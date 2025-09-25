@@ -1,0 +1,67 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() { return request.auth != null; }
+    function isSelf(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // =====================================================================
+    // Users Collection
+    // =====================================================================
+    match /users/{userId} {
+      // Read: 본인 또는 Admin
+      allow get, list: if isSelf(userId) || isAdmin();
+
+      // Create: 본인만 생성, 보호 필드(role, isAdmin) 금지
+      allow create: if isSelf(userId)
+                    && !('role' in request.resource.data)
+                    && !('isAdmin' in request.resource.data);
+
+      // Update: 본인은 보호 필드 변경 불가, Admin은 허용
+      allow update: if (
+                      isSelf(userId)
+                      && request.resource.data.role == resource.data.role
+                      && request.resource.data.isAdmin == resource.data.isAdmin
+                    ) || isAdmin();
+
+      // Delete: 본인 또는 Admin
+      allow delete: if isSelf(userId) || isAdmin();
+    }
+
+    // =====================================================================
+    // Posts Collection
+    // =====================================================================
+    match /posts/{postId} {
+      // 공개 게시물 읽기 허용
+      allow read: if true;
+      
+      // 본인 또는 Admin만 생성/수정/삭제 가능
+      allow create, update, delete: if request.auth.uid == resource.data.authorId 
+                                      || isAdmin();
+    }
+    
+    // =====================================================================
+    // Notices Collection
+    // =====================================================================
+    match /notices/{noticeId} {
+      // 공지 읽기 허용
+      allow read: if true;
+      
+      // Admin만 공지 작성/수정/삭제 가능
+      allow write: if isAdmin();
+    }
+
+    // =====================================================================
+    // System Collection (e.g., for stats)
+    // =====================================================================
+    match /system/{docId} {
+      // Admin만 시스템 문서 접근 가능
+      allow read, write: if isAdmin();
+    }
+  }
+}
+

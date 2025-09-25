@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dos2unix:*)",
+      "Bash(start http://localhost:5174)",
+      "Bash(start http://localhost:5173/about)",
+      "Bash(npm run build:*)",
+      "Bash(firebase deploy:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(npm install:*)",
+      "mcp__codex-bridge__consult_codex_with_stdin",
+      "WebSearch",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:aglowiditsolutions.com)",
+      "WebFetch(domain:ai-secretary-6e9c8.web.app)",
+      "Bash(node:*)",
+      "Bash(firebase functions:log:*)",
+      "Bash(start https://ai-secretary-6e9c8.web.app)",
+      "mcp__codex-bridge__consult_codex",
+      "Bash(codex:*)",
+      "Bash(cat:*)",
+      "Bash(firebase projects:list:*)",
+      "Bash(npm run lint)",
+      "Bash(git for-each-ref:*)",
+      "Bash(xargs:*)",
+      "Bash(git reflog:*)",
+      "Bash(git gc:*)",
+      "Bash(git prune:*)",
+      "Bash(git update-ref:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote:*)",
+      "Bash(git stash:*)"
+    ],
+    "deny": [],
+    "ask": [],
+    "additionalDirectories": [
+      "E:\\e"
+    ]
+  }
+}

@@ -1,0 +1,101 @@
+React Hook useGenerateAPI 코드 리뷰 요청
+// frontend/src/hooks/useGenerateAPI.js - 완전 수정된 최종 버전
+
+import { useState, useCallback } from 'react';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../services/firebase';
+import { callHttpFunction } from '../services/firebaseService';
+import { useAuth } from './useAuth';
+
+export function useGenerateAPI() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [drafts, setDrafts] = useState([]);
+  const [attempts, setAttempts] = useState(0);
+  
+  const maxAttempts = 3;
+
+  // Firebase 예열 함수 (최적화를 위해 유지)
+  const preloadFirebase = useCallback((formData) => {
+    const totalLength = (formData.topic?.length || 0) + (formData.keywords?.length || 0);
+    if (totalLength > 2) {
+      import('firebase/functions');
+      import('../services/firebase');
+    }
+  }, []);
+
+  // 🆕 메타데이터 축적 및 분석 함수 (임시 비활성화)
+  const collectMetadata = useCallback(async (draft) => {
+    try {
+      console.log('📊 메타데이터 수집 시작 (비활성화):', draft.title);
+      
+      // 메타데이터 함수가 백엔드에 없으므로 임시 비활성화
+      // const collectMetadata = httpsCallable(functions, 'collectMetadata');
+      return null; // 바로 반환
+      
+      /* 임시 비활성화
+      const metadataPackage = {
+        // 원고 기본 정보
+        contentData: {
+          title: draft.title,
+          content: draft.content,
+          wordCount: draft.wordCount,
+          category: draft.category,
+          subCategory: draft.subCategory,
+          keywords: draft.keywords
+        },
+        
+        // AI 생성 메타데이터
+        aiMetadata: draft.meta || {},
+        
+        // 사용자 선택 행동 데이터
+        userBehavior: {
+          generatedAt: draft.generatedAt,
+          selectedStyle: draft.style,
+          selectedType: draft.type,
+          isFirstChoice: attempts === 1 // 첫 시도에서 선택했는지
+        },
+        
+        // 성과 추적용
+        performanceMetrics: {
+          generationAttempt: attempts,
+          totalVariations: 3, // 기본 3개 생성
+          selectedVariationIndex: 0 // 첫 번째 선택
+        }
+      };
+      
+      const result = await collectMetadata(metadataPackage);
+      
+      if (result.data?.success) {
+        console.log('✅ 메타데이터 수집 완료:', result.data.insights);
+        return result.data.insights; // 학습된 인사이트 반환
+      }
+      */
+      
+    } catch (error) {
+      console.warn('⚠️ 메타데이터 수집 실패 (기능에는 영향 없음):', error.message);
+    }
+    
+    return null;
+  }, [attempts]);
+
+  // HTML 태그 제거 유틸리티 함수
+  const stripHtmlTags = useCallback((html) => {
+    if (!html) return '';
+    return html
+      .replace(/<[^>]*>/g, '')  // HTML 태그 제거
+      .replace(/&nbsp;/g, ' ')  // &nbsp; → 공백
+      .replace(/&amp;/g, '&')   // &amp; → &
+      .replace(/&lt;/g, '<')    // &lt; → <
+      .replace(/&gt;/g, '>')    // &gt; → >
+      .replace(/&quot;/g, '"')  // &quot; → "
+      .trim();
+  }, []);
+
+  // HTML 렌더링용 정리 함수
+  const sanitizeHtml = useCallback((html) => {
+    if (!html) return '';
+    // 기본적인 HTML 태그만 허용 (보안상 필요시 라이브러리 사용 권장)
+    return html
+      .replace(/<script[^>]*>.*?<\/script>/gi, '') // 스크립트 제거

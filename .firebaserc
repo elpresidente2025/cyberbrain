@@ -1,0 +1,16 @@
+{
+  "projects": {
+    "default": "ai-secretary-6e9c8",
+    "staging": "ai-secretary-6e9c8"
+  },
+  "targets": {
+    "ai-secretary-6e9c8": {
+      "hosting": {
+        "default": [
+          "ai-secretary-6e9c8"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

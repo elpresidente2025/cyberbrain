@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Naver Login Proxy</title>
+    <script>
+        // Firebase Hosting에서 Functions 호출 (CORS 없음)
+        async function proxyNaverLogin(data) {
+            console.log('🔥 프록시에서 함수 호출 시작:', data);
+            try {
+                // Firebase Functions 직접 호출 (같은 프로젝트이므로 CORS 없음)
+                const response = await fetch('https://asia-northeast3-ai-secretary-6e9c8.cloudfunctions.net/naverLoginHTTP', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                console.log('📡 Functions 응답 상태:', response.status, response.statusText);
+                console.log('📡 응답 헤더:', [...response.headers.entries()]);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('❌ HTTP 오류 응답:', errorText);
+                    throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+                }
+                
+                const responseText = await response.text();
+                console.log('📄 원본 응답 텍스트:', responseText.substring(0, 200) + '...');
+                
+                try {
+                    const jsonResult = JSON.parse(responseText);
+                    console.log('✅ JSON 파싱 성공:', jsonResult);
+                    return jsonResult;
+                } catch (parseError) {
+                    console.error('❌ JSON 파싱 실패:', parseError);
+                    console.error('📄 파싱 실패한 응답:', responseText);
+                    throw new Error(`JSON 파싱 오류: ${parseError.message}`);
+                }
+            } catch (error) {
+                console.error('❌ 프록시 오류:', error);
+                throw error;
+            }
+        }
+
+        function updateStatus(message, isError = false) {
+            const statusEl = document.getElementById('status');
+            if (statusEl) {
+                statusEl.innerHTML = message;
+                statusEl.style.color = isError ? '#ff4444' : '#333';
+            }
+        }
+
+        // PostMessage를 통한 통신
+        window.addEventListener('message', async (event) => {
+            console.log('📨 프록시에서 메시지 수신:', event.origin, event.data);
+            
+            // cyberbrain.kr에서 온 요청만 처리
+            if (event.origin !== 'https://cyberbrain.kr') {
+                console.log('❌ 허용되지 않은 origin:', event.origin);
+                return;
+            }
+
+            try {
+                updateStatus('네이버 로그인 처리 중...');
+                console.log('🚀 프록시 네이버 로그인 시작');
+                const result = await proxyNaverLogin(event.data);
+                
+                updateStatus('로그인 성공! 잠시 후 창이 닫힙니다...');
+                console.log('✅ 프록시 네이버 로그인 성공:', result);
+                
+                // 결과를 다시 cyberbrain.kr로 전송 (팝업 방식)
+                if (window.opener) {
+                    console.log('📤 부모 창에 성공 결과 전송');
+                    window.opener.postMessage({
+                        type: 'naver-login-result',
+                        success: true,
+                        data: result
+                    }, event.origin);
+                }
+                
+                // 1초 후 자동으로 팝업 닫기
+                setTimeout(() => {
+                    console.log('🔒 팝업 창 닫기');
+                    window.close();
+                }, 1000);
+                
+            } catch (error) {
+                console.error('❌ 프록시 네이버 로그인 오류:', error);
+                updateStatus(`로그인 오류: ${error.message}`, true);
+                
+                if (window.opener) {
+                    console.log('📤 부모 창에 오류 결과 전송');
+                    window.opener.postMessage({
+                        type: 'naver-login-result',
+                        success: false,
+                        error: error.message
+                    }, event.origin);
+                }
+                
+                // 3초 후 자동으로 팝업 닫기 (오류인 경우 조금 더 대기)
+                setTimeout(() => {
+                    console.log('🔒 팝업 창 닫기 (오류)');
+                    window.close();
+                }, 3000);
+            }
+        });
+
+        // 준비 완료 신호 (팝업 방식)
+        console.log('📋 프록시 초기화 완료');
+        if (window.opener) {
+            console.log('📤 부모 창에 준비 완료 신호 전송');
+            window.opener.postMessage({
+                type: 'proxy-ready'
+            }, 'https://cyberbrain.kr');
+        } else {
+            console.log('❌ 부모 창을 찾을 수 없음');
+        }
+    </script>
+</head>
+<body>
+    <div style="text-align: center; padding: 20px; font-family: Arial, sans-serif;">
+        <h3>네이버 로그인</h3>
+        <p id="status">인증 처리 준비 중...</p>
+        <div style="margin-top: 20px;">
+            <div style="display: inline-block; width: 20px; height: 20px; border: 3px solid #f3f3f3; border-top: 3px solid #3498db; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+        </div>
+    </div>
+    <style>
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "name": "ai-secretary",
+  "version": "1.0.0",
+  "description": "더불어민주당 정치인 전용 블로그 콘텐츠 자동 생성 서비스",
+  "private": true,
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "build": "cd frontend && npm run build",
+    "deploy": "node deploy.js",
+    "deploy:hosting": "node deploy.js hosting-only",
+    "deploy:full": "node deploy.js full",
+    "deploy:functions": "node deploy.js functions-only",
+    "lint": "npm run lint -w functions",
+    "firebase:emulators": "firebase emulators:start"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  },
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "dependencies": {
+    "firebase": "^12.1.0",
+    "styled-components": "^6.1.19"
+  }
+}

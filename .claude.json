@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "codex-bridge": {
+      "command": "C:\\Users\\강정구학부졸업미디어문예창작학과\\.local\\bin\\codex-bridge.exe",
+      "args": ["mcp"]
+    }
+  }
+}
