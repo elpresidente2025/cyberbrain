@@ -2309,24 +2309,6 @@ After
                       >
                         {plan.count}
                       </Typography>
-                      <Button
-                        variant="outlined"
-                        sx={{
-                          backgroundColor: 'transparent',
-                          borderColor: plan.color,
-                          color: plan.color,
-                          fontWeight: 700,
-                          px: { xs: 2, md: 4 },
-                          py: { xs: 1, md: 1.5 },
-                          fontSize: { xs: '0.7rem', sm: '0.8rem', md: '1rem' },
-                          '&:hover': {
-                            backgroundColor: plan.color,
-                            color: 'black'
-                          }
-                        }}
-                      >
-                        상담 신청
-                      </Button>
                     </CardContent>
                   </Card>
                 </InViewFade>
