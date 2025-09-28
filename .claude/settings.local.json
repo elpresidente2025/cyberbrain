@@ -35,7 +35,9 @@
       "Bash(start https://ai-secretary-6e9c8.web.app/about)",
       "Bash(git checkout:*)",
       "Bash(git restore:*)",
-      "Bash(lsof:*)"
+      "Bash(lsof:*)",
+      "Bash(npm run dev:*)",
+      "Bash(start http://localhost:5173)"
     ],
     "deny": [],
     "ask": [],

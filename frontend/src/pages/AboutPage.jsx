@@ -1134,7 +1134,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                       bgcolor: 'rgba(255,255,255,0.05)',
                       border: `2px solid ${rule.color}40`,
                       borderRadius: 3,
-                      height: '100%',
+                      height: '200px',
                       display: 'flex',
                       flexDirection: 'column',
                       transition: 'all 0.3s ease',
