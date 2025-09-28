@@ -1193,9 +1193,16 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               { icon: <StyleIcon />, label: '톤앤매너' },
               { icon: <FormatListBulletedIcon />, label: '구조화' },
             ].map((it, i) => (
-              <Box key={i}>
-                <CardSoft>
-                  <CardContent sx={{ textAlign: 'center', py: { xs: 3, md: 4 } }}>
+              <Box key={i} sx={{ height: '100%' }}>
+                <CardSoft sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                  <CardContent sx={{
+                    textAlign: 'center',
+                    py: { xs: 3, md: 4 },
+                    flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center'
+                  }}>
                     <Box sx={{
                       mb: 1.5,
                       '& svg': {
