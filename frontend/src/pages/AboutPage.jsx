@@ -1748,71 +1748,98 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
 
           {/* 네이버 블로그의 3가지 핵심 장점 */}
           <InViewFade>
-            <Grid container spacing={3} sx={{ mb: 4 }}>
-              <Grid item xs={12} md={4}>
-                <Box sx={{
-                  p: 3,
-                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                  borderRadius: 3,
-                  border: '1px solid #003a8740',
-                  textAlign: 'center',
-                  transition: 'all 0.3s ease',
-                  '&:hover': {
-                    transform: 'translateY(-4px)',
-                    boxShadow: '0 8px 32px #003a8730'
-                  }
+            <Box sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: 3,
+              mb: 4,
+              alignItems: 'stretch'
+            }}>
+              <Box sx={{
+                p: { xs: 2, md: 3 },
+                backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: 3,
+                border: '1px solid #003a8740',
+                textAlign: 'center',
+                transition: 'all 0.3s ease',
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  boxShadow: '0 8px 32px #003a8730'
+                }
+              }}>
+                <Typography variant="h6" sx={{
+                  fontWeight: 700,
+                  color: '#003a87',
+                  mb: 2,
+                  fontSize: { xs: '0.9rem', sm: '1rem', md: '1.25rem' }
                 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#003a87', mb: 2 }}>
-                    검색 우선 노출
-                  </Typography>
-                  <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.9)', lineHeight: 1.6 }}>
-                    유권자가 찾을 때 가장 먼저 발견되는 콘텐츠로 첫인상을 좌우합니다
-                  </Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={12} md={4}>
-                <Box sx={{
-                  p: 3,
-                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                  borderRadius: 3,
-                  border: '1px solid #55207d40',
-                  textAlign: 'center',
-                  transition: 'all 0.3s ease',
-                  '&:hover': {
-                    transform: 'translateY(-4px)',
-                    boxShadow: '0 8px 32px #55207d30'
-                  }
+                  검색 우선 노출
+                </Typography>
+                <Typography variant="body1" sx={{
+                  color: 'rgba(255,255,255,0.9)',
+                  lineHeight: 1.6,
+                  fontSize: { xs: '0.75rem', sm: '0.85rem', md: '1rem' }
                 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#55207d', mb: 2 }}>
-                    깊이 있는 설득력
-                  </Typography>
-                  <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.9)', lineHeight: 1.6 }}>
-                    장문으로 논리적 설득이 가능하여 정책과 비전을 완전히 전달합니다
-                  </Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={12} md={4}>
-                <Box sx={{
-                  p: 3,
-                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                  borderRadius: 3,
-                  border: '1px solid #00626140',
-                  textAlign: 'center',
-                  transition: 'all 0.3s ease',
-                  '&:hover': {
-                    transform: 'translateY(-4px)',
-                    boxShadow: '0 8px 32px #00626130'
-                  }
+                  유권자가 찾을 때 가장 먼저 발견되는 콘텐츠로 첫인상을 좌우합니다
+                </Typography>
+              </Box>
+              <Box sx={{
+                p: { xs: 2, md: 3 },
+                backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: 3,
+                border: '1px solid #55207d40',
+                textAlign: 'center',
+                transition: 'all 0.3s ease',
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  boxShadow: '0 8px 32px #55207d30'
+                }
+              }}>
+                <Typography variant="h6" sx={{
+                  fontWeight: 700,
+                  color: '#55207d',
+                  mb: 2,
+                  fontSize: { xs: '0.9rem', sm: '1rem', md: '1.25rem' }
                 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#006261', mb: 2 }}>
-                    전문 콘텐츠 준비
-                  </Typography>
-                  <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.9)', lineHeight: 1.6 }}>
-                    체계적으로 정리된 전문 콘텐츠로 신뢰도와 전문성을 구축합니다
-                  </Typography>
-                </Box>
-              </Grid>
-            </Grid>
+                  깊이 있는 설득력
+                </Typography>
+                <Typography variant="body1" sx={{
+                  color: 'rgba(255,255,255,0.9)',
+                  lineHeight: 1.6,
+                  fontSize: { xs: '0.75rem', sm: '0.85rem', md: '1rem' }
+                }}>
+                  장문으로 논리적 설득이 가능하여 정책과 비전을 완전히 전달합니다
+                </Typography>
+              </Box>
+              <Box sx={{
+                p: { xs: 2, md: 3 },
+                backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: 3,
+                border: '1px solid #00626140',
+                textAlign: 'center',
+                transition: 'all 0.3s ease',
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  boxShadow: '0 8px 32px #00626130'
+                }
+              }}>
+                <Typography variant="h6" sx={{
+                  fontWeight: 700,
+                  color: '#006261',
+                  mb: 2,
+                  fontSize: { xs: '0.9rem', sm: '1rem', md: '1.25rem' }
+                }}>
+                  전문 콘텐츠 준비
+                </Typography>
+                <Typography variant="body1" sx={{
+                  color: 'rgba(255,255,255,0.9)',
+                  lineHeight: 1.6,
+                  fontSize: { xs: '0.75rem', sm: '0.85rem', md: '1rem' }
+                }}>
+                  체계적으로 정리된 전문 콘텐츠로 신뢰도와 전문성을 구축합니다
+                </Typography>
+              </Box>
+            </Box>
           </InViewFade>
 
           {/* 결론 메시지 */}
