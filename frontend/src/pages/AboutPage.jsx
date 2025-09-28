@@ -191,7 +191,7 @@ const FAQS = [
   },
   {
     q: '선거구 독점 정책은 어떻게 운영되나요?',
-    a: '동일 선거구(국회의원 선거구 기준) 내에는 1인만 서비스를 이용할 수 있습니다. 선착순으로 선거구를 확보하며, 계약 종료 시에만 해당 선거구가 다시 개방됩니다. 이를 통해 지역 내 독점적 디지털 우위를 확보할 수 있습니다.',
+    a: '동일 선거구 내에는 1인만 서비스를 이용할 수 있습니다. 선착순으로 선거구를 확보하며, 계약 종료 시에만 해당 선거구가 다시 개방됩니다. 이를 통해 지역 내 독점적 디지털 우위를 확보할 수 있습니다.',
   },
 ];
 
@@ -839,13 +839,25 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               sx={{
                 fontWeight: 600,
                 letterSpacing: '0.01em',
-                mb: { xs: 3, md: 4, lg: 4 }, // 태블릿에서 마진 조정
+                mb: { xs: 4, md: 5, lg: 5 }, // 로고와의 여백을 위해 마진 증가
                 fontSize: { xs: '1.1rem', md: '1.35rem', lg: '1.5rem' }, // 태블릿 사이즈 추가
                 opacity: 0.9
               }}
             >
               검색되지 않으면 이런 칭찬도 못 듣습니다.
             </Typography>
+            <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center' }}>
+              <img
+                src="/logo-landscape.png"
+                alt="AI Secretary Logo"
+                style={{
+                  height: '48px',
+                  width: 'auto',
+                  opacity: 0.9,
+                  filter: 'brightness(1.1)'
+                }}
+              />
+            </Box>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="center">
               <CTAButton aria-label="영향력 확인" onClick={handlePrimaryCTA}>
                 영향력 확인
