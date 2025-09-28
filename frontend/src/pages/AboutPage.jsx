@@ -2078,8 +2078,10 @@ After
                     border: '1px solid rgba(255,255,255,0.1)',
                     borderRadius: '16px',
                     backdropFilter: 'blur(6px)',
-                    p: 4,
-                    textAlign: 'center'
+                    p: { xs: 2, md: 3 },
+                    textAlign: 'center',
+                    maxWidth: '80%',
+                    mx: 'auto'
                   }}
                 >
                   <Box
