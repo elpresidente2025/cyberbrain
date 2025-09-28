@@ -1034,7 +1034,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                   color: 'rgba(255,255,255,0.7)',
                   fontSize: { xs: '0.9rem', md: '1.0rem', lg: '1rem' } // 태블릿 사이즈 추가
                 }}>
-                  온라인 검색에서 먼저 발견되는 콘텐츠와 논리적 설득부터 감정적 공감까지, 상황별 맞춤 원고로 유권자에게 더 깊이 다가갈 수 있습니다.
+                  검색 노출부터 유권자 소통까지, 전략적 블로그 콘텐츠로 정치인의 인지도와 영향력을 높이세요.
                 </Typography>
               </Box>
             </Grid>
@@ -1625,13 +1625,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                 mb: 2,
                 color: '#f8c023'
               }}>
-                정치인이라면 당연히 네이버 블로그
+                네이버 블로그로 정치적 영향력 확대
               </Typography>
               <Typography variant="body1" sx={{
                 color: 'rgba(255,255,255,0.9)',
                 lineHeight: 1.8
               }}>
-                온라인 검색에서 먼저 발견되는 콘텐츠와 논리적 설득부터 감정적 공감까지, 상황별 맞춤 원고로 유권자에게 더 깊이 다가갈 수 있습니다.
+                검색 노출부터 유권자 소통까지, 전략적 블로그 콘텐츠로 정치인의 인지도와 영향력을 높이세요.
               </Typography>
             </Box>
           </InViewFade>
