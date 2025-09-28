@@ -695,6 +695,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
   const showDemoSwitch = process.env.NODE_ENV !== 'production' ||
     new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('demo') === '1';
 
+  // FAQ accordion state - only one panel can be open at a time
+  const [expandedFaq, setExpandedFaq] = React.useState(false);
+
+  const handleAccordionChange = (panel) => (event, isExpanded) => {
+    setExpandedFaq(isExpanded ? panel : false);
+  };
+
   const handlePrimaryCTA = () => {
     if (user) navigate('/dashboard');
     else navigate('/register');
@@ -1095,7 +1102,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
             ))}
           </Grid>
 
-          <Grid container spacing={3} justifyContent="center">
+          <Box sx={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: { xs: 2, md: 3 },
+            justifyContent: 'center',
+            alignItems: 'stretch'
+          }}>
             {[
               {
                 title: '1회 = 1원고',
@@ -1113,7 +1126,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                 color: '#006261'
               }
             ].map((rule, index) => (
-              <Grid item xs={12} md={4} key={index}>
+              <Box key={index}>
                 <InViewFade timeout={600 + index * 100}>
                   <Card
                     sx={{
@@ -1129,26 +1142,30 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                       }
                     }}
                   >
-                    <CardContent sx={{ p: 4, textAlign: 'center' }}>
+                    <CardContent sx={{ p: { xs: 2, md: 4 }, textAlign: 'center' }}>
                       <Typography
                         variant="h6"
                         sx={{
                           fontWeight: 700,
-                          mb: 2,
-                          color: rule.color
+                          mb: { xs: 1, md: 2 },
+                          color: rule.color,
+                          fontSize: { xs: '0.9rem', sm: '1rem', md: '1.25rem' }
                         }}
                       >
                         {rule.title}
                       </Typography>
-                      <Typography sx={{ lineHeight: 1.6 }}>
+                      <Typography sx={{
+                        lineHeight: 1.6,
+                        fontSize: { xs: '0.75rem', sm: '0.85rem', md: '1rem' }
+                      }}>
                         {rule.description}
                       </Typography>
                     </CardContent>
                   </Card>
                 </InViewFade>
-              </Grid>
+              </Box>
             ))}
-          </Grid>
+          </Box>
         </ContentContainer>
       </Section>
 
@@ -1165,23 +1182,39 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
           </InViewFade>
 
           {/* 품질 기준 아이콘 그리드 */}
-          <Grid container spacing={3}>
+          <Box sx={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: { xs: 2, md: 3 },
+            alignItems: 'stretch'
+          }}>
             {[
               { icon: <FactCheckIcon />, label: '사실 검증' },
-              { icon: <SourceIcon />, label: '출처 표기' },
               { icon: <StyleIcon />, label: '톤앤매너' },
               { icon: <FormatListBulletedIcon />, label: '구조화' },
             ].map((it, i) => (
-              <Grid item xs={6} md={3} key={i}>
+              <Box key={i}>
                 <CardSoft>
-                  <CardContent sx={{ textAlign: 'center', py: 4 }}>
-                    <Box sx={{ mb: 1.5, '& svg': { fontSize: 32, color: '#00d4ff' } }}>{it.icon}</Box>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{it.label}</Typography>
+                  <CardContent sx={{ textAlign: 'center', py: { xs: 3, md: 4 } }}>
+                    <Box sx={{
+                      mb: 1.5,
+                      '& svg': {
+                        fontSize: { xs: 28, md: 32 },
+                        color: '#00d4ff'
+                      }
+                    }}>{it.icon}</Box>
+                    <Typography
+                      variant="subtitle1"
+                      sx={{
+                        fontWeight: 700,
+                        fontSize: { xs: '0.9rem', md: '1rem' }
+                      }}
+                    >{it.label}</Typography>
                   </CardContent>
                 </CardSoft>
-              </Grid>
+              </Box>
             ))}
-          </Grid>
+          </Box>
 
           {/* 프로세스 플로우 */}
           <Box sx={{ mt: 6 }}>
@@ -1443,87 +1476,99 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                         </Box>
                       </Grid>
 
-                      {/* 오른쪽: 방사형 SNS 다이어그램 */}
+                      {/* 오른쪽: 동심원 SNS 다이어그램 */}
                       <Grid item xs={12} md={6}>
                         <Box sx={{
                           position: 'relative',
-                          width: '240px',
-                          height: '240px',
+                          width: '300px',
+                          height: '300px',
                           mx: 'auto'
                         }}>
+                          {/* 동심원들 - SNS 아이콘이 원의 테두리에 걸치도록 조정 */}
+                          <Box sx={{
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            width: '220px', // SNS 아이콘들이 테두리에 걸치도록
+                            height: '220px',
+                            borderRadius: '50%',
+                            border: '2px solid rgba(0, 212, 255, 0.3)',
+                            zIndex: 1
+                          }} />
+                          <Box sx={{
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            width: '140px',
+                            height: '140px',
+                            borderRadius: '50%',
+                            border: '2px solid rgba(0, 212, 255, 0.4)',
+                            zIndex: 2
+                          }} />
+                          <Box sx={{
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            width: '90px',
+                            height: '90px',
+                            borderRadius: '50%',
+                            border: '2px solid rgba(0, 212, 255, 0.5)',
+                            zIndex: 3
+                          }} />
+
                           {/* 중앙 네이버 블로그 */}
                           <Box sx={{
                             position: 'absolute',
                             top: '50%',
                             left: '50%',
                             transform: 'translate(-50%, -50%)',
-                            width: 80,
-                            height: 80,
-                            borderRadius: '50%',
-                            border: '1px solid #f8c02340',
-                            backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
                             zIndex: 10
                           }}>
                             <img
                               src="/icons/Nblog.webp"
                               alt="네이버 블로그"
-                              style={{ width: 50, height: 50 }}
+                              style={{
+                                width: 36,
+                                height: 36,
+                                filter: 'drop-shadow(0 0 8px rgba(248, 192, 35, 0.8)) drop-shadow(0 0 16px rgba(248, 192, 35, 0.4))',
+                                transition: 'filter 0.3s ease'
+                              }}
                             />
                           </Box>
 
-                          {/* 연결선들 */}
+                          {/* SNS 아이콘들 */}
                           {[
-                            { angle: 0, icon: 'icon-facebook.png', name: '페이스북' },
-                            { angle: 72, icon: 'icon-instagram.png', name: '인스타그램' },
-                            { angle: 144, icon: 'icon-X.png', name: 'X(트위터)' },
-                            { angle: 216, icon: 'icon-threads.png', name: '스레드' }
+                            { angle: 23, icon: 'icon-facebook.png', name: '페이스북', radius: 110 },
+                            { angle: 127, icon: 'icon-instagram.png', name: '인스타그램', radius: 70 },
+                            { angle: 203, icon: 'icon-X.png', name: 'X(트위터)', radius: 110 },
+                            { angle: 311, icon: 'icon-threads.png', name: '스레드', radius: 110 }
                           ].map((sns, index) => {
                             const radian = (sns.angle * Math.PI) / 180;
-                            const x = Math.cos(radian) * 85;
-                            const y = Math.sin(radian) * 85;
+                            const x = Math.cos(radian) * sns.radius;
+                            const y = Math.sin(radian) * sns.radius;
 
                             return (
-                              <React.Fragment key={sns.name}>
-                                {/* 연결선 */}
-                                <Box sx={{
-                                  position: 'absolute',
-                                  top: '50%',
-                                  left: '50%',
-                                  width: '85px',
-                                  height: '3px',
-                                  backgroundColor: 'rgba(0, 212, 255, 0.6)',
-                                  transformOrigin: '0 50%',
-                                  transform: `translate(0, -50%) rotate(${sns.angle}deg)`,
-                                  zIndex: 1
-                                }} />
-
-                                {/* SNS 아이콘 */}
-                                <Box sx={{
-                                  position: 'absolute',
-                                  top: '50%',
-                                  left: '50%',
-                                  transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`,
-                                  width: 50,
-                                  height: 50,
-                                  borderRadius: '50%',
-                                  border: '1px solid rgba(255, 255, 255, 0.4)',
-                                  backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  opacity: 0.8,
-                                  zIndex: 5
-                                }}>
-                                  <img
-                                    src={`/icons/${sns.icon}`}
-                                    alt={sns.name}
-                                    style={{ width: 30, height: 30 }}
-                                  />
-                                </Box>
-                              </React.Fragment>
+                              <Box key={sns.name} sx={{
+                                position: 'absolute',
+                                top: '50%',
+                                left: '50%',
+                                transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`,
+                                zIndex: 5
+                              }}>
+                                <img
+                                  src={`/icons/${sns.icon}`}
+                                  alt={sns.name}
+                                  style={{
+                                    width: 24,
+                                    height: 24,
+                                    filter: 'drop-shadow(0 0 6px rgba(0, 212, 255, 0.8)) drop-shadow(0 0 12px rgba(0, 212, 255, 0.4))',
+                                    transition: 'filter 0.3s ease'
+                                  }}
+                                />
+                              </Box>
                             );
                           })}
                         </Box>
@@ -2135,7 +2180,13 @@ After
             </Box>
           </InViewFade>
 
-          <Grid container spacing={4} justifyContent="center">
+          <Box sx={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: { xs: 2, md: 4 },
+            justifyContent: 'center',
+            alignItems: 'stretch'
+          }}>
             {[
               {
                 name: '로컬 블로거',
@@ -2159,7 +2210,7 @@ After
                 color: '#006261'
               }
             ].map((plan, index) => (
-              <Grid item xs={12} md={4} key={index}>
+              <Box key={index}>
                 <InViewFade timeout={600 + index * 100}>
                   <Card
                     sx={{
@@ -2175,13 +2226,14 @@ After
                       }
                     }}
                   >
-                    <CardContent sx={{ p: 4, textAlign: 'center' }}>
+                    <CardContent sx={{ p: { xs: 2, md: 4 }, textAlign: 'center' }}>
                       <Typography
                         variant="h5"
                         sx={{
                           fontWeight: 700,
                           mb: 1,
-                          color: plan.color
+                          color: plan.color,
+                          fontSize: { xs: '0.9rem', sm: '1.1rem', md: '1.25rem' }
                         }}
                       >
                         {plan.name}
@@ -2190,7 +2242,8 @@ After
                         variant="h4"
                         sx={{
                           fontWeight: 900,
-                          mb: 1
+                          mb: 1,
+                          fontSize: { xs: '1.2rem', sm: '1.5rem', md: '2rem' }
                         }}
                       >
                         {plan.price}
@@ -2198,7 +2251,8 @@ After
                       <Typography
                         sx={{
                           color: 'rgba(255,255,255,0.7)',
-                          mb: 4
+                          mb: { xs: 2, md: 4 },
+                          fontSize: { xs: '0.75rem', sm: '0.85rem', md: '1rem' }
                         }}
                       >
                         {plan.description}
@@ -2207,8 +2261,9 @@ After
                         variant="h3"
                         sx={{
                           fontWeight: 900,
-                          mb: 4,
-                          color: plan.color
+                          mb: { xs: 2, md: 4 },
+                          color: plan.color,
+                          fontSize: { xs: '1.5rem', sm: '2rem', md: '2.5rem' }
                         }}
                       >
                         {plan.count}
@@ -2220,8 +2275,9 @@ After
                           borderColor: plan.color,
                           color: plan.color,
                           fontWeight: 700,
-                          px: 4,
-                          py: 1.5,
+                          px: { xs: 2, md: 4 },
+                          py: { xs: 1, md: 1.5 },
+                          fontSize: { xs: '0.7rem', sm: '0.8rem', md: '1rem' },
                           '&:hover': {
                             backgroundColor: plan.color,
                             color: 'black'
@@ -2233,9 +2289,9 @@ After
                     </CardContent>
                   </Card>
                 </InViewFade>
-              </Grid>
+              </Box>
             ))}
-          </Grid>
+          </Box>
 
           <InViewFade>
             <Box
@@ -2281,6 +2337,8 @@ After
               <InViewFade key={item.q} timeout={600 + i * 80}>
                 <Accordion
                   disableGutters
+                  expanded={expandedFaq === `panel${i}`}
+                  onChange={handleAccordionChange(`panel${i}`)}
                   sx={{ backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 2, '&::before': { display: 'none' } }}
                 >
                   <AccordionSummary
