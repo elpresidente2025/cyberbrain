@@ -1186,7 +1186,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
             display: 'grid',
             gridTemplateColumns: 'repeat(3, 1fr)',
             gap: { xs: 2, md: 3 },
-            alignItems: 'stretch'
+            alignItems: 'stretch',
+            gridAutoRows: '1fr'
           }}>
             {[
               { icon: <FactCheckIcon />, label: '사실 검증' },

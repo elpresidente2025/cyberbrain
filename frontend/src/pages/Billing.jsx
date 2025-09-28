@@ -310,57 +310,84 @@ const Billing = () => {
             <Typography variant="h6" sx={{ mb: 3, fontSize: '1.25rem', fontWeight: 'bold' }}>
               플랜 선택
             </Typography>
-            <Grid container spacing={3}>
+            <Box sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: 1
+            }}>
               {plans.map((plan, index) => (
-                <Grid item xs={12} md={4} key={index}>
-                    <Card sx={{ 
+                <Box key={index}>
+                    <Card sx={{
                       height: '100%',
                       position: 'relative',
                       border: currentPlan === plan.name ? `2px solid ${plan.color}` : '1px solid #e0e0e0',
                       display: 'flex',
-                      flexDirection: 'column'
+                      flexDirection: 'column',
+                      minWidth: 0,
+                      width: '100%'
                     }}>
-                      <Box sx={{ 
-                        bgcolor: plan.color, 
-                        p: 2,
+                      <Box sx={{
+                        bgcolor: plan.color,
+                        p: { xs: 1, sm: 1.5, md: 2 },
                         borderBottom: '1px solid #e0e0e0'
                       }}>
-                        <Typography variant="h6" sx={{ 
+                        <Typography variant="h6" sx={{
                           fontWeight: 'bold',
                           color: 'black !important',
-                          textShadow: '1px 1px 0px white, -1px 1px 0px white, 1px -1px 0px white, -1px -1px 0px white'
+                          textShadow: '1px 1px 0px white, -1px 1px 0px white, 1px -1px 0px white, -1px -1px 0px white',
+                          fontSize: { xs: '0.875rem', sm: '1rem', md: '1.25rem' }
                         }}>
                           {plan.name}
                         </Typography>
                       </Box>
-                      <CardContent sx={{ flex: 1 }}>
-                        <Typography variant="h4" sx={{ fontWeight: 'bold', mb: 1, color: plan.color }}>
+                      <CardContent sx={{ flex: 1, p: { xs: 1, sm: 1.5, md: 2 } }}>
+                        <Typography variant="h4" sx={{
+                          fontWeight: 'bold',
+                          mb: 1,
+                          color: plan.color,
+                          fontSize: { xs: '1.25rem', sm: '1.5rem', md: '2rem' }
+                        }}>
                           {plan.price.toLocaleString()}
-                          <Typography component="span" variant="body2">원/월 (VAT 포함)</Typography>
+                          <Typography component="span" variant="body2" sx={{
+                            fontSize: { xs: '0.6rem', sm: '0.75rem', md: '0.875rem' }
+                          }}>
+                            원/월 (VAT 포함)
+                          </Typography>
                         </Typography>
                         <List dense>
                           {plan.features.map((feature, idx) => (
-                            <ListItem key={idx} sx={{ py: 0.5, px: 0 }}>
-                              <ListItemIcon sx={{ minWidth: 20 }}>
-                                <CheckCircle sx={{ fontSize: 16, color: plan.color }} />
+                            <ListItem key={idx} sx={{ py: 0.25, px: 0 }}>
+                              <ListItemIcon sx={{ minWidth: { xs: 16, sm: 18, md: 20 } }}>
+                                <CheckCircle sx={{
+                                  fontSize: { xs: 12, sm: 14, md: 16 },
+                                  color: plan.color
+                                }} />
                               </ListItemIcon>
-                              <ListItemText 
-                                primary={feature} 
-                                primaryTypographyProps={{ variant: 'body2' }}
+                              <ListItemText
+                                primary={feature}
+                                primaryTypographyProps={{
+                                  variant: 'body2',
+                                  sx: {
+                                    fontSize: { xs: '0.6rem', sm: '0.75rem', md: '0.875rem' },
+                                    lineHeight: { xs: 1.2, sm: 1.3, md: 1.4 }
+                                  }
+                                }}
                               />
                             </ListItem>
                           ))}
                         </List>
                       </CardContent>
-                      <CardActions sx={{ mt: 'auto', p: 2 }}>
+                      <CardActions sx={{ mt: 'auto', p: { xs: 1, sm: 1.5, md: 2 } }}>
                         <Button
                           variant="contained"
                           fullWidth
                           disabled={currentPlan === plan.name}
                           onClick={() => handlePlanChange(plan)}
-                          sx={{ 
+                          sx={{
                             bgcolor: plan.color,
-                            '&:hover': { 
+                            fontSize: { xs: '0.6rem', sm: '0.75rem', md: '0.875rem' },
+                            py: { xs: 0.5, sm: 1, md: 1.5 },
+                            '&:hover': {
                               bgcolor: plan.color,
                               filter: 'brightness(0.9)'
                             },
@@ -374,9 +401,9 @@ const Billing = () => {
                         </Button>
                       </CardActions>
                     </Card>
-                  </Grid>
+                  </Box>
                 ))}
-            </Grid>
+            </Box>
           </Paper>
 
           {/* 하단: 애드온 서비스 */}
