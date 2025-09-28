@@ -2150,19 +2150,19 @@ After
                   borderRadius: 3,
                   mb: 4
                 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, mb: 3, color: '#00d4ff' }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 3, color: '#00d4ff' }}>
                     체험판 제공
                   </Typography>
                   <Stack spacing={1.5}>
-                    <Typography sx={{ fontSize: '1rem', display: 'flex', alignItems: 'center' }}>
+                    <Typography sx={{ fontSize: '0.9rem', display: 'flex', alignItems: 'center' }}>
                       <Box component="span" sx={{ color: '#00d4ff', mr: 1, fontWeight: 'bold' }}>✓</Box>
                       의정활동 콘텐츠 8편 자동 생성
                     </Typography>
-                    <Typography sx={{ fontSize: '1rem', display: 'flex', alignItems: 'center' }}>
+                    <Typography sx={{ fontSize: '0.9rem', display: 'flex', alignItems: 'center' }}>
                       <Box component="span" sx={{ color: '#00d4ff', mr: 1, fontWeight: 'bold' }}>✓</Box>
                       최대 31일 체험 기간 제공
                     </Typography>
-                    <Typography sx={{ fontSize: '1rem', display: 'flex', alignItems: 'center' }}>
+                    <Typography sx={{ fontSize: '0.9rem', display: 'flex', alignItems: 'center' }}>
                       <Box component="span" sx={{ color: '#00d4ff', mr: 1, fontWeight: 'bold' }}>✓</Box>
                       효과 확인 후 이용 여부 결정
                     </Typography>
