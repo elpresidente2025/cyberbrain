@@ -431,6 +431,17 @@ const Page = styled('main')({
     height: 'auto',
     minHeight: '100vh',
   },
+  // 갤럭시 폴드 7 메인 디스플레이 최적화 (8인치, 1968x2184 세로모드)
+  '@media (min-width: 1900px) and (orientation: portrait)': {
+    height: 'auto',
+    fontSize: '1.1rem',
+  },
+  // 갤럭시 폴드 7 커버 디스플레이 최적화 (6.5인치, 2520x1080)
+  '@media (min-width: 1080px) and (max-width: 1080px) and (min-height: 2520px)': {
+    height: 'auto',
+    minHeight: '100vh',
+    padding: '2vh 1rem',
+  },
 });
 
 const Section = styled('section')(({ theme }) => ({
@@ -458,6 +469,18 @@ const HeroRoot = styled('header')(({ theme }) => ({
     minHeight: '100vh',
     paddingTop: '10vh',
     paddingBottom: '10vh',
+  },
+  // 갤럭시 폴드 7 메인 디스플레이 히어로 섹션 최적화
+  '@media (min-width: 1950px) and (min-height: 2150px)': {
+    height: '100vh',
+    paddingTop: '8vh',
+    paddingBottom: '8vh',
+  },
+  // 갤럭시 폴드 7 커버 디스플레이 히어로 섹션 최적화
+  '@media (min-width: 1080px) and (max-width: 1080px) and (min-height: 2520px)': {
+    height: '100vh',
+    paddingTop: '5vh',
+    paddingBottom: '5vh',
   },
   // 가로 태블릿
   [theme.breakpoints.between('md', 'lg')]: {
@@ -499,6 +522,16 @@ const HeroContent = styled(Box)(({ theme }) => ({
   '@media (min-width: 768px) and (orientation: portrait)': {
     maxWidth: '80%',
     padding: theme.spacing(0, 4),
+  },
+  // 갤럭시 폴드 7 메인 디스플레이 컨테이너 최적화
+  '@media (min-width: 1950px) and (min-height: 2150px)': {
+    maxWidth: '85%',
+    padding: theme.spacing(0, 6),
+  },
+  // 갤럭시 폴드 7 커버 디스플레이 컨테이너 최적화
+  '@media (min-width: 1080px) and (max-width: 1080px) and (min-height: 2520px)': {
+    maxWidth: '90%',
+    padding: theme.spacing(0, 2),
   },
   // 가로 태블릿
   [theme.breakpoints.between('md', 'lg')]: {
@@ -833,10 +866,10 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
         display: 'flex',
         alignItems: 'center',
         scrollSnapAlign: 'start',
-        // 세로 태블릿/폴드폰에서는 높이를 100vh로 고정
-        '@media (min-width: 768px) and (orientation: portrait)': {
-          height: '100vh',
-          minHeight: '100vh',
+        // 갤럭시 폴드 7 메인 디스플레이 (거의 정사각형 비율)에서 카드가 50% 넘어가지 않도록 높이 조정
+        '@media (orientation: portrait) and (min-aspect-ratio: 10/11) and (max-aspect-ratio: 12/11)': {
+          height: 'auto',
+          minHeight: '50vh',
           paddingTop: '2vh',
           paddingBottom: '2vh',
         }
@@ -844,40 +877,31 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
         <ContentContainer maxWidth="lg" sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center' }}>
           <Grid container spacing={4} sx={{
             width: '100%',
-            // 세로 태블릿에서는 세로 배치
-            '@media (min-width: 768px) and (orientation: portrait)': {
-              flexDirection: 'column',
-            }
           }}>
             {/* 좌측: 이미지 */}
             <Grid item xs={12} md={6} sx={{
-              // 세로 태블릿에서는 전체 너비
-              '@media (min-width: 768px) and (orientation: portrait)': {
-                width: '100%',
-                maxWidth: '100%',
-                flexBasis: 'auto',
-              }
             }}>
               <Box sx={{
-                height: { xs: '50vh', md: '65vh', lg: '60vh' },
+                width: '100%',
+                aspectRatio: '1 / 1', // 정사각형 비율로 고정
                 p: { xs: 1, md: 2 },
-                // 세로 태블릿에서 높이 조정 (25% 정도)
-                '@media (min-width: 768px) and (orientation: portrait)': {
-                  height: '25vh',
+                // 갤럭시 폴드 7 메인 디스플레이에서는 더 넓은 비율
+                '@media (orientation: portrait) and (min-aspect-ratio: 10/11) and (max-aspect-ratio: 12/11)': {
+                  aspectRatio: '2 / 1', // 2:1 비율로 변경하여 2열 배치에 최적화
                   p: 1,
-                }
+                },
               }}>
                 <Grid container spacing={2} sx={{
                   height: '100%',
-                  // 세로 태블릿에서만 2열 배치
-                  '@media (min-width: 768px) and (orientation: portrait)': {
+                  // 갤럭시 폴드 7 메인 디스플레이에서만 2열 배치
+                  '@media (orientation: portrait) and (min-aspect-ratio: 10/11) and (max-aspect-ratio: 12/11)': {
                     spacing: 1,
                   }
                 }}>
                   {/* 이재명 이미지 */}
                   <Grid item xs={12} sx={{
-                    // 세로 태블릿에서는 6 (절반)
-                    '@media (min-width: 768px) and (orientation: portrait)': {
+                    // 갤럭시 폴드 7 메인 디스플레이에서는 6 (절반)
+                    '@media (orientation: portrait) and (min-aspect-ratio: 10/11) and (max-aspect-ratio: 12/11)': {
                       flexBasis: '50%',
                       maxWidth: '50%',
                     }
@@ -890,7 +914,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                       border: '1px solid rgba(255, 255, 255, 0.1)',
                       borderRadius: 2,
                       p: 2,
-                      '@media (min-width: 768px) and (orientation: portrait)': {
+                      // 갤럭시 폴드 7 메인 디스플레이에서 패딩 조정
+                      '@media (orientation: portrait) and (min-aspect-ratio: 10/11) and (max-aspect-ratio: 12/11)': {
                         p: 1,
                       }
                     }}>
@@ -909,8 +934,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
 
                   {/* 트럼프 이미지 */}
                   <Grid item xs={12} sx={{
-                    // 세로 태블릿에서는 6 (절반)
-                    '@media (min-width: 768px) and (orientation: portrait)': {
+                    // 갤럭시 폴드 7 메인 디스플레이에서는 6 (절반)
+                    '@media (orientation: portrait) and (min-aspect-ratio: 10/11) and (max-aspect-ratio: 12/11)': {
                       flexBasis: '50%',
                       maxWidth: '50%',
                     }
@@ -923,7 +948,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                       border: '1px solid rgba(255, 255, 255, 0.1)',
                       borderRadius: 2,
                       p: 2,
-                      '@media (min-width: 768px) and (orientation: portrait)': {
+                      // 갤럭시 폴드 7 메인 디스플레이에서 패딩 조정
+                      '@media (orientation: portrait) and (min-aspect-ratio: 10/11) and (max-aspect-ratio: 12/11)': {
                         p: 1,
                       }
                     }}>
@@ -947,42 +973,38 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
             <Grid item xs={12} md={6} sx={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              // 세로 태블릿에서는 전체 너비
-              '@media (min-width: 768px) and (orientation: portrait)': {
-                width: '100%',
-                maxWidth: '100%',
-                flexBasis: 'auto',
-                mt: 3, // 이미지와 텍스트 사이 간격 조정
-              }
+              justifyContent: { xs: 'center', md: 'center' },
             }}>
               <Box sx={{
                 px: { xs: 1, md: 2, lg: 2 },
                 py: { xs: 3, md: 4, lg: 4 }, // 태블릿에서 패딩 조정
                 textAlign: 'center',
                 maxWidth: { xs: '400px', md: '500px', lg: '600px' }, // 태블릿에서 최대 너비 조정
-                // 모든 세로 태블릿/폴드폰
-                '@media (min-width: 768px) and (orientation: portrait)': {
-                  px: 3,
-                  py: 2, // 패딩 줄여서 공간 절약
-                  maxWidth: '80%',
-                }
               }}>
                 <Typography variant="h3" sx={{
                   fontWeight: 900,
                   mb: { xs: 3, md: 4, lg: 4 }, // 태블릿에서 마진 조정
                   color: '#00d4ff',
-                  // 세로 태블릿에서 마진 줄이기
-                  '@media (min-width: 768px) and (orientation: portrait)': {
-                    mb: 2,
-                  },
                   textShadow: '0 0 30px rgba(0,212,255,0.5)',
                   whiteSpace: { xs: 'normal', md: 'nowrap', lg: 'nowrap' }, // 태블릿에서 줄바꿈 허용
                   fontSize: { xs: '1.6rem', md: '2.0rem', lg: '2.5rem' }, // 태블릿 사이즈 추가
-                  // 모든 세로 태블릿/폴드폰
-                  '@media (min-width: 768px) and (orientation: portrait)': {
+                  // 모든 세로 태블릿/폴드폰 (폴드 7 메인 디스플레이 제외)
+                  '@media (min-width: 768px) and (orientation: portrait) and (max-height: 1399px)': {
+                    mb: 2,
                     fontSize: 'clamp(2rem, 4vw, 2.8rem)',
                     whiteSpace: 'normal',
+                  },
+                  // 갤럭시 폴드 7 메인 디스플레이 타이틀 최적화
+                  '@media (min-width: 1950px) and (min-height: 2150px)': {
+                    fontSize: 'clamp(3rem, 5vw, 4rem)',
+                    lineHeight: 1.2,
+                    marginBottom: '3rem',
+                  },
+                  // 갤럭시 폴드 7 커버 디스플레이 타이틀 최적화
+                  '@media (min-width: 1080px) and (max-width: 1080px) and (min-height: 2520px)': {
+                    fontSize: 'clamp(1.8rem, 3vw, 2.5rem)',
+                    lineHeight: 1.3,
+                    marginBottom: '2rem',
                   }
                 }}>
                   이미 검증된 성공 방식
@@ -993,8 +1015,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                   lineHeight: 1.8,
                   color: 'rgba(255,255,255,0.9)',
                   fontSize: { xs: '1.0rem', md: '1.15rem', lg: '1.25rem' }, // 태블릿 사이즈 추가
-                  // 세로 태블릿에서 마진 줄이기
-                  '@media (min-width: 768px) and (orientation: portrait)': {
+                  // 세로 태블릿에서 마진 줄이기 (폴드 7 메인 디스플레이 제외)
+                  '@media (min-width: 768px) and (orientation: portrait) and (max-height: 1399px)': {
                     mb: 1.5,
                   }
                 }}>
@@ -1211,7 +1233,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
         </ContentContainer>
       </Section>
 
-      {/* SNS vs Blog Comparison */}
+      {/* 첫 번째 섹션: 영향력 확장의 두 축 */}
       <Section sx={{
         backgroundColor: 'rgba(255,255,255,0.01)',
         py: { xs: 6, md: 10 }
@@ -1223,7 +1245,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               mb: 2,
               textAlign: 'center'
             }}>
-              왜 네이버 블로그인가?
+              영향력 확장의 두 축
             </Typography>
             <Typography variant="h6" sx={{
               mb: 6,
@@ -1231,250 +1253,291 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               fontWeight: 500,
               color: 'rgba(255,255,255,0.7)'
             }}>
-              7천만 이용자가 매일 찾는 곳에서, 제한 없는 긴 글로 당신의 철학을 전하세요
+              인바운드와 아웃바운드 마케팅으로 완전한 정치적 영향력을 구축하세요
             </Typography>
           </InViewFade>
 
-          {/* 1단계: 검색 점유율 우위 */}
           <InViewFade>
-            <Grid container spacing={4} sx={{ mb: 8 }}>
-              <Grid item xs={12} md={4}>
-                <CardSoft sx={{ height: '100%', textAlign: 'center' }}>
+            <Grid container spacing={4} sx={{
+              justifyContent: 'center',
+              mb: 6,
+              // 갤럭시 폴드 7 메인 디스플레이 그리드 최적화
+              '@media (min-width: 1950px) and (min-height: 2150px)': {
+                spacing: 6,
+                mb: 8,
+              },
+              // 갤럭시 폴드 7 커버 디스플레이 그리드 최적화
+              '@media (min-width: 1080px) and (max-width: 1080px) and (min-height: 2520px)': {
+                spacing: 2,
+                mb: 4,
+              }
+            }}>
+              {/* 찾아오는 신규 유권자 */}
+              <Grid item xs={12} md={6}>
+                <CardSoft sx={{
+                  height: '100%',
+                  textAlign: 'center',
+                  border: '1px solid #f8c02340',
+                  // 갤럭시 폴드 7 메인 디스플레이 카드 최적화
+                  '@media (min-width: 1950px) and (min-height: 2150px)': {
+                    padding: '2rem',
+                    fontSize: '1.1rem',
+                  },
+                  // 갤럭시 폴드 7 커버 디스플레이 카드 최적화
+                  '@media (min-width: 1080px) and (max-width: 1080px) and (min-height: 2520px)': {
+                    padding: '1rem',
+                    fontSize: '0.9rem',
+                  }
+                }}>
                   <CardContent sx={{ p: 4 }}>
-                    <Typography variant="h5" sx={{ fontWeight: 700, mb: 3, color: '#00d4ff' }}>
-                      대한민국 검색의 중심
+                    <Typography variant="h5" sx={{ fontWeight: 700, color: '#f8c023', mb: 3 }}>
+                      찾아오는 신규 유권자
                     </Typography>
-
-                    <Box sx={{ mb: 3 }}>
-                      <Typography variant="h3" sx={{ fontWeight: 900, color: '#f8c023' }}>
-                        70%
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)' }}>
-                        네이버 점유율
-                      </Typography>
-                    </Box>
-
-                    <Box sx={{ mb: 3 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                        <Box sx={{
-                          width: 20, height: 12,
-                          backgroundColor: '#00d4ff',
-                          mr: 1, borderRadius: 1
-                        }} />
-                        <Typography variant="body2">네이버 70%</Typography>
-                      </Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                        <Box sx={{
-                          width: 8, height: 12,
-                          backgroundColor: 'rgba(255,255,255,0.4)',
-                          mr: 1, borderRadius: 1
-                        }} />
-                        <Typography variant="body2">구글 27%</Typography>
-                      </Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        <Box sx={{
-                          width: 2, height: 12,
-                          backgroundColor: 'rgba(255,255,255,0.2)',
-                          mr: 1, borderRadius: 1
-                        }} />
-                        <Typography variant="body2">기타 3%</Typography>
-                      </Box>
-                    </Box>
-
-                    <Typography variant="body1" sx={{
-                      fontWeight: 600,
-                      color: 'rgba(255,255,255,0.9)',
-                      lineHeight: 1.6
+                    <Typography variant="body1" sx={{ textAlign: 'left', lineHeight: 1.8, mb: 3 }}>
+                      • 지역 현안 검색 → 전문가 블로그 발견<br/>
+                      • 능동적 정보 탐색으로 높은 관여도<br/>
+                      • 완전한 정책 설명에 논리적 설득<br/>
+                      • 검색 유입으로 새로운 지지층 확장
+                    </Typography>
+                    <Box sx={{
+                      p: 2,
+                      backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                      borderRadius: 2,
+                      border: '1px solid #f8c02340'
                     }}>
-                      가장 많은 유권자가 모이는 곳
-                    </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: 'rgba(255,255,255,0.9)' }}>
+                        자연스러운 발견을 통한 진정성 있는 소통
+                      </Typography>
+                    </Box>
                   </CardContent>
                 </CardSoft>
               </Grid>
 
-              {/* 2단계: 플랫폼 특성 비교 */}
-              <Grid item xs={12} md={4}>
-                <CardSoft sx={{ height: '100%', textAlign: 'center' }}>
+              {/* 찾아가는 기존 지지자 */}
+              <Grid item xs={12} md={6}>
+                <CardSoft sx={{
+                  height: '100%',
+                  textAlign: 'center',
+                  border: '1px solid #00d4ff40',
+                  // 갤럭시 폴드 7 메인 디스플레이 카드 최적화
+                  '@media (min-width: 1950px) and (min-height: 2150px)': {
+                    padding: '2rem',
+                    fontSize: '1.1rem',
+                  },
+                  // 갤럭시 폴드 7 커버 디스플레이 카드 최적화
+                  '@media (min-width: 1080px) and (max-width: 1080px) and (min-height: 2520px)': {
+                    padding: '1rem',
+                    fontSize: '0.9rem',
+                  }
+                }}>
                   <CardContent sx={{ p: 4 }}>
-                    <Typography variant="h5" sx={{ fontWeight: 700, mb: 3, color: '#00d4ff' }}>
-                      무제한 텍스트 vs 제약적 SNS
+                    <Typography variant="h5" sx={{ fontWeight: 700, color: '#00d4ff', mb: 3 }}>
+                      찾아가는 기존 지지자
                     </Typography>
-
-                    <Box sx={{ mb: 3 }}>
-                      <Box sx={{
-                        p: 2,
-                        border: '2px solid #f8c023',
-                        borderRadius: 2,
-                        mb: 2,
-                        backgroundColor: 'rgba(248, 192, 35, 0.1)'
-                      }}>
-                        <Typography variant="h6" sx={{ fontWeight: 700, color: '#f8c023' }}>
-                          네이버 블로그
-                        </Typography>
-                        <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                          무제한 장문
-                        </Typography>
-                      </Box>
-
-                      <Box sx={{ opacity: 0.6 }}>
-                        <Typography variant="body2" sx={{ mb: 0.5 }}>
-                          페이스북: 63,206자 제한
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 0.5 }}>
-                          인스타그램: 2,200자 제한
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 0.5 }}>
-                          X(트위터): 280자 제한
-                        </Typography>
-                      </Box>
-                    </Box>
-
-                    <Typography variant="body1" sx={{
-                      fontWeight: 600,
-                      color: 'rgba(255,255,255,0.9)',
-                      lineHeight: 1.6
+                    <Typography variant="body1" sx={{ textAlign: 'left', lineHeight: 1.8, mb: 3 }}>
+                      • 팔로우한 지지자에게 직접 전달<br/>
+                      • 즉시 알림으로 빠른 반응 유도<br/>
+                      • 좋아요, 공유로 확산 네트워크 가동<br/>
+                      • 결집된 힘으로 여론 주도권 확보
+                    </Typography>
+                    <Box sx={{
+                      p: 2,
+                      backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                      borderRadius: 2,
+                      border: '1px solid #00d4ff40'
                     }}>
-                      정치인의 비전과 신념을 온전히 전달
-                    </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: 'rgba(255,255,255,0.9)' }}>
+                        확실한 전달을 통한 즉각적 반응 유도
+                      </Typography>
+                    </Box>
                   </CardContent>
                 </CardSoft>
               </Grid>
+            </Grid>
 
-              {/* 3단계: 전문가 마케팅 사례 */}
-              <Grid item xs={12} md={4}>
-                <CardSoft sx={{ height: '100%', textAlign: 'center' }}>
+            {/* 결론 메시지 */}
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography variant="h5" sx={{
+                fontWeight: 700,
+                color: 'rgba(255,255,255,0.9)',
+                lineHeight: 1.6,
+                p: 3,
+                border: '2px solid rgba(255,255,255,0.2)',
+                borderRadius: 2,
+                backgroundColor: 'rgba(255,255,255,0.05)',
+                maxWidth: 600,
+                mx: 'auto'
+              }}>
+                신규 유입 + 기존 결집 = 정치적 영향력 확대
+              </Typography>
+            </Box>
+          </InViewFade>
+        </ContentContainer>
+      </Section>
+
+      {/* 두 번째 섹션: 이미 증명된 전략 */}
+      <Section sx={{
+        backgroundColor: 'rgba(0,0,0,0.02)',
+        py: { xs: 6, md: 10 }
+      }}>
+        <ContentContainer maxWidth="lg">
+          <InViewFade>
+            <Typography variant="h4" sx={{
+              fontWeight: 700,
+              mb: 2,
+              textAlign: 'center'
+            }}>
+              이미 증명된 전략
+            </Typography>
+            <Typography variant="h6" sx={{
+              mb: 6,
+              textAlign: 'center',
+              fontWeight: 500,
+              color: 'rgba(255,255,255,0.7)'
+            }}>
+              전문직들이 검증한 네이버 블로그 중심 마케팅 전략
+            </Typography>
+          </InViewFade>
+
+          <InViewFade>
+            <Grid container spacing={4} sx={{ justifyContent: 'center' }}>
+              <Grid item xs={12} md={8}>
+                <CardSoft sx={{ height: '100%' }}>
                   <CardContent sx={{ p: 4 }}>
-                    <Typography variant="h5" sx={{ fontWeight: 700, mb: 3, color: '#00d4ff' }}>
-                      이미 검증된 전략
-                    </Typography>
-
-                    <Box sx={{ mb: 3 }}>
-                      <Typography variant="body1" sx={{
-                        fontWeight: 600,
-                        mb: 2,
-                        color: 'rgba(255,255,255,0.9)'
-                      }}>
-                        전문직 마케팅 사례
-                      </Typography>
-
-                      <Box sx={{ textAlign: 'left', mb: 3 }}>
-                        <Typography variant="body2" sx={{ mb: 1 }}>
-                          • 의사, 변호사, 세무사
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 1 }}>
-                          • 네이버 블로그 → SNS 허브 전략
-                        </Typography>
-                        <Typography variant="body2" sx={{ mb: 1 }}>
-                          • 검색 유입 → 고객 전환
-                        </Typography>
-                      </Box>
-
-                      {/* 방사형 연결 다이어그램 */}
-                      <Box sx={{
-                        position: 'relative',
-                        width: '200px',
-                        height: '200px',
-                        mx: 'auto',
-                        mb: 2
-                      }}>
-                        {/* 중앙 네이버 블로그 */}
-                        <Box sx={{
-                          position: 'absolute',
-                          top: '50%',
-                          left: '50%',
-                          transform: 'translate(-50%, -50%)',
-                          width: 60,
-                          height: 60,
-                          borderRadius: '50%',
-                          border: '3px solid #f8c023',
-                          backgroundColor: 'rgba(248, 192, 35, 0.2)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          zIndex: 10
-                        }}>
-                          <img
-                            src="/icons/Nblog.webp"
-                            alt="네이버 블로그"
-                            style={{ width: 40, height: 40 }}
-                          />
-                        </Box>
-
-                        {/* 연결선들 */}
-                        {[
-                          { angle: 0, icon: 'icon-facebook.png', name: '페이스북' },
-                          { angle: 72, icon: 'icon-instagram.png', name: '인스타그램' },
-                          { angle: 144, icon: 'icon-X.png', name: 'X(트위터)' },
-                          { angle: 216, icon: 'icon-threads.png', name: '스레드' }
-                        ].map((sns, index) => {
-                          const radian = (sns.angle * Math.PI) / 180;
-                          const x = Math.cos(radian) * 70;
-                          const y = Math.sin(radian) * 70;
-
-                          return (
-                            <React.Fragment key={sns.name}>
-                              {/* 연결선 */}
-                              <Box sx={{
-                                position: 'absolute',
-                                top: '50%',
-                                left: '50%',
-                                width: '70px',
-                                height: '2px',
-                                backgroundColor: 'rgba(0, 212, 255, 0.4)',
-                                transformOrigin: '0 50%',
-                                transform: `translate(0, -50%) rotate(${sns.angle}deg)`,
-                                zIndex: 1
-                              }} />
-
-                              {/* SNS 아이콘 */}
-                              <Box sx={{
-                                position: 'absolute',
-                                top: '50%',
-                                left: '50%',
-                                transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`,
-                                width: 40,
-                                height: 40,
-                                borderRadius: '50%',
-                                border: '2px solid rgba(255, 255, 255, 0.3)',
-                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                opacity: 0.7,
-                                zIndex: 5
-                              }}>
-                                <img
-                                  src={`/icons/${sns.icon}`}
-                                  alt={sns.name}
-                                  style={{ width: 24, height: 24 }}
-                                />
-                              </Box>
-                            </React.Fragment>
-                          );
-                        })}
-                      </Box>
-
-                      <Box sx={{
-                        p: 2,
-                        backgroundColor: 'rgba(0, 212, 255, 0.1)',
-                        borderRadius: 2,
-                        border: '1px solid rgba(0, 212, 255, 0.3)'
-                      }}>
-                        <Typography variant="body2" sx={{
-                          fontWeight: 600,
+                    <Grid container spacing={4} alignItems="center">
+                      {/* 왼쪽: 전문직 마케팅 사례 */}
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="h5" sx={{
+                          fontWeight: 700,
+                          mb: 3,
+                          color: '#00d4ff',
                           textAlign: 'center'
                         }}>
-                          블로그 작성 → SNS 확산 → 유입 증가 → 성과 창출
+                          전문직 마케팅 사례
                         </Typography>
-                      </Box>
-                    </Box>
 
-                    <Typography variant="body1" sx={{
+                        <Box sx={{ textAlign: 'left', mb: 3 }}>
+                          <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
+                            • 의사, 변호사, 세무사
+                          </Typography>
+                          <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
+                            • 네이버 블로그 → SNS 허브 전략
+                          </Typography>
+                          <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
+                            • 검색 유입 → 고객 전환
+                          </Typography>
+                        </Box>
+
+                        <Box sx={{
+                          p: 3,
+                          backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                          borderRadius: 2,
+                          border: '1px solid #00d4ff40',
+                          textAlign: 'center'
+                        }}>
+                          <Typography variant="body1" sx={{
+                            fontWeight: 600
+                          }}>
+                            블로그 작성 → SNS 확산 → 유입 증가 → 성과 창출
+                          </Typography>
+                        </Box>
+                      </Grid>
+
+                      {/* 오른쪽: 방사형 SNS 다이어그램 */}
+                      <Grid item xs={12} md={6}>
+                        <Box sx={{
+                          position: 'relative',
+                          width: '240px',
+                          height: '240px',
+                          mx: 'auto'
+                        }}>
+                          {/* 중앙 네이버 블로그 */}
+                          <Box sx={{
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            width: 80,
+                            height: 80,
+                            borderRadius: '50%',
+                            border: '1px solid #f8c02340',
+                            backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 10
+                          }}>
+                            <img
+                              src="/icons/Nblog.webp"
+                              alt="네이버 블로그"
+                              style={{ width: 50, height: 50 }}
+                            />
+                          </Box>
+
+                          {/* 연결선들 */}
+                          {[
+                            { angle: 0, icon: 'icon-facebook.png', name: '페이스북' },
+                            { angle: 72, icon: 'icon-instagram.png', name: '인스타그램' },
+                            { angle: 144, icon: 'icon-X.png', name: 'X(트위터)' },
+                            { angle: 216, icon: 'icon-threads.png', name: '스레드' }
+                          ].map((sns, index) => {
+                            const radian = (sns.angle * Math.PI) / 180;
+                            const x = Math.cos(radian) * 85;
+                            const y = Math.sin(radian) * 85;
+
+                            return (
+                              <React.Fragment key={sns.name}>
+                                {/* 연결선 */}
+                                <Box sx={{
+                                  position: 'absolute',
+                                  top: '50%',
+                                  left: '50%',
+                                  width: '85px',
+                                  height: '3px',
+                                  backgroundColor: 'rgba(0, 212, 255, 0.6)',
+                                  transformOrigin: '0 50%',
+                                  transform: `translate(0, -50%) rotate(${sns.angle}deg)`,
+                                  zIndex: 1
+                                }} />
+
+                                {/* SNS 아이콘 */}
+                                <Box sx={{
+                                  position: 'absolute',
+                                  top: '50%',
+                                  left: '50%',
+                                  transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`,
+                                  width: 50,
+                                  height: 50,
+                                  borderRadius: '50%',
+                                  border: '1px solid rgba(255, 255, 255, 0.4)',
+                                  backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  opacity: 0.8,
+                                  zIndex: 5
+                                }}>
+                                  <img
+                                    src={`/icons/${sns.icon}`}
+                                    alt={sns.name}
+                                    style={{ width: 30, height: 30 }}
+                                  />
+                                </Box>
+                              </React.Fragment>
+                            );
+                          })}
+                        </Box>
+                      </Grid>
+                    </Grid>
+
+                    <Typography variant="h6" sx={{
                       fontWeight: 600,
                       color: 'rgba(255,255,255,0.9)',
-                      lineHeight: 1.6
+                      lineHeight: 1.6,
+                      textAlign: 'center',
+                      mt: 4
                     }}>
-                      전문직도 선택한 검증된 전략을 정치에도
+                      전문직도 선택한 검증된 전략을 정치에도 적용하세요
                     </Typography>
                   </CardContent>
                 </CardSoft>
@@ -1487,11 +1550,12 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
             <Box sx={{
               textAlign: 'center',
               p: 4,
-              border: '2px solid #f8c023',
+              border: '1px solid #f8c02340',
               borderRadius: 3,
-              backgroundColor: 'rgba(248, 192, 35, 0.1)',
+              backgroundColor: 'rgba(255, 255, 255, 0.03)',
               maxWidth: 800,
-              mx: 'auto'
+              mx: 'auto',
+              mt: 4
             }}>
               <Typography variant="h4" sx={{
                 fontWeight: 900,
@@ -1508,64 +1572,206 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               </Typography>
             </Box>
           </InViewFade>
+        </ContentContainer>
+      </Section>
 
-          {/* 통계 섹션 */}
-          <Box sx={{ mt: 6, textAlign: 'center' }}>
-            <InViewFade timeout={1200}>
-              <Box sx={{
-                backgroundColor: 'rgba(255,255,255,0.04)',
-                borderRadius: '16px',
-                p: 4,
-                border: '1px solid rgba(255,255,255,0.08)'
-              }}>
-                <Typography variant="h6" sx={{
-                  fontWeight: 800,
-                  mb: 2,
-                  color: '#00d4ff'
-                }}>
-정치인 검색 플랫폼 현황
-                </Typography>
-                <Typography sx={{
-                  fontSize: '1.1rem',
-                  color: 'rgba(255,255,255,0.9)',
-                  fontWeight: 600,
-                  lineHeight: 1.6
-                }}>
-                  유권자가 후보자 정보를 찾을 때 주요 포털 검색이 일반적입니다.<br />
-                  <Box component="span" sx={{ color: '#00d4ff', fontWeight: 800 }}>
-                    네이버 블로그 검색 순위가 정치적 영향력에 도움이 될 수 있습니다.
-                  </Box>
-                </Typography>
-              </Box>
-            </InViewFade>
-          </Box>
+      {/* 텍스트 위주 vs 비텍스트 위주 매체 섹션 */}
+      <Section sx={{
+        backgroundColor: 'rgba(0,0,0,0.02)',
+        py: { xs: 6, md: 10 }
+      }}>
+        <ContentContainer maxWidth="lg">
+          <InViewFade>
+            <Typography variant="h4" sx={{
+              fontWeight: 700,
+              mb: 2,
+              textAlign: 'center'
+            }}>
+              텍스트 위주 vs 비텍스트 위주 매체
+            </Typography>
+            <Typography variant="h6" sx={{
+              mb: 6,
+              textAlign: 'center',
+              fontWeight: 500,
+              color: 'rgba(255,255,255,0.7)'
+            }}>
+              매체별 특성과 네이버 블로그의 차별화된 장점
+            </Typography>
+          </InViewFade>
 
-          {/* 핵심 메시지 */}
-          <Box sx={{ mt: 6, textAlign: 'center' }}>
-            <InViewFade timeout={1400}>
-              <Typography variant="h5" sx={{
-                fontWeight: 800,
-                color: '#00d4ff',
-                mb: 2,
-                fontSize: { xs: '1.3rem', md: '1.5rem' }
-              }}>
-핵심 통찰
-              </Typography>
-              <Typography sx={{
-                fontSize: { xs: '1.1rem', md: '1.2rem' },
-                fontWeight: 600,
-                color: 'rgba(255,255,255,0.9)',
-                lineHeight: 1.7,
-                maxWidth: '800px',
-                mx: 'auto'
-              }}>
-                "정치 활동에서 SNS '소통'만으로는 한계가 있습니다.<br />
-                <Box component="span" sx={{ color: '#00d4ff', fontWeight: 800 }}>
-                  유권자가 검색하는 순간에 잡히는 것이 결정적입니다."
+          <InViewFade>
+            <Grid container spacing={4} sx={{
+              justifyContent: 'center',
+              mb: 6,
+              // 갤럭시 폴드 7 메인 디스플레이 그리드 최적화
+              '@media (min-width: 1950px) and (min-height: 2150px)': {
+                spacing: 6,
+                mb: 8,
+              },
+              // 갤럭시 폴드 7 커버 디스플레이 그리드 최적화
+              '@media (min-width: 1080px) and (max-width: 1080px) and (min-height: 2520px)': {
+                spacing: 2,
+                mb: 4,
+              }
+            }}>
+              {/* 텍스트 위주 매체 */}
+              <Grid item xs={12} md={5}>
+                <CardSoft sx={{
+                  height: '100%',
+                  textAlign: 'center',
+                  border: '1px solid #f8c02340'
+                }}>
+                  <CardContent sx={{ p: 4 }}>
+                    <Typography variant="h5" sx={{
+                      fontWeight: 700,
+                      mb: 3,
+                      color: '#f8c023'
+                    }}>
+                      텍스트 위주 매체
+                    </Typography>
+
+                    <Typography variant="h6" sx={{
+                      fontWeight: 600,
+                      mb: 2,
+                      color: '#f8c023'
+                    }}>
+                      네이버 블로그
+                    </Typography>
+
+                    <Typography variant="body1" sx={{
+                      mb: 3,
+                      lineHeight: 1.6,
+                      color: 'rgba(255,255,255,0.9)'
+                    }}>
+                      깊이 있는 글 읽기를 기대하는 독자들에게<br />
+                      논리적 설득과 완전한 메시지 전달 가능
+                    </Typography>
+                  </CardContent>
+                </CardSoft>
+              </Grid>
+
+              {/* 비텍스트 위주 매체 */}
+              <Grid item xs={12} md={5}>
+                <CardSoft sx={{
+                  height: '100%',
+                  textAlign: 'center',
+                  border: '1px solid #00d4ff40'
+                }}>
+                  <CardContent sx={{ p: 4 }}>
+                    <Typography variant="h5" sx={{
+                      fontWeight: 700,
+                      mb: 3,
+                      color: '#00d4ff'
+                    }}>
+                      비텍스트 위주 매체
+                    </Typography>
+
+                    <Box sx={{ textAlign: 'left', mb: 3 }}>
+                      <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
+                        • 페이스북 - 이미지/영상 + 간단한 텍스트
+                      </Typography>
+                      <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
+                        • 인스타그램 - 시각적 콘텐츠 중심
+                      </Typography>
+                      <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
+                        • X(트위터) - 즉석 반응과 짧은 메시지
+                      </Typography>
+                    </Box>
+                  </CardContent>
+                </CardSoft>
+              </Grid>
+            </Grid>
+          </InViewFade>
+
+          {/* 네이버 블로그의 3가지 핵심 장점 */}
+          <InViewFade>
+            <Grid container spacing={3} sx={{ mb: 4 }}>
+              <Grid item xs={12} md={4}>
+                <Box sx={{
+                  p: 3,
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  borderRadius: 3,
+                  border: '1px solid #003a8740',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    transform: 'translateY(-4px)',
+                    boxShadow: '0 8px 32px #003a8730'
+                  }
+                }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#003a87', mb: 2 }}>
+                    검색 우선 노출
+                  </Typography>
+                  <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.9)', lineHeight: 1.6 }}>
+                    유권자가 찾을 때 가장 먼저 발견되는 콘텐츠로 첫인상을 좌우합니다
+                  </Typography>
                 </Box>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <Box sx={{
+                  p: 3,
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  borderRadius: 3,
+                  border: '1px solid #55207d40',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    transform: 'translateY(-4px)',
+                    boxShadow: '0 8px 32px #55207d30'
+                  }
+                }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#55207d', mb: 2 }}>
+                    깊이 있는 설득력
+                  </Typography>
+                  <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.9)', lineHeight: 1.6 }}>
+                    장문으로 논리적 설득이 가능하여 정책과 비전을 완전히 전달합니다
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <Box sx={{
+                  p: 3,
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  borderRadius: 3,
+                  border: '1px solid #00626140',
+                  textAlign: 'center',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    transform: 'translateY(-4px)',
+                    boxShadow: '0 8px 32px #00626130'
+                  }
+                }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#006261', mb: 2 }}>
+                    전문 콘텐츠 준비
+                  </Typography>
+                  <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.9)', lineHeight: 1.6 }}>
+                    체계적으로 정리된 전문 콘텐츠로 신뢰도와 전문성을 구축합니다
+                  </Typography>
+                </Box>
+              </Grid>
+            </Grid>
+          </InViewFade>
+
+          {/* 결론 메시지 */}
+          <InViewFade>
+            <Box sx={{
+              textAlign: 'center',
+              p: 4,
+              border: '1px solid #00d4ff40',
+              borderRadius: 3,
+              backgroundColor: 'rgba(255, 255, 255, 0.03)',
+              maxWidth: 600,
+              mx: 'auto'
+            }}>
+              <Typography variant="h5" sx={{
+                fontWeight: 700,
+                color: 'rgba(255,255,255,0.9)',
+                lineHeight: 1.6
+              }}>
+                SNS 소통만으로는 한계 - 검색되는 순간이 결정적
               </Typography>
-            </InViewFade>
-          </Box>
+            </Box>
+          </InViewFade>
         </ContentContainer>
       </Section>
 

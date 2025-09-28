@@ -31,7 +31,11 @@
       "Bash(git update-ref:*)",
       "Bash(git branch:*)",
       "Bash(git remote:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(start https://ai-secretary-6e9c8.web.app/about)",
+      "Bash(git checkout:*)",
+      "Bash(git restore:*)",
+      "Bash(lsof:*)"
     ],
     "deny": [],
     "ask": [],
