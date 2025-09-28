@@ -1107,7 +1107,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
             gridTemplateColumns: 'repeat(3, 1fr)',
             gap: { xs: 2, md: 3 },
             justifyContent: 'center',
-            alignItems: 'stretch'
+            alignItems: 'stretch',
+            gridAutoRows: '1fr'
           }}>
             {[
               {
@@ -1126,7 +1127,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                 color: '#006261'
               }
             ].map((rule, index) => (
-              <Box key={index}>
+              <Box key={index} sx={{ height: '100%' }}>
                 <InViewFade timeout={600 + index * 100}>
                   <Card
                     sx={{
@@ -1134,6 +1135,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                       border: `2px solid ${rule.color}40`,
                       borderRadius: 3,
                       height: '100%',
+                      display: 'flex',
+                      flexDirection: 'column',
                       transition: 'all 0.3s ease',
                       '&:hover': {
                         borderColor: `${rule.color}80`,
@@ -1142,7 +1145,14 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                       }
                     }}
                   >
-                    <CardContent sx={{ p: { xs: 2, md: 4 }, textAlign: 'center' }}>
+                    <CardContent sx={{
+                      p: { xs: 2, md: 4 },
+                      textAlign: 'center',
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center'
+                    }}>
                       <Typography
                         variant="h6"
                         sx={{
