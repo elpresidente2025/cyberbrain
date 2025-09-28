@@ -1108,7 +1108,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
             gap: { xs: 2, md: 3 },
             justifyContent: 'center',
             alignItems: 'stretch',
-            gridAutoRows: '1fr'
+            gridTemplateRows: '200px'
           }}>
             {[
               {
