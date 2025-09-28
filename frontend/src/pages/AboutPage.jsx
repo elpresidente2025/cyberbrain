@@ -2116,12 +2116,6 @@ After
                   >
                     "SNS 활동, 공천 평가에 반영"
                   </Typography>
-                  <Typography variant="caption" sx={{
-                    fontSize: '0.85rem',
-                    opacity: 0.7
-                  }}>
-                    정청래 대표의 실제 발언 내용
-                  </Typography>
                 </Box>
               </InViewFade>
             </Grid>
