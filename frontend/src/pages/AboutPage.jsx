@@ -1620,7 +1620,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               mx: 'auto',
               mt: 4
             }}>
-              <Typography variant="h4" sx={{
+              <Typography variant="h5" sx={{
                 fontWeight: 900,
                 mb: 2,
                 color: '#f8c023'
