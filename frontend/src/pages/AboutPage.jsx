@@ -448,11 +448,18 @@ const Section = styled('section')(({ theme }) => ({
   padding: theme.spacing(12, 0),
   borderBottom: '1px solid rgba(0, 212, 255, 0.10)',
   position: 'relative',
-  minHeight: '100vh',
+  minHeight: '100dvh', // 동적 뷰포트 높이 사용
   scrollSnapAlign: 'start',
   display: 'flex',
   alignItems: 'center',
-  [theme.breakpoints.down('sm')]: { padding: theme.spacing(8, 0) },
+  [theme.breakpoints.down('sm')]: {
+    padding: theme.spacing(8, 0),
+    minHeight: '100dvh' // 모바일에서도 동적 뷰포트 높이 적용
+  },
+  // dvh 미지원 브라우저를 위한 fallback
+  '@supports not (height: 100dvh)': {
+    minHeight: '100vh'
+  },
 }));
 
 const HeroRoot = styled('header')(({ theme }) => ({
@@ -1336,11 +1343,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               }
             }}>
               {/* 찾아오는 신규 유권자 */}
-              <Grid item xs={12} md={6}>
+              <Grid item xs={6}>
                 <CardSoft sx={{
                   height: '100%',
                   textAlign: 'center',
                   border: '1px solid #f8c02340',
+                  display: 'flex',
+                  flexDirection: 'column',
                   // 갤럭시 폴드 7 메인 디스플레이 카드 최적화
                   '@media (min-width: 1950px) and (min-height: 2150px)': {
                     padding: '2rem',
@@ -1352,7 +1361,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                     fontSize: '0.9rem',
                   }
                 }}>
-                  <CardContent sx={{ p: 4 }}>
+                  <CardContent sx={{ p: 4, display: 'flex', flexDirection: 'column', flex: 1 }}>
                     <Typography variant="h5" sx={{ fontWeight: 700, color: '#f8c023', mb: 3 }}>
                       찾아오는 신규 유권자
                     </Typography>
@@ -1366,7 +1375,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                       p: 2,
                       backgroundColor: 'rgba(255, 255, 255, 0.03)',
                       borderRadius: 2,
-                      border: '1px solid #f8c02340'
+                      border: '1px solid #f8c02340',
+                      mt: 'auto'
                     }}>
                       <Typography variant="body2" sx={{ fontWeight: 600, color: 'rgba(255,255,255,0.9)' }}>
                         자연스러운 발견을 통한 진정성 있는 소통
@@ -1377,11 +1387,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               </Grid>
 
               {/* 찾아가는 기존 지지자 */}
-              <Grid item xs={12} md={6}>
+              <Grid item xs={6}>
                 <CardSoft sx={{
                   height: '100%',
                   textAlign: 'center',
                   border: '1px solid #00d4ff40',
+                  display: 'flex',
+                  flexDirection: 'column',
                   // 갤럭시 폴드 7 메인 디스플레이 카드 최적화
                   '@media (min-width: 1950px) and (min-height: 2150px)': {
                     padding: '2rem',
@@ -1393,7 +1405,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                     fontSize: '0.9rem',
                   }
                 }}>
-                  <CardContent sx={{ p: 4 }}>
+                  <CardContent sx={{ p: 4, display: 'flex', flexDirection: 'column', flex: 1 }}>
                     <Typography variant="h5" sx={{ fontWeight: 700, color: '#00d4ff', mb: 3 }}>
                       찾아가는 기존 지지자
                     </Typography>
@@ -1407,7 +1419,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                       p: 2,
                       backgroundColor: 'rgba(255, 255, 255, 0.03)',
                       borderRadius: 2,
-                      border: '1px solid #00d4ff40'
+                      border: '1px solid #00d4ff40',
+                      mt: 'auto'
                     }}>
                       <Typography variant="body2" sx={{ fontWeight: 600, color: 'rgba(255,255,255,0.9)' }}>
                         확실한 전달을 통한 즉각적 반응 유도
