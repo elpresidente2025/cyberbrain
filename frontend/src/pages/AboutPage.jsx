@@ -1289,13 +1289,6 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                     }}>
                       📋 정책 이력
                     </Typography>
-                    <Typography variant="body1" sx={{
-                      lineHeight: 1.8,
-                      color: 'rgba(255,255,255,0.9)',
-                      mb: 2
-                    }}>
-                      한 번 입력하면 영원히 기억합니다
-                    </Typography>
                     <Typography variant="body2" sx={{
                       lineHeight: 1.6,
                       color: 'rgba(255,255,255,0.7)'
@@ -1319,13 +1312,6 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                     }}>
                       🏘️ 지역 맥락
                     </Typography>
-                    <Typography variant="body1" sx={{
-                      lineHeight: 1.8,
-                      color: 'rgba(255,255,255,0.9)',
-                      mb: 2
-                    }}>
-                      우리 동네를 가장 잘 아는 AI
-                    </Typography>
                     <Typography variant="body2" sx={{
                       lineHeight: 1.6,
                       color: 'rgba(255,255,255,0.7)'
@@ -1348,13 +1334,6 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                       color: '#00d4ff'
                     }}>
                       ✍️ 개인 스타일
-                    </Typography>
-                    <Typography variant="body1" sx={{
-                      lineHeight: 1.8,
-                      color: 'rgba(255,255,255,0.9)',
-                      mb: 2
-                    }}>
-                      나만의 목소리로 말합니다
                     </Typography>
                     <Typography variant="body2" sx={{
                       lineHeight: 1.6,
