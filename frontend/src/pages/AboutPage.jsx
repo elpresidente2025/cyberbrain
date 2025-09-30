@@ -1248,6 +1248,301 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
         </ContentContainer>
       </Box>
 
+      {/* 섹션 구분선 */}
+      <Box sx={{
+        height: '2px',
+        background: 'linear-gradient(90deg, transparent 0%, #00d4ff 20%, #00d4ff 80%, transparent 100%)',
+        opacity: 0.3
+      }} />
+
+      {/* 개인화 시스템 섹션 */}
+      <Section sx={{ backgroundColor: 'rgba(0,0,0,0.02)', py: { xs: 8, md: 12 } }}>
+        <ContentContainer maxWidth="lg">
+          <InViewFade>
+            <Typography variant="h4" sx={{
+              fontWeight: 800,
+              mb: 2,
+              textAlign: 'center'
+            }}>
+              당신만의 전뇌비서관이 기억합니다
+            </Typography>
+            <Typography variant="h6" sx={{
+              mb: 6,
+              textAlign: 'center',
+              fontWeight: 400,
+              color: 'rgba(255,255,255,0.7)'
+            }}>
+              3가지 핵심 요소로 당신의 정치 활동을 완벽하게 지원합니다
+            </Typography>
+          </InViewFade>
+
+          <Grid container spacing={4}>
+            {/* 정책 이력 */}
+            <Grid item xs={12} md={4}>
+              <InViewFade timeout={600}>
+                <CardSoft sx={{ height: '100%', textAlign: 'center' }}>
+                  <CardContent sx={{ p: 4 }}>
+                    <Typography variant="h5" sx={{
+                      fontWeight: 700,
+                      mb: 2,
+                      color: '#00d4ff'
+                    }}>
+                      📋 정책 이력
+                    </Typography>
+                    <Typography variant="body1" sx={{
+                      lineHeight: 1.8,
+                      color: 'rgba(255,255,255,0.9)',
+                      mb: 2
+                    }}>
+                      한 번 입력하면 영원히 기억합니다
+                    </Typography>
+                    <Typography variant="body2" sx={{
+                      lineHeight: 1.6,
+                      color: 'rgba(255,255,255,0.7)'
+                    }}>
+                      과거에 발표했던 정책, 공약, 활동 내역을 AI가 학습하여 일관성 있는 메시지를 전달합니다
+                    </Typography>
+                  </CardContent>
+                </CardSoft>
+              </InViewFade>
+            </Grid>
+
+            {/* 지역 맥락 */}
+            <Grid item xs={12} md={4}>
+              <InViewFade timeout={700}>
+                <CardSoft sx={{ height: '100%', textAlign: 'center' }}>
+                  <CardContent sx={{ p: 4 }}>
+                    <Typography variant="h5" sx={{
+                      fontWeight: 700,
+                      mb: 2,
+                      color: '#00d4ff'
+                    }}>
+                      🏘️ 지역 맥락
+                    </Typography>
+                    <Typography variant="body1" sx={{
+                      lineHeight: 1.8,
+                      color: 'rgba(255,255,255,0.9)',
+                      mb: 2
+                    }}>
+                      우리 동네를 가장 잘 아는 AI
+                    </Typography>
+                    <Typography variant="body2" sx={{
+                      lineHeight: 1.6,
+                      color: 'rgba(255,255,255,0.7)'
+                    }}>
+                      지역 현안, 주민 관심사, 특성을 반영하여 지역 밀착형 콘텐츠를 생성합니다
+                    </Typography>
+                  </CardContent>
+                </CardSoft>
+              </InViewFade>
+            </Grid>
+
+            {/* 개인 스타일 */}
+            <Grid item xs={12} md={4}>
+              <InViewFade timeout={800}>
+                <CardSoft sx={{ height: '100%', textAlign: 'center' }}>
+                  <CardContent sx={{ p: 4 }}>
+                    <Typography variant="h5" sx={{
+                      fontWeight: 700,
+                      mb: 2,
+                      color: '#00d4ff'
+                    }}>
+                      ✍️ 개인 스타일
+                    </Typography>
+                    <Typography variant="body1" sx={{
+                      lineHeight: 1.8,
+                      color: 'rgba(255,255,255,0.9)',
+                      mb: 2
+                    }}>
+                      나만의 목소리로 말합니다
+                    </Typography>
+                    <Typography variant="body2" sx={{
+                      lineHeight: 1.6,
+                      color: 'rgba(255,255,255,0.7)'
+                    }}>
+                      글쓰기 스타일, 선호하는 표현, 톤앤매너를 학습하여 점점 더 '나다운' 콘텐츠를 만들어냅니다
+                    </Typography>
+                  </CardContent>
+                </CardSoft>
+              </InViewFade>
+            </Grid>
+          </Grid>
+        </ContentContainer>
+      </Section>
+
+      {/* 섹션 구분선 */}
+      <Box sx={{
+        height: '2px',
+        background: 'linear-gradient(90deg, transparent 0%, #00d4ff 20%, #00d4ff 80%, transparent 100%)',
+        opacity: 0.3
+      }} />
+
+      {/* 3단계 사용법 섹션 */}
+      <Section sx={{ py: { xs: 8, md: 12 } }}>
+        <ContentContainer maxWidth="lg">
+          <InViewFade>
+            <Typography variant="h4" sx={{
+              fontWeight: 800,
+              mb: 2,
+              textAlign: 'center'
+            }}>
+              3단계면 끝, 누구나 쉽게
+            </Typography>
+            <Typography variant="h6" sx={{
+              mb: 6,
+              textAlign: 'center',
+              fontWeight: 400,
+              color: 'rgba(255,255,255,0.7)'
+            }}>
+              복잡한 설정 없이 바로 시작하세요
+            </Typography>
+          </InViewFade>
+
+          <Grid container spacing={4} sx={{ justifyContent: 'center' }}>
+            {/* 1단계 */}
+            <Grid item xs={12} md={4}>
+              <InViewFade timeout={600}>
+                <CardSoft sx={{
+                  height: '100%',
+                  textAlign: 'center',
+                  position: 'relative',
+                  border: '2px solid rgba(0, 212, 255, 0.3)'
+                }}>
+                  <Box sx={{
+                    position: 'absolute',
+                    top: -20,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: 40,
+                    height: 40,
+                    borderRadius: '50%',
+                    backgroundColor: '#00d4ff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 900,
+                    fontSize: '1.5rem',
+                    color: '#000'
+                  }}>
+                    1
+                  </Box>
+                  <CardContent sx={{ p: 4, pt: 5 }}>
+                    <Typography variant="h5" sx={{
+                      fontWeight: 700,
+                      mb: 2,
+                      color: '#00d4ff'
+                    }}>
+                      말씀하세요
+                    </Typography>
+                    <Typography variant="body1" sx={{
+                      lineHeight: 1.8,
+                      color: 'rgba(255,255,255,0.9)'
+                    }}>
+                      정책, 지역 이슈, 활동 내역을<br />
+                      간단히 입력하세요
+                    </Typography>
+                  </CardContent>
+                </CardSoft>
+              </InViewFade>
+            </Grid>
+
+            {/* 2단계 */}
+            <Grid item xs={12} md={4}>
+              <InViewFade timeout={700}>
+                <CardSoft sx={{
+                  height: '100%',
+                  textAlign: 'center',
+                  position: 'relative',
+                  border: '2px solid rgba(0, 212, 255, 0.3)'
+                }}>
+                  <Box sx={{
+                    position: 'absolute',
+                    top: -20,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: 40,
+                    height: 40,
+                    borderRadius: '50%',
+                    backgroundColor: '#00d4ff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 900,
+                    fontSize: '1.5rem',
+                    color: '#000'
+                  }}>
+                    2
+                  </Box>
+                  <CardContent sx={{ p: 4, pt: 5 }}>
+                    <Typography variant="h5" sx={{
+                      fontWeight: 700,
+                      mb: 2,
+                      color: '#00d4ff'
+                    }}>
+                      완성됩니다
+                    </Typography>
+                    <Typography variant="body1" sx={{
+                      lineHeight: 1.8,
+                      color: 'rgba(255,255,255,0.9)'
+                    }}>
+                      AI가 자동으로 생성한<br />
+                      품격 있는 원고를 확인하세요
+                    </Typography>
+                  </CardContent>
+                </CardSoft>
+              </InViewFade>
+            </Grid>
+
+            {/* 3단계 */}
+            <Grid item xs={12} md={4}>
+              <InViewFade timeout={800}>
+                <CardSoft sx={{
+                  height: '100%',
+                  textAlign: 'center',
+                  position: 'relative',
+                  border: '2px solid rgba(0, 212, 255, 0.3)'
+                }}>
+                  <Box sx={{
+                    position: 'absolute',
+                    top: -20,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: 40,
+                    height: 40,
+                    borderRadius: '50%',
+                    backgroundColor: '#00d4ff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 900,
+                    fontSize: '1.5rem',
+                    color: '#000'
+                  }}>
+                    3
+                  </Box>
+                  <CardContent sx={{ p: 4, pt: 5 }}>
+                    <Typography variant="h5" sx={{
+                      fontWeight: 700,
+                      mb: 2,
+                      color: '#00d4ff'
+                    }}>
+                      발전됩니다
+                    </Typography>
+                    <Typography variant="body1" sx={{
+                      lineHeight: 1.8,
+                      color: 'rgba(255,255,255,0.9)'
+                    }}>
+                      스타일을 학습하여<br />
+                      점점 더 나아집니다
+                    </Typography>
+                  </CardContent>
+                </CardSoft>
+              </InViewFade>
+            </Grid>
+          </Grid>
+        </ContentContainer>
+      </Section>
+
       {/* Core Features */}
       <Section id="how" aria-labelledby="features-heading">
         <ContentContainer maxWidth="lg">
@@ -2623,7 +2918,14 @@ After
                     </Typography>
                   </AccordionSummary>
                   <AccordionDetails sx={{ px: 3, pb: 3 }}>
-                    <Typography sx={{  }}>{item.a}</Typography>
+                    <Typography sx={{ mb: 2, fontWeight: 600, color: '#00d4ff' }}>
+                      {item.a}
+                    </Typography>
+                    {item.detail && (
+                      <Typography sx={{ color: 'rgba(255,255,255,0.8)', lineHeight: 1.6 }}>
+                        {item.detail}
+                      </Typography>
+                    )}
                   </AccordionDetails>
                 </Accordion>
               </InViewFade>
