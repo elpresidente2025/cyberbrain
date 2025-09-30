@@ -50,30 +50,34 @@ import { useAuth } from '../hooks/useAuth';
 const CORE_FEATURES = [
   {
     title: 'AI 콘텐츠 자동 생성',
-    desc: '정치인 맞춤형 블로그 포스트를 AI가 자동으로 생성할 수 있습니다. 정책, 활동, 소식을 전문적으로 작성해드립니다.',
+    desc: '정책, 활동, 소식을 전문적으로 작성합니다.',
   },
   {
-    title: '네이버·구글 1페이지 진출 가능성 극대화',
-    desc: '유권자가 내 이름을 검색했을 때 1페이지 노출 가능성을 높이는 콘텐츠를 작성합니다. 찾기 쉬워야 기억될 가능성이 높습니다.',
+    title: '네이버·구글 1페이지 진출',
+    desc: '유권자가 먼저 찾아오는 의원이 되세요.',
+    subtext: '검색 1페이지 노출 가능성 극대화'
   },
   {
-    title: '질문 답변 상위 노출 최적화',
-    desc: '"○○구 의원 공약 뭐야?" 물으면 검색 상위 답변에 내 이름과 공약이 언급될 가능성을 높이도록 최적화합니다.',
+    title: '질문 답변 상위 노출',
+    desc: '"○○구 의원 공약 뭐야?" 검색 상위 답변에 내 이름이 나옵니다.',
   },
   {
-    title: '시간 절약 자동화',
-    desc: '매일 1-2시간씩 소요되던 콘텐츠 작성을 5분으로 단축할 수 있습니다. 본업인 정책과 현장활동에 집중할 수 있습니다.',
+    title: '5분 작성 자동화',
+    desc: '시간은 줄이고, 품질은 높이고.',
+    subtext: '본업인 정책과 현장활동에 집중하세요'
   },
 ];
 
 const SAFETY_FEATURES = [
   {
     title: '법적 안전성 및 선거법 준수',
-    desc: '정치적 리스크 키워드를 자동 회피하고 의견과 사실을 구분하여 법적 리스크를 최소화합니다. 선거법 180일 규정 등 정치 관련 법규를 자동으로 준수합니다.',
+    desc: '선거법 걱정 없이 안전하게.',
+    subtext: '180일 규정 등 모든 선거법을 AI가 자동 적용합니다. 정치적 리스크 키워드를 자동 회피하고 의견과 사실을 명확히 구분합니다.'
   },
   {
     title: '상황별 작법 및 지능적 톤앤매너',
-    desc: '일상 소통, 정책 제안, 활동 보고, 시사 논평, 지역 현안 등 정치인의 다양한 상황에 맞춰 각각 다른 작법을 적용합니다. AI가 주제를 분석하여 최적의 톤앤매너와 문체를 자동 선택합니다.',
+    desc: '상황마다 다른 말투, AI가 알아서 선택합니다.',
+    subtext: '일상 소통, 정책 제안, 활동 보고, 시사 논평 등 주제를 분석하여 최적의 톤앤매너를 자동 적용합니다.'
   },
 ];
 
@@ -168,30 +172,60 @@ const GLOBAL_AUTHORITY_CASES = [
 ];
 
 
+const STATS_DATA = [
+  {
+    title: "콘텐츠 생성 시간",
+    number: "5",
+    unit: "분",
+    description: "시간은 줄이고, 품질은 높이고",
+    subtext: "기존 대비 평균 90% 이상 단축"
+  },
+  {
+    title: "검색 노출률",
+    number: "1",
+    unit: "페이지",
+    description: "유권자가 먼저 찾아오는 의원이 되세요",
+    subtext: "구글·네이버 1페이지 노출 최적화"
+  },
+  {
+    title: "법적 안전성",
+    number: "180",
+    unit: "일",
+    description: "선거법 걱정 없이 안전하게",
+    subtext: "선거법 180일 규정 자동 준수"
+  },
+];
+
 const FAQS = [
   {
     q: '생성되는 콘텐츠의 정치적 안전성은 어떻게 유지되나요?',
-    a: '더불어민주당의 가치와 정책 방향에 부합하는 콘텐츠만 생성하도록 AI가 학습되어 있습니다. 또한 모든 콘텐츠는 정치적 리스크 검토 시스템을 거쳐 안전성을 유지할 수 있습니다.',
+    a: '당의 가치와 정책 방향에 맞는 콘텐츠만 생성됩니다.',
+    detail: 'AI는 당 강령과 정책 기조를 학습하여 당론에 부합하는 콘텐츠만 생성합니다. 정치적으로 민감한 키워드는 자동 회피하며, 의견과 사실을 명확히 구분합니다.'
   },
   {
     q: '개인정보 수집과 데이터 보안은 어떻게 처리되나요?',
-    a: '최소한의 필수 정보만 수집하며, 모든 데이터는 최고 수준 보안 암호화로 저장됩니다. 개인정보보호법과 정치자금법을 완전히 준수하며, 제3자와 데이터를 공유하지 않습니다. 정기적인 보안 점검을 통해 안전성을 유지합니다.',
+    a: '최소한의 필수 정보만 수집하며, 최고 수준 암호화로 보호합니다.',
+    detail: '모든 데이터는 최고 수준 보안 암호화로 저장됩니다. 개인정보보호법과 정치자금법을 완전히 준수하며, 제3자와 데이터를 공유하지 않습니다. 정기적인 보안 점검을 통해 안전성을 유지합니다.'
   },
   {
     q: '당적 인증은 어떻게 이루어지나요?',
-    a: '당적 증명서와 당비 납부 내역 2가지 문서로 확인합니다. 모두 휴대폰에서 간편하게 확인 가능하며, 스크린샷을 찍어 업로드하면 자동으로 문서 내용을 읽어 검증합니다. 인증은 분기별(연 4회) 진행되며, 인증이 확인되지 않으면 서비스 이용이 제한됩니다.',
+    a: '당적 증명서와 당비 납부 내역으로 간편하게 인증됩니다.',
+    detail: '모두 휴대폰에서 간편하게 확인 가능하며, 스크린샷을 찍어 업로드하면 자동으로 문서 내용을 읽어 검증합니다. 인증은 분기별(연 4회) 진행되며, 인증이 확인되지 않으면 서비스 이용이 제한됩니다.'
   },
   {
     q: '선거법 180일 규정은 어떻게 준수하나요?',
-    a: '선거일 180일 전부터는 선거운동으로 간주될 수 있는 콘텐츠 생성을 자동으로 제한합니다. 해당 기간에는 정책 홍보와 의정활동 보고에 집중한 콘텐츠만 생성 가능하며, 법적 검토를 강화합니다.',
+    a: '180일 규정 등 모든 선거법을 AI가 자동 적용합니다.',
+    detail: '선거 기간, 금지 행위, 표현 제한 등 정치 관련 법규를 AI가 실시간으로 모니터링하며 자동 적용합니다. 법적 리스크가 있는 표현은 생성 단계에서 차단됩니다.'
   },
   {
     q: '콘텐츠 스타일을 개인 취향에 맞게 조정할 수 있나요?',
-    a: '네, 개인의 글쓰기 스타일, 선호하는 주제, 톤앤매너 등을 학습하여 개별 맞춤형 콘텐츠를 생성합니다. 지속적인 피드백을 통해 더욱 정교해집니다.',
+    a: '개인의 글쓰기 스타일과 톤앤매너를 학습하여 맞춤형 콘텐츠를 생성합니다.',
+    detail: '선호하는 주제, 문체, 어조 등을 학습하여 개별 맞춤형 콘텐츠를 생성합니다. 지속적인 피드백을 통해 더욱 정교해집니다.'
   },
   {
     q: '선거구 독점 정책은 어떻게 운영되나요?',
-    a: '동일 선거구 내에는 1인만 서비스를 이용할 수 있습니다. 선착순으로 선거구를 확보하며, 계약 종료 시에만 해당 선거구가 다시 개방됩니다. 이를 통해 지역 내 독점적 디지털 우위를 확보할 수 있습니다.',
+    a: '우리 지역구에서는 나만 사용할 수 있는 디지털 우위입니다.',
+    detail: '하나의 선거구에는 한 명의 정치인만 서비스를 이용할 수 있습니다. 선착순으로 등록이 완료되며, 동일 지역구 내 경쟁자는 이용이 제한됩니다.'
   },
 ];
 
@@ -426,20 +460,21 @@ const Page = styled('main')({
   scrollSnapType: 'y mandatory',
   overflowY: 'scroll',
   height: '100vh',
-  // 세로 태블릿/폴드폰에서는 높이 조정하되 scroll snap 유지
+  // 세로 태블릿/폴드폰에서도 height 100vh 유지 (스크롤 스냅을 위해)
   '@media (min-width: 768px) and (orientation: portrait)': {
-    height: 'auto',
-    minHeight: '100vh',
+    height: '100vh',
+    overflowY: 'scroll',
   },
   // 갤럭시 폴드 7 메인 디스플레이 최적화 (8인치, 1968x2184 세로모드)
   '@media (min-width: 1900px) and (orientation: portrait)': {
-    height: 'auto',
+    height: '100vh',
     fontSize: '1.1rem',
+    overflowY: 'scroll',
   },
   // 갤럭시 폴드 7 커버 디스플레이 최적화 (6.5인치, 2520x1080)
   '@media (min-width: 1080px) and (max-width: 1080px) and (min-height: 2520px)': {
-    height: 'auto',
-    minHeight: '100vh',
+    height: '100vh',
+    overflowY: 'scroll',
     padding: '2vh 1rem',
   },
 });
@@ -882,54 +917,162 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
         opacity: 0.3
       }} />
 
+      {/* 핵심 성과 지표 */}
+      <Box component="section" id="stats" sx={{
+        py: 10,
+        scrollSnapAlign: 'start',
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center'
+      }}>
+        <Container>
+          <InViewFade>
+            <Typography variant="h4" sx={{ fontWeight: 800, textAlign: 'center', mb: 6 }}>
+              핵심 성과 지표
+            </Typography>
+          </InViewFade>
+          <Grid container spacing={6}>
+            {STATS_DATA.map((stat, idx) => (
+              <Grid item xs={12} md={4} key={stat.title}>
+                <InViewFade timeout={600 + idx * 100}>
+                  <Card sx={{
+                    bgcolor: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(0, 212, 255, 0.2)',
+                    borderRadius: 3,
+                    height: '100%',
+                    transition: 'all 0.3s ease',
+                    '&:hover': {
+                      borderColor: 'rgba(0, 212, 255, 0.5)',
+                      transform: 'translateY(-8px)',
+                      boxShadow: '0 12px 40px rgba(0, 212, 255, 0.2)'
+                    }
+                  }}>
+                    <CardContent sx={{ p: 4, textAlign: 'center' }}>
+                      <Typography variant="h2" sx={{
+                        fontWeight: 900,
+                        color: '#00d4ff',
+                        mb: 0.5,
+                        fontSize: { xs: '3.5rem', md: '4.5rem' },
+                        lineHeight: 1
+                      }}>
+                        {stat.number}
+                        <Typography component="span" variant="h4" sx={{
+                          ml: 1,
+                          color: 'rgba(255,255,255,0.8)',
+                          fontWeight: 700,
+                          fontSize: { xs: '1.8rem', md: '2.2rem' }
+                        }}>
+                          {stat.unit}
+                        </Typography>
+                      </Typography>
+                      <Typography variant="subtitle2" sx={{
+                        color: 'rgba(255,255,255,0.5)',
+                        mb: 2,
+                        fontWeight: 500,
+                        fontSize: '0.75rem'
+                      }}>
+                        {stat.title}
+                      </Typography>
+                      <Typography sx={{
+                        color: '#00d4ff',
+                        mb: 1,
+                        fontSize: '0.95rem',
+                        fontWeight: 600
+                      }}>
+                        {stat.description}
+                      </Typography>
+                      <Typography variant="body2" sx={{
+                        color: 'rgba(255,255,255,0.5)',
+                        fontSize: '0.8rem'
+                      }}>
+                        {stat.subtext}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </InViewFade>
+              </Grid>
+            ))}
+          </Grid>
+        </Container>
+      </Box>
+
+      {/* 섹션 구분선 */}
+      <Box sx={{
+        height: '2px',
+        background: 'linear-gradient(90deg, transparent 0%, #00d4ff 20%, #00d4ff 80%, transparent 100%)',
+        opacity: 0.3
+      }} />
+
       {/* 글로벌 사례 */}
       <Box sx={{
         backgroundColor: 'rgba(21, 36, 132, 0.08)',
         borderTop: '1px solid rgba(0, 212, 255, 0.2)',
         borderBottom: '1px solid rgba(0, 212, 255, 0.10)',
         height: '100vh',
-        minHeight: { xs: '700px', md: '800px', lg: '100vh' }, // 태블릿 사이즈에서 최소 높이 보장
+        minHeight: '700px',
         display: 'flex',
         alignItems: 'center',
         scrollSnapAlign: 'start',
-        // 갤럭시 폴드 7 메인 디스플레이 (거의 정사각형 비율)에서 카드가 50% 넘어가지 않도록 높이 조정
-        '@media (orientation: portrait) and (min-aspect-ratio: 10/11) and (max-aspect-ratio: 12/11)': {
-          height: 'auto',
-          minHeight: '50vh',
-          paddingTop: '2vh',
-          paddingBottom: '2vh',
-        }
       }}>
         <ContentContainer maxWidth="lg" sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center' }}>
           <Grid container spacing={4} sx={{
             width: '100%',
+            // 세로형 + 정사각형 + 가로 4:3까지 높이 기반 레이아웃
+            '@media (max-aspect-ratio: 16/9)': {
+              height: '100%',
+            }
           }}>
             {/* 좌측: 이미지 */}
             <Grid item xs={12} md={6} sx={{
+              // 16:9 이상에서는 상단 정렬
+              '@media (min-aspect-ratio: 16/9)': {
+                alignSelf: 'flex-start',
+              },
+              // 16:9 미만에서는 전체 너비, 상단 50% 차지, 상단 여백
+              '@media (max-aspect-ratio: 16/9)': {
+                flexBasis: '100%',
+                maxWidth: '100%',
+                height: '50%',
+                maxHeight: '50%',
+                pt: 4,
+                display: 'flex',
+                alignItems: 'center',
+              }
             }}>
               <Box sx={{
                 width: '100%',
-                aspectRatio: '1 / 1', // 정사각형 비율로 고정
+                aspectRatio: '1 / 1',
                 p: { xs: 1, md: 2 },
-                // 갤럭시 폴드 7 메인 디스플레이에서는 더 넓은 비율
-                '@media (orientation: portrait) and (min-aspect-ratio: 10/11) and (max-aspect-ratio: 12/11)': {
-                  aspectRatio: '2 / 1', // 2:1 비율로 변경하여 2열 배치에 최적화
-                  p: 1,
+                // 16:9 미만: 높이 100%로 꽉 채우기, 이미지 2열 배치
+                '@media (max-aspect-ratio: 16/9)': {
+                  height: '100%',
+                  aspectRatio: 'auto',
+                  p: 0,
                 },
               }}>
                 <Grid container spacing={2} sx={{
                   height: '100%',
-                  // 갤럭시 폴드 7 메인 디스플레이에서만 2열 배치
-                  '@media (orientation: portrait) and (min-aspect-ratio: 10/11) and (max-aspect-ratio: 12/11)': {
+                  // 세로형: 세로 배치, spacing 제거
+                  '@media (max-aspect-ratio: 9/16)': {
+                    spacing: 0,
+                  },
+                  // 정사각형~4:3: 가로 2열 배치, spacing 추가
+                  '@media (min-aspect-ratio: 9/16) and (max-aspect-ratio: 16/9)': {
                     spacing: 1,
                   }
                 }}>
                   {/* 이재명 이미지 */}
                   <Grid item xs={12} sx={{
-                    // 갤럭시 폴드 7 메인 디스플레이에서는 6 (절반)
-                    '@media (orientation: portrait) and (min-aspect-ratio: 10/11) and (max-aspect-ratio: 12/11)': {
+                    // 세로형: 세로 배치, 상단 50%
+                    '@media (max-aspect-ratio: 9/16)': {
+                      height: '50%',
+                      maxHeight: '50%',
+                    },
+                    // 정사각형~16:9: 가로 2열 배치, 좌측 50%
+                    '@media (min-aspect-ratio: 9/16) and (max-aspect-ratio: 16/9)': {
                       flexBasis: '50%',
                       maxWidth: '50%',
+                      height: '100%',
                     }
                   }}>
                     <Box sx={{
@@ -940,8 +1083,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                       border: '1px solid rgba(255, 255, 255, 0.1)',
                       borderRadius: 2,
                       p: 2,
-                      // 갤럭시 폴드 7 메인 디스플레이에서 패딩 조정
-                      '@media (orientation: portrait) and (min-aspect-ratio: 10/11) and (max-aspect-ratio: 12/11)': {
+                      // 정사각형~16:9 비율에서 패딩 조정
+                      '@media (min-aspect-ratio: 9/16) and (max-aspect-ratio: 16/9)': {
                         p: 1,
                       }
                     }}>
@@ -960,10 +1103,16 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
 
                   {/* 트럼프 이미지 */}
                   <Grid item xs={12} sx={{
-                    // 갤럭시 폴드 7 메인 디스플레이에서는 6 (절반)
-                    '@media (orientation: portrait) and (min-aspect-ratio: 10/11) and (max-aspect-ratio: 12/11)': {
+                    // 세로형: 세로 배치, 하단 50%
+                    '@media (max-aspect-ratio: 9/16)': {
+                      height: '50%',
+                      maxHeight: '50%',
+                    },
+                    // 정사각형~16:9: 가로 2열 배치, 우측 50%
+                    '@media (min-aspect-ratio: 9/16) and (max-aspect-ratio: 16/9)': {
                       flexBasis: '50%',
                       maxWidth: '50%',
+                      height: '100%',
                     }
                   }}>
                     <Box sx={{
@@ -974,8 +1123,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                       border: '1px solid rgba(255, 255, 255, 0.1)',
                       borderRadius: 2,
                       p: 2,
-                      // 갤럭시 폴드 7 메인 디스플레이에서 패딩 조정
-                      '@media (orientation: portrait) and (min-aspect-ratio: 10/11) and (max-aspect-ratio: 12/11)': {
+                      // 정사각형~16:9 비율에서 패딩 조정
+                      '@media (min-aspect-ratio: 9/16) and (max-aspect-ratio: 16/9)': {
                         p: 1,
                       }
                     }}>
@@ -1000,50 +1149,65 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               display: 'flex',
               alignItems: 'center',
               justifyContent: { xs: 'center', md: 'center' },
+              // 16:9 미만: 전체 너비, 하단 50% 차지
+              '@media (max-aspect-ratio: 16/9)': {
+                flexBasis: '100%',
+                maxWidth: '100%',
+                height: '50%',
+                maxHeight: '50%',
+                alignItems: 'center',
+                pt: 0,
+              }
             }}>
               <Box sx={{
                 px: { xs: 1, md: 2, lg: 2 },
-                py: { xs: 3, md: 4, lg: 4 }, // 태블릿에서 패딩 조정
+                py: { xs: 3, md: 4, lg: 4 },
                 textAlign: 'center',
-                maxWidth: { xs: '400px', md: '500px', lg: '600px' }, // 태블릿에서 최대 너비 조정
+                maxWidth: { xs: '400px', md: '500px', lg: '600px' },
+                // 16:9 미만: 세로 패딩 최소화
+                '@media (max-aspect-ratio: 16/9)': {
+                  py: 0,
+                  px: 2,
+                },
+                // 16:9 이상: 세로 패딩 줄임
+                '@media (min-aspect-ratio: 16/9)': {
+                  py: 2,
+                }
               }}>
                 <Typography variant="h3" sx={{
                   fontWeight: 900,
-                  mb: { xs: 3, md: 4, lg: 4 }, // 태블릿에서 마진 조정
+                  mb: 4,
                   color: '#00d4ff',
                   textShadow: '0 0 30px rgba(0,212,255,0.5)',
-                  whiteSpace: { xs: 'normal', md: 'nowrap', lg: 'nowrap' }, // 태블릿에서 줄바꿈 허용
-                  fontSize: { xs: '1.6rem', md: '2.0rem', lg: '2.5rem' }, // 태블릿 사이즈 추가
-                  // 모든 세로 태블릿/폴드폰 (폴드 7 메인 디스플레이 제외)
-                  '@media (min-width: 768px) and (orientation: portrait) and (max-height: 1399px)': {
+                  fontSize: { xs: '1.6rem', md: '2.5rem' },
+                  // 세로형 (모바일, 폴드 커버): 작은 폰트
+                  '@media (max-aspect-ratio: 9/16)': {
+                    fontSize: '1.6rem',
+                    mb: 3,
+                  },
+                  // 정사각형 (폴드 메인, 세로 태블릿): 중간 폰트
+                  '@media (min-aspect-ratio: 9/16) and (max-aspect-ratio: 4/3)': {
+                    fontSize: 'clamp(2rem, 4vw, 3rem)',
                     mb: 2,
-                    fontSize: 'clamp(2rem, 4vw, 2.8rem)',
-                    whiteSpace: 'normal',
                   },
-                  // 갤럭시 폴드 7 메인 디스플레이 타이틀 최적화
-                  '@media (min-width: 1950px) and (min-height: 2150px)': {
-                    fontSize: 'clamp(3rem, 5vw, 4rem)',
-                    lineHeight: 1.2,
-                    marginBottom: '3rem',
-                  },
-                  // 갤럭시 폴드 7 커버 디스플레이 타이틀 최적화
-                  '@media (min-width: 1080px) and (max-width: 1080px) and (min-height: 2520px)': {
-                    fontSize: 'clamp(1.8rem, 3vw, 2.5rem)',
-                    lineHeight: 1.3,
-                    marginBottom: '2rem',
+                  // 가로형 (데스크톱): 큰 폰트
+                  '@media (min-aspect-ratio: 16/9)': {
+                    fontSize: '2.5rem',
+                    mb: 4,
                   }
                 }}>
                   이미 검증된 성공 방식
                 </Typography>
                 <Typography variant="h6" sx={{
                   fontWeight: 500,
-                  mb: { xs: 2, md: 3, lg: 3 }, // 태블릿에서 마진 조정
+                  mb: 3,
                   lineHeight: 1.8,
                   color: 'rgba(255,255,255,0.9)',
-                  fontSize: { xs: '1.0rem', md: '1.15rem', lg: '1.25rem' }, // 태블릿 사이즈 추가
-                  // 세로 태블릿에서 마진 줄이기 (폴드 7 메인 디스플레이 제외)
-                  '@media (min-width: 768px) and (orientation: portrait) and (max-height: 1399px)': {
+                  fontSize: { xs: '1.0rem', md: '1.25rem' },
+                  // 정사각형 비율에서 마진 줄이기
+                  '@media (min-aspect-ratio: 9/16) and (max-aspect-ratio: 4/3)': {
                     mb: 1.5,
+                    fontSize: '1.15rem',
                   }
                 }}>
                   전 세계 정치인들이 이미 증명한 디지털 소통의 힘. 이제 대한민국 정치에서도 같은 성과를 거둘 때입니다.
@@ -1259,8 +1423,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               4단계 검수 프로세스
             </Typography>
             <Grid container spacing={2}>
-              {['초안', '검증', '교열', '발행'].map((step, i) => (
-                <Grid item xs={6} md={3} key={step}>
+              {[
+                { label: '초안', desc: '주제 입력' },
+                { label: '검증', desc: '사실 확인' },
+                { label: '교열', desc: '문체 조정' },
+                { label: '발행', desc: '최종 게시' }
+              ].map((step, i) => (
+                <Grid item xs={6} md={3} key={step.label}>
                   <CardSoft sx={{ position: 'relative' }}>
                     <CardContent sx={{ py: 3, textAlign: 'center' }}>
                       <Box sx={{
@@ -1275,30 +1444,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                         fontSize: 12,
                         color: 'rgba(255,255,255,0.7)'
                       }}>{i + 1}</Box>
-                      <Typography sx={{ fontWeight: 700, fontSize: '0.9rem' }}>{step}</Typography>
+                      <Typography sx={{ fontWeight: 700, fontSize: '0.9rem', mb: 0.5 }}>{step.label}</Typography>
+                      <Typography sx={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>{step.desc}</Typography>
                     </CardContent>
                   </CardSoft>
                 </Grid>
               ))}
             </Grid>
-          </Box>
-
-          {/* 샘플 문단 */}
-          <Box sx={{ mt: 6 }}>
-            <CardSoft>
-              <CardContent sx={{ p: { xs: 3, md: 4 } }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
-                  샘플 문단(예시)
-                </Typography>
-                <Typography sx={{ color: 'rgba(255,255,255,0.85)', fontStyle: 'italic', mb: 2 }}>
-                  "○○구 어린이 통학로 안전 점검 결과를 공개합니다. 지난달 접수된 민원 12건을 바탕으로
-                  현장 점검을 완료했고, 개선이 필요한 3곳에 예산 반영을 요청했습니다."
-                </Typography>
-                <Typography variant="caption" sx={{ display: 'block', opacity: 0.6 }}>
-                  ※ 예시 문구입니다. 실제 발행 전 수치·출처·일정을 확인하세요.
-                </Typography>
-              </CardContent>
-            </CardSoft>
           </Box>
         </ContentContainer>
       </Section>
