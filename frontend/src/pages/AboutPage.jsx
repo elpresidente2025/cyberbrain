@@ -933,7 +933,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
           </InViewFade>
           <Grid container spacing={6}>
             {STATS_DATA.map((stat, idx) => (
-              <Grid item xs={12} md={4} key={stat.title}>
+              <Grid item xs={12} sm={4} md={4} key={stat.title}>
                 <InViewFade timeout={600 + idx * 100}>
                   <Card sx={{
                     bgcolor: 'rgba(255,255,255,0.05)',
@@ -947,12 +947,12 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                       boxShadow: '0 12px 40px rgba(0, 212, 255, 0.2)'
                     }
                   }}>
-                    <CardContent sx={{ p: 4, textAlign: 'center' }}>
+                    <CardContent sx={{ p: { xs: 3, sm: 2, md: 3, lg: 4 }, textAlign: 'center' }}>
                       <Typography variant="h2" sx={{
                         fontWeight: 900,
                         color: '#00d4ff',
                         mb: 0.5,
-                        fontSize: { xs: '3.5rem', md: '4.5rem' },
+                        fontSize: { xs: '3.5rem', sm: '3rem', md: '3.5rem', lg: '4.5rem' },
                         lineHeight: 1
                       }}>
                         {stat.number}
@@ -960,7 +960,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                           ml: 1,
                           color: 'rgba(255,255,255,0.8)',
                           fontWeight: 700,
-                          fontSize: { xs: '1.8rem', md: '2.2rem' }
+                          fontSize: { xs: '1.8rem', sm: '1.5rem', md: '1.8rem', lg: '2.2rem' }
                         }}>
                           {stat.unit}
                         </Typography>
@@ -969,21 +969,25 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                         color: 'rgba(255,255,255,0.5)',
                         mb: 2,
                         fontWeight: 500,
-                        fontSize: '0.75rem'
+                        fontSize: { xs: '0.75rem', sm: '0.65rem', md: '0.7rem', lg: '0.75rem' }
                       }}>
                         {stat.title}
                       </Typography>
                       <Typography sx={{
                         color: '#00d4ff',
                         mb: 1,
-                        fontSize: '0.95rem',
-                        fontWeight: 600
+                        fontSize: { xs: '0.95rem', sm: '0.75rem', md: '0.85rem', lg: '0.95rem' },
+                        fontWeight: 600,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
                       }}>
                         {stat.description}
                       </Typography>
                       <Typography variant="body2" sx={{
                         color: 'rgba(255,255,255,0.5)',
-                        fontSize: '0.8rem'
+                        fontSize: { xs: '0.8rem', sm: '0.65rem', md: '0.7rem', lg: '0.8rem' },
+                        lineHeight: 1.4
                       }}>
                         {stat.subtext}
                       </Typography>
@@ -1024,51 +1028,62 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
           }}>
             {/* 좌측: 이미지 */}
             <Grid item xs={12} md={6} sx={{
-              // 16:9 이상에서는 상단 정렬
+              // [데스크톱] 16:9 이상 - 중앙 정렬
               '@media (min-aspect-ratio: 16/9)': {
-                alignSelf: 'flex-start',
+                display: 'flex',
+                alignItems: 'center',
               },
-              // 16:9 미만에서는 전체 너비, 상단 50% 차지, 상단 여백
+              // [모바일/태블릿] 16:9 미만 - 전체 너비, 상단 60% 차지, 하단 정렬
               '@media (max-aspect-ratio: 16/9)': {
                 flexBasis: '100%',
                 maxWidth: '100%',
-                height: '50%',
-                maxHeight: '50%',
-                pt: 4,
+                height: '60%',
+                maxHeight: '60%',
+                pb: 2,
                 display: 'flex',
-                alignItems: 'center',
+                alignItems: 'flex-end',
+                justifyContent: 'center',
               }
             }}>
               <Box sx={{
                 width: '100%',
-                aspectRatio: '1 / 1',
                 p: { xs: 1, md: 2 },
-                // 16:9 미만: 높이 100%로 꽉 채우기, 이미지 2열 배치
-                '@media (max-aspect-ratio: 16/9)': {
+                // [데스크톱] 16:9 이상 - aspectRatio 제거하여 내용에 맞게 높이 자동 조정
+                '@media (min-aspect-ratio: 16/9)': {
+                  aspectRatio: 'auto',
+                },
+                // [태블릿] 9/16~16/9 (정사각형~4:3) - 정사각형 유지
+                '@media (min-aspect-ratio: 9/16) and (max-aspect-ratio: 16/9)': {
+                  aspectRatio: '1 / 1',
                   height: '100%',
+                  p: 0,
+                },
+                // [모바일] 9/16 미만 (세로형) - 높이 90%로 여백 확보
+                '@media (max-aspect-ratio: 9/16)': {
+                  height: '90%',
                   aspectRatio: 'auto',
                   p: 0,
                 },
               }}>
                 <Grid container spacing={2} sx={{
                   height: '100%',
-                  // 세로형: 세로 배치, spacing 제거
+                  // [모바일] 세로 배치, spacing 제거
                   '@media (max-aspect-ratio: 9/16)': {
                     spacing: 0,
                   },
-                  // 정사각형~4:3: 가로 2열 배치, spacing 추가
+                  // [태블릿] 가로 2열 배치, spacing 추가
                   '@media (min-aspect-ratio: 9/16) and (max-aspect-ratio: 16/9)': {
                     spacing: 1,
                   }
                 }}>
                   {/* 이재명 이미지 */}
                   <Grid item xs={12} sx={{
-                    // 세로형: 세로 배치, 상단 50%
+                    // [모바일] 세로 배치, 상단 50%
                     '@media (max-aspect-ratio: 9/16)': {
                       height: '50%',
                       maxHeight: '50%',
                     },
-                    // 정사각형~16:9: 가로 2열 배치, 좌측 50%
+                    // [태블릿] 가로 2열 배치, 좌측 50%
                     '@media (min-aspect-ratio: 9/16) and (max-aspect-ratio: 16/9)': {
                       flexBasis: '50%',
                       maxWidth: '50%',
@@ -1083,8 +1098,12 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                       border: '1px solid rgba(255, 255, 255, 0.1)',
                       borderRadius: 2,
                       p: 2,
-                      // 정사각형~16:9 비율에서 패딩 조정
+                      // [태블릿] 패딩 조정
                       '@media (min-aspect-ratio: 9/16) and (max-aspect-ratio: 16/9)': {
+                        p: 1,
+                      },
+                      // [모바일] 패딩 줄이기
+                      '@media (max-aspect-ratio: 9/16)': {
                         p: 1,
                       }
                     }}>
@@ -1092,8 +1111,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                         src="/sns/lee-jae-myung.png"
                         alt="이재명"
                         style={{
-                          maxWidth: '80%',
-                          maxHeight: '80%',
+                          maxWidth: '95%',
+                          maxHeight: '95%',
                           borderRadius: 8,
                           objectFit: 'contain'
                         }}
@@ -1103,12 +1122,12 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
 
                   {/* 트럼프 이미지 */}
                   <Grid item xs={12} sx={{
-                    // 세로형: 세로 배치, 하단 50%
+                    // [모바일] 세로 배치, 하단 50%
                     '@media (max-aspect-ratio: 9/16)': {
                       height: '50%',
                       maxHeight: '50%',
                     },
-                    // 정사각형~16:9: 가로 2열 배치, 우측 50%
+                    // [태블릿] 가로 2열 배치, 우측 50%
                     '@media (min-aspect-ratio: 9/16) and (max-aspect-ratio: 16/9)': {
                       flexBasis: '50%',
                       maxWidth: '50%',
@@ -1123,8 +1142,12 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                       border: '1px solid rgba(255, 255, 255, 0.1)',
                       borderRadius: 2,
                       p: 2,
-                      // 정사각형~16:9 비율에서 패딩 조정
+                      // [태블릿] 패딩 조정
                       '@media (min-aspect-ratio: 9/16) and (max-aspect-ratio: 16/9)': {
+                        p: 1,
+                      },
+                      // [모바일] 패딩 줄이기
+                      '@media (max-aspect-ratio: 9/16)': {
                         p: 1,
                       }
                     }}>
@@ -1132,8 +1155,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                         src="/sns/trump.png"
                         alt="트럼프"
                         style={{
-                          maxWidth: '80%',
-                          maxHeight: '80%',
+                          maxWidth: '95%',
+                          maxHeight: '95%',
                           borderRadius: 8,
                           objectFit: 'contain'
                         }}
@@ -1149,14 +1172,14 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               display: 'flex',
               alignItems: 'center',
               justifyContent: { xs: 'center', md: 'center' },
-              // 16:9 미만: 전체 너비, 하단 50% 차지
+              // [모바일/태블릿] 16:9 미만 - 전체 너비, 하단 40% 차지
               '@media (max-aspect-ratio: 16/9)': {
                 flexBasis: '100%',
                 maxWidth: '100%',
-                height: '50%',
-                maxHeight: '50%',
-                alignItems: 'center',
-                pt: 0,
+                height: '40%',
+                maxHeight: '40%',
+                alignItems: 'flex-start',
+                pt: 2,
               }
             }}>
               <Box sx={{
@@ -1855,7 +1878,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               }
             }}>
               {/* 텍스트 위주 매체 */}
-              <Grid item xs={12} md={5}>
+              <Grid item xs={6} sm={6} md={5}>
                 <CardSoft sx={{
                   height: '100%',
                   textAlign: 'center',
@@ -1870,13 +1893,17 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                       텍스트 위주 매체
                     </Typography>
 
-                    <Typography variant="h6" sx={{
-                      fontWeight: 600,
-                      mb: 2,
-                      color: '#f8c023'
-                    }}>
-                      네이버 블로그
-                    </Typography>
+                    <Box sx={{ mb: 2, display: 'flex', justifyContent: 'center' }}>
+                      <img
+                        src="/icons/Nblog.webp"
+                        alt="네이버 블로그"
+                        style={{
+                          height: '60px',
+                          width: 'auto',
+                          filter: 'drop-shadow(0 0 8px rgba(0, 212, 255, 0.6))'
+                        }}
+                      />
+                    </Box>
 
                     <Typography variant="body1" sx={{
                       mb: 3,
@@ -1891,7 +1918,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               </Grid>
 
               {/* 비텍스트 위주 매체 */}
-              <Grid item xs={12} md={5}>
+              <Grid item xs={6} sm={6} md={5}>
                 <CardSoft sx={{
                   height: '100%',
                   textAlign: 'center',
@@ -1906,16 +1933,60 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                       비텍스트 위주 매체
                     </Typography>
 
-                    <Box sx={{ textAlign: 'left', mb: 3 }}>
-                      <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
-                        • 페이스북 - 이미지/영상 + 간단한 텍스트
-                      </Typography>
-                      <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
-                        • 인스타그램 - 시각적 콘텐츠 중심
-                      </Typography>
-                      <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
-                        • X(트위터) - 즉석 반응과 짧은 메시지
-                      </Typography>
+                    <Box sx={{ mb: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                      {/* 페이스북 */}
+                      <Box>
+                        <Box sx={{ mb: 1, display: 'flex', justifyContent: 'center' }}>
+                          <img
+                            src="/icons/icon-facebook.png"
+                            alt="페이스북"
+                            style={{
+                              height: '40px',
+                              width: 'auto',
+                              filter: 'drop-shadow(0 0 8px rgba(0, 212, 255, 0.6))'
+                            }}
+                          />
+                        </Box>
+                        <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+                          이미지/영상 + 간단한 텍스트
+                        </Typography>
+                      </Box>
+
+                      {/* 인스타그램 */}
+                      <Box>
+                        <Box sx={{ mb: 1, display: 'flex', justifyContent: 'center' }}>
+                          <img
+                            src="/icons/icon-instagram.png"
+                            alt="인스타그램"
+                            style={{
+                              height: '40px',
+                              width: 'auto',
+                              filter: 'drop-shadow(0 0 8px rgba(0, 212, 255, 0.6))'
+                            }}
+                          />
+                        </Box>
+                        <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+                          시각적 콘텐츠 중심
+                        </Typography>
+                      </Box>
+
+                      {/* X(트위터) */}
+                      <Box>
+                        <Box sx={{ mb: 1, display: 'flex', justifyContent: 'center' }}>
+                          <img
+                            src="/icons/icon-X.png"
+                            alt="X(트위터)"
+                            style={{
+                              height: '40px',
+                              width: 'auto',
+                              filter: 'drop-shadow(0 0 8px rgba(0, 212, 255, 0.6))'
+                            }}
+                          />
+                        </Box>
+                        <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+                          즉석 반응과 짧은 메시지
+                        </Typography>
+                      </Box>
                     </Box>
                   </CardContent>
                 </CardSoft>
