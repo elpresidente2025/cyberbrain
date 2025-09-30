@@ -1221,6 +1221,14 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                 }}>
                   이미 검증된 성공 방식
                 </Typography>
+                <Typography variant="h5" sx={{
+                  fontWeight: 600,
+                  mb: 3,
+                  color: '#00d4ff',
+                  fontSize: { xs: '1.2rem', md: '1.5rem' }
+                }}>
+                  01. 글로벌 정치인들의 선택
+                </Typography>
                 <Typography variant="h6" sx={{
                   fontWeight: 500,
                   mb: 3,
@@ -1249,510 +1257,6 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
       </Box>
 
       {/* 섹션 구분선 */}
-      <Box sx={{
-        height: '2px',
-        background: 'linear-gradient(90deg, transparent 0%, #00d4ff 20%, #00d4ff 80%, transparent 100%)',
-        opacity: 0.3
-      }} />
-
-      {/* 개인화 시스템 섹션 */}
-      <Section sx={{ backgroundColor: 'rgba(0,0,0,0.02)', py: { xs: 8, md: 12 } }}>
-        <ContentContainer maxWidth="lg">
-          <InViewFade>
-            <Typography variant="h4" sx={{
-              fontWeight: 800,
-              mb: 2,
-              textAlign: 'center'
-            }}>
-              당신만의 전뇌비서관이 기억합니다
-            </Typography>
-            <Typography variant="h6" sx={{
-              mb: 6,
-              textAlign: 'center',
-              fontWeight: 400,
-              color: 'rgba(255,255,255,0.7)'
-            }}>
-              3가지 핵심 요소로 당신의 정치 활동을 완벽하게 지원합니다
-            </Typography>
-          </InViewFade>
-
-          <Grid container spacing={4}>
-            {/* 정책 이력 */}
-            <Grid item xs={12} md={4}>
-              <InViewFade timeout={600}>
-                <CardSoft sx={{ height: '100%', textAlign: 'center' }}>
-                  <CardContent sx={{ p: 4 }}>
-                    <Typography variant="h5" sx={{
-                      fontWeight: 700,
-                      mb: 2,
-                      color: '#00d4ff'
-                    }}>
-                      📋 정책 이력
-                    </Typography>
-                    <Typography variant="body2" sx={{
-                      lineHeight: 1.6,
-                      color: 'rgba(255,255,255,0.7)'
-                    }}>
-                      과거에 발표했던 정책, 공약, 활동 내역을 AI가 학습하여 일관성 있는 메시지를 전달합니다
-                    </Typography>
-                  </CardContent>
-                </CardSoft>
-              </InViewFade>
-            </Grid>
-
-            {/* 지역 맥락 */}
-            <Grid item xs={12} md={4}>
-              <InViewFade timeout={700}>
-                <CardSoft sx={{ height: '100%', textAlign: 'center' }}>
-                  <CardContent sx={{ p: 4 }}>
-                    <Typography variant="h5" sx={{
-                      fontWeight: 700,
-                      mb: 2,
-                      color: '#00d4ff'
-                    }}>
-                      🏘️ 지역 맥락
-                    </Typography>
-                    <Typography variant="body2" sx={{
-                      lineHeight: 1.6,
-                      color: 'rgba(255,255,255,0.7)'
-                    }}>
-                      지역 현안, 주민 관심사, 특성을 반영하여 지역 밀착형 콘텐츠를 생성합니다
-                    </Typography>
-                  </CardContent>
-                </CardSoft>
-              </InViewFade>
-            </Grid>
-
-            {/* 개인 스타일 */}
-            <Grid item xs={12} md={4}>
-              <InViewFade timeout={800}>
-                <CardSoft sx={{ height: '100%', textAlign: 'center' }}>
-                  <CardContent sx={{ p: 4 }}>
-                    <Typography variant="h5" sx={{
-                      fontWeight: 700,
-                      mb: 2,
-                      color: '#00d4ff'
-                    }}>
-                      ✍️ 개인 스타일
-                    </Typography>
-                    <Typography variant="body2" sx={{
-                      lineHeight: 1.6,
-                      color: 'rgba(255,255,255,0.7)'
-                    }}>
-                      글쓰기 스타일, 선호하는 표현, 톤앤매너를 학습하여 점점 더 '나다운' 콘텐츠를 만들어냅니다
-                    </Typography>
-                  </CardContent>
-                </CardSoft>
-              </InViewFade>
-            </Grid>
-          </Grid>
-        </ContentContainer>
-      </Section>
-
-      {/* 섹션 구분선 */}
-      <Box sx={{
-        height: '2px',
-        background: 'linear-gradient(90deg, transparent 0%, #00d4ff 20%, #00d4ff 80%, transparent 100%)',
-        opacity: 0.3
-      }} />
-
-      {/* 3단계 사용법 섹션 */}
-      <Section sx={{ py: { xs: 8, md: 12 } }}>
-        <ContentContainer maxWidth="lg">
-          <InViewFade>
-            <Typography variant="h4" sx={{
-              fontWeight: 800,
-              mb: 2,
-              textAlign: 'center'
-            }}>
-              3단계면 끝, 누구나 쉽게
-            </Typography>
-            <Typography variant="h6" sx={{
-              mb: 6,
-              textAlign: 'center',
-              fontWeight: 400,
-              color: 'rgba(255,255,255,0.7)'
-            }}>
-              복잡한 설정 없이 바로 시작하세요
-            </Typography>
-          </InViewFade>
-
-          <Grid container spacing={4} sx={{ justifyContent: 'center' }}>
-            {/* 1단계 */}
-            <Grid item xs={12} md={4}>
-              <InViewFade timeout={600}>
-                <CardSoft sx={{
-                  height: '100%',
-                  textAlign: 'center',
-                  position: 'relative',
-                  border: '2px solid rgba(0, 212, 255, 0.3)'
-                }}>
-                  <Box sx={{
-                    position: 'absolute',
-                    top: -20,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    width: 40,
-                    height: 40,
-                    borderRadius: '50%',
-                    backgroundColor: '#00d4ff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 900,
-                    fontSize: '1.5rem',
-                    color: '#000'
-                  }}>
-                    1
-                  </Box>
-                  <CardContent sx={{ p: 4, pt: 5 }}>
-                    <Typography variant="h5" sx={{
-                      fontWeight: 700,
-                      mb: 2,
-                      color: '#00d4ff'
-                    }}>
-                      말씀하세요
-                    </Typography>
-                    <Typography variant="body1" sx={{
-                      lineHeight: 1.8,
-                      color: 'rgba(255,255,255,0.9)'
-                    }}>
-                      정책, 지역 이슈, 활동 내역을<br />
-                      간단히 입력하세요
-                    </Typography>
-                  </CardContent>
-                </CardSoft>
-              </InViewFade>
-            </Grid>
-
-            {/* 2단계 */}
-            <Grid item xs={12} md={4}>
-              <InViewFade timeout={700}>
-                <CardSoft sx={{
-                  height: '100%',
-                  textAlign: 'center',
-                  position: 'relative',
-                  border: '2px solid rgba(0, 212, 255, 0.3)'
-                }}>
-                  <Box sx={{
-                    position: 'absolute',
-                    top: -20,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    width: 40,
-                    height: 40,
-                    borderRadius: '50%',
-                    backgroundColor: '#00d4ff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 900,
-                    fontSize: '1.5rem',
-                    color: '#000'
-                  }}>
-                    2
-                  </Box>
-                  <CardContent sx={{ p: 4, pt: 5 }}>
-                    <Typography variant="h5" sx={{
-                      fontWeight: 700,
-                      mb: 2,
-                      color: '#00d4ff'
-                    }}>
-                      완성됩니다
-                    </Typography>
-                    <Typography variant="body1" sx={{
-                      lineHeight: 1.8,
-                      color: 'rgba(255,255,255,0.9)'
-                    }}>
-                      AI가 자동으로 생성한<br />
-                      품격 있는 원고를 확인하세요
-                    </Typography>
-                  </CardContent>
-                </CardSoft>
-              </InViewFade>
-            </Grid>
-
-            {/* 3단계 */}
-            <Grid item xs={12} md={4}>
-              <InViewFade timeout={800}>
-                <CardSoft sx={{
-                  height: '100%',
-                  textAlign: 'center',
-                  position: 'relative',
-                  border: '2px solid rgba(0, 212, 255, 0.3)'
-                }}>
-                  <Box sx={{
-                    position: 'absolute',
-                    top: -20,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    width: 40,
-                    height: 40,
-                    borderRadius: '50%',
-                    backgroundColor: '#00d4ff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 900,
-                    fontSize: '1.5rem',
-                    color: '#000'
-                  }}>
-                    3
-                  </Box>
-                  <CardContent sx={{ p: 4, pt: 5 }}>
-                    <Typography variant="h5" sx={{
-                      fontWeight: 700,
-                      mb: 2,
-                      color: '#00d4ff'
-                    }}>
-                      발전됩니다
-                    </Typography>
-                    <Typography variant="body1" sx={{
-                      lineHeight: 1.8,
-                      color: 'rgba(255,255,255,0.9)'
-                    }}>
-                      스타일을 학습하여<br />
-                      점점 더 나아집니다
-                    </Typography>
-                  </CardContent>
-                </CardSoft>
-              </InViewFade>
-            </Grid>
-          </Grid>
-        </ContentContainer>
-      </Section>
-
-      {/* Core Features */}
-      <Section id="how" aria-labelledby="features-heading">
-        <ContentContainer maxWidth="lg">
-          <InViewFade>
-            <Typography id="features-heading" variant="h4" sx={{ fontWeight: 800, mb: 6 }}>
-              핵심 기능
-            </Typography>
-          </InViewFade>
-          <Grid container spacing={3}>
-            {CORE_FEATURES.map((f, idx) => (
-              <Grid item xs={12} md={6} key={f.title}>
-                <InViewFade timeout={600 + idx * 80}>
-                  <CardSoft>
-                    <CardContent sx={{ p: { xs: 3, md: 4 } }}>
-                      <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                        {f.title}
-                      </Typography>
-                      <Typography sx={{ mt: 1.25 }}>
-                        {f.desc}
-                      </Typography>
-                    </CardContent>
-                  </CardSoft>
-                </InViewFade>
-              </Grid>
-            ))}
-          </Grid>
-        </ContentContainer>
-      </Section>
-
-      {/* Safety & Quality Management */}
-      <Section sx={{ backgroundColor: 'rgba(255,255,255,0.02)' }}>
-        <ContentContainer maxWidth="lg">
-          <InViewFade>
-            <Typography variant="h4" sx={{ fontWeight: 800, mb: 2, textAlign: 'center' }}>
-              안전성과 품질 관리
-            </Typography>
-            <Typography sx={{ color: 'rgba(255,255,255,0.75)', mb: 6, textAlign: 'center' }}>
-              정치인을 위한 안전하고 신뢰할 수 있는 콘텐츠 생성 시스템입니다.
-            </Typography>
-          </InViewFade>
-
-          <Grid container spacing={3} sx={{ mb: 6 }}>
-            {SAFETY_FEATURES.map((f, idx) => (
-              <Grid item xs={12} md={6} key={f.title}>
-                <InViewFade timeout={600 + idx * 80}>
-                  <CardSoft>
-                    <CardContent sx={{ p: { xs: 3, md: 4 } }}>
-                      <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                        {f.title}
-                      </Typography>
-                      <Typography sx={{ mt: 1.25 }}>
-                        {f.desc}
-                      </Typography>
-                    </CardContent>
-                  </CardSoft>
-                </InViewFade>
-              </Grid>
-            ))}
-          </Grid>
-
-          <Box sx={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: { xs: 2, md: 3 },
-            justifyContent: 'center',
-            alignItems: 'stretch',
-            gridTemplateRows: '200px'
-          }}>
-            {[
-              {
-                title: '1회 = 1원고',
-                description: '한 번의 요청으로 하나의 완성된 원고를 생성합니다.',
-                color: '#003a87'
-              },
-              {
-                title: '최대 3회 재생성',
-                description: '동일한 주제에 대해 최대 3번까지 다른 버전을 생성할 수 있습니다.',
-                color: '#55207d'
-              },
-              {
-                title: '사실 검증 시스템',
-                description: 'AI가 잘못된 정보를 만들어내지 않도록 원칙적 제한을 적용합니다.',
-                color: '#006261'
-              }
-            ].map((rule, index) => (
-              <Box key={index} sx={{ height: '100%' }}>
-                <InViewFade timeout={600 + index * 100}>
-                  <Card
-                    sx={{
-                      bgcolor: 'rgba(255,255,255,0.05)',
-                      border: `2px solid ${rule.color}40`,
-                      borderRadius: 3,
-                      height: '200px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      transition: 'all 0.3s ease',
-                      '&:hover': {
-                        borderColor: `${rule.color}80`,
-                        transform: 'translateY(-4px)',
-                        boxShadow: `0 8px 32px ${rule.color}20`
-                      }
-                    }}
-                  >
-                    <CardContent sx={{
-                      p: { xs: 2, md: 4 },
-                      textAlign: 'center',
-                      flex: 1,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center'
-                    }}>
-                      <Typography
-                        variant="h6"
-                        sx={{
-                          fontWeight: 700,
-                          mb: { xs: 1, md: 2 },
-                          color: rule.color,
-                          fontSize: { xs: '0.9rem', sm: '1rem', md: '1.25rem' }
-                        }}
-                      >
-                        {rule.title}
-                      </Typography>
-                      <Typography sx={{
-                        lineHeight: 1.6,
-                        fontSize: { xs: '0.75rem', sm: '0.85rem', md: '1rem' }
-                      }}>
-                        {rule.description}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                </InViewFade>
-              </Box>
-            ))}
-          </Box>
-        </ContentContainer>
-      </Section>
-
-      {/* Quality (Infographic) */}
-      <Section aria-labelledby="quality-heading">
-        <ContentContainer maxWidth="lg">
-          <InViewFade>
-            <Typography id="quality-heading" variant="h4" sx={{ fontWeight: 800, mb: 2 }}>
-              원고 품질과 검수 프로세스
-            </Typography>
-            <Typography sx={{ color: 'rgba(255,255,255,0.75)', mb: 6 }}>
-              모든 글은 아래 기준과 절차를 통과합니다. 최종 검토는 사용자가 수행합니다.
-            </Typography>
-          </InViewFade>
-
-          {/* 품질 기준 아이콘 그리드 */}
-          <Box sx={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: { xs: 2, md: 3 },
-            alignItems: 'stretch',
-            gridAutoRows: '1fr'
-          }}>
-            {[
-              { icon: <FactCheckIcon />, label: '사실 검증' },
-              { icon: <StyleIcon />, label: '톤앤매너' },
-              { icon: <FormatListBulletedIcon />, label: '구조화' },
-            ].map((it, i) => (
-              <Box key={i} sx={{ height: '100%' }}>
-                <CardSoft sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                  <CardContent sx={{
-                    textAlign: 'center',
-                    py: { xs: 3, md: 4 },
-                    flex: 1,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center'
-                  }}>
-                    <Box sx={{
-                      mb: 1.5,
-                      '& svg': {
-                        fontSize: { xs: 28, md: 32 },
-                        color: '#00d4ff'
-                      }
-                    }}>{it.icon}</Box>
-                    <Typography
-                      variant="subtitle1"
-                      sx={{
-                        fontWeight: 700,
-                        fontSize: { xs: '0.9rem', md: '1rem' }
-                      }}
-                    >{it.label}</Typography>
-                  </CardContent>
-                </CardSoft>
-              </Box>
-            ))}
-          </Box>
-
-          {/* 프로세스 플로우 */}
-          <Box sx={{ mt: 6 }}>
-            <Typography variant="h6" sx={{ fontWeight: 700, mb: 3, textAlign: 'center' }}>
-              4단계 검수 프로세스
-            </Typography>
-            <Grid container spacing={2}>
-              {[
-                { label: '초안', desc: '주제 입력' },
-                { label: '검증', desc: '사실 확인' },
-                { label: '교열', desc: '문체 조정' },
-                { label: '발행', desc: '최종 게시' }
-              ].map((step, i) => (
-                <Grid item xs={6} md={3} key={step.label}>
-                  <CardSoft sx={{ position: 'relative' }}>
-                    <CardContent sx={{ py: 3, textAlign: 'center' }}>
-                      <Box sx={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: '50%',
-                        mx: 'auto',
-                        mb: 1.5,
-                        border: '1px solid rgba(255,255,255,0.3)',
-                        display: 'grid',
-                        placeItems: 'center',
-                        fontSize: 12,
-                        color: 'rgba(255,255,255,0.7)'
-                      }}>{i + 1}</Box>
-                      <Typography sx={{ fontWeight: 700, fontSize: '0.9rem', mb: 0.5 }}>{step.label}</Typography>
-                      <Typography sx={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>{step.desc}</Typography>
-                    </CardContent>
-                  </CardSoft>
-                </Grid>
-              ))}
-            </Grid>
-          </Box>
-        </ContentContainer>
-      </Section>
-
-      {/* 첫 번째 섹션: 영향력 확장의 두 축 */}
       <Section sx={{
         backgroundColor: 'rgba(255,255,255,0.01)',
         py: { xs: 6, md: 10 }
@@ -1901,218 +1405,6 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
       </Section>
 
       {/* 두 번째 섹션: 이미 증명된 전략 */}
-      <Section sx={{
-        backgroundColor: 'rgba(0,0,0,0.02)',
-        py: { xs: 6, md: 10 }
-      }}>
-        <ContentContainer maxWidth="lg">
-          <InViewFade>
-            <Typography variant="h4" sx={{
-              fontWeight: 700,
-              mb: 2,
-              textAlign: 'center'
-            }}>
-              이미 증명된 전략
-            </Typography>
-            <Typography variant="h6" sx={{
-              mb: 6,
-              textAlign: 'center',
-              fontWeight: 500,
-              color: 'rgba(255,255,255,0.7)'
-            }}>
-              전문직들이 검증한 네이버 블로그 중심 마케팅 전략
-            </Typography>
-          </InViewFade>
-
-          <InViewFade>
-            <Grid container spacing={4} sx={{ justifyContent: 'center' }}>
-              <Grid item xs={12} md={8}>
-                <CardSoft sx={{ height: '100%' }}>
-                  <CardContent sx={{ p: 4 }}>
-                    <Grid container spacing={4} alignItems="center">
-                      {/* 왼쪽: 전문직 마케팅 사례 */}
-                      <Grid item xs={12} md={6}>
-                        <Typography variant="h5" sx={{
-                          fontWeight: 700,
-                          mb: 3,
-                          color: '#00d4ff',
-                          textAlign: 'center'
-                        }}>
-                          전문직 마케팅 사례
-                        </Typography>
-
-                        <Box sx={{ textAlign: 'left', mb: 3 }}>
-                          <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
-                            • 의사, 변호사, 세무사
-                          </Typography>
-                          <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
-                            • 네이버 블로그 → SNS 허브 전략
-                          </Typography>
-                          <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
-                            • 검색 유입 → 고객 전환
-                          </Typography>
-                        </Box>
-
-                        <Box sx={{
-                          p: 3,
-                          backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                          borderRadius: 2,
-                          border: '1px solid #00d4ff40',
-                          textAlign: 'center'
-                        }}>
-                          <Typography variant="body1" sx={{
-                            fontWeight: 600
-                          }}>
-                            블로그 작성 → SNS 확산 → 유입 증가 → 성과 창출
-                          </Typography>
-                        </Box>
-                      </Grid>
-
-                      {/* 오른쪽: 동심원 SNS 다이어그램 */}
-                      <Grid item xs={12} md={6}>
-                        <Box sx={{
-                          position: 'relative',
-                          width: '300px',
-                          height: '300px',
-                          mx: 'auto'
-                        }}>
-                          {/* 동심원들 - SNS 아이콘이 원의 테두리에 걸치도록 조정 */}
-                          <Box sx={{
-                            position: 'absolute',
-                            top: '50%',
-                            left: '50%',
-                            transform: 'translate(-50%, -50%)',
-                            width: '220px', // SNS 아이콘들이 테두리에 걸치도록
-                            height: '220px',
-                            borderRadius: '50%',
-                            border: '2px solid rgba(0, 212, 255, 0.3)',
-                            zIndex: 1
-                          }} />
-                          <Box sx={{
-                            position: 'absolute',
-                            top: '50%',
-                            left: '50%',
-                            transform: 'translate(-50%, -50%)',
-                            width: '140px',
-                            height: '140px',
-                            borderRadius: '50%',
-                            border: '2px solid rgba(0, 212, 255, 0.4)',
-                            zIndex: 2
-                          }} />
-                          <Box sx={{
-                            position: 'absolute',
-                            top: '50%',
-                            left: '50%',
-                            transform: 'translate(-50%, -50%)',
-                            width: '90px',
-                            height: '90px',
-                            borderRadius: '50%',
-                            border: '2px solid rgba(0, 212, 255, 0.5)',
-                            zIndex: 3
-                          }} />
-
-                          {/* 중앙 네이버 블로그 */}
-                          <Box sx={{
-                            position: 'absolute',
-                            top: '50%',
-                            left: '50%',
-                            transform: 'translate(-50%, -50%)',
-                            zIndex: 10
-                          }}>
-                            <img
-                              src="/icons/Nblog.webp"
-                              alt="네이버 블로그"
-                              style={{
-                                width: 36,
-                                height: 36,
-                                filter: 'drop-shadow(0 0 8px rgba(248, 192, 35, 0.8)) drop-shadow(0 0 16px rgba(248, 192, 35, 0.4))',
-                                transition: 'filter 0.3s ease'
-                              }}
-                            />
-                          </Box>
-
-                          {/* SNS 아이콘들 */}
-                          {[
-                            { angle: 23, icon: 'icon-facebook.png', name: '페이스북', radius: 110 },
-                            { angle: 127, icon: 'icon-instagram.png', name: '인스타그램', radius: 70 },
-                            { angle: 203, icon: 'icon-X.png', name: 'X(트위터)', radius: 110 },
-                            { angle: 311, icon: 'icon-threads.png', name: '스레드', radius: 110 }
-                          ].map((sns, index) => {
-                            const radian = (sns.angle * Math.PI) / 180;
-                            const x = Math.cos(radian) * sns.radius;
-                            const y = Math.sin(radian) * sns.radius;
-
-                            return (
-                              <Box key={sns.name} sx={{
-                                position: 'absolute',
-                                top: '50%',
-                                left: '50%',
-                                transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`,
-                                zIndex: 5
-                              }}>
-                                <img
-                                  src={`/icons/${sns.icon}`}
-                                  alt={sns.name}
-                                  style={{
-                                    width: 24,
-                                    height: 24,
-                                    filter: 'drop-shadow(0 0 6px rgba(0, 212, 255, 0.8)) drop-shadow(0 0 12px rgba(0, 212, 255, 0.4))',
-                                    transition: 'filter 0.3s ease'
-                                  }}
-                                />
-                              </Box>
-                            );
-                          })}
-                        </Box>
-                      </Grid>
-                    </Grid>
-
-                    <Typography variant="h6" sx={{
-                      fontWeight: 600,
-                      color: 'rgba(255,255,255,0.9)',
-                      lineHeight: 1.6,
-                      textAlign: 'center',
-                      mt: 4
-                    }}>
-                      전문직도 선택한 검증된 전략을 정치에도 적용하세요
-                    </Typography>
-                  </CardContent>
-                </CardSoft>
-              </Grid>
-            </Grid>
-          </InViewFade>
-
-          {/* 결론 메시지 */}
-          <InViewFade>
-            <Box sx={{
-              textAlign: 'center',
-              p: 4,
-              border: '1px solid #f8c02340',
-              borderRadius: 3,
-              backgroundColor: 'rgba(255, 255, 255, 0.03)',
-              maxWidth: 800,
-              mx: 'auto',
-              mt: 4
-            }}>
-              <Typography variant="h5" sx={{
-                fontWeight: 900,
-                mb: 2,
-                color: '#f8c023'
-              }}>
-                네이버 블로그로 정치적 영향력 확대
-              </Typography>
-              <Typography variant="body1" sx={{
-                color: 'rgba(255,255,255,0.9)',
-                lineHeight: 1.8
-              }}>
-                검색 노출부터 유권자 소통까지, 전략적 블로그 콘텐츠로 정치인의 인지도와 영향력을 높이세요.
-              </Typography>
-            </Box>
-          </InViewFade>
-        </ContentContainer>
-      </Section>
-
-      {/* 텍스트 위주 vs 비텍스트 위주 매체 섹션 */}
       <Section sx={{
         backgroundColor: 'rgba(0,0,0,0.02)',
         py: { xs: 6, md: 10 }
@@ -2389,10 +1681,774 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
 
       {/* Before/After + Testimonials Combined */}
       <Section id="proof" aria-labelledby="evidence-heading">
+      <Section sx={{ py: { xs: 8, md: 12 } }}>
         <ContentContainer maxWidth="lg">
           <InViewFade>
-            <Typography id="evidence-heading" variant="h4" sx={{ fontWeight: 800, mb: 2, textAlign: 'center' }}>
-              전자두뇌비서관 도입 전후 비교
+            <Typography variant="h4" sx={{
+              fontWeight: 800,
+              mb: 2,
+              textAlign: 'center'
+            }}>
+              3단계면 끝, 누구나 쉽게
+            </Typography>
+            <Typography variant="h6" sx={{
+              mb: 6,
+              textAlign: 'center',
+              fontWeight: 400,
+              color: 'rgba(255,255,255,0.7)'
+            }}>
+              복잡한 설정 없이 바로 시작하세요
+            </Typography>
+          </InViewFade>
+
+          <Grid container spacing={4} sx={{ justifyContent: 'center' }}>
+            {/* 1단계 */}
+            <Grid item xs={12} md={4}>
+              <InViewFade timeout={600}>
+                <CardSoft sx={{
+                  height: '100%',
+                  textAlign: 'center',
+                  position: 'relative',
+                  border: '2px solid rgba(0, 212, 255, 0.3)'
+                }}>
+                  <Box sx={{
+                    position: 'absolute',
+                    top: -20,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: 40,
+                    height: 40,
+                    borderRadius: '50%',
+                    backgroundColor: '#00d4ff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 900,
+                    fontSize: '1.5rem',
+                    color: '#000'
+                  }}>
+                    1
+                  </Box>
+                  <CardContent sx={{ p: 4, pt: 5 }}>
+                    <Typography variant="h5" sx={{
+                      fontWeight: 700,
+                      mb: 2,
+                      color: '#00d4ff'
+                    }}>
+                      말씀하세요
+                    </Typography>
+                    <Typography variant="body1" sx={{
+                      lineHeight: 1.8,
+                      color: 'rgba(255,255,255,0.9)'
+                    }}>
+                      정책, 지역 이슈, 활동 내역을<br />
+                      간단히 입력하세요
+                    </Typography>
+                  </CardContent>
+                </CardSoft>
+              </InViewFade>
+            </Grid>
+
+            {/* 2단계 */}
+            <Grid item xs={12} md={4}>
+              <InViewFade timeout={700}>
+                <CardSoft sx={{
+                  height: '100%',
+                  textAlign: 'center',
+                  position: 'relative',
+                  border: '2px solid rgba(0, 212, 255, 0.3)'
+                }}>
+                  <Box sx={{
+                    position: 'absolute',
+                    top: -20,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: 40,
+                    height: 40,
+                    borderRadius: '50%',
+                    backgroundColor: '#00d4ff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 900,
+                    fontSize: '1.5rem',
+                    color: '#000'
+                  }}>
+                    2
+                  </Box>
+                  <CardContent sx={{ p: 4, pt: 5 }}>
+                    <Typography variant="h5" sx={{
+                      fontWeight: 700,
+                      mb: 2,
+                      color: '#00d4ff'
+                    }}>
+                      완성됩니다
+                    </Typography>
+                    <Typography variant="body1" sx={{
+                      lineHeight: 1.8,
+                      color: 'rgba(255,255,255,0.9)'
+                    }}>
+                      AI가 자동으로 생성한<br />
+                      품격 있는 원고를 확인하세요
+                    </Typography>
+                  </CardContent>
+                </CardSoft>
+              </InViewFade>
+            </Grid>
+
+            {/* 3단계 */}
+            <Grid item xs={12} md={4}>
+              <InViewFade timeout={800}>
+                <CardSoft sx={{
+                  height: '100%',
+                  textAlign: 'center',
+                  position: 'relative',
+                  border: '2px solid rgba(0, 212, 255, 0.3)'
+                }}>
+                  <Box sx={{
+                    position: 'absolute',
+                    top: -20,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: 40,
+                    height: 40,
+                    borderRadius: '50%',
+                    backgroundColor: '#00d4ff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 900,
+                    fontSize: '1.5rem',
+                    color: '#000'
+                  }}>
+                    3
+                  </Box>
+                  <CardContent sx={{ p: 4, pt: 5 }}>
+                    <Typography variant="h5" sx={{
+                      fontWeight: 700,
+                      mb: 2,
+                      color: '#00d4ff'
+                    }}>
+                      발전됩니다
+                    </Typography>
+                    <Typography variant="body1" sx={{
+                      lineHeight: 1.8,
+                      color: 'rgba(255,255,255,0.9)'
+                    }}>
+                      스타일을 학습하여<br />
+                      점점 더 나아집니다
+                    </Typography>
+                  </CardContent>
+                </CardSoft>
+              </InViewFade>
+            </Grid>
+          </Grid>
+        </ContentContainer>
+      </Section>
+
+      {/* Core Features */}
+      <Section id="how" aria-labelledby="features-heading">
+        <ContentContainer maxWidth="lg">
+          <InViewFade>
+            <Typography id="features-heading" variant="h4" sx={{ fontWeight: 800, mb: 6 }}>
+              핵심 기능
+            </Typography>
+          </InViewFade>
+          <Grid container spacing={3}>
+            {CORE_FEATURES.map((f, idx) => (
+              <Grid item xs={12} md={6} key={f.title}>
+                <InViewFade timeout={600 + idx * 80}>
+                  <CardSoft>
+                    <CardContent sx={{ p: { xs: 3, md: 4 } }}>
+                      <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                        {f.title}
+                      </Typography>
+                      <Typography sx={{ mt: 1.25 }}>
+                        {f.desc}
+                      </Typography>
+                    </CardContent>
+                  </CardSoft>
+                </InViewFade>
+              </Grid>
+            ))}
+          </Grid>
+        </ContentContainer>
+      </Section>
+
+      {/* Safety & Quality Management */}
+      <Box sx={{
+        height: '2px',
+        background: 'linear-gradient(90deg, transparent 0%, #00d4ff 20%, #00d4ff 80%, transparent 100%)',
+        opacity: 0.3
+      }} />
+
+      {/* 샘플 원고 미리보기 CTA */}
+      <Box sx={{
+        textAlign: 'center',
+        py: 6,
+        backgroundColor: 'rgba(0, 0, 0, 0.02)'
+      }}>
+        <InViewFade>
+          <Button
+            variant="outlined"
+            size="large"
+            onClick={() => setOpenSample(true)}
+            sx={{
+              borderRadius: 8,
+              px: 4,
+              py: 1.5,
+              borderColor: '#00d4ff',
+              color: '#00d4ff',
+              fontWeight: 700,
+              fontSize: { xs: '1rem', md: '1.1rem' },
+              '&:hover': {
+                borderColor: '#00d4ff',
+                backgroundColor: 'rgba(0, 212, 255, 0.1)',
+                transform: 'translateY(-2px)',
+                transition: 'all 0.3s ease'
+              }
+            }}
+          >
+            📄 실제 생성 원고 미리보기
+          </Button>
+        </InViewFade>
+      </Box>
+
+      {/* 개인화 시스템 섹션 */}
+      <Section sx={{ backgroundColor: 'rgba(0,0,0,0.02)', py: { xs: 8, md: 12 } }}>
+        <ContentContainer maxWidth="lg">
+          <InViewFade>
+            <Typography variant="h4" sx={{
+              fontWeight: 800,
+              mb: 2,
+              textAlign: 'center'
+            }}>
+              당신만의 전뇌비서관이 기억합니다
+            </Typography>
+            <Typography variant="h6" sx={{
+              mb: 6,
+              textAlign: 'center',
+              fontWeight: 400,
+              color: 'rgba(255,255,255,0.7)'
+            }}>
+              3가지 핵심 요소로 당신의 정치 활동을 완벽하게 지원합니다
+            </Typography>
+          </InViewFade>
+
+          <Grid container spacing={4}>
+            {/* 정책 이력 */}
+            <Grid item xs={12} md={4}>
+              <InViewFade timeout={600}>
+                <CardSoft sx={{ height: '100%', textAlign: 'center' }}>
+                  <CardContent sx={{ p: 4 }}>
+                    <Typography variant="h5" sx={{
+                      fontWeight: 700,
+                      mb: 2,
+                      color: '#00d4ff'
+                    }}>
+                      📋 정책 이력
+                    </Typography>
+                    <Typography variant="body2" sx={{
+                      lineHeight: 1.6,
+                      color: 'rgba(255,255,255,0.7)'
+                    }}>
+                      과거에 발표했던 정책, 공약, 활동 내역을 AI가 학습하여 일관성 있는 메시지를 전달합니다
+                    </Typography>
+                  </CardContent>
+                </CardSoft>
+              </InViewFade>
+            </Grid>
+
+            {/* 지역 맥락 */}
+            <Grid item xs={12} md={4}>
+              <InViewFade timeout={700}>
+                <CardSoft sx={{ height: '100%', textAlign: 'center' }}>
+                  <CardContent sx={{ p: 4 }}>
+                    <Typography variant="h5" sx={{
+                      fontWeight: 700,
+                      mb: 2,
+                      color: '#00d4ff'
+                    }}>
+                      🏘️ 지역 맥락
+                    </Typography>
+                    <Typography variant="body2" sx={{
+                      lineHeight: 1.6,
+                      color: 'rgba(255,255,255,0.7)'
+                    }}>
+                      지역 현안, 주민 관심사, 특성을 반영하여 지역 밀착형 콘텐츠를 생성합니다
+                    </Typography>
+                  </CardContent>
+                </CardSoft>
+              </InViewFade>
+            </Grid>
+
+            {/* 개인 스타일 */}
+            <Grid item xs={12} md={4}>
+              <InViewFade timeout={800}>
+                <CardSoft sx={{ height: '100%', textAlign: 'center' }}>
+                  <CardContent sx={{ p: 4 }}>
+                    <Typography variant="h5" sx={{
+                      fontWeight: 700,
+                      mb: 2,
+                      color: '#00d4ff'
+                    }}>
+                      ✍️ 개인 스타일
+                    </Typography>
+                    <Typography variant="body2" sx={{
+                      lineHeight: 1.6,
+                      color: 'rgba(255,255,255,0.7)'
+                    }}>
+                      글쓰기 스타일, 선호하는 표현, 톤앤매너를 학습하여 점점 더 '나다운' 콘텐츠를 만들어냅니다
+                    </Typography>
+                  </CardContent>
+                </CardSoft>
+              </InViewFade>
+            </Grid>
+          </Grid>
+        </ContentContainer>
+      </Section>
+
+      {/* 섹션 구분선 */}
+      <Box sx={{
+        height: '2px',
+        background: 'linear-gradient(90deg, transparent 0%, #00d4ff 20%, #00d4ff 80%, transparent 100%)',
+        opacity: 0.3
+      }} />
+
+      {/* 3단계 사용법 섹션 */}
+      <Section sx={{
+        backgroundColor: 'rgba(0,0,0,0.02)',
+        py: { xs: 6, md: 10 }
+      }}>
+        <ContentContainer maxWidth="lg">
+          <InViewFade>
+            <Typography variant="h4" sx={{
+              fontWeight: 700,
+              mb: 1,
+              textAlign: 'center'
+            }}>
+              이미 검증된 성공 방식
+            </Typography>
+            <Typography variant="h5" sx={{
+              fontWeight: 600,
+              mb: 2,
+              textAlign: 'center',
+              color: '#00d4ff'
+            }}>
+              02. 블로그 중심 전략의 위력
+            </Typography>
+            <Typography variant="h6" sx={{
+              mb: 6,
+              textAlign: 'center',
+              fontWeight: 500,
+              color: 'rgba(255,255,255,0.7)'
+            }}>
+              전문직들이 검증한 네이버 블로그 중심 마케팅 전략
+            </Typography>
+          </InViewFade>
+
+          <InViewFade>
+            <Grid container spacing={4} sx={{ justifyContent: 'center' }}>
+              <Grid item xs={12} md={8}>
+                <CardSoft sx={{ height: '100%' }}>
+                  <CardContent sx={{ p: 4 }}>
+                    <Grid container spacing={4} alignItems="center">
+                      {/* 왼쪽: 전문직 마케팅 사례 */}
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="h5" sx={{
+                          fontWeight: 700,
+                          mb: 3,
+                          color: '#00d4ff',
+                          textAlign: 'center'
+                        }}>
+                          전문직 마케팅 사례
+                        </Typography>
+
+                        <Box sx={{ textAlign: 'left', mb: 3 }}>
+                          <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
+                            • 의사, 변호사, 세무사
+                          </Typography>
+                          <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
+                            • 네이버 블로그 → SNS 허브 전략
+                          </Typography>
+                          <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
+                            • 검색 유입 → 고객 전환
+                          </Typography>
+                        </Box>
+
+                        <Box sx={{
+                          p: 3,
+                          backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                          borderRadius: 2,
+                          border: '1px solid #00d4ff40',
+                          textAlign: 'center'
+                        }}>
+                          <Typography variant="body1" sx={{
+                            fontWeight: 600
+                          }}>
+                            블로그 작성 → SNS 확산 → 유입 증가 → 성과 창출
+                          </Typography>
+                        </Box>
+                      </Grid>
+
+                      {/* 오른쪽: 동심원 SNS 다이어그램 */}
+                      <Grid item xs={12} md={6}>
+                        <Box sx={{
+                          position: 'relative',
+                          width: '300px',
+                          height: '300px',
+                          mx: 'auto'
+                        }}>
+                          {/* 동심원들 - SNS 아이콘이 원의 테두리에 걸치도록 조정 */}
+                          <Box sx={{
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            width: '220px', // SNS 아이콘들이 테두리에 걸치도록
+                            height: '220px',
+                            borderRadius: '50%',
+                            border: '2px solid rgba(0, 212, 255, 0.3)',
+                            zIndex: 1
+                          }} />
+                          <Box sx={{
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            width: '140px',
+                            height: '140px',
+                            borderRadius: '50%',
+                            border: '2px solid rgba(0, 212, 255, 0.4)',
+                            zIndex: 2
+                          }} />
+                          <Box sx={{
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            width: '90px',
+                            height: '90px',
+                            borderRadius: '50%',
+                            border: '2px solid rgba(0, 212, 255, 0.5)',
+                            zIndex: 3
+                          }} />
+
+                          {/* 중앙 네이버 블로그 */}
+                          <Box sx={{
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            zIndex: 10
+                          }}>
+                            <img
+                              src="/icons/Nblog.webp"
+                              alt="네이버 블로그"
+                              style={{
+                                width: 36,
+                                height: 36,
+                                filter: 'drop-shadow(0 0 8px rgba(248, 192, 35, 0.8)) drop-shadow(0 0 16px rgba(248, 192, 35, 0.4))',
+                                transition: 'filter 0.3s ease'
+                              }}
+                            />
+                          </Box>
+
+                          {/* SNS 아이콘들 */}
+                          {[
+                            { angle: 23, icon: 'icon-facebook.png', name: '페이스북', radius: 110 },
+                            { angle: 127, icon: 'icon-instagram.png', name: '인스타그램', radius: 70 },
+                            { angle: 203, icon: 'icon-X.png', name: 'X(트위터)', radius: 110 },
+                            { angle: 311, icon: 'icon-threads.png', name: '스레드', radius: 110 }
+                          ].map((sns, index) => {
+                            const radian = (sns.angle * Math.PI) / 180;
+                            const x = Math.cos(radian) * sns.radius;
+                            const y = Math.sin(radian) * sns.radius;
+
+                            return (
+                              <Box key={sns.name} sx={{
+                                position: 'absolute',
+                                top: '50%',
+                                left: '50%',
+                                transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`,
+                                zIndex: 5
+                              }}>
+                                <img
+                                  src={`/icons/${sns.icon}`}
+                                  alt={sns.name}
+                                  style={{
+                                    width: 24,
+                                    height: 24,
+                                    filter: 'drop-shadow(0 0 6px rgba(0, 212, 255, 0.8)) drop-shadow(0 0 12px rgba(0, 212, 255, 0.4))',
+                                    transition: 'filter 0.3s ease'
+                                  }}
+                                />
+                              </Box>
+                            );
+                          })}
+                        </Box>
+                      </Grid>
+                    </Grid>
+
+                    <Typography variant="h6" sx={{
+                      fontWeight: 600,
+                      color: 'rgba(255,255,255,0.9)',
+                      lineHeight: 1.6,
+                      textAlign: 'center',
+                      mt: 4
+                    }}>
+                      전문직도 선택한 검증된 전략을 정치에도 적용하세요
+                    </Typography>
+                  </CardContent>
+                </CardSoft>
+              </Grid>
+            </Grid>
+          </InViewFade>
+
+          {/* 결론 메시지 */}
+          <InViewFade>
+            <Box sx={{
+              textAlign: 'center',
+              p: 4,
+              border: '1px solid #f8c02340',
+              borderRadius: 3,
+              backgroundColor: 'rgba(255, 255, 255, 0.03)',
+              maxWidth: 800,
+              mx: 'auto',
+              mt: 4
+            }}>
+              <Typography variant="h5" sx={{
+                fontWeight: 900,
+                mb: 2,
+                color: '#f8c023'
+              }}>
+                네이버 블로그로 정치적 영향력 확대
+              </Typography>
+              <Typography variant="body1" sx={{
+                color: 'rgba(255,255,255,0.9)',
+                lineHeight: 1.8
+              }}>
+                검색 노출부터 유권자 소통까지, 전략적 블로그 콘텐츠로 정치인의 인지도와 영향력을 높이세요.
+              </Typography>
+            </Box>
+          </InViewFade>
+        </ContentContainer>
+      </Section>
+
+      {/* 텍스트 위주 vs 비텍스트 위주 매체 섹션 */}
+      <Section sx={{ backgroundColor: 'rgba(255,255,255,0.02)' }}>
+        <ContentContainer maxWidth="lg">
+          <InViewFade>
+            <Typography variant="h4" sx={{ fontWeight: 800, mb: 2, textAlign: 'center' }}>
+              안전성과 품질 관리
+            </Typography>
+            <Typography sx={{ color: 'rgba(255,255,255,0.75)', mb: 6, textAlign: 'center' }}>
+              정치인을 위한 안전하고 신뢰할 수 있는 콘텐츠 생성 시스템입니다.
+            </Typography>
+          </InViewFade>
+
+          <Grid container spacing={3} sx={{ mb: 6 }}>
+            {SAFETY_FEATURES.map((f, idx) => (
+              <Grid item xs={12} md={6} key={f.title}>
+                <InViewFade timeout={600 + idx * 80}>
+                  <CardSoft>
+                    <CardContent sx={{ p: { xs: 3, md: 4 } }}>
+                      <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                        {f.title}
+                      </Typography>
+                      <Typography sx={{ mt: 1.25 }}>
+                        {f.desc}
+                      </Typography>
+                    </CardContent>
+                  </CardSoft>
+                </InViewFade>
+              </Grid>
+            ))}
+          </Grid>
+
+          <Box sx={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: { xs: 2, md: 3 },
+            justifyContent: 'center',
+            alignItems: 'stretch',
+            gridTemplateRows: '200px'
+          }}>
+            {[
+              {
+                title: '1회 = 1원고',
+                description: '한 번의 요청으로 하나의 완성된 원고를 생성합니다.',
+                color: '#003a87'
+              },
+              {
+                title: '최대 3회 재생성',
+                description: '동일한 주제에 대해 최대 3번까지 다른 버전을 생성할 수 있습니다.',
+                color: '#55207d'
+              },
+              {
+                title: '사실 검증 시스템',
+                description: 'AI가 잘못된 정보를 만들어내지 않도록 원칙적 제한을 적용합니다.',
+                color: '#006261'
+              }
+            ].map((rule, index) => (
+              <Box key={index} sx={{ height: '100%' }}>
+                <InViewFade timeout={600 + index * 100}>
+                  <Card
+                    sx={{
+                      bgcolor: 'rgba(255,255,255,0.05)',
+                      border: `2px solid ${rule.color}40`,
+                      borderRadius: 3,
+                      height: '200px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      transition: 'all 0.3s ease',
+                      '&:hover': {
+                        borderColor: `${rule.color}80`,
+                        transform: 'translateY(-4px)',
+                        boxShadow: `0 8px 32px ${rule.color}20`
+                      }
+                    }}
+                  >
+                    <CardContent sx={{
+                      p: { xs: 2, md: 4 },
+                      textAlign: 'center',
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center'
+                    }}>
+                      <Typography
+                        variant="h6"
+                        sx={{
+                          fontWeight: 700,
+                          mb: { xs: 1, md: 2 },
+                          color: rule.color,
+                          fontSize: { xs: '0.9rem', sm: '1rem', md: '1.25rem' }
+                        }}
+                      >
+                        {rule.title}
+                      </Typography>
+                      <Typography sx={{
+                        lineHeight: 1.6,
+                        fontSize: { xs: '0.75rem', sm: '0.85rem', md: '1rem' }
+                      }}>
+                        {rule.description}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </InViewFade>
+              </Box>
+            ))}
+          </Box>
+        </ContentContainer>
+      </Section>
+
+      {/* Quality (Infographic) */}
+      <Section aria-labelledby="quality-heading">
+        <ContentContainer maxWidth="lg">
+          <InViewFade>
+            <Typography id="quality-heading" variant="h4" sx={{ fontWeight: 800, mb: 2 }}>
+              원고 품질과 검수 프로세스
+            </Typography>
+            <Typography sx={{ color: 'rgba(255,255,255,0.75)', mb: 6 }}>
+              모든 글은 아래 기준과 절차를 통과합니다. 최종 검토는 사용자가 수행합니다.
+            </Typography>
+          </InViewFade>
+
+          {/* 품질 기준 아이콘 그리드 */}
+          <Box sx={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: { xs: 2, md: 3 },
+            alignItems: 'stretch',
+            gridAutoRows: '1fr'
+          }}>
+            {[
+              { icon: <FactCheckIcon />, label: '사실 검증' },
+              { icon: <StyleIcon />, label: '톤앤매너' },
+              { icon: <FormatListBulletedIcon />, label: '구조화' },
+            ].map((it, i) => (
+              <Box key={i} sx={{ height: '100%' }}>
+                <CardSoft sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                  <CardContent sx={{
+                    textAlign: 'center',
+                    py: { xs: 3, md: 4 },
+                    flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center'
+                  }}>
+                    <Box sx={{
+                      mb: 1.5,
+                      '& svg': {
+                        fontSize: { xs: 28, md: 32 },
+                        color: '#00d4ff'
+                      }
+                    }}>{it.icon}</Box>
+                    <Typography
+                      variant="subtitle1"
+                      sx={{
+                        fontWeight: 700,
+                        fontSize: { xs: '0.9rem', md: '1rem' }
+                      }}
+                    >{it.label}</Typography>
+                  </CardContent>
+                </CardSoft>
+              </Box>
+            ))}
+          </Box>
+
+          {/* 프로세스 플로우 */}
+          <Box sx={{ mt: 6 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, mb: 3, textAlign: 'center' }}>
+              4단계 검수 프로세스
+            </Typography>
+            <Grid container spacing={2}>
+              {[
+                { label: '초안', desc: '주제 입력' },
+                { label: '검증', desc: '사실 확인' },
+                { label: '교열', desc: '문체 조정' },
+                { label: '발행', desc: '최종 게시' }
+              ].map((step, i) => (
+                <Grid item xs={6} md={3} key={step.label}>
+                  <CardSoft sx={{ position: 'relative' }}>
+                    <CardContent sx={{ py: 3, textAlign: 'center' }}>
+                      <Box sx={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: '50%',
+                        mx: 'auto',
+                        mb: 1.5,
+                        border: '1px solid rgba(255,255,255,0.3)',
+                        display: 'grid',
+                        placeItems: 'center',
+                        fontSize: 12,
+                        color: 'rgba(255,255,255,0.7)'
+                      }}>{i + 1}</Box>
+                      <Typography sx={{ fontWeight: 700, fontSize: '0.9rem', mb: 0.5 }}>{step.label}</Typography>
+                      <Typography sx={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>{step.desc}</Typography>
+                    </CardContent>
+                  </CardSoft>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+        </ContentContainer>
+      </Section>
+
+      {/* 첫 번째 섹션: 영향력 확장의 두 축 */}
+        <ContentContainer maxWidth="lg">
+          <InViewFade>
+            <Typography id="evidence-heading" variant="h4" sx={{ fontWeight: 800, mb: 1, textAlign: 'center' }}>
+              이미 검증된 성공 방식
+            </Typography>
+            <Typography variant="h5" sx={{
+              fontWeight: 600,
+              mb: 2,
+              textAlign: 'center',
+              color: '#00d4ff'
+            }}>
+              03. 도입 전후 실제 변화
             </Typography>
             <Typography variant="h6" sx={{
               mb: 6,
@@ -2400,7 +2456,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               color: 'rgba(255,255,255,0.7)',
               fontWeight: 500
             }}>
-              전후 비교
+              실제 사용자들의 변화된 성과
             </Typography>
           </InViewFade>
 
