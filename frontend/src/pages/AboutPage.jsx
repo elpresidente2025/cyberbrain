@@ -1294,7 +1294,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
 
       {/* Safety & Quality Management */}
       {/* 3단계 사용법 섹션 */}
-      <Section sx={{ py: { xs: 8, md: 12 } }}>
+      <Section sx={{ py: { xs: 8, md: 12 }, minHeight: '100dvh' }}>
         <ContentContainer maxWidth="lg">
           <InViewFade>
             <Typography variant="h4" sx={{
@@ -1461,7 +1461,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
 
       {/* Core Features */}
       {/* 개인화 시스템 섹션 */}
-      <Section sx={{ backgroundColor: 'rgba(0,0,0,0.02)', py: { xs: 8, md: 12 } }}>
+      <Section sx={{ backgroundColor: 'rgba(0,0,0,0.02)', py: { xs: 8, md: 12 }, minHeight: '100dvh' }}>
         <ContentContainer maxWidth="lg">
           <InViewFade>
             <Typography variant="h4" sx={{
@@ -1472,7 +1472,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
       {/* 첫 번째 섹션: 영향력 확장의 두 축 */}
       <Section sx={{
         backgroundColor: 'rgba(255,255,255,0.01)',
-        py: { xs: 6, md: 10 }
+        py: { xs: 6, md: 10 },
+        minHeight: '100dvh'
       }}>
         <ContentContainer maxWidth="lg">
           <InViewFade>
@@ -1620,7 +1621,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
       {/* 두 번째 섹션: 이미 증명된 전략 */}
       <Section sx={{
         backgroundColor: 'rgba(0,0,0,0.02)',
-        py: { xs: 6, md: 10 }
+        py: { xs: 6, md: 10 },
+        minHeight: '100dvh'
       }}>
         <ContentContainer maxWidth="lg">
           <InViewFade>
@@ -1633,7 +1635,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
       {/* 텍스트 위주 vs 비텍스트 위주 매체 섹션 */}
       <Section sx={{
         backgroundColor: 'rgba(0,0,0,0.02)',
-        py: { xs: 6, md: 10 }
+        py: { xs: 6, md: 10 },
+        minHeight: '100dvh'
       }}>
         <ContentContainer maxWidth="lg">
           <InViewFade>
@@ -1998,7 +2001,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
       }} />
 
       {/* 3단계 사용법 섹션 */}
-      <Section sx={{ backgroundColor: 'rgba(255,255,255,0.02)' }}>
+      <Section sx={{ backgroundColor: 'rgba(255,255,255,0.02)', minHeight: '100dvh' }}>
         <ContentContainer maxWidth="lg">
           <InViewFade>
             <Typography variant="h4" sx={{ fontWeight: 800, mb: 2, textAlign: 'center' }}>
