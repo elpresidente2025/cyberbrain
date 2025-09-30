@@ -39,7 +39,10 @@
       "Bash(npm run dev:*)",
       "Bash(start http://localhost:5173)",
       "Bash(python:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Read(//e/**)",
+      "Bash(awk:*)",
+      "Read(//e//**)"
     ],
     "deny": [],
     "ask": [],
