@@ -6,6 +6,8 @@
 # Build outputs
 /frontend/dist
 /backend/dist
+frontend/stats.html
+*.stats.html
 
 # Logs
 logs
@@ -48,3 +50,14 @@ functions/.env
 **/credentials.json
 # local tmp files
 /tmp*.txt
+
+# Backup files
+*.backup
+*.ORIGINAL_BACKUP
+*_NEW.*
+*_REFACTORED.*
+*.backup-*
+
+# Tool outputs
+.serena/
+serena/
