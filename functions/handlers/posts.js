@@ -6,6 +6,7 @@ const { httpWrap } = require('../common/http-wrap');
 const { auth } = require('../common/auth');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { callGenerativeModel } = require('../services/gemini');
+const { fetchNaverNews, formatNewsForPrompt, shouldFetchNews } = require('../services/news-fetcher');
 
 /**
  * 怨듬갚 ?쒖쇅 湲?먯닔 怨꾩궛 (Java 肄붾뱶? ?숈씪??濡쒖쭅)
@@ -664,7 +665,23 @@ exports.generatePosts = httpWrap(async (req) => {
     };
     
     const fullRegion = generateNaturalRegionTitle(userProfile.regionLocal, userProfile.regionMetro);
-    
+
+    // 뉴스 컨텍스트 조회 (시사비평, 정책제안 등 특정 카테고리만)
+    let newsContext = '';
+    if (shouldFetchNews(category)) {
+      try {
+        console.log('📰 뉴스 컨텍스트 조회 시작:', topic);
+        const news = await fetchNaverNews(topic, 3);
+        if (news && news.length > 0) {
+          newsContext = formatNewsForPrompt(news);
+          console.log(`✅ 뉴스 ${news.length}개 추가됨`);
+        }
+      } catch (newsError) {
+        console.warn('⚠️ 뉴스 조회 실패 (무시하고 계속):', newsError.message);
+        // 뉴스 조회 실패해도 원고 생성은 계속 진행
+      }
+    }
+
     const prompt = `YOU ARE A POLITICAL CONTENT WRITER. FOLLOW ALL INSTRUCTIONS PRECISELY OR YOU FAIL.
 
 WRITER IDENTITY (MUST USE EXACTLY):
@@ -694,6 +711,7 @@ WRITER IDENTITY (MUST USE EXACTLY):
 
 ?곹깭蹂?媛?대뱶?쇱씤: ${config.guideline}
 
+${newsContext}
 ${(() => {
   // 李멸퀬?먮즺 諛?諛곌꼍?뺣낫媛 ?섎??덈뒗 ?댁슜???덈뒗吏 ?뺤씤
   const hasInstructions = Array.isArray(data.instructions) 
@@ -727,14 +745,14 @@ ${personalizedHints ? `媛쒖씤??媛?대뱶?쇱씤: ${personalizedHints}` : '
 - ?쒕?怨쇱쓽 吏꾩젙???뚰넻 吏?? "~?????二쇰? ?щ윭遺꾧퍡 蹂닿퀬?쒕┰?덈떎", "~?꾪솴??怨듭쑀?⑸땲??
 - 援ъ껜???ㅽ뻾 ?섏? ?쒕챸: "~?대젃寃?異붿쭊?섍쿋?듬땲??, "~?닿껐???꾪븳 援ъ껜??怨꾪쉷"
 - 吏??諛李⑺삎 肄섑뀗痢? 吏??뎄??愿묒뿭?쒕룄紐??먯뿰?ㅻ읇寃??ы븿
-- 30-40??理쒖쟻 湲몄씠 以??
+- 20-30??理쒖쟻 湲몄씠 以??
 - **?덈? 湲덉?**: "?볦튂硫??꾪쉶?섎뒗", "諛섎뱶???뚯븘????, "~??鍮꾨?", "TOP 5", "媛???뺤떎??諛⑸쾿" ???곸뾽???좎젙???쒗쁽
 - **?덈? 湲덉?**: "李ъ궗", "?뚰쉶", "?⑥긽", "?뚭컧" 媛숈? 異붿긽???⑥뼱
 
 **MANDATORY JSON ?묐떟 ?뺤떇 - ?덈? ?ㅻⅨ ?뺤떇 ?ъ슜 湲덉?:**
 
 {
-  "title": "?ㅼ젣 二쇱젣??留욌뒗 援ъ껜?곸씠怨??뺤튂?몃떎???쒕ぉ???묒꽦?섏꽭??(30-40?? ??媛?대뱶?쇱씤 以??",
+  "title": "?ㅼ젣 二쇱젣??留욌뒗 援ъ껜?곸씠怨??뺤튂?몃떎???쒕ぉ???묒꽦?섏꽭??(20-30?? ??媛?대뱶?쇱씤 以??",
   "content": "<p>議닿꼍?섎뒗 ${fullRegion} ?쒕? ?щ윭遺? ${fullName}?낅땲??</p><p>[?쒕줎 臾몃떒: 二쇱젣?????媛꾨떒???뚭컻? 臾몄젣 ?쒓린]</p><p>[蹂몃줎 1臾몃떒: 泥?踰덉㎏ ?듭떖 ?쇱젏?대굹 ?꾪솴 遺꾩꽍]</p><p>[蹂몃줎 2臾몃떒: ??踰덉㎏ ?듭떖 ?쇱젏?대굹 ?닿껐諛⑹븞]</p><p>[蹂몃줎 3臾몃떒: ??踰덉㎏ ?듭떖 ?쇱젏?대굹 ?ν썑 怨꾪쉷 - ?꾩슂??</p><p>[寃곕줎 臾몃떒: 留덈Т由??ㅼ쭚怨??쒕??ㅼ뿉 ???媛먯궗 ?몄궗]</p>",
   "wordCount": ${targetWordCount}
 }
