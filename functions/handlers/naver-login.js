@@ -85,20 +85,22 @@ const naverLogin = onCall({
 // ?�이�?로그??처리 (?�원가???�도 ?�책) - onRequest�?변경하??CORS ?�전 ?�어
 const naverLoginHTTP = onRequest({
   region: 'asia-northeast3',
-  cors: true, // ?�선 모든 origin ?�용?�로 ?�스??  memory: '256MiB',
+  cors: true,
+  memory: '256MiB',
   timeoutSeconds: 60
 }, async (request, response) => {
-  let stage = 'init'; // ?�수 최상?�에???�언
-  
-  // ?�동 CORS ?�더 ?�정
-  response.set('Access-Control-Allow-Origin', 'https://cyberbrain.kr');
-  response.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  response.set('Access-Control-Allow-Headers', 'Content-Type');
-  
-  // OPTIONS ?�청 처리 (?�리?�라?�트)
+  // CORS 헤더 명시적 설정
+  response.set('Access-Control-Allow-Origin', request.headers.origin || '*');
+  response.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  response.set('Access-Control-Max-Age', '3600');
+
+  // OPTIONS preflight 요청 처리
   if (request.method === 'OPTIONS') {
-    return response.status(204).end();
+    return response.status(204).send('');
   }
+
+  let stage = 'init';
   try {
     console.log('?? naverLogin v2 ?�수 ?�작 (onRequest)');
     console.log('?�� ?�청 ?�보:', {

@@ -35,5 +35,7 @@ setPersistence(auth, browserLocalPersistence).catch((error) => {
 // asia-northeast3에 배포된 Functions와 정확히 매칭
 export const functions = getFunctions(app, 'asia-northeast3');
 
-// Analytics
-export const analytics = getAnalytics(app);
+// Analytics (비활성화 - API 키 제한으로 인한 에러 방지)
+// 필요시 Google Cloud Console에서 API 키 제한 해제 후 활성화
+export const analytics = null;
+// export const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;

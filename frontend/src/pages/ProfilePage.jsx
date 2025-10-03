@@ -1253,6 +1253,26 @@ export default function ProfilePage() {
                   최대 {VALIDATION_RULES.maxEntries}개의 엔트리까지 추가할 수 있습니다.
                 </Alert>
               )}
+
+              {/* 프로필 저장 버튼 */}
+              <LoadingButton
+                fullWidth
+                variant="contained"
+                onClick={handleSubmit}
+                loading={saving}
+                disabled={saving}
+                startIcon={<Save />}
+                sx={{
+                  mt: 2,
+                  py: 1.5,
+                  bgcolor: '#006261',
+                  '&:hover': {
+                    bgcolor: '#003A87'
+                  }
+                }}
+              >
+                프로필 저장
+              </LoadingButton>
             </Paper>
           </Grid>
         </Grid>

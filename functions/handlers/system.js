@@ -126,11 +126,11 @@ exports.logUserActivity = wrap(async (req) => {
       lastActivity: admin.firestore.FieldValue.serverTimestamp() 
     }, { merge: true });
 
-    log('ACTIVITY', '?�??, { userId: uid, action });
-    return ok({ message: '?�동??기록?�었?�니??' });
+    log('ACTIVITY', '완료', { userId: uid, action });
+    return ok({ message: '활동이 기록되었습니다' });
   } catch (e) {
-    log('ACTIVITY', '?�패(무시)', e.message);
-    return ok({ message: '?�료?�었?�니??' });
+    log('ACTIVITY', '실패(무시)', e.message);
+    return ok({ message: '완료되었습니다' });
   }
 });
 

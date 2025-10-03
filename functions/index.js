@@ -70,6 +70,14 @@ try {
   console.warn('[index] sns-addon handler warning:', e?.message);
 }
 
+// Add Naver login handlers
+try {
+  const naverLoginHandlers = require('./handlers/naver-login');
+  Object.assign(exports, naverLoginHandlers);
+} catch (e) {
+  console.warn('[index] naver-login handler warning:', e?.message);
+}
+
 // Delete post (HTTP onRequest, Naver-only via __naverAuth)
 exports.deletePost = onRequest({ region: 'asia-northeast3', cors: true }, async (req, res) => {
   try {
