@@ -30,8 +30,9 @@ const createCustomTheme = (isDarkMode) => createTheme({
   },
   // 3. 타이포그래피 설정 (가이드 4절)
   typography: {
-    fontFamily: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif',
-    h1: { 
+    fontFamily: '"Spoqa Han Sans Neo", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif',
+    h1: {
+      fontFamily: '"NanumSquare", "Spoqa Han Sans Neo", sans-serif',
       fontSize: '2.5rem', // 기본 폰트 크기 설정
       '@media (min-width: 2560px)': {
         fontSize: '3rem', // 2K에서 더 큰 폰트
@@ -41,6 +42,7 @@ const createCustomTheme = (isDarkMode) => createTheme({
       },
     },
     h2: {
+      fontFamily: '"NanumSquare", "Spoqa Han Sans Neo", sans-serif',
       '@media (min-width: 2560px)': {
         fontSize: '2.5rem',
       },
@@ -49,12 +51,22 @@ const createCustomTheme = (isDarkMode) => createTheme({
       },
     },
     h3: {
+      fontFamily: '"NanumSquare", "Spoqa Han Sans Neo", sans-serif',
       '@media (min-width: 2560px)': {
         fontSize: '2rem',
       },
       '@media (min-width: 3840px)': {
         fontSize: '2.25rem',
       },
+    },
+    h4: {
+      fontFamily: '"NanumSquare", "Spoqa Han Sans Neo", sans-serif',
+    },
+    h5: {
+      fontFamily: '"NanumSquare", "Spoqa Han Sans Neo", sans-serif',
+    },
+    h6: {
+      fontFamily: '"NanumSquare", "Spoqa Han Sans Neo", sans-serif',
     },
     body1: {
       '@media (min-width: 2560px)': {
