@@ -1,3 +1,22 @@
+/**
+ * ⚠️⚠️⚠️ 경고: 이 파일은 템플릿입니다! ⚠️⚠️⚠️
+ *
+ * 실제 프로젝트에서 사용하는 파일:
+ * → frontend/src/services/firebase.js (환경 변수 사용)
+ *
+ * 이 파일(config/firebase.js)을 수정하면 적용되지 않습니다!
+ *
+ * 이 파일의 용도:
+ * 1. 신규 개발자를 위한 참고 자료
+ * 2. Firebase 설정 구조 예시
+ * 3. 테스트 환경 설정 템플릿
+ *
+ * 환경 변수 설정 방법:
+ * 1. frontend/.env 파일 생성
+ * 2. VITE_FIREBASE_API_KEY=... 추가
+ * 3. services/firebase.js가 자동으로 사용
+ */
+
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
