@@ -1271,7 +1271,7 @@ export default function ProfilePage() {
                   }
                 }}
               >
-                프로필 저장
+                자기소개 및 추가 정보 저장
               </LoadingButton>
             </Paper>
           </Grid>
