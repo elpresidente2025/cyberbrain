@@ -30,7 +30,7 @@ import {
   Checkbox,
   useTheme
 } from '@mui/material';
-import { Add, Remove, AutoAwesome, DeleteForever, Warning, Settings } from '@mui/icons-material';
+import { Add, Remove, AutoAwesome, DeleteForever, Warning, Settings, Save } from '@mui/icons-material';
 import { callFunctionWithNaverAuth } from '../services/firebaseService';
 import DashboardLayout from '../components/DashboardLayout';
 import UserInfoForm from '../components/UserInfoForm';
