@@ -14,13 +14,7 @@ import {
   Chip,
   IconButton,
   Tooltip,
-  Snackbar,
-  Alert,
-  Dialog,
-  DialogTitle,
   useTheme,
-  DialogContent,
-  DialogActions,
   Button,
   Divider,
   TextField,
@@ -32,6 +26,16 @@ import { LoadingSpinner } from '../components/loading';
 import PostViewerModal from '../components/PostViewerModal';
 import { useAuth } from '../hooks/useAuth';
 import { callFunctionWithNaverAuth } from '../services/firebaseService';
+import {
+  LoadingState,
+  EmptyState,
+  PageHeader,
+  ActionButtonGroup,
+  StatusChip,
+  NotificationSnackbar,
+  useNotification,
+  StandardDialog
+} from '../components/ui';
 
 function formatDate(iso) {
   try {
@@ -77,8 +81,10 @@ export default function PostsListPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [posts, setPosts] = useState([]);
-  const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
   const [error, setError] = useState('');
+
+  // useNotification 훅 사용
+  const { notification, showNotification, hideNotification } = useNotification();
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerPost, setViewerPost] = useState(null);
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
@@ -156,14 +162,14 @@ export default function PostsListPage() {
       await callFunctionWithNaverAuth('deletePost', { postId });
       
       setPosts((prev) => prev.filter((p) => p.id !== postId));
-      setSnack({ open: true, message: '삭제되었습니다.', severity: 'info' });
+      showNotification('삭제되었습니다.', 'info');
       if (viewerPost?.id === postId) {
         setViewerOpen(false);
         setViewerPost(null);
       }
     } catch (err) {
       console.error(err);
-      setSnack({ open: true, message: err.message || '삭제에 실패했습니다.', severity: 'error' });
+      showNotification(err.message || '삭제에 실패했습니다.', 'error');
     }
   };
 
@@ -192,7 +198,7 @@ export default function PostsListPage() {
 
   const handlePublishSubmit = async () => {
     if (!publishPost || !publishUrl.trim()) {
-      setSnack({ open: true, message: '발행 URL을 입력해주세요.', severity: 'error' });
+      showNotification('발행 URL을 입력해주세요.', 'error');
       return;
     }
 
@@ -212,10 +218,10 @@ export default function PostsListPage() {
       setPublishDialogOpen(false);
       setPublishPost(null);
       setPublishUrl('');
-      setSnack({ open: true, message: '발행 완료! 게이미피케이션 포인트를 획득했습니다.', severity: 'success' });
+      showNotification('발행 완료! 게이미피케이션 포인트를 획득했습니다.', 'success');
     } catch (err) {
       console.error(err);
-      setSnack({ open: true, message: '발행 등록에 실패했습니다.', severity: 'error' });
+      showNotification('발행 등록에 실패했습니다.', 'error');
     }
   };
 
@@ -381,16 +387,16 @@ export default function PostsListPage() {
                             <IconButton
                               size="small"
                               onClick={(e) => handleSNSConvert(p, e)}
-                              sx={{ color: '#152484' }}
+                              sx={{ color: theme.palette.ui?.header || '#152484' }}
                             >
                               <Transform fontSize="small" />
                             </IconButton>
                           </Tooltip>
                           <Tooltip title="URL 등록">
                             <IconButton 
-                              size="small" 
+                              size="small"
                               onClick={(e) => handlePublish(p, e)}
-                              sx={{ color: p.publishUrl ? '#006261' : '#152484' }}
+                              sx={{ color: p.publishUrl ? '#006261' : (theme.palette.ui?.header || '#152484') }}
                             >
                               <AddLink fontSize="small" />
                             </IconButton>
@@ -421,7 +427,7 @@ export default function PostsListPage() {
         {/* 발행 URL 입력 다이얼로그 */}
         <Dialog open={publishDialogOpen} onClose={closePublishDialog} maxWidth="sm" fullWidth>
           <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Publish sx={{ color: '#152484' }} />
+            <Publish sx={{ color: theme.palette.ui?.header || '#152484' }} />
             원고 발행 등록
           </DialogTitle>
           <DialogContent>
@@ -454,9 +460,9 @@ export default function PostsListPage() {
             <Button 
               onClick={handlePublishSubmit} 
               variant="contained"
-              sx={{ 
-                bgcolor: '#152484',
-                '&:hover': { bgcolor: '#003A87' }
+              sx={{
+                bgcolor: theme.palette.ui?.header || '#152484',
+                '&:hover': { bgcolor: theme.palette.ui?.headerHover || '#003A87' }
               }}
             >
               발행 완료
@@ -464,20 +470,13 @@ export default function PostsListPage() {
           </DialogActions>
         </Dialog>
 
-        <Snackbar
-          open={snack.open}
-          autoHideDuration={4000}
-          onClose={() => setSnack((s) => ({ ...s, open: false }))}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        >
-          <Alert
-            onClose={() => setSnack((s) => ({ ...s, open: false }))}
-            severity={snack.severity}
-            sx={{ width: '100%' }}
-          >
-            {snack.message}
-          </Alert>
-        </Snackbar>
+        {/* 알림 스낵바 */}
+        <NotificationSnackbar
+          open={notification.open}
+          onClose={hideNotification}
+          message={notification.message}
+          severity={notification.severity}
+        />
 
         {/* SNS 변환 모달 */}
         <SNSConversionModal

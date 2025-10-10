@@ -6,12 +6,14 @@
  * - 게슈탈트 법칙: 유사성(Similarity)을 위한 일관된 컬러 체계
  */
 export const colors = {
-  // 브랜드 컬러 (녹색 계열)
+  // 브랜드 컬러 (파랑 계열 - 사이버펑크 테마)
   brand: {
-    primary: '#1ca152',                    // 메인 녹색
-    primaryHover: '#158241',               // 호버 시 어두운 녹색
-    primaryLight: 'rgba(28, 161, 82, 0.1)', // 반투명 배경용
-    primaryBorder: 'rgba(28, 161, 82, 0.4)', // 테두리용
+    primary: '#152484',                    // 메인 파랑 (헤더 통일)
+    primaryHover: '#003A87',               // 호버 시 어두운 파랑
+    primaryLight: 'rgba(21, 36, 132, 0.1)', // 반투명 배경용
+    primaryBorder: 'rgba(21, 36, 132, 0.4)', // 테두리용
+    accent: '#00d4ff',                     // 강조 시안
+    accentGlow: 'rgba(0, 212, 255, 0.8)',  // 시안 글로우
   },
 
   // UI 구조 컬러
@@ -20,15 +22,15 @@ export const colors = {
     headerHover: '#003A87',                // 헤더 호버
     background: '#050511',                 // 다크 배경
     backgroundLight: 'rgba(255, 255, 255, 0.03)', // 카드 배경
-    gridLineHorizontal: 'rgba(28, 161, 82, 0.9)', // 그리드 가로선
-    gridLineVertical: 'rgba(28, 161, 82, 0.8)',   // 그리드 세로선
-    divider: 'rgba(28, 161, 82, 0.3)',     // 구분선
+    gridLineHorizontal: 'rgba(0, 212, 255, 0.8)', // 그리드 가로선 (시안)
+    gridLineVertical: 'rgba(0, 200, 200, 0.6)',   // 그리드 세로선 (시안)
+    divider: 'rgba(21, 36, 132, 0.3)',     // 구분선
   },
 
   // 시맨틱 컬러
   semantic: {
-    success: '#1ca152',
-    info: '#00d4ff',
+    success: '#1ca152',                    // 성공은 녹색 유지
+    info: '#00d4ff',                       // 정보는 시안
     warning: '#ffa726',
     error: '#f44336',
   },
@@ -85,9 +87,10 @@ export const borders = {
  */
 export const shadows = {
   glow: {
-    brand: '0 0 10px rgba(28, 161, 82, 0.8)',
-    brandHover: '0 0 15px rgba(28, 161, 82, 1.0)',
-    info: '0 0 10px rgba(0, 212, 255, 0.8)',
+    brand: '0 0 10px rgba(21, 36, 132, 0.8)',      // 파랑 글로우
+    brandHover: '0 0 15px rgba(21, 36, 132, 1.0)', // 파랑 글로우 강조
+    accent: '0 0 10px rgba(0, 212, 255, 0.8)',     // 시안 글로우
+    accentHover: '0 0 15px rgba(0, 212, 255, 1.0)', // 시안 글로우 강조
   },
   card: '0 4px 6px rgba(0, 0, 0, 0.1)',
   cardHover: '0 8px 12px rgba(0, 0, 0, 0.15)',
