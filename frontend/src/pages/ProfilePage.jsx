@@ -8,7 +8,6 @@ import {
   Paper,
   Container,
   Alert,
-  Snackbar,
   Grid,
   IconButton,
   Tooltip,
@@ -22,10 +21,6 @@ import {
   Chip,
   Divider,
   Stack,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   FormControlLabel,
   Checkbox,
   useTheme
@@ -39,6 +34,15 @@ import CongratulationsModal from '../components/onboarding/CongratulationsModal'
 import { LoadingSpinner, LoadingButton } from '../components/loading';
 import { useAuth } from '../hooks/useAuth';
 import { BIO_ENTRY_TYPES, BIO_TYPE_ORDER, BIO_CATEGORIES, VALIDATION_RULES } from '../constants/bio-types';
+import {
+  LoadingState,
+  StandardDialog,
+  PageHeader,
+  ActionButton,
+  NotificationSnackbar,
+  useNotification,
+  ContentCard
+} from '../components/ui';
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
@@ -49,7 +53,9 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
+
+  // useNotification 훅 사용
+  const { notification, showNotification, hideNotification } = useNotification();
   
   // 회원탈퇴 다이얼로그 상태
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -87,11 +93,7 @@ export default function ProfilePage() {
   // 회원탈퇴 처리
   const handleDeleteAccount = async () => {
     if (deleteConfirmText !== '회원탈퇴') {
-      setSnack({
-        open: true,
-        message: '확인 문구를 정확히 입력해주세요.',
-        severity: 'error'
-      });
+      showNotification('확인 문구를 정확히 입력해주세요.', 'error');
       return;
     }
 
@@ -99,13 +101,9 @@ export default function ProfilePage() {
     try {
       console.log('회원탈퇴 시작...');
       await callFunctionWithNaverAuth('deleteUserAccount');
-      
-      setSnack({
-        open: true,
-        message: '회원탈퇴가 완료되었습니다. 그동안 이용해 주셔서 감사합니다.',
-        severity: 'success'
-      });
-      
+
+      showNotification('회원탈퇴가 완료되었습니다. 그동안 이용해 주셔서 감사합니다.', 'success');
+
       // 잠시 후 로그아웃 처리
       setTimeout(async () => {
         try {
@@ -115,22 +113,18 @@ export default function ProfilePage() {
           window.location.href = '/login';
         }
       }, 2000);
-      
+
     } catch (error) {
       console.error('회원탈퇴 오류:', error);
       let errorMessage = '회원탈퇴 처리 중 오류가 발생했습니다.';
-      
+
       if (error.code === 'unauthenticated') {
         errorMessage = '로그인이 필요합니다.';
       } else if (error.message) {
         errorMessage = error.message;
       }
-      
-      setSnack({
-        open: true,
-        message: errorMessage,
-        severity: 'error'
-      });
+
+      showNotification(errorMessage, 'error');
     } finally {
       setDeleting(false);
       setDeleteDialogOpen(false);
@@ -529,7 +523,7 @@ export default function ProfilePage() {
           console.log('🎉 첫 번째 bio 완성 - 축하 모달 표시');
           setCongratulationsOpen(true);
         } else {
-          setSnack({ open: true, message, severity: 'success' });
+          showNotification(message, 'success');
         }
       } else {
         throw new Error('서버 응답이 올바르지 않습니다.');
@@ -980,9 +974,11 @@ export default function ProfilePage() {
                   sx={{
                     mt: 2,
                     py: 1.5,
-                    bgcolor: '#006261',
+                    bgcolor: '#00d4ff',
+                    color: '#000',
+                    fontWeight: 600,
                     '&:hover': {
-                      bgcolor: '#003A87'
+                      bgcolor: '#00a8cc'
                     }
                   }}
                 >
@@ -1095,9 +1091,9 @@ export default function ProfilePage() {
                                   color: 'white',
                                   border: '1px solid',
                                   borderColor: '#55207d',
-                                  '&:hover': { 
-                                    backgroundColor: '#152484',
-                                    borderColor: '#152484'
+                                  '&:hover': {
+                                    backgroundColor: theme.palette.ui?.header || '#152484',
+                                    borderColor: theme.palette.ui?.header || '#152484'
                                   },
                                   '&:disabled': {
                                     backgroundColor: 'grey.50',
@@ -1226,9 +1222,9 @@ export default function ProfilePage() {
                                   color: 'white',
                                   border: '1px solid',
                                   borderColor: '#55207d',
-                                  '&:hover': { 
-                                    backgroundColor: '#152484',
-                                    borderColor: '#152484'
+                                  '&:hover': {
+                                    backgroundColor: theme.palette.ui?.header || '#152484',
+                                    borderColor: theme.palette.ui?.header || '#152484'
                                   },
                                   '&:disabled': {
                                     backgroundColor: 'grey.50',
@@ -1265,9 +1261,11 @@ export default function ProfilePage() {
                 sx={{
                   mt: 2,
                   py: 1.5,
-                  bgcolor: '#006261',
+                  bgcolor: '#00d4ff',
+                  color: '#000',
+                  fontWeight: 600,
                   '&:hover': {
-                    bgcolor: '#003A87'
+                    bgcolor: '#00a8cc'
                   }
                 }}
               >
@@ -1296,20 +1294,14 @@ export default function ProfilePage() {
           </Button>
         </Box>
 
-        {/* 성공 메시지 */}
-        <Snackbar
-          open={snack.open}
+        {/* 알림 스낵바 */}
+        <NotificationSnackbar
+          open={notification.open}
+          onClose={hideNotification}
+          message={notification.message}
+          severity={notification.severity}
           autoHideDuration={6000}
-          onClose={() => setSnack({ ...snack, open: false })}
-        >
-          <Alert
-            onClose={() => setSnack({ ...snack, open: false })}
-            severity={snack.severity}
-            sx={{ width: '100%' }}
-          >
-            {snack.message}
-          </Alert>
-        </Snackbar>
+        />
 
         {/* 회원탈퇴 확인 다이얼로그 */}
         <Dialog 

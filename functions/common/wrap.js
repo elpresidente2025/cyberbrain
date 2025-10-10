@@ -4,7 +4,14 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 
 // 공통 함수 옵션 - CORS 설정 강화
 const functionOptions = {
-  cors: true,
+  cors: [
+    'https://cyberbrain.kr',
+    'https://www.cyberbrain.kr',
+    'https://ai-secretary-6e9c8.web.app',
+    'https://ai-secretary-6e9c8.firebaseapp.com',
+    'http://localhost:5173',
+    'http://localhost:5174'
+  ],
   maxInstances: 10,
   timeoutSeconds: 300, // 5분으로 증가 (SNS 변환용)
   memory: '1GiB' // 메모리도 증가

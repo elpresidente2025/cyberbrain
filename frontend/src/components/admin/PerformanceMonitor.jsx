@@ -22,7 +22,8 @@ import {
   TableRow,
   Paper,
   IconButton,
-  Tooltip
+  Tooltip,
+  useTheme
 } from '@mui/material';
 import { 
   Close, 
@@ -38,13 +39,14 @@ import {
 import { usePerformanceMonitoring } from '../../hooks/usePerformanceMonitoring';
 
 const PerformanceMonitor = ({ open, onClose }) => {
-  const { 
-    metrics, 
-    browserMetrics, 
-    loading, 
-    error, 
+  const theme = useTheme();
+  const {
+    metrics,
+    browserMetrics,
+    loading,
+    error,
     fetchPerformanceMetrics,
-    startRealTimeMonitoring 
+    startRealTimeMonitoring
   } = usePerformanceMonitoring();
 
   const [autoRefresh, setAutoRefresh] = useState(false);
@@ -76,7 +78,7 @@ const PerformanceMonitor = ({ open, onClose }) => {
   const getStatusColor = (value, thresholds) => {
     if (value <= thresholds.good) return '#006261';
     if (value <= thresholds.warning) return '#55207D';
-    return '#152484';
+    return theme.palette.ui?.header || '#152484';
   };
 
   return (
@@ -89,15 +91,15 @@ const PerformanceMonitor = ({ open, onClose }) => {
         sx: { height: '90vh' }
       }}
     >
-      <DialogTitle sx={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
+      <DialogTitle sx={{
+        display: 'flex',
+        justifyContent: 'space-between',
         alignItems: 'center',
-        borderBottom: '2px solid #152484'
+        borderBottom: `2px solid ${theme.palette.ui?.header || '#152484'}`
       }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Speed sx={{ color: '#152484' }} />
-          <Typography variant="h5" sx={{ color: '#152484', fontWeight: 600 }}>
+          <Speed sx={{ color: theme.palette.ui?.header || '#152484' }} />
+          <Typography variant="h5" sx={{ color: theme.palette.ui?.header || '#152484', fontWeight: 600 }}>
             성능 모니터링
           </Typography>
         </Box>
@@ -122,11 +124,11 @@ const PerformanceMonitor = ({ open, onClose }) => {
           <IconButton 
             onClick={fetchPerformanceMetrics} 
             disabled={loading}
-            sx={{ color: '#152484' }}
+            sx={{ color: theme.palette.ui?.header || '#152484' }}
           >
             <Refresh />
           </IconButton>
-          <IconButton onClick={onClose} sx={{ color: '#152484' }}>
+          <IconButton onClick={onClose} sx={{ color: theme.palette.ui?.header || '#152484' }}>
             <Close />
           </IconButton>
         </Box>
@@ -150,7 +152,7 @@ const PerformanceMonitor = ({ open, onClose }) => {
           <Grid container spacing={3}>
             {/* 시스템 개요 */}
             <Grid item xs={12}>
-              <Typography variant="h6" sx={{ color: '#152484', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="h6" sx={{ color: theme.palette.ui?.header || '#152484', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Cloud />
                 시스템 개요
               </Typography>
@@ -158,7 +160,7 @@ const PerformanceMonitor = ({ open, onClose }) => {
                 <Grid item xs={12} sm={6} md={3}>
                   <Card>
                     <CardContent sx={{ textAlign: 'center' }}>
-                      <Memory sx={{ fontSize: 40, color: '#152484', mb: 1 }} />
+                      <Memory sx={{ fontSize: 40, color: theme.palette.ui?.header || '#152484', mb: 1 }} />
                       <Typography variant="h4" sx={{ color: getStatusColor(metrics.system?.memoryUsage || 0, { good: 70, warning: 85 }) }}>
                         {metrics.system?.memoryUsage || 0}%
                       </Typography>
@@ -215,7 +217,7 @@ const PerformanceMonitor = ({ open, onClose }) => {
 
             {/* 브라우저 성능 */}
             <Grid item xs={12} md={6}>
-              <Typography variant="h6" sx={{ color: '#152484', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="h6" sx={{ color: theme.palette.ui?.header || '#152484', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Computer />
                 브라우저 성능
               </Typography>
@@ -283,7 +285,7 @@ const PerformanceMonitor = ({ open, onClose }) => {
 
             {/* API 성능 */}
             <Grid item xs={12} md={6}>
-              <Typography variant="h6" sx={{ color: '#152484', mb: 2 }}>
+              <Typography variant="h6" sx={{ color: theme.palette.ui?.header || '#152484', mb: 2 }}>
                 상위 API 엔드포인트
               </Typography>
               <Card>
@@ -329,7 +331,7 @@ const PerformanceMonitor = ({ open, onClose }) => {
 
             {/* 성능 상세 */}
             <Grid item xs={12}>
-              <Typography variant="h6" sx={{ color: '#152484', mb: 2 }}>
+              <Typography variant="h6" sx={{ color: theme.palette.ui?.header || '#152484', mb: 2 }}>
                 성능 상세 정보
               </Typography>
               <Grid container spacing={2}>

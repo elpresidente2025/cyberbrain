@@ -20,9 +20,16 @@ import {
   Chip,
   LinearProgress,
   Card,
-  CardContent,
-  Snackbar
+  CardContent
 } from '@mui/material';
+import {
+  LoadingState,
+  EmptyState,
+  ContentCard,
+  ActionButton,
+  NotificationSnackbar,
+  useNotification
+} from '../components/ui';
 import {
   Create,
   KeyboardArrowRight,
@@ -63,8 +70,9 @@ const Dashboard = () => {
   const [notices, setNotices] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  
-  const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
+
+  // useNotification 훅 사용
+  const { notification, showNotification, hideNotification } = useNotification();
   
   // 모달 관리
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -150,14 +158,21 @@ const Dashboard = () => {
     const onboardingDismissed = sessionStorage.getItem('onboardingDismissed');
     if (onboardingDismissed) return;
 
-    // localStorage에서 직접 최신 bio 정보 확인
+    // user 객체를 먼저 체크, localStorage는 폴백
     let hasSufficientBio = false;
     try {
-      const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-      hasSufficientBio = currentUser.bio && currentUser.bio.trim().length >= 200;
+      // 1. user 객체에서 직접 체크 (최신 데이터)
+      if (user.bio && user.bio.trim().length >= 200) {
+        hasSufficientBio = true;
+      } else {
+        // 2. localStorage 폴백 (네이버 로그인 시)
+        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+        hasSufficientBio = currentUser.bio && currentUser.bio.trim().length >= 200;
+      }
+
       console.log('🔍 Bio 체크:', {
         userBio: user.bio?.length || 0,
-        localStorageBio: currentUser.bio?.length || 0,
+        localStorageBio: JSON.parse(localStorage.getItem('currentUser') || '{}').bio?.length || 0,
         hasSufficientBio
       });
     } catch (e) {
@@ -178,10 +193,15 @@ const Dashboard = () => {
     fetchDashboardData();
   }, [user]);
 
-  // bio 체크 (사용자 로그인 후)
+  // bio 체크 (사용자 로그인 후) - 약간 지연하여 프로필 로드 대기
   useEffect(() => {
     if (user && !isLoading) {
-      checkBioAndShowOnboarding();
+      // 네이버 로그인 시 프로필 로드를 기다리기 위해 200ms 지연
+      const timer = setTimeout(() => {
+        checkBioAndShowOnboarding();
+      }, 200);
+
+      return () => clearTimeout(timer);
     }
   }, [user, isLoading]);
 
@@ -330,15 +350,15 @@ const Dashboard = () => {
       
       // 대시보드의 최근 포스트 목록에서 제거
       setRecentPosts((prev) => prev.filter((p) => p.id !== postId));
-      
-      setSnack({ open: true, message: '삭제되었습니다.', severity: 'info' });
+
+      showNotification('삭제되었습니다.', 'info');
       if (viewerPost?.id === postId) {
         setViewerOpen(false);
         setViewerPost(null);
       }
     } catch (err) {
       console.error(err);
-      setSnack({ open: true, message: err.message || '삭제에 실패했습니다.', severity: 'error' });
+      showNotification(err.message || '삭제에 실패했습니다.', 'error');
     }
   };
 
@@ -347,10 +367,10 @@ const Dashboard = () => {
     try {
       const text = stripHtml(content);
       navigator.clipboard.writeText(text);
-      setSnack({ open: true, message: '클립보드에 복사되었습니다!', severity: 'success' });
+      showNotification('클립보드에 복사되었습니다!', 'success');
     } catch (err) {
       console.error(err);
-      setSnack({ open: true, message: '복사에 실패했습니다.', severity: 'error' });
+      showNotification('복사에 실패했습니다.', 'error');
     }
   };
 
@@ -363,7 +383,7 @@ const Dashboard = () => {
   if (isLoading) {
     return (
       <DashboardLayout>
-        <LoadingSpinner />
+        <LoadingState loading={true} type="fullPage" message="대시보드 로딩 중..." />
       </DashboardLayout>
     );
   }
@@ -828,11 +848,11 @@ const Dashboard = () => {
               </Box>
               
               {notices.length === 0 ? (
-                <Box sx={{ p: 3 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    현재 공지사항이 없습니다.
-                  </Typography>
-                </Box>
+                <EmptyState
+                  icon={Notifications}
+                  message="현재 공지사항이 없습니다"
+                  py={3}
+                />
               ) : (
                 <>
                   <List>
@@ -942,11 +962,15 @@ const Dashboard = () => {
                   </Box>
                 </>
               ) : (
-                <Box sx={{ p: 3, textAlign: 'center' }}>
-                  <Typography variant="body2" color="text.secondary">
-                    아직 생성한 원고가 없습니다.
-                  </Typography>
-                </Box>
+                <EmptyState
+                  message="아직 생성한 원고가 없습니다"
+                  action={
+                    <ActionButton variant="primary" icon={<Create />} onClick={handleGeneratePost}>
+                      첫 원고 만들기
+                    </ActionButton>
+                  }
+                  py={3}
+                />
               )}
             </Paper>
           </Box>
@@ -993,11 +1017,15 @@ const Dashboard = () => {
                     ))}
                   </List>
                 ) : (
-                  <Box sx={{ p: 3, textAlign: 'center' }}>
-                    <Typography variant="body2" color="text.secondary">
-                      아직 생성한 원고가 없습니다.
-                    </Typography>
-                  </Box>
+                  <EmptyState
+                    message="아직 생성한 원고가 없습니다"
+                    action={
+                      <ActionButton variant="primary" icon={<Create />} onClick={handleGeneratePost}>
+                        첫 원고 만들기
+                      </ActionButton>
+                    }
+                    py={3}
+                  />
                 )}
               </Paper>
             </Grid>
@@ -1025,11 +1053,11 @@ const Dashboard = () => {
                 </Box>
                 
                 {notices.length === 0 ? (
-                  <Box sx={{ p: 3 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      현재 공지사항이 없습니다.
-                    </Typography>
-                  </Box>
+                  <EmptyState
+                    icon={Notifications}
+                    message="현재 공지사항이 없습니다"
+                    py={3}
+                  />
                 ) : (
                   <>
                     <List>
@@ -1112,11 +1140,11 @@ const Dashboard = () => {
                     </Box>
                     
                     {notices.length === 0 ? (
-                      <Box sx={{ p: 3 }}>
-                        <Typography variant="body2" color="text.secondary">
-                          현재 공지사항이 없습니다.
-                        </Typography>
-                      </Box>
+                      <EmptyState
+                        icon={Notifications}
+                        message="현재 공지사항이 없습니다"
+                        py={3}
+                      />
                     ) : (
                       <>
                         <List>
@@ -1192,21 +1220,13 @@ const Dashboard = () => {
         onDelete={handleDelete}
       />
 
-      {/* 스낵바 */}
-      <Snackbar
-        open={snack.open}
-        autoHideDuration={4000}
-        onClose={() => setSnack((s) => ({ ...s, open: false }))}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          onClose={() => setSnack((s) => ({ ...s, open: false }))}
-          severity={snack.severity}
-          sx={{ width: '100%' }}
-        >
-          {snack.message}
-        </Alert>
-      </Snackbar>
+      {/* 알림 스낵바 */}
+      <NotificationSnackbar
+        open={notification.open}
+        onClose={hideNotification}
+        message={notification.message}
+        severity={notification.severity}
+      />
 
       {/* 온보딩 환영 모달 */}
       <OnboardingWelcomeModal
