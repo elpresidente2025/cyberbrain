@@ -8,11 +8,10 @@ import {
   Button,
   Box,
   Typography,
-  Snackbar,
-  Alert,
   useTheme
 } from '@mui/material';
 import { ContentCopy, DeleteOutline } from '@mui/icons-material';
+import { NotificationSnackbar, useNotification } from './ui';
 
 // 유틸리티 함수들
 function formatDate(iso) {
@@ -66,15 +65,15 @@ function convertHtmlToFormattedText(html = '') {
   }
 }
 
-export default function PostViewerModal({ 
-  open, 
-  onClose, 
-  post, 
-  onDelete, 
-  showDeleteButton = true 
+export default function PostViewerModal({
+  open,
+  onClose,
+  post,
+  onDelete,
+  showDeleteButton = true
 }) {
-  const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
   const theme = useTheme();
+  const { notification, showNotification, hideNotification } = useNotification();
 
   const handleCopy = () => {
     try {
@@ -82,13 +81,13 @@ export default function PostViewerModal({
       const content = convertHtmlToFormattedText(post?.content || '');
       const textToCopy = `제목: ${title}\n\n${content}`;
       navigator.clipboard.writeText(textToCopy).then(() => {
-        setSnack({ open: true, message: '제목과 내용이 클립보드에 복사되었습니다!', severity: 'success' });
+        showNotification('제목과 내용이 클립보드에 복사되었습니다!', 'success');
       }).catch(() => {
-        setSnack({ open: true, message: '복사에 실패했습니다.', severity: 'error' });
+        showNotification('복사에 실패했습니다.', 'error');
       });
     } catch (err) {
       console.error('복사 실패:', err);
-      setSnack({ open: true, message: '복사에 실패했습니다.', severity: 'error' });
+      showNotification('복사에 실패했습니다.', 'error');
     }
   };
 
@@ -149,7 +148,7 @@ export default function PostViewerModal({
             onClick={handleCopy} 
             startIcon={<ContentCopy />}
             sx={{ 
-              bgcolor: '#152484',
+              bgcolor: theme.palette.ui?.header || '#152484',
               color: 'white',
               '&:hover': { bgcolor: '#003A87' }
             }}
@@ -169,7 +168,7 @@ export default function PostViewerModal({
             onClick={onClose} 
             variant="contained"
             sx={{ 
-              bgcolor: '#152484',
+              bgcolor: theme.palette.ui?.header || '#152484',
               '&:hover': { bgcolor: '#003A87' }
             }}
           >
@@ -179,20 +178,13 @@ export default function PostViewerModal({
       </Dialog>
 
       {/* 복사 알림 스낵바 */}
-      <Snackbar
-        open={snack.open}
+      <NotificationSnackbar
+        open={notification.open}
+        onClose={hideNotification}
+        message={notification.message}
+        severity={notification.severity}
         autoHideDuration={3000}
-        onClose={() => setSnack(prev => ({ ...prev, open: false }))}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert 
-          onClose={() => setSnack(prev => ({ ...prev, open: false }))} 
-          severity={snack.severity}
-          sx={{ width: '100%' }}
-        >
-          {snack.message}
-        </Alert>
-      </Snackbar>
+      />
     </>
   );
 }

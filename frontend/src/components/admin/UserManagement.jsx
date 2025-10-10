@@ -18,7 +18,7 @@ import {
   TextField,
   Alert,
   Tooltip,
-  Snackbar
+  useTheme
 } from '@mui/material';
 import { LoadingSpinner } from '../loading';
 import {
@@ -31,14 +31,16 @@ import {
 } from '@mui/icons-material';
 import HongKongNeonCard from '../HongKongNeonCard';
 import { callFunctionWithNaverAuth } from '../../services/firebaseService';
+import { NotificationSnackbar, useNotification } from '../ui';
 
 const UserManagement = () => {
+  const theme = useTheme();
+  const { notification, showNotification, hideNotification } = useNotification();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [deleteDialog, setDeleteDialog] = useState({ open: false, user: null });
   const [deactivateDialog, setDeactivateDialog] = useState({ open: false, user: null });
-  const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
 
   // Firebase Functions 호출을 네이버 인증 방식으로 변경
 
@@ -59,11 +61,7 @@ const UserManagement = () => {
       } else {
         console.warn('⚠️ 응답 구조가 예상과 다름:', response);
         setUsers([]);
-        setNotification({
-          open: true,
-          message: '사용자 목록 데이터 형식이 올바르지 않습니다.',
-          severity: 'warning'
-        });
+        showNotification('사용자 목록 데이터 형식이 올바르지 않습니다.', 'warning');
       }
     } catch (error) {
       console.error('❌ 사용자 목록 로드 실패:', error);
@@ -73,19 +71,15 @@ const UserManagement = () => {
         details: error.details,
         stack: error.stack
       });
-      
+
       let errorMessage = '사용자 목록을 불러오는 중 오류가 발생했습니다.';
       if (error.code === 'functions/permission-denied') {
         errorMessage = '관리자 권한이 필요합니다.';
       } else if (error.code === 'functions/unauthenticated') {
         errorMessage = '로그인이 필요합니다.';
       }
-      
-      setNotification({
-        open: true,
-        message: errorMessage,
-        severity: 'error'
-      });
+
+      showNotification(errorMessage, 'error');
     } finally {
       setLoading(false);
     }
@@ -93,27 +87,19 @@ const UserManagement = () => {
 
   const handleDeactivateUser = async () => {
     if (!deactivateDialog.user) return;
-    
+
     try {
-      const response = await callFunctionWithNaverAuth('deactivateUser', { 
-        userId: deactivateDialog.user.uid 
+      const response = await callFunctionWithNaverAuth('deactivateUser', {
+        userId: deactivateDialog.user.uid
       });
-      
+
       if (response.success) {
-        setNotification({
-          open: true,
-          message: `${deactivateDialog.user.name || '사용자'} 계정이 비활성화되었습니다.`,
-          severity: 'success'
-        });
+        showNotification(`${deactivateDialog.user.name || '사용자'} 계정이 비활성화되었습니다.`, 'success');
         loadUsers(); // 목록 새로고침
       }
     } catch (error) {
       console.error('계정 비활성화 실패:', error);
-      setNotification({
-        open: true,
-        message: '계정 비활성화 중 오류가 발생했습니다.',
-        severity: 'error'
-      });
+      showNotification('계정 비활성화 중 오류가 발생했습니다.', 'error');
     } finally {
       setDeactivateDialog({ open: false, user: null });
     }
@@ -121,51 +107,35 @@ const UserManagement = () => {
 
   const handleReactivateUser = async (user) => {
     try {
-      const response = await callFunctionWithNaverAuth('reactivateUser', { 
-        userId: user.uid 
+      const response = await callFunctionWithNaverAuth('reactivateUser', {
+        userId: user.uid
       });
-      
+
       if (response.success) {
-        setNotification({
-          open: true,
-          message: `${user.name || '사용자'} 계정이 재활성화되었습니다.`,
-          severity: 'success'
-        });
+        showNotification(`${user.name || '사용자'} 계정이 재활성화되었습니다.`, 'success');
         loadUsers(); // 목록 새로고침
       }
     } catch (error) {
       console.error('계정 재활성화 실패:', error);
-      setNotification({
-        open: true,
-        message: '계정 재활성화 중 오류가 발생했습니다.',
-        severity: 'error'
-      });
+      showNotification('계정 재활성화 중 오류가 발생했습니다.', 'error');
     }
   };
 
   const handleDeleteUser = async () => {
     if (!deleteDialog.user) return;
-    
+
     try {
-      const response = await callFunctionWithNaverAuth('deleteUser', { 
-        userId: deleteDialog.user.uid 
+      const response = await callFunctionWithNaverAuth('deleteUser', {
+        userId: deleteDialog.user.uid
       });
-      
+
       if (response.success) {
-        setNotification({
-          open: true,
-          message: `${deleteDialog.user.name || '사용자'} 계정이 완전히 삭제되었습니다.`,
-          severity: 'success'
-        });
+        showNotification(`${deleteDialog.user.name || '사용자'} 계정이 완전히 삭제되었습니다.`, 'success');
         loadUsers(); // 목록 새로고침
       }
     } catch (error) {
       console.error('계정 삭제 실패:', error);
-      setNotification({
-        open: true,
-        message: '계정 삭제 중 오류가 발생했습니다.',
-        severity: 'error'
-      });
+      showNotification('계정 삭제 중 오류가 발생했습니다.', 'error');
     } finally {
       setDeleteDialog({ open: false, user: null });
     }
@@ -221,7 +191,7 @@ const UserManagement = () => {
           onClick={loadUsers}
           disabled={loading}
           sx={{
-            bgcolor: '#152484',
+            bgcolor: theme.palette.ui?.header || '#152484',
             color: 'white',
             '&:hover': {
               bgcolor: '#1e2d9f',
@@ -380,19 +350,13 @@ const UserManagement = () => {
       </Dialog>
 
       {/* 알림 메시지 */}
-      <Snackbar
+      <NotificationSnackbar
         open={notification.open}
+        onClose={hideNotification}
+        message={notification.message}
+        severity={notification.severity}
         autoHideDuration={6000}
-        onClose={() => setNotification({ ...notification, open: false })}
-      >
-        <Alert
-          onClose={() => setNotification({ ...notification, open: false })}
-          severity={notification.severity}
-          sx={{ width: '100%' }}
-        >
-          {notification.message}
-        </Alert>
-      </Snackbar>
+      />
     </HongKongNeonCard>
   );
 };
