@@ -6,7 +6,7 @@ import {
   Box,
   Button,
   Alert,
-  Snackbar
+  useTheme
 } from '@mui/material';
 import { Speed } from '@mui/icons-material';
 import DashboardLayout from '../components/DashboardLayout';
@@ -17,10 +17,12 @@ import NoticeManager from '../components/admin/NoticeManager';
 import PerformanceMonitor from '../components/admin/PerformanceMonitor';
 import UserManagement from '../components/admin/UserManagement';
 import { useAuth } from '../hooks/useAuth';
+import { PageHeader, NotificationSnackbar, useNotification } from '../components/ui';
 
 function AdminPage() {
   const { user } = useAuth();
-  const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
+  const theme = useTheme();
+  const { notification, showNotification, hideNotification } = useNotification();
   const [performanceMonitorOpen, setPerformanceMonitorOpen] = useState(false);
 
   // 권한 체크
@@ -62,7 +64,7 @@ function AdminPage() {
           alignItems: 'center',
           mb: 4,
           pb: 2,
-          borderBottom: '2px solid #152484'
+          borderBottom: `2px solid ${theme.palette.ui?.header || '#152484'}`
         }}>
           <Box>
             <Typography 
@@ -128,11 +130,12 @@ function AdminPage() {
       </Container>
 
       {/* 알림 스낵바 */}
-      <Snackbar
+      <NotificationSnackbar
         open={notification.open}
-        autoHideDuration={6000}
-        onClose={() => setNotification({ ...notification, open: false })}
+        onClose={hideNotification}
         message={notification.message}
+        severity={notification.severity}
+        autoHideDuration={6000}
       />
 
       {/* 성능 모니터 다이얼로그 */}

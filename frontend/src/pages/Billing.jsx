@@ -47,10 +47,12 @@ import PaymentDialog from '../components/PaymentDialog';
 import { useAuth } from '../hooks/useAuth';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../services/firebase';
+import { NotificationSnackbar, useNotification } from '../components/ui';
 
 const Billing = () => {
   const { user, refreshUserProfile } = useAuth();
   const theme = useTheme();
+  const { notification, showNotification, hideNotification } = useNotification();
   const [currentPlan, setCurrentPlan] = useState(user?.plan || user?.subscription || '리전 인플루언서');
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [membershipDialogOpen, setMembershipDialogOpen] = useState(false);
@@ -126,20 +128,20 @@ const Billing = () => {
 
   const handleAuthSubmit = () => {
     if (!selectedFile) {
-      alert('당적증명서를 업로드해주세요.');
+      showNotification('당적증명서를 업로드해주세요.', 'warning');
       return;
     }
-    
+
     setAuthDialogOpen(false);
     setSelectedFile(null);
     // 실제로는 파일 업로드 API 호출
-    alert('당원 인증이 요청되었습니다. 검토 후 승인 알림을 드리겠습니다.');
+    showNotification('당원 인증이 요청되었습니다. 검토 후 승인 알림을 드리겠습니다.', 'success');
   };
 
   const handleMembershipSubmit = () => {
     setMembershipDialogOpen(false);
     // 실제로는 당비 납부 API 호출
-    alert('당비 납부가 처리되었습니다. 확인까지 1-2일 소요됩니다.');
+    showNotification('당비 납부가 처리되었습니다. 확인까지 1-2일 소요됩니다.', 'success');
   };
 
   return (
@@ -276,7 +278,7 @@ const Billing = () => {
                 display: 'flex', 
                 flexDirection: 'column'
               }}>
-                <Typography variant="h6" sx={{ mb: 2, color: '#152484', fontSize: '1rem' }}>
+                <Typography variant="h6" sx={{ mb: 2, color: theme.palette.ui?.header || '#152484', fontSize: '1rem' }}>
                   서비스 제공 방식 및 환불 정책
                 </Typography>
                 
@@ -427,9 +429,9 @@ const Billing = () => {
                         size="large"
                         onClick={() => {
                           if (currentPlan === '오피니언 리더') {
-                            alert('오피니언 리더 플랜은 이미 SNS 원고 무료 생성이 포함되어 있습니다.');
+                            showNotification('오피니언 리더 플랜은 이미 SNS 원고 무료 생성이 포함되어 있습니다.', 'info');
                           } else {
-                            alert('SNS 원고 추가 생성 서비스는 준비 중입니다. 곧 출시 예정입니다!');
+                            showNotification('SNS 원고 추가 생성 서비스는 준비 중입니다. 곧 출시 예정입니다!', 'info');
                           }
                         }}
                         sx={{ 
@@ -457,8 +459,8 @@ const Billing = () => {
                         variant="outlined"
                         fullWidth
                         size="large"
-                        onClick={() => alert('워드프레스 연동 서비스는 준비 중입니다. 곧 출시 예정입니다!')}
-                        sx={{ 
+                        onClick={() => showNotification('워드프레스 연동 서비스는 준비 중입니다. 곧 출시 예정입니다!', 'info')}
+                        sx={{
                           py: 3,
                           flexDirection: 'column',
                           gap: 1,
@@ -480,8 +482,8 @@ const Billing = () => {
                         variant="outlined"
                         fullWidth
                         size="large"
-                        onClick={() => alert('영상 자료 생성 서비스는 준비 중입니다. 곧 출시 예정입니다!')}
-                        sx={{ 
+                        onClick={() => showNotification('영상 자료 생성 서비스는 준비 중입니다. 곧 출시 예정입니다!', 'info')}
+                        sx={{
                           py: 3,
                           flexDirection: 'column',
                           gap: 1,
@@ -667,6 +669,15 @@ const Billing = () => {
           open={paymentDialogOpen}
           onClose={handlePaymentClose}
           selectedPlan={selectedPlan}
+        />
+
+        {/* 알림 스낵바 */}
+        <NotificationSnackbar
+          open={notification.open}
+          onClose={hideNotification}
+          message={notification.message}
+          severity={notification.severity}
+          autoHideDuration={4000}
         />
       </Container>
     </DashboardLayout>

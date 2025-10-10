@@ -5,7 +5,6 @@ import React, { Suspense, useEffect } from 'react';
 import {
   Container,
   Alert,
-  Snackbar,
   useTheme,
   useMediaQuery,
   Skeleton,
@@ -28,6 +27,7 @@ import SNSConversionModal from '../components/SNSConversionModal';
 // 기능별로 분리된 커스텀 훅(Hook)들을 가져옵니다.
 import { useAuth } from '../hooks/useAuth';
 import { useGenerateForm } from '../hooks/useGenerateForm';
+import { NotificationSnackbar, useNotification, PageHeader } from '../components/ui';
 import { useGenerateAPI } from '../hooks/useGenerateAPI';
 import { useBonus } from '../hooks/useBonus';
 import { getSNSUsage } from '../services/firebaseService';
@@ -80,11 +80,7 @@ const GeneratePage = () => {
   }, [user?.uid]);
 
   // --- 📢 사용자 피드백(알림창) 상태 관리 ---
-  const [snackbar, setSnackbar] = React.useState({
-    open: false,      // 스낵바가 열려있는지 여부
-    message: '',      // 보여줄 메시지 내용
-    severity: 'info'  // 메시지 종류 (success, error, info, warning)
-  });
+  const { notification, showNotification, hideNotification } = useNotification();
 
   // --- 👁️ 미리보기 상태 관리 ---
   const [selectedDraft, setSelectedDraft] = React.useState(null); // 사용자가 선택한 초안
@@ -123,7 +119,7 @@ const GeneratePage = () => {
     const validation = validateForm();
     if (!validation.isValid) {
       // 유효하지 않으면 에러 스낵바를 띄움
-      setSnackbar({ open: true, message: validation.error, severity: 'error' });
+      showNotification(validation.error, 'error');
       return;
     }
 
@@ -132,9 +128,9 @@ const GeneratePage = () => {
 
     // 3. API 결과에 따라 성공 또는 실패 스낵바를 띄움
     if (result.success) {
-      setSnackbar({ open: true, message: result.message, severity: 'success' });
+      showNotification(result.message, 'success');
     } else {
-      setSnackbar({ open: true, message: result.error, severity: 'error' });
+      showNotification(result.error, 'error');
     }
   };
 
@@ -150,11 +146,7 @@ const GeneratePage = () => {
   const handleSelectDraft = (draft) => {
     // 선택된 초안을 별도로 저장하되, 다른 초안들은 그대로 유지
     setSelectedDraft(draft);
-    setSnackbar({ 
-      open: true, 
-      message: '원고를 선택했습니다. 저장하시겠습니까?', 
-      severity: 'info' 
-    });
+    showNotification('원고를 선택했습니다. 저장하시겠습니까?', 'info');
   };
 
   /** 선택된 원고를 최종 저장하는 함수 */
@@ -162,30 +154,18 @@ const GeneratePage = () => {
     try {
       // 실제 저장 로직
       const result = await save(draft);
-      
+
       if (result.success) {
         // 저장 성공 시에만 선택된 원고만 남기기
         setDrafts([draft]);
         setSelectedDraft(null);
-        setSnackbar({ 
-          open: true, 
-          message: '원고가 저장되었습니다. 이제 SNS 변환을 할 수 있습니다.', 
-          severity: 'success' 
-        });
+        showNotification('원고가 저장되었습니다. 이제 SNS 변환을 할 수 있습니다.', 'success');
       } else {
-        setSnackbar({ 
-          open: true, 
-          message: result.error || '저장에 실패했습니다.', 
-          severity: 'error' 
-        });
+        showNotification(result.error || '저장에 실패했습니다.', 'error');
       }
     } catch (error) {
       console.error('원고 저장 오류:', error);
-      setSnackbar({ 
-        open: true, 
-        message: '저장 처리 중 오류가 발생했습니다.', 
-        severity: 'error' 
-      });
+      showNotification('저장 처리 중 오류가 발생했습니다.', 'error');
     }
   };
 
@@ -201,23 +181,19 @@ const GeneratePage = () => {
       console.log('💾 저장 시작:', draft.title);
       const result = await save(draft);
       console.log('💾 저장 결과:', result);
-      
+
       // 저장 API 결과에 따라 스낵바를 띄움
       if (result.success) {
-        setSnackbar({ open: true, message: result.message || '원고가 저장되었습니다.', severity: 'success' });
+        showNotification(result.message || '원고가 저장되었습니다.', 'success');
       } else {
-        setSnackbar({ open: true, message: result.error || '저장에 실패했습니다.', severity: 'error' });
+        showNotification(result.error || '저장에 실패했습니다.', 'error');
       }
     } catch (error) {
       console.error('💾 저장 핸들러 오류:', error);
-      setSnackbar({ open: true, message: '저장 처리 중 오류가 발생했습니다.', severity: 'error' });
+      showNotification('저장 처리 중 오류가 발생했습니다.', 'error');
     }
   };
 
-  /** 스낵바를 닫는 함수 */
-  const handleCloseSnackbar = () => {
-    setSnackbar(prev => ({ ...prev, open: false }));
-  };
 
   // '생성하기' 버튼을 활성화할지 최종적으로 결정하는 변수
   const finalCanGenerate = canGenerate && attempts < maxAttempts && !loading;
@@ -355,20 +331,13 @@ const GeneratePage = () => {
       </Container>
 
       {/* 알림 메시지를 보여주는 스낵바 컴포넌트 */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={6000} // 6초 후에 자동으로 닫힘
-        onClose={handleCloseSnackbar}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert 
-          onClose={handleCloseSnackbar} 
-          severity={snackbar.severity}
-          sx={{ width: '100%' }}
-        >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
+      <NotificationSnackbar
+        open={notification.open}
+        onClose={hideNotification}
+        message={notification.message}
+        severity={notification.severity}
+        autoHideDuration={6000}
+      />
 
       {/* SNS 변환 모달 */}
       <SNSConversionModal
