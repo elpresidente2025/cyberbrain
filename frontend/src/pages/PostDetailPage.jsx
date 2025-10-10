@@ -6,8 +6,6 @@ import {
   Typography,
   Button,
   CircularProgress,
-  Snackbar,
-  Alert,
   Stack,
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
@@ -16,6 +14,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { callFunctionWithNaverAuth } from '../services/firebaseService';
 import DashboardLayout from "../components/DashboardLayout";
 import { functions } from '../services/firebase';
+import { NotificationSnackbar, useNotification } from '../components/ui';
 
 const htmlToText = (html) => {
   if (!html) return "";
@@ -40,10 +39,10 @@ const fmt = (iso) => {
 export default function PostDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { notification, showNotification, hideNotification } = useNotification();
 
   const [loading, setLoading] = useState(true);
   const [post, setPost] = useState(null);
-  const [snack, setSnack] = useState({ open: false, severity: "info", msg: "" });
 
   useEffect(() => {
     const load = async () => {
@@ -53,25 +52,25 @@ export default function PostDetailPage() {
         const found = (res?.posts || []).find((p) => p.id === id) || null;
         setPost(found);
         if (!found) {
-          setSnack({ open: true, severity: "warning", msg: "해당 원고를 찾을 수 없습니다." });
+          showNotification("해당 원고를 찾을 수 없습니다.", "warning");
         }
       } catch (e) {
         console.error(e);
-        setSnack({ open: true, severity: "error", msg: "원고를 불러오지 못했습니다." });
+        showNotification("원고를 불러오지 못했습니다.", "error");
       } finally {
         setLoading(false);
       }
     };
     load();
-  }, [id]);
+  }, [id, showNotification]);
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(htmlToText(post?.content || ""));
-      setSnack({ open: true, severity: "success", msg: "본문을 클립보드에 복사했습니다." });
+      showNotification("본문을 클립보드에 복사했습니다.", "success");
     } catch (e) {
       console.error(e);
-      setSnack({ open: true, severity: "error", msg: "복사에 실패했습니다." });
+      showNotification("복사에 실패했습니다.", "error");
     }
   };
 
@@ -126,20 +125,13 @@ export default function PostDetailPage() {
         </Paper>
       )}
 
-      <Snackbar
-        open={snack.open}
+      <NotificationSnackbar
+        open={notification.open}
+        onClose={hideNotification}
+        message={notification.message}
+        severity={notification.severity}
         autoHideDuration={2200}
-        onClose={() => setSnack((s) => ({ ...s, open: false }))}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert
-          severity={snack.severity}
-          onClose={() => setSnack((s) => ({ ...s, open: false }))}
-          sx={{ width: "100%" }}
-        >
-          {snack.msg}
-        </Alert>
-      </Snackbar>
+      />
     </DashboardLayout>
   );
 }
