@@ -33,6 +33,7 @@ import { useBonus } from '../hooks/useBonus';
 import { getSNSUsage } from '../services/firebaseService';
 // 폼에서 사용할 카테고리/세부 카테고리 목록 데이터를 가져옵니다.
 import { CATEGORIES } from '../constants/formConstants';
+import { spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
 
 // 🚀 성능 최적화를 위해 초안 그리드와 미리보기 패널은 필요할 때만 불러옵니다 (Lazy Loading).
 const DraftGrid = React.lazy(() => import('../components/generate/DraftGrid'));
@@ -102,7 +103,7 @@ const GeneratePage = () => {
   if (!user?.uid) {
     return (
       <DashboardLayout>
-        <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Container maxWidth="xl" sx={{ py: `${spacing.xl}px` }}>
           <Alert severity="error">
             사용자 정보를 불러올 수 없습니다. 다시 로그인해주세요.
           </Alert>
@@ -201,15 +202,15 @@ const GeneratePage = () => {
   // --- 🖥️ 화면 렌더링 ---
   return (
     <DashboardLayout>
-      <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="h4" sx={{ 
-            fontWeight: 'bold', 
-            mb: 1, 
-            color: theme.palette.mode === 'dark' ? 'white' : 'black', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: 1 
+      <Container maxWidth="xl" sx={{ py: `${spacing.xl}px` }}>
+        <Box sx={{ mb: `${spacing.xl}px` }}>
+          <Typography variant="h4" sx={{
+            fontWeight: 'bold',
+            mb: `${spacing.xs}px`,
+            color: theme.palette.mode === 'dark' ? 'white' : 'black',
+            display: 'flex',
+            alignItems: 'center',
+            gap: `${spacing.xs}px`
           }}>
             <Create sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
             새 원고 생성
@@ -218,7 +219,7 @@ const GeneratePage = () => {
 
         {/* API 에러가 있을 경우, 화면 상단에 에러 메시지를 보여줌 */}
         {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
+          <Alert severity="error" sx={{ mb: `${spacing.md}px` }}>
             {error}
           </Alert>
         )}
@@ -247,9 +248,9 @@ const GeneratePage = () => {
         {/* 초안 그리드 (Lazy Loading 적용) */}
         <Suspense fallback={
           // 로딩 중일 때 보여줄 UI (스켈레톤)
-          <Box sx={{ py: 2 }}>
-            <Skeleton variant="text" width={200} height={32} sx={{ mb: 2 }} />
-            <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr' } }}>
+          <Box sx={{ py: `${spacing.md}px` }}>
+            <Skeleton variant="text" width={200} height={32} sx={{ mb: `${spacing.md}px` }} />
+            <Box sx={{ display: 'grid', gap: `${spacing.md}px`, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr' } }}>
               <Skeleton variant="rectangular" height={300} />
               <Skeleton variant="rectangular" height={300} />
               <Skeleton variant="rectangular" height={300} />
@@ -292,7 +293,7 @@ const GeneratePage = () => {
             {selectedDraft && (
               <Suspense fallback={
                 <Box>
-                  <Skeleton variant="text" width={150} height={32} sx={{ mb: 2 }} />
+                  <Skeleton variant="text" width={150} height={32} sx={{ mb: `${spacing.md}px` }} />
                   <Skeleton variant="rectangular" height={400} />
                 </Box>
               }>
@@ -300,7 +301,7 @@ const GeneratePage = () => {
               </Suspense>
             )}
           </DialogContent>
-          <DialogActions sx={{ p: 2, gap: 1, justifyContent: 'space-between' }}>
+          <DialogActions sx={{ p: `${spacing.md}px`, gap: `${spacing.xs}px`, justifyContent: 'space-between' }}>
             <Box>
               {/* SNS 변환 조건 충족 시 SNS 버튼 표시 */}
               {snsUsage?.isActive && selectedDraft && (
@@ -308,13 +309,13 @@ const GeneratePage = () => {
                   variant="outlined"
                   startIcon={<ShareIcon />}
                   onClick={() => handleSNSConvert(selectedDraft)}
-                  sx={{ mr: 1 }}
+                  sx={{ mr: `${spacing.xs}px` }}
                 >
                   SNS 변환
                 </Button>
               )}
             </Box>
-            <Box sx={{ display: 'flex', gap: 1 }}>
+            <Box sx={{ display: 'flex', gap: `${spacing.xs}px` }}>
               <Button onClick={() => setSelectedDraft(null)}>
                 취소
               </Button>

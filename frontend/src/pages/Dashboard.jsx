@@ -30,6 +30,7 @@ import {
   NotificationSnackbar,
   useNotification
 } from '../components/ui';
+import { spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
 import {
   Create,
   KeyboardArrowRight,
@@ -392,8 +393,8 @@ const Dashboard = () => {
   if (error) {
     return (
       <DashboardLayout>
-        <Box sx={{ py: 4, px: { xs: 2, md: 4 }, maxWidth: '1200px', mx: 'auto' }}>
-          <Alert severity="error" sx={{ mb: 3 }}>
+        <Box sx={{ py: `${spacing.xl}px`, px: { xs: 2, md: 4 }, maxWidth: '1200px', mx: 'auto' }}>
+          <Alert severity="error" sx={{ mb: `${spacing.lg}px` }}>
             {error}
           </Alert>
           <Button variant="contained" onClick={() => window.location.reload()}>
@@ -415,7 +416,7 @@ const Dashboard = () => {
     <DashboardLayout>
       <Box
         sx={{
-          py: 4,
+          py: `${spacing.xl}px`,
           px: { xs: 2, md: 4 },
           maxWidth: '1200px',
           mx: 'auto'
@@ -426,7 +427,7 @@ const Dashboard = () => {
         
         
         {/* 인사말 + 선거 카운터 카드 */}
-        <Grid container spacing={3} sx={{ mb: 3, alignItems: 'stretch' }}>
+        <Grid container spacing={3} sx={{ mb: `${spacing.lg}px`, alignItems: 'stretch' }}>
           {/* 인사말 카드 */}
           <Grid item xs={12} sm={8}>
             <Paper
@@ -441,12 +442,12 @@ const Dashboard = () => {
           {isMobile ? (
             <Box>
               {/* 인사말 */}
-              <Typography variant="h5" sx={{ fontWeight: 600, mb: 2 }}>
+              <Typography variant="h5" sx={{ fontWeight: 600, mb: `${spacing.md}px` }}>
                 안녕하세요, {user?.name || '사용자'} {getUserDisplayTitle(user)} {userIcon}
               </Typography>
 
               {/* 지역 정보와 플랜 정보, 인증 상태, 버튼들 */}
-              <Box sx={{ display: 'flex', gap: 2, alignItems: 'stretch' }}>
+              <Box sx={{ display: 'flex', gap: `${spacing.md}px`, alignItems: 'stretch' }}>
                 {/* 왼쪽: 지역/플랜 정보 */}
                 <Box sx={{ flex: 1 }}>
                   {/* 지역 정보 */}
@@ -457,7 +458,7 @@ const Dashboard = () => {
                   )}
 
                   {/* 플랜 정보 */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: `${spacing.xs}px` }}>
                     <Typography variant="body1">
                       플랜: <strong style={{ color: planColor }}>{planName}</strong>
                     </Typography>
@@ -473,7 +474,7 @@ const Dashboard = () => {
                 </Box>
 
                 {/* 가운데+오른쪽: 인증 상태와 액션 버튼들을 묶은 컨테이너 */}
-                <Box sx={{ display: 'flex', gap: 2, alignItems: 'stretch' }}>
+                <Box sx={{ display: 'flex', gap: `${spacing.md}px`, alignItems: 'stretch' }}>
                   {/* 인증 상태 */}
                   <Box
                     sx={{
@@ -573,7 +574,7 @@ const Dashboard = () => {
 
               {/* 프로필 미완료 경고 메시지 */}
               {showBioAlert && (
-                <Alert severity="warning" sx={{ mb: 2, mt: 1 }}>
+                <Alert severity="warning" sx={{ mb: `${spacing.md}px`, mt: `${spacing.xs}px` }}>
                   <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
                     프로필 설정이 완료되지 않았습니다
                   </Typography>
@@ -585,12 +586,12 @@ const Dashboard = () => {
 
               {/* 사용량 현황 */}
               {!isAdmin && (
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
+                <Box sx={{ mb: `${spacing.md}px` }}>
+                  <Typography variant="subtitle1" sx={{ mb: `${spacing.xs}px`, fontWeight: 600 }}>
                     이번 달 사용량
                   </Typography>
-                  <Box sx={{ mb: 1 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Box sx={{ mb: `${spacing.xs}px` }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: `${spacing.xs}px` }}>
                       <Typography variant="body2" color="text.secondary">
                         원고 생성
                       </Typography>
@@ -631,12 +632,12 @@ const Dashboard = () => {
                 {/* 인사말 영역 (전체 너비) */}
                 <Grid item xs={12}>
                   {/* 인사말 */}
-                  <Typography variant="h4" sx={{ fontWeight: 600, mb: 2 }}>
+                  <Typography variant="h4" sx={{ fontWeight: 600, mb: `${spacing.md}px` }}>
                     안녕하세요, {user?.name || '사용자'} {getUserDisplayTitle(user)} {userIcon}
                   </Typography>
 
                   {/* 지역 정보와 플랜 정보, 인증 상태, 버튼들 */}
-                  <Box sx={{ display: 'flex', gap: 3, alignItems: 'stretch' }}>
+                  <Box sx={{ display: 'flex', gap: `${spacing.lg}px`, alignItems: 'stretch' }}>
                     {/* 왼쪽: 지역/플랜 정보 */}
                     <Box sx={{ flex: 1 }}>
                       {/* 지역 정보 */}
@@ -647,7 +648,7 @@ const Dashboard = () => {
                       )}
 
                       {/* 플랜 정보 */}
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px` }}>
                         <Typography variant="h6">
                           플랜: <strong style={{ color: planColor }}>{planName}</strong>
                         </Typography>
@@ -663,7 +664,7 @@ const Dashboard = () => {
                     </Box>
 
                     {/* 가운데+오른쪽: 인증 상태와 액션 버튼들을 묶은 컨테이너 */}
-                    <Box sx={{ display: 'flex', gap: 3, alignItems: 'stretch' }}>
+                    <Box sx={{ display: 'flex', gap: `${spacing.lg}px`, alignItems: 'stretch' }}>
                       {/* 인증 상태 */}
                       <Box
                         sx={{
@@ -699,7 +700,7 @@ const Dashboard = () => {
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'center',
-                        gap: 2,
+                        gap: `${spacing.md}px`,
                         minWidth: '140px'
                       }}>
                         <Button
@@ -763,12 +764,12 @@ const Dashboard = () => {
 
                   {/* PC용 사용량 현황 */}
                   {!isAdmin && (
-                    <Box sx={{ mt: 2 }}>
-                      <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                    <Box sx={{ mt: `${spacing.md}px` }}>
+                      <Typography variant="subtitle2" sx={{ mb: `${spacing.xs}px`, fontWeight: 600 }}>
                         이번 달 사용량
                       </Typography>
-                      <Box sx={{ mb: 1 }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                      <Box sx={{ mb: `${spacing.xs}px` }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: `${spacing.xs}px` }}>
                           <Typography variant="body2" color="text.secondary">
                             원고 생성
                           </Typography>
@@ -806,7 +807,7 @@ const Dashboard = () => {
 
               {/* PC 버전 프로필 미완료 경고 메시지 */}
               {showBioAlert && (
-                <Alert severity="warning" sx={{ mt: 3 }}>
+                <Alert severity="warning" sx={{ mt: `${spacing.lg}px` }}>
                   <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
                     프로필 설정이 완료되지 않았습니다
                   </Typography>
@@ -834,15 +835,15 @@ const Dashboard = () => {
           /* 모바일 - 수직 스택 */
           <Box>
             {/* 공지사항 카드 - 항상 표시 */}
-            <Paper elevation={0} sx={{ 
-              mb: 3, 
+            <Paper elevation={0} sx={{
+              mb: `${spacing.lg}px`,
               bgcolor: 'rgba(255, 255, 255, 0.03)',
               border: '1px solid rgba(255, 255, 255, 0.05)',
               borderRadius: 2
             }}>
-              <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+              <Box sx={{ p: `${spacing.md}px`, borderBottom: '1px solid', borderColor: 'divider' }}>
                 <Typography variant="h6" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center' }}>
-                  <Notifications sx={{ mr: 1, color: '#55207D' }} />
+                  <Notifications sx={{ mr: `${spacing.xs}px`, color: '#55207D' }} />
                   공지사항
                 </Typography>
               </Box>
@@ -862,7 +863,7 @@ const Dashboard = () => {
                           <ListItemText
                             primary={
                               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.xs}px` }}>
                                   <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                                     {notice.title || '제목 없음'}
                                   </Typography>
@@ -900,9 +901,9 @@ const Dashboard = () => {
                       </React.Fragment>
                     ))}
                   </List>
-                  
+
                   {notices.length > 5 && (
-                    <Box sx={{ p: 2, textAlign: 'center' }}>
+                    <Box sx={{ p: `${spacing.md}px`, textAlign: 'center' }}>
                       <Button variant="text" size="small" sx={{ color: planColor }}>
                         더 보기 ({notices.length - 5}개 더)
                       </Button>
@@ -913,20 +914,20 @@ const Dashboard = () => {
             </Paper>
 
             {/* 발행 진행률 카드 */}
-            <Box sx={{ mb: 3 }}>
+            <Box sx={{ mb: `${spacing.lg}px` }}>
               <PublishingProgress />
             </Box>
 
 
 
             {/* 최근 생성한 글 */}
-            <Paper elevation={0} sx={{ 
-              mb: 3, 
+            <Paper elevation={0} sx={{
+              mb: `${spacing.lg}px`,
               bgcolor: 'rgba(255, 255, 255, 0.03)',
               border: '1px solid rgba(255, 255, 255, 0.05)',
               borderRadius: 2
             }}>
-              <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+              <Box sx={{ p: `${spacing.md}px`, borderBottom: '1px solid', borderColor: 'divider' }}>
                 <Typography variant="h6" sx={{ fontWeight: 600 }}>
                   최근 생성한 글
                 </Typography>
@@ -955,7 +956,7 @@ const Dashboard = () => {
                       </React.Fragment>
                     ))}
                   </List>
-                  <Box sx={{ p: 2, textAlign: 'center' }}>
+                  <Box sx={{ p: `${spacing.md}px`, textAlign: 'center' }}>
                     <Button variant="text" onClick={handleViewAllPosts} sx={{ color: planColor }}>
                       전체 보기
                     </Button>
@@ -986,7 +987,7 @@ const Dashboard = () => {
                 borderRadius: 2,
                 boxShadow: 'none'
               }}>
-                <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'divider' }}>
+                <Box sx={{ p: `${spacing.lg}px`, borderBottom: '1px solid', borderColor: 'divider' }}>
                   <Typography variant="h6" sx={{ fontWeight: 600 }}>
                     최근 생성한 글
                   </Typography>
@@ -1045,9 +1046,9 @@ const Dashboard = () => {
                 borderRadius: 2,
                 boxShadow: 'none'
               }}>
-                <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+                <Box sx={{ p: `${spacing.md}px`, borderBottom: '1px solid', borderColor: 'divider' }}>
                   <Typography variant="h6" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center' }}>
-                    <Notifications sx={{ mr: 1, color: '#55207D' }} />
+                    <Notifications sx={{ mr: `${spacing.xs}px`, color: '#55207D' }} />
                     공지사항
                   </Typography>
                 </Box>
@@ -1067,7 +1068,7 @@ const Dashboard = () => {
                             <ListItemText
                               primary={
                                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.xs}px` }}>
                                     <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                                       {notice.title || '제목 없음'}
                                     </Typography>
@@ -1105,9 +1106,9 @@ const Dashboard = () => {
                         </React.Fragment>
                       ))}
                     </List>
-                    
+
                     {notices.length > 8 && (
-                      <Box sx={{ p: 2, textAlign: 'center' }}>
+                      <Box sx={{ p: `${spacing.md}px`, textAlign: 'center' }}>
                         <Button variant="text" size="small" sx={{ color: planColor }}>
                           더 보기 ({notices.length - 8}개 더)
                         </Button>
@@ -1120,7 +1121,7 @@ const Dashboard = () => {
 
             {/* 우측: 발행 진행률(상단) + 선거일정(하단), 2K 미만에서는 공지사항도 포함 */}
             <Grid item xs={12} md={6} xl={4}>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: `${spacing.lg}px` }}>
                 {/* 발행 진행률 카드 - 항상 상단에 */}
                 <PublishingProgress />
 
@@ -1132,9 +1133,9 @@ const Dashboard = () => {
                           border: '1px solid rgba(255, 255, 255, 0.05)',
                     borderRadius: 2
                   }}>
-                    <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Box sx={{ p: `${spacing.md}px`, borderBottom: '1px solid', borderColor: 'divider' }}>
                       <Typography variant="h6" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center' }}>
-                        <Notifications sx={{ mr: 1, color: '#55207D' }} />
+                        <Notifications sx={{ mr: `${spacing.xs}px`, color: '#55207D' }} />
                         공지사항
                       </Typography>
                     </Box>
@@ -1154,7 +1155,7 @@ const Dashboard = () => {
                                 <ListItemText
                                   primary={
                                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.xs}px` }}>
                                         <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                                           {notice.title || '제목 없음'}
                                         </Typography>
@@ -1192,9 +1193,9 @@ const Dashboard = () => {
                             </React.Fragment>
                           ))}
                         </List>
-                        
+
                         {notices.length > 5 && (
-                          <Box sx={{ p: 2, textAlign: 'center' }}>
+                          <Box sx={{ p: `${spacing.md}px`, textAlign: 'center' }}>
                             <Button variant="text" size="small" sx={{ color: planColor }}>
                               더 보기 ({notices.length - 5}개 더)
                             </Button>

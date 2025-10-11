@@ -48,6 +48,7 @@ import { useAuth } from '../hooks/useAuth';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../services/firebase';
 import { NotificationSnackbar, useNotification } from '../components/ui';
+import { spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
 
 const Billing = () => {
   const { user, refreshUserProfile } = useAuth();
@@ -146,16 +147,16 @@ const Billing = () => {
 
   return (
     <DashboardLayout>
-      <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Container maxWidth="lg" sx={{ py: `${spacing.xl}px` }}>
         {/* 페이지 헤더 */}
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="h4" sx={{ 
-            fontWeight: 'bold', 
-            mb: 1, 
+        <Box sx={{ mb: `${spacing.xl}px` }}>
+          <Typography variant="h4" sx={{
+            fontWeight: 'bold',
+            mb: `${spacing.xs}px`,
             color: theme.palette.mode === 'dark' ? 'white' : 'black',
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: 1 
+            display: 'flex',
+            alignItems: 'center',
+            gap: `${spacing.xs}px`
           }}>
             <CreditCard sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
             인증 및 결제
@@ -166,34 +167,34 @@ const Billing = () => {
         </Box>
 
         {/* 반응형 레이아웃 */}
-        <Box sx={{ 
+        <Box sx={{
           display: 'flex',
           flexDirection: 'column',
-          gap: 3
+          gap: `${spacing.lg}px`
         }}>
           {/* 상단: 현재 플랜과 인증 상태 */}
           <Grid container spacing={3}>
             <Grid item xs={12} lg={4}>
-              <Paper elevation={0} sx={{ 
-                p: 3, 
-                height: '100%', 
-                display: 'flex', 
+              <Paper elevation={0} sx={{
+                p: `${spacing.lg}px`,
+                height: '100%',
+                display: 'flex',
                 flexDirection: 'column'
               }}>
-              <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', fontSize: '1rem' }}>
-                <CreditCard sx={{ mr: 1 }} />
+              <Typography variant="h6" sx={{ mb: `${spacing.md}px`, display: 'flex', alignItems: 'center', fontSize: '1rem' }}>
+                <CreditCard sx={{ mr: `${spacing.xs}px` }} />
                 현재 플랜 및 인증 상태
               </Typography>
               
-              <Card sx={{ 
-                bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f5f5f5', 
-                mb: 3, 
-                p: 2 
+              <Card sx={{
+                bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f5f5f5',
+                mb: `${spacing.lg}px`,
+                p: `${spacing.md}px`
               }}>
-                <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#55207d', mb: 1 }}>
+                <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#55207d', mb: `${spacing.xs}px` }}>
                   {currentPlan}
                 </Typography>
-                <Typography variant="h6" sx={{ mb: 1 }}>
+                <Typography variant="h6" sx={{ mb: `${spacing.xs}px` }}>
                   {plans.find(p => p.name === currentPlan)?.price.toLocaleString()}원/월 (VAT 포함)
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
@@ -205,12 +206,12 @@ const Billing = () => {
                 </Typography>
               </Card>
 
-              <Box sx={{ mb: 2 }}>
+              <Box sx={{ mb: `${spacing.md}px` }}>
                 <Typography variant="subtitle2" sx={{ mb: 1.5 }}>
                   이번 달 사용량
                 </Typography>
-                <Box sx={{ mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                <Box sx={{ mb: `${spacing.xs}px` }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.xs}px` }}>
                     원고 생성: 15/20회
                   </Typography>
                   <LinearProgress 
@@ -221,12 +222,12 @@ const Billing = () => {
                 </Box>
               </Box>
 
-              <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid #e0e0e0', flex: 1 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
-                  <VerifiedUser sx={{ mr: 1, color: '#4caf50', fontSize: 18 }} />
+              <Box sx={{ mt: `${spacing.xs}px`, pt: `${spacing.xs}px`, borderTop: '1px solid #e0e0e0', flex: 1 }}>
+                <Typography variant="subtitle2" sx={{ mb: `${spacing.xs}px`, display: 'flex', alignItems: 'center' }}>
+                  <VerifiedUser sx={{ mr: `${spacing.xs}px`, color: '#4caf50', fontSize: 18 }} />
                   당원 인증 상태
                 </Typography>
-                <Alert severity="success" size="small" sx={{ mb: 2 }}>
+                <Alert severity="success" size="small" sx={{ mb: `${spacing.md}px` }}>
                   <Typography variant="body2">
                     2025년 1분기 당원 인증 완료
                   </Typography>
@@ -245,14 +246,14 @@ const Billing = () => {
             </Grid>
 
             <Grid item xs={12} lg={4}>
-              <Paper elevation={0} sx={{ 
-                p: 3, 
-                height: '100%', 
-                display: 'flex', 
+              <Paper elevation={0} sx={{
+                p: `${spacing.lg}px`,
+                height: '100%',
+                display: 'flex',
                 flexDirection: 'column'
               }}>
-                <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', fontSize: '1rem' }}>
-                  <Payment sx={{ mr: 1 }} />
+                <Typography variant="h6" sx={{ mb: `${spacing.md}px`, display: 'flex', alignItems: 'center', fontSize: '1rem' }}>
+                  <Payment sx={{ mr: `${spacing.xs}px` }} />
                   결제 내역
                 </Typography>
                 <List sx={{ flex: 1 }}>
@@ -272,27 +273,27 @@ const Billing = () => {
             </Grid>
 
             <Grid item xs={12} lg={4}>
-              <Paper elevation={0} sx={{ 
-                p: 3, 
-                height: '100%', 
-                display: 'flex', 
+              <Paper elevation={0} sx={{
+                p: `${spacing.lg}px`,
+                height: '100%',
+                display: 'flex',
                 flexDirection: 'column'
               }}>
-                <Typography variant="h6" sx={{ mb: 2, color: theme.palette.ui?.header || '#152484', fontSize: '1rem' }}>
+                <Typography variant="h6" sx={{ mb: `${spacing.md}px`, color: theme.palette.ui?.header || '#152484', fontSize: '1rem' }}>
                   서비스 제공 방식 및 환불 정책
                 </Typography>
                 
                 <Alert severity="info" sx={{ flex: 1 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 'bold', mb: `${spacing.xs}px` }}>
                     📅 서비스 제공 방식
                   </Typography>
-                  <Typography variant="body2" sx={{ mb: 2 }}>
+                  <Typography variant="body2" sx={{ mb: `${spacing.md}px` }}>
                     • 본 서비스는 월 단위 계약으로 제공되며, 매월 1일 자동 갱신됩니다<br/>
                     • 원고 생성 횟수는 결제 완료 즉시 제공되어 바로 이용 가능합니다<br/>
                     • 월간 서비스로 언제든 해지 가능합니다
                   </Typography>
-                  
-                  <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
+
+                  <Typography variant="body2" sx={{ fontWeight: 'bold', mb: `${spacing.xs}px` }}>
                     💰 환불 정책
                   </Typography>
                   <Typography variant="body2">
@@ -306,16 +307,16 @@ const Billing = () => {
           </Grid>
 
           {/* 중단: 플랜 선택 */}
-          <Paper elevation={0} sx={{ 
-            p: 3
+          <Paper elevation={0} sx={{
+            p: `${spacing.lg}px`
           }}>
-            <Typography variant="h6" sx={{ mb: 3, fontSize: '1.25rem', fontWeight: 'bold' }}>
+            <Typography variant="h6" sx={{ mb: `${spacing.lg}px`, fontSize: '1.25rem', fontWeight: 'bold' }}>
               플랜 선택
             </Typography>
             <Box sx={{
               display: 'grid',
               gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: 1
+              gap: `${spacing.xs}px`
             }}>
               {plans.map((plan, index) => (
                 <Box key={index}>
@@ -345,7 +346,7 @@ const Billing = () => {
                       <CardContent sx={{ flex: 1, p: { xs: 1, sm: 1.5, md: 2 } }}>
                         <Typography variant="h4" sx={{
                           fontWeight: 'bold',
-                          mb: 1,
+                          mb: `${spacing.xs}px`,
                           color: plan.color,
                           fontSize: { xs: '1.25rem', sm: '1.5rem', md: '2rem' }
                         }}>
@@ -409,15 +410,15 @@ const Billing = () => {
           </Paper>
 
           {/* 하단: 애드온 서비스 */}
-          <Paper elevation={0} sx={{ 
-            p: 3
+          <Paper elevation={0} sx={{
+            p: `${spacing.lg}px`
           }}>
-            <Typography variant="h6" sx={{ mb: 3, fontSize: '1.25rem', fontWeight: 'bold' }}>
+            <Typography variant="h6" sx={{ mb: `${spacing.lg}px`, fontSize: '1.25rem', fontWeight: 'bold' }}>
               애드온 서비스
             </Typography>
             <Card sx={{ border: '1px solid #e0e0e0' }}>
-              <CardContent sx={{ p: 3 }}>
-                <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+              <CardContent sx={{ p: `${spacing.lg}px` }}>
+                <Typography variant="body1" color="text.secondary" sx={{ mb: `${spacing.lg}px` }}>
                   기본 요금제와 함께 사용할 수 있는 부가 서비스입니다.
                 </Typography>
                 
@@ -434,13 +435,13 @@ const Billing = () => {
                             showNotification('SNS 원고 추가 생성 서비스는 준비 중입니다. 곧 출시 예정입니다!', 'info');
                           }
                         }}
-                        sx={{ 
+                        sx={{
                           bgcolor: '#e89f2f',
                           color: 'white',
-                          py: 3,
+                          py: `${spacing.lg}px`,
                           flexDirection: 'column',
-                          gap: 1,
-                          '&:hover': { 
+                          gap: `${spacing.xs}px`,
+                          '&:hover': {
                             bgcolor: '#d18a26'
                           }
                         }}
@@ -461,9 +462,9 @@ const Billing = () => {
                         size="large"
                         onClick={() => showNotification('워드프레스 연동 서비스는 준비 중입니다. 곧 출시 예정입니다!', 'info')}
                         sx={{
-                          py: 3,
+                          py: `${spacing.lg}px`,
                           flexDirection: 'column',
-                          gap: 1,
+                          gap: `${spacing.xs}px`,
                           borderColor: '#6c757d',
                           color: '#6c757d',
                           opacity: 0.8,
@@ -484,9 +485,9 @@ const Billing = () => {
                         size="large"
                         onClick={() => showNotification('영상 자료 생성 서비스는 준비 중입니다. 곧 출시 예정입니다!', 'info')}
                         sx={{
-                          py: 3,
+                          py: `${spacing.lg}px`,
                           flexDirection: 'column',
-                          gap: 1,
+                          gap: `${spacing.xs}px`,
                           borderColor: '#6c757d',
                           color: '#6c757d',
                           opacity: 0.8,
@@ -501,13 +502,13 @@ const Billing = () => {
                     </Grid>
                   </Grid>
 
-                  <Box sx={{ 
-                    mt: 4, 
-                    p: 3, 
-                    bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'grey.50', 
-                    borderRadius: 2 
+                  <Box sx={{
+                    mt: `${spacing.xl}px`,
+                    p: `${spacing.lg}px`,
+                    bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'grey.50',
+                    borderRadius: 2
                   }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2, color: '#e89f2f' }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: `${spacing.md}px`, color: '#e89f2f' }}>
                       💡 SNS 원고 추가 생성 서비스
                     </Typography>
                     <Grid container spacing={2}>
@@ -567,17 +568,17 @@ const Billing = () => {
         <Dialog open={authDialogOpen} onClose={() => setAuthDialogOpen(false)} maxWidth="sm" fullWidth>
           <DialogTitle>당원 인증서 제출</DialogTitle>
           <DialogContent>
-            <Alert severity="info" sx={{ mb: 2 }}>
+            <Alert severity="info" sx={{ mb: `${spacing.md}px` }}>
               당적증명서를 업로드하시면 OCR 자동 인증 또는 수동 검토를 통해 처리됩니다.
             </Alert>
-            
-            <Box sx={{ mt: 2 }}>
+
+            <Box sx={{ mt: `${spacing.md}px` }}>
               <Button
                 variant="outlined"
                 component="label"
                 startIcon={<AttachFile />}
                 fullWidth
-                sx={{ mb: 2 }}
+                sx={{ mb: `${spacing.md}px` }}
               >
                 당적증명서 업로드 (PDF, JPG, PNG)
                 <input
@@ -595,7 +596,7 @@ const Billing = () => {
               )}
             </Box>
 
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ mt: `${spacing.md}px`, display: 'block' }}>
               * 개인정보는 인증 완료 후 즉시 삭제됩니다.<br />
               * 인증 처리에는 1-2일이 소요될 수 있습니다.
             </Typography>
@@ -612,25 +613,25 @@ const Billing = () => {
         <Dialog open={membershipDialogOpen} onClose={() => setMembershipDialogOpen(false)} maxWidth="sm" fullWidth>
           <DialogTitle>당비 납부 내역 제출</DialogTitle>
           <DialogContent>
-            <Alert severity="info" sx={{ mb: 2 }}>
+            <Alert severity="info" sx={{ mb: `${spacing.md}px` }}>
               최근 3개월간의 당비 납부 내역을 제출해주세요. 계좌이체 내역서나 영수증을 업로드하시면 됩니다.
             </Alert>
-            
-            <Box sx={{ mt: 2, mb: 2 }}>
+
+            <Box sx={{ mt: `${spacing.md}px`, mb: `${spacing.md}px` }}>
               <TextField
                 fullWidth
                 label="납부자명"
                 placeholder="당비를 납부한 분의 성명을 입력해주세요"
                 variant="outlined"
-                sx={{ mb: 2 }}
+                sx={{ mb: `${spacing.md}px` }}
               />
-              
+
               <TextField
                 fullWidth
                 label="납부 기간"
                 placeholder="예: 2024년 11월 ~ 2025년 1월"
                 variant="outlined"
-                sx={{ mb: 2 }}
+                sx={{ mb: `${spacing.md}px` }}
               />
 
               <Button
@@ -638,7 +639,7 @@ const Billing = () => {
                 component="label"
                 startIcon={<AttachFile />}
                 fullWidth
-                sx={{ mb: 2 }}
+                sx={{ mb: `${spacing.md}px` }}
               >
                 납부 내역서 업로드 (PDF, JPG, PNG)
                 <input

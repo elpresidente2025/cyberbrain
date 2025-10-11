@@ -43,6 +43,7 @@ import {
   useNotification,
   ContentCard
 } from '../components/ui';
+import { spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
@@ -625,14 +626,14 @@ export default function ProfilePage() {
           }
         }}
       >
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="h4" sx={{ 
-            fontWeight: 'bold', 
-            mb: 1, 
-            color: theme.palette.mode === 'dark' ? 'white' : 'black', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: 1 
+        <Box sx={{ mb: `${spacing.xl}px` }}>
+          <Typography variant="h4" sx={{
+            fontWeight: 'bold',
+            mb: `${spacing.xs}px`,
+            color: theme.palette.mode === 'dark' ? 'white' : 'black',
+            display: 'flex',
+            alignItems: 'center',
+            gap: `${spacing.xs}px`
           }}>
             <Settings sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
             프로필 수정
@@ -645,8 +646,8 @@ export default function ProfilePage() {
         <Grid container spacing={3}>
           {/* 좌측 컬럼: 기본 정보 */}
           <Grid item xs={12} xxl={6} xxxl={6}>
-            <Paper elevation={0} sx={{ 
-              p: 3, 
+            <Paper elevation={0} sx={{
+              p: `${spacing.lg}px`,
               height: 'fit-content'
             }}>
               <Box component="form" onSubmit={handleSubmit}>
@@ -668,11 +669,11 @@ export default function ProfilePage() {
 
               {/* 개인화 정보 섹션 (선택사항) */}
               <Grid item xs={12}>
-                <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', mb: 2, mt: 3 }}>
-                  <AutoAwesome sx={{ mr: 1, color: '#55207D' }} />
+                <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', mb: `${spacing.md}px`, mt: `${spacing.lg}px` }}>
+                  <AutoAwesome sx={{ mr: `${spacing.xs}px`, color: '#55207D' }} />
                   개인화 정보 (선택사항)
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.lg}px` }}>
                   더 개인화되고 진정성 있는 원고 생성을 위한 선택 정보입니다. 입력하지 않아도 서비스 이용에 문제없습니다.
                 </Typography>
               </Grid>
@@ -836,14 +837,14 @@ export default function ProfilePage() {
                     />
                   }
                   label="X 프리미엄 구독"
-                  sx={{ mt: 2 }}
+                  sx={{ mt: `${spacing.md}px` }}
                 />
               </Grid>
 
               {/* 소속 위원회 */}
               <Grid item xs={12}>
-                <Box sx={{ mb: 3 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                <Box sx={{ mb: `${spacing.lg}px` }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.md}px` }}>
                     <Typography variant="h6" sx={{ 
                       color: theme.palette.mode === 'dark' ? '#e1bee7' : '#55207D', 
                       fontWeight: 600 
@@ -880,13 +881,13 @@ export default function ProfilePage() {
                       </IconButton>
                     </Tooltip>
                   </Box>
-                  
+
                   <Stack spacing={2}>
                     {profile.committees.map((committee, index) => (
-                      <Paper key={index} elevation={0} sx={{ 
-                        p: 2
+                      <Paper key={index} elevation={0} sx={{
+                        p: `${spacing.md}px`
                       }}>
-                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: `${spacing.md}px` }}>
                           <Box sx={{ flex: 1 }}>
                             <FormControl fullWidth>
                               <InputLabel>위원회 선택</InputLabel>
@@ -937,7 +938,7 @@ export default function ProfilePage() {
                                 }}
                                 disabled={saving}
                                 placeholder="예: 특별위원회, 소위원회명 등"
-                                sx={{ mt: 1 }}
+                                sx={{ mt: `${spacing.xs}px` }}
                               />
                             )}
                           </Box>
@@ -972,7 +973,7 @@ export default function ProfilePage() {
                   loading={saving}
                   loadingText="저장 중..."
                   sx={{
-                    mt: 2,
+                    mt: `${spacing.md}px`,
                     py: 1.5,
                     bgcolor: '#00d4ff',
                     color: '#000',
@@ -1000,21 +1001,21 @@ export default function ProfilePage() {
 
           {/* 우측 컬럼: Bio 엔트리들 */}
           <Grid item xs={12} xxl={6} xxxl={6}>
-            <Paper elevation={0} sx={{ 
-              p: 3, 
+            <Paper elevation={0} sx={{
+              p: `${spacing.lg}px`,
               height: 'fit-content'
             }}>
-              <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <AutoAwesome sx={{ mr: 1, color: '#006261' }} />
+              <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', mb: `${spacing.md}px` }}>
+                <AutoAwesome sx={{ mr: `${spacing.xs}px`, color: '#006261' }} />
                 자기소개 및 추가 정보
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.lg}px` }}>
                 다양한 유형의 정보를 추가하여 더 정확한 개인화 원고를 생성하세요.
               </Typography>
 
               {/* 1. 자기소개 섹션 */}
-              <Box sx={{ mb: 4 }} data-bio-section="personal">
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+              <Box sx={{ mb: `${spacing.xl}px` }} data-bio-section="personal">
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.md}px` }}>
                   <Typography variant="h6" sx={{
                     color: theme.palette.mode === 'dark' ? '#81d4fa' : '#003A87',
                     fontWeight: 600
@@ -1054,12 +1055,12 @@ export default function ProfilePage() {
                     const index = bioEntries.findIndex(e => e.id === entry.id);
                     const typeConfig = Object.values(BIO_ENTRY_TYPES).find(t => t.id === entry.type) || BIO_ENTRY_TYPES.SELF_INTRODUCTION;
                     const isRequired = entry.type === 'self_introduction';
-                    
+
                     return (
-                      <Paper key={entry.id} elevation={0} sx={{ 
-                        p: 2
+                      <Paper key={entry.id} elevation={0} sx={{
+                        p: `${spacing.md}px`
                       }}>
-                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: `${spacing.md}px` }}>
                           <Box sx={{ flex: 1 }}>
                             <TextField
                               required={isRequired}
@@ -1083,8 +1084,8 @@ export default function ProfilePage() {
                                 size="small"
                                 onClick={() => removeBioEntry(index)}
                                 disabled={saving}
-                                sx={{ 
-                                  mt: 1,
+                                sx={{
+                                  mt: `${spacing.xs}px`,
                                   width: 24,
                                   height: 24,
                                   backgroundColor: '#55207d',
@@ -1114,8 +1115,8 @@ export default function ProfilePage() {
               </Box>
 
               {/* 2. 추가 정보 섹션 (카드형 배치) */}
-              <Box sx={{ mb: 4 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+              <Box sx={{ mb: `${spacing.xl}px` }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.md}px` }}>
                   <Typography variant="h6" sx={{ 
                     color: theme.palette.mode === 'dark' ? '#e1bee7' : '#55207D', 
                     fontWeight: 600 
@@ -1154,16 +1155,16 @@ export default function ProfilePage() {
                   {getEntriesByCategory('PERFORMANCE').map((entry) => {
                     const index = bioEntries.findIndex(e => e.id === entry.id);
                     const typeConfig = Object.values(BIO_ENTRY_TYPES).find(t => t.id === entry.type) || BIO_ENTRY_TYPES.POLICY;
-                    
+
                     return (
                       <Grid item xs={12} sm={6} md={4} key={entry.id}>
-                        <Card elevation={0} sx={{ 
-                          height: '100%', 
-                          display: 'flex', 
+                        <Card elevation={0} sx={{
+                          height: '100%',
+                          display: 'flex',
                           flexDirection: 'column'
                         }}>
                           <CardContent sx={{ flex: 1 }}>
-                            <Box sx={{ mb: 2 }}>
+                            <Box sx={{ mb: `${spacing.md}px` }}>
                               <Chip 
                                 label={typeConfig.name}
                                 size="small"
@@ -1174,8 +1175,8 @@ export default function ProfilePage() {
                                 }}
                               />
                             </Box>
-                            
-                            <FormControl fullWidth sx={{ mb: 2 }}>
+
+                            <FormControl fullWidth sx={{ mb: `${spacing.md}px` }}>
                               <InputLabel>유형 선택</InputLabel>
                               <Select
                                 value={entry.type}
@@ -1205,8 +1206,8 @@ export default function ProfilePage() {
                               size="small"
                             />
                           </CardContent>
-                          
-                          <CardActions sx={{ justifyContent: 'space-between', px: 2, pb: 2 }}>
+
+                          <CardActions sx={{ justifyContent: 'space-between', px: `${spacing.md}px`, pb: `${spacing.md}px` }}>
                             <Typography variant="caption" color="text.secondary">
                               {entry.content?.length || 0}/{typeConfig.maxLength}자
                             </Typography>
@@ -1245,7 +1246,7 @@ export default function ProfilePage() {
               </Box>
 
               {bioEntries.length >= VALIDATION_RULES.maxEntries && (
-                <Alert severity="info" sx={{ mb: 2 }}>
+                <Alert severity="info" sx={{ mb: `${spacing.md}px` }}>
                   최대 {VALIDATION_RULES.maxEntries}개의 엔트리까지 추가할 수 있습니다.
                 </Alert>
               )}
@@ -1259,7 +1260,7 @@ export default function ProfilePage() {
                 disabled={saving}
                 startIcon={<Save />}
                 sx={{
-                  mt: 2,
+                  mt: `${spacing.md}px`,
                   py: 1.5,
                   bgcolor: '#00d4ff',
                   color: '#000',
@@ -1276,7 +1277,7 @@ export default function ProfilePage() {
         </Grid>
 
         {/* 회원탈퇴 버튼 (최하단, 카드 폭과 동일) */}
-        <Box sx={{ mt: 4 }}>
+        <Box sx={{ mt: `${spacing.xl}px` }}>
           <Button
             onClick={() => setDeleteDialogOpen(true)}
             variant="contained"
@@ -1311,17 +1312,17 @@ export default function ProfilePage() {
           fullWidth
         >
           <DialogTitle>
-            <Box display="flex" alignItems="center" gap={1}>
+            <Box display="flex" alignItems="center" gap={`${spacing.xs}px`}>
               <Warning color="error" />
               <Typography variant="h6" component="span">
                 회원탈퇴 확인
               </Typography>
             </Box>
           </DialogTitle>
-          
+
           <DialogContent>
-            <Alert severity="error" sx={{ mb: 3 }}>
-              <Typography variant="body1" sx={{ fontWeight: 600, mb: 1 }}>
+            <Alert severity="error" sx={{ mb: `${spacing.lg}px` }}>
+              <Typography variant="body1" sx={{ fontWeight: 600, mb: `${spacing.xs}px` }}>
                 ⚠️ 회원탈퇴 시 다음 데이터가 영구적으로 삭제됩니다:
               </Typography>
               <Typography component="div">
@@ -1331,12 +1332,12 @@ export default function ProfilePage() {
                 • 계정 정보 (복구 불가능)
               </Typography>
             </Alert>
-            
-            <Typography variant="body1" sx={{ mb: 2 }}>
+
+            <Typography variant="body1" sx={{ mb: `${spacing.md}px` }}>
               정말로 회원탈퇴를 진행하시겠습니까?
             </Typography>
-            
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+
+            <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.md}px` }}>
               탈퇴를 확인하려면 아래에 <strong>"회원탈퇴"</strong>를 정확히 입력해주세요.
             </Typography>
             

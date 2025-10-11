@@ -10,6 +10,7 @@ import {
 } from '@mui/material';
 import { Speed } from '@mui/icons-material';
 import DashboardLayout from '../components/DashboardLayout';
+import { spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
 import DashboardCards from '../components/admin/DashboardCards';
 import QuickActions from '../components/admin/QuickActions';
 import ErrorsMiniTable from '../components/admin/ErrorsMiniTable';
@@ -58,21 +59,21 @@ function AdminPage() {
     <DashboardLayout title="시스템 관리">
       <Container maxWidth="xl">
         {/* 헤더 영역 */}
-        <Box sx={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
+        <Box sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
           alignItems: 'center',
-          mb: 4,
-          pb: 2,
+          mb: `${spacing.xl}px`,
+          pb: `${spacing.md}px`,
           borderBottom: `2px solid ${theme.palette.ui?.header || '#152484'}`
         }}>
           <Box>
-            <Typography 
-              variant="h4" 
-              sx={{ 
-                color: 'white', 
+            <Typography
+              variant="h4"
+              sx={{
+                color: 'white',
                 fontWeight: 700,
-                mb: 1
+                mb: `${spacing.xs}px`
               }}
             >
               시스템 관리
@@ -82,7 +83,7 @@ function AdminPage() {
             </Typography>
           </Box>
           
-          <Box sx={{ display: 'flex', gap: 2 }}>
+          <Box sx={{ display: 'flex', gap: `${spacing.md}px` }}>
             <Button
               variant="contained"
               startIcon={<Speed />}
@@ -103,27 +104,27 @@ function AdminPage() {
         </Box>
 
         {/* 대시보드 카드 영역 */}
-        <Box sx={{ mb: 4 }}>
+        <Box sx={{ mb: `${spacing.xl}px` }}>
           <DashboardCards />
         </Box>
 
         {/* 빠른 작업 영역 */}
-        <Box sx={{ mb: 4 }}>
+        <Box sx={{ mb: `${spacing.xl}px` }}>
           <QuickActions />
         </Box>
 
         {/* 에러 로그 영역 */}
-        <Box sx={{ mb: 4 }}>
+        <Box sx={{ mb: `${spacing.xl}px` }}>
           <ErrorsMiniTable />
         </Box>
 
         {/* 공지사항 관리 영역 */}
-        <Box sx={{ mb: 4 }}>
+        <Box sx={{ mb: `${spacing.xl}px` }}>
           <NoticeManager />
         </Box>
 
         {/* 사용자 관리 영역 */}
-        <Box sx={{ mb: 4 }}>
+        <Box sx={{ mb: `${spacing.xl}px` }}>
           <UserManagement />
         </Box>
 

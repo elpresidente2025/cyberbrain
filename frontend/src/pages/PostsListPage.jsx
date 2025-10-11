@@ -36,6 +36,7 @@ import {
   useNotification,
   StandardDialog
 } from '../components/ui';
+import { spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
 
 function formatDate(iso) {
   try {
@@ -234,7 +235,7 @@ export default function PostsListPage() {
   if (authLoading) {
     return (
       <DashboardLayout title="포스트 목록">
-        <Container maxWidth="xl" sx={{ mt: 2 }}>
+        <Container maxWidth="xl" sx={{ mt: `${spacing.md}px` }}>
           <LoadingSpinner message="게시글 목록 로딩 중..." fullHeight={true} />
         </Container>
       </DashboardLayout>
@@ -244,7 +245,7 @@ export default function PostsListPage() {
   if (!user?.uid) {
     return (
       <DashboardLayout title="포스트 목록">
-        <Container maxWidth="xl" sx={{ mt: 2 }}>
+        <Container maxWidth="xl" sx={{ mt: `${spacing.md}px` }}>
           <Alert severity="error">사용자 정보를 불러올 수 없습니다. 다시 로그인해주세요.</Alert>
         </Container>
       </DashboardLayout>
@@ -253,21 +254,21 @@ export default function PostsListPage() {
 
   return (
     <DashboardLayout title="포스트 목록">
-      <Container maxWidth="xl" sx={{ py: 4, px: { xs: 1, sm: 2 } }}>
+      <Container maxWidth="xl" sx={{ py: `${spacing.xl}px`, px: { xs: 1, sm: 2 } }}>
         {/* 페이지 헤더 */}
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="h4" sx={{ 
-            fontWeight: 'bold', 
-            mb: 1, 
-            color: theme.palette.mode === 'dark' ? 'white' : 'black', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: 1 
+        <Box sx={{ mb: `${spacing.xl}px` }}>
+          <Typography variant="h4" sx={{
+            fontWeight: 'bold',
+            mb: `${spacing.xs}px`,
+            color: theme.palette.mode === 'dark' ? 'white' : 'black',
+            display: 'flex',
+            alignItems: 'center',
+            gap: `${spacing.xs}px`
           }}>
             <Assignment sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
             내 원고 목록
           </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px` }}>
             <Typography variant="body1" color="text.secondary">
               생성한 원고를 관리할 수 있습니다
             </Typography>
@@ -287,7 +288,7 @@ export default function PostsListPage() {
           p: { xs: 2, sm: 3 }
         }}>
 
-          <Typography variant="body2" sx={{ mb: 2, color: 'grey.100', fontStyle: 'italic' }}>
+          <Typography variant="body2" sx={{ mb: `${spacing.md}px`, color: 'grey.100', fontStyle: 'italic' }}>
             이 화면은 읽기 전용입니다. 카드를 터치/클릭하면 원고가 열립니다.
           </Typography>
 
@@ -298,7 +299,7 @@ export default function PostsListPage() {
           ) : posts.length === 0 ? (
             <Alert severity="warning">저장된 원고가 없습니다.</Alert>
           ) : (
-            <Grid container spacing={2}>
+            <Grid container spacing={`${spacing.md}px`}>
               {posts.map((p) => {
                 const preview = stripHtml(p.content || '');
                 const wordCount = countWithoutSpace(preview); // 공백 제외 글자수로 계산
@@ -318,7 +319,7 @@ export default function PostsListPage() {
                     >
                       <CardActionArea onClick={() => openViewer(p)} sx={{ flexGrow: 1 }}>
                         <CardContent>
-                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.xs}px` }}>
                             <Chip size="small" label={status} color={statusColor} variant="outlined" />
                             <Typography variant="caption" color="text.secondary">
                               {formatDate(p.updatedAt) || formatDate(p.createdAt)}
@@ -329,7 +330,7 @@ export default function PostsListPage() {
                             variant="h6"
                             sx={{
                               fontWeight: 700,
-                              mb: 1,
+                              mb: `${spacing.xs}px`,
                               display: '-webkit-box',
                               WebkitLineClamp: 2,
                               WebkitBoxOrient: 'vertical',
@@ -426,15 +427,15 @@ export default function PostsListPage() {
 
         {/* 발행 URL 입력 다이얼로그 */}
         <Dialog open={publishDialogOpen} onClose={closePublishDialog} maxWidth="sm" fullWidth>
-          <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.xs}px` }}>
             <Publish sx={{ color: theme.palette.ui?.header || '#152484' }} />
             원고 발행 등록
           </DialogTitle>
           <DialogContent>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.md}px` }}>
               실제 발행한 블로그/SNS 주소를 입력하여 게이미피케이션 포인트를 획득하세요!
             </Typography>
-            <Typography variant="h6" sx={{ mb: 1, fontWeight: 600 }}>
+            <Typography variant="h6" sx={{ mb: `${spacing.xs}px`, fontWeight: 600 }}>
               "{publishPost?.title || '원고 제목'}"
             </Typography>
             <TextField
@@ -447,7 +448,7 @@ export default function PostsListPage() {
               value={publishUrl}
               onChange={(e) => setPublishUrl(e.target.value)}
               InputProps={{
-                startAdornment: <Link sx={{ color: 'text.secondary', mr: 1 }} />,
+                startAdornment: <Link sx={{ color: 'text.secondary', mr: `${spacing.xs}px` }} />,
               }}
               helperText="네이버 블로그, 티스토리, 브런치, 인스타그램 등 실제 발행한 주소를 입력하세요."
               FormHelperTextProps={{ sx: { color: 'black' } }}
