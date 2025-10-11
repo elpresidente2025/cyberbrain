@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import { ContentCopy, DeleteOutline } from '@mui/icons-material';
 import { NotificationSnackbar, useNotification } from './ui';
+import { transitions } from '../theme/tokens';
 
 // 유틸리티 함수들
 function formatDate(iso) {
@@ -100,7 +101,17 @@ export default function PostViewerModal({
 
   return (
     <>
-      <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
+      <Dialog
+        open={open}
+        onClose={onClose}
+        fullWidth
+        maxWidth="md"
+        PaperProps={{
+          sx: {
+            transition: `transform ${transitions.normal} ${transitions.easing.easeOut}, opacity ${transitions.normal} ${transitions.easing.easeOut}`
+          }
+        }}
+      >
         <DialogTitle sx={{ pr: 2 }}>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
             생성일 {formatDate(post?.createdAt)} · 수정일 {formatDate(post?.updatedAt)}

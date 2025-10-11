@@ -1,6 +1,7 @@
 import React from 'react';
 import { Fab } from '@mui/material';
 import { LightbulbOutlined } from '@mui/icons-material';
+import { transitions } from '../theme/tokens';
 
 const HelpButton = ({ onClick }) => {
   return (
@@ -23,7 +24,7 @@ const HelpButton = ({ onClick }) => {
             '0 8px 24px rgba(248, 192, 35, 0.8), 0 0 20px rgba(248, 192, 35, 0.6)',
         },
         boxShadow: '0 4px 12px rgba(248, 192, 35, 0.4)',
-        transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+        transition: `all ${transitions.normal} ${transitions.easing.easeInOut}`,
         '@supports (bottom: env(safe-area-inset-bottom))': {
           bottom: 'calc(16px + env(safe-area-inset-bottom))',
         },

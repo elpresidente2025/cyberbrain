@@ -1,6 +1,6 @@
 import React from 'react';
 import { Paper, Typography, Box } from '@mui/material';
-import { spacing, borders, visualWeight, verticalRhythm } from '../../../theme/tokens';
+import { spacing, borders, visualWeight, verticalRhythm, transitions, shadows } from '../../../theme/tokens';
 
 /**
  * ContentCard - 콘텐츠 카드 컴포넌트
@@ -32,6 +32,11 @@ const ContentCard = ({
         bgcolor: transparent ? 'transparent' : 'rgba(255,255,255,0.03)',
         border: '1px solid rgba(255,255,255,0.1)',
         borderRadius: `${borders.radius.md}px`,
+        transition: `all ${transitions.normal} ${transitions.easing.easeInOut}`,
+        '&:hover': {
+          boxShadow: shadows.cardHover,
+          borderColor: 'rgba(255,255,255,0.15)'
+        },
         ...props.sx
       }}
       {...props}

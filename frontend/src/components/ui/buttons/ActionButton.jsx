@@ -1,5 +1,6 @@
 import React from 'react';
 import { Button, CircularProgress, Tooltip, useTheme } from '@mui/material';
+import { transitions } from '../../../theme/tokens';
 
 /**
  * ActionButton - 향상된 액션 버튼 컴포넌트
@@ -37,9 +38,11 @@ const ActionButton = ({
           sx: {
             bgcolor: baseColor,
             color: '#ffffff',
+            transition: `all ${transitions.normal} ${transitions.easing.easeInOut}`,
             '&:hover': {
               bgcolor: baseColor,
-              filter: 'brightness(0.9)'
+              filter: 'brightness(0.9)',
+              transform: 'scale(0.98)'
             }
           }
         };
@@ -50,9 +53,11 @@ const ActionButton = ({
           sx: {
             color: baseColor,
             borderColor: baseColor,
+            transition: `all ${transitions.normal} ${transitions.easing.easeInOut}`,
             '&:hover': {
               borderColor: baseColor,
-              bgcolor: `${baseColor}10`
+              bgcolor: `${baseColor}10`,
+              transform: 'scale(0.98)'
             }
           }
         };

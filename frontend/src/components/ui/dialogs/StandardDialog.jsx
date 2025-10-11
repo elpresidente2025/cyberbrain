@@ -10,6 +10,7 @@ import {
   Button
 } from '@mui/material';
 import { Close } from '@mui/icons-material';
+import { transitions } from '../../../theme/tokens';
 
 /**
  * StandardDialog - 재사용 가능한 표준 다이얼로그 컴포넌트
@@ -47,7 +48,10 @@ const StandardDialog = ({
       maxWidth={maxWidth}
       fullWidth={fullWidth}
       PaperProps={{
-        sx: minHeight ? { minHeight } : undefined
+        sx: {
+          ...(minHeight ? { minHeight } : {}),
+          transition: `transform ${transitions.normal} ${transitions.easing.easeOut}, opacity ${transitions.normal} ${transitions.easing.easeOut}`
+        }
       }}
       {...props}
     >
