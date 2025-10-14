@@ -1,4 +1,5 @@
 import { createTheme } from '@mui/material/styles';
+import { colors } from './theme/tokens';
 
 const createCustomTheme = (isDarkMode) => createTheme({
   // 1. 색상(Color) 설정 - 라이트/다크 모드 대응
@@ -6,6 +7,23 @@ const createCustomTheme = (isDarkMode) => createTheme({
     mode: isDarkMode ? 'dark' : 'light',
     primary: {
       main: isDarkMode ? '#4FC3F7' : '#013c95',
+    },
+    // 브랜드 컬러 (디자인 토큰 통합)
+    brand: {
+      primary: colors.brand.primary,
+      primaryHover: colors.brand.primaryHover,
+      primaryLight: colors.brand.primaryLight,
+      primaryBorder: colors.brand.primaryBorder,
+    },
+    // UI 구조 컬러 (디자인 토큰 통합)
+    ui: {
+      header: colors.ui.header,
+      headerHover: colors.ui.headerHover,
+      background: colors.ui.background,
+      backgroundLight: colors.ui.backgroundLight,
+      gridLineHorizontal: colors.ui.gridLineHorizontal,
+      gridLineVertical: colors.ui.gridLineVertical,
+      divider: colors.ui.divider,
     },
     background: {
       default: 'transparent',

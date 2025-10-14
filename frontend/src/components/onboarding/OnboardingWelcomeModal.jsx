@@ -9,7 +9,8 @@ import {
   Typography,
   Box,
   Alert,
-  Chip
+  Chip,
+  useTheme
 } from '@mui/material';
 import {
   AutoFixHigh,
@@ -19,6 +20,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 
 const OnboardingWelcomeModal = ({ open, onClose, userName }) => {
+  const theme = useTheme();
   const navigate = useNavigate();
 
   const handleStartNow = () => {
@@ -53,8 +55,8 @@ const OnboardingWelcomeModal = ({ open, onClose, userName }) => {
         alignItems: 'center',
         gap: 1
       }}>
-        <AutoFixHigh sx={{ fontSize: 48, color: '#152484', mb: 1 }} />
-        <Typography variant="h5" component="div" sx={{ fontWeight: 'bold', color: '#152484' }}>
+        <AutoFixHigh sx={{ fontSize: 48, color: theme.palette.ui?.header || '#152484', mb: 1 }} />
+        <Typography variant="h5" component="div" sx={{ fontWeight: 'bold', color: theme.palette.ui?.header || '#152484' }}>
           환영합니다!
         </Typography>
         <Chip
@@ -143,10 +145,11 @@ const OnboardingWelcomeModal = ({ open, onClose, userName }) => {
           startIcon={<AccountCircle />}
           sx={{
             minWidth: 140,
-            bgcolor: '#152484',
-            color: 'white',
+            bgcolor: '#00d4ff',
+            color: '#000',
+            fontWeight: 600,
             '&:hover': {
-              bgcolor: '#003A87'
+              bgcolor: '#00a8cc'
             }
           }}
         >

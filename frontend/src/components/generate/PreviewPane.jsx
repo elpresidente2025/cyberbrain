@@ -1,12 +1,14 @@
 // frontend/src/components/generate/PreviewPane.jsx
 import React from 'react';
-import { 
-  Box, 
-  Typography, 
-  Paper
+import {
+  Box,
+  Typography,
+  Paper,
+  useTheme
 } from '@mui/material';
 
 export default function PreviewPane({ draft }) {
+  const theme = useTheme();
   if (!draft) {
     return null;
   }
@@ -72,7 +74,7 @@ export default function PreviewPane({ draft }) {
           // 🔥 'strong' 태그 스타일 개선 (가이드 역할 강화)
           '.article-content strong': {
             fontWeight: 700,
-            color: '#152484', // 남색 계열로 텍스트 색상 강조
+            color: theme.palette.ui?.header || '#152484', // 남색 계열로 텍스트 색상 강조
             backgroundColor: 'rgba(33, 150, 243, 0.1)', // 아주 연한 하늘색 배경 추가
             padding: '2px 5px',
             borderRadius: '4px',

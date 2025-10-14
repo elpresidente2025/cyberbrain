@@ -13,7 +13,8 @@ import {
   ListItemIcon,
   ListItemText,
   Divider,
-  Chip
+  Chip,
+  useTheme
 } from '@mui/material';
 import {
   Edit,
@@ -27,6 +28,7 @@ import {
 } from '@mui/icons-material';
 
 const ProfileBioGuideModal = ({ open, onClose, onStartWriting, userName }) => {
+  const theme = useTheme();
 
   const handleStartWriting = () => {
     onClose();
@@ -89,8 +91,8 @@ const ProfileBioGuideModal = ({ open, onClose, onStartWriting, userName }) => {
         alignItems: 'center',
         gap: 1
       }}>
-        <Edit sx={{ fontSize: 48, color: '#152484', mb: 1 }} />
-        <Typography variant="h5" component="div" sx={{ fontWeight: 'bold', color: '#152484' }}>
+        <Edit sx={{ fontSize: 48, color: theme.palette.ui?.header || '#152484', mb: 1 }} />
+        <Typography variant="h5" component="div" sx={{ fontWeight: 'bold', color: theme.palette.ui?.header || '#152484' }}>
           문체 DNA 입력하기
         </Typography>
         <Chip
@@ -192,9 +194,11 @@ const ProfileBioGuideModal = ({ open, onClose, onStartWriting, userName }) => {
           startIcon={<Edit />}
           sx={{
             minWidth: 140,
-            bgcolor: '#152484',
+            bgcolor: '#00d4ff',
+            color: '#000',
+            fontWeight: 600,
             '&:hover': {
-              bgcolor: '#003A87'
+              bgcolor: '#00a8cc'
             }
           }}
         >

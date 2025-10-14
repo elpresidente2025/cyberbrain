@@ -10,7 +10,8 @@ import {
   Box,
   Alert,
   Chip,
-  IconButton
+  IconButton,
+  useTheme
 } from '@mui/material';
 import {
   Celebration,
@@ -21,6 +22,7 @@ import {
 } from '@mui/icons-material';
 
 const CongratulationsModal = ({ open, onClose, userName, bioContent }) => {
+  const theme = useTheme();
   const [copied, setCopied] = useState(false);
 
   const handleCopyBio = async () => {
@@ -71,8 +73,8 @@ const CongratulationsModal = ({ open, onClose, userName, bioContent }) => {
           <Close />
         </IconButton>
 
-        <Celebration sx={{ fontSize: 64, color: '#152484', mb: 1 }} />
-        <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', color: '#152484' }}>
+        <Celebration sx={{ fontSize: 64, color: theme.palette.ui?.header || '#152484', mb: 1 }} />
+        <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', color: theme.palette.ui?.header || '#152484' }}>
           🎉 축하합니다!
         </Typography>
         <Chip
@@ -183,10 +185,11 @@ const CongratulationsModal = ({ open, onClose, userName, bioContent }) => {
           variant="contained"
           sx={{
             minWidth: 140,
-            bgcolor: '#152484',
-            color: 'white',
+            bgcolor: '#00d4ff',
+            color: '#000',
+            fontWeight: 600,
             '&:hover': {
-              bgcolor: '#003A87'
+              bgcolor: '#00a8cc'
             }
           }}
         >

@@ -46,6 +46,7 @@ firebase-adminsdk-*.json
 
 # Additional security files
 functions/.env
+functions/.runtimeconfig.json
 **/private-key.json
 **/credentials.json
 # local tmp files
@@ -61,3 +62,9 @@ functions/.env
 # Tool outputs
 .serena/
 serena/
+
+# Windows temp files
+nul
+temp_*.js
+temp_*.py
+*.cache

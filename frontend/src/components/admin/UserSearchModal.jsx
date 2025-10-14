@@ -17,12 +17,14 @@ import {
   CircularProgress,
   Alert,
   InputAdornment,
-  Divider
+  Divider,
+  useTheme
 } from '@mui/material';
 import { Search, Close, Visibility, Download } from '@mui/icons-material';
 import { callFunctionWithRetry } from '../../services/firebaseService';
 
 function UserSearchModal({ open, onClose }) {
+  const theme = useTheme();
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -97,7 +99,7 @@ function UserSearchModal({ open, onClose }) {
     <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
       <DialogTitle>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6" sx={{ color: '#152484', fontWeight: 600 }}>
+          <Typography variant="h6" sx={{ color: theme.palette.ui?.header || '#152484', fontWeight: 600 }}>
             사용자 검색
           </Typography>
           <IconButton onClick={handleClose}>
@@ -127,7 +129,7 @@ function UserSearchModal({ open, onClose }) {
                     variant="contained"
                     onClick={handleSearch}
                     disabled={loading}
-                    sx={{ backgroundColor: '#152484' }}
+                    sx={{ backgroundColor: theme.palette.ui?.header || '#152484' }}
                   >
                     {loading ? <CircularProgress size={20} /> : '검색'}
                   </Button>

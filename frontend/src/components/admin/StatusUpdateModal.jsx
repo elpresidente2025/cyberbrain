@@ -23,7 +23,8 @@ import {
   Switch,
   Accordion,
   AccordionSummary,
-  AccordionDetails
+  AccordionDetails,
+  useTheme
 } from '@mui/material';
 import { 
   Close, 
@@ -39,6 +40,7 @@ import {
 import { updateSystemStatus, getSystemStatus } from '../../services/firebaseService';
 
 function StatusUpdateModal({ open, onClose }) {
+  const theme = useTheme();
   const [currentStatus, setCurrentStatus] = useState(null);
   const [newStatus, setNewStatus] = useState('');
   const [reason, setReason] = useState('');
@@ -175,8 +177,8 @@ function StatusUpdateModal({ open, onClose }) {
       <DialogTitle>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Api sx={{ color: '#152484' }} />
-            <Typography variant="h6" sx={{ color: '#152484', fontWeight: 600 }}>
+            <Api sx={{ color: theme.palette.ui?.header || '#152484' }} />
+            <Typography variant="h6" sx={{ color: theme.palette.ui?.header || '#152484', fontWeight: 600 }}>
               시스템 상태 관리
             </Typography>
           </Box>
@@ -213,7 +215,7 @@ function StatusUpdateModal({ open, onClose }) {
                       size="small"
                       startIcon={<Refresh />}
                       onClick={fetchCurrentStatus}
-                      sx={{ color: '#152484' }}
+                      sx={{ color: theme.palette.ui?.header || '#152484' }}
                     >
                       새로고침
                     </Button>
@@ -419,7 +421,7 @@ function StatusUpdateModal({ open, onClose }) {
           onClick={handleStatusUpdate}
           disabled={updating || !newStatus || !reason.trim() || success}
           sx={{ 
-            backgroundColor: '#152484',
+            backgroundColor: theme.palette.ui?.header || '#152484',
             '&:hover': { backgroundColor: '#003A87' }
           }}
         >

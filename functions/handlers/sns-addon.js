@@ -193,8 +193,8 @@ exports.convertToSNS = httpWrap(async (req) => {
     const platforms = Object.keys(SNS_LIMITS);
     const results = {};
     
-    // 사용할 모델 결정 (기본값: gemini-1.5-flash)
-    const selectedModel = modelName || 'gemini-1.5-flash';
+    // 사용할 모델 결정 (기본값: gemini-2.0-flash-exp)
+    const selectedModel = modelName || 'gemini-2.0-flash-exp';
     console.log('🔄 모든 SNS 플랫폼 변환 시작:', { postId: postIdStr, userRole, userInfo, selectedModel });
 
     // 각 플랫폼별로 병렬 처리로 변환 (재시도 로직 포함)

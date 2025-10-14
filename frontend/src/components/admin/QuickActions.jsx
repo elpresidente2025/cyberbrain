@@ -7,7 +7,8 @@ import {
   Box,
   Switch,
   FormControlLabel,
-  Alert
+  Alert,
+  useTheme
 } from '@mui/material';
 import {
   Settings,
@@ -22,6 +23,7 @@ import HongKongNeonCard from '../HongKongNeonCard';
 import { getAdminStats, callFunctionWithRetry } from '../../services/firebaseService';
 
 function QuickActions() {
+  const theme = useTheme();
   const [userListOpen, setUserListOpen] = useState(false);
   const [statusUpdateOpen, setStatusUpdateOpen] = useState(false);
   const [testMode, setTestMode] = useState(() => {
@@ -121,7 +123,7 @@ function QuickActions() {
   return (
     <>
       <HongKongNeonCard sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom sx={{ color: '#152484', fontWeight: 600 }}>
+        <Typography variant="h6" gutterBottom sx={{ color: theme.palette.ui?.header || '#152484', fontWeight: 600 }}>
           빠른 작업 (Quick Actions)
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
@@ -137,7 +139,7 @@ function QuickActions() {
               onClick={() => setUserListOpen(true)}
               sx={{ 
                 py: 2,
-                bgcolor: '#152484',
+                bgcolor: theme.palette.ui?.header || '#152484',
                 color: 'white',
                 '&:hover': {
                   bgcolor: '#1e2d9f',

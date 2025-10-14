@@ -16,6 +16,7 @@ import ProfileRequiredRoute from './components/ProfileRequiredRoute.jsx';
 import './index.css';
 
 // ?�� ?�시: lazy loading ?�거?�고 직접 import
+import HomePage from './pages/HomePage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -43,7 +44,7 @@ const router = createBrowserRouter([
     element: <App />,
     errorElement: <ErrorPage />,
     children: [
-      { index: true, element: <LoginPage /> },
+      { index: true, element: <HomePage /> },
       { path: 'login', element: <LoginPage /> },
       { path: 'register', element: <RegisterPage /> },
       {

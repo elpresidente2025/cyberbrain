@@ -211,7 +211,18 @@ function LoginPage() {
             <Button onClick={handleNaverDialogClose} color="secondary">
               취소
             </Button>
-            <Button onClick={handleGoToRegister} variant="contained" color="primary">
+            <Button
+              onClick={handleGoToRegister}
+              variant="contained"
+              sx={{
+                bgcolor: '#00d4ff',
+                color: '#000',
+                fontWeight: 600,
+                '&:hover': {
+                  bgcolor: '#00a8cc'
+                }
+              }}
+            >
               회원가입 페이지로 이동
             </Button>
           </DialogActions>

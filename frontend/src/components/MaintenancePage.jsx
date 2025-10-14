@@ -9,7 +9,8 @@ import {
   Button,
   Divider,
   Chip,
-  CircularProgress
+  CircularProgress,
+  useTheme
 } from '@mui/material';
 import {
   Warning,
@@ -21,6 +22,7 @@ import {
 } from '@mui/icons-material';
 
 function MaintenancePage({ maintenanceInfo, onRetry, isAdmin, onLogout }) {
+  const theme = useTheme();
   console.log('🔧 MaintenancePage props:', { 
     hasOnLogout: !!onLogout, 
     isAdmin, 
@@ -83,7 +85,7 @@ function MaintenancePage({ maintenanceInfo, onRetry, isAdmin, onLogout }) {
             gutterBottom
             sx={{ 
               fontWeight: 700,
-              color: '#152484',
+              color: theme.palette.ui?.header || '#152484',
               mb: 3,
               fontSize: { xs: '2rem', md: '3rem' }
             }}
@@ -145,7 +147,7 @@ function MaintenancePage({ maintenanceInfo, onRetry, isAdmin, onLogout }) {
                 startIcon={<AdminPanelSettings />}
                 onClick={() => window.location.href = '/admin'}
                 sx={{
-                  backgroundColor: '#152484',
+                  backgroundColor: theme.palette.ui?.header || '#152484',
                   '&:hover': { backgroundColor: '#003A87' },
                   mr: 2
                 }}
@@ -163,8 +165,8 @@ function MaintenancePage({ maintenanceInfo, onRetry, isAdmin, onLogout }) {
               onClick={onRetry}
               size="large"
               sx={{
-                borderColor: '#152484',
-                color: '#152484',
+                borderColor: theme.palette.ui?.header || '#152484',
+                color: theme.palette.ui?.header || '#152484',
                 '&:hover': {
                   borderColor: '#003A87',
                   backgroundColor: 'rgba(21, 36, 132, 0.1)'
@@ -186,7 +188,7 @@ function MaintenancePage({ maintenanceInfo, onRetry, isAdmin, onLogout }) {
                   borderColor: '#55207D',
                   color: '#55207D',
                   '&:hover': {
-                    borderColor: '#152484',
+                    borderColor: theme.palette.ui?.header || '#152484',
                     backgroundColor: 'rgba(85, 32, 125, 0.1)'
                   }
                 }}
@@ -198,7 +200,7 @@ function MaintenancePage({ maintenanceInfo, onRetry, isAdmin, onLogout }) {
 
           {/* 로딩 애니메이션 */}
           <Box sx={{ mt: 4, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2 }}>
-            <CircularProgress size={20} sx={{ color: '#152484' }} />
+            <CircularProgress size={20} sx={{ color: theme.palette.ui?.header || '#152484' }} />
             <Typography variant="body2" color="text.secondary">
               시스템 복구 작업을 진행하고 있습니다...
             </Typography>

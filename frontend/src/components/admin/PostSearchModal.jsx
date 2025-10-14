@@ -24,7 +24,8 @@ import {
   FormControl,
   InputLabel,
   Select,
-  MenuItem
+  MenuItem,
+  useTheme
 } from '@mui/material';
 import { 
   Search, 
@@ -39,6 +40,7 @@ import {
 import { callFunctionWithRetry } from '../../services/firebaseService';
 
 function PostSearchModal({ open, onClose }) {
+  const theme = useTheme();
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -159,7 +161,7 @@ function PostSearchModal({ open, onClose }) {
     <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>
       <DialogTitle>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6" sx={{ color: '#152484', fontWeight: 600 }}>
+          <Typography variant="h6" sx={{ color: theme.palette.ui?.header || '#152484', fontWeight: 600 }}>
             원고 검색
           </Typography>
           <IconButton onClick={handleClose}>
@@ -189,7 +191,7 @@ function PostSearchModal({ open, onClose }) {
                     variant="contained"
                     onClick={handleSearch}
                     disabled={loading}
-                    sx={{ backgroundColor: '#152484' }}
+                    sx={{ backgroundColor: theme.palette.ui?.header || '#152484' }}
                   >
                     {loading ? <CircularProgress size={20} /> : '검색'}
                   </Button>

@@ -41,6 +41,9 @@ const DashboardLayout = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Design tokens
+  const headerBgColor = theme.palette.ui?.header || '#152484';
+
   const handleLogout = async () => await logout();
   const handleLogoClick = () => navigate('/dashboard');
 
@@ -90,7 +93,7 @@ const DashboardLayout = ({ children }) => {
         position="fixed"
         elevation={0}
         sx={{
-          bgcolor: '#152484',
+          bgcolor: headerBgColor,
           top: 0,
           zIndex: (t) => t.zIndex.appBar + 1,
           borderRadius: 0,
@@ -204,7 +207,7 @@ const DashboardLayout = ({ children }) => {
         sx={{
           py: 2,
           px: 2,
-          bgcolor: '#152484',
+          bgcolor: headerBgColor,
           borderTop: '1px solid',
           borderColor: 'divider',
           textAlign: 'center',

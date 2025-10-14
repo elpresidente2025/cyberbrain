@@ -47,21 +47,22 @@ export default function GenerateActions({
             disabled={!canGenerate}
             loading={loading}
             loadingText="생성 중..."
-            sx={{ 
+            sx={{
               minWidth: isMobile ? 'auto' : 160,
               flex: isMobile ? 1 : 'none',
-              bgcolor: canGenerate ? '#152484 !important' : '#757575 !important',
-              color: 'white !important',
+              bgcolor: canGenerate ? '#00d4ff !important' : '#757575 !important',
+              color: canGenerate ? '#000 !important' : 'white !important',
+              fontWeight: 600,
               transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
               '&.Mui-disabled': {
                 bgcolor: '#757575 !important',
                 color: 'rgba(255, 255, 255, 0.6) !important'
               },
               ...(canGenerate && !loading && {
-                boxShadow: '0 0 10px rgba(0, 255, 255, 0.8)',
+                boxShadow: '0 0 10px rgba(0, 212, 255, 0.8)',
                 '&:hover': {
-                  bgcolor: '#152484 !important',
-                  boxShadow: '0 0 15px rgba(0, 255, 255, 1.0)',
+                  bgcolor: '#00a8cc !important',
+                  boxShadow: '0 0 15px rgba(0, 212, 255, 1.0)',
                   transform: 'scale(0.98)',
                 }
               })
@@ -69,14 +70,15 @@ export default function GenerateActions({
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <span>{attempts === 0 ? '새 원고 생성' : '다른 버전 생성'}</span>
-              <Chip 
+              <Chip
                 label={`${attemptsRemaining}/${maxAttempts}`}
                 size="small"
                 sx={{
-                  bgcolor: 'rgba(255, 255, 255, 0.2)',
-                  color: 'white',
+                  bgcolor: canGenerate ? 'rgba(0, 0, 0, 0.15)' : 'rgba(255, 255, 255, 0.2)',
+                  color: canGenerate ? '#000' : 'white',
                   fontSize: '0.75rem',
-                  height: '20px'
+                  height: '20px',
+                  fontWeight: 600
                 }}
               />
             </Box>

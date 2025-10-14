@@ -62,10 +62,10 @@ function getUserFriendlyErrorMessage(error) {
  * @description 주어진 프롬프트로 Gemini 모델을 호출하고, 텍스트 응답을 반환합니다.
  * @param {string} prompt - AI 모델에게 전달할 프롬프트
  * @param {number} retries - 실패 시 재시도 횟수
- * @param {string} modelName - 사용할 모델명 (기본값: gemini-1.5-flash)
+ * @param {string} modelName - 사용할 모델명 (기본값: gemini-2.0-flash-exp)
  * @returns {Promise<string>} - AI가 생성한 텍스트
  */
-async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-1.5-flash') {
+async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.0-flash-exp') {
   if (!API_KEY) {
     logError('callGenerativeModel', 'Gemini API 키가 설정되지 않았습니다.');
     throw new HttpsError('internal', 'AI 서비스 설정에 오류가 발생했습니다.');
@@ -75,16 +75,23 @@ async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-1.5-
   
   // 모델별 설정
   const isGemini2 = modelName.includes('gemini-2.0');
+
+  const generationConfig = {
+    temperature: 0.3, // 정치인 원고: 창의성보다 지시 준수율 우선
+    topK: 25,
+    topP: 0.85,
+    maxOutputTokens: isGemini2 ? 20000 : 20000, // 한국어 장문 콘텐츠 생성을 위한 토큰 증가
+    stopSequences: ['```', '---', '<!--'], // 불완전한 출력 방지
+  };
+
+  // Gemini 2.0만 JSON mode 지원
+  if (isGemini2) {
+    generationConfig.responseMimeType = 'application/json';
+  }
+
   const model = genAI.getGenerativeModel({
     model: modelName,
-    generationConfig: {
-      temperature: 0.7,
-      topK: 40,
-      topP: 0.95,
-      maxOutputTokens: isGemini2 ? 20000 : 20000, // 한국어 장문 콘텐츠 생성을 위한 토큰 증가
-      responseMimeType: 'application/json', // JSON 출력을 명시적으로 요구
-      stopSequences: ['```', '---', '<!--'], // 불완전한 출력 방지
-    },
+    generationConfig,
     safetySettings: [
       { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
       { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },

@@ -9,6 +9,7 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const NodeCache = require('node-cache');
+const { callGenerativeModel } = require('./gemini');
 
 // 캐시 설정 (10분 TTL)
 const cache = new NodeCache({ stdTTL: 600 });
@@ -83,20 +84,96 @@ async function fetchNaverNews(topic, limit = 3) {
 }
 
 /**
- * 뉴스 컨텍스트를 프롬프트용 텍스트로 변환
+ * AI로 뉴스를 핵심만 압축 (토큰 절감)
  * @param {Array} news - 뉴스 목록
+ * @returns {Promise<Object>} 압축된 뉴스 정보
+ */
+async function compressNewsWithAI(news) {
+  if (!news || news.length === 0) {
+    return null;
+  }
+
+  const cacheKey = `compressed:${JSON.stringify(news.map(n => n.title))}`;
+  if (cache.has(cacheKey)) {
+    console.log('✅ 캐시에서 압축 뉴스 반환');
+    return cache.get(cacheKey);
+  }
+
+  const combined = news.map(n =>
+    `${n.title}${n.summary ? `. ${n.summary}` : ''}`
+  ).join('\n\n');
+
+  const prompt = `다음 뉴스를 핵심만 100자 이내로 요약하세요:
+
+${combined}
+
+출력 형식 (반드시 JSON):
+{
+  "summary": "핵심 요약 (100자 이내)",
+  "keyPoints": ["포인트1", "포인트2", "포인트3"]
+}`;
+
+  try {
+    const result = await callGenerativeModel(prompt, 1, 'gemini-2.0-flash-exp');
+
+    // JSON 추출
+    const jsonMatch = result.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      const compressed = {
+        summary: parsed.summary,
+        keyPoints: parsed.keyPoints || [],
+        sources: news.map(n => n.link)
+      };
+
+      cache.set(cacheKey, compressed);
+      console.log('✅ 뉴스 AI 압축 완료:', compressed.summary.substring(0, 50) + '...');
+      return compressed;
+    }
+  } catch (error) {
+    console.error('❌ 뉴스 압축 실패:', error.message);
+  }
+
+  // 폴백: 첫 번째 뉴스 제목만 사용
+  return {
+    summary: news[0]?.title || '',
+    keyPoints: news.slice(0, 3).map(n => n.title),
+    sources: news.map(n => n.link)
+  };
+}
+
+/**
+ * 뉴스 컨텍스트를 프롬프트용 텍스트로 변환
+ * @param {Array|Object} news - 뉴스 목록 또는 압축된 뉴스
  * @returns {string} 프롬프트에 삽입할 텍스트
  */
 function formatNewsForPrompt(news) {
-  if (!news || news.length === 0) {
+  if (!news) {
     return '';
   }
 
-  const newsText = news.map((item, idx) => {
-    return `${idx + 1}. ${item.title}${item.date ? ` (${item.date})` : ''}${item.summary ? `\n   요약: ${item.summary}` : ''}`;
-  }).join('\n\n');
+  // 압축된 뉴스 형식인 경우
+  if (news.summary && news.keyPoints) {
+    return `
+[📰 뉴스 핵심]
+${news.summary}
 
-  return `
+주요 포인트:
+${news.keyPoints.map((p, i) => `${i + 1}. ${p}`).join('\n')}
+
+출처: ${news.sources?.slice(0, 2).join(', ') || '네이버 뉴스'}
+
+---
+`;
+  }
+
+  // 기존 형식 (배열)
+  if (Array.isArray(news) && news.length > 0) {
+    const newsText = news.map((item, idx) => {
+      return `${idx + 1}. ${item.title}${item.date ? ` (${item.date})` : ''}${item.summary ? `\n   요약: ${item.summary}` : ''}`;
+    }).join('\n\n');
+
+    return `
 [📰 최신 뉴스 정보]
 아래는 실제 최신 뉴스입니다. 이 정보를 참고하여 구체적이고 사실 기반의 원고를 작성하세요.
 
@@ -104,6 +181,9 @@ ${newsText}
 
 ---
 `;
+  }
+
+  return '';
 }
 
 /**
@@ -124,6 +204,7 @@ function shouldFetchNews(category) {
 
 module.exports = {
   fetchNaverNews,
+  compressNewsWithAI,
   formatNewsForPrompt,
   shouldFetchNews
 };

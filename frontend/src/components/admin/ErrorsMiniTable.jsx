@@ -12,7 +12,8 @@ import {
   TableRow,
   Alert,
   Chip,
-  Tooltip
+  Tooltip,
+  useTheme
 } from '@mui/material';
 import { LoadingSkeleton } from '../loading';
 import { Download, Warning, Error, Refresh } from '@mui/icons-material';
@@ -21,6 +22,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { getErrorLogs } from '../../services/firebaseService';
 
 function ErrorsMiniTable() {
+  const theme = useTheme();
   const { user } = useAuth();
   const [errors, setErrors] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -158,7 +160,7 @@ function ErrorsMiniTable() {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Warning sx={{ color: '#55207D' }} />
-          <Typography variant="h6" sx={{ color: '#152484', fontWeight: 600 }}>
+          <Typography variant="h6" sx={{ color: theme.palette.ui?.header || '#152484', fontWeight: 600 }}>
             최근 에러 로그
           </Typography>
           <Chip 
@@ -192,7 +194,7 @@ function ErrorsMiniTable() {
             startIcon={<Refresh />}
             onClick={fetchRecentErrors}
             sx={{ 
-              bgcolor: '#152484',
+              bgcolor: theme.palette.ui?.header || '#152484',
               color: 'white',
               '&:hover': { 
                 bgcolor: '#1e2d9f',

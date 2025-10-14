@@ -7,12 +7,14 @@ import {
   Typography, 
   Alert, 
   Button,
-  LinearProgress
+  LinearProgress,
+  useTheme
 } from '@mui/material';
 import { AccountCircle, Edit } from '@mui/icons-material';
 import { useAuth } from '../hooks/useAuth';
 
 const ProfileRequiredRoute = ({ children }) => {
+  const theme = useTheme();
   const { user, loading } = useAuth();
 
   console.log('🔒 ProfileRequiredRoute 상태:', { 
@@ -55,8 +57,8 @@ const ProfileRequiredRoute = ({ children }) => {
         <Container maxWidth="sm">
           <Paper sx={{ p: 4, textAlign: 'center' }}>
             <Box sx={{ mb: 3 }}>
-              <AccountCircle sx={{ fontSize: 80, color: '#152484', mb: 2 }} />
-              <Typography variant="h4" sx={{ fontWeight: 'bold', mb: 1, color: '#152484' }}>
+              <AccountCircle sx={{ fontSize: 80, color: theme.palette.ui?.header || '#152484', mb: 2 }} />
+              <Typography variant="h4" sx={{ fontWeight: 'bold', mb: 1, color: theme.palette.ui?.header || '#152484' }}>
                 프로필 설정이 필요합니다
               </Typography>
               <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
@@ -82,7 +84,7 @@ const ProfileRequiredRoute = ({ children }) => {
                 startIcon={<Edit />}
                 onClick={() => window.location.href = '/profile'}
                 sx={{
-                  bgcolor: '#152484',
+                  bgcolor: theme.palette.ui?.header || '#152484',
                   py: 1.5,
                   '&:hover': { bgcolor: '#003A87' }
                 }}
@@ -94,8 +96,8 @@ const ProfileRequiredRoute = ({ children }) => {
                 variant="outlined"
                 onClick={() => window.location.href = '/dashboard'}
                 sx={{
-                  color: '#152484',
-                  borderColor: '#152484',
+                  color: theme.palette.ui?.header || '#152484',
+                  borderColor: theme.palette.ui?.header || '#152484',
                   '&:hover': { 
                     borderColor: '#003A87',
                     bgcolor: 'rgba(21, 36, 132, 0.04)'

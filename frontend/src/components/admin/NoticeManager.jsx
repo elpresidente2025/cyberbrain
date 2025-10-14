@@ -24,7 +24,8 @@ import {
   Box,
   IconButton,
   Alert,
-  Divider
+  Divider,
+  useTheme
 } from '@mui/material';
 import {
   Add,
@@ -40,6 +41,7 @@ import HongKongNeonCard from '../HongKongNeonCard';
 import { getNotices } from '../../services/firebaseService';
 
 function NoticeManager() {
+  const theme = useTheme();
   const [notices, setNotices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -190,8 +192,8 @@ function NoticeManager() {
     <HongKongNeonCard sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Campaign sx={{ color: '#152484' }} />
-          <Typography variant="h6" sx={{ color: '#152484', fontWeight: 600 }}>
+          <Campaign sx={{ color: theme.palette.ui?.header || '#152484' }} />
+          <Typography variant="h6" sx={{ color: theme.palette.ui?.header || '#152484', fontWeight: 600 }}>
             공지사항 관리
           </Typography>
           <Chip label={`${notices.length}개`} size="small" />
@@ -201,7 +203,7 @@ function NoticeManager() {
           startIcon={<Add />}
           onClick={() => handleOpenDialog()}
           sx={{ 
-            backgroundColor: '#152484',
+            backgroundColor: theme.palette.ui?.header || '#152484',
             color: 'white',
             '&:hover': { 
               backgroundColor: '#003A87',
@@ -421,7 +423,7 @@ function NoticeManager() {
             variant="contained" 
             onClick={handleSave}
             sx={{ 
-              backgroundColor: '#152484',
+              backgroundColor: theme.palette.ui?.header || '#152484',
               '&:hover': { backgroundColor: '#003A87' }
             }}
           >

@@ -6,7 +6,8 @@ const { httpWrap } = require('../common/http-wrap');
 const { auth } = require('../common/auth');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { callGenerativeModel } = require('../services/gemini');
-const { fetchNaverNews, formatNewsForPrompt, shouldFetchNews } = require('../services/news-fetcher');
+const { fetchNaverNews, compressNewsWithAI, formatNewsForPrompt, shouldFetchNews } = require('../services/news-fetcher');
+const { generateEnhancedMetadataHints } = require('../utils/enhanced-metadata-hints');
 
 /**
  * 怨듬갚 ?쒖쇅 湲?먯닔 怨꾩궛 (Java 肄붾뱶? ?숈씪??濡쒖쭅)
@@ -485,7 +486,7 @@ exports.generatePosts = httpWrap(async (req) => {
   // prompt ?꾨뱶 ?곗꽑 泥섎━
   const topic = data.prompt || data.topic || '';
   const category = data.category || '';
-  const modelName = data.modelName || 'gemini-1.5-flash'; // 湲곕낯媛믪? 1.5-flash
+  const modelName = data.modelName || 'gemini-2.0-flash-exp'; // 湲곕낯媛믪? 2.0-flash (JSON mode 吏??)
   const targetWordCount = data.wordCount || 1700; // ?ъ슜???붿껌 湲?먯닔 (湲곕낯媛?1700)
   
   console.log('?뵇 寃利?以?', { 
@@ -514,6 +515,7 @@ exports.generatePosts = httpWrap(async (req) => {
     let bioMetadata = null;
     let personalizedHints = '';
     let dailyLimitWarning = false;
+    let userMetadata = null; // 향상된 메타데이터 (스코프 버그 수정)
 
     try {
       // ?ъ슜??湲곕낯 ?뺣낫 議고쉶
@@ -603,6 +605,32 @@ exports.generatePosts = httpWrap(async (req) => {
         console.log('???섎Ⅴ?뚮굹 ?뚰듃 異붽?:', personaHints);
       }
 
+      // Bio 메타데이터 로드 (향상된 개인화를 위해)
+      try {
+        const bioDoc = await db.collection('bios').doc(uid).get();
+
+        if (bioDoc.exists && bioDoc.data().metadataStatus === 'completed') {
+          const bioData = bioDoc.data();
+
+          userMetadata = {
+            extractedMetadata: bioData.extractedMetadata,
+            typeMetadata: bioData.typeMetadata?.[category],
+            hints: bioData.optimizationHints
+          };
+
+          console.log('✅ 향상된 메타데이터 로드 완료:', uid);
+        }
+      } catch (metaError) {
+        console.warn('⚠️ 메타데이터 로드 실패 (무시하고 계속):', metaError.message);
+      }
+
+      // 향상된 메타데이터 힌트 추가
+      const enhancedHints = generateEnhancedMetadataHints(userMetadata, category);
+      if (enhancedHints) {
+        personalizedHints = personalizedHints ? `${personalizedHints} | ${enhancedHints}` : enhancedHints;
+        console.log('✅ 향상된 메타데이터 힌트 추가:', enhancedHints);
+      }
+
     } catch (profileError) {
       console.error('???꾨줈??Bio 議고쉶 ?ㅽ뙣:', {
         error: profileError.message,
@@ -666,15 +694,18 @@ exports.generatePosts = httpWrap(async (req) => {
     
     const fullRegion = generateNaturalRegionTitle(userProfile.regionLocal, userProfile.regionMetro);
 
-    // 뉴스 컨텍스트 조회 (시사비평, 정책제안 등 특정 카테고리만)
+
+    // 뉴스 컨텍스트 조회 (시사비평, 정책제안 등 특정 카테고리만) - AI 압축 적용
     let newsContext = '';
     if (shouldFetchNews(category)) {
       try {
         console.log('📰 뉴스 컨텍스트 조회 시작:', topic);
         const news = await fetchNaverNews(topic, 3);
         if (news && news.length > 0) {
-          newsContext = formatNewsForPrompt(news);
-          console.log(`✅ 뉴스 ${news.length}개 추가됨`);
+          // AI 압축 적용 (토큰 80% 절감)
+          const compressedNews = await compressNewsWithAI(news);
+          newsContext = formatNewsForPrompt(compressedNews);
+          console.log(`✅ 뉴스 ${news.length}개 압축 완료`);
         }
       } catch (newsError) {
         console.warn('⚠️ 뉴스 조회 실패 (무시하고 계속):', newsError.message);
@@ -682,130 +713,152 @@ exports.generatePosts = httpWrap(async (req) => {
       }
     }
 
-    const prompt = `YOU ARE A POLITICAL CONTENT WRITER. FOLLOW ALL INSTRUCTIONS PRECISELY OR YOU FAIL.
+    
+    // 배경정보에서 필수 키워드 추출 (검증용)
+    function extractKeywordsFromInstructions(instructions) {
+      if (!instructions) return [];
 
-WRITER IDENTITY (MUST USE EXACTLY):
-- NAME: ${fullName} (USE THIS EXACT NAME - NOT "??? OR "?섏썝")  
-- TITLE: ${config.title} (USE THIS EXACT TITLE - NEVER "?섏썝")
-- REGION: ${fullRegion} (USE THIS EXACT REGION - NOT "?곕━ 吏??)
-- STATUS: ${currentStatus}
+      const text = Array.isArray(instructions) ? instructions.join(' ') : instructions;
+      const keywords = [];
 
-?뺤튂??釉붾줈洹몄슜 ?먭퀬 1媛쒕? ?묒꽦?댁＜?몄슂.
+      // 1. 숫자+단위 추출 (예: 300여명, 500명, 1000개, 2회)
+      const numberMatches = text.match(/[0-9]+여?[명개회건차명월일년원]/g);
+      if (numberMatches) keywords.push(...numberMatches);
 
-**?슚 CRITICAL - 諛섎뱶??吏耳쒖빞 ???꾩닔 ?뺣낫 ?슚**
-- **?묒꽦???대쫫**: "${fullName}" (諛섎뱶?????대쫫??湲?먯꽌 ?ъ슜)
-- **?몄묶**: "${config.title}" (?ㅻⅨ ?몄묶 ?ъ슜 湲덉?)
-- **吏??*: "${fullRegion}" (?ㅻⅨ 吏???멸툒 ?덈? 湲덉?)
-- **?곹깭**: ${currentStatus} (?댁뿉 留욌뒗 ?쒗쁽留??ъ슜)
+      // 2. 인명 + 직책 패턴 (예: 홍길동 의원, 김철수 위원장, 홍길동 경기도당위원장)
+      // 첫 번째 패턴: 직책이 바로 붙거나 공백 후 나오는 경우
+      const nameWithTitleMatches = text.match(/[가-힣]{2,4}\s+(?:경기도당위원장|국회의원|위원장|의원|시장|도지사|장관|총리|대통령)/g);
+      if (nameWithTitleMatches) {
+        keywords.push(...nameWithTitleMatches);
+        // 이름만 별도 추출 (검증 시 부분 매칭용)
+        nameWithTitleMatches.forEach(match => {
+          const nameOnly = match.match(/([가-힣]{2,4})\s+/);
+          if (nameOnly && nameOnly[1]) keywords.push(nameOnly[1]);
+        });
+      }
 
-**?묒꽦???뺣낫 ?곸꽭:**
-- ?대쫫: ${fullName}
-- 吏곸콉: ${config.title}  
-- 吏?? ${fullRegion}
-- ?곹깭: ${currentStatus}
+      // 3. 조직명 패턴 (예: 경기도당, 서울시당, 교육위원회)
+      const orgMatches = text.match(/[가-힣]{2,}(?:도당|시당|구당|위원회|재단|협회|연합|위원회)/g);
+      if (orgMatches) keywords.push(...orgMatches);
 
-二쇱젣: ${topic}
-移댄뀒怨좊━: ${category}
-?몃?移댄뀒怨좊━: ${data.subCategory || '?놁쓬'}
-?ㅼ썙?? ${data.keywords || '?놁쓬'}
+      // 4. 이벤트명 패턴 (예: 체육대회, 토론회, 간담회)
+      const eventMatches = text.match(/[가-힣]{2,}(?:대회|행사|토론회|간담회|설명회|세미나|워크숍|회의|집회|축제)/g);
+      if (eventMatches) keywords.push(...eventMatches);
 
-?곹깭蹂?媛?대뱶?쇱씤: ${config.guideline}
+      // 5. 지명 패턴 (예: 서울특별시, 경기도, 수원시)
+      const placeMatches = text.match(/[가-힣]{2,}(?:특별시|광역시|도|시|군|구|읍|면|동)/g);
+      if (placeMatches) keywords.push(...placeMatches);
 
-${newsContext}
+      // 6. 연도/날짜 (예: 2024년, 2025년)
+      const yearMatches = text.match(/20[0-9]{2}년/g);
+      if (yearMatches) keywords.push(...yearMatches);
+
+      // 7. 정책/법안명 (예: OO법, OO정책, OO사업)
+      const policyMatches = text.match(/[가-힣]{2,}(?:법|조례|정책|사업|계획|방안)/g);
+      if (policyMatches) keywords.push(...policyMatches);
+
+      // 중복 제거 및 반환
+      return [...new Set(keywords)];
+    }
+
+    const backgroundKeywords = extractKeywordsFromInstructions(data.instructions);
+    console.log('🔍 배경정보 필수 키워드:', backgroundKeywords);
+
+
+    // 새로운 프롬프트 템플릿
+const prompt = `[PRIORITY 0: SYSTEM RULES]
+You are a political content writer. Output ONLY valid JSON. Never hallucinate facts.
+
+[PRIORITY 1: WHAT TO CREATE]
+Format: Political blog post
+Word Count: ${targetWordCount} characters (excluding spaces, ±50 acceptable)
+Category: ${category}
+Output Format: JSON with {title, content, wordCount}
+
+[PRIORITY 2: SOURCE MATERIAL - MANDATORY USE]
+🚨 You MUST use ALL items below. Before writing, verify you understand each item.
+
 ${(() => {
-  // 李멸퀬?먮즺 諛?諛곌꼍?뺣낫媛 ?섎??덈뒗 ?댁슜???덈뒗吏 ?뺤씤
-  const hasInstructions = Array.isArray(data.instructions) 
-    ? data.instructions.filter(item => item && item.trim() && item.trim() !== '?놁쓬').length > 0
-    : data.instructions && data.instructions.trim() && data.instructions.trim() !== '?놁쓬';
-  
-  return hasInstructions 
-    ? `李멸퀬?먮즺 諛?諛곌꼍?뺣낫: ${Array.isArray(data.instructions) ? data.instructions.filter(item => item.trim()).map((item, index) => `${index + 1}. ${item}`).join('\n') : data.instructions}` 
-    : '';
+  const hasInstructions = Array.isArray(data.instructions)
+    ? data.instructions.filter(item => item && item.trim() && item.trim() !== '없음').length > 0
+    : data.instructions && data.instructions.trim() && data.instructions.trim() !== '없음';
+
+  if (!hasInstructions) return 'No background information provided.';
+
+  const instructionText = Array.isArray(data.instructions)
+    ? data.instructions.filter(item => item.trim()).join('\n')
+    : data.instructions;
+
+  return `Background Information:
+${instructionText}
+
+CHECKLIST (Every item below MUST appear in your article):
+${backgroundKeywords.length > 0 ? backgroundKeywords.map((kw, i) => `☐ ${i+1}. "${kw}" must be included`).join('\n') : 'No specific keywords extracted'}`;
 })()}
 
-${personalizedHints ? `媛쒖씤??媛?대뱶?쇱씤: ${personalizedHints}` : ''}
+Writer Identity (use EXACTLY as specified):
+- Name: ${fullName}
+- Title: ${config.title}
+- Region: ${fullRegion}
+- Status: ${currentStatus}
 
-**?슚 ?뺤튂???낆옣 ?꾩닔 吏移?(?덈? 以?? ?슚:**
-- **吏묎텒???뚯냽 ?뺤튂??*: ???뺣? ?뺤콉怨??댁옱紐???듬졊?????吏吏?섍퀬 湲띿젙?곸씤 ?낆옣 寃ъ?
-- **嫄댁꽕???쒖븞**: 媛쒖꽑?ы빆? "?붿슧 諛쒖쟾?쒗궎??, "蹂댁셿?섏옄"???앹쑝濡?吏吏 湲곕컲?먯꽌 ?쒗쁽
-- **?덈? 湲덉?**: ???뺣????댁옱紐???듬졊?????鍮꾪뙋, 諛섎?, ?섎Ц ?쒗쁽 ?꾩쟾 湲덉?
-- **?밸줎 ?쇱튂**: ?붾텋?대?二쇰떦 怨듭떇 ?낆옣怨??쇱튂?섎뒗 ?댁슜留??묒꽦
-- **?묐젰???댁“**: ?뺣? ?뺤콉?????"?곴레 吏吏", "?④퍡 異붿쭊", "?붿슧 諛쒖쟾" ?깆쓽 湲띿젙???쒗쁽 ?ъ슜
+${newsContext}
 
-**?덈? 以??洹쒖튃:**
-1. ?꾩쟾???먭퀬 1媛쒕쭔 ?묒꽦 - 以묎컙???딆? 留먭퀬 ?앷퉴吏 ?꾩꽦?섏꽭??
-2. 湲????${targetWordCount}???뺥솗??以??(瑗쇱닔 湲덉?) - 踰붿쐞媛 ?꾨땶 ?뺥솗??湲?먯닔
-3. ?쒗뵆由우씠???뚮젅?댁뒪????ъ슜 湲덉? - 紐⑤뱺 ?댁슜???ㅼ젣濡??묒꽦?섏꽭??
-4. 硫뷀? ?뺣낫???ㅻ챸臾몄쓣 蹂몃Ц???ы븿?섏? 留덉꽭??
-5. 臾몄옣??以묎컙???딄굅??遺덉셿?꾪븯寃??앸궡吏 留덉꽭??
-6. **?뺤튂???낆옣**: ???뺣?? ?댁옱紐???듬졊??????덈??곸쑝濡?吏吏?섎뒗 ?낆옣 寃ъ?
+${personalizedHints ? `Additional Context: ${personalizedHints}` : ''}
 
-**?쒕ぉ ?묒꽦 ?밸퀎 媛?대뱶?쇱씤 (?뺤튂??釉붾줈洹??뱁솕):**
-- ?뺤튂?몃떎??沅뚯쐞? ?좊ː???쒗쁽: "~????????낆옣??留먯??쒕┰?덈떎", "~異붿쭊 諛⑹븞???쒖떆?⑸땲??
-- ?쒕?怨쇱쓽 吏꾩젙???뚰넻 吏?? "~?????二쇰? ?щ윭遺꾧퍡 蹂닿퀬?쒕┰?덈떎", "~?꾪솴??怨듭쑀?⑸땲??
-- 援ъ껜???ㅽ뻾 ?섏? ?쒕챸: "~?대젃寃?異붿쭊?섍쿋?듬땲??, "~?닿껐???꾪븳 援ъ껜??怨꾪쉷"
-- 吏??諛李⑺삎 肄섑뀗痢? 吏??뎄??愿묒뿭?쒕룄紐??먯뿰?ㅻ읇寃??ы븿
-- 20-30??理쒖쟻 湲몄씠 以??
-- **?덈? 湲덉?**: "?볦튂硫??꾪쉶?섎뒗", "諛섎뱶???뚯븘????, "~??鍮꾨?", "TOP 5", "媛???뺤떎??諛⑸쾿" ???곸뾽???좎젙???쒗쁽
-- **?덈? 湲덉?**: "李ъ궗", "?뚰쉶", "?⑥긽", "?뚭컧" 媛숈? 異붿긽???⑥뼱
+[PRIORITY 3: HOW TO WRITE]
+Structure:
+1. Opening: "존경하는 ${fullRegion} 주민 여러분, ${fullName}입니다"
+2. Body: 2-3 paragraphs focused on background information
+3. Closing: Natural thanks and signature
 
-**MANDATORY JSON ?묐떟 ?뺤떇 - ?덈? ?ㅻⅨ ?뺤떇 ?ъ슜 湲덉?:**
+Style Guidelines:
+- Formal political tone appropriate for ${currentStatus}
+- Minimize first-person after opening (use "저는" sparingly)
+- Focus on facts from background information
+- ${config.guideline}
 
+Content Requirements:
+- Base article on background information facts
+- Include specific names, numbers, dates from background
+- Use concrete examples rather than abstract statements
+- Connect to local community concerns
+
+Format:
+- HTML format with <p> tags for paragraphs
+- <strong> tags for emphasis (sparingly)
+- 4-5 paragraphs total
+- Each paragraph must end with complete sentence (다/습니다/니다)
+
+[PRIORITY 4: PROHIBITIONS]
+DO NOT:
+- Use generic placeholders ("의원", "지역구") - use actual names
+- Write abstract content without specific facts
+- Add information not in source material
+- Use incomplete sentences
+- Write less than ${Math.floor(targetWordCount * 0.9)} characters
+${currentStatus === '예비' ? '- Use official titles or campaign language (예비후보, 후보, 의원으로서, etc.)' : ''}
+
+[SELF-VERIFICATION BEFORE OUTPUT]
+Before generating JSON, verify:
+1. ✓ All CHECKLIST items appear in content
+2. ✓ Character count ≥ ${Math.floor(targetWordCount * 0.9)}
+3. ✓ Writer name "${fullName}" appears correctly
+4. ✓ All background information facts are included
+5. ✓ No placeholder text remains
+
+If ANY verification fails, revise content before output.
+
+[OUTPUT FORMAT]
 {
-  "title": "?ㅼ젣 二쇱젣??留욌뒗 援ъ껜?곸씠怨??뺤튂?몃떎???쒕ぉ???묒꽦?섏꽭??(20-30?? ??媛?대뱶?쇱씤 以??",
-  "content": "<p>議닿꼍?섎뒗 ${fullRegion} ?쒕? ?щ윭遺? ${fullName}?낅땲??</p><p>[?쒕줎 臾몃떒: 二쇱젣?????媛꾨떒???뚭컻? 臾몄젣 ?쒓린]</p><p>[蹂몃줎 1臾몃떒: 泥?踰덉㎏ ?듭떖 ?쇱젏?대굹 ?꾪솴 遺꾩꽍]</p><p>[蹂몃줎 2臾몃떒: ??踰덉㎏ ?듭떖 ?쇱젏?대굹 ?닿껐諛⑹븞]</p><p>[蹂몃줎 3臾몃떒: ??踰덉㎏ ?듭떖 ?쇱젏?대굹 ?ν썑 怨꾪쉷 - ?꾩슂??</p><p>[寃곕줎 臾몃떒: 留덈Т由??ㅼ쭚怨??쒕??ㅼ뿉 ???媛먯궗 ?몄궗]</p>",
+  "title": "Specific, concrete title based on background (20-30 chars)",
+  "content": "<p>Opening greeting</p><p>Body paragraph 1</p><p>Body paragraph 2</p><p>Body paragraph 3</p><p>Closing</p>",
   "wordCount": ${targetWordCount}
 }
 
-?슚 **ABSOLUTE REQUIREMENTS - 臾댁“嫄?以?섑빐????*:
-1. "${fullName}" ???ㅼ젣 ?대쫫?쇰줈 援먯껜 (${fullName})
-2. "${fullRegion}" ???ㅼ젣 吏??쑝濡?援먯껜 (${fullRegion})  
-3. "${config.title}" ??${config.title}?쇰줈 援먯껜
-4. "?섏썝"?대씪???⑥뼱 ?덈? ?ъ슜 湲덉?
-5. ?뚮젅?댁뒪???"()", "?덉떆:" ?덈? ?ъ슜 湲덉?
-6. 留덈Т由щ뒗 ?먯뿰?ㅻ윭???몄궗留먮줈 ?묒꽦 (?? "?욎쑝濡쒕룄 留롮? 愿?ш낵 ?묒썝 遺?곷뱶由쎈땲?? 媛먯궗?⑸땲??")
+Topic: ${topic}
+`;
 
-?붽뎄?ы빆:
-- **?꾩닔: ${targetWordCount}??遺꾨웾 (怨듬갚 ?쒖쇅, ?뺥솗??以?? - ?ㅼ감 짹50???대궡**
-- **臾몃떒 援ъ꽦**: ?곸젅??臾몃떒 ?섎늻湲곕줈 媛?낆꽦 ?μ긽
-  * ?쒕줎: ?몄궗? 二쇱젣 ?뚭컻 (1臾몃떒)
-  * 蹂몃줎: ?듭떖 ?댁슜??2-3媛?臾몃떒?쇰줈 ?쇰━??援ъ꽦
-  * 媛?臾몃떒? ?섎굹??二쇱슂 ?꾩씠?붿뼱???쇱젏???ㅻ８
-  * 臾몃떒 媛??먯뿰?ㅻ윭???곌껐怨??먮쫫 ?좎?
-  * 寃곕줎: 留덈Т由??몄궗? ?ㅼ쭚 (1臾몃떒)
-- **HTML ?뺤떇**: <p> ?쒓렇濡?臾몃떒 援щ텇, <strong> ??媛뺤“ ?쒓렇 ?곸젅???ъ슜
-- 吏꾩쨷?섍퀬 ?좊ː媛??덈뒗 ??
-- 吏??二쇰?怨쇱쓽 ?뚰넻??以묒떆?섎뒗 ?댁슜
-- 援ъ껜?곸씤 ?뺤콉?대굹 ?쒕룞 ?댁슜 ?ы븿
-${(() => {
-  const hasInstructions = Array.isArray(data.instructions) 
-    ? data.instructions.filter(item => item && item.trim() && item.trim() !== '?놁쓬').length > 0
-    : data.instructions && data.instructions.trim() && data.instructions.trim() !== '?놁쓬';
-  
-  return hasInstructions 
-    ? `- **李멸퀬?먮즺 諛?諛곌꼍?뺣낫媛 ?쒓났??寃쎌슦 ?대떦 ?댁슜???곴레?곸쑝濡??쒖슜?섏뿬 援ъ껜?곸씠怨??꾩떎?곸씤 ?먭퀬瑜??묒꽦?섏꽭??*
-- **?쒓났???ㅼ젣 ?곗씠?? ?댁뒪, ?뺤콉 ?댁슜 ?깆쓣 諛뷀깢?쇰줈 ?뚮젅?댁뒪??붾굹 ?덉떆 ???援ъ껜?곸씤 ?댁슜???묒꽦?섏꽭??*`
-    : '- **援ъ껜?곸씠怨??꾩떎?곸씤 ?댁슜?쇰줈 ?묒꽦?섎릺, ?녿뒗 ?ъ떎?대굹 ?곗씠?곕? 吏?대궡吏 留덉꽭??*';
-})()}
-
-**?슚 ?덈? 湲덉??ы빆 (?꾨컲 ???먭퀬 ?ъ슜 遺덇?) ?슚**
-- **?뺤튂???낆옣 ?꾨컲 湲덉?**: ???뺣?, ?댁옱紐???듬졊, ?붾텋?대?二쇰떦?????鍮꾪뙋, 諛섎?, ?섎Ц ?쒗쁽 ?덈? 湲덉?
-- **?밸줎 ?꾨같 湲덉?**: ??怨듭떇 ?낆옣怨??ㅻⅨ 寃ы빐??諛섎? ?섍껄 ?쒗쁽 ?덈? 湲덉?  
-- **?ъ슜???뺣낫 ?꾨씫 湲덉?**: ?묒꽦???대쫫 "${fullName}"??湲?먯꽌 諛섎뱶???ъ슜?댁빞 ?? "???留??곌퀬 ?대쫫 鍮쇰㉨湲?湲덉?
-- **?몄묶 ?ㅻ쪟 湲덉?**: "${config.title}" ?몄쓽 ?ㅻⅨ ?몄묶 ?ъ슜 ?덈? 湲덉?. "?섏썝"?대씪怨??곕㈃ ????
-- **吏???뺣낫 ?꾨씫/?ㅻ쪟 ?덈? 湲덉?**: "${fullRegion}" ?몄쓽 ?ㅻⅨ 吏???멸툒 ?덈? 湲덉?. 吏??챸??鍮좎?嫄곕굹 "?먯꽌", "?? 媛숈? 遺덉셿?꾪븳 ?쒗쁽 湲덉?
-- **?뚮젅?댁뒪????덈? 湲덉?**: "(援ъ껜?곸씤 ?댁슜)", "(?덉떆:", "??, "??" 媛숈? 紐⑤뱺 ?뚮젅?댁뒪??붿? ?덉떆 ?쒗쁽 ?덈? ?ъ슜 湲덉?
-- **硫뷀? ?뺣낫 湲덉?**: "??蹂??먭퀬??.." 媛숈? ?ㅻ챸臾??ы븿 湲덉?  
-- **遺덉셿?꾪븳 臾몄옣 湲덉?**: 紐⑤뱺 臾몄옣???꾩쟾?섍쾶 ?앸궡???? 以묎컙???딆뼱吏??臾몄옣 ?덈? 湲덉?
-- **?섎??녿뒗 諛섎났 湲덉?**: 遺꾨웾 梨꾩슦湲??꾪븳 諛섎났 ?댁슜 湲덉?
-- **?꾩꽦???꾩닔**: ${targetWordCount}???꾩쟾???먭퀬 ?묒꽦. 誘몄셿???곹깭濡??쒖텧 湲덉?. 紐⑤뱺 臾몄옣???꾩쟾?섍쾶 ?앸궪 寃?
-- **?몄? ?뺤떇 湲덉?**: "?뗢뿃 ?쒕┝", "?뗢뿃 ?щ┝" 媛숈? ?몄? ?뺤떇 留덈Т由??덈? 湲덉?. ?쇰컲 ?먭퀬/湲 ?뺤떇?쇰줈 ?묒꽦
-- **1?몄묶 ?ъ슜**: 泥??뚭컻 ?꾩뿉??"???, "?쒓?", "?瑜? ???먯뿰?ㅻ윭??1?몄묶 ?쒗쁽 ?ъ슜. 怨꾩냽 ?대쫫??諛섎났?섏? 留?寃?
-- **?먯뿰?ㅻ윭??吏???쒗쁽**: "?⑥뼇二쇱떆誘?寃쎌젣" (X) ??"?⑥뼇二?寃쎌젣" (O), "?⑥뼇二쇱떆誘?愿愿? (X) ??"?⑥뼇二?愿愿? (O)
-- **以묐났 ?쒗쁽 湲덉?**: "?⑥뼇二쇱떆誘쇱쓣 ?ы븿??留롮? 援???? 媛숈? 以묐났?섍퀬 ?댁깋???쒗쁽 ?ъ슜 湲덉?
-- **臾몄옣 ?꾧껐??*: 紐⑤뱺 臾몄옣??"??, "?덈떎", "?듬땲?? ?깆쑝濡??꾩쟾???앸궪 寃? 以묎컙???딆뼱吏??臾몄옣 ?덈? 湲덉?
-- **臾몃떒 援ъ꽦 ?꾩닔**: ?섎굹??湲?臾몃떒?쇰줈 ?묒꽦 湲덉?. 諛섎뱶??4-5媛?臾몃떒?쇰줈 ?쇰━??援ъ꽦??寃?
-${currentStatus === '?덈퉬' ? `- **?덈퉬 ?곹깭 ?밸퀎 湲덉??ы빆**: "?덈퉬?꾨낫", "?꾨낫", "?섏썝", "?꾩뿭 ?섏썝?쇰줈??, "?섏썝?쇰줈??, "?섏젙?쒕룞", "?깃낵", "?ㅼ쟻", "異붿쭊??, "湲곗뿬?? ??紐⑤뱺 怨듭쭅/?뺤튂???몄묶怨??쒕룞 ?쒗쁽 ?덈? ?ъ슜 湲덉?. 泥??뚭컻 ?꾩뿉??1?몄묶?쇰줈 吏移?븷 寃? : ''}`;
 
     console.log(`?쨼 AI ?몄텧 ?쒖옉 (1媛??먭퀬 ?앹꽦) - 紐⑤뜽: ${modelName}...`);
     
@@ -816,34 +869,62 @@ ${currentStatus === '?덈퉬' ? `- **?덈퉬 ?곹깭 ?밸퀎 湲덉??ы빆**: "?
     
     while (attempt < maxAttempts) {
       attempt++;
-      console.log(`?봽 AI ?몄텧 ?쒕룄 ${attempt}/${maxAttempts}...`);
-      
+      console.log(`🔥 AI 호출 시도 ${attempt}/${maxAttempts}...`);
+
       apiResponse = await callGenerativeModel(prompt, 1, modelName);
-      
-      // 湲곕낯 寃利?
+
+      // 기본 검증
       if (apiResponse && apiResponse.length > 100) {
-        // 以묒슂???댁슜???ы븿?섏뼱 ?덈뒗吏 寃利?
+        // JSON 파싱하여 실제 content 추출
+        let contentToCheck = apiResponse;
+        try {
+          const jsonMatch = apiResponse.match(/```json\s*([\s\S]*?)\s*```/) ||
+                           apiResponse.match(/\{[\s\S]*?\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
+            contentToCheck = parsed.content || apiResponse;
+          }
+        } catch (e) {
+          // JSON 파싱 실패시 원본 사용
+        }
+
+        // HTML 태그 제거하고 순수 텍스트 길이 계산 (공백 제외)
+        const plainText = contentToCheck.replace(/<[^>]*>/g, '').replace(/\s/g, '');
+        const actualWordCount = plainText.length;
+        const minWordCount = Math.floor(targetWordCount * 0.9); // 목표의 90%
+
+        console.log(`📊 분량 체크 - 실제: ${actualWordCount}자, 목표: ${targetWordCount}자, 최소: ${minWordCount}자`);
+
+        // 중요한 내용이 포함되어 있는지 검증
         const hasName = apiResponse.includes(fullName);
         const hasRegion = fullRegion ? apiResponse.includes(fullRegion) : true;
-        const hasWrongTitle = apiResponse.includes('?섏썝?낅땲??) || apiResponse.includes('?섏썝?쇰줈??);
-        
-        console.log(`?뱥 寃利?寃곌낵 - ?대쫫: ${hasName}, 吏?? ${hasRegion}, ?섎せ?쒗샇移? ${hasWrongTitle}`);
-        
-        if (hasName && hasRegion && !hasWrongTitle) {
-          console.log(`??寃利??듦낵! (${attempt}踰덉㎏ ?쒕룄)`);
+        const hasWrongTitle = apiResponse.includes('의원입니다') || apiResponse.includes('의원으로서');
+        const hasSufficientLength = actualWordCount >= minWordCount;
+
+        console.log(`🔍 검증 결과 - 이름: ${hasName}, 지역: ${hasRegion}, 잘못된호칭: ${hasWrongTitle}, 분량충족: ${hasSufficientLength}`);
+
+        if (hasName && hasRegion && !hasWrongTitle && hasSufficientLength) {
+          console.log(`✅ 모든 검증 통과! (${attempt}번째 시도)`);
           break;
         }
-        
+
         if (attempt < maxAttempts) {
-          console.log(`??寃利??ㅽ뙣 - ?ъ떆???꾩슂`);
+          if (!hasSufficientLength) {
+            console.log(`⚠️ 분량 부족 (${actualWordCount}/${minWordCount}자) - 재생성 필요`);
+            // 분량 부족을 명시적으로 프롬프트에 추가하여 재시도
+            prompt = prompt + `\n\n**중요: 이전 시도에서 분량이 ${actualWordCount}자로 부족했습니다. 반드시 ${targetWordCount}자 이상으로 작성하세요. 문단을 더 상세하게 확장하고, 구체적인 사례나 설명을 추가하세요.**`;
+          } else {
+            console.log(`❌ 기타 검증 실패 - 재시도 필요`);
+          }
           continue;
         }
       }
-      
+
       if (attempt >= maxAttempts) {
-        console.log(`?좑툘 理쒕? ?쒕룄 ?잛닔 珥덇낵 - ?꾩옱 ?묐떟 ?ъ슜`);
+        console.log(`⚠️ 최대 시도 횟수 초과 - 현재 응답 사용`);
       }
     }
+
     
     console.log(`??AI ?묐떟 理쒖쥌 ?섏떊, 湲몄씠: ${apiResponse.length} - 紐⑤뜽: ${modelName}`);
     

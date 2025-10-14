@@ -12,7 +12,8 @@ import {
   Grid,
   Box,
   IconButton,
-  Tooltip
+  Tooltip,
+  useTheme
 } from '@mui/material';
 import { AutoAwesome, Add, Remove } from '@mui/icons-material';
 // ✅ 1. formConstants에서 카테고리 데이터를 직접 불러와서 자급자족합니다.
@@ -25,6 +26,7 @@ export default function PromptForm({
   disabled = false,
   isMobile = false
 }) {
+  const theme = useTheme();
   // 참고자료 목록 상태 관리
   const [instructionsList, setInstructionsList] = useState(() => {
     // formData.instructions가 배열이면 그대로 사용, 아니면 문자열을 배열로 변환
@@ -219,9 +221,9 @@ export default function PromptForm({
                         color: 'white',
                         border: '1px solid',
                         borderColor: '#55207d',
-                        '&:hover': { 
-                          backgroundColor: '#152484',
-                          borderColor: '#152484'
+                        '&:hover': {
+                          backgroundColor: theme.palette.ui?.header || '#152484',
+                          borderColor: theme.palette.ui?.header || '#152484'
                         },
                         '&:disabled': {
                           backgroundColor: 'grey.50',

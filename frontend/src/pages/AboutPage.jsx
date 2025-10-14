@@ -42,6 +42,7 @@ import { styled } from '@mui/material/styles';
 import { Helmet } from 'react-helmet-async'; // ensure provider is set at app root
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useTheme } from '@mui/material/styles';
 
 
 // Section components
@@ -77,6 +78,7 @@ import { SAFETY_FEATURES } from "./AboutPage/data";
 const AboutPage = ({ showDemo: showDemoProp }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const theme = useTheme();
   const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const [openSample, setOpenSample] = React.useState(false);
   const pageRef = useRef(null);
@@ -122,9 +124,28 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
         <meta name="googlebot" content="noindex,nofollow" />
       </Helmet>
 
+      {/* 로그인 화면 이동 버튼 */}
+      <Box sx={{ position: 'fixed', right: 16, top: 16, zIndex: 10 }}>
+        <Button
+          onClick={() => navigate('/login')}
+          sx={{
+            color: 'rgba(255,255,255,0.9)',
+            fontSize: '0.95rem',
+            fontWeight: 500,
+            textTransform: 'none',
+            '&:hover': {
+              color: theme.palette.brand.primary,
+              bgcolor: 'transparent'
+            }
+          }}
+        >
+          로그인 화면으로 이동
+        </Button>
+      </Box>
+
       {/* Demo switch (only in dev or with ?demo=1) */}
       {showDemoSwitch && (
-        <Box sx={{ position: 'fixed', right: 16, top: 16, zIndex: 10 }}>
+        <Box sx={{ position: 'fixed', right: 16, top: 56, zIndex: 10 }}>
           <FormControlLabel
             control={
               <Switch
@@ -1464,135 +1485,6 @@ After
               ))}
             </Grid>
           </Box>
-        </ContentContainer>
-      </Section>
-
-      {/* Urgency */}
-      <Section id="urgency" aria-labelledby="urgency-heading" sx={{
-        bgcolor: 'rgba(255,255,255,0.02)',
-        py: { xs: 4, md: 8 },
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center'
-      }}>
-        <ContentContainer maxWidth="lg">
-          <Grid container spacing={4} alignItems="center">
-            {/* 좌측: 정청래 이미지 */}
-            <Grid item xs={12} md={6}>
-              <InViewFade>
-                <Box
-                  sx={{
-                    backgroundColor: 'rgba(255,255,255,0.04)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '16px',
-                    backdropFilter: 'blur(6px)',
-                    p: { xs: 2, md: 3 },
-                    textAlign: 'center',
-                    maxWidth: '80%',
-                    mx: 'auto'
-                  }}
-                >
-                  <Box
-                    component="img"
-                    src="/sns/jeongcr_news.png"
-                    alt="정청래 대표 SNS 공천 필수화 발언"
-                    sx={{
-                      maxWidth: '100%',
-                      width: '100%',
-                      height: 'auto',
-                      borderRadius: '8px',
-                      mb: 3
-                    }}
-                  />
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      fontWeight: 700,
-                      mb: 1,
-                      fontSize: { xs: '1.1rem', md: '1.3rem' }
-                    }}
-                  >
-                    정청래 대표 발언
-                  </Typography>
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      fontWeight: 600,
-                      mb: 2,
-                      fontSize: { xs: '1rem', md: '1.1rem' },
-                      fontStyle: 'italic',
-                      color: '#00d4ff'
-                    }}
-                  >
-                    "SNS 활동, 공천 평가에 반영"
-                  </Typography>
-                </Box>
-              </InViewFade>
-            </Grid>
-
-            {/* 우측: 텍스트 및 CTA */}
-            <Grid item xs={12} md={6}>
-              <InViewFade timeout={400}>
-                <Typography variant="h4" sx={{
-                  fontWeight: 800,
-                  mb: 3,
-                  fontSize: { xs: '1.8rem', md: '2.2rem' }
-                }}>
-                  준비는 미룰 수 없습니다
-                </Typography>
-
-                <Typography variant="body1" sx={{
-                  lineHeight: 1.7,
-                  color: 'rgba(255,255,255,0.9)',
-                  mb: 4,
-                  fontSize: '1.1rem'
-                }}>
-                  민주당은 공천 심사에서 온라인 활동을 평가 지표로 검토하고 있습니다.
-                  <br /><br />
-                  검색과 SNS에서 의원 이름이 보이지 않으면 유권자가 확인하기 어렵습니다.
-                </Typography>
-
-                {/* Trial Information */}
-                <Box sx={{
-                  p: 4,
-                  backgroundColor: 'rgba(0, 212, 255, 0.05)',
-                  border: '1px solid rgba(0, 212, 255, 0.2)',
-                  borderRadius: 3,
-                  mb: 4
-                }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 3, color: '#00d4ff' }}>
-                    체험판 제공
-                  </Typography>
-                  <Stack spacing={1.5}>
-                    <Typography sx={{ fontSize: '0.9rem', display: 'flex', alignItems: 'center' }}>
-                      <Box component="span" sx={{ color: '#00d4ff', mr: 1, fontWeight: 'bold' }}>✓</Box>
-                      의정활동 콘텐츠 8편 자동 생성
-                    </Typography>
-                    <Typography sx={{ fontSize: '0.9rem', display: 'flex', alignItems: 'center' }}>
-                      <Box component="span" sx={{ color: '#00d4ff', mr: 1, fontWeight: 'bold' }}>✓</Box>
-                      최대 31일 체험 기간 제공
-                    </Typography>
-                    <Typography sx={{ fontSize: '0.9rem', display: 'flex', alignItems: 'center' }}>
-                      <Box component="span" sx={{ color: '#00d4ff', mr: 1, fontWeight: 'bold' }}>✓</Box>
-                      효과 확인 후 이용 여부 결정
-                    </Typography>
-                  </Stack>
-                </Box>
-
-                <CTAButton
-                  size="large"
-                  onClick={handlePrimaryCTA}
-                  sx={{
-                    fontSize: '1.2rem',
-                    px: 5,
-                    py: 1.5
-                  }}
-                >
-                  준비 시작
-                </CTAButton>
-              </InViewFade>
-            </Grid>
-          </Grid>
         </ContentContainer>
       </Section>
 
