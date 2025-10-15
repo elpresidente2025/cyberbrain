@@ -23,6 +23,10 @@ import {
   Stack,
   FormControlLabel,
   Checkbox,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
   useTheme
 } from '@mui/material';
 import { Add, Remove, AutoAwesome, DeleteForever, Warning, Settings, Save } from '@mui/icons-material';
