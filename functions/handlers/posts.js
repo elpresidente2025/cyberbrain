@@ -8,6 +8,8 @@ const { admin, db } = require('../utils/firebaseAdmin');
 const { callGenerativeModel } = require('../services/gemini');
 const { fetchNaverNews, compressNewsWithAI, formatNewsForPrompt, shouldFetchNews } = require('../services/news-fetcher');
 const { generateEnhancedMetadataHints } = require('../utils/enhanced-metadata-hints');
+const { buildTitlePrompt } = require('../templates/prompts/title-generation');
+const { buildSmartPrompt } = require('../templates/prompts');
 
 /**
  * 怨듬갚 ?쒖쇅 湲?먯닔 怨꾩궛 (Java 肄붾뱶? ?숈씪??濡쒖쭅)
@@ -240,9 +242,8 @@ function getRelevantPersonalInfo(userProfile, category, topicLower) {
   
   return result;
 }
-const { buildDailyCommunicationPrompt } = require('../templates/prompts/daily-communication');
 
-// 媛꾨떒???묐떟 ?ы띁
+// 간단한 응답 헬퍼
 const ok = (data) => ({ success: true, ...data });
 const okMessage = (message) => ({ success: true, message });
 
@@ -429,6 +430,63 @@ exports.checkUsageLimit = wrap(async (req) => {
 });
 
 // 吏꾩쭨 AI ?먭퀬 ?앹꽦 ?⑥닔 (諛깆뾽?먯꽌 蹂듦뎄) - HTTP 踰꾩쟾
+
+/**
+ * 본문 내용을 기반으로 제목을 생성하는 함수
+ * @param {Object} params - 제목 생성에 필요한 파라미터
+ * @param {string} params.content - 생성된 본문 내용
+ * @param {string|Array} params.backgroundInfo - 배경정보
+ * @param {Array} params.keywords - 키워드 목록
+ * @param {string} params.topic - 주제
+ * @param {string} params.fullName - 작성자 이름
+ * @param {string} params.modelName - 사용할 AI 모델명
+ * @returns {Promise<string>} - 생성된 제목
+ */
+async function generateTitleFromContent({ content, backgroundInfo, keywords, topic, fullName, modelName }) {
+  console.log('📝 2단계: 본문 기반 제목 생성 시작');
+
+  // 본문에서 HTML 태그 제거하고 미리보기 추출
+  const contentPreview = content.substring(0, 1000).replace(/<[^>]*>/g, '');
+
+  // 배경정보 텍스트 추출
+  const backgroundText = Array.isArray(backgroundInfo)
+    ? backgroundInfo.filter(item => item && item.trim()).join('\n')
+    : backgroundInfo || '';
+
+  // 분리된 프롬프트 빌더 사용
+  const titlePrompt = buildTitlePrompt({
+    contentPreview,
+    backgroundText,
+    topic,
+    fullName,
+    keywords
+  });
+
+  try {
+    const titleResponse = await callGenerativeModel(titlePrompt, 1, modelName);
+
+    // JSON이나 코드 블록 제거
+    let cleanTitle = titleResponse
+      .replace(/```json/g, '')
+      .replace(/```/g, '')
+      .trim();
+
+    // 첫 번째 줄만 추출 (여러 줄인 경우)
+    cleanTitle = cleanTitle.split('\n')[0].trim();
+
+    // 따옴표 제거
+    cleanTitle = cleanTitle.replace(/^["']|["']$/g, '');
+
+    console.log('✅ 제목 생성 완료:', cleanTitle);
+    return cleanTitle;
+  } catch (error) {
+    console.error('❌ 제목 생성 실패:', error.message);
+    // 실패 시 기본 제목 반환
+    return `${topic} 관련 원고`;
+  }
+}
+
+
 exports.generatePosts = httpWrap(async (req) => {
   console.log('?뵦 generatePosts HTTP ?쒖옉');
 
@@ -764,100 +822,28 @@ exports.generatePosts = httpWrap(async (req) => {
     const backgroundKeywords = extractKeywordsFromInstructions(data.instructions);
     console.log('🔍 배경정보 필수 키워드:', backgroundKeywords);
 
+    // 카테고리를 작법(writingMethod)으로 매핑
+    const categoryToWritingMethod = {
+      'daily-communication': 'emotional_writing',
+      'activity-report': 'direct_writing',
+      'policy-proposal': 'logical_writing',
+      'current-affairs': 'critical_writing',
+      'local-issues': 'analytical_writing'
+    };
+    const writingMethod = categoryToWritingMethod[category] || 'emotional_writing';
 
-    // 새로운 프롬프트 템플릿
-const prompt = `[PRIORITY 0: SYSTEM RULES]
-You are a political content writer. Output ONLY valid JSON. Never hallucinate facts.
-
-[PRIORITY 1: WHAT TO CREATE]
-Format: Political blog post
-Word Count: ${targetWordCount} characters (excluding spaces, ±50 acceptable)
-Category: ${category}
-Output Format: JSON with {title, content, wordCount}
-
-[PRIORITY 2: SOURCE MATERIAL - MANDATORY USE]
-🚨 You MUST use ALL items below. Before writing, verify you understand each item.
-
-${(() => {
-  const hasInstructions = Array.isArray(data.instructions)
-    ? data.instructions.filter(item => item && item.trim() && item.trim() !== '없음').length > 0
-    : data.instructions && data.instructions.trim() && data.instructions.trim() !== '없음';
-
-  if (!hasInstructions) return 'No background information provided.';
-
-  const instructionText = Array.isArray(data.instructions)
-    ? data.instructions.filter(item => item.trim()).join('\n')
-    : data.instructions;
-
-  return `Background Information:
-${instructionText}
-
-CHECKLIST (Every item below MUST appear in your article):
-${backgroundKeywords.length > 0 ? backgroundKeywords.map((kw, i) => `☐ ${i+1}. "${kw}" must be included`).join('\n') : 'No specific keywords extracted'}`;
-})()}
-
-Writer Identity (use EXACTLY as specified):
-- Name: ${fullName}
-- Title: ${config.title}
-- Region: ${fullRegion}
-- Status: ${currentStatus}
-
-${newsContext}
-
-${personalizedHints ? `Additional Context: ${personalizedHints}` : ''}
-
-[PRIORITY 3: HOW TO WRITE]
-Structure:
-1. Opening: "존경하는 ${fullRegion} 주민 여러분, ${fullName}입니다"
-2. Body: 2-3 paragraphs focused on background information
-3. Closing: Natural thanks and signature
-
-Style Guidelines:
-- Formal political tone appropriate for ${currentStatus}
-- Minimize first-person after opening (use "저는" sparingly)
-- Focus on facts from background information
-- ${config.guideline}
-
-Content Requirements:
-- Base article on background information facts
-- Include specific names, numbers, dates from background
-- Use concrete examples rather than abstract statements
-- Connect to local community concerns
-
-Format:
-- HTML format with <p> tags for paragraphs
-- <strong> tags for emphasis (sparingly)
-- 4-5 paragraphs total
-- Each paragraph must end with complete sentence (다/습니다/니다)
-
-[PRIORITY 4: PROHIBITIONS]
-DO NOT:
-- Use generic placeholders ("의원", "지역구") - use actual names
-- Write abstract content without specific facts
-- Add information not in source material
-- Use incomplete sentences
-- Write less than ${Math.floor(targetWordCount * 0.9)} characters
-${currentStatus === '예비' ? '- Use official titles or campaign language (예비후보, 후보, 의원으로서, etc.)' : ''}
-
-[SELF-VERIFICATION BEFORE OUTPUT]
-Before generating JSON, verify:
-1. ✓ All CHECKLIST items appear in content
-2. ✓ Character count ≥ ${Math.floor(targetWordCount * 0.9)}
-3. ✓ Writer name "${fullName}" appears correctly
-4. ✓ All background information facts are included
-5. ✓ No placeholder text remains
-
-If ANY verification fails, revise content before output.
-
-[OUTPUT FORMAT]
-{
-  "title": "Specific, concrete title based on background (20-30 chars)",
-  "content": "<p>Opening greeting</p><p>Body paragraph 1</p><p>Body paragraph 2</p><p>Body paragraph 3</p><p>Closing</p>",
-  "wordCount": ${targetWordCount}
-}
-
-Topic: ${topic}
-`;
+    // buildSmartPrompt 사용 (카테고리별 특화 프롬프트)
+    const prompt = await buildSmartPrompt({
+      writingMethod,
+      topic,
+      authorBio: `${fullName} (${config.title || ''}, ${fullRegion || ''})`,
+      targetWordCount,
+      instructions: data.instructions,
+      keywords: backgroundKeywords,
+      newsContext,
+      personalizedHints,
+      applyEditorialRules: true
+    });
 
 
     console.log(`?쨼 AI ?몄텧 ?쒖옉 (1媛??먭퀬 ?앹꽦) - 紐⑤뜽: ${modelName}...`);
@@ -1111,10 +1097,20 @@ Topic: ${topic}
       console.log('???꾩쿂由??꾨즺 - ?꾩닔 ?뺣낫 ?쎌엯??);
     }
 
+    // 2단계: 본문 기반 제목 생성
+    const generatedTitle = await generateTitleFromContent({
+      content: parsedResponse.content || '',
+      backgroundInfo: data.instructions,
+      keywords: backgroundKeywords,
+      topic,
+      fullName,
+      modelName
+    });
+
     // drafts ?뺤떇?쇰줈 諛섑솚 (?꾨줎?몄뿏???명솚??
     const draftData = {
       id: `draft_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      title: parsedResponse.title || `${topic} 愿???먭퀬`,
+      title: generatedTitle,
       content: parsedResponse.content || `<p>${topic}??????댁슜?낅땲??</p>`,
       wordCount: parsedResponse.wordCount || parsedResponse.content?.replace(/<[^>]*>/g, '').length || 0,
       category,
