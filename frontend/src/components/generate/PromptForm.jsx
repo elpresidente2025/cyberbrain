@@ -146,10 +146,10 @@ export default function PromptForm({
             rows={2}
             inputProps={{ maxLength: 500 }}
             helperText={`${formData.topic?.length || 0}/500자`}
-            FormHelperTextProps={{ sx: { color: 'black' } }}
+            FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
           />
         </Grid>
-        
+
         {/* ✅ 6. 참고자료 및 배경정보 입력창 - 다중 입력 지원 */}
         <Grid item xs={12}>
           <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -201,11 +201,11 @@ export default function PromptForm({
                   multiline
                   rows={index === 0 ? 4 : 3}
                   inputProps={{ maxLength: 1500 }}
-                  helperText={index === 0 
-                    ? `예시: • 한미정상회담 주요 성과: 반도체 협력, 사이버보안 공동대응 체제 구축 • 지역 현황: 청년 실업률 8.2% (${instruction?.length || 0}/1500자)`
+                  helperText={index === 0
+                    ? `사용법: 언론사 기사/보도자료, 당 공지사항, 입장문, 논문 등 원고 작성에 필요한 배경지식 입력 (최대 1500자/초과 시 우측 상단 + 버튼으로 분할 입력) | ${instruction?.length || 0}/1500자`
                     : `${instruction?.length || 0}/1500자`
                   }
-                  FormHelperTextProps={{ sx: { color: 'black' } }}
+                  FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
                 />
                 {instructionsList.length > 1 && (
                   <Tooltip title="이 참고자료 삭제">
@@ -247,18 +247,18 @@ export default function PromptForm({
           )}
         </Grid>
 
-        {/* 키워드 */}
+        {/* 노출 희망 검색어 */}
         <Grid item xs={12}>
           <TextField
             fullWidth
             size={formSize}
-            label="키워드 (선택사항)"
+            label="노출 희망 검색어 (선택사항)"
             placeholder="쉼표(,)로 구분하여 입력하세요"
             value={formData.keywords || ''}
             onChange={handleInputChange('keywords')}
             disabled={disabled}
-            helperText="예: 민생안정, 경제활성화, 부동산문제"
-            FormHelperTextProps={{ sx: { color: 'black' } }}
+            helperText="예: 성수역 3번 출구, 울산대 대학로, 계양IC 정체 등"
+            FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
           />
         </Grid>
       </Grid>

@@ -99,7 +99,13 @@
       "Bash(C:Users강정구학부졸업미디어문예창작학과AppDataRoamingPythonPython313Scriptscodex-bridge.exe --help)",
       "Bash(codex-bridge:*)",
       "mcp__serena__get_symbols_overview",
-      "Bash(if exist nul del nul)"
+      "Bash(if exist nul del nul)",
+      "mcp__serena__insert_before_symbol",
+      "Bash(do sed -i '2s|functions/templates/prompts/|functions/prompts/templates/|' \"$file\")",
+      "Bash(tree:*)",
+      "Bash(do echo \"=== $file ===\")",
+      "mcp__serena__search_for_pattern",
+      "mcp__serena__think_about_collected_information"
     ],
     "deny": [],
     "ask": [],

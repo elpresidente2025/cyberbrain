@@ -6,7 +6,7 @@ const { auth } = require('../common/auth');
 const { log } = require('../common/log');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { callGenerativeModel } = require('../services/gemini');
-const { testPrompt, getPolicySafe } = require('../templates/prompts');
+const { testPrompt, getPolicySafe } = require('../prompts/prompts');
 
 // ?�스체크
 exports.healthCheck = wrap(async () => {

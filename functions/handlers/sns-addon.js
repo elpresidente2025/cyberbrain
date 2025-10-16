@@ -6,6 +6,7 @@ const { ok, error } = require('../common/response');
 const { auth } = require('../common/auth');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { callGenerativeModel } = require('../services/gemini');
+const { buildSNSPrompt, SNS_LIMITS } = require('../prompts/builders/sns-conversion');
 
 /**
  * 공백 제외 글자수 계산 (Java 코드와 동일한 로직)
@@ -23,24 +24,7 @@ function countWithoutSpace(str) {
   return count;
 }
 
-// SNS 플랫폼별 제한사항 (공백 제외 글자수 기준)
-const SNS_LIMITS = {
-  'facebook-instagram': {
-    maxLength: 1800,       // Facebook/Instagram 연동 게시용 통합
-    recommendedLength: 1800,
-    hashtagLimit: 7        // Meta 플랫폼 통합용 (적당한 개수)
-  },
-  x: {
-    maxLength: 230,        // 기본값 (일반 사용자)
-    recommendedLength: 230,
-    hashtagLimit: 2         // 1-2개 적절
-  },
-  threads: {
-    maxLength: 400,        // 공백 제외 기준으로 조정
-    recommendedLength: 400,
-    hashtagLimit: 3         // Threads는 해시태그 좀 더 사용 가능
-  }
-};
+// SNS 플랫폼별 제한사항은 prompts/builders/sns-conversion.js에서 import
 
 /**
  * 사용자 프로필에 따른 X(트위터) 글자수 제한 반환
@@ -218,7 +202,7 @@ exports.convertToSNS = httpWrap(async (req) => {
         console.log(`🔄 ${platform} 시도 ${attempt}/${maxAttempts}...`);
         
         try {
-          const snsPrompt = generateSNSPrompt(originalContent, platform, platformConfig, postKeywords, userInfo);
+          const snsPrompt = buildSNSPrompt(originalContent, platform, platformConfig, postKeywords, userInfo);
           
           // Gemini API로 변환 실행 (타임아웃 추가)
           const convertedText = await Promise.race([
@@ -487,165 +471,6 @@ exports.purchaseSNSAddon = wrap(async (req) => {
     throw new HttpsError('internal', 'SNS 애드온 구매 중 오류가 발생했습니다.');
   }
 });
-
-/**
- * 원본 콘텐츠의 주제 유형 분석
- */
-function analyzeContentType(content) {
-  // 자기어필 중심 콘텐츠 키워드들
-  const personalAppealKeywords = [
-    // 일상소통
-    '안녕하세요', '인사드립니다', '근황', '일상', '소통', '대화', '이야기',
-    
-    // 지역활동/현안
-    '지역', '현장', '방문', '만남', '간담회', '토론회', '설명회', '보고회',
-    '주민', '시민', '구민', '동민', '마을', '우리동네', '지역구',
-    
-    // 의정활동 보고  
-    '의정', '국감', '질의', '질문', '발언', '제안', '건의', '요청',
-    '위원회', '본회의', '의정보고', '활동보고', '성과', '실적',
-    '추진', '노력', '최선', '앞으로도', '계속', '지속',
-    
-    // 개인적 어필
-    '저는', '제가', '개인적으로', '생각해보니', '느낀점', '다짐', '약속',
-    '감사합니다', '부탁드립니다', '응원', '관심', '성원'
-  ];
-  
-  // 정책/이슈 중심 콘텐츠 키워드들  
-  const policyIssueKeywords = [
-    '정책', '제도', '법안', '예산', '계획', '방안', '대책',
-    '경제', '교육', '복지', '보건', '환경', '교통', '안전',
-    '개발', '투자', '지원', '확대', '개선', '강화', '추진',
-    '문제', '과제', '해결', '검토', '논의', '결정',
-    '정부', '정당', '의원', '장관', '시장', '도지사'
-  ];
-  
-  let personalScore = 0;
-  let policyScore = 0;
-  
-  // 키워드 매칭으로 점수 계산
-  personalAppealKeywords.forEach(keyword => {
-    if (content.includes(keyword)) personalScore++;
-  });
-  
-  policyIssueKeywords.forEach(keyword => {
-    if (content.includes(keyword)) policyScore++;
-  });
-  
-  // 자기어필 중심 콘텐츠 여부 판단
-  return personalScore > policyScore || personalScore >= 3;
-}
-
-/**
- * 주제 유형과 플랫폼에 따른 콘텐츠 가공 가이드라인 생성
- */
-function getContentFocusGuideline(isPersonalAppealContent, platform, userInfo) {
-  if (isPersonalAppealContent) {
-    // 일상소통, 지역활동, 의정보고 등 자기어필이 목적인 글
-    if (platform === 'x') {
-      return `- 자기어필이 글의 목적이므로 "${userInfo.name} ${userInfo.position}" 정체성 유지
-- 하지만 230자 제약으로 핵심 활동/메시지만 압축하여 표현`;
-    } else if (platform === 'threads') {
-      return `- 자기어필 중심 글이므로 개인적 소통 톤 적절히 유지  
-- 400자 제약으로 핵심 활동과 소통 의지를 간결하게 표현`;
-    }
-  } else {
-    // 정책, 이슈, 사회문제 등 내용 중심 글
-    if (platform === 'x') {
-      return `- 정책/이슈 중심 글이므로 자기소개는 최소화하고 핵심 내용에 집중
-- "${userInfo.name}"은 간단히 언급하되 대부분 분량을 주제 내용에 할당`;
-    } else if (platform === 'threads') {
-      return `- 정책/이슈 중심 글이므로 개인 어필보다 내용 전달에 집중
-- 자기소개는 간략히, 대부분을 주제와 관련된 핵심 내용으로 구성`;
-    }
-  }
-  return '';
-}
-
-/**
- * SNS 변환 프롬프트 생성
- */
-function generateSNSPrompt(originalContent, platform, platformConfig, postKeywords = '', userInfo = {}) {
-  // HTML 태그를 제거하고 평문으로 변환
-  const cleanContent = originalContent
-    .replace(/<\/?(h[1-6]|p|div|br|li)[^>]*>/gi, '\n')
-    .replace(/<\/?(ul|ol)[^>]*>/gi, '\n\n')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-
-  // 플랫폼별 목표 글자수 설정 (공백 제외)
-  const targetLength = Math.floor(platformConfig.maxLength * 0.85); // 85% 활용으로 여유분 확보
-  
-  // 원본 글의 주제 유형 분석
-  const isPersonalAppealContent = analyzeContentType(cleanContent);
-  
-  // 플랫폼별 가공 방식 정의 (분량과 주제에 따른 자기어필 조절)
-  const platformInstructions = {
-    'facebook-instagram': `원본 원고를 Facebook/Instagram 연동 게시에 맞게 가공:
-- 원본의 핵심 내용과 논리 구조를 적절히 보존
-- ${userInfo.name} ${userInfo.position}의 격식 있는 어조와 문체 유지
-- 중요한 정책, 수치, 사례는 반드시 포함
-- 분량이 충분하므로 적절한 자기 소개와 마무리 포함 가능
-- Facebook 게시 + Instagram 연동을 고려한 완성도 있는 구성
-- ${platformConfig.maxLength}자 이내로 품격 있게 가공`,
-    
-    x: `원본 원고를 X(Twitter)에 맞게 핵심 압축:
-${getContentFocusGuideline(isPersonalAppealContent, 'x', userInfo)}
-- 230자 극한 제약으로 핵심 메시지만 선별
-- 원본의 가장 중요한 한 가지 포인트에만 집중
-- 완전한 문장으로 마무리하되 불필요한 수식어 제거
-- 원본의 논조와 입장을 정확히 표현`,
-    
-    threads: `원본 원고를 Threads에 맞게 대화형 가공:
-${getContentFocusGuideline(isPersonalAppealContent, 'threads', userInfo)}
-- 400자 제약으로 핵심 내용 위주 구성
-- 대화하듯 자연스러운 톤으로 가공
-- 원본의 주요 메시지를 압축하여 전달
-- 간결하면서도 완성도 있는 스토리로 구성`
-  };
-
-  return `아래는 ${userInfo.name} ${userInfo.position}이 작성한 원본 정치인 원고입니다. 이를 ${platformConfig.name} 플랫폼에 맞게 가공해주세요.
-
-**원본 원고 (가공 대상):**
-${cleanContent}
-
-**가공 지침:**
-${platformInstructions[platform]}
-
-**원본 문체 분석 및 보존 요구사항:**
-- 어조: ${cleanContent.substring(0, 200)}... 이 문체 그대로 유지
-- 표현법: 원본에서 사용한 존댓말, 문장 구조, 어미 패턴 보존
-- 어휘: 원본에서 사용한 정치적 표현, 전문 용어 그대로 사용
-- 논조: 원본의 정치적 입장과 태도 완전 보존
-
-**가공 결과물 요구사항:**
-- 목표 길이: ${targetLength}자 (공백 제외, ±50자 허용)
-- 최대 한도: ${platformConfig.maxLength}자 절대 초과 금지
-- 해시태그: ${platformConfig.hashtagLimit}개
-- 완결성: 모든 문장이 완전히 끝나야 함 ("다/니다/습니다" 등)
-
-**가공 시 절대 준수사항:**
-1. 원본을 "요약"하지 말고 "가공"하세요 - 새로 쓰는 것이 아닙니다
-2. ${userInfo.name}의 실제 어조, 문체, 표현 방식을 정확히 모방하세요
-3. 원본의 핵심 메시지와 정보는 빠뜨리지 말고 모두 포함하세요
-4. 원본의 정치적 입장과 논조를 절대 바꾸지 마세요
-5. 원본에 없는 내용이나 의견을 추가하지 마세요
-
-**JSON 출력 형식:**
-{
-  "content": "원본 원고를 ${platformConfig.name}에 맞게 가공한 완전한 텍스트",
-  "hashtags": ["#관련태그1", "#관련태그2", "#관련태그3"],
-  "wordCount": 실제글자수
-}
-
-원본의 품격과 내용을 손상시키지 않으면서 ${platformConfig.name}에 최적화된 가공 결과물을 만들어주세요.`;
-}
 
 /**
  * SNS 변환 결과 품질 검증 (블로그 원고 방식 적용)

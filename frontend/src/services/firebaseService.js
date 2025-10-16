@@ -223,7 +223,7 @@ export const clearSystemCache = async () => {
 };
 
 export const convertToSNS = async (postId) => {
-  const modelName = localStorage.getItem('gemini_model') || 'gemini-1.5-flash';
+  const modelName = localStorage.getItem('gemini_model') || 'gemini-2.0-flash-exp';
   return await callHttpFunction('convertToSNS', { postId, modelName });
 };
 

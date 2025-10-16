@@ -111,12 +111,12 @@ function QuickActions() {
     const newTestMode = !testMode;
     setTestMode(newTestMode);
     localStorage.setItem('admin_test_mode', newTestMode.toString());
-    localStorage.setItem('gemini_model', newTestMode ? 'gemini-2.0-flash-exp' : 'gemini-1.5-flash');
-    
+    localStorage.setItem('gemini_model', 'gemini-2.0-flash-exp');
+
     if (newTestMode) {
       alert('🧪 테스트 모드가 활성화되었습니다!\n\nGemini 2.0 Flash Experimental 모델을 사용합니다.\n\n⚠️ 실험적 기능이므로 예상치 못한 동작이 발생할 수 있습니다.');
     } else {
-      alert('✅ 테스트 모드가 비활성화되었습니다.\n\n안정적인 Gemini 1.5 Flash 모델을 사용합니다.');
+      alert('✅ 테스트 모드가 비활성화되었습니다.\n\nGemini 2.0 Flash Experimental 모델을 계속 사용합니다.');
     }
   };
 

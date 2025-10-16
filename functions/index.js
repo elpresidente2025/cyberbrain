@@ -54,12 +54,12 @@ try {
   console.warn('[index] publishing handler warning:', e?.message);
 }
 
-// Add posts handlers (using clean version due to encoding issues)
+// Add posts handlers (full version with advanced prompt system)
 try {
-  const postsHandlers = require('./handlers/posts-clean');
+  const postsHandlers = require('./handlers/posts');
   Object.assign(exports, postsHandlers);
 } catch (e) {
-  console.warn('[index] posts-clean handler warning:', e?.message);
+  console.warn('[index] posts handler warning:', e?.message);
 }
 
 // Add SNS addon handlers

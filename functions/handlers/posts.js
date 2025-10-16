@@ -134,8 +134,23 @@ exports.generatePosts = httpWrap(async (req) => {
       }
     }
 
-    // 키워드 추출
-    const backgroundKeywords = extractKeywordsFromInstructions(data.instructions);
+    // 노출 희망 검색어 및 자동 추출 키워드 병합
+    const extractedKeywords = extractKeywordsFromInstructions(data.instructions);
+
+    // 🔧 수정: 쉼표로만 구분, 띄어쓰기는 유지 (네이버 검색은 띄어쓰기를 구분함)
+    // 예: "민주당 청년위원장" → ['민주당 청년위원장']
+    // 예: "민주당 청년위원장, 경제활성화" → ['민주당 청년위원장', '경제활성화']
+    const userKeywords = data.keywords
+      ? (typeof data.keywords === 'string'
+          ? data.keywords.split(',').map(k => k.trim()).filter(k => k)
+          : data.keywords)
+      : [];
+
+    const backgroundKeywords = [...new Set([...userKeywords, ...extractedKeywords])];
+
+    console.log('🔑 노출 희망 검색어 (사용자 입력):', userKeywords);
+    console.log('🔑 자동 추출 키워드:', extractedKeywords);
+    console.log('🔑 최종 병합 키워드:', backgroundKeywords);
 
     // 작법 결정
     const writingMethod = CATEGORY_TO_WRITING_METHOD[category] || 'emotional_writing';
@@ -152,6 +167,10 @@ exports.generatePosts = httpWrap(async (req) => {
       personalizedHints,
       applyEditorialRules: true
     });
+
+    // 🔍 디버깅: 프롬프트 로깅 (처음 1000자만)
+    console.log('📋 생성된 프롬프트 (처음 1000자):', prompt.substring(0, 1000));
+    console.log('📋 프롬프트 전체 길이:', prompt.length, '자');
 
     // AI 호출 및 검증
     const apiResponse = await validateAndRetry({

@@ -48,8 +48,15 @@ export function useGenerateAPI() {
     try {
       console.log('🔥 generatePosts 호출 시작');
 
-      // 📌 보안 개선: localStorage 값 검증
-      const modelName = localStorage.getItem('gemini_model') || CONFIG.DEFAULT_AI_MODEL;
+      // 📌 보안 개선: localStorage 값 검증 및 잘못된 모델명 수정
+      let modelName = localStorage.getItem('gemini_model');
+
+      // 더 이상 사용할 수 없는 모델명 자동 수정
+      if (!modelName || modelName.includes('1.5')) {
+        console.warn('⚠️ 잘못된 모델명 감지:', modelName, '→ 기본값으로 수정');
+        modelName = CONFIG.DEFAULT_AI_MODEL;
+        localStorage.setItem('gemini_model', modelName);
+      }
 
       const requestData = {
         ...formData,
@@ -72,15 +79,16 @@ export function useGenerateAPI() {
       const responseData = result?.data ? result.data : result;
       console.log('🔍 백엔드 응답 전체 구조:', responseData);
 
-      // 서버에서 content 필드로 응답하므로 이를 사용
-      const content = responseData?.content;
+      // 백엔드가 drafts 객체로 응답 (단일 draft)
+      const draftData = responseData?.drafts;
 
-      if (!content) {
+      if (!draftData || !draftData.content) {
         console.error('⚠️ 유효하지 않은 응답 구조:', result);
         console.error('⚠️ responseData:', responseData);
         throw new Error('AI 응답에서 유효한 원고 데이터를 찾을 수 없습니다.');
       }
 
+      const content = draftData.content;
       console.log('👍 원고 콘텐츠 추출 성공:', content.substring(0, 100) + '...');
 
       // 📌 개선: 안전한 콘텐츠 처리 및 정확한 길이 계산
@@ -89,19 +97,19 @@ export function useGenerateAPI() {
       const actualWordCount = getTextLength(content);
 
       const newDraft = {
-        id: Date.now(),
-        title: formData.topic || formData.prompt || '새로운 원고',
+        id: draftData.id || Date.now(),
+        title: draftData.title || formData.topic || formData.prompt || '새로운 원고',
         content: content,
 
         // 📌 보안 개선: DOMPurify 사용
         htmlContent: sanitizedContent,
         plainText: plainTextContent,
 
-        category: formData.category || '일반',
-        subCategory: formData.subCategory || '',
-        keywords: formData.keywords || '',
-        generatedAt: new Date().toISOString(),
-        wordCount: actualWordCount,
+        category: draftData.category || formData.category || '일반',
+        subCategory: draftData.subCategory || formData.subCategory || '',
+        keywords: draftData.keywords || formData.keywords || '',
+        generatedAt: draftData.generatedAt || new Date().toISOString(),
+        wordCount: draftData.wordCount || actualWordCount,
 
         // 메타데이터
         style: formData.style,

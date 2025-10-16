@@ -10,8 +10,8 @@ const { callGenerativeModel } = require('./gemini');
 const { logError } = require('../common/log');
 
 // 분석의 기준이 될 글쓰기 부품 라이브러리를 직접 가져옵니다.
-const { EMOTIONAL_ARCHETYPES, NARRATIVE_FRAMES } = require('../templates/prompts/daily-communication');
-const { LOGICAL_STRUCTURES } = require('../templates/prompts/policy-proposal');
+const { EMOTIONAL_ARCHETYPES, NARRATIVE_FRAMES } = require('../prompts/templates/daily-communication');
+const { LOGICAL_STRUCTURES } = require('../prompts/templates/policy-proposal');
 // ... 다른 작법 모듈들도 필요에 따라 추가 가능
 
 /**
