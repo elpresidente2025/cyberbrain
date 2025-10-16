@@ -81,7 +81,7 @@ async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.0-
     topK: 25,
     topP: 0.85,
     maxOutputTokens: isGemini2 ? 20000 : 20000, // 한국어 장문 콘텐츠 생성을 위한 토큰 증가
-    stopSequences: ['```', '---', '<!--'], // 불완전한 출력 방지
+    stopSequences: [], // stopSequences는 출력을 제한하지만, 프롬프트 템플릿의 구분자(---)도 차단하므로 제거
   };
 
   // Gemini 2.0만 JSON mode 지원

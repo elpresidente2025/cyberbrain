@@ -1,5 +1,5 @@
 /**
- * functions/templates/prompts/current-affairs.js
+ * functions/prompts/templates/current-affairs.js
  * '비판적 글쓰기' 작법 전용 프롬프트 생성 모듈입니다.
  */
 
@@ -30,6 +30,11 @@ function buildCriticalWritingPrompt(options) {
   const {
     topic,
     authorBio,
+    instructions,
+    keywords,
+    targetWordCount,
+    personalizedHints,
+    newsContext,
     criticalStructureId,
     offensiveTacticId,
     vocabularyModuleId,
@@ -39,16 +44,37 @@ function buildCriticalWritingPrompt(options) {
   const offensiveTactic = Object.values(OFFENSIVE_TACTICS).find(t => t.id === offensiveTacticId) || OFFENSIVE_TACTICS.EXPOSING_CONTRADICTION;
   const vocabularyModule = Object.values(VOCABULARY_MODULES).find(m => m.id === vocabularyModuleId) || VOCABULARY_MODULES.LEGAL_FACTUAL;
 
+  const backgroundSection = instructions ? `
+[배경 정보 및 필수 포함 내용]
+${Array.isArray(instructions) ? instructions.join('\n') : instructions}
+` : '';
+
+  const keywordsSection = keywords && keywords.length > 0 ? `
+[필수 키워드 (반드시 원고에 포함할 것)]
+${keywords.join(', ')}
+` : '';
+
+  const hintsSection = personalizedHints ? `
+[개인화 가이드]
+${personalizedHints}
+` : '';
+
+  const newsSection = newsContext ? `
+[참고 뉴스 (최신 정보 반영)]
+${newsContext}
+` : '';
+
   const prompt = `
 # 전자두뇌비서관 - 비판적 글쓰기 원고 생성
 
 [기본 정보]
 - 작성자: ${authorBio}
-- 글의 주제 (사용자 제공 사실): "${topic}"
-
+- 글의 주제: "${topic}"
+- 목표 분량: ${targetWordCount || 1700}자 (공백 제외)
+${backgroundSection}${keywordsSection}${hintsSection}${newsSection}
 [🚫 절대 원칙: 사실 기반 글쓰기 (Hallucination Guardrail)]
 - 너는 절대로 사실을 지어내거나 추측해서는 안 된다.
-- 모든 비판과 주장은 오직 사용자가 [기본 정보]의 '글의 주제'에 제공한 내용에만 100% 근거해야 한다.
+- 모든 비판과 주장은 오직 사용자가 [기본 정보] 및 [배경 정보]에 제공한 내용에만 100% 근거해야 한다.
 - 만약 사용자가 구체적인 사실, 통계, 인용문을 제공했다면 그것을 반드시 활용하라.
 - 만약 사용자가 구체적인 사실을 제공하지 않았다면, 사실을 날조하지 말고 원칙적인 수준의 비판만 수행하라.
 - 법적 문제가 발생할 수 있는 민감한 작법이므로, 이 원칙은 반드시 지켜져야 한다.
@@ -66,8 +92,38 @@ function buildCriticalWritingPrompt(options) {
     - 어휘 테마: ${vocabularyModule.thematic_guidance}
     - 지시사항: 위 '어휘 테마'에 맞는 단어와 표현을 사용하여 글 전체의 톤앤매너를 형성하라.
 
+[📊 SEO 최적화 규칙]
+- **필수 분량**: 1800~2300자 (공백 제외, 목표: 2050자)
+- **키워드 배치**: 본문 400자당 1회, 맥락에 맞게 자연스럽게 포함 (키워드 스터핑 금지)
+- **구조화**: h2 태그 2-3개, h3 태그 3-5개로 소제목 구성, 문단 6-8개 (각 150-250자)
+
+[📝 출력 형식 및 품질 기준]
+- **출력 구조**: 반드시 JSON 형식으로 출력. title, content, wordCount 필드 포함
+- **HTML 가이드라인**: <p> 태그로 문단 구성, <h2>/<h3> 태그로 소제목, <ul>/<ol> 태그로 목록, <strong> 태그로 강조. CSS 인라인 스타일 절대 금지
+- **톤앤매너**: 반드시 존댓말 사용 ("~입니다", "~합니다"). "저는", "제가" 사용. 비판적이되 논리적인 어조 유지
+- **예시 JSON 구조**:
+\`\`\`json
+{
+  "title": "제목",
+  "content": "<p>존댓말로 작성된 비판적 본문...</p><h2>소제목</h2><p>내용...</p>",
+  "wordCount": 2050
+}
+\`\`\`
+
+[🔍 품질 검증 필수사항]
+다음 항목들을 반드시 확인하여 작성하라:
+1. **문장 완결성**: 모든 문장이 완전한 구조를 갖추고 있는지 확인
+2. **조사/어미 검증**: 조사 누락 절대 금지
+3. **구체성 확보**: 괄호 안 예시가 아닌 실제 구체적 내용으로 작성
+4. **논리적 연결**: 도입-전개-결론의 자연스러운 흐름 구성
+5. **문체 일관성**: 존댓말 통일 및 어색한 표현 제거
+6. **실제 내용 작성**: 모든 괄호 표현 제거하고 실제 구체적인 문장으로 작성
+7. **사실 기반 비판**: 제공된 정보에만 근거한 비판, 추측이나 날조 금지
+
 [최종 임무]
-위 '절대 원칙'과 '글쓰기 설계도'에 따라, 주어진 [기본 정보]를 바탕으로 논리정연하고 강력한 비판 원고 초안을 작성하라.
+위 '절대 원칙'과 '글쓰기 설계도', 그리고 모든 규칙을 준수하여, 주어진 [기본 정보]와 [배경 정보]를 바탕으로 논리정연하고 강력하며 완성도 높은 비판 원고를 작성하라.
+**[필수 키워드]에 명시된 모든 키워드를 원고에 자연스럽게 포함시켜야 한다.**
+**반드시 JSON 형식으로만 출력하고, 코드 펜스(\`\`\`)는 사용하지 말 것.**
 `;
 
   return prompt.trim();

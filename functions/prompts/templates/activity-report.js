@@ -1,5 +1,5 @@
 /**
- * functions/templates/prompts/activity-report.js
+ * functions/prompts/templates/activity-report.js
  * '직설적 글쓰기' 작법에 기반한 의정활동 보고 전용 프롬프트 생성 모듈입니다.
  * (성과 보고, 입법 활동, 예산 확보 등)
  */
@@ -32,6 +32,11 @@ function buildActivityReportPrompt(options) {
   const {
     topic,
     authorBio,
+    instructions,
+    keywords,
+    targetWordCount,
+    personalizedHints,
+    newsContext,
     declarativeStructureId,
     rhetoricalTacticId,
     vocabularyModuleId,
@@ -41,13 +46,38 @@ function buildActivityReportPrompt(options) {
   const rhetoricalTactic = Object.values(RHETORICAL_TACTICS).find(t => t.id === rhetoricalTacticId) || RHETORICAL_TACTICS.FACTS_AND_EVIDENCE;
   const vocabularyModule = Object.values(VOCABULARY_MODULES).find(m => m.id === vocabularyModuleId) || VOCABULARY_MODULES.FORMAL_AND_REPORTING;
 
+  // 배경정보 포맷팅
+  const backgroundSection = instructions ? `
+[배경 정보 및 필수 포함 내용]
+${Array.isArray(instructions) ? instructions.join('\n') : instructions}
+` : '';
+
+  // 필수 키워드 포맷팅
+  const keywordsSection = keywords && keywords.length > 0 ? `
+[필수 키워드 (반드시 원고에 포함할 것)]
+${keywords.join(', ')}
+` : '';
+
+  // 개인화 힌트 포맷팅
+  const hintsSection = personalizedHints ? `
+[개인화 가이드]
+${personalizedHints}
+` : '';
+
+  // 뉴스 컨텍스트 포맷팅
+  const newsSection = newsContext ? `
+[참고 뉴스 (최신 정보 반영)]
+${newsContext}
+` : '';
+
   const prompt = `
 # 전자두뇌비서관 - 의정활동 보고 원고 생성
 
 [기본 정보]
 - 작성자: ${authorBio}
 - 글의 주제: "${topic}"
-
+- 목표 분량: ${targetWordCount || 1700}자 (공백 제외)
+${backgroundSection}${keywordsSection}${hintsSection}${newsSection}
 [글쓰기 설계도]
 너는 아래 3가지 부품을 조립하여, 매우 명확하고 신뢰감 있는 글을 만들어야 한다.
 
@@ -61,8 +91,37 @@ function buildActivityReportPrompt(options) {
     - 어휘 테마: ${vocabularyModule.thematic_guidance}
     - 지시사항: 위 '어휘 테마'에 맞는 단어와 표현을 사용하여 글 전체의 톤앤매너를 형성하라.
 
+[📊 SEO 최적화 규칙]
+- **필수 분량**: 1800~2300자 (공백 제외, 목표: 2050자)
+- **키워드 배치**: 본문 400자당 1회, 맥락에 맞게 자연스럽게 포함 (키워드 스터핑 금지)
+- **구조화**: h2 태그 2-3개, h3 태그 3-5개로 소제목 구성, 문단 6-8개 (각 150-250자)
+
+[📝 출력 형식 및 품질 기준]
+- **출력 구조**: 반드시 JSON 형식으로 출력. title, content, wordCount 필드 포함
+- **HTML 가이드라인**: <p> 태그로 문단 구성, <h2>/<h3> 태그로 소제목, <ul>/<ol> 태그로 목록, <strong> 태그로 강조. CSS 인라인 스타일 절대 금지
+- **톤앤매너**: 반드시 존댓말 사용 ("~입니다", "~합니다"). "저는", "제가" 사용. 서민적이고 친근한 어조 유지
+- **예시 JSON 구조**:
+\`\`\`json
+{
+  "title": "제목",
+  "content": "<p>존댓말로 작성된 본문...</p><h2>소제목</h2><p>내용...</p>",
+  "wordCount": 2050
+}
+\`\`\`
+
+[🔍 품질 검증 필수사항]
+다음 항목들을 반드시 확인하여 작성하라:
+1. **문장 완결성**: 모든 문장이 완전한 구조를 갖추고 있는지 확인. 예시: "주민여하여" (X) → "주민 여러분께서" (O)
+2. **조사/어미 검증**: "주민소리에" 같은 조사 누락 절대 금지. 예시: "주민소리에" (X) → "주민들의 소리에" (O)
+3. **구체성 확보**: 괄호 안 예시가 아닌 실제 구체적 내용으로 작성. 예시: "(구체적 사례)" (X) → "지난 10월 12일 시흥시 체육관에서 열린" (O)
+4. **논리적 연결**: 도입-전개-결론의 자연스러운 흐름 구성
+5. **문체 일관성**: 존댓말 통일 및 어색한 표현 제거
+6. **실제 내용 작성**: 모든 괄호 표현 제거하고 실제 구체적인 문장으로 작성
+
 [최종 임무]
-위 '글쓰기 설계도'에 따라, 주어진 [기본 정보]를 바탕으로 신뢰도 높은 의정활동 보고 원고 초안을 작성하라.
+위 '글쓰기 설계도'와 모든 규칙을 준수하여, 주어진 [기본 정보]와 [배경 정보]를 바탕으로 신뢰도 높고 완성도 있는 의정활동 보고 원고를 작성하라.
+**[필수 키워드]에 명시된 모든 키워드를 원고에 자연스럽게 포함시켜야 한다.**
+**반드시 JSON 형식으로만 출력하고, 코드 펜스(\`\`\`)는 사용하지 말 것.**
 `;
 
   return prompt.trim();

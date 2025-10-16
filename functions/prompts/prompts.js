@@ -1,5 +1,5 @@
 /**
- * functions/templates/prompts.js (최종본)
+ * functions/prompts/prompts.js
  * 전자두뇌비서관의 메인 프롬프트 라우터(Router)입니다.
  * 사용자의 요청에 따라 적절한 작법 모듈을 호출하고,
  * '지능적 프레이밍'과 'editorial' 규칙을 적용하여 최종 프롬프트를 완성합니다.
@@ -12,11 +12,11 @@ const { SEO_RULES, FORMAT_RULES } = require('./guidelines/editorial');
 const { OVERRIDE_KEYWORDS, HIGH_RISK_KEYWORDS, POLITICAL_FRAMES } = require('./guidelines/framingRules');
 
 // [신규] 작법별 프롬프트 빌더 모듈 import
-const { buildDailyCommunicationPrompt } = require('./prompts/daily-communication');
-const { buildLogicalWritingPrompt } = require('./prompts/policy-proposal');
-const { buildActivityReportPrompt } = require('./prompts/activity-report'); // direct-writing -> activity-report
-const { buildCriticalWritingPrompt } = require('./prompts/current-affairs');
-const { buildLocalIssuesPrompt } = require('./prompts/local-issues'); // analytical-writing -> local-issues
+const { buildDailyCommunicationPrompt } = require('./templates/daily-communication');
+const { buildLogicalWritingPrompt } = require('./templates/policy-proposal');
+const { buildActivityReportPrompt } = require('./templates/activity-report'); // direct-writing -> activity-report
+const { buildCriticalWritingPrompt } = require('./templates/current-affairs');
+const { buildLocalIssuesPrompt } = require('./templates/local-issues'); // analytical-writing -> local-issues
 
 // ============================================================================
 // 지능적 프레이밍 에이전트
