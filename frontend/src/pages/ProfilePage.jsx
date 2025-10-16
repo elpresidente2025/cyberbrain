@@ -754,8 +754,8 @@ export default function ProfilePage() {
                   >
                     <MenuItem value="">선택 안함</MenuItem>
                     <MenuItem value="미혼">미혼</MenuItem>
-                    <MenuItem value="기혼">기혼</MenuItem>
-                    <MenuItem value="자녀있음">자녀있음</MenuItem>
+                    <MenuItem value="기혼(자녀 있음)">기혼(자녀 있음)</MenuItem>
+                    <MenuItem value="기혼(자녀 없음)">기혼(자녀 없음)</MenuItem>
                     <MenuItem value="한부모">한부모</MenuItem>
                   </Select>
                 </FormControl>
