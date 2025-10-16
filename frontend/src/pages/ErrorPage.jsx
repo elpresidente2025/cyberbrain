@@ -79,7 +79,7 @@ export default function ErrorPage() {
               }
             }}
           >
-            홈으로 도아가기
+            홈으로 돌아가기
           </Button>
         </Box>
       </Paper>
