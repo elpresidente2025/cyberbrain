@@ -226,6 +226,15 @@ const createCustomTheme = (isDarkMode) => createTheme({
         },
       },
     },
+    MuiMenu: {
+      styleOverrides: {
+        paper: {
+          backgroundColor: isDarkMode ? '#1a1a1a' : '#ffffff',
+          backdropFilter: 'none',
+          WebkitBackdropFilter: 'none',
+        },
+      },
+    },
     MuiFormControl: {
       styleOverrides: {
         root: {
