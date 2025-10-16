@@ -63,9 +63,10 @@ function getUserFriendlyErrorMessage(error) {
  * @param {string} prompt - AI 모델에게 전달할 프롬프트
  * @param {number} retries - 실패 시 재시도 횟수
  * @param {string} modelName - 사용할 모델명 (기본값: gemini-2.0-flash-exp)
+ * @param {boolean} useJsonMode - JSON 형식 응답 강제 (기본값: true)
  * @returns {Promise<string>} - AI가 생성한 텍스트
  */
-async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.0-flash-exp') {
+async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.0-flash-exp', useJsonMode = true) {
   if (!API_KEY) {
     logError('callGenerativeModel', 'Gemini API 키가 설정되지 않았습니다.');
     throw new HttpsError('internal', 'AI 서비스 설정에 오류가 발생했습니다.');
@@ -84,8 +85,8 @@ async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.0-
     stopSequences: [], // stopSequences는 출력을 제한하지만, 프롬프트 템플릿의 구분자(---)도 차단하므로 제거
   };
 
-  // Gemini 2.0만 JSON mode 지원
-  if (isGemini2) {
+  // Gemini 2.0만 JSON mode 지원 (useJsonMode가 true일 때만)
+  if (isGemini2 && useJsonMode) {
     generationConfig.responseMimeType = 'application/json';
   }
 
