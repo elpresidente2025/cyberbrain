@@ -122,7 +122,7 @@ export default function PostsListPage() {
         console.log('🚀 Firebase Functions 호출:', { uid: user.uid });
         const res = await callFunctionWithNaverAuth('getUserPosts');
         console.log('✅ getUserPosts 응답:', res);
-        const list = res?.data?.posts || [];
+        const list = res?.posts || [];
         console.log('📝 처리된 posts 목록:', list);
         console.log('📝 posts 개수:', list.length);
         console.log('📝 첫 번째 post:', list[0]);
