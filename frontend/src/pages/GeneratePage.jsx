@@ -49,13 +49,14 @@ const GeneratePage = () => {
   // 폼의 상태와 관련된 모든 로직을 useGenerateForm 훅이 전담합니다.
   const { formData, updateForm, resetForm, validateForm, canGenerate } = useGenerateForm();
   // API 통신과 관련된 모든 상태와 함수를 useGenerateAPI 훅이 전담합니다.
-  const { 
+  const {
     loading,      // 로딩 중인지 여부 (true/false)
     error,        // API 에러 메시지
     drafts,       // 생성된 원고 초안 목록
     setDrafts,    // 원고 목록 직접 설정 함수
     attempts,     // 현재 생성 시도 횟수
     maxAttempts,  // 최대 생성 시도 횟수
+    progress,     // 진행 상황 { step, progress, message }
     generate,     // 원고 생성 API 호출 함수
     reset,        // API 상태 초기화 함수
     save,         // 원고 저장 API 호출 함수
@@ -242,6 +243,7 @@ const GeneratePage = () => {
           attempts={attempts}
           maxAttempts={maxAttempts}
           drafts={drafts}
+          progress={progress}
           isMobile={isMobile}
         />
 

@@ -1,11 +1,12 @@
 // frontend/src/hooks/useGenerateAPI.js - 보안 및 성능 개선된 버전
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { callHttpFunction } from '../services/firebaseService';
 import { useAuth } from './useAuth';
 import { handleHttpError } from '../utils/errorHandler';
 import { sanitizeHtml, stripHtmlTags, getTextLength, isSeoOptimized } from '../utils/contentSanitizer';
 import { CONFIG } from '../config/constants';
+import { db } from '../services/firebase';
 
 export function useGenerateAPI() {
   const { user } = useAuth();
@@ -13,6 +14,7 @@ export function useGenerateAPI() {
   const [error, setError] = useState(null);
   const [drafts, setDrafts] = useState([]);
   const [attempts, setAttempts] = useState(0);
+  const [progress, setProgress] = useState(null); // { step, progress, message }
 
   // 📌 메모리 누수 방지: 최대 개수 제한
   const addDraft = useCallback((newDraft) => {
@@ -44,6 +46,10 @@ export function useGenerateAPI() {
 
     setLoading(true);
     setError(null);
+    setProgress({ step: 0, progress: 0, message: '시작 중...' });
+
+    // Firestore 리스너 등록을 위한 변수
+    let unsubscribe = null;
 
     try {
       console.log('🔥 generatePosts 호출 시작');
@@ -71,8 +77,31 @@ export function useGenerateAPI() {
 
       console.log('📝 요청 데이터:', requestData);
 
-      // HTTP 함수 호출
-      const result = await callHttpFunction(CONFIG.FUNCTIONS.GENERATE_POSTS, requestData);
+      // HTTP 함수 호출 (비동기)
+      const resultPromise = callHttpFunction(CONFIG.FUNCTIONS.GENERATE_POSTS, requestData);
+
+      // sessionId를 예측하여 즉시 Firestore 리스너 등록
+      const tempSessionId = `${user.uid}_${Date.now()}`;
+
+      // Firestore 진행 상황 리스너 등록
+      unsubscribe = db.collection('generation_progress')
+        .doc(tempSessionId)
+        .onSnapshot((doc) => {
+          if (doc.exists) {
+            const data = doc.data();
+            console.log('📊 진행 상황 업데이트:', data);
+            setProgress({
+              step: data.step,
+              progress: data.progress,
+              message: data.message
+            });
+          }
+        }, (error) => {
+          console.error('⚠️ 진행 상황 리스너 에러:', error);
+        });
+
+      // 실제 결과 대기
+      const result = await resultPromise;
       console.log('✅ generatePosts 응답 수신:', result);
 
       // HTTP 응답 구조 확인 및 처리
@@ -138,8 +167,8 @@ export function useGenerateAPI() {
         ? `보너스 원고가 성공적으로 생성되었습니다! (${newDraft.wordCount}자)` 
         : `AI 원고가 성공적으로 생성되었습니다! (${newDraft.wordCount}자)`;
 
-      return { 
-        success: true, 
+      return {
+        success: true,
         message: message
       };
 
@@ -150,12 +179,21 @@ export function useGenerateAPI() {
       const errorMessage = handleHttpError(err);
 
       setError(errorMessage);
+      setProgress({ step: -1, progress: 0, message: `오류: ${errorMessage}` });
       return { success: false, error: errorMessage };
-      
+
     } finally {
       setLoading(false);
+
+      // 리스너 정리
+      if (unsubscribe) {
+        setTimeout(() => {
+          unsubscribe();
+          console.log('🔌 진행 상황 리스너 해제');
+        }, 2000); // 2초 후 해제 (완료 메시지 표시 시간 확보)
+      }
     }
-  }, [attempts, addDraft, collectMetadata]);
+  }, [attempts, addDraft, collectMetadata, user]);
 
   // 초안 저장 함수
   const save = useCallback(async (draft) => {
@@ -210,6 +248,7 @@ export function useGenerateAPI() {
     setDrafts([]);
     setAttempts(0);
     setError(null);
+    setProgress(null);
   }, []);
 
   return {
@@ -219,6 +258,7 @@ export function useGenerateAPI() {
     setDrafts,
     attempts,
     maxAttempts: CONFIG.MAX_GENERATION_ATTEMPTS,
+    progress, // 진행 상황 추가
     generate,
     save,
     reset,

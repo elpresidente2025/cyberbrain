@@ -37,6 +37,7 @@ const { processGeneratedContent } = require('../services/posts/content-processor
 const { generateTitleFromContent } = require('../services/posts/title-generator');
 const { buildSmartPrompt } = require('../prompts/prompts');
 const { fetchNaverNews, compressNewsWithAI, formatNewsForPrompt, shouldFetchNews } = require('../services/news-fetcher');
+const { ProgressTracker } = require('../utils/progress-tracker');
 
 // CRUD 엔드포인트 export
 exports.getUserPosts = getUserPosts;
@@ -103,7 +104,14 @@ exports.generatePosts = httpWrap(async (req) => {
     throw new HttpsError('invalid-argument', '카테고리를 선택해주세요.');
   }
 
+  // 🔔 진행 상황 추적 시작
+  const sessionId = `${uid}_${Date.now()}`;
+  const progress = new ProgressTracker(sessionId);
+
   try {
+    // 1단계: 준비 중
+    await progress.stepPreparing();
+
     // 사용자 프로필 및 Bio 로딩
     const {
       userProfile,
@@ -119,6 +127,9 @@ exports.generatePosts = httpWrap(async (req) => {
     // 사용자 정보
     const fullName = userProfile.name || '사용자';
     const fullRegion = generateNaturalRegionTitle(userProfile.regionLocal, userProfile.regionMetro);
+
+    // 2단계: 자료 수집 중
+    await progress.stepCollecting();
 
     // 뉴스 컨텍스트 조회
     let newsContext = '';
@@ -172,6 +183,9 @@ exports.generatePosts = httpWrap(async (req) => {
     console.log('📋 생성된 프롬프트 (처음 1000자):', prompt.substring(0, 1000));
     console.log('📋 프롬프트 전체 길이:', prompt.length, '자');
 
+    // 3단계: AI 원고 작성 중
+    await progress.stepGenerating();
+
     // AI 호출 및 검증
     const apiResponse = await validateAndRetry({
       prompt,
@@ -179,8 +193,12 @@ exports.generatePosts = httpWrap(async (req) => {
       fullName,
       fullRegion,
       targetWordCount,
+      keywords: backgroundKeywords,
       maxAttempts: 3
     });
+
+    // 4단계: 품질 검증 중 (validateAndRetry에서 이미 검증 완료)
+    await progress.stepValidating();
 
     // JSON 파싱
     let parsedResponse;
@@ -221,6 +239,9 @@ exports.generatePosts = httpWrap(async (req) => {
       };
     }
 
+    // 5단계: 마무리 중
+    await progress.stepFinalizing();
+
     // 후처리
     if (parsedResponse && parsedResponse.content) {
       parsedResponse.content = processGeneratedContent({
@@ -258,6 +279,9 @@ exports.generatePosts = httpWrap(async (req) => {
     // 사용량 업데이트
     await updateUsageStats(uid, useBonus, isAdmin);
 
+    // 진행 상황 완료 표시
+    await progress.complete();
+
     // 최종 응답
     let message = useBonus ? '보너스 원고가 성공적으로 생성되었습니다' : '원고가 성공적으로 생성되었습니다';
     if (dailyLimitWarning) {
@@ -269,6 +293,7 @@ exports.generatePosts = httpWrap(async (req) => {
       message: message,
       dailyLimitWarning: dailyLimitWarning,
       drafts: draftData,
+      sessionId: sessionId, // 프론트엔드에 세션 ID 전달
       metadata: {
         generatedAt: new Date().toISOString(),
         userId: uid,
@@ -279,6 +304,12 @@ exports.generatePosts = httpWrap(async (req) => {
 
   } catch (error) {
     console.error('❌ generatePosts 오류:', error.message);
+
+    // 에러 발생 시 진행 상황 업데이트
+    if (progress) {
+      await progress.error(error.message);
+    }
+
     throw new HttpsError('internal', '원고 생성에 실패했습니다: ' + error.message);
   }
 });

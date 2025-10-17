@@ -18,9 +18,16 @@ export default function GenerateActions({
   attempts = 0,
   maxAttempts = 3,
   drafts = [],
+  progress = null,
   isMobile = false
 }) {
   const attemptsRemaining = maxAttempts - attempts;
+
+  // 진행 상황 메시지 결정
+  const getProgressMessage = () => {
+    if (!progress || !loading) return '생성 중...';
+    return progress.message || '처리 중...';
+  };
 
   return (
     <Box sx={{ mb: 3 }}>
@@ -46,7 +53,7 @@ export default function GenerateActions({
             onClick={onGenerate}
             disabled={!canGenerate}
             loading={loading}
-            loadingText="생성 중..."
+            loadingText={getProgressMessage()}
             sx={{
               minWidth: isMobile ? 'auto' : 160,
               flex: isMobile ? 1 : 'none',
