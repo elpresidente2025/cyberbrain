@@ -147,28 +147,17 @@ exports.generatePosts = httpWrap(async (req) => {
       generatedContent = JSON.stringify(generatedContent, null, 2);
     }
 
-    // 생성된 원고 저장
-    const postData = {
-      userId: uid,
-      topic: actualTopic,
+    // DB에 저장하지 않고 생성된 콘텐츠만 반환
+    console.log('✅ 원고 생성 완료 (임시)');
+
+    return {
+      success: true,
       content: generatedContent,
+      topic: actualTopic,
       tone: tone || '전문적',
       keywords: keywords || '',
       category: category || '일반',
       length: length || '중간',
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      status: 'draft'
-    };
-
-    const docRef = await db.collection('posts').add(postData);
-
-    console.log('✅ 원고 생성 완료:', docRef.id);
-
-    return {
-      success: true,
-      postId: docRef.id,
-      content: generatedContent,
       message: '원고가 성공적으로 생성되었습니다.'
     };
 

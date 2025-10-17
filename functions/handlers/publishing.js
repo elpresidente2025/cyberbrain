@@ -35,6 +35,7 @@ const publishPost = wrap(async (request) => {
       transaction.update(postRef, {
         publishUrl: publishUrl,
         publishedAt: publishedAt,
+        status: 'published',
         updatedAt: now
       });
 

@@ -60,7 +60,7 @@ exports.saveSelectedPost = httpWrap(async (req) => {
       subCategory: data.subCategory || '',
       keywords: data.keywords || '',
       wordCount,
-      status: 'published',
+      status: 'scheduled',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
