@@ -192,33 +192,27 @@ const Dashboard = () => {
     }
   };
 
-  // 실제 데이터 로딩
+  // 실제 데이터 로딩 (페이지 마운트 시에만 실행)
   useEffect(() => {
     fetchDashboardData();
   }, [user]);
 
-  // bio 체크 (사용자 로그인 후) - 약간 지연하여 프로필 로드 대기
-  // ref를 사용하여 한 번만 실행되도록 보장 (focus 이벤트로 인한 재실행 방지)
+  // bio 체크 (사용자 로그인 후) - isLoading이 false가 되면 프로필 로드 완료된 상태
+  // ref를 사용하여 한 번만 실행되도록 보장
   useEffect(() => {
+    console.log('🔄 Bio check useEffect:', {
+      hasUser: !!user,
+      isLoading,
+      hasCheckedBio: hasCheckedBio.current
+    });
+
     if (user && !isLoading && !hasCheckedBio.current) {
+      console.log('✅ Bio check 조건 충족 - 즉시 실행');
       hasCheckedBio.current = true;
-      // 네이버 로그인 시 프로필 로드를 기다리기 위해 200ms 지연
-      setTimeout(() => {
-        checkBioAndShowOnboarding();
-      }, 200);
+      // isLoading이 false이면 이미 프로필 로드 완료된 상태이므로 즉시 실행
+      checkBioAndShowOnboarding();
     }
   }, [user, isLoading]);
-
-  // 페이지 포커스 시 데이터 새로고침 (새 포스트 생성 후 대시보드 복귀 시)
-  useEffect(() => {
-    const handleFocus = () => {
-      console.log('🔄 Dashboard 페이지 포커스 - 데이터 새로고침');
-      fetchDashboardData();
-    };
-
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, [user]);
 
   // 공지사항 별도 로딩 (대시보드 데이터와 독립적으로)
   useEffect(() => {
