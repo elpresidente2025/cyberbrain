@@ -13,6 +13,14 @@ const { auth } = require('../common/auth');
 exports.getDashboardData = wrap(async (req) => {
   const { uid } = await auth(req);
 
+  // 사용자 정보 가져오기 (구독 상태 확인)
+  const userDoc = await db.collection('users').doc(uid).get();
+  const userData = userDoc.data() || {};
+
+  const subscriptionStatus = userData.subscriptionStatus || 'trial';
+  const monthlyLimit = userData.monthlyLimit || 8;
+  const trialPostsRemaining = userData.trialPostsRemaining || 0;
+
   // 사용량 정보
   const now = new Date();
   const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -21,10 +29,33 @@ exports.getDashboardData = wrap(async (req) => {
     .where('createdAt', '>=', admin.firestore.Timestamp.fromDate(thisMonth))
     .get();
 
+  const postsGenerated = usageSnapshot.size;
+
+  // 구독 상태별 사용량 계산
+  let canGenerate;
+  let remainingPosts;
+
+  if (subscriptionStatus === 'trial') {
+    // 무료 체험: trialPostsRemaining 기준
+    canGenerate = trialPostsRemaining > 0;
+    remainingPosts = trialPostsRemaining;
+  } else if (subscriptionStatus === 'active') {
+    // 유료 구독: monthlyLimit 기준
+    canGenerate = postsGenerated < monthlyLimit;
+    remainingPosts = monthlyLimit - postsGenerated;
+  } else {
+    // 만료 또는 기타 상태
+    canGenerate = false;
+    remainingPosts = 0;
+  }
+
   const usage = {
-    postsGenerated: usageSnapshot.size,
-    monthlyLimit: 50, // 이 값은 나중에 설정에서 가져오도록 변경 가능
-    canGenerate: usageSnapshot.size < 50
+    postsGenerated,
+    monthlyLimit,
+    trialPostsRemaining,
+    subscriptionStatus,
+    canGenerate,
+    remainingPosts
   };
 
   // 최근 포스트 조회 (최대 5개)

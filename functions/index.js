@@ -78,6 +78,14 @@ try {
   console.warn('[index] naver-login handler warning:', e?.message);
 }
 
+// Add Toss Payments handlers
+try {
+  const tossPaymentsHandlers = require('./handlers/toss-payments');
+  Object.assign(exports, tossPaymentsHandlers);
+} catch (e) {
+  console.warn('[index] toss-payments handler warning:', e?.message);
+}
+
 // Delete post (HTTP onRequest, Naver-only via __naverAuth)
 exports.deletePost = onRequest({ region: 'asia-northeast3', cors: true }, async (req, res) => {
   try {

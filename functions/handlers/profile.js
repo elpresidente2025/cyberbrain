@@ -310,13 +310,17 @@ exports.registerWithDistrictCheck = wrap(async (req) => {
       bio,
       isActive,
       districtKey: newKey,
+      subscriptionStatus: 'trial',  // 무료 체험 상태
+      trialPostsRemaining: 8,  // 무료 체험 8회
+      monthlyLimit: 8,  // 체험 기간 제한
+      postsThisMonth: 0,  // 이번 달 생성 회수
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     },
     { merge: true }
   );
 
-  logInfo('회원가입 성공', { newKey, isActive });
+  logInfo('회원가입 성공', { newKey, isActive, subscriptionStatus: 'trial', trialPostsRemaining: 8 });
   return ok({ message: '회원가입이 완료되었습니다.', isActive });
 });
 

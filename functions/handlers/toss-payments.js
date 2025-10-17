@@ -133,40 +133,80 @@ async function updateUserSubscription(uid, orderId, paymentData) {
     // 주문번호에서 플랜 정보 추출 (예: "전자두뇌비서관 - 리전 인플루언서 (1개월)")
     const orderName = paymentData.orderName || '';
     let planName = '리전 인플루언서'; // 기본값
-    
+    let monthlyLimit = 20; // 기본값
+
     if (orderName.includes('로컬 블로거')) {
       planName = '로컬 블로거';
+      monthlyLimit = 8;
+    } else if (orderName.includes('리전 인플루언서')) {
+      planName = '리전 인플루언서';
+      monthlyLimit = 20;
     } else if (orderName.includes('오피니언 리더')) {
       planName = '오피니언 리더';
+      monthlyLimit = 60;
     }
-    
-    // 사용자 정보 업데이트
+
+    // 사용자 정보 가져오기
     const userRef = db.collection('users').doc(uid);
+    const userDoc = await userRef.get();
+    const userData = userDoc.data() || {};
+
+    // 현재 시간
+    const now = new Date();
+
+    // 다음 결제일 계산 (가입월 M+1월 1일)
+    let nextBillingDate;
+    if (!userData.subscriptionStartDate) {
+      // 첫 결제인 경우: M+1월 1일
+      nextBillingDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    } else {
+      // 이미 구독 중인 경우: 다음 달 1일
+      const currentNext = userData.nextBillingDate?.toDate() || now;
+      nextBillingDate = new Date(currentNext.getFullYear(), currentNext.getMonth() + 1, 1);
+    }
+
+    // 구독 데이터 준비
     const subscriptionData = {
       plan: planName,
       subscription: planName, // 호환성을 위해 둘 다 설정
       subscriptionStatus: 'active',
+      monthlyLimit,
+      subscriptionStartDate: userData.subscriptionStartDate || admin.firestore.FieldValue.serverTimestamp(),
+      nextBillingDate: admin.firestore.Timestamp.fromDate(nextBillingDate),
       lastPaymentAt: admin.firestore.FieldValue.serverTimestamp(),
       lastPaymentAmount: paymentData.totalAmount,
       lastPaymentKey: paymentData.paymentKey,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
-    
+
+    // 체험 상태였다면 체험 종료
+    if (userData.subscriptionStatus === 'trial') {
+      subscriptionData.trialEndedAt = admin.firestore.FieldValue.serverTimestamp();
+    }
+
     await userRef.update(subscriptionData);
-    
+
     // 구독 이력도 기록
     await db.collection('subscription_history').add({
       userId: uid,
       planName,
+      monthlyLimit,
       paymentKey: paymentData.paymentKey,
       orderId: paymentData.orderId,
       amount: paymentData.totalAmount,
       status: 'active',
+      billingDate: now,
+      nextBillingDate: nextBillingDate,
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
-    
-    console.log('✅ 사용자 구독 정보 업데이트 완료:', { uid, planName });
-    
+
+    console.log('✅ 사용자 구독 정보 업데이트 완료:', {
+      uid,
+      planName,
+      monthlyLimit,
+      nextBillingDate: nextBillingDate.toISOString()
+    });
+
   } catch (error) {
     console.error('❌ 사용자 구독 정보 업데이트 실패:', error);
     // 구독 업데이트 실패해도 결제는 성공으로 처리 (수동으로 처리 가능)

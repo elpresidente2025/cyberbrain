@@ -154,16 +154,32 @@ function checkUsageLimit(userProfile, useBonus) {
 
     console.log('✅ 보너스 원고 사용 가능', { availableBonus });
   } else {
-    const usage = userProfile.usage || { postsGenerated: 0, monthlyLimit: 50 };
+    const subscriptionStatus = userProfile.subscriptionStatus || 'trial';
+    const monthlyLimit = userProfile.monthlyLimit || 8;
+    const trialPostsRemaining = userProfile.trialPostsRemaining || 0;
+    const postsThisMonth = userProfile.postsThisMonth || 0;
 
-    if (usage.postsGenerated >= usage.monthlyLimit) {
-      throw new HttpsError('resource-exhausted', '월간 생성 시도를 초과했습니다.');
+    if (subscriptionStatus === 'trial') {
+      // 무료 체험 상태
+      if (trialPostsRemaining <= 0) {
+        throw new HttpsError('resource-exhausted', '무료 체험 횟수를 모두 사용하셨습니다. 유료 플랜을 구독해주세요.');
+      }
+      console.log('✅ 무료 체험 원고 생성 가능', {
+        remaining: trialPostsRemaining
+      });
+    } else if (subscriptionStatus === 'active') {
+      // 유료 구독 상태
+      if (postsThisMonth >= monthlyLimit) {
+        throw new HttpsError('resource-exhausted', '월간 생성 횟수를 초과했습니다.');
+      }
+      console.log('✅ 유료 구독 원고 생성 가능', {
+        current: postsThisMonth,
+        limit: monthlyLimit
+      });
+    } else {
+      // 만료 또는 기타 상태
+      throw new HttpsError('failed-precondition', '구독이 만료되었거나 유효하지 않습니다. 플랜을 확인해주세요.');
     }
-
-    console.log('✅ 일반 원고 생성 가능', {
-      current: usage.postsGenerated,
-      limit: usage.monthlyLimit
-    });
   }
 }
 
@@ -186,11 +202,30 @@ async function updateUsageStats(uid, useBonus, isAdmin) {
       console.log('✅ 보너스 원고 사용량 업데이트', isAdmin ? '(관리자 - 하루 카운트 제외)' : '');
     } else {
       if (!isAdmin) {
-        await db.collection('users').doc(uid).update({
-          'usage.postsGenerated': admin.firestore.FieldValue.increment(1),
+        // 사용자 정보 가져와서 구독 상태 확인
+        const userDoc = await db.collection('users').doc(uid).get();
+        const userData = userDoc.data() || {};
+        const subscriptionStatus = userData.subscriptionStatus || 'trial';
+
+        const updateData = {
           [`dailyUsage.${todayKey}`]: admin.firestore.FieldValue.increment(1),
           lastGenerated: admin.firestore.FieldValue.serverTimestamp()
-        });
+        };
+
+        if (subscriptionStatus === 'trial') {
+          // 무료 체험: trialPostsRemaining 감소
+          updateData.trialPostsRemaining = admin.firestore.FieldValue.increment(-1);
+          console.log('✅ 무료 체험 횟수 차감');
+        } else if (subscriptionStatus === 'active') {
+          // 유료 구독: postsThisMonth 증가
+          updateData.postsThisMonth = admin.firestore.FieldValue.increment(1);
+          console.log('✅ 이번 달 사용량 증가');
+        }
+
+        // 하위 호환성을 위해 usage.postsGenerated도 업데이트
+        updateData['usage.postsGenerated'] = admin.firestore.FieldValue.increment(1);
+
+        await db.collection('users').doc(uid).update(updateData);
         console.log('✅ 일반 원고 사용량 및 하루 사용량 업데이트');
       } else {
         await db.collection('users').doc(uid).update({
