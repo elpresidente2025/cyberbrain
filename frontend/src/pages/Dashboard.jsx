@@ -580,47 +580,6 @@ const Dashboard = () => {
                   </Typography>
                 </Alert>
               )}
-
-              {/* 사용량 현황 */}
-              {!isAdmin && (
-                <Box sx={{ mb: `${spacing.md}px` }}>
-                  <Typography variant="subtitle1" sx={{ mb: `${spacing.xs}px`, fontWeight: 600 }}>
-                    이번 달 사용량
-                  </Typography>
-                  <Box sx={{ mb: `${spacing.xs}px` }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: `${spacing.xs}px` }}>
-                      <Typography variant="body2" color="text.secondary">
-                        원고 생성
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {usage.postsGenerated}/{usage.monthlyLimit}회
-                      </Typography>
-                    </Box>
-                    <LinearProgress 
-                      variant="determinate" 
-                      value={usagePercentage} 
-                      sx={{ 
-                        height: 8, 
-                        borderRadius: 4,
-                        '& .MuiLinearProgress-bar': {
-                          bgcolor: planColor
-                        }
-                      }}
-                    />
-                  </Box>
-                  <Button 
-                    variant="text" 
-                    size="small" 
-                    onClick={handleViewBilling}
-                    sx={{ 
-                      color: planColor,
-                      fontSize: '0.75rem'
-                    }}
-                  >
-                    플랜 관리
-                  </Button>
-                </Box>
-              )}
             </Box>
           ) : (
             /* PC 버전 - 수평 레이아웃 (2:1:1 비율) */
@@ -758,47 +717,6 @@ const Dashboard = () => {
                       </Box>
                     </Box>
                   </Box>
-
-                  {/* PC용 사용량 현황 */}
-                  {!isAdmin && (
-                    <Box sx={{ mt: `${spacing.md}px` }}>
-                      <Typography variant="subtitle2" sx={{ mb: `${spacing.xs}px`, fontWeight: 600 }}>
-                        이번 달 사용량
-                      </Typography>
-                      <Box sx={{ mb: `${spacing.xs}px` }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: `${spacing.xs}px` }}>
-                          <Typography variant="body2" color="text.secondary">
-                            원고 생성
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {usage.postsGenerated}/{usage.monthlyLimit}회
-                          </Typography>
-                        </Box>
-                        <LinearProgress 
-                          variant="determinate" 
-                          value={usagePercentage} 
-                          sx={{ 
-                            height: 6, 
-                            borderRadius: 3,
-                            '& .MuiLinearProgress-bar': {
-                              bgcolor: planColor
-                            }
-                          }}
-                        />
-                      </Box>
-                      <Button 
-                        variant="text" 
-                        size="small" 
-                        onClick={handleViewBilling}
-                        sx={{ 
-                          color: planColor,
-                          fontSize: '0.75rem'
-                        }}
-                      >
-                        플랜 관리
-                      </Button>
-                    </Box>
-                  )}
                 </Grid>
               </Grid>
 
