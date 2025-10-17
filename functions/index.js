@@ -122,8 +122,8 @@ exports.deletePost = onRequest({ region: 'asia-northeast3', cors: true }, async 
     }
 
     await db.collection('posts').doc(postId).delete();
-    res.json({ success: true, postId });
+    res.json({ data: { success: true, postId } });
   } catch (err) {
-    res.status(500).json({ error: 'internal', message: err.message });
+    res.status(500).json({ data: { error: 'internal', message: err.message } });
   }
 });
