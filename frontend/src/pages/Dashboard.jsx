@@ -1,5 +1,5 @@
 // frontend/src/pages/Dashboard.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Container,
@@ -79,6 +79,9 @@ const Dashboard = () => {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerPost, setViewerPost] = useState(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+
+  // Bio 체크 실행 여부 추적
+  const hasCheckedBio = useRef(false);
 
   // 사용자 정보
   const userTitle = getUserFullTitle(user);
@@ -195,14 +198,14 @@ const Dashboard = () => {
   }, [user]);
 
   // bio 체크 (사용자 로그인 후) - 약간 지연하여 프로필 로드 대기
+  // ref를 사용하여 한 번만 실행되도록 보장 (focus 이벤트로 인한 재실행 방지)
   useEffect(() => {
-    if (user && !isLoading) {
+    if (user && !isLoading && !hasCheckedBio.current) {
+      hasCheckedBio.current = true;
       // 네이버 로그인 시 프로필 로드를 기다리기 위해 200ms 지연
-      const timer = setTimeout(() => {
+      setTimeout(() => {
         checkBioAndShowOnboarding();
       }, 200);
-
-      return () => clearTimeout(timer);
     }
   }, [user, isLoading]);
 
