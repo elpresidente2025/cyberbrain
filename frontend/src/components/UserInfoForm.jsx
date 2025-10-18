@@ -44,7 +44,8 @@ function getElectoralList(metro, local, position) {
  * 사용자 기본 정보 + 지역구 정보 통합 컴포넌트
  * @param {Object} props
  * @param {string} props.name - 이름
- * @param {string} props.status - 상태 (현역/예비)
+ * @param {string} props.status - 상태 (현역/예비/준비)
+ * @param {string} props.customTitle - 사용자 지정 직위 (준비 상태일 때 사용)
  * @param {string} props.position - 직책
  * @param {string} props.regionMetro - 광역자치단체
  * @param {string} props.regionLocal - 기초자치단체
@@ -59,6 +60,7 @@ function getElectoralList(metro, local, position) {
 export default function UserInfoForm({
   name = '',
   status = '현역',
+  customTitle = '',
   position = '',
   regionMetro = '',
   regionLocal = '',
@@ -172,9 +174,26 @@ export default function UserInfoForm({
             <MenuItem value="현역">현역</MenuItem>
             <MenuItem value="후보">후보</MenuItem>
             <MenuItem value="예비">예비</MenuItem>
+            <MenuItem value="준비">준비</MenuItem>
           </Select>
         </FormControl>
       </Grid>
+
+      {/* 직위 (준비 상태일 때만 표시) */}
+      {status === '준비' && (
+        <Grid item xs={12}>
+          <TextField
+            fullWidth
+            label="직위 (선택사항)"
+            name="customTitle"
+            value={customTitle}
+            onChange={handleTextFieldChange}
+            disabled={disabled}
+            placeholder="예: 청년위원장, 정책위원장, 여성위원장 등"
+            helperText="당내 직위가 있다면 입력해주세요. 원고 검수 시 직접 편집하여 추가하거나 삭제할 수 있습니다."
+          />
+        </Grid>
+      )}
 
       {/* 지역구 정보 제목 */}
       <Grid item xs={12}>

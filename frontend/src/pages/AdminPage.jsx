@@ -6,7 +6,8 @@ import {
   Box,
   Button,
   Alert,
-  useTheme
+  useTheme,
+  Grid
 } from '@mui/material';
 import { Speed } from '@mui/icons-material';
 import DashboardLayout from '../components/DashboardLayout';
@@ -108,15 +109,15 @@ function AdminPage() {
           <DashboardCards />
         </Box>
 
-        {/* 빠른 작업 영역 */}
-        <Box sx={{ mb: `${spacing.xl}px` }}>
-          <QuickActions />
-        </Box>
-
-        {/* 에러 로그 영역 */}
-        <Box sx={{ mb: `${spacing.xl}px` }}>
-          <ErrorsMiniTable />
-        </Box>
+        {/* 빠른 작업 & 에러 로그 영역 (2열 배치) */}
+        <Grid container spacing={3} sx={{ mb: `${spacing.xl}px` }}>
+          <Grid item xs={12} md={6}>
+            <QuickActions />
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <ErrorsMiniTable />
+          </Grid>
+        </Grid>
 
         {/* 공지사항 관리 영역 */}
         <Box sx={{ mb: `${spacing.xl}px` }}>

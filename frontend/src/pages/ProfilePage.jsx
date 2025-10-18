@@ -80,6 +80,7 @@ export default function ProfilePage() {
     regionLocal: '',
     electoralDistrict: '',
     bio: '',
+    customTitle: '', // 준비 상태일 때 사용할 직위
     // 개인화 정보 (선택사항)
     ageDecade: '',
     ageDetail: '',
@@ -186,6 +187,7 @@ export default function ProfilePage() {
           regionLocal: profileData.regionLocal || '',
           electoralDistrict: profileData.electoralDistrict || '',
           bio: profileData.bio || '',
+          customTitle: profileData.customTitle || '',
           // 개인화 정보 (선택사항)
           ageDecade: profileData.ageDecade || '',
           ageDetail: profileData.ageDetail || '',
@@ -477,6 +479,7 @@ export default function ProfilePage() {
         regionLocal: profile.regionLocal,
         electoralDistrict: profile.electoralDistrict,
         bio: profile.bio,
+        customTitle: profile.customTitle,
         // 개인화 정보 필드들 추가
         ageDecade: profile.ageDecade,
         ageDetail: profile.ageDetail,
@@ -661,6 +664,7 @@ export default function ProfilePage() {
               <UserInfoForm
                 name={profile.name}
                 status={profile.status}
+                customTitle={profile.customTitle}
                 position={profile.position}
                 regionMetro={profile.regionMetro}
                 regionLocal={profile.regionLocal}

@@ -130,7 +130,9 @@ const GeneratePage = () => {
 
     // 3. API 결과에 따라 성공 또는 실패 스낵바를 띄움
     if (result.success) {
-      showNotification(result.message, 'success');
+      // 원고 생성 성공 시 검수 안내 메시지 추가
+      const successMessage = result.message + '\n\n💡 생성된 원고를 꼭 검수하시고, 필요에 따라 직위나 내용을 직접 편집해주세요.';
+      showNotification(successMessage, 'success');
     } else {
       showNotification(result.error, 'error');
     }

@@ -127,6 +127,13 @@ exports.generatePosts = httpWrap(async (req) => {
     // 사용자 정보
     const fullName = userProfile.name || '사용자';
     const fullRegion = generateNaturalRegionTitle(userProfile.regionLocal, userProfile.regionMetro);
+    const customTitle = userProfile.customTitle || '';
+
+    // 호칭 결정: '준비' 상태이고 customTitle이 있으면 사용, 아니면 config.title 사용
+    let displayTitle = config.title || '';
+    if (currentStatus === '준비' && customTitle) {
+      displayTitle = customTitle;
+    }
 
     // 2단계: 자료 수집 중
     await progress.stepCollecting();
@@ -170,7 +177,7 @@ exports.generatePosts = httpWrap(async (req) => {
     const prompt = await buildSmartPrompt({
       writingMethod,
       topic,
-      authorBio: `${fullName} (${config.title || ''}, ${fullRegion || ''})`,
+      authorBio: `${fullName} (${displayTitle}, ${fullRegion || ''})`,
       targetWordCount,
       instructions: data.instructions,
       keywords: backgroundKeywords,
@@ -250,7 +257,9 @@ exports.generatePosts = httpWrap(async (req) => {
         fullRegion,
         currentStatus,
         userProfile,
-        config
+        config,
+        customTitle,
+        displayTitle
       });
     }
 

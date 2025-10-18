@@ -6,12 +6,14 @@
  * @param {string} params.content - 생성된 원고 내용
  * @param {string} params.fullName - 작성자 이름
  * @param {string} params.fullRegion - 지역명
- * @param {string} params.currentStatus - 현재 상태 (현역/예비/은퇴)
+ * @param {string} params.currentStatus - 현재 상태 (현역/예비/준비)
  * @param {Object} params.userProfile - 사용자 프로필
  * @param {Object} params.config - 상태별 설정
+ * @param {string} params.customTitle - 사용자 지정 직위 (선택)
+ * @param {string} params.displayTitle - 표시할 직위 (customTitle 또는 config.title)
  * @returns {string} 수정된 원고 내용
  */
-function processGeneratedContent({ content, fullName, fullRegion, currentStatus, userProfile, config }) {
+function processGeneratedContent({ content, fullName, fullRegion, currentStatus, userProfile, config, customTitle, displayTitle }) {
   console.log('🔩 후처리 시작 - 필수 정보 강제 삽입');
 
   if (!content) return content;
@@ -19,10 +21,20 @@ function processGeneratedContent({ content, fullName, fullRegion, currentStatus,
   let fixedContent = content;
 
   // 1. 기본적인 호칭 수정
-  fixedContent = fixedContent.replace(/의원입니다/g, `${fullName}입니다`);
-  fixedContent = fixedContent.replace(/의원으로서/g, `${config.title}으로서`);
-  fixedContent = fixedContent.replace(/국회 의원/g, config.title);
-  fixedContent = fixedContent.replace(/\s의원\s/g, ` ${config.title} `);
+  // '준비' 상태는 이름만 사용하므로 직위 표현을 제거
+  if (currentStatus === '준비') {
+    fixedContent = fixedContent.replace(/의원입니다/g, `${fullName}입니다`);
+    fixedContent = fixedContent.replace(/의원으로서/g, customTitle ? `${customTitle}으로서` : '저로서');
+    fixedContent = fixedContent.replace(/후보입니다/g, `${fullName}입니다`);
+    fixedContent = fixedContent.replace(/후보으로서/g, customTitle ? `${customTitle}으로서` : '저로서');
+    fixedContent = fixedContent.replace(/예비후보입니다/g, `${fullName}입니다`);
+    fixedContent = fixedContent.replace(/예비후보으로서/g, customTitle ? `${customTitle}으로서` : '저로서');
+  } else {
+    fixedContent = fixedContent.replace(/의원입니다/g, `${fullName}입니다`);
+    fixedContent = fixedContent.replace(/의원으로서/g, `${displayTitle}으로서`);
+    fixedContent = fixedContent.replace(/국회 의원/g, displayTitle);
+    fixedContent = fixedContent.replace(/\s의원\s/g, ` ${displayTitle} `);
+  }
 
   // 은퇴 상태 특별 수정
   if (currentStatus === '은퇴') {
