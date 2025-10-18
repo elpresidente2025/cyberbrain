@@ -181,6 +181,8 @@ async function validateAndRetry({
 
           improvementInstructions += `  • 본문 전체(도입부, 본론, 결론)에 고르게 분산 배치하세요.\n`;
           improvementInstructions += `  • 문장의 주어, 목적어, 수식어 위치에 자연스럽게 배치하세요.\n`;
+          improvementInstructions += `  • 동일한 문장이나 문단을 반복하지 마세요.\n`;
+          improvementInstructions += `  • 마무리 인사 후 본문이 다시 시작되지 않도록 주의하세요.\n`;
           needsImprovement = true;
         }
 
@@ -193,8 +195,29 @@ async function validateAndRetry({
       }
     }
 
+    // 최대 시도 횟수 초과 시 상세 에러 메시지와 함께 실패 처리
     if (attempt >= maxAttempts) {
-      console.log(`⚠️ 최대 시도 횟수 초과 - 현재 응답 사용`);
+      const errors = [];
+
+      if (!hasName && fullName) {
+        errors.push(`작성자 이름 '${fullName}' 미포함`);
+      }
+
+      if (!hasSufficientLength) {
+        errors.push(`분량 부족 (실제: ${actualWordCount}자, 최소: ${Math.floor(targetWordCount * 0.9)}자)`);
+      }
+
+      if (!keywordValidation.valid) {
+        const { keywords: kwResults } = keywordValidation.details;
+        const missingKeywords = Object.entries(kwResults)
+          .filter(([_, result]) => !result.valid)
+          .map(([kw, result]) => `'${kw}' (${result.count}/${result.expected}회)`)
+          .join(', ');
+        errors.push(`검색어 부족: ${missingKeywords}`);
+      }
+
+      console.error(`❌ ${maxAttempts}번 시도 후에도 품질 기준 미달:`, errors.join(' | '));
+      throw new Error(`AI 원고 생성 품질 기준 미달: ${errors.join(', ')}`);
     }
   }
 
