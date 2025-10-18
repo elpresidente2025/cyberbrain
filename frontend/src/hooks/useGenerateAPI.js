@@ -1,6 +1,7 @@
 // frontend/src/hooks/useGenerateAPI.js - 보안 및 성능 개선된 버전
 
 import { useState, useCallback, useEffect } from 'react';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { callHttpFunction } from '../services/firebaseService';
 import { useAuth } from './useAuth';
 import { handleHttpError } from '../utils/errorHandler';
@@ -83,12 +84,13 @@ export function useGenerateAPI() {
       // sessionId를 예측하여 즉시 Firestore 리스너 등록
       const tempSessionId = `${user.uid}_${Date.now()}`;
 
-      // Firestore 진행 상황 리스너 등록
-      unsubscribe = db.collection('generation_progress')
-        .doc(tempSessionId)
-        .onSnapshot((doc) => {
-          if (doc.exists) {
-            const data = doc.data();
+      // Firestore 진행 상황 리스너 등록 (Firebase v9+ 모듈러 API)
+      const progressDocRef = doc(db, 'generation_progress', tempSessionId);
+      unsubscribe = onSnapshot(
+        progressDocRef,
+        (docSnapshot) => {
+          if (docSnapshot.exists()) {
+            const data = docSnapshot.data();
             console.log('📊 진행 상황 업데이트:', data);
             setProgress({
               step: data.step,
@@ -96,9 +98,11 @@ export function useGenerateAPI() {
               message: data.message
             });
           }
-        }, (error) => {
+        },
+        (error) => {
           console.error('⚠️ 진행 상황 리스너 에러:', error);
-        });
+        }
+      );
 
       // 실제 결과 대기
       const result = await resultPromise;
