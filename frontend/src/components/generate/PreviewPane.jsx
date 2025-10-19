@@ -6,6 +6,7 @@ import {
   Paper,
   useTheme
 } from '@mui/material';
+import { CATEGORIES } from '../../constants/formConstants';
 
 export default function PreviewPane({ draft }) {
   const theme = useTheme();
@@ -35,6 +36,50 @@ export default function PreviewPane({ draft }) {
 
   const textContent = getTextContent(draft.htmlContent);
   const characterCount = countWithoutSpace(textContent);
+
+  // 검색어별 출현 횟수 계산
+  const countKeywordOccurrences = (content, keyword) => {
+    if (!content || !keyword) return 0;
+    const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escapedKeyword, 'g');
+    const matches = content.match(regex);
+    return matches ? matches.length : 0;
+  };
+
+  const getKeywordStats = () => {
+    if (!draft.keywords) return null;
+    const keywords = draft.keywords.split(',').map(k => k.trim()).filter(k => k);
+    if (keywords.length === 0) return null;
+
+    return keywords.map(keyword => ({
+      keyword,
+      count: countKeywordOccurrences(textContent, keyword)
+    }));
+  };
+
+  const keywordStats = getKeywordStats();
+
+  // 카테고리를 한글로 변환
+  const getCategoryLabel = () => {
+    if (!draft.category) return null;
+
+    const category = CATEGORIES.find(cat => cat.value === draft.category);
+    if (!category) return draft.category;
+
+    let label = category.label;
+
+    // 세부 카테고리가 있으면 추가
+    if (draft.subCategory) {
+      const subCategory = category.subCategories?.find(sub => sub.value === draft.subCategory);
+      if (subCategory) {
+        label += ` / ${subCategory.label}`;
+      }
+    }
+
+    return label;
+  };
+
+  const categoryLabel = getCategoryLabel();
 
   return (
     <>
@@ -135,18 +180,34 @@ export default function PreviewPane({ draft }) {
         />
 
         {/* 메타 정보 */}
-        {(draft.category || draft.keywords || draft.generatedAt) && (
+        {(categoryLabel || draft.keywords || draft.generatedAt) && (
           <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-              {draft.category && (
+              {categoryLabel && (
                 <Typography variant="caption" color="text.secondary">
-                  카테고리: {draft.category}
+                  카테고리: {categoryLabel}
                 </Typography>
               )}
-              {draft.keywords && (
-                <Typography variant="caption" color="text.secondary">
-                  키워드: {draft.keywords}
-                </Typography>
+              {keywordStats && keywordStats.length > 0 && (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                    검색어 삽입 횟수:
+                  </Typography>
+                  {keywordStats.map((stat, index) => (
+                    <Typography
+                      key={index}
+                      variant="caption"
+                      sx={{
+                        color: stat.count >= Math.floor(characterCount / 400) ? 'success.main' : 'error.main',
+                        fontWeight: 500,
+                        pl: 1
+                      }}
+                    >
+                      "{stat.keyword}": {stat.count}회
+                      {stat.count < Math.floor(characterCount / 400) && ' (부족)'}
+                    </Typography>
+                  ))}
+                </Box>
               )}
               {draft.generatedAt && (
                 <Typography variant="caption" color="text.secondary">
