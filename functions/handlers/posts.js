@@ -200,7 +200,8 @@ exports.generatePosts = httpWrap(async (req) => {
       fullName,
       fullRegion,
       targetWordCount,
-      keywords: backgroundKeywords,
+      userKeywords,        // 사용자 입력 키워드 (엄격 검증)
+      autoKeywords: extractedKeywords,  // 자동 추출 키워드 (완화 검증)
       maxAttempts: 3
     });
 
