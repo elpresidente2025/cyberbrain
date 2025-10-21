@@ -134,6 +134,19 @@ const Billing = () => {
     setSelectedReceiptFile(file);
   };
 
+  const handleAuthClick = () => {
+    // 인증 완료 상태 체크 (verificationStatus가 'verified'인 경우)
+    if (user?.verificationStatus === 'verified') {
+      showNotification(
+        '이미 당원 인증이 완료되었습니다. 추가 인증이 필요한 경우 고객센터로 문의해주세요.',
+        'info'
+      );
+      return;
+    }
+    // 인증 안 된 경우 다이얼로그 열기
+    setAuthDialogOpen(true);
+  };
+
   const handleAuthSubmit = async () => {
     if (!selectedCertFile && !selectedReceiptFile) {
       showNotification('당적증명서 또는 당비납부 영수증 중 하나 이상 업로드해주세요.', 'warning');
@@ -298,7 +311,7 @@ const Billing = () => {
                 <Button
                   variant="outlined"
                   size="small"
-                  onClick={() => setAuthDialogOpen(true)}
+                  onClick={handleAuthClick}
                   startIcon={<Upload />}
                   sx={{ fontSize: '0.75rem' }}
                 >
