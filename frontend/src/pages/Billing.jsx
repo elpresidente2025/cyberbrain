@@ -46,7 +46,8 @@ import DashboardLayout from '../components/DashboardLayout';
 import PaymentDialog from '../components/PaymentDialog';
 import { useAuth } from '../hooks/useAuth';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '../services/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { functions, storage } from '../services/firebase';
 import { NotificationSnackbar, useNotification } from '../components/ui';
 import { spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
 
@@ -61,6 +62,7 @@ const Billing = () => {
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [updatingPlan, setUpdatingPlan] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   // 사용자 정보가 변경될 때 currentPlan 동기화
   useEffect(() => {
@@ -127,22 +129,98 @@ const Billing = () => {
     setSelectedFile(file);
   };
 
-  const handleAuthSubmit = () => {
+  const handleAuthSubmit = async () => {
     if (!selectedFile) {
       showNotification('당적증명서를 업로드해주세요.', 'warning');
       return;
     }
 
-    setAuthDialogOpen(false);
-    setSelectedFile(null);
-    // 실제로는 파일 업로드 API 호출
-    showNotification('당원 인증이 요청되었습니다. 검토 후 승인 알림을 드리겠습니다.', 'success');
+    setUploading(true);
+
+    try {
+      // 1. Firebase Storage에 파일 업로드
+      const fileExtension = selectedFile.name.split('.').pop();
+      const fileName = `party-certificates/${user.uid}/${Date.now()}.${fileExtension}`;
+      const storageRef = ref(storage, fileName);
+
+      await uploadBytes(storageRef, selectedFile);
+      const imageUrl = await getDownloadURL(storageRef);
+
+      // 2. Cloud Function 호출하여 OCR 처리
+      const verifyPartyCertificate = httpsCallable(functions, 'verifyPartyCertificate');
+      const result = await verifyPartyCertificate({
+        imageUrl: imageUrl,
+        imageFormat: fileExtension
+      });
+
+      setAuthDialogOpen(false);
+      setSelectedFile(null);
+      setUploading(false);
+
+      if (result.data.success) {
+        showNotification(`당원 인증이 완료되었습니다! (${result.data.quarter})`, 'success');
+        // 사용자 프로필 새로고침
+        if (refreshUserProfile) {
+          await refreshUserProfile();
+        }
+      } else if (result.data.requiresManualReview) {
+        showNotification(result.data.message, 'info');
+      } else {
+        showNotification('인증 처리 중 문제가 발생했습니다.', 'error');
+      }
+
+    } catch (error) {
+      console.error('당원 인증 오류:', error);
+      setUploading(false);
+      showNotification('인증 요청 중 오류가 발생했습니다. 다시 시도해주세요.', 'error');
+    }
   };
 
-  const handleMembershipSubmit = () => {
-    setMembershipDialogOpen(false);
-    // 실제로는 당비 납부 API 호출
-    showNotification('당비 납부가 처리되었습니다. 확인까지 1-2일 소요됩니다.', 'success');
+  const handleMembershipSubmit = async () => {
+    if (!selectedFile) {
+      showNotification('납부 내역서를 업로드해주세요.', 'warning');
+      return;
+    }
+
+    setUploading(true);
+
+    try {
+      // 1. Firebase Storage에 파일 업로드
+      const fileExtension = selectedFile.name.split('.').pop();
+      const fileName = `payment-receipts/${user.uid}/${Date.now()}.${fileExtension}`;
+      const storageRef = ref(storage, fileName);
+
+      await uploadBytes(storageRef, selectedFile);
+      const imageUrl = await getDownloadURL(storageRef);
+
+      // 2. Cloud Function 호출하여 OCR 처리
+      const verifyPaymentReceipt = httpsCallable(functions, 'verifyPaymentReceipt');
+      const result = await verifyPaymentReceipt({
+        imageUrl: imageUrl,
+        imageFormat: fileExtension
+      });
+
+      setMembershipDialogOpen(false);
+      setSelectedFile(null);
+      setUploading(false);
+
+      if (result.data.success) {
+        showNotification(`당비 납부 내역 인증이 완료되었습니다! (${result.data.quarter})`, 'success');
+        // 사용자 프로필 새로고침
+        if (refreshUserProfile) {
+          await refreshUserProfile();
+        }
+      } else if (result.data.requiresManualReview) {
+        showNotification(result.data.message, 'info');
+      } else {
+        showNotification('인증 처리 중 문제가 발생했습니다.', 'error');
+      }
+
+    } catch (error) {
+      console.error('당비 납부 내역 인증 오류:', error);
+      setUploading(false);
+      showNotification('인증 요청 중 오류가 발생했습니다. 다시 시도해주세요.', 'error');
+    }
   };
 
   return (
@@ -232,15 +310,26 @@ const Billing = () => {
                     2025년 1분기 당원 인증 완료
                   </Typography>
                 </Alert>
-                <Button 
-                  variant="outlined" 
-                  size="small"
-                  onClick={() => setAuthDialogOpen(true)}
-                  startIcon={<Upload />}
-                  sx={{ fontSize: '0.75rem' }}
-                >
-                  인증서 업데이트
-                </Button>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: `${spacing.xs}px` }}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => setAuthDialogOpen(true)}
+                    startIcon={<Upload />}
+                    sx={{ fontSize: '0.75rem' }}
+                  >
+                    당적증명서 업로드
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => setMembershipDialogOpen(true)}
+                    startIcon={<Upload />}
+                    sx={{ fontSize: '0.75rem' }}
+                  >
+                    당비납부 영수증 업로드
+                  </Button>
+                </Box>
               </Box>
             </Paper>
             </Grid>
@@ -580,7 +669,7 @@ const Billing = () => {
                 fullWidth
                 sx={{ mb: `${spacing.md}px` }}
               >
-                당적증명서 업로드 (PDF, JPG, PNG)
+                당적증명서 업로드
                 <input
                   type="file"
                   hidden
@@ -588,7 +677,7 @@ const Billing = () => {
                   onChange={handleFileUpload}
                 />
               </Button>
-              
+
               {selectedFile && (
                 <Alert severity="success">
                   선택된 파일: {selectedFile.name}
@@ -597,14 +686,15 @@ const Billing = () => {
             </Box>
 
             <Typography variant="caption" color="text.secondary" sx={{ mt: `${spacing.md}px`, display: 'block' }}>
+              * 지원 파일 형식: PDF, JPG, PNG<br />
               * 개인정보는 인증 완료 후 즉시 삭제됩니다.<br />
               * 인증 처리에는 1-2일이 소요될 수 있습니다.
             </Typography>
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setAuthDialogOpen(false)}>취소</Button>
-            <Button onClick={handleAuthSubmit} variant="contained">
-              제출
+            <Button onClick={() => setAuthDialogOpen(false)} disabled={uploading}>취소</Button>
+            <Button onClick={handleAuthSubmit} variant="contained" disabled={uploading || !selectedFile}>
+              {uploading ? '처리중...' : '제출'}
             </Button>
           </DialogActions>
         </Dialog>
@@ -614,26 +704,10 @@ const Billing = () => {
           <DialogTitle>당비 납부 내역 제출</DialogTitle>
           <DialogContent>
             <Alert severity="info" sx={{ mb: `${spacing.md}px` }}>
-              최근 3개월간의 당비 납부 내역을 제출해주세요. 계좌이체 내역서나 영수증을 업로드하시면 됩니다.
+              당비 납부내역서를 업로드하시면 OCR 자동 인증 또는 수동 검토를 통해 처리됩니다.
             </Alert>
 
-            <Box sx={{ mt: `${spacing.md}px`, mb: `${spacing.md}px` }}>
-              <TextField
-                fullWidth
-                label="납부자명"
-                placeholder="당비를 납부한 분의 성명을 입력해주세요"
-                variant="outlined"
-                sx={{ mb: `${spacing.md}px` }}
-              />
-
-              <TextField
-                fullWidth
-                label="납부 기간"
-                placeholder="예: 2024년 11월 ~ 2025년 1월"
-                variant="outlined"
-                sx={{ mb: `${spacing.md}px` }}
-              />
-
+            <Box sx={{ mt: `${spacing.md}px` }}>
               <Button
                 variant="outlined"
                 component="label"
@@ -641,26 +715,33 @@ const Billing = () => {
                 fullWidth
                 sx={{ mb: `${spacing.md}px` }}
               >
-                납부 내역서 업로드 (PDF, JPG, PNG)
+                당비납부 영수증 업로드
                 <input
                   type="file"
                   hidden
                   accept=".pdf,.jpg,.jpeg,.png"
-                  multiple
+                  onChange={handleFileUpload}
                 />
               </Button>
+
+              {selectedFile && (
+                <Alert severity="success">
+                  선택된 파일: {selectedFile.name}
+                </Alert>
+              )}
             </Box>
 
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-              * 계좌이체 내역서, 영수증, 당비 납부 확인서 등을 제출 가능합니다.<br />
-              * 여러 파일을 동시에 업로드할 수 있습니다.<br />
-              * 개인정보는 확인 완료 후 즉시 삭제됩니다.
+            <Typography variant="caption" color="text.secondary" sx={{ mt: `${spacing.md}px`, display: 'block' }}>
+              * 지원 파일 형식: PDF, JPG, PNG<br />
+              * 성명, 납입연월, 발행연월일이 자동으로 확인됩니다.<br />
+              * 개인정보는 인증 완료 후 즉시 삭제됩니다.<br />
+              * 인증 처리에는 1-2일이 소요될 수 있습니다.
             </Typography>
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setMembershipDialogOpen(false)}>취소</Button>
-            <Button onClick={handleMembershipSubmit} variant="contained">
-              제출
+            <Button onClick={() => setMembershipDialogOpen(false)} disabled={uploading}>취소</Button>
+            <Button onClick={handleMembershipSubmit} variant="contained" disabled={uploading || !selectedFile}>
+              {uploading ? '처리중...' : '제출'}
             </Button>
           </DialogActions>
         </Dialog>
