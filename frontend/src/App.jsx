@@ -1,20 +1,21 @@
 // frontend/src/App.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
-import { Box } from '@mui/material';
+import { Box, useTheme } from '@mui/material';
 import { useAuth } from './hooks/useAuth';
 import { getSystemStatus } from './services/firebaseService';
 import MaintenancePage from './components/MaintenancePage';
 import { LoadingOverlay } from './components/loading';
 import { HelpProvider } from './contexts/HelpContext';
 import { ColorProvider } from './contexts/ColorContext';
-import BackgroundGrid from './components/BackgroundGrid';
 
 function App() {
   const { user, loading, logout } = useAuth();
+  const theme = useTheme();
   const [systemStatus, setSystemStatus] = useState(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const location = useLocation();
+  const isDarkMode = theme.palette.mode === 'dark';
 
   // ?�스???�태 ?�인 (?�?�아??10초로 조정)
   const checkSystemStatus = useCallback(async () => {
@@ -147,25 +148,6 @@ function App() {
     <HelpProvider>
       <ColorProvider>
       <Box sx={{ position: 'relative', minHeight: '100vh' }}>
-        {/* Synthwave background image for top 50% */}
-        <Box
-          sx={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: '50vh',
-            backgroundImage: 'url(/background/synthwave_city.png)',
-            backgroundRepeat: 'no-repeat',
-            backgroundPosition: 'top center',
-            backgroundSize: 'cover',
-            pointerEvents: 'none',
-            zIndex: -1,
-          }}
-        />
-
-        {/* Background Grid */}
-        <BackgroundGrid />
         <Outlet />
       </Box>
       </ColorProvider>
