@@ -485,55 +485,10 @@ const Dashboard = () => {
             </Button>
           </Box>
 
-          {/* 새 원고 생성 버튼 - 크고 눈에 띄게 */}
-          <Button
-            variant="contained"
-            size="large"
-            startIcon={<Create />}
-            onClick={handleGeneratePost}
-            disabled={!canGeneratePost}
-            fullWidth
-            sx={{
-              bgcolor: canGeneratePost ? planColor : '#757575',
-              color: '#ffffff',
-              fontSize: '1.125rem',
-              py: 2.5,
-              minHeight: '70px',
-              fontWeight: 700,
-              boxShadow: canGeneratePost ? `0 8px 24px ${planColor}40` : 'none',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              '&:hover': canGeneratePost ? {
-                bgcolor: planColor,
-                filter: 'brightness(0.9)',
-                transform: 'translateY(-2px)',
-                boxShadow: `0 12px 32px ${planColor}50, 0 6px 16px ${planColor}30`,
-              } : {},
-              '&.Mui-disabled': {
-                bgcolor: '#757575 !important',
-                color: 'rgba(255, 255, 255, 0.6) !important'
-              }
-            }}
-          >
-            📝 새 원고 생성
-          </Button>
-
-          {/* 프로필 미완료 경고 메시지 */}
-          {showBioAlert && (
-            <Alert severity="warning" sx={{ mt: `${spacing.md}px` }}>
-              <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
-                프로필 설정이 완료되지 않았습니다
-              </Typography>
-              <Typography variant="body2">
-                AI 원고 생성을 위해 자기소개 작성이 필요합니다.
-              </Typography>
-            </Alert>
-          )}
-
           {/* 플랜 정보 및 사용량 */}
           <Paper
             elevation={0}
             sx={{
-              mt: `${spacing.md}px`,
               p: `${spacing.md}px`,
               bgcolor: 'rgba(0, 0, 0, 0.02)',
               display: 'flex',
@@ -587,6 +542,51 @@ const Dashboard = () => {
               </Typography>
             </Box>
           </Paper>
+
+          {/* 새 원고 생성 버튼 - 크고 눈에 띄게 */}
+          <Button
+            variant="contained"
+            size="large"
+            startIcon={<Create />}
+            onClick={handleGeneratePost}
+            disabled={!canGeneratePost}
+            fullWidth
+            sx={{
+              mt: `${spacing.md}px`,
+              bgcolor: canGeneratePost ? planColor : '#757575',
+              color: '#ffffff',
+              fontSize: '1.125rem',
+              py: 2.5,
+              minHeight: '70px',
+              fontWeight: 700,
+              boxShadow: canGeneratePost ? `0 8px 24px ${planColor}40` : 'none',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              '&:hover': canGeneratePost ? {
+                bgcolor: planColor,
+                filter: 'brightness(0.9)',
+                transform: 'translateY(-2px)',
+                boxShadow: `0 12px 32px ${planColor}50, 0 6px 16px ${planColor}30`,
+              } : {},
+              '&.Mui-disabled': {
+                bgcolor: '#757575 !important',
+                color: 'rgba(255, 255, 255, 0.6) !important'
+              }
+            }}
+          >
+            📝 새 원고 생성
+          </Button>
+
+          {/* 프로필 미완료 경고 메시지 */}
+          {showBioAlert && (
+            <Alert severity="warning" sx={{ mt: `${spacing.md}px` }}>
+              <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                프로필 설정이 완료되지 않았습니다
+              </Typography>
+              <Typography variant="body2">
+                AI 원고 생성을 위해 자기소개 작성이 필요합니다.
+              </Typography>
+            </Alert>
+          )}
         </Box>
 
         {/* 콘텐츠 섹션 - 기존 구조 유지하되 공지사항은 데이터가 있을 때만 표시 */}
