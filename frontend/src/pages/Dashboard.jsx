@@ -559,13 +559,10 @@ const Dashboard = () => {
               py: 2.5,
               minHeight: '70px',
               fontWeight: 700,
-              boxShadow: canGeneratePost ? `0 8px 24px ${planColor}40` : 'none',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
               '&:hover': canGeneratePost ? {
                 bgcolor: planColor,
                 filter: 'brightness(0.9)',
-                transform: 'translateY(-2px)',
-                boxShadow: `0 12px 32px ${planColor}50, 0 6px 16px ${planColor}30`,
               } : {},
               '&.Mui-disabled': {
                 bgcolor: '#757575 !important',
