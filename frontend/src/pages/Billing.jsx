@@ -57,10 +57,10 @@ const Billing = () => {
   const { notification, showNotification, hideNotification } = useNotification();
   const [currentPlan, setCurrentPlan] = useState(user?.plan || user?.subscription || '리전 인플루언서');
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
-  const [membershipDialogOpen, setMembershipDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedCertFile, setSelectedCertFile] = useState(null);
+  const [selectedReceiptFile, setSelectedReceiptFile] = useState(null);
   const [updatingPlan, setUpdatingPlan] = useState(false);
   const [uploading, setUploading] = useState(false);
 
@@ -124,100 +124,85 @@ const Billing = () => {
     setSelectedPlan(null);
   };
 
-  const handleFileUpload = (event) => {
+  const handleCertFileUpload = (event) => {
     const file = event.target.files[0];
-    setSelectedFile(file);
+    setSelectedCertFile(file);
+  };
+
+  const handleReceiptFileUpload = (event) => {
+    const file = event.target.files[0];
+    setSelectedReceiptFile(file);
   };
 
   const handleAuthSubmit = async () => {
-    if (!selectedFile) {
-      showNotification('당적증명서를 업로드해주세요.', 'warning');
+    if (!selectedCertFile && !selectedReceiptFile) {
+      showNotification('당적증명서 또는 당비납부 영수증 중 하나 이상 업로드해주세요.', 'warning');
       return;
     }
 
     setUploading(true);
 
     try {
-      // 1. Firebase Storage에 파일 업로드
-      const fileExtension = selectedFile.name.split('.').pop();
-      const fileName = `party-certificates/${user.uid}/${Date.now()}.${fileExtension}`;
-      const storageRef = ref(storage, fileName);
+      const results = [];
 
-      await uploadBytes(storageRef, selectedFile);
-      const imageUrl = await getDownloadURL(storageRef);
+      // 1. 당적증명서 처리
+      if (selectedCertFile) {
+        const fileExtension = selectedCertFile.name.split('.').pop();
+        const fileName = `party-certificates/${user.uid}/${Date.now()}.${fileExtension}`;
+        const storageRef = ref(storage, fileName);
 
-      // 2. Cloud Function 호출하여 OCR 처리
-      const verifyPartyCertificate = httpsCallable(functions, 'verifyPartyCertificate');
-      const result = await verifyPartyCertificate({
-        imageUrl: imageUrl,
-        imageFormat: fileExtension
-      });
+        await uploadBytes(storageRef, selectedCertFile);
+        const imageUrl = await getDownloadURL(storageRef);
+
+        const verifyPartyCertificate = httpsCallable(functions, 'verifyPartyCertificate');
+        const result = await verifyPartyCertificate({
+          imageUrl: imageUrl,
+          imageFormat: fileExtension
+        });
+
+        results.push({ type: '당적증명서', result: result.data });
+      }
+
+      // 2. 당비납부 영수증 처리
+      if (selectedReceiptFile) {
+        const fileExtension = selectedReceiptFile.name.split('.').pop();
+        const fileName = `payment-receipts/${user.uid}/${Date.now()}.${fileExtension}`;
+        const storageRef = ref(storage, fileName);
+
+        await uploadBytes(storageRef, selectedReceiptFile);
+        const imageUrl = await getDownloadURL(storageRef);
+
+        const verifyPaymentReceipt = httpsCallable(functions, 'verifyPaymentReceipt');
+        const result = await verifyPaymentReceipt({
+          imageUrl: imageUrl,
+          imageFormat: fileExtension
+        });
+
+        results.push({ type: '당비납부 영수증', result: result.data });
+      }
 
       setAuthDialogOpen(false);
-      setSelectedFile(null);
+      setSelectedCertFile(null);
+      setSelectedReceiptFile(null);
       setUploading(false);
 
-      if (result.data.success) {
-        showNotification(`당원 인증이 완료되었습니다! (${result.data.quarter})`, 'success');
-        // 사용자 프로필 새로고침
+      // 결과 메시지 생성
+      const successCount = results.filter(r => r.result.success).length;
+      const reviewCount = results.filter(r => r.result.requiresManualReview).length;
+
+      if (successCount > 0) {
+        showNotification(`당원 인증이 완료되었습니다! (${successCount}개 문서 처리 완료)`, 'success');
         if (refreshUserProfile) {
           await refreshUserProfile();
         }
-      } else if (result.data.requiresManualReview) {
-        showNotification(result.data.message, 'info');
+      } else if (reviewCount > 0) {
+        showNotification('문서가 수동 검토 대기 중입니다. 1-2일 내 처리 예정입니다.', 'info');
       } else {
         showNotification('인증 처리 중 문제가 발생했습니다.', 'error');
       }
 
     } catch (error) {
       console.error('당원 인증 오류:', error);
-      setUploading(false);
-      showNotification('인증 요청 중 오류가 발생했습니다. 다시 시도해주세요.', 'error');
-    }
-  };
-
-  const handleMembershipSubmit = async () => {
-    if (!selectedFile) {
-      showNotification('납부 내역서를 업로드해주세요.', 'warning');
-      return;
-    }
-
-    setUploading(true);
-
-    try {
-      // 1. Firebase Storage에 파일 업로드
-      const fileExtension = selectedFile.name.split('.').pop();
-      const fileName = `payment-receipts/${user.uid}/${Date.now()}.${fileExtension}`;
-      const storageRef = ref(storage, fileName);
-
-      await uploadBytes(storageRef, selectedFile);
-      const imageUrl = await getDownloadURL(storageRef);
-
-      // 2. Cloud Function 호출하여 OCR 처리
-      const verifyPaymentReceipt = httpsCallable(functions, 'verifyPaymentReceipt');
-      const result = await verifyPaymentReceipt({
-        imageUrl: imageUrl,
-        imageFormat: fileExtension
-      });
-
-      setMembershipDialogOpen(false);
-      setSelectedFile(null);
-      setUploading(false);
-
-      if (result.data.success) {
-        showNotification(`당비 납부 내역 인증이 완료되었습니다! (${result.data.quarter})`, 'success');
-        // 사용자 프로필 새로고침
-        if (refreshUserProfile) {
-          await refreshUserProfile();
-        }
-      } else if (result.data.requiresManualReview) {
-        showNotification(result.data.message, 'info');
-      } else {
-        showNotification('인증 처리 중 문제가 발생했습니다.', 'error');
-      }
-
-    } catch (error) {
-      console.error('당비 납부 내역 인증 오류:', error);
       setUploading(false);
       showNotification('인증 요청 중 오류가 발생했습니다. 다시 시도해주세요.', 'error');
     }
@@ -310,26 +295,15 @@ const Billing = () => {
                     2025년 1분기 당원 인증 완료
                   </Typography>
                 </Alert>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: `${spacing.xs}px` }}>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={() => setAuthDialogOpen(true)}
-                    startIcon={<Upload />}
-                    sx={{ fontSize: '0.75rem' }}
-                  >
-                    당적증명서 업로드
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={() => setMembershipDialogOpen(true)}
-                    startIcon={<Upload />}
-                    sx={{ fontSize: '0.75rem' }}
-                  >
-                    당비납부 영수증 업로드
-                  </Button>
-                </Box>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => setAuthDialogOpen(true)}
+                  startIcon={<Upload />}
+                  sx={{ fontSize: '0.75rem' }}
+                >
+                  당원 인증
+                </Button>
               </Box>
             </Paper>
             </Grid>
@@ -658,89 +632,73 @@ const Billing = () => {
           <DialogTitle>당원 인증서 제출</DialogTitle>
           <DialogContent>
             <Alert severity="info" sx={{ mb: `${spacing.md}px` }}>
-              당적증명서를 업로드하시면 OCR 자동 인증 또는 수동 검토를 통해 처리됩니다.
+              당적증명서와 당비납부 영수증을 업로드하시면 OCR 자동 인증 또는 수동 검토를 통해 처리됩니다.
             </Alert>
 
             <Box sx={{ mt: `${spacing.md}px` }}>
+              {/* 당적증명서 업로드 */}
+              <Typography variant="subtitle2" sx={{ mb: `${spacing.xs}px`, fontWeight: 'bold' }}>
+                1. 당적증명서
+              </Typography>
               <Button
                 variant="outlined"
                 component="label"
                 startIcon={<AttachFile />}
                 fullWidth
-                sx={{ mb: `${spacing.md}px` }}
+                sx={{ mb: `${spacing.xs}px` }}
               >
                 당적증명서 업로드
                 <input
                   type="file"
                   hidden
                   accept=".pdf,.jpg,.jpeg,.png"
-                  onChange={handleFileUpload}
+                  onChange={handleCertFileUpload}
                 />
               </Button>
 
-              {selectedFile && (
-                <Alert severity="success">
-                  선택된 파일: {selectedFile.name}
+              {selectedCertFile && (
+                <Alert severity="success" sx={{ mb: `${spacing.md}px` }}>
+                  선택된 파일: {selectedCertFile.name}
                 </Alert>
               )}
-            </Box>
 
-            <Typography variant="caption" color="text.secondary" sx={{ mt: `${spacing.md}px`, display: 'block' }}>
-              * 지원 파일 형식: PDF, JPG, PNG<br />
-              * 개인정보는 인증 완료 후 즉시 삭제됩니다.<br />
-              * 인증 처리에는 1-2일이 소요될 수 있습니다.
-            </Typography>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setAuthDialogOpen(false)} disabled={uploading}>취소</Button>
-            <Button onClick={handleAuthSubmit} variant="contained" disabled={uploading || !selectedFile}>
-              {uploading ? '처리중...' : '제출'}
-            </Button>
-          </DialogActions>
-        </Dialog>
-
-        {/* 당비 납부 내역 다이얼로그 */}
-        <Dialog open={membershipDialogOpen} onClose={() => setMembershipDialogOpen(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>당비 납부 내역 제출</DialogTitle>
-          <DialogContent>
-            <Alert severity="info" sx={{ mb: `${spacing.md}px` }}>
-              당비 납부내역서를 업로드하시면 OCR 자동 인증 또는 수동 검토를 통해 처리됩니다.
-            </Alert>
-
-            <Box sx={{ mt: `${spacing.md}px` }}>
+              {/* 당비납부 영수증 업로드 */}
+              <Typography variant="subtitle2" sx={{ mb: `${spacing.xs}px`, mt: `${spacing.md}px`, fontWeight: 'bold' }}>
+                2. 당비납부 영수증
+              </Typography>
               <Button
                 variant="outlined"
                 component="label"
                 startIcon={<AttachFile />}
                 fullWidth
-                sx={{ mb: `${spacing.md}px` }}
+                sx={{ mb: `${spacing.xs}px` }}
               >
                 당비납부 영수증 업로드
                 <input
                   type="file"
                   hidden
                   accept=".pdf,.jpg,.jpeg,.png"
-                  onChange={handleFileUpload}
+                  onChange={handleReceiptFileUpload}
                 />
               </Button>
 
-              {selectedFile && (
+              {selectedReceiptFile && (
                 <Alert severity="success">
-                  선택된 파일: {selectedFile.name}
+                  선택된 파일: {selectedReceiptFile.name}
                 </Alert>
               )}
             </Box>
 
             <Typography variant="caption" color="text.secondary" sx={{ mt: `${spacing.md}px`, display: 'block' }}>
               * 지원 파일 형식: PDF, JPG, PNG<br />
-              * 성명, 납입연월, 발행연월일이 자동으로 확인됩니다.<br />
-              * 개인정보는 인증 완료 후 즉시 삭제됩니다.<br />
-              * 인증 처리에는 1-2일이 소요될 수 있습니다.
+              * 두 문서 중 하나 이상 업로드해주세요<br />
+              * 개인정보는 인증 완료 후 즉시 삭제됩니다<br />
+              * 인증 처리에는 1-2일이 소요될 수 있습니다
             </Typography>
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setMembershipDialogOpen(false)} disabled={uploading}>취소</Button>
-            <Button onClick={handleMembershipSubmit} variant="contained" disabled={uploading || !selectedFile}>
+            <Button onClick={() => setAuthDialogOpen(false)} disabled={uploading}>취소</Button>
+            <Button onClick={handleAuthSubmit} variant="contained" disabled={uploading || (!selectedCertFile && !selectedReceiptFile)}>
               {uploading ? '처리중...' : '제출'}
             </Button>
           </DialogActions>
