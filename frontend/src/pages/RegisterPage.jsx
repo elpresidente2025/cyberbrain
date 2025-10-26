@@ -2,13 +2,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link as RouterLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { Container, Typography, Box, Paper, TextField, Alert, Link, Grid, FormControlLabel, Checkbox, Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
+import { Container, Typography, Box, Paper, TextField, Alert, Link, Grid, FormControlLabel, Checkbox, Dialog, DialogTitle, DialogContent, DialogActions, Button, useTheme } from '@mui/material';
 import UserInfoForm from '../components/UserInfoForm';
 import { LoadingButton } from '../components/loading';
 
 function RegisterPage() {
   const location = useLocation();
   const naverUserData = location.state?.naverUserData || null;
+  const theme = useTheme();
 
   // 네이버 사용자 데이터가 없으면 로그인 페이지로 리다이렉트
   const navigate = useNavigate();
@@ -204,7 +205,7 @@ function RegisterPage() {
     <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', py: { xs: 2, sm: 4 } }}>
       <Container component="main" maxWidth="md">
         <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <Typography component="h1" variant="h5" sx={{ color: 'white' }}>
+          <Typography component="h1" variant="h5" sx={{ color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000' }}>
             회원가입
           </Typography>
 

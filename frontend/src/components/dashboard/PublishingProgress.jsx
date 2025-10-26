@@ -187,42 +187,17 @@ const PublishingProgress = () => {
       userSubscription: user?.subscription,
       finalPlan: plan
     });
-    
+
     if (plan) {
-      switch (plan) {
-        case '오피니언 리더':
-          return 60;
-        case '리전 인플루언서':
-          return 20;
-        case '로컬 블로거':
-          return 8;
-        default:
-          return 8;
-      }
+      return 90; // 스탠다드 플랜 통일
     }
-    
+
     // 플랜 정보가 없으면 결제되지 않은 상태
     return null;
   };
 
   const getBonusAmount = (user) => {
-    // 사용자의 플랜 정보를 기반으로 보너스 결정
-    const plan = user?.plan || user?.subscription;
-    
-    if (plan) {
-      switch (plan) {
-        case '오피니언 리더':
-          return 30; // 60회 달성 시 익월 30회 추가 제공
-        case '리전 인플루언서':
-          return 10;
-        case '로컬 블로거':
-          return 4;
-        default:
-          return 4;
-      }
-    }
-    
-    // 플랜 정보가 없으면 결제되지 않은 상태
+    // 스탠다드 플랜은 별도 보너스 없음
     return 0;
   };
 

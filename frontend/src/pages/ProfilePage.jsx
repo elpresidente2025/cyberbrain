@@ -47,7 +47,7 @@ import {
   useNotification,
   ContentCard
 } from '../components/ui';
-import { spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
+import { colors, spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
@@ -443,10 +443,31 @@ export default function ProfilePage() {
       setError('자기소개가 너무 짧습니다. 최소 10자 이상 입력해 주세요. (권장: 100~300자)');
       return false;
     }
-    if (!profile.name || !profile.position || !profile.regionMetro || !profile.regionLocal || !profile.electoralDistrict) {
+
+    // 기본 필수 정보 체크
+    if (!profile.name || !profile.position || !profile.regionMetro) {
       setError('모든 필수 정보를 입력해 주세요.');
       return false;
     }
+
+    // 직책별 필수 정보 체크
+    if (profile.position === '광역자치단체장') {
+      // 광역자치단체장: regionMetro만 필요
+      // 추가 검증 없음
+    } else if (profile.position === '기초자치단체장') {
+      // 기초자치단체장: regionLocal까지 필요
+      if (!profile.regionLocal) {
+        setError('기초자치단체를 선택해 주세요.');
+        return false;
+      }
+    } else {
+      // 의원: regionLocal, electoralDistrict 모두 필요
+      if (!profile.regionLocal || !profile.electoralDistrict) {
+        setError('모든 필수 정보를 입력해 주세요.');
+        return false;
+      }
+    }
+
     return true;
   };
 
@@ -645,7 +666,7 @@ export default function ProfilePage() {
             <Settings sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
             프로필 수정
           </Typography>
-          <Typography variant="body1" color="text.secondary">
+          <Typography variant="body1" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
             프로필 정보를 바탕으로 맞춤형 원고가 생성됩니다.
           </Typography>
         </Box>
@@ -678,7 +699,7 @@ export default function ProfilePage() {
               {/* 개인화 정보 섹션 (선택사항) */}
               <Grid item xs={12}>
                 <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', mb: `${spacing.md}px`, mt: `${spacing.lg}px` }}>
-                  <AutoAwesome sx={{ mr: `${spacing.xs}px`, color: '#55207D' }} />
+                  <AutoAwesome sx={{ mr: `${spacing.xs}px`, color: 'colors.brand.primary' }} />
                   개인화 정보 (선택사항)
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.lg}px` }}>
@@ -837,9 +858,9 @@ export default function ProfilePage() {
                       onChange={(e) => handleUserInfoChange('twitterPremium', e.target.checked)}
                       disabled={saving}
                       sx={{
-                        color: '#006261',
+                        color: 'colors.brand.primary',
                         '&.Mui-checked': {
-                          color: '#006261'
+                          color: 'colors.brand.primary'
                         }
                       }}
                     />
@@ -854,7 +875,7 @@ export default function ProfilePage() {
                 <Box sx={{ mb: `${spacing.lg}px` }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.md}px` }}>
                     <Typography variant="h6" sx={{ 
-                      color: theme.palette.mode === 'dark' ? '#e1bee7' : '#55207D', 
+                      color: theme.palette.mode === 'dark' ? '#e1bee7' : 'colors.brand.primary', 
                       fontWeight: 600 
                     }}>
                       🏛️ 소속 위원회
@@ -870,13 +891,13 @@ export default function ProfilePage() {
                         sx={{ 
                           width: 24,
                           height: 24,
-                          backgroundColor: '#006261',
+                          backgroundColor: 'colors.brand.primary',
                           color: 'white',
                           border: '1px solid',
-                          borderColor: '#006261',
+                          borderColor: 'colors.brand.primary',
                           '&:hover': { 
-                            backgroundColor: '#003A87',
-                            borderColor: '#003A87'
+                            backgroundColor: 'colors.brand.primaryHover',
+                            borderColor: 'colors.brand.primaryHover'
                           },
                           '&:disabled': {
                             backgroundColor: 'grey.50',
@@ -983,11 +1004,11 @@ export default function ProfilePage() {
                   sx={{
                     mt: `${spacing.md}px`,
                     py: 1.5,
-                    bgcolor: '#00d4ff',
-                    color: '#000',
+                    bgcolor: colors.brand.accent,
+                    color: '#fff',
                     fontWeight: 600,
                     '&:hover': {
-                      bgcolor: '#00a8cc'
+                      bgcolor: colors.brand.accentHover
                     }
                   }}
                 >
@@ -1014,7 +1035,7 @@ export default function ProfilePage() {
               height: 'fit-content'
             }}>
               <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', mb: `${spacing.md}px` }}>
-                <AutoAwesome sx={{ mr: `${spacing.xs}px`, color: '#006261' }} />
+                <AutoAwesome sx={{ mr: `${spacing.xs}px`, color: 'colors.brand.primary' }} />
                 자기소개 및 추가 정보
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.lg}px` }}>
@@ -1025,7 +1046,7 @@ export default function ProfilePage() {
               <Box sx={{ mb: `${spacing.xl}px` }} data-bio-section="personal">
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.md}px` }}>
                   <Typography variant="h6" sx={{
-                    color: theme.palette.mode === 'dark' ? '#81d4fa' : '#003A87',
+                    color: theme.palette.mode === 'dark' ? '#81d4fa' : 'colors.brand.primaryHover',
                     fontWeight: 600
                   }}>
                     👤 자기소개
@@ -1038,13 +1059,13 @@ export default function ProfilePage() {
                       sx={{ 
                         width: 24,
                         height: 24,
-                        backgroundColor: '#006261',
+                        backgroundColor: 'colors.brand.primary',
                         color: 'white',
                         border: '1px solid',
-                        borderColor: '#006261',
+                        borderColor: 'colors.brand.primary',
                         '&:hover': { 
-                          backgroundColor: '#003A87',
-                          borderColor: '#003A87'
+                          backgroundColor: 'colors.brand.primaryHover',
+                          borderColor: 'colors.brand.primaryHover'
                         },
                         '&:disabled': {
                           backgroundColor: 'grey.50',
@@ -1096,10 +1117,10 @@ export default function ProfilePage() {
                                   mt: `${spacing.xs}px`,
                                   width: 24,
                                   height: 24,
-                                  backgroundColor: '#55207d',
+                                  backgroundColor: 'colors.brand.primary',
                                   color: 'white',
                                   border: '1px solid',
-                                  borderColor: '#55207d',
+                                  borderColor: 'colors.brand.primary',
                                   '&:hover': {
                                     backgroundColor: theme.palette.ui?.header || '#152484',
                                     borderColor: theme.palette.ui?.header || '#152484'
@@ -1126,7 +1147,7 @@ export default function ProfilePage() {
               <Box sx={{ mb: `${spacing.xl}px` }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.md}px` }}>
                   <Typography variant="h6" sx={{ 
-                    color: theme.palette.mode === 'dark' ? '#e1bee7' : '#55207D', 
+                    color: theme.palette.mode === 'dark' ? '#e1bee7' : 'colors.brand.primary', 
                     fontWeight: 600 
                   }}>
                     📋 추가 정보
@@ -1139,13 +1160,13 @@ export default function ProfilePage() {
                       sx={{ 
                         width: 24,
                         height: 24,
-                        backgroundColor: '#006261',
+                        backgroundColor: 'colors.brand.primary',
                         color: 'white',
                         border: '1px solid',
-                        borderColor: '#006261',
+                        borderColor: 'colors.brand.primary',
                         '&:hover': { 
-                          backgroundColor: '#003A87',
-                          borderColor: '#003A87'
+                          backgroundColor: 'colors.brand.primaryHover',
+                          borderColor: 'colors.brand.primaryHover'
                         },
                         '&:disabled': {
                           backgroundColor: 'grey.50',
@@ -1227,10 +1248,10 @@ export default function ProfilePage() {
                                 sx={{ 
                                   width: 24,
                                   height: 24,
-                                  backgroundColor: '#55207d',
+                                  backgroundColor: 'colors.brand.primary',
                                   color: 'white',
                                   border: '1px solid',
-                                  borderColor: '#55207d',
+                                  borderColor: 'colors.brand.primary',
                                   '&:hover': {
                                     backgroundColor: theme.palette.ui?.header || '#152484',
                                     borderColor: theme.palette.ui?.header || '#152484'
@@ -1270,11 +1291,11 @@ export default function ProfilePage() {
                 sx={{
                   mt: `${spacing.md}px`,
                   py: 1.5,
-                  bgcolor: '#00d4ff',
-                  color: '#000',
+                  bgcolor: colors.brand.accent,
+                  color: '#fff',
                   fontWeight: 600,
                   '&:hover': {
-                    bgcolor: '#00a8cc'
+                    bgcolor: colors.brand.accentHover
                   }
                 }}
               >

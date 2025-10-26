@@ -16,7 +16,8 @@ import {
 } from '@mui/material';
 import { Close } from '@mui/icons-material';
 import { useAuth } from '../hooks/useAuth';
-import TossPayment from './TossPayment';
+import NaverPayment from './NaverPayment';
+import { colors } from '../theme/tokens';
 
 const PaymentDialog = ({ open, onClose, selectedPlan }) => {
   const { user } = useAuth();
@@ -87,7 +88,7 @@ const PaymentDialog = ({ open, onClose, selectedPlan }) => {
             </Alert>
 
             <Box sx={{ p: 3, bgcolor: 'grey.50', borderRadius: 2, mb: 3 }}>
-              <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: selectedPlan.color }}>
+              <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: selectedPlan.color || colors.brand.primary }}>
                 {selectedPlan.name}
               </Typography>
               
@@ -99,16 +100,18 @@ const PaymentDialog = ({ open, onClose, selectedPlan }) => {
                 VAT 포함 가격입니다
               </Typography>
 
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                  포함 서비스:
-                </Typography>
-                {selectedPlan.features.map((feature, index) => (
-                  <Typography key={index} variant="body2" sx={{ ml: 1, mb: 0.5 }}>
-                    • {feature}
+              {selectedPlan.features && selectedPlan.features.length > 0 && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                    포함 서비스:
                   </Typography>
-                ))}
-              </Box>
+                  {selectedPlan.features.map((feature, index) => (
+                    <Typography key={index} variant="body2" sx={{ ml: 1, mb: 0.5 }}>
+                      • {feature}
+                    </Typography>
+                  ))}
+                </Box>
+              )}
 
               <Typography variant="body2" color="text.secondary">
                 구매자: {user?.name || user?.displayName || '사용자'}
@@ -139,9 +142,9 @@ const PaymentDialog = ({ open, onClose, selectedPlan }) => {
         )}
 
         {activeStep === 1 && (
-          // 2단계: 토스페이먼츠 결제 위젯
+          // 2단계: 네이버페이 결제
           <Box>
-            <TossPayment
+            <NaverPayment
               amount={selectedPlan.price}
               orderId={orderId}
               orderName={`전자두뇌비서관 - ${selectedPlan.name} (1개월)`}
@@ -175,7 +178,7 @@ const PaymentDialog = ({ open, onClose, selectedPlan }) => {
               variant="contained"
               onClick={handleNextStep}
               size="large"
-              sx={{ bgcolor: selectedPlan.color }}
+              sx={{ bgcolor: selectedPlan.color || colors.brand.primary }}
             >
               결제하기
             </Button>

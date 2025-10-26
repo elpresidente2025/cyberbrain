@@ -15,6 +15,7 @@ import {
   DialogContent,
   DialogActions,
   Link,
+  useTheme,
 } from '@mui/material';
 import { LoadingButton } from '../components/loading';
 
@@ -23,12 +24,13 @@ function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [naverDialogOpen, setNaverDialogOpen] = useState(false);
   const [naverUserData, setNaverUserData] = useState(null);
-  
+
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
   const { loginWithNaver } = useNaverLogin();
   const { isDarkMode } = useThemeMode();
+  const theme = useTheme();
 
   useEffect(() => {
     if (user) {
@@ -118,7 +120,7 @@ function LoginPage() {
             objectFit: 'contain'
           }}
         />
-        <Typography component="h1" variant="h5" sx={{ color: 'white' }}>
+        <Typography component="h1" variant="h5" sx={{ color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000' }}>
           전자두뇌비서관 로그인
         </Typography>
 

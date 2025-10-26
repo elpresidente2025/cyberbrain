@@ -6,42 +6,108 @@
  * - 게슈탈트 법칙: 유사성(Similarity)을 위한 일관된 컬러 체계
  */
 export const colors = {
-  // 브랜드 컬러 (파랑 계열 - 사이버펑크 테마)
+  // 브랜드 컬러
   brand: {
-    primary: '#152484',                    // 메인 파랑 (헤더 통일)
-    primaryHover: '#003A87',               // 호버 시 어두운 파랑
-    primaryLight: 'rgba(21, 36, 132, 0.1)', // 반투명 배경용
-    primaryBorder: 'rgba(21, 36, 132, 0.4)', // 테두리용
-    accent: '#00d4ff',                     // 강조 시안
-    accentGlow: 'rgba(0, 212, 255, 0.8)',  // 시안 글로우
+    primary: '#152484',                         // 더불어민주당 블루
+    primaryHover: '#1e30a0',                    // 호버 시 밝은 블루
+    primaryLight: 'rgba(21, 36, 132, 0.05)',    // 배경용 연한 블루
+    primaryLight10: 'rgba(21, 36, 132, 0.1)',   // 배경용 10% 투명도
+    primaryBorder: 'rgba(21, 36, 132, 0.3)',    // 테두리용 블루
+    primaryText: '#152484',                      // 텍스트용 블루
+
+    secondary: '#152484',                        // 더불어민주당 블루
+    secondaryHover: '#0f1a5f',                   // 호버 시 어두운 블루
+    secondaryLight: 'rgba(21, 36, 132, 0.05)',  // 배경용 연한 민주당 블루
+
+    accent: '#00d4ff',                           // 강조 시안
+    accentHover: '#00c4ef',                      // 시안 호버
+    accentLight5: 'rgba(0, 212, 255, 0.05)',    // 시안 배경 5%
+    accentLight20: 'rgba(0, 212, 255, 0.2)',    // 시안 배경 20%
+    accentBorder30: 'rgba(0, 212, 255, 0.3)',   // 시안 테두리 30%
+    accentBorder40: 'rgba(0, 212, 255, 0.4)',   // 시안 테두리 40%
+    accentBorder50: 'rgba(0, 212, 255, 0.5)',   // 시안 테두리 50%
+    accentGlow60: 'rgba(0, 212, 255, 0.6)',     // 시안 글로우 60%
+    accentGlow80: 'rgba(0, 212, 255, 0.8)',     // 시안 글로우 80%
+
+    gold: '#f8c023',                             // 골드/노란색
+    goldBorder: 'rgba(248, 192, 35, 0.25)',     // 골드 테두리 (40 in hex = 25%)
+    goldGlow40: 'rgba(248, 192, 35, 0.4)',      // 골드 글로우 40%
+    goldGlow80: 'rgba(248, 192, 35, 0.8)',      // 골드 글로우 80%
+
+    warning: 'rgba(255, 193, 7, 1)',            // 경고 색상
+    warningLight10: 'rgba(255, 193, 7, 0.1)',   // 경고 배경
+    warningBorder30: 'rgba(255, 193, 7, 0.3)',  // 경고 테두리
   },
 
   // UI 구조 컬러
   ui: {
-    header: '#152484',                     // 헤더/푸터 네이비
-    headerHover: '#003A87',                // 헤더 호버
-    background: '#050511',                 // 다크 배경
-    backgroundLight: 'rgba(255, 255, 255, 0.03)', // 카드 배경
-    gridLineHorizontal: 'rgba(0, 212, 255, 0.8)', // 그리드 가로선 (시안)
-    gridLineVertical: 'rgba(0, 200, 200, 0.6)',   // 그리드 세로선 (시안)
-    divider: 'rgba(21, 36, 132, 0.3)',     // 구분선
-  },
-
-  // 시맨틱 컬러
-  semantic: {
-    success: '#1ca152',                    // 성공은 녹색 유지
-    info: '#00d4ff',                       // 정보는 시안
-    warning: '#ffa726',
-    error: '#f44336',
+    header: 'rgba(0, 0, 0, 0.3)',
+    headerHover: 'rgba(79, 195, 247, 0.15)',
+    background: '#0a0a0a',
+    backgroundDark1: 'rgba(0, 0, 0, 0.02)',      // 섹션 배경
+    backgroundLight1: 'rgba(255, 255, 255, 0.01)', // 매우 연한 배경
+    backgroundLight2: 'rgba(255, 255, 255, 0.02)', // 연한 배경
+    backgroundLight3: 'rgba(255, 255, 255, 0.03)', // 카드 배경
+    backgroundLight5: 'rgba(255, 255, 255, 0.05)', // 강조 배경
+    backgroundLight6: 'rgba(255, 255, 255, 0.06)', // 더 강한 배경
+    backgroundEmphasis: 'rgba(79, 195, 247, 0.05)', // 강조 배경
+    gridLineHorizontal: 'rgba(79, 195, 247, 0.15)',
+    gridLineVertical: 'rgba(79, 195, 247, 0.08)',
+    divider: 'rgba(255, 255, 255, 0.1)',
+    divider12: 'rgba(255, 255, 255, 0.12)',      // 테두리용
+    divider20: 'rgba(255, 255, 255, 0.2)',       // 테두리용
+    divider30: 'rgba(255, 255, 255, 0.3)',       // 테두리용
   },
 
   // 텍스트 컬러
   text: {
-    primary: '#ffffff',
-    secondary: 'rgba(255, 255, 255, 0.9)',
-    tertiary: 'rgba(255, 255, 255, 0.7)',
-    disabled: 'rgba(255, 255, 255, 0.5)',
+    primary: 'rgba(255, 255, 255, 0.9)',      // 제목용
+    secondary: 'rgba(255, 255, 255, 0.7)',    // 본문용
+    tertiary: 'rgba(255, 255, 255, 0.5)',     // 부가설명용
+    muted60: 'rgba(255, 255, 255, 0.6)',      // 더 흐린 텍스트
+    muted75: 'rgba(255, 255, 255, 0.75)',     // 중간 흐림
+    muted80: 'rgba(255, 255, 255, 0.8)',      // 약간 흐림
+    emphasis: '#4FC3F7',                       // 강조 텍스트
     black: '#000000',
+    white: '#ffffff',
+  },
+
+  // 테두리 컬러
+  border: {
+    default: 'rgba(255, 255, 255, 0.1)',
+    emphasis: 'rgba(79, 195, 247, 0.3)',
+    dashed: 'rgba(255, 255, 255, 0.2)',
+    accent: 'rgba(0, 212, 255, 0.4)',         // #00d4ff40와 동일
+    gold: 'rgba(248, 192, 35, 0.25)',         // #f8c02340과 동일
+  },
+
+  // 플랜 컬러 (요금제 등)
+  plan: {
+    local: '#003a87',                          // 로컬 블로거
+    localBorder: 'rgba(0, 58, 135, 0.25)',    // #003a8740과 동일
+    localShadow: 'rgba(0, 58, 135, 0.19)',    // #003a8730과 동일
+
+    region: '#55207d',                         // 리전 인플루언서
+    regionBorder: 'rgba(85, 32, 125, 0.25)',  // #55207d40과 동일
+    regionShadow: 'rgba(85, 32, 125, 0.19)',  // #55207d30과 동일
+
+    opinion: '#006261',                        // 오피니언 리더
+    opinionBorder: 'rgba(0, 98, 97, 0.25)',   // #00626140과 동일
+    opinionShadow: 'rgba(0, 98, 97, 0.19)',   // #00626130과 동일
+  },
+
+  // 상태별 컬러
+  state: {
+    success: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    info: '#4FC3F7',
+  },
+
+  // 그라데이션
+  gradient: {
+    divider: 'linear-gradient(90deg, transparent 0%, #00d4ff 20%, #00d4ff 80%, transparent 100%)',
+    footer: 'linear-gradient(to bottom, #001320, #050511)',
   }
 };
 

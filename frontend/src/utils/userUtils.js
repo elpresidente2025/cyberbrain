@@ -32,6 +32,21 @@ export const getUserDisplayTitle = (user) => {
       else baseTitle = '기초의원';
       break;
     }
+    case '광역자치단체장': {
+      // 광역자치단체장: 시장, 도지사 등
+      if (regionMetro.endsWith('시')) baseTitle = '시장';
+      else if (regionMetro.endsWith('도')) baseTitle = '도지사';
+      else baseTitle = '광역자치단체장';
+      break;
+    }
+    case '기초자치단체장': {
+      // 기초자치단체장: 시장, 구청장, 군수 등
+      if (regionLocal.endsWith('시')) baseTitle = '시장';
+      else if (regionLocal.endsWith('구')) baseTitle = '구청장';
+      else if (regionLocal.endsWith('군')) baseTitle = '군수';
+      else baseTitle = '기초자치단체장';
+      break;
+    }
     default:
       baseTitle = position;
   }

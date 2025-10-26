@@ -107,7 +107,13 @@
       "mcp__serena__search_for_pattern",
       "mcp__serena__think_about_collected_information",
       "Bash(firebase functions:delete:*)",
-      "Bash(npm run deploy:functions:*)"
+      "Bash(npm run deploy:functions:*)",
+      "mcp__serena__find_file",
+      "Bash(gcloud storage buckets update:*)",
+      "Bash(gsutil cors set:*)",
+      "Bash(firebase functions:secrets:access:*)",
+      "Bash(firebase functions:secrets:delete:*)",
+      "Bash(npm view:*)"
     ],
     "deny": [],
     "ask": [],

@@ -6,11 +6,11 @@ import {
   DialogActions,
   Button,
   Typography,
-  Stack,
-  Chip,
-  Box
+  Box,
+  Grid,
+  Card,
+  CardContent
 } from '@mui/material';
-import { SAMPLE_SPEECH } from '../data/samples';
 
 function SampleSpeechModal({ open, onClose }) {
   return (
@@ -18,7 +18,7 @@ function SampleSpeechModal({ open, onClose }) {
       open={open}
       onClose={onClose}
       fullWidth
-      maxWidth="md"
+      maxWidth="lg"
       aria-labelledby="sample-speech-title"
       aria-describedby="sample-speech-desc"
       PaperProps={{
@@ -29,33 +29,83 @@ function SampleSpeechModal({ open, onClose }) {
         }
       }}
     >
-      <DialogTitle id="sample-speech-title" sx={{ fontWeight: 800, color: '#fff' }}>
-        {SAMPLE_SPEECH.title}
+      <DialogTitle id="sample-speech-title" sx={{ fontWeight: 800, textAlign: 'center' }} style={{ color: '#fff' }}>
+        원고 작성 품질 비교
       </DialogTitle>
-      <DialogContent dividers id="sample-speech-desc" sx={{ position: 'relative', color: '#fff' }}>
-        <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap', gap: 1 }}>
-          <Chip size="small" label="데모 샘플" sx={{ backgroundColor: 'rgba(255,255,255,0.1)', color: '#fff' }} />
-          <Chip size="small" label={SAMPLE_SPEECH.source} sx={{ backgroundColor: 'rgba(0,212,255,0.2)', color: '#00d4ff' }} />
-          <Chip size="small" label="전문 비공개" sx={{ backgroundColor: 'rgba(255,255,255,0.1)', color: '#fff' }} />
-        </Stack>
-        <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', mb: 2, color: '#fff' }}>
-          {SAMPLE_SPEECH.disclaimer}
-        </Typography>
-        <Typography sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.7, color: '#fff' }}>
-          {SAMPLE_SPEECH.body}
-        </Typography>
-        <Box sx={{
-          position: 'absolute',
-          right: 12,
-          bottom: 12,
-          px: 1,
-          py: 0.25,
-          border: '1px solid rgba(255,255,255,0.25)',
-          borderRadius: 1,
-          fontSize: 12,
-          opacity: 0.8,
-          color: '#fff'
-        }}>DEMO</Box>
+      <DialogContent dividers id="sample-speech-desc" sx={{ position: 'relative', color: '#fff', p: 4 }}>
+        <Grid container spacing={4}>
+          {/* Before */}
+          <Grid item xs={12} md={6}>
+            <Card sx={{
+              backgroundColor: 'rgba(255,255,255,0.02)',
+              border: '2px solid rgba(255,255,255,0.1)',
+              borderRadius: 2
+            }}>
+              <CardContent sx={{ p: 3 }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 3 }} style={{ color: '#fff' }}>
+                  Before: 직접 작성
+                </Typography>
+                <Box
+                  sx={{
+                    minHeight: 300,
+                    backgroundColor: 'rgba(255,255,255,0.02)',
+                    border: '2px dashed rgba(255,255,255,0.2)',
+                    borderRadius: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    p: 3
+                  }}
+                >
+                  <Typography variant="body2" sx={{
+                    color: 'rgba(255,255,255,0.5)',
+                    textAlign: 'center',
+                    fontStyle: 'italic'
+                  }}>
+                    스크린샷 추가 예정<br />
+                    (기존 방식의 원고 예시)
+                  </Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* After */}
+          <Grid item xs={12} md={6}>
+            <Card sx={{
+              backgroundColor: 'rgba(79, 195, 247, 0.05)',
+              border: '2px solid rgba(79, 195, 247, 0.3)',
+              borderRadius: 2
+            }}>
+              <CardContent sx={{ p: 3 }}>
+                <Typography variant="h6" sx={{ fontWeight: 800, mb: 3 }} style={{ color: '#fff' }}>
+                  After: AI 생성 + 검토
+                </Typography>
+                <Box
+                  sx={{
+                    minHeight: 300,
+                    backgroundColor: 'rgba(79, 195, 247, 0.05)',
+                    border: '2px dashed rgba(79, 195, 247, 0.3)',
+                    borderRadius: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    p: 3
+                  }}
+                >
+                  <Typography variant="body2" sx={{
+                    color: 'rgba(79, 195, 247, 0.7)',
+                    textAlign: 'center',
+                    fontStyle: 'italic'
+                  }}>
+                    스크린샷 추가 예정<br />
+                    (AI 생성 + 검토 완료 원고 예시)
+                  </Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
       </DialogContent>
       <DialogActions sx={{ px: 3, py: 2 }}>
         <Button onClick={onClose} variant="contained" sx={{ backgroundColor: '#00d4ff', color: '#041120' }}>

@@ -35,7 +35,7 @@ function norm(s) {
 /**
  * 직책 표준화:
  * - 괄호/상태 표기 제거: (예비), (현역), 후보/후보자, candidate, incumbent 등
- * - 흔한 동의어를 하나로 접힘: 국회의원/광역의원/기초의원
+ * - 흔한 동의어를 하나로 접힘: 국회의원/광역의원/기초의원/광역자치단체장/기초자치단체장
  */
 function canonicalPosition(pos) {
   let v = String(pos || '');
@@ -52,6 +52,8 @@ function canonicalPosition(pos) {
   if (/국회|국회의원/i.test(s)) return '국회의원';
   if (/광역|도의원/i.test(s)) return '광역의원';
   if (/기초|구의원|군의원|시의원/i.test(s)) return '기초의원';
+  if (/광역자치단체장/i.test(s)) return '광역자치단체장';
+  if (/기초자치단체장/i.test(s)) return '기초자치단체장';
 
   // 모호하면 그대로 사용(그래도 상태는 제거돼 있음)
   return v || '기초의원';
@@ -65,14 +67,39 @@ function canonicalPosition(pos) {
 function districtKey(parts = {}) {
   const { position, regionMetro, regionLocal, electoralDistrict } = parts;
   const pos = canonicalPosition(position); // ✅ 상태 제거된 직책 사용
-  const pieces = [pos, regionMetro, regionLocal, electoralDistrict].map(norm);
-  if (pieces.some((p) => !p)) {
-    throw new HttpsError(
-      'invalid-argument',
-      '선거구 키를 만들기 위해 position/regionMetro/regionLocal/electoralDistrict가 모두 필요합니다.'
-    );
+
+  // 자치단체장의 경우 선거구 불필요
+  if (pos === '광역자치단체장') {
+    // 광역자치단체장: regionMetro만 필요
+    const pieces = [pos, regionMetro].map(norm);
+    if (pieces.some((p) => !p)) {
+      throw new HttpsError(
+        'invalid-argument',
+        '광역자치단체장의 경우 position과 regionMetro가 필요합니다.'
+      );
+    }
+    return pieces.join('__');
+  } else if (pos === '기초자치단체장') {
+    // 기초자치단체장: regionMetro, regionLocal 필요
+    const pieces = [pos, regionMetro, regionLocal].map(norm);
+    if (pieces.some((p) => !p)) {
+      throw new HttpsError(
+        'invalid-argument',
+        '기초자치단체장의 경우 position, regionMetro, regionLocal이 필요합니다.'
+      );
+    }
+    return pieces.join('__');
+  } else {
+    // 의원: 모든 필드 필요
+    const pieces = [pos, regionMetro, regionLocal, electoralDistrict].map(norm);
+    if (pieces.some((p) => !p)) {
+      throw new HttpsError(
+        'invalid-argument',
+        '선거구 키를 만들기 위해 position/regionMetro/regionLocal/electoralDistrict가 모두 필요합니다.'
+      );
+    }
+    return pieces.join('__');
   }
-  return pieces.join('__');
 }
 
 /* =========================================

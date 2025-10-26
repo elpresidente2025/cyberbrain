@@ -14,15 +14,13 @@ import { CheckCircleOutline, TrendingUp } from '@mui/icons-material';
 
 const UsageGuide = () => {
   const plans = [
-    { name: '로컬 블로거', limit: '월 8편 (보너스 최대 +4편)' },
-    { name: '리전 인플루언서', limit: '월 20편 (보너스 최대 +10편)' },
-    { name: '오피니언 리더', limit: '월 90편 + SNS 원고 무제한' }
+    { name: '스탠다드 플랜', limit: '월 90회 원고 생성 + SNS 원고 무료 생성' }
   ];
 
   const bonus = [
-    '로컬 블로거: 월 8회 모두 발행 시 익월 4회 추가',
-    '리전 인플루언서: 월 20회 모두 발행 시 익월 10회 추가', 
-    '추가 조건 달성 시 SNS 원고 무료 생성',
+    '월 90회 원고 생성 가능',
+    'SNS 원고 무료 생성 포함',
+    '무제한 수정 및 재생성',
     '대시보드에서 현황 확인 가능'
   ];
 

@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["https://ai-secretary-6e9c8.web.app", "https://cyberbrain.kr"],
+    "method": ["GET", "POST", "PUT", "DELETE", "HEAD"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": ["Content-Type", "Authorization", "Content-Length", "User-Agent", "X-Requested-With"]
+  }
+]

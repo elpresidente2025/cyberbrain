@@ -11,7 +11,7 @@ import {
 } from '@mui/material';
 import { Speed } from '@mui/icons-material';
 import DashboardLayout from '../components/DashboardLayout';
-import { spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
+import { colors, spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
 import DashboardCards from '../components/admin/DashboardCards';
 import QuickActions from '../components/admin/QuickActions';
 import ErrorsMiniTable from '../components/admin/ErrorsMiniTable';
@@ -66,20 +66,20 @@ function AdminPage() {
           alignItems: 'center',
           mb: `${spacing.xl}px`,
           pb: `${spacing.md}px`,
-          borderBottom: `2px solid ${theme.palette.ui?.header || '#152484'}`
+          borderBottom: `2px solid ${theme.palette.ui?.header || colors.brand.primary}`
         }}>
           <Box>
             <Typography
               variant="h4"
               sx={{
-                color: 'white',
+                color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
                 fontWeight: 700,
                 mb: `${spacing.xs}px`
               }}
             >
               시스템 관리
             </Typography>
-            <Typography variant="body1" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+            <Typography variant="body1" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
               전자두뇌비서관 서비스의 전반적인 상태를 모니터링하고 관리합니다.
             </Typography>
           </Box>
@@ -90,7 +90,7 @@ function AdminPage() {
               startIcon={<Speed />}
               onClick={() => setPerformanceMonitorOpen(true)}
               sx={{ 
-                bgcolor: '#006261',
+                bgcolor: colors.brand.primary,
                 color: 'white',
                 '&:hover': { 
                   bgcolor: '#007a74',

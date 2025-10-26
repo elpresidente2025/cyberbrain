@@ -41,7 +41,7 @@ import {
   useNotification,
   StandardDialog
 } from '../components/ui';
-import { spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
+import { colors, spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
 
 function formatDate(iso) {
   try {
@@ -274,7 +274,7 @@ export default function PostsListPage() {
             내 원고 목록
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px` }}>
-            <Typography variant="body1" color="text.secondary">
+            <Typography variant="body1" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
               생성한 원고를 관리할 수 있습니다
             </Typography>
             <Chip 
@@ -393,7 +393,7 @@ export default function PostsListPage() {
                             <IconButton
                               size="small"
                               onClick={(e) => handleSNSConvert(p, e)}
-                              sx={{ color: theme.palette.ui?.header || '#152484' }}
+                              sx={{ color: theme.palette.ui?.header || colors.brand.primary }}
                             >
                               <Transform fontSize="small" />
                             </IconButton>
@@ -402,7 +402,7 @@ export default function PostsListPage() {
                             <IconButton 
                               size="small"
                               onClick={(e) => handlePublish(p, e)}
-                              sx={{ color: p.publishUrl ? '#006261' : (theme.palette.ui?.header || '#152484') }}
+                              sx={{ color: p.publishUrl ? colors.brand.primary : (theme.palette.ui?.header || colors.brand.primary) }}
                             >
                               <AddLink fontSize="small" />
                             </IconButton>
@@ -433,7 +433,7 @@ export default function PostsListPage() {
         {/* 발행 URL 입력 다이얼로그 */}
         <Dialog open={publishDialogOpen} onClose={closePublishDialog} maxWidth="sm" fullWidth>
           <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.xs}px` }}>
-            <Publish sx={{ color: theme.palette.ui?.header || '#152484' }} />
+            <Publish sx={{ color: theme.palette.ui?.header || colors.brand.primary }} />
             원고 발행 등록
           </DialogTitle>
           <DialogContent>
@@ -467,8 +467,8 @@ export default function PostsListPage() {
               onClick={handlePublishSubmit} 
               variant="contained"
               sx={{
-                bgcolor: theme.palette.ui?.header || '#152484',
-                '&:hover': { bgcolor: theme.palette.ui?.headerHover || '#003A87' }
+                bgcolor: theme.palette.ui?.header || colors.brand.primary,
+                '&:hover': { bgcolor: theme.palette.ui?.headerHover || colors.brand.primaryHover }
               }}
             >
               발행 완료

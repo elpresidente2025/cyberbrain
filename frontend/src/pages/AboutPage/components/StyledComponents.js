@@ -154,10 +154,38 @@ export const CTAButton = styled(Button)(({ theme }) => ({
   padding: theme.spacing(1.25, 3),
   borderRadius: 12,
   letterSpacing: '0.02em',
-  transition: 'transform 200ms ease, background-color 200ms ease',
+  position: 'relative',
+  overflow: 'hidden',
+  transition: 'transform 150ms ease-out, background-color 200ms ease',
+  boxShadow: `
+    0 2px 4px rgba(0, 0, 0, 0.2),
+    0 4px 8px rgba(0, 212, 255, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2)
+  `,
+  '&::before': {
+    content: '""',
+    position: 'absolute',
+    top: 0,
+    left: '-100%',
+    width: '100%',
+    height: '100%',
+    background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent)',
+    transition: 'left 600ms',
+  },
   '&:hover': {
     backgroundColor: '#00bde6',
     transform: 'translateY(-1px)',
+    boxShadow: `
+      0 4px 8px rgba(0, 0, 0, 0.25),
+      0 6px 12px rgba(0, 212, 255, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3)
+    `,
+  },
+  '&:hover::before': {
+    left: '100%',
+  },
+  '&:active': {
+    transform: 'translateY(0)',
   },
 }));
 
@@ -168,9 +196,38 @@ export const OutlineButton = styled(Button)(({ theme }) => ({
   padding: theme.spacing(1.25, 3),
   borderRadius: 12,
   letterSpacing: '0.02em',
+  position: 'relative',
+  overflow: 'hidden',
+  transition: 'transform 150ms ease-out, background-color 200ms ease',
+  boxShadow: `
+    0 1px 2px rgba(0, 0, 0, 0.2),
+    inset 0 0 0 1px rgba(0, 212, 255, 0.3)
+  `,
+  '&::before': {
+    content: '""',
+    position: 'absolute',
+    top: 0,
+    left: '-100%',
+    width: '100%',
+    height: '100%',
+    background: 'linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.1), transparent)',
+    transition: 'left 600ms',
+  },
   '&:hover': {
     backgroundColor: 'rgba(0, 212, 255, 0.10)',
     borderColor: '#00d4ff',
+    transform: 'translateY(-1px)',
+    boxShadow: `
+      0 2px 4px rgba(0, 0, 0, 0.25),
+      0 0 4px rgba(0, 212, 255, 0.3),
+      inset 0 0 0 1px rgba(0, 212, 255, 0.5)
+    `,
+  },
+  '&:hover::before': {
+    left: '100%',
+  },
+  '&:active': {
+    transform: 'translateY(0)',
   },
 }));
 
@@ -179,12 +236,42 @@ export const CardSoft = styled(Card)({
   borderRadius: 16,
   border: '1px solid rgba(255,255,255,0.06)',
   backdropFilter: 'blur(6px)',
-  transition: 'all 0.3s ease',
+  position: 'relative',
+  overflow: 'hidden',
+  transition: 'transform 150ms ease-out',
   cursor: 'pointer',
+  // 다층 섀도우로 깊이감 강화
+  boxShadow: `
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 4px 8px rgba(0, 0, 0, 0.15),
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05)
+  `,
+  '&::before': {
+    content: '""',
+    position: 'absolute',
+    inset: 0,
+    borderRadius: 'inherit',
+    padding: '1px',
+    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02))',
+    mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+    maskComposite: 'exclude',
+    WebkitMaskComposite: 'xor',
+    pointerEvents: 'none',
+  },
   '&:hover': {
-    transform: 'scale(0.98)',
-    boxShadow: '0 0 20px rgba(0, 212, 255, 0.3), 0 0 40px rgba(0, 212, 255, 0.1)',
+    transform: 'translateY(-1px)',
+    boxShadow: `
+      0 2px 4px rgba(0, 0, 0, 0.3),
+      0 8px 16px rgba(0, 0, 0, 0.2),
+      0 0 0 1px rgba(0, 212, 255, 0.3),
+      0 0 4px rgba(0, 212, 255, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1)
+    `,
     borderColor: 'rgba(0, 212, 255, 0.2)',
+  },
+  '&:active': {
+    transform: 'translateY(0)',
   },
 });
 
@@ -193,12 +280,42 @@ export const CardEmphasis = styled(Card)({
   borderRadius: 16,
   border: '1px solid rgba(0, 212, 255, 0.25)',
   backdropFilter: 'blur(6px)',
-  transition: 'all 0.3s ease',
+  position: 'relative',
+  overflow: 'hidden',
+  transition: 'transform 150ms ease-out',
   cursor: 'pointer',
+  // 다층 섀도우로 깊이감 강화
+  boxShadow: `
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 4px 8px rgba(0, 0, 0, 0.15),
+    0 0 0 1px rgba(79, 195, 247, 0.15),
+    inset 0 1px 0 rgba(79, 195, 247, 0.1)
+  `,
+  '&::before': {
+    content: '""',
+    position: 'absolute',
+    inset: 0,
+    borderRadius: 'inherit',
+    padding: '1px',
+    background: 'linear-gradient(135deg, rgba(79, 195, 247, 0.3), rgba(21, 36, 132, 0.1))',
+    mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+    maskComposite: 'exclude',
+    WebkitMaskComposite: 'xor',
+    pointerEvents: 'none',
+  },
   '&:hover': {
-    transform: 'scale(0.98)',
-    boxShadow: '0 0 20px rgba(79, 195, 247, 0.4), 0 0 40px rgba(79, 195, 247, 0.2)',
+    transform: 'translateY(-1px)',
+    boxShadow: `
+      0 2px 4px rgba(0, 0, 0, 0.3),
+      0 8px 16px rgba(0, 0, 0, 0.2),
+      0 0 0 1px rgba(79, 195, 247, 0.4),
+      0 0 4px rgba(79, 195, 247, 0.3),
+      inset 0 1px 0 rgba(79, 195, 247, 0.15)
+    `,
     borderColor: 'rgba(79, 195, 247, 0.4)',
+  },
+  '&:active': {
+    transform: 'translateY(0)',
   },
 });
 

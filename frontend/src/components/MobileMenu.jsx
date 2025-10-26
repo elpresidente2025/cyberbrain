@@ -136,13 +136,13 @@ const MobileMenu = () => {
                 <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                   {user?.name || '사용자'}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
                   {getUserDisplayTitle(user)}
                 </Typography>
               </Box>
             </Box>
             {regionInfo && (
-              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              <Typography variant="caption" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
                 {regionInfo}
               </Typography>
             )}

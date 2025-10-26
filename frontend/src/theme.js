@@ -6,32 +6,29 @@ const createCustomTheme = (isDarkMode) => createTheme({
   palette: {
     mode: isDarkMode ? 'dark' : 'light',
     primary: {
-      main: isDarkMode ? '#4FC3F7' : '#013c95',
+      main: colors.brand.primary,
     },
     // 브랜드 컬러 (디자인 토큰 통합)
-    brand: {
-      primary: colors.brand.primary,
-      primaryHover: colors.brand.primaryHover,
-      primaryLight: colors.brand.primaryLight,
-      primaryBorder: colors.brand.primaryBorder,
-    },
+    brand: colors.brand,
     // UI 구조 컬러 (디자인 토큰 통합)
-    ui: {
-      header: colors.ui.header,
-      headerHover: colors.ui.headerHover,
-      background: colors.ui.background,
-      backgroundLight: colors.ui.backgroundLight,
-      gridLineHorizontal: colors.ui.gridLineHorizontal,
-      gridLineVertical: colors.ui.gridLineVertical,
-      divider: colors.ui.divider,
+    ui: colors.ui,
+    // 텍스트 컬러 (다크/라이트 모드 대응)
+    text: {
+      primary: isDarkMode ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.87)',
+      secondary: isDarkMode ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)',
+      disabled: isDarkMode ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.38)',
     },
+    // 테두리 컬러 (디자인 토큰 통합)
+    border: colors.border,
+    // 플랜 컬러 (디자인 토큰 통합)
+    plan: colors.plan,
+    // 상태별 컬러 (디자인 토큰 통합)
+    state: colors.state,
+    // 그라데이션 (디자인 토큰 통합)
+    gradient: colors.gradient,
     background: {
       default: 'transparent',
       paper: isDarkMode ? '#1a1a1a' : '#f5f5f5',
-    },
-    text: {
-      primary: isDarkMode ? '#ffffff' : '#000000',
-      secondary: isDarkMode ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)',
     },
   },
   // 2. 브레이크포인트 설정 (가이드 2절)

@@ -157,7 +157,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
             }
             label="데모 데이터"
             sx={{
-              color: 'rgba(255,255,255,0.75)',
+              color: theme.palette.text.muted75,
               bgcolor: 'rgba(255,255,255,0.06)',
               px: 1.25,
               py: 0.5,
@@ -173,7 +173,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
 
       <Box sx={{
         height: '2px',
-        background: 'linear-gradient(90deg, transparent 0%, #00d4ff 20%, #00d4ff 80%, transparent 100%)',
+        background: theme.palette.gradient.divider,
         opacity: 0.3
       }} />
 
@@ -197,7 +197,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               mb: 6,
               textAlign: 'center',
               fontWeight: 500,
-              color: 'rgba(255,255,255,0.7)'
+              color: theme.palette.text.secondary
             }}>
               인바운드와 아웃바운드 마케팅으로 완전한 정치적 영향력을 구축하세요
             </Typography>
@@ -223,7 +223,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                 <CardSoft sx={{
                   height: '100%',
                   textAlign: 'center',
-                  border: '1px solid #f8c02340',
+                  border: `1px solid ${theme.palette.border.gold}`,
                   display: 'flex',
                   flexDirection: 'column',
                   // 갤럭시 폴드 7 메인 디스플레이 카드 최적화
@@ -238,7 +238,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                   }
                 }}>
                   <CardContent sx={{ p: 4, display: 'flex', flexDirection: 'column', flex: 1 }}>
-                    <Typography variant="h5" sx={{ fontWeight: 700, color: '#f8c023', mb: 3 }}>
+                    <Typography variant="h5" sx={{ fontWeight: 700, color: theme.palette.brand.gold, mb: 3 }}>
                       찾아오는 신규 유권자
                     </Typography>
                     <Typography variant="body1" sx={{ textAlign: 'left', lineHeight: 1.8, mb: 3 }}>
@@ -249,12 +249,12 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                     </Typography>
                     <Box sx={{
                       p: 2,
-                      backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                      backgroundColor: theme.palette.ui.backgroundLight3,
                       borderRadius: 2,
-                      border: '1px solid #f8c02340',
+                      border: `1px solid ${theme.palette.border.gold}`,
                       mt: 'auto'
                     }}>
-                      <Typography variant="body2" sx={{ fontWeight: 600, color: 'rgba(255,255,255,0.9)' }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: theme.palette.text.primary }}>
                         자연스러운 발견을 통한 진정성 있는 소통
                       </Typography>
                     </Box>
@@ -267,7 +267,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                 <CardSoft sx={{
                   height: '100%',
                   textAlign: 'center',
-                  border: '1px solid #00d4ff40',
+                  border: `1px solid ${theme.palette.border.accent}`,
                   display: 'flex',
                   flexDirection: 'column',
                   // 갤럭시 폴드 7 메인 디스플레이 카드 최적화
@@ -282,7 +282,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                   }
                 }}>
                   <CardContent sx={{ p: 4, display: 'flex', flexDirection: 'column', flex: 1 }}>
-                    <Typography variant="h5" sx={{ fontWeight: 700, color: '#00d4ff', mb: 3 }}>
+                    <Typography variant="h5" sx={{ fontWeight: 700, color: theme.palette.brand.accent, mb: 3 }}>
                       찾아가는 기존 지지자
                     </Typography>
                     <Typography variant="body1" sx={{ textAlign: 'left', lineHeight: 1.8, mb: 3 }}>
@@ -293,12 +293,12 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                     </Typography>
                     <Box sx={{
                       p: 2,
-                      backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                      backgroundColor: theme.palette.ui.backgroundLight3,
                       borderRadius: 2,
-                      border: '1px solid #00d4ff40',
+                      border: `1px solid ${theme.palette.border.accent}`,
                       mt: 'auto'
                     }}>
-                      <Typography variant="body2" sx={{ fontWeight: 600, color: 'rgba(255,255,255,0.9)' }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: theme.palette.text.primary }}>
                         확실한 전달을 통한 즉각적 반응 유도
                       </Typography>
                     </Box>
@@ -345,7 +345,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               mb: 6,
               textAlign: 'center',
               fontWeight: 500,
-              color: 'rgba(255,255,255,0.7)'
+              color: theme.palette.text.secondary
             }}>
               매체별 특성과 네이버 블로그의 차별화된 장점
             </Typography>
@@ -371,13 +371,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                 <CardSoft sx={{
                   height: '100%',
                   textAlign: 'center',
-                  border: '1px solid #f8c02340'
+                  border: `1px solid ${theme.palette.border.gold}`
                 }}>
                   <CardContent sx={{ p: 4 }}>
                     <Typography variant="h5" sx={{
                       fontWeight: 700,
                       mb: 3,
-                      color: '#f8c023'
+                      color: theme.palette.brand.gold
                     }}>
                       텍스트 위주 매체
                     </Typography>
@@ -397,7 +397,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                     <Typography variant="body1" sx={{
                       mb: 3,
                       lineHeight: 1.6,
-                      color: 'rgba(255,255,255,0.9)'
+                      color: theme.palette.text.primary
                     }}>
                       깊이 있는 글 읽기를 기대하는 독자들에게<br />
                       논리적 설득과 완전한 메시지 전달 가능
@@ -411,13 +411,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                 <CardSoft sx={{
                   height: '100%',
                   textAlign: 'center',
-                  border: '1px solid #00d4ff40'
+                  border: `1px solid ${theme.palette.border.accent}`
                 }}>
                   <CardContent sx={{ p: 4 }}>
                     <Typography variant="h5" sx={{
                       fontWeight: 700,
                       mb: 3,
-                      color: '#00d4ff'
+                      color: theme.palette.brand.accent
                     }}>
                       비텍스트 위주 매체
                     </Typography>
@@ -494,19 +494,19 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
             }}>
               <Box sx={{
                 p: { xs: 2, md: 3 },
-                backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                backgroundColor: theme.palette.ui.backgroundLight5,
                 borderRadius: 3,
-                border: '1px solid #003a8740',
+                border: `1px solid ${theme.palette.plan.localBorder}`,
                 textAlign: 'center',
                 transition: 'all 0.3s ease',
                 '&:hover': {
                   transform: 'translateY(-4px)',
-                  boxShadow: '0 8px 32px #003a8730'
+                  boxShadow: `0 8px 32px ${theme.palette.plan.localShadow}`
                 }
               }}>
                 <Typography variant="h6" sx={{
                   fontWeight: 700,
-                  color: '#003a87',
+                  color: theme.palette.plan.local,
                   mb: 2,
                   fontSize: { xs: '0.9rem', sm: '1rem', md: '1.25rem' }
                 }}>
@@ -522,19 +522,19 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               </Box>
               <Box sx={{
                 p: { xs: 2, md: 3 },
-                backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                backgroundColor: theme.palette.ui.backgroundLight5,
                 borderRadius: 3,
-                border: '1px solid #55207d40',
+                border: `1px solid ${theme.palette.plan.regionBorder}`,
                 textAlign: 'center',
                 transition: 'all 0.3s ease',
                 '&:hover': {
                   transform: 'translateY(-4px)',
-                  boxShadow: '0 8px 32px #55207d30'
+                  boxShadow: `0 8px 32px ${theme.palette.plan.regionShadow}`
                 }
               }}>
                 <Typography variant="h6" sx={{
                   fontWeight: 700,
-                  color: '#55207d',
+                  color: theme.palette.plan.region,
                   mb: 2,
                   fontSize: { xs: '0.9rem', sm: '1rem', md: '1.25rem' }
                 }}>
@@ -550,19 +550,19 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               </Box>
               <Box sx={{
                 p: { xs: 2, md: 3 },
-                backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                backgroundColor: theme.palette.ui.backgroundLight5,
                 borderRadius: 3,
-                border: '1px solid #00626140',
+                border: `1px solid ${theme.palette.plan.opinionBorder}`,
                 textAlign: 'center',
                 transition: 'all 0.3s ease',
                 '&:hover': {
                   transform: 'translateY(-4px)',
-                  boxShadow: '0 8px 32px #00626130'
+                  boxShadow: `0 8px 32px ${theme.palette.plan.opinionShadow}`
                 }
               }}>
                 <Typography variant="h6" sx={{
                   fontWeight: 700,
-                  color: '#006261',
+                  color: theme.palette.plan.opinion,
                   mb: 2,
                   fontSize: { xs: '0.9rem', sm: '1rem', md: '1.25rem' }
                 }}>
@@ -584,15 +584,15 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
             <Box sx={{
               textAlign: 'center',
               p: 4,
-              border: '1px solid #00d4ff40',
+              border: `1px solid ${theme.palette.border.accent}`,
               borderRadius: 3,
-              backgroundColor: 'rgba(255, 255, 255, 0.03)',
+              backgroundColor: theme.palette.ui.backgroundLight3,
               maxWidth: 600,
               mx: 'auto'
             }}>
               <Typography variant="h5" sx={{
                 fontWeight: 700,
-                color: 'rgba(255,255,255,0.9)',
+                color: theme.palette.text.primary,
                 lineHeight: 1.6
               }}>
                 SNS 소통만으로는 한계 - 검색되는 순간이 결정적
@@ -605,7 +605,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
       {/* 섹션 구분선 */}
       <Box sx={{
         height: '2px',
-        background: 'linear-gradient(90deg, transparent 0%, #00d4ff 20%, #00d4ff 80%, transparent 100%)',
+        background: theme.palette.gradient.divider,
         opacity: 0.3
       }} />
 
@@ -624,13 +624,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               mb: 6,
               textAlign: 'center',
               fontWeight: 400,
-              color: 'rgba(255,255,255,0.7)'
+              color: theme.palette.text.secondary
             }}>
               복잡한 설정 없이 바로 시작하세요
             </Typography>
           </InViewFade>
 
-          <Grid container spacing={4} sx={{ justifyContent: 'center' }}>
+          <Grid container spacing={4} sx={{ justifyContent: 'center', pt: 3 }}>
             {/* 1단계 */}
             <Grid item xs={12} md={4}>
               <InViewFade timeout={600}>
@@ -638,7 +638,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                   height: '100%',
                   textAlign: 'center',
                   position: 'relative',
-                  border: '2px solid rgba(0, 212, 255, 0.3)'
+                  overflow: 'visible',
+                  border: `2px solid ${theme.palette.brand.accentBorder30}`
                 }}>
                   <Box sx={{
                     position: 'absolute',
@@ -648,13 +649,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                     width: 40,
                     height: 40,
                     borderRadius: '50%',
-                    backgroundColor: '#00d4ff',
+                    backgroundColor: theme.palette.brand.accent,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontWeight: 900,
                     fontSize: '1.5rem',
-                    color: '#000'
+                    color: theme.palette.text.black
                   }}>
                     1
                   </Box>
@@ -662,13 +663,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                     <Typography variant="h5" sx={{
                       fontWeight: 700,
                       mb: 2,
-                      color: '#00d4ff'
+                      color: theme.palette.brand.accent
                     }}>
                       말씀하세요
                     </Typography>
                     <Typography variant="body1" sx={{
                       lineHeight: 1.8,
-                      color: 'rgba(255,255,255,0.9)'
+                      color: theme.palette.text.primary
                     }}>
                       정책, 지역 이슈, 활동 내역을<br />
                       간단히 입력하세요
@@ -685,7 +686,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                   height: '100%',
                   textAlign: 'center',
                   position: 'relative',
-                  border: '2px solid rgba(0, 212, 255, 0.3)'
+                  overflow: 'visible',
+                  border: `2px solid ${theme.palette.brand.accentBorder30}`
                 }}>
                   <Box sx={{
                     position: 'absolute',
@@ -695,13 +697,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                     width: 40,
                     height: 40,
                     borderRadius: '50%',
-                    backgroundColor: '#00d4ff',
+                    backgroundColor: theme.palette.brand.accent,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontWeight: 900,
                     fontSize: '1.5rem',
-                    color: '#000'
+                    color: theme.palette.text.black
                   }}>
                     2
                   </Box>
@@ -709,13 +711,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                     <Typography variant="h5" sx={{
                       fontWeight: 700,
                       mb: 2,
-                      color: '#00d4ff'
+                      color: theme.palette.brand.accent
                     }}>
                       완성됩니다
                     </Typography>
                     <Typography variant="body1" sx={{
                       lineHeight: 1.8,
-                      color: 'rgba(255,255,255,0.9)'
+                      color: theme.palette.text.primary
                     }}>
                       AI가 자동으로 생성한<br />
                       품격 있는 원고를 확인하세요
@@ -732,7 +734,8 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                   height: '100%',
                   textAlign: 'center',
                   position: 'relative',
-                  border: '2px solid rgba(0, 212, 255, 0.3)'
+                  overflow: 'visible',
+                  border: `2px solid ${theme.palette.brand.accentBorder30}`
                 }}>
                   <Box sx={{
                     position: 'absolute',
@@ -742,13 +745,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                     width: 40,
                     height: 40,
                     borderRadius: '50%',
-                    backgroundColor: '#00d4ff',
+                    backgroundColor: theme.palette.brand.accent,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontWeight: 900,
                     fontSize: '1.5rem',
-                    color: '#000'
+                    color: theme.palette.text.black
                   }}>
                     3
                   </Box>
@@ -756,13 +759,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                     <Typography variant="h5" sx={{
                       fontWeight: 700,
                       mb: 2,
-                      color: '#00d4ff'
+                      color: theme.palette.brand.accent
                     }}>
                       발전됩니다
                     </Typography>
                     <Typography variant="body1" sx={{
                       lineHeight: 1.8,
-                      color: 'rgba(255,255,255,0.9)'
+                      color: theme.palette.text.primary
                     }}>
                       스타일을 학습하여<br />
                       점점 더 나아집니다
@@ -781,7 +784,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
       {/* 섹션 구분선 */}
       <Box sx={{
         height: '2px',
-        background: 'linear-gradient(90deg, transparent 0%, #00d4ff 20%, #00d4ff 80%, transparent 100%)',
+        background: theme.palette.gradient.divider,
         opacity: 0.3
       }} />
 
@@ -800,7 +803,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               mb: 6,
               textAlign: 'center',
               fontWeight: 400,
-              color: 'rgba(255,255,255,0.7)'
+              color: theme.palette.text.secondary
             }}>
               3가지 핵심 요소로 당신의 정치 활동을 완벽하게 지원합니다
             </Typography>
@@ -815,13 +818,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                     <Typography variant="h5" sx={{
                       fontWeight: 700,
                       mb: 2,
-                      color: '#00d4ff'
+                      color: theme.palette.brand.accent
                     }}>
                       📋 정책 이력
                     </Typography>
                     <Typography variant="body2" sx={{
                       lineHeight: 1.6,
-                      color: 'rgba(255,255,255,0.7)'
+                      color: theme.palette.text.secondary
                     }}>
                       과거에 발표했던 정책, 공약, 활동 내역을 AI가 학습하여 일관성 있는 메시지를 전달합니다
                     </Typography>
@@ -838,13 +841,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                     <Typography variant="h5" sx={{
                       fontWeight: 700,
                       mb: 2,
-                      color: '#00d4ff'
+                      color: theme.palette.brand.accent
                     }}>
                       🏘️ 지역 맥락
                     </Typography>
                     <Typography variant="body2" sx={{
                       lineHeight: 1.6,
-                      color: 'rgba(255,255,255,0.7)'
+                      color: theme.palette.text.secondary
                     }}>
                       지역 현안, 주민 관심사, 특성을 반영하여 지역 밀착형 콘텐츠를 생성합니다
                     </Typography>
@@ -861,13 +864,13 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                     <Typography variant="h5" sx={{
                       fontWeight: 700,
                       mb: 2,
-                      color: '#00d4ff'
+                      color: theme.palette.brand.accent
                     }}>
                       ✍️ 개인 스타일
                     </Typography>
                     <Typography variant="body2" sx={{
                       lineHeight: 1.6,
-                      color: 'rgba(255,255,255,0.7)'
+                      color: theme.palette.text.secondary
                     }}>
                       글쓰기 스타일, 선호하는 표현, 톤앤매너를 학습하여 점점 더 '나다운' 콘텐츠를 만들어냅니다
                     </Typography>
@@ -882,7 +885,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
       {/* 섹션 구분선 */}
       <Box sx={{
         height: '2px',
-        background: 'linear-gradient(90deg, transparent 0%, #00d4ff 20%, #00d4ff 80%, transparent 100%)',
+        background: theme.palette.gradient.divider,
         opacity: 0.3
       }} />
 
@@ -916,7 +919,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                         <Typography variant="h5" sx={{
                           fontWeight: 700,
                           mb: 3,
-                          color: '#00d4ff',
+                          color: theme.palette.brand.accent,
                           textAlign: 'center'
                         }}>
                           전문직 마케팅 사례
@@ -936,9 +939,9 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
 
                         <Box sx={{
                           p: 3,
-                          backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                          backgroundColor: theme.palette.ui.backgroundLight3,
                           borderRadius: 2,
-                          border: '1px solid #00d4ff40',
+                          border: `1px solid ${theme.palette.border.accent}`,
                           textAlign: 'center'
                         }}>
                           <Typography variant="body1" sx={{
@@ -1050,7 +1053,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
 
                     <Typography variant="h6" sx={{
                       fontWeight: 600,
-                      color: 'rgba(255,255,255,0.9)',
+                      color: theme.palette.text.primary,
                       lineHeight: 1.6,
                       textAlign: 'center',
                       mt: 4
@@ -1068,9 +1071,9 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
             <Box sx={{
               textAlign: 'center',
               p: 4,
-              border: '1px solid #f8c02340',
+              border: `1px solid ${theme.palette.border.gold}`,
               borderRadius: 3,
-              backgroundColor: 'rgba(255, 255, 255, 0.03)',
+              backgroundColor: theme.palette.ui.backgroundLight3,
               maxWidth: 800,
               mx: 'auto',
               mt: 4
@@ -1078,7 +1081,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
               <Typography variant="h5" sx={{
                 fontWeight: 900,
                 mb: 2,
-                color: '#f8c023'
+                color: theme.palette.brand.gold
               }}>
                 네이버 블로그로 정치적 영향력 확대
               </Typography>
@@ -1098,15 +1101,15 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
         <ContentContainer maxWidth="lg">
           <InViewFade>
             <Typography id="evidence-heading" variant="h4" sx={{ fontWeight: 800, mb: 2, textAlign: 'center' }}>
-              전자두뇌비서관 도입 전후 비교
+              검색 노출 전후
             </Typography>
             <Typography variant="h6" sx={{
               mb: 6,
               textAlign: 'center',
-              color: 'rgba(255,255,255,0.7)',
+              color: theme.palette.text.secondary,
               fontWeight: 500
             }}>
-              전후 비교
+              전자두뇌비서관 도입으로 달라진 온라인 존재감
             </Typography>
           </InViewFade>
 
@@ -1117,7 +1120,7 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
                 <CardSoft sx={{ height: '100%' }}>
                   <CardContent sx={{ p: { xs: 3, md: 4 } }}>
                     <Typography variant="h6" sx={{ fontWeight: 700, color: '#999', mb: 2 }}>
-Before
+                      Before
                     </Typography>
                     <Typography sx={{ mb: 3, lineHeight: 1.6 }}>
                       수동으로 블로그 콘텐츠 작성하느라 시간 부족.<br />
@@ -1143,8 +1146,8 @@ Before
               <InViewFade timeout={400}>
                 <CardEmphasis sx={{ height: '100%' }}>
                   <CardContent sx={{ p: { xs: 3, md: 4 } }}>
-                    <Typography variant="h6" sx={{ fontWeight: 800, color: '#4FC3F7', mb: 2 }}>
-After
+                    <Typography variant="h6" sx={{ fontWeight: 800, color: theme.palette.brand.primaryText, mb: 2 }}>
+                      After
                     </Typography>
                     <Typography sx={{ mb: 3, lineHeight: 1.6 }}>
                       AI가 자동으로 전문적인 콘텐츠 생성.<br />
@@ -1165,12 +1168,12 @@ After
                       <Box sx={{
                         mt: 3,
                         p: 2,
-                        backgroundColor: 'rgba(79, 195, 247, 0.1)',
+                        backgroundColor: theme.palette.brand.primaryLight10,
                         borderRadius: '8px',
-                        border: '1px solid rgba(79, 195, 247, 0.3)'
+                        border: `1px solid ${theme.palette.brand.primaryBorder}`
                       }}>
-                        <Typography variant="body2" sx={{ fontWeight: 600, color: '#4FC3F7' }}>
-콘텐츠 생성 시간 대폭 단축<br />
+                        <Typography variant="body2" sx={{ fontWeight: 600, color: theme.palette.brand.primaryText }}>
+                          콘텐츠 생성 시간 대폭 단축<br />
                           온라인 영향력 향상
                         </Typography>
                       </Box>
@@ -1180,88 +1183,6 @@ After
               </InViewFade>
             </Grid>
           </Grid>
-
-          {/* Content Examples */}
-          <Box sx={{ mt: 6 }}>
-            <InViewFade>
-              <Typography variant="h5" sx={{
-                fontWeight: 700,
-                mb: 4,
-                textAlign: 'center',
-                color: 'rgba(255,255,255,0.95)'
-              }}>
-                원고 작성 품질 비교
-              </Typography>
-            </InViewFade>
-
-            <Grid container spacing={4}>
-              <Grid item xs={12} md={6}>
-                <InViewFade>
-                  <CardSoft>
-                    <CardContent sx={{ p: { xs: 3, md: 4 } }}>
-                      <Typography variant="h6" sx={{ fontWeight: 700, color: '#999', mb: 3 }}>
-                        Before: 직접 작성
-                      </Typography>
-                      <Box
-                        sx={{
-                          minHeight: 300,
-                          backgroundColor: 'rgba(255,255,255,0.02)',
-                          border: '2px dashed rgba(255,255,255,0.2)',
-                          borderRadius: 2,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          p: 3
-                        }}
-                      >
-                        <Typography variant="body2" sx={{
-                          color: 'rgba(255,255,255,0.5)',
-                          textAlign: 'center',
-                          fontStyle: 'italic'
-                        }}>
-                          스크린샷 추가 예정<br />
-                          (기존 방식의 원고 예시)
-                        </Typography>
-                      </Box>
-                    </CardContent>
-                  </CardSoft>
-                </InViewFade>
-              </Grid>
-
-              <Grid item xs={12} md={6}>
-                <InViewFade timeout={400}>
-                  <CardEmphasis>
-                    <CardContent sx={{ p: { xs: 3, md: 4 } }}>
-                      <Typography variant="h6" sx={{ fontWeight: 800, color: '#4FC3F7', mb: 3 }}>
-                        After: AI 생성 + 검토
-                      </Typography>
-                      <Box
-                        sx={{
-                          minHeight: 300,
-                          backgroundColor: 'rgba(79, 195, 247, 0.05)',
-                          border: '2px dashed rgba(79, 195, 247, 0.3)',
-                          borderRadius: 2,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          p: 3
-                        }}
-                      >
-                        <Typography variant="body2" sx={{
-                          color: 'rgba(79, 195, 247, 0.7)',
-                          textAlign: 'center',
-                          fontStyle: 'italic'
-                        }}>
-                          스크린샷 추가 예정<br />
-                          (AI 생성 + 검토 완료 원고 예시)
-                        </Typography>
-                      </Box>
-                    </CardContent>
-                  </CardEmphasis>
-                </InViewFade>
-              </Grid>
-            </Grid>
-          </Box>
 
           {/* Final Evidence CTA */}
           <Box sx={{ textAlign: 'center', mt: 6 }}>
@@ -1274,14 +1195,9 @@ After
                 더 많은 유권자와 소통하고, 정치적 영향력을 확대할 준비가 되셨나요?<br />
                 전자두뇌비서관과 함께 새로운 정치 커뮤니케이션을 시작해보세요.
               </Typography>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="center">
-                <CTAButton aria-label="Before & After 확인" onClick={handlePrimaryCTA}>
-                  Before & After
-                </CTAButton>
-                <OutlineButton aria-label="원고 샘플 확인" onClick={() => setOpenSample(true)}>
-                  원고 샘플 확인
-                </OutlineButton>
-              </Stack>
+              <CTAButton aria-label="원고 샘플 확인" onClick={() => setOpenSample(true)}>
+                원고 샘플 확인
+              </CTAButton>
             </InViewFade>
           </Box>
         </ContentContainer>
@@ -1330,17 +1246,17 @@ After
               {
                 title: '1회 = 1원고',
                 description: '한 번의 요청으로 하나의 완성된 원고를 생성합니다.',
-                color: '#003a87'
+                color: theme.palette.plan.local
               },
               {
                 title: '최대 3회 재생성',
                 description: '동일한 주제에 대해 최대 3번까지 다른 버전을 생성할 수 있습니다.',
-                color: '#55207d'
+                color: theme.palette.plan.region
               },
               {
                 title: '사실 검증 시스템',
                 description: 'AI가 잘못된 정보를 만들어내지 않도록 원칙적 제한을 적용합니다.',
-                color: '#006261'
+                color: theme.palette.plan.opinion
               }
             ].map((rule, index) => (
               <Box key={index} sx={{ height: '100%' }}>
@@ -1434,7 +1350,7 @@ After
                       mb: 1.5,
                       '& svg': {
                         fontSize: { xs: 28, md: 32 },
-                        color: '#00d4ff'
+                        color: theme.palette.brand.accent
                       }
                     }}>{it.icon}</Box>
                     <Typography
@@ -1475,7 +1391,7 @@ After
                         display: 'grid',
                         placeItems: 'center',
                         fontSize: 12,
-                        color: 'rgba(255,255,255,0.7)'
+                        color: theme.palette.text.secondary
                       }}>{i + 1}</Box>
                       <Typography sx={{ fontWeight: 700, fontSize: '0.9rem', mb: 0.5 }}>{step.label}</Typography>
                       <Typography sx={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>{step.desc}</Typography>
@@ -1504,12 +1420,12 @@ After
             <Box sx={{
               mb: 6,
               p: 4,
-              backgroundColor: 'rgba(0, 212, 255, 0.05)',
-              border: '1px solid rgba(0, 212, 255, 0.2)',
+              backgroundColor: theme.palette.brand.accentLight5,
+              border: `1px solid ${theme.palette.brand.accentLight20}`,
               borderRadius: 3,
               textAlign: 'center'
             }}>
-              <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, color: '#00d4ff' }}>
+              <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, color: theme.palette.brand.accent }}>
                 모든 플랜 공통 제공
               </Typography>
               <Typography sx={{ mb: 2 }}>
@@ -1530,25 +1446,11 @@ After
           }}>
             {[
               {
-                name: '로컬 블로거',
+                name: '스탠다드 플랜',
                 price: '월 55,000원',
-                count: '월 8회',
-                description: '기초의원 개인 활동',
-                color: '#003a87'
-              },
-              {
-                name: '리전 인플루언서',
-                price: '월 132,000원',
-                count: '월 20회',
-                description: '활발한 의정활동',
-                color: '#55207d'
-              },
-              {
-                name: '오피니언 리더',
-                price: '월 330,000원',
-                count: '월 60회',
-                description: '집중 홍보 기간',
-                color: '#006261'
+                count: '월 90회',
+                description: '모든 기능 포함',
+                color: theme.palette.plan.region
               }
             ].map((plan, index) => (
               <Box key={index}>
@@ -1591,7 +1493,7 @@ After
                       </Typography>
                       <Typography
                         sx={{
-                          color: 'rgba(255,255,255,0.7)',
+                          color: theme.palette.text.secondary,
                           mb: { xs: 2, md: 4 },
                           fontSize: { xs: '0.75rem', sm: '0.85rem', md: '1rem' }
                         }}
@@ -1621,8 +1523,8 @@ After
               sx={{
                 mt: 6,
                 p: 4,
-                backgroundColor: 'rgba(255, 193, 7, 0.1)',
-                border: '1px solid rgba(255, 193, 7, 0.3)',
+                backgroundColor: theme.palette.brand.warningLight10,
+                border: `1px solid ${theme.palette.brand.warningBorder30}`,
                 borderRadius: 3,
                 textAlign: 'center'
               }}
@@ -1632,7 +1534,7 @@ After
                 sx={{
                   fontWeight: 700,
                   mb: 2,
-                  color: '#f8c023'
+                  color: theme.palette.brand.gold
                 }}
               >
                 🏛️ 선거구 독점 정책
@@ -1715,13 +1617,14 @@ After
                   fontSize: '0.875rem',
                   borderTop: '1px solid rgba(255,255,255,0.1)',
                   pt: 3,
+                  color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
                 }}
               >
                 전자두뇌비서관
               </Typography>
               <Typography
                 sx={{
-                  color: 'rgba(255,255,255,0.8)',
+                  color: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.6)',
                   fontSize: '0.75rem',
                   lineHeight: 1.6,
                   whiteSpace: 'pre-line',

@@ -86,6 +86,30 @@ try {
   console.warn('[index] toss-payments handler warning:', e?.message);
 }
 
+// Add Naver Payments handlers
+try {
+  const naverPaymentsHandlers = require('./handlers/naver-payments');
+  Object.assign(exports, naverPaymentsHandlers);
+} catch (e) {
+  console.warn('[index] naver-payments handler warning:', e?.message);
+}
+
+// Add Party Verification handlers
+try {
+  const partyVerificationHandlers = require('./handlers/party-verification');
+  Object.assign(exports, partyVerificationHandlers);
+} catch (e) {
+  console.warn('[index] party-verification handler warning:', e?.message);
+}
+
+// Add Keyword Analysis handlers (v3.0)
+try {
+  const keywordAnalysisHandlers = require('./handlers/keyword-analysis');
+  Object.assign(exports, keywordAnalysisHandlers);
+} catch (e) {
+  console.warn('[index] keyword-analysis handler warning:', e?.message);
+}
+
 // Delete post (HTTP onRequest, Naver-only via __naverAuth)
 exports.deletePost = onRequest({ region: 'asia-northeast3', cors: true }, async (req, res) => {
   try {

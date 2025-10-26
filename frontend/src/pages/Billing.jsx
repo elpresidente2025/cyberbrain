@@ -46,82 +46,42 @@ import DashboardLayout from '../components/DashboardLayout';
 import PaymentDialog from '../components/PaymentDialog';
 import { useAuth } from '../hooks/useAuth';
 import { httpsCallable } from 'firebase/functions';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { functions, storage } from '../services/firebase';
+import { functions } from '../services/firebase';
 import { NotificationSnackbar, useNotification } from '../components/ui';
-import { spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
+import { colors, spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
 
 const Billing = () => {
   const { user, refreshUserProfile } = useAuth();
   const theme = useTheme();
   const { notification, showNotification, hideNotification } = useNotification();
-  const [currentPlan, setCurrentPlan] = useState(user?.plan || user?.subscription || '리전 인플루언서');
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState(null);
   const [selectedCertFile, setSelectedCertFile] = useState(null);
   const [selectedReceiptFile, setSelectedReceiptFile] = useState(null);
-  const [updatingPlan, setUpdatingPlan] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  // 사용자 정보가 변경될 때 currentPlan 동기화
-  useEffect(() => {
-    const actualPlan = user?.plan || user?.subscription;
-    console.log('🔍 Billing: 사용자 플랜 확인:', { user, actualPlan });
-    if (actualPlan) {
-      setCurrentPlan(actualPlan);
-    }
-  }, [user?.plan, user?.subscription]);
+  // 구독 상태 확인
+  const isSubscribed = user?.subscriptionStatus === 'active';
+  const planInfo = {
+    name: '스탠다드 플랜',
+    price: 55000,
+    monthlyLimit: 90,
+    color: colors.brand.primary,
+    features: [
+      '월 90회 원고 생성',
+      'SNS 원고 무료 생성',
+      '무제한 수정 및 재생성',
+      '더불어민주당 당원 전용'
+    ]
+  };
 
-  // 플랜 업데이트 함수
-  const callUpdateUserPlan = httpsCallable(functions, 'updateUserPlan');
-
-  // 더미 데이터
-  const plans = [
-    {
-      name: '로컬 블로거',
-      price: 55000, // 부가세 10% 포함
-      features: ['월 8회 원고 생성', '8회 모두 발행 시 익월 4회 추가 증정', '12회 모두 발행 시 익월 SNS 원고 무료 생성'],
-      color: '#003a87',
-      recommended: false
-    },
-    {
-      name: '리전 인플루언서',
-      price: 132000, // 부가세 10% 포함
-      features: ['월 20회 원고 생성', '20회 모두 발행 시 익월 10회 추가 증정', '30회 모두 발행 시 익월 SNS 원고 무료 생성'],
-      color: '#55207d',
-      recommended: true
-    },
-    {
-      name: '오피니언 리더',
-      price: 330000, // 부가세 10% 포함
-      features: ['월 60회 원고 생성+SNS 원고 무료 생성', '60회 모두 달성 시 익월 30회 추가 제공'],
-      color: '#006261',
-      recommended: false
-    }
-  ];
-
-  const paymentHistory = [
-    { date: '2025-01-15', plan: '리전 인플루언서', amount: 132000, status: '완료' },
-    { date: '2024-12-15', plan: '리전 인플루언서', amount: 132000, status: '완료' },
-    { date: '2024-11-15', plan: '로컬 블로거', amount: 55000, status: '완료' }
-  ];
-
-  const authHistory = [
-    { quarter: '2025년 1분기', status: '인증완료', date: '2025-01-05', method: 'OCR 자동인증' },
-    { quarter: '2024년 4분기', status: '인증완료', date: '2024-10-03', method: '수동 검토' },
-    { quarter: '2024년 3분기', status: '인증완료', date: '2024-07-02', method: 'OCR 자동인증' }
-  ];
-
-  const handlePlanChange = (plan) => {
-    // 결제 다이얼로그 열기
-    setSelectedPlan(plan);
+  // 결제 시작
+  const handleStartSubscription = () => {
     setPaymentDialogOpen(true);
   };
 
   const handlePaymentClose = () => {
     setPaymentDialogOpen(false);
-    setSelectedPlan(null);
   };
 
   const handleCertFileUpload = (event) => {
@@ -147,6 +107,20 @@ const Billing = () => {
     setAuthDialogOpen(true);
   };
 
+  // 파일을 base64로 변환하는 헬퍼 함수
+  const fileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        // "data:image/jpeg;base64,..." 형식에서 base64 부분만 추출
+        const base64 = reader.result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = error => reject(error);
+    });
+  };
+
   const handleAuthSubmit = async () => {
     if (!selectedCertFile && !selectedReceiptFile) {
       showNotification('당적증명서 또는 당비납부 영수증 중 하나 이상 업로드해주세요.', 'warning');
@@ -161,15 +135,14 @@ const Billing = () => {
       // 1. 당적증명서 처리
       if (selectedCertFile) {
         const fileExtension = selectedCertFile.name.split('.').pop();
-        const fileName = `party-certificates/${user.uid}/${Date.now()}.${fileExtension}`;
-        const storageRef = ref(storage, fileName);
-
-        await uploadBytes(storageRef, selectedCertFile);
-        const imageUrl = await getDownloadURL(storageRef);
+        const fileName = `${Date.now()}.${fileExtension}`;
+        const base64Data = await fileToBase64(selectedCertFile);
 
         const verifyPartyCertificate = httpsCallable(functions, 'verifyPartyCertificate');
         const result = await verifyPartyCertificate({
-          imageUrl: imageUrl,
+          userId: user.uid,
+          base64Data: base64Data,
+          fileName: fileName,
           imageFormat: fileExtension
         });
 
@@ -179,15 +152,14 @@ const Billing = () => {
       // 2. 당비납부 영수증 처리
       if (selectedReceiptFile) {
         const fileExtension = selectedReceiptFile.name.split('.').pop();
-        const fileName = `payment-receipts/${user.uid}/${Date.now()}.${fileExtension}`;
-        const storageRef = ref(storage, fileName);
-
-        await uploadBytes(storageRef, selectedReceiptFile);
-        const imageUrl = await getDownloadURL(storageRef);
+        const fileName = `${Date.now()}.${fileExtension}`;
+        const base64Data = await fileToBase64(selectedReceiptFile);
 
         const verifyPaymentReceipt = httpsCallable(functions, 'verifyPaymentReceipt');
         const result = await verifyPaymentReceipt({
-          imageUrl: imageUrl,
+          userId: user.uid,
+          base64Data: base64Data,
+          fileName: fileName,
           imageFormat: fileExtension
         });
 
@@ -209,7 +181,7 @@ const Billing = () => {
           await refreshUserProfile();
         }
       } else if (reviewCount > 0) {
-        showNotification('문서가 수동 검토 대기 중입니다. 1-2일 내 처리 예정입니다.', 'info');
+        showNotification('문서가 수동 검토 대기 중입니다.', 'info');
       } else {
         showNotification('인증 처리 중 문제가 발생했습니다.', 'error');
       }
@@ -235,419 +207,313 @@ const Billing = () => {
             gap: `${spacing.xs}px`
           }}>
             <CreditCard sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
-            인증 및 결제
+            {isSubscribed ? '구독 관리' : '구독 시작하기'}
           </Typography>
-          <Typography variant="body1" color="text.secondary">
-            요금제 변경과 당원 인증을 관리하세요
+          <Typography variant="body1" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
+            {isSubscribed ? '구독 정보와 당원 인증을 관리하세요' : '전자두뇌비서관으로 효율적인 의정활동을 시작하세요'}
           </Typography>
         </Box>
 
-        {/* 반응형 레이아웃 */}
-        <Box sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: `${spacing.lg}px`
-        }}>
-          {/* 상단: 현재 플랜과 인증 상태 */}
-          <Grid container spacing={3}>
-            <Grid item xs={12} lg={4}>
-              <Paper elevation={0} sx={{
-                p: `${spacing.lg}px`,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column'
-              }}>
-              <Typography variant="h6" sx={{ mb: `${spacing.md}px`, display: 'flex', alignItems: 'center', fontSize: '1rem' }}>
-                <CreditCard sx={{ mr: `${spacing.xs}px` }} />
-                현재 플랜 및 인증 상태
+        {/* 구독 상태별 UI */}
+        {!isSubscribed ? (
+          // 미구독자: Hero CTA
+          <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: `${spacing.xl}px`
+          }}>
+            {/* Hero CTA */}
+            <Paper elevation={0} sx={{
+              p: `${spacing.xxl || spacing.xl * 1.5}px`,
+              background: `linear-gradient(135deg, ${colors.brand.primary} 0%, ${colors.brand.primaryHover} 100%)`,
+              color: 'white',
+              textAlign: 'center',
+              borderRadius: 3
+            }}>
+              <Typography variant="h3" sx={{ fontWeight: 'bold', mb: `${spacing.md}px`, color: 'white' }}>
+                전자두뇌비서관 시작하기
               </Typography>
-              
-              <Card sx={{
-                bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : '#f5f5f5',
-                mb: `${spacing.lg}px`,
-                p: `${spacing.md}px`
-              }}>
-                <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#55207d', mb: `${spacing.xs}px` }}>
-                  {currentPlan}
-                </Typography>
-                <Typography variant="h6" sx={{ mb: `${spacing.xs}px` }}>
-                  {plans.find(p => p.name === currentPlan)?.price.toLocaleString()}원/월 (VAT 포함)
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  다음 결제일: {(() => {
-                    const now = new Date();
-                    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-                    return `${nextMonth.getFullYear()}년 ${String(nextMonth.getMonth() + 1).padStart(2, '0')}월 1일`;
-                  })()}
-                </Typography>
-              </Card>
-
-              <Box sx={{ mb: `${spacing.md}px` }}>
-                <Typography variant="subtitle2" sx={{ mb: 1.5 }}>
-                  이번 달 사용량
-                </Typography>
-                <Box sx={{ mb: `${spacing.xs}px` }}>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.xs}px` }}>
-                    원고 생성: 15/20회
-                  </Typography>
-                  <LinearProgress 
-                    variant="determinate" 
-                    value={75} 
-                    sx={{ mt: 0.5, height: 6, borderRadius: 3 }}
-                  />
-                </Box>
-              </Box>
-
-              <Box sx={{ mt: `${spacing.xs}px`, pt: `${spacing.xs}px`, borderTop: '1px solid #e0e0e0', flex: 1 }}>
-                <Typography variant="subtitle2" sx={{ mb: `${spacing.xs}px`, display: 'flex', alignItems: 'center' }}>
-                  <VerifiedUser sx={{ mr: `${spacing.xs}px`, color: '#4caf50', fontSize: 18 }} />
-                  당원 인증 상태
-                </Typography>
-                <Alert severity="success" size="small" sx={{ mb: `${spacing.md}px` }}>
-                  <Typography variant="body2">
-                    2025년 1분기 당원 인증 완료
-                  </Typography>
-                </Alert>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={handleAuthClick}
-                  startIcon={<Upload />}
-                  sx={{ fontSize: '0.75rem' }}
-                >
-                  당원 인증
-                </Button>
-              </Box>
+              <Typography variant="h4" sx={{ mb: `${spacing.xs}px`, fontWeight: 'bold', color: 'white' }}>
+                {planInfo.price.toLocaleString()}원/월
+              </Typography>
+              <Typography variant="body1" sx={{ mb: `${spacing.xl}px`, opacity: 0.9, color: 'white' }}>
+                VAT 포함 · 월 {planInfo.monthlyLimit}회 원고 생성
+              </Typography>
+              <Button
+                variant="contained"
+                size="large"
+                onClick={handleStartSubscription}
+                sx={{
+                  bgcolor: 'white',
+                  color: colors.brand.primary,
+                  fontSize: '1.2rem',
+                  fontWeight: 'bold',
+                  py: 2,
+                  px: 6,
+                  '&:hover': {
+                    bgcolor: '#f0f0f0'
+                  }
+                }}
+              >
+                💳 지금 시작하기
+              </Button>
             </Paper>
-            </Grid>
 
-            <Grid item xs={12} lg={4}>
-              <Paper elevation={0} sx={{
-                p: `${spacing.lg}px`,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column'
-              }}>
-                <Typography variant="h6" sx={{ mb: `${spacing.md}px`, display: 'flex', alignItems: 'center', fontSize: '1rem' }}>
-                  <Payment sx={{ mr: `${spacing.xs}px` }} />
-                  결제 내역
-                </Typography>
-                <List sx={{ flex: 1 }}>
-                  {paymentHistory.map((payment, index) => (
-                    <ListItem key={index} sx={{ px: 0 }}>
-                      <ListItemIcon>
-                        <CheckCircle color="success" />
-                      </ListItemIcon>
+            {/* 포함 혜택 */}
+            <Paper elevation={0} sx={{ p: `${spacing.lg}px` }}>
+              <Typography variant="h6" sx={{ mb: `${spacing.lg}px`, fontWeight: 'bold' }}>
+                포함된 혜택
+              </Typography>
+              <Grid container spacing={3}>
+                <Grid item xs={12} md={4}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <CheckCircle sx={{ fontSize: 48, color: colors.brand.primary, mb: 2 }} />
+                    <Typography variant="h6" sx={{ mb: 1, fontWeight: 'bold' }}>
+                      월 90회 원고 생성
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      지역구 주민과 소통할 양질의 콘텐츠를 충분히 생성하세요
+                    </Typography>
+                  </Box>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <CheckCircle sx={{ fontSize: 48, color: colors.brand.primary, mb: 2 }} />
+                    <Typography variant="h6" sx={{ mb: 1, fontWeight: 'bold' }}>
+                      SNS 원고 무료 생성
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      블로그 원고를 Instagram, Facebook 등 SNS용으로 자동 변환
+                    </Typography>
+                  </Box>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <CheckCircle sx={{ fontSize: 48, color: colors.brand.primary, mb: 2 }} />
+                    <Typography variant="h6" sx={{ mb: 1, fontWeight: 'bold' }}>
+                      무제한 수정 및 재생성
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      만족할 때까지 원고를 수정하고 재생성할 수 있습니다
+                    </Typography>
+                  </Box>
+                </Grid>
+              </Grid>
+            </Paper>
+
+            {/* 당원 인증 및 환불 정책 */}
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={6}>
+                <Paper elevation={0} sx={{ p: `${spacing.lg}px` }}>
+                  <Typography variant="h6" sx={{ mb: `${spacing.md}px`, display: 'flex', alignItems: 'center' }}>
+                    <VerifiedUser sx={{ mr: `${spacing.xs}px`, color: colors.brand.primary }} />
+                    당원 인증
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.md}px` }}>
+                    더불어민주당 당원 인증을 완료하시면 서비스를 이용하실 수 있습니다.
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    onClick={handleAuthClick}
+                    startIcon={<Upload />}
+                    fullWidth
+                  >
+                    당원 인증하기
+                  </Button>
+                </Paper>
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <Paper elevation={0} sx={{ p: `${spacing.lg}px` }}>
+                  <Typography variant="h6" sx={{ mb: `${spacing.md}px`, display: 'flex', alignItems: 'center' }}>
+                    <Warning sx={{ mr: `${spacing.xs}px`, color: '#ff9800' }} />
+                    환불 정책
+                  </Typography>
+                  <List dense>
+                    <ListItem sx={{ px: 0 }}>
                       <ListItemText
-                        primary={`${payment.plan} - ${payment.amount.toLocaleString()}원`}
-                        secondary={`${payment.date} (${payment.status})`}
+                        primary="구매일로부터 7일 이내: 전액 환불 가능"
+                        primaryTypographyProps={{ variant: 'body2' }}
                       />
                     </ListItem>
-                  ))}
-                </List>
-              </Paper>
+                    <ListItem sx={{ px: 0 }}>
+                      <ListItemText
+                        primary="원고 생성 이용 후: 미사용 횟수만큼 일할 계산하여 환불"
+                        primaryTypographyProps={{ variant: 'body2' }}
+                      />
+                    </ListItem>
+                    <ListItem sx={{ px: 0 }}>
+                      <ListItemText
+                        primary="환불 요청 시 7영업일 이내 처리 완료"
+                        primaryTypographyProps={{ variant: 'body2' }}
+                      />
+                    </ListItem>
+                  </List>
+                </Paper>
+              </Grid>
             </Grid>
-
-            <Grid item xs={12} lg={4}>
-              <Paper elevation={0} sx={{
-                p: `${spacing.lg}px`,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column'
-              }}>
-                <Typography variant="h6" sx={{ mb: `${spacing.md}px`, color: theme.palette.ui?.header || '#152484', fontSize: '1rem' }}>
-                  서비스 제공 방식 및 환불 정책
-                </Typography>
-                
-                <Alert severity="info" sx={{ flex: 1 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 'bold', mb: `${spacing.xs}px` }}>
-                    📅 서비스 제공 방식
-                  </Typography>
-                  <Typography variant="body2" sx={{ mb: `${spacing.md}px` }}>
-                    • 본 서비스는 월 단위 계약으로 제공되며, 매월 1일 자동 갱신됩니다<br/>
-                    • 원고 생성 횟수는 결제 완료 즉시 제공되어 바로 이용 가능합니다<br/>
-                    • 월간 서비스로 언제든 해지 가능합니다
-                  </Typography>
-
-                  <Typography variant="body2" sx={{ fontWeight: 'bold', mb: `${spacing.xs}px` }}>
-                    💰 환불 정책
-                  </Typography>
-                  <Typography variant="body2">
-                    • 구매일로부터 7일 이내: 전액 환불 가능<br/>
-                    • 원고 생성 이용 후: 미사용 횟수만큼 일할 계산하여 환불<br/>
-                    • 환불 요청 시 7영업일 이내 처리 완료
-                  </Typography>
-                </Alert>
-              </Paper>
-            </Grid>
-          </Grid>
-
-          {/* 중단: 플랜 선택 */}
-          <Paper elevation={0} sx={{
-            p: `${spacing.lg}px`
+          </Box>
+        ) : (
+          // 구독 중인 사용자
+          <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: `${spacing.lg}px`
           }}>
-            <Typography variant="h6" sx={{ mb: `${spacing.lg}px`, fontSize: '1.25rem', fontWeight: 'bold' }}>
-              플랜 선택
-            </Typography>
-            <Box sx={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: `${spacing.xs}px`
-            }}>
-              {plans.map((plan, index) => (
-                <Box key={index}>
-                    <Card sx={{
-                      height: '100%',
-                      position: 'relative',
-                      border: currentPlan === plan.name ? `2px solid ${plan.color}` : '1px solid #e0e0e0',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      minWidth: 0,
-                      width: '100%'
-                    }}>
-                      <Box sx={{
-                        bgcolor: plan.color,
-                        p: { xs: 1, sm: 1.5, md: 2 },
-                        borderBottom: '1px solid #e0e0e0'
-                      }}>
-                        <Typography variant="h6" sx={{
-                          fontWeight: 'bold',
-                          color: 'black !important',
-                          textShadow: '1px 1px 0px white, -1px 1px 0px white, 1px -1px 0px white, -1px -1px 0px white',
-                          fontSize: { xs: '0.875rem', sm: '1rem', md: '1.25rem' }
-                        }}>
-                          {plan.name}
-                        </Typography>
-                      </Box>
-                      <CardContent sx={{ flex: 1, p: { xs: 1, sm: 1.5, md: 2 } }}>
-                        <Typography variant="h4" sx={{
-                          fontWeight: 'bold',
-                          mb: `${spacing.xs}px`,
-                          color: plan.color,
-                          fontSize: { xs: '1.25rem', sm: '1.5rem', md: '2rem' }
-                        }}>
-                          {plan.price.toLocaleString()}
-                          <Typography component="span" variant="body2" sx={{
-                            fontSize: { xs: '0.6rem', sm: '0.75rem', md: '0.875rem' }
-                          }}>
-                            원/월 (VAT 포함)
-                          </Typography>
-                        </Typography>
-                        <List dense>
-                          {plan.features.map((feature, idx) => (
-                            <ListItem key={idx} sx={{ py: 0.25, px: 0 }}>
-                              <ListItemIcon sx={{ minWidth: { xs: 16, sm: 18, md: 20 } }}>
-                                <CheckCircle sx={{
-                                  fontSize: { xs: 12, sm: 14, md: 16 },
-                                  color: plan.color
-                                }} />
-                              </ListItemIcon>
-                              <ListItemText
-                                primary={feature}
-                                primaryTypographyProps={{
-                                  variant: 'body2',
-                                  sx: {
-                                    fontSize: { xs: '0.6rem', sm: '0.75rem', md: '0.875rem' },
-                                    lineHeight: { xs: 1.2, sm: 1.3, md: 1.4 }
-                                  }
-                                }}
-                              />
-                            </ListItem>
-                          ))}
-                        </List>
-                      </CardContent>
-                      <CardActions sx={{ mt: 'auto', p: { xs: 1, sm: 1.5, md: 2 } }}>
-                        <Button
-                          variant="contained"
-                          fullWidth
-                          disabled={currentPlan === plan.name}
-                          onClick={() => handlePlanChange(plan)}
-                          sx={{
-                            bgcolor: plan.color,
-                            fontSize: { xs: '0.6rem', sm: '0.75rem', md: '0.875rem' },
-                            py: { xs: 0.5, sm: 1, md: 1.5 },
-                            '&:hover': {
-                              bgcolor: plan.color,
-                              filter: 'brightness(0.9)'
-                            },
-                            '&:disabled': {
-                              bgcolor: '#e0e0e0',
-                              color: '#9e9e9e'
-                            }
-                          }}
-                        >
-                          {currentPlan === plan.name ? '현재 플랜' : '결제하기'}
-                        </Button>
-                      </CardActions>
-                    </Card>
+            {/* 구독 정보 카드 3단 */}
+            <Grid container spacing={3}>
+              {/* 구독 정보 */}
+              <Grid item xs={12} md={4}>
+                <Paper elevation={0} sx={{ p: `${spacing.lg}px`, height: '100%' }}>
+                  <Typography variant="h6" sx={{ mb: `${spacing.md}px`, display: 'flex', alignItems: 'center' }}>
+                    <CreditCard sx={{ mr: `${spacing.xs}px`, color: colors.brand.primary }} />
+                    구독 정보
+                  </Typography>
+                  <Box sx={{ mb: `${spacing.md}px` }}>
+                    <Typography variant="h5" sx={{ fontWeight: 'bold', color: colors.brand.primary, mb: 1 }}>
+                      {planInfo.name}
+                    </Typography>
+                    <Typography variant="h6" sx={{ mb: 1 }}>
+                      {planInfo.price.toLocaleString()}원/월
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      VAT 포함
+                    </Typography>
                   </Box>
-                ))}
-            </Box>
-          </Paper>
+                  <Divider sx={{ my: `${spacing.md}px` }} />
+                  <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                    다음 결제일
+                  </Typography>
+                  <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+                    {(() => {
+                      const nextBilling = user?.nextBillingDate?.toDate?.() || new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1);
+                      return nextBilling.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+                    })()}
+                  </Typography>
+                </Paper>
+              </Grid>
 
-          {/* 하단: 애드온 서비스 */}
-          <Paper elevation={0} sx={{
-            p: `${spacing.lg}px`
-          }}>
-            <Typography variant="h6" sx={{ mb: `${spacing.lg}px`, fontSize: '1.25rem', fontWeight: 'bold' }}>
-              애드온 서비스
-            </Typography>
-            <Card sx={{ border: '1px solid #e0e0e0' }}>
-              <CardContent sx={{ p: `${spacing.lg}px` }}>
-                <Typography variant="body1" color="text.secondary" sx={{ mb: `${spacing.lg}px` }}>
-                  기본 요금제와 함께 사용할 수 있는 부가 서비스입니다.
-                </Typography>
-                
-                <Grid container spacing={2}>
-                  <Grid item xs={12} sm={4}>
+              {/* 이번 달 사용량 */}
+              <Grid item xs={12} md={4}>
+                <Paper elevation={0} sx={{ p: `${spacing.lg}px`, height: '100%' }}>
+                  <Typography variant="h6" sx={{ mb: `${spacing.md}px`, display: 'flex', alignItems: 'center' }}>
+                    <Schedule sx={{ mr: `${spacing.xs}px`, color: colors.brand.primary }} />
+                    이번 달 사용량
+                  </Typography>
+                  <Box sx={{ mb: `${spacing.md}px` }}>
+                    <Typography variant="h3" sx={{ fontWeight: 'bold', color: colors.brand.primary, mb: 1 }}>
+                      45 / {planInfo.monthlyLimit}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      원고 생성 횟수
+                    </Typography>
+                  </Box>
+                  <LinearProgress
+                    variant="determinate"
+                    value={50}
+                    sx={{
+                      height: 10,
+                      borderRadius: 5,
+                      bgcolor: colors.brand.primaryLight10,
+                      '& .MuiLinearProgress-bar': {
+                        bgcolor: colors.brand.primary
+                      }
+                    }}
+                  />
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                    50% 사용
+                  </Typography>
+                </Paper>
+              </Grid>
+
+              {/* 당원 인증 상태 */}
+              <Grid item xs={12} md={4}>
+                <Paper elevation={0} sx={{ p: `${spacing.lg}px`, height: '100%' }}>
+                  <Typography variant="h6" sx={{ mb: `${spacing.md}px`, display: 'flex', alignItems: 'center' }}>
+                    <VerifiedUser sx={{ mr: `${spacing.xs}px`, color: user?.verificationStatus === 'verified' ? '#4caf50' : '#ff9800' }} />
+                    당원 인증
+                  </Typography>
+                  {user?.verificationStatus === 'verified' && user?.lastVerification ? (
+                    <>
+                      <Alert severity="success" sx={{ mb: `${spacing.md}px` }}>
+                        <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                          인증 완료
+                        </Typography>
+                        <Typography variant="caption">
+                          {user.lastVerification.quarter}
+                        </Typography>
+                      </Alert>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={handleAuthClick}
+                        startIcon={<Upload />}
+                        fullWidth
+                      >
+                        재인증
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Alert severity="warning" sx={{ mb: `${spacing.md}px` }}>
+                        <Typography variant="body2">
+                          당원 인증이 필요합니다
+                        </Typography>
+                      </Alert>
                       <Button
                         variant="contained"
+                        onClick={handleAuthClick}
+                        startIcon={<Upload />}
                         fullWidth
-                        size="large"
-                        onClick={() => {
-                          if (currentPlan === '오피니언 리더') {
-                            showNotification('오피니언 리더 플랜은 이미 SNS 원고 무료 생성이 포함되어 있습니다.', 'info');
-                          } else {
-                            showNotification('SNS 원고 추가 생성 서비스는 준비 중입니다. 곧 출시 예정입니다!', 'info');
-                          }
-                        }}
-                        sx={{
-                          bgcolor: '#e89f2f',
-                          color: 'white',
-                          py: `${spacing.lg}px`,
-                          flexDirection: 'column',
-                          gap: `${spacing.xs}px`,
-                          '&:hover': {
-                            bgcolor: '#d18a26'
-                          }
-                        }}
+                        sx={{ bgcolor: '#ff9800', '&:hover': { bgcolor: '#f57c00' } }}
                       >
-                        <Typography variant="h6" sx={{ fontWeight: 'bold', textAlign: 'center' }}>
-                          SNS 원고<br />추가 생성
-                        </Typography>
-                        <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                          {currentPlan === '오피니언 리더' ? '이미 포함됨' : '22,000원/월'}
-                        </Typography>
+                        당원 인증하기
                       </Button>
-                    </Grid>
+                    </>
+                  )}
+                </Paper>
+              </Grid>
+            </Grid>
 
-                    <Grid item xs={12} sm={4}>
-                      <Button
-                        variant="outlined"
-                        fullWidth
-                        size="large"
-                        onClick={() => showNotification('워드프레스 연동 서비스는 준비 중입니다. 곧 출시 예정입니다!', 'info')}
-                        sx={{
-                          py: `${spacing.lg}px`,
-                          flexDirection: 'column',
-                          gap: `${spacing.xs}px`,
-                          borderColor: '#6c757d',
-                          color: '#6c757d',
-                          opacity: 0.8,
-                          '&:hover': { opacity: 1, borderColor: '#495057' }
-                        }}
-                      >
-                        <Typography variant="h6" sx={{ fontWeight: 'bold', textAlign: 'center' }}>
-                          워드프레스<br />연동
-                        </Typography>
-                        <Typography variant="body2">준비중입니다</Typography>
-                      </Button>
-                    </Grid>
+            {/* 결제 내역 */}
+            <Paper elevation={0} sx={{ p: `${spacing.lg}px` }}>
+              <Typography variant="h6" sx={{ mb: `${spacing.md}px`, display: 'flex', alignItems: 'center' }}>
+                <Payment sx={{ mr: `${spacing.xs}px` }} />
+                결제 내역
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.md}px` }}>
+                최근 결제 내역을 확인할 수 있습니다.
+              </Typography>
+              {/* TODO: 실제 결제 내역 불러오기 */}
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+                결제 내역이 없습니다
+              </Typography>
+            </Paper>
 
-                    <Grid item xs={12} sm={4}>
-                      <Button
-                        variant="outlined"
-                        fullWidth
-                        size="large"
-                        onClick={() => showNotification('영상 자료 생성 서비스는 준비 중입니다. 곧 출시 예정입니다!', 'info')}
-                        sx={{
-                          py: `${spacing.lg}px`,
-                          flexDirection: 'column',
-                          gap: `${spacing.xs}px`,
-                          borderColor: '#6c757d',
-                          color: '#6c757d',
-                          opacity: 0.8,
-                          '&:hover': { opacity: 1, borderColor: '#495057' }
-                        }}
-                      >
-                        <Typography variant="h6" sx={{ fontWeight: 'bold', textAlign: 'center' }}>
-                          영상 자료<br />생성
-                        </Typography>
-                        <Typography variant="body2">준비중입니다</Typography>
-                      </Button>
-                    </Grid>
-                  </Grid>
-
-                  <Box sx={{
-                    mt: `${spacing.xl}px`,
-                    p: `${spacing.lg}px`,
-                    bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'grey.50',
-                    borderRadius: 2
-                  }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: `${spacing.md}px`, color: '#e89f2f' }}>
-                      💡 SNS 원고 추가 생성 서비스
-                    </Typography>
-                    <Grid container spacing={2}>
-                      <Grid item xs={12} md={6}>
-                        <List dense>
-                          <ListItem sx={{ py: 0.5, px: 0 }}>
-                            <ListItemIcon sx={{ minWidth: 20 }}>
-                              <CheckCircle sx={{ fontSize: 16, color: '#e89f2f' }} />
-                            </ListItemIcon>
-                            <ListItemText 
-                              primary="SNS 변환 기능 활성화" 
-                              primaryTypographyProps={{ variant: 'body2' }}
-                            />
-                          </ListItem>
-                          <ListItem sx={{ py: 0.5, px: 0 }}>
-                            <ListItemIcon sx={{ minWidth: 20 }}>
-                              <CheckCircle sx={{ fontSize: 16, color: '#e89f2f' }} />
-                            </ListItemIcon>
-                            <ListItemText 
-                              primary="사용자 플랜에 따른 SNS 원고 변환" 
-                              primaryTypographyProps={{ variant: 'body2' }}
-                            />
-                          </ListItem>
-                        </List>
-                      </Grid>
-                      <Grid item xs={12} md={6}>
-                        <List dense>
-                          <ListItem sx={{ py: 0.5, px: 0 }}>
-                            <ListItemIcon sx={{ minWidth: 20 }}>
-                              <CheckCircle sx={{ fontSize: 16, color: '#e89f2f' }} />
-                            </ListItemIcon>
-                            <ListItemText 
-                              primary="Instagram, Facebook, X, Threads 지원" 
-                              primaryTypographyProps={{ variant: 'body2' }}
-                            />
-                          </ListItem>
-                          <ListItem sx={{ py: 0.5, px: 0 }}>
-                            <ListItemIcon sx={{ minWidth: 20 }}>
-                              <CheckCircle sx={{ fontSize: 16, color: '#e89f2f' }} />
-                            </ListItemIcon>
-                            <ListItemText 
-                              primary="자동 해시태그 생성" 
-                              primaryTypographyProps={{ variant: 'body2' }}
-                            />
-                          </ListItem>
-                        </List>
-                      </Grid>
-                    </Grid>
-                  </Box>
-              </CardContent>
-            </Card>
-          </Paper>
-        </Box>
+            {/* 구독 관리 버튼 */}
+            <Box sx={{ display: 'flex', gap: `${spacing.md}px`, justifyContent: 'center' }}>
+              <Button
+                variant="outlined"
+                color="error"
+                onClick={() => showNotification('구독 해지 기능은 고객센터로 문의해주세요.', 'info')}
+              >
+                구독 해지
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={() => showNotification('결제수단 변경 기능은 준비 중입니다.', 'info')}
+              >
+                결제수단 변경
+              </Button>
+            </Box>
+          </Box>
+        )}
 
 
         {/* 당원 인증 다이얼로그 */}
         <Dialog open={authDialogOpen} onClose={() => setAuthDialogOpen(false)} maxWidth="sm" fullWidth>
           <DialogTitle>당원 인증서 제출</DialogTitle>
           <DialogContent>
-            <Alert severity="info" sx={{ mb: `${spacing.md}px` }}>
-              당적증명서와 당비납부 영수증을 업로드하시면 OCR 자동 인증 또는 수동 검토를 통해 처리됩니다.
-            </Alert>
-
             <Box sx={{ mt: `${spacing.md}px` }}>
               {/* 당적증명서 업로드 */}
               <Typography variant="subtitle2" sx={{ mb: `${spacing.xs}px`, fontWeight: 'bold' }}>
@@ -704,9 +570,7 @@ const Billing = () => {
 
             <Typography variant="caption" color="text.secondary" sx={{ mt: `${spacing.md}px`, display: 'block' }}>
               * 지원 파일 형식: PDF, JPG, PNG<br />
-              * 두 문서 중 하나 이상 업로드해주세요<br />
-              * 개인정보는 인증 완료 후 즉시 삭제됩니다<br />
-              * 인증 처리에는 1-2일이 소요될 수 있습니다
+              * 개인정보는 인증 완료 후 즉시 삭제됩니다
             </Typography>
           </DialogContent>
           <DialogActions>
@@ -717,11 +581,11 @@ const Billing = () => {
           </DialogActions>
         </Dialog>
 
-        {/* 토스페이먼츠 결제 다이얼로그 */}
+        {/* 네이버페이 결제 다이얼로그 */}
         <PaymentDialog
           open={paymentDialogOpen}
           onClose={handlePaymentClose}
-          selectedPlan={selectedPlan}
+          selectedPlan={planInfo}
         />
 
         {/* 알림 스낵바 */}

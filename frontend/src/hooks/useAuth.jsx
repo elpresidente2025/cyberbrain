@@ -83,8 +83,56 @@ export const AuthProvider = ({ children }) => {
     console.log('🔍 useAuth: 네이버 로그아웃 완료');
   };
 
+  const refreshUserProfile = async () => {
+    try {
+      const currentUser = checkNaverUser();
+      if (!currentUser || !currentUser.uid) {
+        console.warn('🔍 refreshUserProfile: 사용자 정보 없음');
+        return;
+      }
+
+      console.log('🔍 refreshUserProfile: Cloud Function으로 최신 프로필 가져오기 시작');
+
+      // Cloud Function으로 최신 사용자 프로필 가져오기
+      const { functions } = await import('../services/firebase');
+      const { httpsCallable } = await import('firebase/functions');
+
+      const getUserProfile = httpsCallable(functions, 'getUserProfile');
+      const result = await getUserProfile({
+        __naverAuth: {
+          uid: currentUser.uid,
+          provider: 'naver'
+        }
+      });
+
+      if (result.data?.profile) {
+        const firestoreData = result.data.profile;
+        console.log('🔍 refreshUserProfile: Cloud Function 데이터:', {
+          verificationStatus: firestoreData.verificationStatus,
+          lastVerification: firestoreData.lastVerification
+        });
+
+        // localStorage의 사용자 정보 업데이트
+        const updatedUser = {
+          ...currentUser,
+          ...firestoreData,
+          uid: currentUser.uid // uid는 항상 유지
+        };
+
+        localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+        setUser(updatedUser);
+
+        console.log('🔍 refreshUserProfile: 프로필 업데이트 완료');
+      } else {
+        console.warn('🔍 refreshUserProfile: 프로필 데이터 없음');
+      }
+    } catch (error) {
+      console.error('🔍 refreshUserProfile 에러:', error);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, error, logout }}>
+    <AuthContext.Provider value={{ user, loading, error, logout, refreshUserProfile }}>
       {children}
     </AuthContext.Provider>
   );

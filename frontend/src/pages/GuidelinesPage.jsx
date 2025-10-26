@@ -34,6 +34,7 @@ import {
   Person
 } from '@mui/icons-material';
 import DashboardLayout from '../components/DashboardLayout';
+import { colors } from '../theme/tokens';
 import GenerateGuide from '../components/guides/GenerateGuide';
 import DashboardGuide from '../components/guides/DashboardGuide';
 import ManagementGuide from '../components/guides/ManagementGuide';
@@ -54,19 +55,19 @@ const GuidelinesPage = () => {
     {
       id: 'generate',
       title: '원고 생성하기',
-      icon: <Edit sx={{ color: '#003A87' }} />,
+      icon: <Edit sx={{ color: colors.brand.primary }} />,
       component: <GenerateGuide />
     },
     {
       id: 'dashboard',
       title: '대시보드 활용',
-      icon: <Dashboard sx={{ color: '#006261' }} />,
+      icon: <Dashboard sx={{ color: colors.brand.primary }} />,
       component: <DashboardGuide />
     },
     {
       id: 'management',
       title: '원고 관리',
-      icon: <ListIcon sx={{ color: '#55207D' }} />,
+      icon: <ListIcon sx={{ color: colors.brand.primary }} />,
       component: <ManagementGuide />
     },
     {
@@ -109,7 +110,7 @@ const GuidelinesPage = () => {
           }}>
             전자두뇌비서관 사용 가이드
           </Typography>
-          <Typography variant="body1" color="text.secondary">
+          <Typography variant="body1" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
             AI로 정치 콘텐츠를 효과적으로 생성하고 관리하는 방법을 안내합니다
           </Typography>
         </Box>
@@ -128,11 +129,11 @@ const GuidelinesPage = () => {
                 </InputAdornment>
               ),
             }}
-            sx={{ 
+            sx={{
               '& .MuiOutlinedInput-root': {
                 '& fieldset': { borderColor: '#ddd' },
-                '&:hover fieldset': { borderColor: '#003A87' },
-                '&.Mui-focused fieldset': { borderColor: '#003A87' }
+                '&:hover fieldset': { borderColor: colors.brand.primary },
+                '&.Mui-focused fieldset': { borderColor: colors.brand.primary }
               }
             }}
           />

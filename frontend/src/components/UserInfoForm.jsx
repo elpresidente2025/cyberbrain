@@ -26,9 +26,9 @@ function getLocalList(metro) {
 
 function getElectoralList(metro, local, position) {
   if (!metro || !local || !DIST_DATA[metro]?.[local] || !position) return [];
-  
+
   const districtData = DIST_DATA[metro][local];
-  
+
   if (position === '국회의원') {
     return districtData['국회의원'] || [];
   } else if (position === '광역의원') {
@@ -36,8 +36,38 @@ function getElectoralList(metro, local, position) {
   } else if (position === '기초의원') {
     return districtData['기초의원'] || [];
   }
-  
+
   return [];
+}
+
+/**
+ * 자치단체장 호칭 자동 생성
+ * @param {string} position - 직책
+ * @param {string} regionMetro - 광역자치단체
+ * @param {string} regionLocal - 기초자치단체
+ * @returns {string} 호칭 (예: 서울특별시장, 부산광역시장, 경기도지사, 성남시장, 강남구청장, 양평군수)
+ */
+function getAutomaticTitle(position, regionMetro, regionLocal) {
+  if (position === '광역자치단체장' && regionMetro) {
+    const lastChar = regionMetro.slice(-1);
+    if (lastChar === '시') {
+      return `${regionMetro}장`;
+    } else if (lastChar === '도') {
+      return `${regionMetro}지사`;
+    }
+    return regionMetro; // 기타 경우
+  } else if (position === '기초자치단체장' && regionLocal) {
+    const lastChar = regionLocal.slice(-1);
+    if (lastChar === '시') {
+      return `${regionLocal}장`;
+    } else if (lastChar === '구') {
+      return `${regionLocal}청장`;
+    } else if (lastChar === '군') {
+      return `${regionLocal}수`;
+    }
+    return regionLocal; // 기타 경우
+  }
+  return '';
 }
 
 /**
@@ -90,6 +120,12 @@ export default function UserInfoForm({
   const electoralList = useMemo(
     () => getElectoralList(regionMetro, regionLocal, position),
     [regionMetro, regionLocal, position]
+  );
+
+  // 자치단체장 호칭 자동 생성
+  const automaticTitle = useMemo(
+    () => getAutomaticTitle(position, regionMetro, regionLocal),
+    [position, regionMetro, regionLocal]
   );
 
   const handleChange = (name, value) => {
@@ -228,6 +264,8 @@ export default function UserInfoForm({
             <MenuItem value="국회의원">국회의원</MenuItem>
             <MenuItem value="광역의원">광역의원(시/도의원)</MenuItem>
             <MenuItem value="기초의원">기초의원(시/군/구의원)</MenuItem>
+            <MenuItem value="광역자치단체장">광역자치단체장(특별/광역시장, 도지사)</MenuItem>
+            <MenuItem value="기초자치단체장">기초자치단체장(시장, 구청장, 군수 등)</MenuItem>
           </Select>
         </FormControl>
       </Grid>
@@ -269,7 +307,7 @@ export default function UserInfoForm({
             value={regionLocal}
             label="기초자치단체"
             onChange={handleSelectChange}
-            disabled={disabled || !regionMetro}
+            disabled={disabled || !regionMetro || position === '광역자치단체장'}
             MenuProps={{
               keepMounted: false,
               PaperProps: {
@@ -297,7 +335,7 @@ export default function UserInfoForm({
             value={electoralDistrict}
             label="선거구"
             onChange={handleSelectChange}
-            disabled={disabled || !regionLocal || !position}
+            disabled={disabled || !regionLocal || !position || position === '광역자치단체장' || position === '기초자치단체장'}
             MenuProps={{
               keepMounted: false,
               PaperProps: {
@@ -315,6 +353,7 @@ export default function UserInfoForm({
           </Select>
         </FormControl>
       </Grid>
+
 
     </>
   );

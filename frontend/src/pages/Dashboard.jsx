@@ -30,7 +30,7 @@ import {
   NotificationSnackbar,
   useNotification
 } from '../components/ui';
-import { spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
+import { colors, spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
 import {
   Create,
   KeyboardArrowRight,
@@ -94,19 +94,12 @@ const Dashboard = () => {
 
   // 플랜명 결정 함수
   function getPlanName(limit) {
-    if (limit >= 90) return '오피니언 리더';
-    if (limit >= 30) return '리전 인플루언서';
-    return '로컬 블로거';
+    return '스탠다드 플랜';
   }
 
   // 플랜별 색상 가져오기
   function getPlanColor(planName) {
-    switch(planName) {
-      case '로컬 블로거': return '#003a87';
-      case '리전 인플루언서': return '#55207d';
-      case '오피니언 리더': return '#006261';
-      default: return '#003a87';
-    }
+    return colors.brand.primary; // 스탠다드 플랜 색상
   }
 
   const planColor = getPlanColor(planName);
@@ -256,28 +249,20 @@ const Dashboard = () => {
 
   // 당원 인증 상태 판단 함수
   const getAuthStatus = () => {
-    // 실제 인증 데이터가 있다면 user.authStatus, user.authExpiry 등을 사용
-    // 현재는 임시로 2025년 4월 1일을 만료일로 설정
-    const authExpiry = new Date('2025-04-01');
-    const today = new Date();
-    const daysUntilExpiry = Math.ceil((authExpiry - today) / (1000 * 60 * 60 * 24));
-
-    // 15일 남은 시점부터 경고
-    if (daysUntilExpiry <= 15) {
-      return {
-        status: 'warning',
-        image: '/buttons/AuthFail.png',
-        title: daysUntilExpiry > 0 ? '인증 만료 임박' : '인증 만료됨',
-        message: daysUntilExpiry > 0
-          ? `${daysUntilExpiry}일 후 만료 예정`
-          : '인증이 만료되었습니다'
-      };
-    } else {
+    // 실제 사용자 인증 상태를 기반으로 체크
+    if (user?.verificationStatus === 'verified' && user?.lastVerification) {
       return {
         status: 'active',
         image: '/buttons/AuthPass.png',
         title: '인증 완료',
-        message: `${authExpiry.toLocaleDateString('ko-KR')}까지`
+        message: `${user.lastVerification.quarter} 인증 완료`
+      };
+    } else {
+      return {
+        status: 'warning',
+        image: '/buttons/AuthFail.png',
+        title: '인증 필요',
+        message: '당원 인증이 필요합니다'
       };
     }
   };
@@ -436,11 +421,22 @@ const Dashboard = () => {
           }}>
             {/* 사용자 정보 */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px`, flexWrap: 'wrap' }}>
-              <Typography variant="h5" sx={{ fontWeight: 600 }}>
+              <Typography variant="h5" sx={{
+                fontWeight: 600,
+                color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000'
+              }}>
                 {user?.name || '사용자'} {getUserDisplayTitle(user)} {userIcon}
               </Typography>
               {regionInfo && (
-                <Chip label={regionInfo} size="medium" sx={{ bgcolor: 'rgba(85, 32, 125, 0.1)' }} />
+                <Chip
+                  label={regionInfo}
+                  size="medium"
+                  sx={{
+                    bgcolor: theme.palette.mode === 'dark' ? colors.brand.primaryLight10 : 'rgba(21, 36, 132, 0.15)',
+                    color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.9)' : colors.brand.primary,
+                    fontWeight: 500
+                  }}
+                />
               )}
               <Chip
                 label={`D-${(() => {
@@ -451,7 +447,7 @@ const Dashboard = () => {
                   return diffDays;
                 })()}`}
                 size="medium"
-                sx={{ bgcolor: '#006261', color: 'white', fontWeight: 600 }}
+                sx={{ bgcolor: colors.brand.primary, color: 'white', fontWeight: 600 }}
               />
             </Box>
 
@@ -462,9 +458,9 @@ const Dashboard = () => {
               startIcon={<Settings />}
               onClick={handleChangePlan}
               sx={{
-                bgcolor: showBioAlert ? '#f8c023' : 'transparent',
-                color: showBioAlert ? '#ffffff' : 'inherit',
-                borderColor: showBioAlert ? '#f8c023' : 'rgba(0, 0, 0, 0.23)',
+                bgcolor: showBioAlert ? colors.brand.gold : 'transparent',
+                color: showBioAlert ? '#ffffff' : (theme.palette.mode === 'dark' ? '#ffffff' : '#000000'),
+                borderColor: showBioAlert ? colors.brand.gold : (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : 'rgba(0, 0, 0, 0.23)'),
                 fontSize: '0.75rem',
                 py: 0.5,
                 px: 1.5,
@@ -490,7 +486,7 @@ const Dashboard = () => {
             elevation={0}
             sx={{
               p: `${spacing.md}px`,
-              bgcolor: 'rgba(0, 0, 0, 0.02)',
+              bgcolor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -500,7 +496,7 @@ const Dashboard = () => {
           >
             {/* 플랜 정보 */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px`, flexWrap: 'wrap' }}>
-              <Typography variant="h6">
+              <Typography variant="h6" sx={{ color: theme.palette.text.primary }}>
                 플랜: <strong style={{ color: planColor }}>{planName}</strong>
               </Typography>
               {!isAdmin && (
@@ -576,10 +572,10 @@ const Dashboard = () => {
           {/* 프로필 미완료 경고 메시지 */}
           {showBioAlert && (
             <Alert severity="warning" sx={{ mt: `${spacing.md}px` }}>
-              <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, color: theme.palette.text.primary }}>
                 프로필 설정이 완료되지 않았습니다
               </Typography>
-              <Typography variant="body2">
+              <Typography variant="body2" sx={{ color: theme.palette.text.primary }}>
                 AI 원고 생성을 위해 자기소개 작성이 필요합니다.
               </Typography>
             </Alert>
@@ -594,13 +590,13 @@ const Dashboard = () => {
             {notices.length > 0 && (
               <Paper elevation={0} sx={{
                 mb: `${spacing.lg}px`,
-                bgcolor: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid rgba(255, 255, 255, 0.05)',
+                bgcolor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)',
+                border: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.1)'}`,
                 borderRadius: 2
               }}>
                 <Box sx={{ p: `${spacing.md}px`, borderBottom: '1px solid', borderColor: 'divider' }}>
-                  <Typography variant="h6" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center' }}>
-                    <Notifications sx={{ mr: `${spacing.xs}px`, color: '#55207D' }} />
+                  <Typography variant="h6" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', color: theme.palette.text.primary }}>
+                    <Notifications sx={{ mr: `${spacing.xs}px`, color: 'colors.brand.primary' }} />
                     공지사항
                   </Typography>
                 </Box>
@@ -613,7 +609,7 @@ const Dashboard = () => {
                           primary={
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
                               <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.xs}px` }}>
-                                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                                <Typography variant="subtitle2" sx={{ fontWeight: 600, color: theme.palette.text.primary }}>
                                   {notice.title || '제목 없음'}
                                 </Typography>
                                 {notice.priority === 'high' && (
@@ -794,7 +790,7 @@ const Dashboard = () => {
               }}>
                 <Box sx={{ p: `${spacing.md}px`, borderBottom: '1px solid', borderColor: 'divider' }}>
                   <Typography variant="h6" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center' }}>
-                    <Notifications sx={{ mr: `${spacing.xs}px`, color: '#55207D' }} />
+                    <Notifications sx={{ mr: `${spacing.xs}px`, color: 'colors.brand.primary' }} />
                     공지사항
                   </Typography>
                 </Box>
@@ -881,7 +877,7 @@ const Dashboard = () => {
                   }}>
                     <Box sx={{ p: `${spacing.md}px`, borderBottom: '1px solid', borderColor: 'divider' }}>
                       <Typography variant="h6" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center' }}>
-                        <Notifications sx={{ mr: `${spacing.xs}px`, color: '#55207D' }} />
+                        <Notifications sx={{ mr: `${spacing.xs}px`, color: 'colors.brand.primary' }} />
                         공지사항
                       </Typography>
                     </Box>
