@@ -41,8 +41,8 @@ function UsersSection() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
-    if (!user?.isAdmin) return;
-    
+    if (user?.role !== 'admin') return;
+
     const fetchUsers = async () => {
       try {
         setLoading(true);
@@ -82,7 +82,7 @@ function UsersSection() {
       filtered = filtered.filter(user => {
         if (statusFilter === 'active') return user.isActive;
         if (statusFilter === 'inactive') return !user.isActive;
-        if (statusFilter === 'admin') return user.isAdmin;
+        if (statusFilter === 'admin') return user.role === 'admin';
         return true;
       });
     }
@@ -105,7 +105,7 @@ function UsersSection() {
     setDialogOpen(true);
   };
 
-  if (!user?.isAdmin) {
+  if (user?.role !== 'admin') {
     return (
       <Alert severity="error">
         관리자 권한이 필요합니다.
@@ -227,7 +227,7 @@ function UsersSection() {
                       <Typography variant="body2" fontWeight="medium">
                         {userData.name || '-'}
                       </Typography>
-                      {userData.isAdmin && (
+                      {userData.role === 'admin' && (
                         <Chip label="관리자" size="small" color="primary" />
                       )}
                     </Box>

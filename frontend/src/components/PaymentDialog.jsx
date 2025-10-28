@@ -114,7 +114,7 @@ const PaymentDialog = ({ open, onClose, selectedPlan }) => {
               )}
 
               <Typography variant="body2" color="text.secondary">
-                구매자: {user?.name || user?.displayName || '사용자'}
+                구매자: {user?.displayName || user?.name || '사용자'}
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 이메일: {user?.email}
@@ -149,7 +149,7 @@ const PaymentDialog = ({ open, onClose, selectedPlan }) => {
               orderId={orderId}
               orderName={`전자두뇌비서관 - ${selectedPlan.name} (1개월)`}
               customerEmail={user?.email}
-              customerName={user?.name || user?.displayName}
+              customerName={user?.displayName || user?.name}
               onError={handlePaymentError}
             />
           </Box>

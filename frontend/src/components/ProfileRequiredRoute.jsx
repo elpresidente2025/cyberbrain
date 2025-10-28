@@ -39,7 +39,7 @@ const ProfileRequiredRoute = ({ children }) => {
   }
 
   // 관리자는 프로필 체크 제외
-  if (user.isAdmin || user.role === 'admin') {
+  if (user.role === 'admin') {
     return children;
   }
 

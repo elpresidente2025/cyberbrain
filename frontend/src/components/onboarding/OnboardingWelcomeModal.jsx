@@ -18,6 +18,7 @@ import {
   AccountCircle
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import { colors } from '../../theme/tokens';
 
 const OnboardingWelcomeModal = ({ open, onClose, userName }) => {
   const theme = useTheme();
@@ -55,8 +56,8 @@ const OnboardingWelcomeModal = ({ open, onClose, userName }) => {
         alignItems: 'center',
         gap: 1
       }}>
-        <AutoFixHigh sx={{ fontSize: 48, color: theme.palette.ui?.header || '#152484', mb: 1 }} />
-        <Typography variant="h5" component="div" sx={{ fontWeight: 'bold', color: theme.palette.ui?.header || '#152484' }}>
+        <AutoFixHigh sx={{ fontSize: 48, color: colors.brand.primary, mb: 1 }} />
+        <Typography variant="h5" component="div" sx={{ fontWeight: 'bold', color: colors.brand.primary }}>
           환영합니다!
         </Typography>
         <Chip
@@ -145,11 +146,11 @@ const OnboardingWelcomeModal = ({ open, onClose, userName }) => {
           startIcon={<AccountCircle />}
           sx={{
             minWidth: 140,
-            bgcolor: '#00d4ff',
-            color: '#000',
+            bgcolor: colors.brand.primary,
+            color: 'white',
             fontWeight: 600,
             '&:hover': {
-              bgcolor: '#00a8cc'
+              bgcolor: colors.brand.primaryHover
             }
           }}
         >

@@ -134,7 +134,7 @@ const MobileMenu = () => {
               <Avatar sx={{ mr: 2, bgcolor: 'primary.main' }}>{userIcon}</Avatar>
               <Box>
                 <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                  {user?.name || '사용자'}
+                  {user?.displayName || user?.name || '사용자'}
                 </Typography>
                 <Typography variant="body2" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
                   {getUserDisplayTitle(user)}

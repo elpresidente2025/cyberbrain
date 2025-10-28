@@ -173,7 +173,7 @@ function UserSearchModal({ open, onClose }) {
                           <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                             {user.name || '-'}
                           </Typography>
-                          {user.isAdmin && (
+                          {user.role === 'admin' && (
                             <Chip label="관리자" size="small" color="primary" />
                           )}
                           <Chip 

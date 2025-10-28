@@ -26,6 +26,7 @@ import {
   Favorite,
   TrendingUp
 } from '@mui/icons-material';
+import { colors } from '../../theme/tokens';
 
 const ProfileBioGuideModal = ({ open, onClose, onStartWriting, userName }) => {
   const theme = useTheme();
@@ -91,8 +92,8 @@ const ProfileBioGuideModal = ({ open, onClose, onStartWriting, userName }) => {
         alignItems: 'center',
         gap: 1
       }}>
-        <Edit sx={{ fontSize: 48, color: theme.palette.ui?.header || '#152484', mb: 1 }} />
-        <Typography variant="h5" component="div" sx={{ fontWeight: 'bold', color: theme.palette.ui?.header || '#152484' }}>
+        <Edit sx={{ fontSize: 48, color: colors.brand.primary, mb: 1 }} />
+        <Typography variant="h5" component="div" sx={{ fontWeight: 'bold', color: colors.brand.primary }}>
           문체 DNA 입력하기
         </Typography>
         <Chip
@@ -194,11 +195,11 @@ const ProfileBioGuideModal = ({ open, onClose, onStartWriting, userName }) => {
           startIcon={<Edit />}
           sx={{
             minWidth: 140,
-            bgcolor: '#00d4ff',
-            color: '#000',
+            bgcolor: colors.brand.primary,
+            color: 'white',
             fontWeight: 600,
             '&:hover': {
-              bgcolor: '#00a8cc'
+              bgcolor: colors.brand.primaryHover
             }
           }}
         >

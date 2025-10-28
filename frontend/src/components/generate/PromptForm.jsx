@@ -13,20 +13,27 @@ import {
   Box,
   IconButton,
   Tooltip,
-  useTheme
+  useTheme,
+  Button
 } from '@mui/material';
-import { AutoAwesome, Add, Remove } from '@mui/icons-material';
+import { AutoAwesome, Add, Remove, Search } from '@mui/icons-material';
 // ✅ 1. formConstants에서 카테고리 데이터를 직접 불러와서 자급자족합니다.
 import { CATEGORIES } from '../../constants/formConstants';
+import KeywordExplorerDialog from './KeywordExplorerDialog';
 
 export default function PromptForm({
   formData,
   // ✅ 2. 부모가 사용하는 `onChange` prop을 정상적으로 받습니다.
   onChange,
   disabled = false,
-  isMobile = false
+  isMobile = false,
+  user = null
 }) {
   const theme = useTheme();
+
+  // 키워드 탐색 다이얼로그 상태
+  const [keywordDialogOpen, setKeywordDialogOpen] = useState(false);
+
   // 참고자료 목록 상태 관리
   const [instructionsList, setInstructionsList] = useState(() => {
     // formData.instructions가 배열이면 그대로 사용, 아니면 문자열을 배열로 변환
@@ -64,7 +71,7 @@ export default function PromptForm({
 
   const handleInputChange = (field) => (event) => {
     const { value } = event.target;
-    
+
     // ✅ 3. 부모로부터 받은 `onChange` 함수를 올바른 방식으로 호출합니다.
     if (field === 'category') {
       // 카테고리가 바뀌면, 세부 카테고리 값을 초기화하라는 신호를 함께 보냅니다.
@@ -73,6 +80,13 @@ export default function PromptForm({
       // 그 외의 경우는 해당 필드만 업데이트하라는 신호를 보냅니다.
       onChange({ [field]: value });
     }
+  };
+
+  // 키워드 선택 핸들러 - 노출 희망 검색어 필드에 추가
+  const handleKeywordSelect = (keyword) => {
+    const currentKeywords = formData.keywords || '';
+    const newKeywords = currentKeywords ? `${currentKeywords}, ${keyword}` : keyword;
+    onChange({ keywords: newKeywords });
   };
 
   // 선택된 카테고리에 맞는 세부 카테고리 목록을 안전하게 찾습니다.
@@ -249,19 +263,47 @@ export default function PromptForm({
 
         {/* 노출 희망 검색어 */}
         <Grid item xs={12}>
-          <TextField
-            fullWidth
-            size={formSize}
-            label="노출 희망 검색어 (선택사항)"
-            placeholder="쉼표(,)로 구분하여 입력하세요"
-            value={formData.keywords || ''}
-            onChange={handleInputChange('keywords')}
-            disabled={disabled}
-            helperText="예: 성수역 3번 출구, 울산대 대학로, 계양IC 정체 등"
-            FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
-          />
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+            <TextField
+              fullWidth
+              size={formSize}
+              label="노출 희망 검색어 (선택사항)"
+              placeholder="쉼표(,)로 구분하여 입력하세요"
+              value={formData.keywords || ''}
+              onChange={handleInputChange('keywords')}
+              disabled={disabled}
+              helperText="예: 성수역 3번 출구, 울산대 대학로, 계양IC 정체 등"
+              FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
+            />
+            <Tooltip title="AI 검색어 추천">
+              <Button
+                variant="outlined"
+                onClick={() => setKeywordDialogOpen(true)}
+                disabled={disabled}
+                sx={{
+                  minWidth: isMobile ? '40px' : '120px',
+                  height: isMobile ? '40px' : '56px',
+                  mt: 0.5,
+                  px: isMobile ? 1 : 2
+                }}
+              >
+                <Search />
+                {!isMobile && <Typography variant="button" sx={{ ml: 1 }}>검색어 추천</Typography>}
+              </Button>
+            </Tooltip>
+          </Box>
         </Grid>
       </Grid>
+
+      {/* 검색어 추천 다이얼로그 */}
+      <KeywordExplorerDialog
+        open={keywordDialogOpen}
+        onClose={() => setKeywordDialogOpen(false)}
+        onSelectKeyword={handleKeywordSelect}
+        topic={formData.topic}
+        instructions={instructionsList}
+        user={user}
+      />
     </Paper>
   );
 }

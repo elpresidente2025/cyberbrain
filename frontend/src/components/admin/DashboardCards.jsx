@@ -141,7 +141,7 @@ function DashboardCards() {
     );
   }
 
-  if (!user.isAdmin) {
+  if (user.role !== 'admin') {
     return (
       <Alert severity="error">
         관리자 권한이 필요합니다. 현재 권한: {user.role || 'user'}

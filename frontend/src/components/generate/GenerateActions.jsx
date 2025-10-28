@@ -9,6 +9,7 @@ import {
 } from '@mui/material';
 import { AutoAwesome, Refresh } from '@mui/icons-material';
 import { LoadingButton } from '../loading';
+import { colors, shadows } from '../../theme/tokens';
 
 export default function GenerateActions({
   onGenerate,
@@ -57,8 +58,8 @@ export default function GenerateActions({
             sx={{
               minWidth: isMobile ? 'auto' : 160,
               flex: isMobile ? 1 : 'none',
-              bgcolor: canGenerate ? '#00d4ff !important' : '#757575 !important',
-              color: canGenerate ? '#000 !important' : 'white !important',
+              bgcolor: canGenerate ? `${colors.brand.primary} !important` : '#757575 !important',
+              color: 'white !important',
               fontWeight: 600,
               transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
               '&.Mui-disabled': {
@@ -66,10 +67,10 @@ export default function GenerateActions({
                 color: 'rgba(255, 255, 255, 0.6) !important'
               },
               ...(canGenerate && !loading && {
-                boxShadow: '0 0 10px rgba(0, 212, 255, 0.8)',
+                boxShadow: shadows.glow.brand,
                 '&:hover': {
-                  bgcolor: '#00a8cc !important',
-                  boxShadow: '0 0 15px rgba(0, 212, 255, 1.0)',
+                  bgcolor: `${colors.brand.primaryHover} !important`,
+                  boxShadow: shadows.glow.brandHover,
                   transform: 'scale(0.98)',
                 }
               })
@@ -81,8 +82,8 @@ export default function GenerateActions({
                 label={`${attemptsRemaining}/${maxAttempts}`}
                 size="small"
                 sx={{
-                  bgcolor: canGenerate ? 'rgba(0, 0, 0, 0.15)' : 'rgba(255, 255, 255, 0.2)',
-                  color: canGenerate ? '#000' : 'white',
+                  bgcolor: canGenerate ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.2)',
+                  color: 'white',
                   fontSize: '0.75rem',
                   height: '20px',
                   fontWeight: 600

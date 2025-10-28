@@ -20,6 +20,7 @@ import {
   ContentCopy,
   Close
 } from '@mui/icons-material';
+import { colors } from '../../theme/tokens';
 
 const CongratulationsModal = ({ open, onClose, userName, bioContent }) => {
   const theme = useTheme();
@@ -37,7 +38,7 @@ const CongratulationsModal = ({ open, onClose, userName, bioContent }) => {
 
   const handleOpenNaverBlog = () => {
     // 네이버 블로그 새창으로 열기
-    window.open('https://section.blog.naver.com/', '_blank', 'noopener,noreferrer');
+    window.open('https://blog.naver.com/', '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -73,8 +74,8 @@ const CongratulationsModal = ({ open, onClose, userName, bioContent }) => {
           <Close />
         </IconButton>
 
-        <Celebration sx={{ fontSize: 64, color: theme.palette.ui?.header || '#152484', mb: 1 }} />
-        <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', color: theme.palette.ui?.header || '#152484' }}>
+        <Celebration sx={{ fontSize: 64, color: colors.brand.primary, mb: 1 }} />
+        <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', color: colors.brand.primary }}>
           🎉 축하합니다!
         </Typography>
         <Chip
@@ -185,11 +186,11 @@ const CongratulationsModal = ({ open, onClose, userName, bioContent }) => {
           variant="contained"
           sx={{
             minWidth: 140,
-            bgcolor: '#00d4ff',
-            color: '#000',
+            bgcolor: colors.brand.primary,
+            color: 'white',
             fontWeight: 600,
             '&:hover': {
-              bgcolor: '#00a8cc'
+              bgcolor: colors.brand.primaryHover
             }
           }}
         >

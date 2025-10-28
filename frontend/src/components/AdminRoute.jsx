@@ -11,7 +11,7 @@ const AdminRoute = ({ children }) => {
   const adminEmails = ['kjk6206@gmail.com', 'taesoo@secretart.ai'];
 
   // 프로필 병합 전에는 잠시 대기하여 깜빡임 방지
-  const isProfileMerging = !!user && user.role == null && !user.isAdmin;
+  const isProfileMerging = !!user && user.role == null;
 
   if (loading || isProfileMerging) {
     return (
@@ -25,7 +25,7 @@ const AdminRoute = ({ children }) => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  const hasAdminAccess = user.role === 'admin' || user.isAdmin === true || adminEmails.includes(user.email);
+  const hasAdminAccess = user.role === 'admin' || adminEmails.includes(user.email);
 
   if (!hasAdminAccess) {
     return <Navigate to="/dashboard" replace />;
