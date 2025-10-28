@@ -44,7 +44,9 @@
       "Read(//e/**)",
       "Bash(awk:*)",
       "Read(//e//**)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(gcloud projects add-iam-policy-binding:*)",
+      "Bash(firebase apps:sdkconfig:*)"
     ]
   },
   "mcpServers": {
