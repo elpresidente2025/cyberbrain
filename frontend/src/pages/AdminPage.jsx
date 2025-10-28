@@ -18,6 +18,7 @@ import ErrorsMiniTable from '../components/admin/ErrorsMiniTable';
 import NoticeManager from '../components/admin/NoticeManager';
 import PerformanceMonitor from '../components/admin/PerformanceMonitor';
 import UserManagement from '../components/admin/UserManagement';
+import SystemSettings from '../components/admin/SystemSettings';
 import { useAuth } from '../hooks/useAuth';
 import { PageHeader, NotificationSnackbar, useNotification } from '../components/ui';
 
@@ -107,6 +108,11 @@ function AdminPage() {
         {/* 대시보드 카드 영역 */}
         <Box sx={{ mb: `${spacing.xl}px` }}>
           <DashboardCards />
+        </Box>
+
+        {/* 시스템 설정 영역 */}
+        <Box sx={{ mb: `${spacing.xl}px` }}>
+          <SystemSettings />
         </Box>
 
         {/* 빠른 작업 & 에러 로그 영역 (2열 배치) */}

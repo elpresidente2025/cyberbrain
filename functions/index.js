@@ -78,6 +78,14 @@ try {
   console.warn('[index] system handler warning:', e?.message);
 }
 
+// Add system config handlers
+try {
+  const systemConfigHandlers = require('./handlers/system-config');
+  Object.assign(exports, systemConfigHandlers);
+} catch (e) {
+  console.warn('[index] system-config handler warning:', e?.message);
+}
+
 // Add notices handlers
 try {
   const noticesHandlers = require('./handlers/notices');

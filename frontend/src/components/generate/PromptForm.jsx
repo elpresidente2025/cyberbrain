@@ -20,6 +20,7 @@ import { AutoAwesome, Add, Remove, Search } from '@mui/icons-material';
 // ✅ 1. formConstants에서 카테고리 데이터를 직접 불러와서 자급자족합니다.
 import { CATEGORIES } from '../../constants/formConstants';
 import KeywordExplorerDialog from './KeywordExplorerDialog';
+import { useSystemConfig } from '../../hooks/useSystemConfig';
 
 export default function PromptForm({
   formData,
@@ -30,6 +31,9 @@ export default function PromptForm({
   user = null
 }) {
   const theme = useTheme();
+
+  // 시스템 설정 불러오기
+  const { config } = useSystemConfig();
 
   // 키워드 탐색 다이얼로그 상태
   const [keywordDialogOpen, setKeywordDialogOpen] = useState(false);
@@ -275,35 +279,40 @@ export default function PromptForm({
               helperText="예: 성수역 3번 출구, 울산대 대학로, 계양IC 정체 등"
               FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
             />
-            <Tooltip title="AI 검색어 추천">
-              <Button
-                variant="outlined"
-                onClick={() => setKeywordDialogOpen(true)}
-                disabled={disabled}
-                sx={{
-                  minWidth: isMobile ? '40px' : '120px',
-                  height: isMobile ? '40px' : '56px',
-                  mt: 0.5,
-                  px: isMobile ? 1 : 2
-                }}
-              >
-                <Search />
-                {!isMobile && <Typography variant="button" sx={{ ml: 1 }}>검색어 추천</Typography>}
-              </Button>
-            </Tooltip>
+            {/* AI 검색어 추천 버튼 - 관리자가 활성화한 경우에만 표시 */}
+            {config.aiKeywordRecommendationEnabled && (
+              <Tooltip title="AI 검색어 추천">
+                <Button
+                  variant="outlined"
+                  onClick={() => setKeywordDialogOpen(true)}
+                  disabled={disabled}
+                  sx={{
+                    minWidth: isMobile ? '40px' : '120px',
+                    height: isMobile ? '40px' : '56px',
+                    mt: 0.5,
+                    px: isMobile ? 1 : 2
+                  }}
+                >
+                  <Search />
+                  {!isMobile && <Typography variant="button" sx={{ ml: 1 }}>검색어 추천</Typography>}
+                </Button>
+              </Tooltip>
+            )}
           </Box>
         </Grid>
       </Grid>
 
-      {/* 검색어 추천 다이얼로그 */}
-      <KeywordExplorerDialog
-        open={keywordDialogOpen}
-        onClose={() => setKeywordDialogOpen(false)}
-        onSelectKeyword={handleKeywordSelect}
-        topic={formData.topic}
-        instructions={instructionsList}
-        user={user}
-      />
+      {/* 검색어 추천 다이얼로그 - 관리자가 활성화한 경우에만 렌더링 */}
+      {config.aiKeywordRecommendationEnabled && (
+        <KeywordExplorerDialog
+          open={keywordDialogOpen}
+          onClose={() => setKeywordDialogOpen(false)}
+          onSelectKeyword={handleKeywordSelect}
+          topic={formData.topic}
+          instructions={instructionsList}
+          user={user}
+        />
+      )}
     </Paper>
   );
 }
