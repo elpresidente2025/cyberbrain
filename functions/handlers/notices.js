@@ -135,11 +135,75 @@ exports.getActiveNotices = wrap(async (request) => {
 // 관리자 통계 조회 (관리자용)
 // ============================================================================
 exports.getAdminStats = wrap(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  }
+  const userDoc = await db.collection('users').doc(request.auth.uid).get();
+  if (!userDoc.exists || userDoc.data().role !== 'admin') {
+    throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
+  }
+
   try {
     console.log('🔥 getAdminStats 시작');
-    
-    return ok({ message: '관리자 통계 기능은 현재 구현 중입니다.' });
-    
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const thirtyMinAgo = new Date(now.getTime() - 30 * 60 * 1000);
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    // 오늘 생성된 문서 통계
+    const postsSnapshot = await db.collection('posts')
+      .where('createdAt', '>=', todayStart)
+      .get();
+
+    let todaySuccess = 0;
+    let todayFail = 0;
+    postsSnapshot.forEach(doc => {
+      const data = doc.data();
+      if (data.status === 'completed') {
+        todaySuccess++;
+      } else if (data.status === 'failed') {
+        todayFail++;
+      }
+    });
+
+    // 최근 30분 에러 (에러 로그 컬렉션이 있다면)
+    let last30mErrors = 0;
+    try {
+      const errorsSnapshot = await db.collection('errors')
+        .where('timestamp', '>=', thirtyMinAgo)
+        .get();
+      last30mErrors = errorsSnapshot.size;
+    } catch (e) {
+      console.log('에러 로그 컬렉션 없음, 기본값 사용');
+    }
+
+    // 최근 7일간 활성 사용자
+    const activeUsersSnapshot = await db.collection('users')
+      .where('updatedAt', '>=', sevenDaysAgo)
+      .where('isActive', '==', true)
+      .get();
+    const activeUsers = activeUsersSnapshot.size;
+
+    // Gemini 상태
+    let geminiStatus = { state: 'active' };
+    try {
+      const statusDoc = await db.collection('system').doc('gemini_status').get();
+      if (statusDoc.exists) {
+        geminiStatus = statusDoc.data();
+      }
+    } catch (e) {
+      console.log('Gemini 상태 문서 없음, 기본값 사용');
+    }
+
+    return ok({
+      todaySuccess,
+      todayFail,
+      last30mErrors,
+      activeUsers,
+      geminiStatus
+    });
+
   } catch (error) {
     console.error('❌ getAdminStats 오류:', error);
     throw new HttpsError('internal', `관리자 통계 조회 실패: ${error.message}`);
@@ -150,28 +214,37 @@ exports.getAdminStats = wrap(async (request) => {
 // 에러 로그 조회 (관리자용)
 // ============================================================================
 exports.getErrorLogs = wrap(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  }
+  const userDoc = await db.collection('users').doc(request.auth.uid).get();
+  if (!userDoc.exists || userDoc.data().role !== 'admin') {
+    throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
+  }
+
   try {
     console.log('🔥 getErrorLogs 시작');
-    
-    return ok({ message: '에러 로그 기능은 현재 구현 중입니다.' });
-    
+
+    const snapshot = await db.collection('errors')
+      .orderBy('timestamp', 'desc')
+      .limit(50)
+      .get();
+
+    const errors = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      errors.push({
+        id: doc.id,
+        ...data,
+        timestamp: data.timestamp?.toDate?.().toISOString()
+      });
+    });
+
+    return ok({ errors });
+
   } catch (error) {
     console.error('❌ getErrorLogs 오류:', error);
-    throw new HttpsError('internal', `에러 로그 조회 실패: ${error.message}`);
-  }
-});
-
-// ============================================================================
-// 공지사항 조회 (관리자용, getActiveNotices와 별도)
-// ============================================================================
-exports.getNotices = wrap(async (request) => {
-  try {
-    console.log('🔥 getNotices 시작');
-    
-    return ok({ notices: [] });
-    
-  } catch (error) {
-    console.error('❌ getNotices 오류:', error);
-    throw new HttpsError('internal', `공지사항 조회 실패: ${error.message}`);
+    // 에러 로그 컬렉션이 없는 경우 빈 배열 반환
+    return ok({ errors: [] });
   }
 });

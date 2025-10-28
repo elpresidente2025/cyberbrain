@@ -30,7 +30,7 @@ import {
   Search
 } from '@mui/icons-material';
 import HongKongNeonCard from '../HongKongNeonCard';
-import { callFunctionWithNaverAuth } from '../../services/firebaseService';
+import { callFunction } from '../../services/firebaseService';
 import { NotificationSnackbar, useNotification } from '../ui';
 
 const UserManagement = () => {
@@ -52,7 +52,7 @@ const UserManagement = () => {
     try {
       setLoading(true);
       console.log('🔍 사용자 목록 로드 시작...');
-      const response = await callFunctionWithNaverAuth('getAllUsers');
+      const response = await callFunction('getAllUsers');
       console.log('🔍 getAllUsers 응답:', response);
       
       if (response?.success) {
@@ -89,7 +89,7 @@ const UserManagement = () => {
     if (!deactivateDialog.user) return;
 
     try {
-      const response = await callFunctionWithNaverAuth('deactivateUser', {
+      const response = await callFunction('deactivateUser', {
         userId: deactivateDialog.user.uid
       });
 
@@ -107,7 +107,7 @@ const UserManagement = () => {
 
   const handleReactivateUser = async (user) => {
     try {
-      const response = await callFunctionWithNaverAuth('reactivateUser', {
+      const response = await callFunction('reactivateUser', {
         userId: user.uid
       });
 
@@ -125,7 +125,7 @@ const UserManagement = () => {
     if (!deleteDialog.user) return;
 
     try {
-      const response = await callFunctionWithNaverAuth('deleteUser', {
+      const response = await callFunction('deleteUser', {
         userId: deleteDialog.user.uid
       });
 

@@ -75,42 +75,15 @@ export const getSystemStatus = async () => {
 };
 
 export const getAdminStats = async () => {
-  try {
-    const response = await fetch('https://asia-northeast3-ai-secretary-6e9c8.cloudfunctions.net/getAdminStats', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    return await response.json();
-  } catch (error) {
-    return { success: false, stats: { todaySuccess: 0, todayFail: 0, last30mErrors: 0, activeUsers: 0, geminiStatus: { state: 'unknown' } } };
-  }
+  return await callFunction('getAdminStats', {});
 };
 
 export const getErrorLogs = async () => {
-  try {
-    const response = await fetch('https://asia-northeast3-ai-secretary-6e9c8.cloudfunctions.net/getErrorLogs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    return await response.json();
-  } catch (error) {
-    return { success: false, message: '���� �α׸� �ҷ����� ���߽��ϴ�.' };
-  }
+  return await callFunction('getErrorLogs', {});
 };
 
 export const getNotices = async () => {
-  try {
-    const response = await fetch('https://asia-northeast3-ai-secretary-6e9c8.cloudfunctions.net/getNotices', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    return await response.json();
-  } catch (error) {
-    return { success: false, notices: [] };
-  }
+  return await callFunction('getNotices', {});
 };
 
 export const getUsers = async (params = {}) => {

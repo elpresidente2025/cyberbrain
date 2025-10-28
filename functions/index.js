@@ -158,6 +158,22 @@ try {
   console.warn('[index] keyword-analysis handler warning:', e?.message);
 }
 
+// Add admin handlers
+try {
+  const adminHandlers = require('./handlers/admin');
+  Object.assign(exports, adminHandlers);
+} catch (e) {
+  console.warn('[index] admin handler warning:', e?.message);
+}
+
+// Add admin-users handlers
+try {
+  const adminUsersHandlers = require('./handlers/admin-users');
+  Object.assign(exports, adminUsersHandlers);
+} catch (e) {
+  console.warn('[index] admin-users handler warning:', e?.message);
+}
+
 // Delete post (HTTP onRequest, Naver-only via __naverAuth)
 exports.deletePost = onRequest({ region: 'asia-northeast3', cors: true }, async (req, res) => {
   try {
