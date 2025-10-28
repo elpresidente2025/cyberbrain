@@ -23,6 +23,7 @@ import Dashboard from './pages/Dashboard.jsx';
 import GeneratePage from './pages/GeneratePage.jsx';
 import ProfilePage from './pages/ProfilePage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
+import CleanupLegacyFieldsPage from './pages/CleanupLegacyFieldsPage.jsx';
 import PostDetailPage from './pages/PostDetailPage.jsx';
 import PostsListPage from './pages/PostsListPage.jsx';
 import Billing from './pages/Billing.jsx';
@@ -31,6 +32,7 @@ import PaymentSuccess from './pages/PaymentSuccess.jsx';
 import PaymentFail from './pages/PaymentFail.jsx';
 import NaverCallback from './pages/auth/NaverCallback.jsx';
 import AboutPage from './pages/AboutPage.jsx';
+import RestoreAdminPage from './pages/RestoreAdminPage.jsx';
 
 // ?�� ?�리로드 ?�수??(?�용???�도 감�? ???�용)
 export const preloadGenerate = () => import('./pages/GeneratePage.jsx');
@@ -68,6 +70,10 @@ const router = createBrowserRouter([
         element: <AdminRoute><AdminPage /></AdminRoute>,
       },
       {
+        path: 'admin/cleanup',
+        element: <AdminRoute><CleanupLegacyFieldsPage /></AdminRoute>,
+      },
+      {
         path: 'posts',
         element: <ProtectedRoute><ProfileRequiredRoute><PostsListPage /></ProfileRequiredRoute></ProtectedRoute>,
       },
@@ -90,6 +96,10 @@ const router = createBrowserRouter([
       {
         path: 'auth/naver/callback',
         element: <NaverCallback />,
+      },
+      {
+        path: 'restore-admin',
+        element: <RestoreAdminPage />,
       },
     ],
   },

@@ -38,9 +38,9 @@ service cloud.firestore {
     match /posts/{postId} {
       // 공개 게시물 읽기 허용
       allow read: if true;
-      
+
       // 본인 또는 Admin만 생성/수정/삭제 가능
-      allow create, update, delete: if request.auth.uid == resource.data.authorId 
+      allow create, update, delete: if request.auth.uid == resource.data.userId
                                       || isAdmin();
     }
     
