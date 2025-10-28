@@ -14,18 +14,16 @@ exports.getSystemConfig = wrap(async (req) => {
   await auth(req);
 
   const configDoc = await db.collection('system').doc('config').get();
-  const config = configDoc.exists ? configDoc.data() : {};
+  const rawConfig = configDoc.exists ? configDoc.data() : {};
 
-  // 기본값 설정
-  const defaultConfig = {
-    aiKeywordRecommendationEnabled: true, // 기본값: 활성화
-    lastUpdated: null,
-    updatedBy: null
+  // Timestamp를 ISO 문자열로 변환
+  const config = {
+    aiKeywordRecommendationEnabled: rawConfig.aiKeywordRecommendationEnabled ?? true,
+    lastUpdated: rawConfig.lastUpdated?.toDate?.()?.toISOString() || null,
+    updatedBy: rawConfig.updatedBy || null
   };
 
-  return ok({
-    config: { ...defaultConfig, ...config }
-  });
+  return ok({ config });
 });
 
 /**

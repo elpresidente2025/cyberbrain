@@ -177,7 +177,7 @@ export default function SystemSettings() {
         {config.lastUpdated && (
           <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid rgba(0, 0, 0, 0.08)' }}>
             <Typography variant="caption" sx={{ color: 'rgba(0, 0, 0, 0.5)' }}>
-              마지막 업데이트: {new Date(config.lastUpdated.seconds * 1000).toLocaleString('ko-KR')}
+              마지막 업데이트: {new Date(config.lastUpdated).toLocaleString('ko-KR')}
             </Typography>
           </Box>
         )}
