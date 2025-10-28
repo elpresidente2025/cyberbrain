@@ -68,3 +68,10 @@ nul
 temp_*.js
 temp_*.py
 *.cache
+
+# Temporary scripts and local config
+delete_cache.js
+fix-user-*.md
+functions/delete_cache.js
+functions/restore_admin.js
+.claude/settings.local.json
