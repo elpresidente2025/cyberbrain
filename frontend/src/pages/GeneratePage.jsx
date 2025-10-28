@@ -234,6 +234,7 @@ const GeneratePage = () => {
           disabled={loading}     // 로딩 중일 때는 입력 비활성화
           categories={CATEGORIES}
           isMobile={isMobile}
+          user={user}            // 사용자 정보 전달 (검색어 추천에 필요)
         />
 
         {/* 생성/초기화 버튼 컴포넌트 */}

@@ -40,14 +40,14 @@ function AdminPage() {
     );
   }
 
-  if (!user.isAdmin) {
+  if (user.role !== 'admin') {
     return (
       <DashboardLayout title="관리자 페이지">
         <Container maxWidth="xl">
           <Alert severity="error">
             <Typography variant="h6" gutterBottom>접근 권한이 없습니다</Typography>
             <Typography variant="body2">
-              이 페이지는 관리자만 접근할 수 있습니다. 
+              이 페이지는 관리자만 접근할 수 있습니다.
               현재 권한: {user.role || '일반 사용자'}
             </Typography>
           </Alert>

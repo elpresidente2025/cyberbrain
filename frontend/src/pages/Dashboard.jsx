@@ -425,7 +425,7 @@ const Dashboard = () => {
                 fontWeight: 600,
                 color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000'
               }}>
-                {user?.name || '사용자'} {getUserDisplayTitle(user)} {userIcon}
+                {user?.displayName || user?.name || '사용자'} {getUserDisplayTitle(user)} {userIcon}
               </Typography>
               {regionInfo && (
                 <Chip

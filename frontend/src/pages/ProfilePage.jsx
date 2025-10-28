@@ -180,7 +180,7 @@ export default function ProfilePage() {
 
 
         const newProfile = {
-          name: profileData.name || '',
+          name: profileData.name || profileData.displayName || '',
           status: profileData.status || '현역',
           position: profileData.position || '',
           regionMetro: profileData.regionMetro || '',
@@ -471,12 +471,178 @@ export default function ProfilePage() {
     return true;
   };
 
+  // 기본 프로필 정보만 저장
+  const handleProfileSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    console.log('프로필 정보 저장 시작...');
+
+    // 기본 필수 정보만 체크
+    if (!profile.name || !profile.position || !profile.regionMetro) {
+      setError('모든 필수 정보를 입력해 주세요.');
+      return;
+    }
+
+    // 직책별 필수 정보 체크
+    if (profile.position === '기초자치단체장' && !profile.regionLocal) {
+      setError('기초자치단체를 선택해 주세요.');
+      return;
+    } else if (profile.position !== '광역자치단체장' && profile.position !== '기초자치단체장') {
+      if (!profile.regionLocal || !profile.electoralDistrict) {
+        setError('모든 필수 정보를 입력해 주세요.');
+        return;
+      }
+    }
+
+    try {
+      setSaving(true);
+
+      const payload = {
+        name: profile.name,
+        status: profile.status,
+        position: profile.position,
+        regionMetro: profile.regionMetro,
+        regionLocal: profile.regionLocal,
+        electoralDistrict: profile.electoralDistrict,
+      };
+
+      console.log('전송할 프로필 데이터:', JSON.stringify(payload, null, 2));
+
+      const res = await callFunctionWithNaverAuth('updateProfile', payload);
+      console.log('updateProfile 응답:', res);
+
+      if (res) {
+        // localStorage 업데이트
+        try {
+          const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+          const updatedUser = {
+            ...currentUser,
+            ...payload
+          };
+          localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+          window.dispatchEvent(new CustomEvent('userProfileUpdated', {
+            detail: updatedUser
+          }));
+          console.log('✅ 프로필 정보 업데이트 완료');
+        } catch (e) {
+          console.warn('사용자 정보 업데이트 실패:', e);
+        }
+
+        showNotification('프로필 정보가 저장되었습니다.', 'success');
+      } else {
+        throw new Error('서버 응답이 올바르지 않습니다.');
+      }
+
+    } catch (e) {
+      console.error('[프로필 저장 오류]', e);
+
+      let errorMessage = '저장 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.';
+      const actualMessage = e?.message || e?.details?.message || '';
+
+      if (actualMessage.includes('선거구') || actualMessage.includes('사용 중')) {
+        errorMessage = '해당 선거구는 이미 다른 사용자가 사용 중입니다.';
+      } else if (e.code === 'functions/already-exists') {
+        errorMessage = '해당 선거구에는 이미 등록된 사용자가 있습니다.';
+      }
+
+      setError(errorMessage);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 자기소개 및 추가 정보만 저장
+  const handleBioSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    console.log('자기소개 정보 저장 시작...');
+
+    // bio 최소 길이 체크
+    const bioTrim = (profile.bio || '').trim();
+    if (bioTrim.length > 0 && bioTrim.length < 10) {
+      setError('자기소개가 너무 짧습니다. 최소 10자 이상 입력해 주세요.');
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      // 첫 번째 bio 저장인지 체크
+      const hadSufficientBio = user?.bio && user.bio.trim().length >= 200;
+      const willHaveSufficientBio = profile.bio && profile.bio.trim().length >= 200;
+      const isFirstBioCompletion = !hadSufficientBio && willHaveSufficientBio;
+
+      if (isFirstBioCompletion) {
+        console.log('🎯 첫 번째 자기소개 완성 감지');
+        setIsFirstTimeBioSave(true);
+      }
+
+      const payload = {
+        bio: profile.bio,
+        customTitle: profile.customTitle,
+        ageDecade: profile.ageDecade,
+        ageDetail: profile.ageDetail,
+        familyStatus: profile.familyStatus,
+        backgroundCareer: profile.backgroundCareer,
+        localConnection: profile.localConnection,
+        politicalExperience: profile.politicalExperience,
+        gender: profile.gender,
+        twitterPremium: profile.twitterPremium,
+        committees: profile.committees,
+        customCommittees: profile.customCommittees,
+        constituencyType: profile.constituencyType,
+      };
+
+      console.log('전송할 자기소개 데이터:', JSON.stringify(payload, null, 2));
+
+      const res = await callFunctionWithNaverAuth('updateProfile', payload);
+      console.log('updateProfile 응답:', res);
+
+      if (res) {
+        // localStorage 업데이트
+        try {
+          const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+          const updatedUser = {
+            ...currentUser,
+            ...payload
+          };
+          localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+          window.dispatchEvent(new CustomEvent('userProfileUpdated', {
+            detail: updatedUser
+          }));
+          console.log('✅ 자기소개 정보 업데이트 완료');
+        } catch (e) {
+          console.warn('사용자 정보 업데이트 실패:', e);
+        }
+
+        // 첫 번째 bio 완성인 경우 축하 모달 표시
+        if (isFirstBioCompletion) {
+          console.log('🎉 첫 번째 bio 완성 - 축하 모달 표시');
+          setCongratulationsOpen(true);
+        } else {
+          showNotification('자기소개 및 추가 정보가 저장되었습니다.', 'success');
+        }
+      } else {
+        throw new Error('서버 응답이 올바르지 않습니다.');
+      }
+
+    } catch (e) {
+      console.error('[자기소개 저장 오류]', e);
+      setError('저장 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 전체 정보 저장 (기존 함수 유지)
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    
+
     console.log('폼 제출 시작...');
-    
+
     if (!validate()) return;
 
     try {
@@ -678,7 +844,7 @@ export default function ProfilePage() {
               p: `${spacing.lg}px`,
               height: 'fit-content'
             }}>
-              <Box component="form" onSubmit={handleSubmit}>
+              <Box component="form" onSubmit={handleProfileSubmit}>
                 <Grid container spacing={3}>
               
               {/* 🔧 UserInfoForm 컴포넌트 사용 */}
@@ -891,12 +1057,12 @@ export default function ProfilePage() {
                         sx={{ 
                           width: 24,
                           height: 24,
-                          backgroundColor: 'colors.brand.primary',
+                          backgroundColor: colors.brand.primary,
                           color: 'white',
                           border: '1px solid',
                           borderColor: 'colors.brand.primary',
                           '&:hover': { 
-                            backgroundColor: 'colors.brand.primaryHover',
+                            backgroundColor: colors.brand.primaryHover,
                             borderColor: 'colors.brand.primaryHover'
                           },
                           '&:disabled': {
@@ -1004,11 +1170,11 @@ export default function ProfilePage() {
                   sx={{
                     mt: `${spacing.md}px`,
                     py: 1.5,
-                    bgcolor: colors.brand.accent,
+                    bgcolor: colors.brand.primary,
                     color: '#fff',
                     fontWeight: 600,
                     '&:hover': {
-                      bgcolor: colors.brand.accentHover
+                      bgcolor: colors.brand.primaryHover
                     }
                   }}
                 >
@@ -1059,12 +1225,12 @@ export default function ProfilePage() {
                       sx={{ 
                         width: 24,
                         height: 24,
-                        backgroundColor: 'colors.brand.primary',
+                        backgroundColor: colors.brand.primary,
                         color: 'white',
                         border: '1px solid',
                         borderColor: 'colors.brand.primary',
                         '&:hover': { 
-                          backgroundColor: 'colors.brand.primaryHover',
+                          backgroundColor: colors.brand.primaryHover,
                           borderColor: 'colors.brand.primaryHover'
                         },
                         '&:disabled': {
@@ -1117,13 +1283,13 @@ export default function ProfilePage() {
                                   mt: `${spacing.xs}px`,
                                   width: 24,
                                   height: 24,
-                                  backgroundColor: 'colors.brand.primary',
+                                  backgroundColor: colors.brand.primary,
                                   color: 'white',
                                   border: '1px solid',
-                                  borderColor: 'colors.brand.primary',
+                                  borderColor: colors.brand.primary,
                                   '&:hover': {
-                                    backgroundColor: theme.palette.ui?.header || '#152484',
-                                    borderColor: theme.palette.ui?.header || '#152484'
+                                    backgroundColor: colors.brand.primaryHover,
+                                    borderColor: colors.brand.primaryHover
                                   },
                                   '&:disabled': {
                                     backgroundColor: 'grey.50',
@@ -1160,12 +1326,12 @@ export default function ProfilePage() {
                       sx={{ 
                         width: 24,
                         height: 24,
-                        backgroundColor: 'colors.brand.primary',
+                        backgroundColor: colors.brand.primary,
                         color: 'white',
                         border: '1px solid',
                         borderColor: 'colors.brand.primary',
                         '&:hover': { 
-                          backgroundColor: 'colors.brand.primaryHover',
+                          backgroundColor: colors.brand.primaryHover,
                           borderColor: 'colors.brand.primaryHover'
                         },
                         '&:disabled': {
@@ -1248,13 +1414,13 @@ export default function ProfilePage() {
                                 sx={{ 
                                   width: 24,
                                   height: 24,
-                                  backgroundColor: 'colors.brand.primary',
+                                  backgroundColor: colors.brand.primary,
                                   color: 'white',
                                   border: '1px solid',
-                                  borderColor: 'colors.brand.primary',
+                                  borderColor: colors.brand.primary,
                                   '&:hover': {
-                                    backgroundColor: theme.palette.ui?.header || '#152484',
-                                    borderColor: theme.palette.ui?.header || '#152484'
+                                    backgroundColor: colors.brand.primaryHover,
+                                    borderColor: colors.brand.primaryHover
                                   },
                                   '&:disabled': {
                                     backgroundColor: 'grey.50',
@@ -1284,18 +1450,18 @@ export default function ProfilePage() {
               <LoadingButton
                 fullWidth
                 variant="contained"
-                onClick={handleSubmit}
+                onClick={handleBioSubmit}
                 loading={saving}
                 disabled={saving}
                 startIcon={<Save />}
                 sx={{
                   mt: `${spacing.md}px`,
                   py: 1.5,
-                  bgcolor: colors.brand.accent,
+                  bgcolor: colors.brand.primary,
                   color: '#fff',
                   fontWeight: 600,
                   '&:hover': {
-                    bgcolor: colors.brand.accentHover
+                    bgcolor: colors.brand.primaryHover
                   }
                 }}
               >
@@ -1466,14 +1632,14 @@ export default function ProfilePage() {
               }
             }, 300);
           }}
-          userName={user?.name}
+          userName={user?.displayName || user?.name}
         />
 
         {/* 축하 모달 */}
         <CongratulationsModal
           open={congratulationsOpen}
           onClose={() => setCongratulationsOpen(false)}
-          userName={user?.name}
+          userName={user?.displayName || user?.name}
           bioContent={profile.bio}
         />
 
