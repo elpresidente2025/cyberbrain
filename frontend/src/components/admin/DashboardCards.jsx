@@ -43,7 +43,7 @@ function DashboardCards() {
     todayFail: 0,
     last30mErrors: 0,
     activeUsers: 0,
-    geminiStatus: { state: 'unknown' }
+    geminiStatus: { state: 'unknown', lastUpdated: null }
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -79,7 +79,10 @@ function DashboardCards() {
           todayFail: statsData.todayFail || 0,
           last30mErrors: statsData.last30mErrors || 0,
           activeUsers: statsData.activeUsers || 0,
-          geminiStatus: statsData.geminiStatus || { state: 'unknown' }
+          geminiStatus: {
+            state: statsData.geminiStatus?.state || 'unknown',
+            lastUpdated: statsData.geminiStatus?.lastUpdated || null
+          }
         });
       } catch (err) {
         console.error('통계 데이터 조회 실패:', err);
@@ -123,7 +126,10 @@ function DashboardCards() {
         todayFail: statsData.todayFail || 0,
         last30mErrors: statsData.last30mErrors || 0,
         activeUsers: statsData.activeUsers || 0,
-        geminiStatus: statsData.geminiStatus || { state: 'unknown' }
+        geminiStatus: {
+          state: statsData.geminiStatus?.state || 'unknown',
+          lastUpdated: statsData.geminiStatus?.lastUpdated || null
+        }
       });
     } catch (err) {
       console.error('새로고침 실패:', err);
@@ -276,7 +282,7 @@ function DashboardCards() {
               />
               {stats.geminiStatus.lastUpdated && (
                 <Typography variant="caption" display="block" color="text.secondary">
-                  업데이트: {new Date(stats.geminiStatus.lastUpdated).toLocaleString()}
+                  업데이트: {new Date(stats.geminiStatus.lastUpdated).toLocaleString('ko-KR')}
                 </Typography>
               )}
             </Box>
