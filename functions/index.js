@@ -6,6 +6,22 @@ const { onRequest } = require('firebase-functions/v2/https');
 // Set region for all functions
 setGlobalOptions({ region: 'asia-northeast3' });
 
+// 환경 변수 검증 (보안 강화)
+const REQUIRED_ENV_VARS = [
+  'NAVER_CLIENT_ID',
+  'NAVER_CLIENT_SECRET',
+  'TOSS_SECRET_KEY',
+  'GEMINI_API_KEY'
+];
+
+const missingVars = REQUIRED_ENV_VARS.filter(varName => !process.env[varName]);
+if (missingVars.length > 0) {
+  console.error('❌ 필수 환경 변수 누락:', missingVars.join(', '));
+  console.error('⚠️ 일부 기능이 정상 작동하지 않을 수 있습니다.');
+} else {
+  console.log('✅ 모든 필수 환경 변수 확인 완료');
+}
+
 // Add profile handlers for getUserProfile debug
 try {
   const profileHandlers = require('./handlers/profile');
@@ -20,6 +36,30 @@ try {
   Object.assign(exports, postsUserHandler);
 } catch (e) {
   console.warn('[index] posts-getUserPosts handler warning:', e?.message);
+}
+
+// Add emergency admin restore handler
+try {
+  const emergencyAdminHandlers = require('./handlers/emergency-admin');
+  Object.assign(exports, emergencyAdminHandlers);
+} catch (e) {
+  console.warn('[index] emergency-admin handler warning:', e?.message);
+}
+
+// Add cleanup legacy fields handler
+try {
+  const cleanupLegacyFieldsHandlers = require('./handlers/cleanup-legacy-fields');
+  Object.assign(exports, cleanupLegacyFieldsHandlers);
+} catch (e) {
+  console.warn('[index] cleanup-legacy-fields handler warning:', e?.message);
+}
+
+// Add merge user handler
+try {
+  const mergeUserHandlers = require('./handlers/merge-user');
+  Object.assign(exports, mergeUserHandlers);
+} catch (e) {
+  console.warn('[index] merge-user handler warning:', e?.message);
 }
 
 // Add dashboard handlers

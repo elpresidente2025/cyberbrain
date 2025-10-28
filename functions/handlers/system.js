@@ -95,14 +95,14 @@ exports.testPolicy = wrap(async (req) => {
     throw new (require('firebase-functions/v2/https').HttpsError)('not-found', '?�당 ?�책??찾을 ???�습?�다.');
   }
 
-  const fullPrompt = `${policyPrompt}\n\n?�스???�력: ${testInput}`;
+  const fullPrompt = `${policyPrompt}\n\n테스트 입력: ${testInput}`;
   const responseText = await callGenerativeModel(fullPrompt);
 
-  log('DEBUG', '?�책 ?�스???�료', { policyId });
-  return ok({ 
-    policy: policyId, 
-    response: responseText, 
-    usage: apiResponse?.usage || null 
+  log('DEBUG', '정책 테스트 완료', { policyId });
+  return ok({
+    policy: policyId,
+    response: responseText
+    // usage 정보는 callGenerativeModel이 반환하지 않으므로 제거
   });
 });
 

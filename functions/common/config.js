@@ -18,4 +18,19 @@ const functionOptions = {
   secrets: [geminiApiKey],
 };
 
-module.exports = { functionOptions };
+// 허용된 CORS 도메인 목록 (중앙집중화)
+const ALLOWED_ORIGINS = [
+  'https://cyberbrain.kr',
+  'https://ai-secretary-6e9c8.web.app',
+  'https://ai-secretary-6e9c8.firebaseapp.com'
+];
+
+// 개발 환경에서 localhost 추가
+if (process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR) {
+  ALLOWED_ORIGINS.push('http://localhost:5173', 'http://localhost:5174');
+}
+
+module.exports = {
+  functionOptions,
+  ALLOWED_ORIGINS
+};

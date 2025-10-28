@@ -34,73 +34,22 @@ export const callFunctionWithRetry = async (functionName, data = {}, retries = 2
   throw lastError || new Error('Function call failed');
 };
 
-// HTTP(onRequest) 함수 호출: 네이버 인증 전용
+// HTTP(onRequest) 함수 호출: 더 이상 사용되지 않음 (deprecated)
+// ✅ 보안 강화: Firebase Auth 사용으로 __naverAuth 패턴 제거
 export const callHttpFunction = async (functionName, data = {}) => {
-  // localStorage에서 네이버 사용자 정보 확인
-  const storedUser = localStorage.getItem('currentUser');
-  if (!storedUser) {
-    throw new Error('로그인이 필요합니다.');
-  }
-
-  let userData;
-  try {
-    userData = JSON.parse(storedUser);
-  } catch (e) {
-    throw new Error('사용자 정보를 읽을 수 없습니다.');
-  }
-
-  if (!userData.uid || userData.provider !== 'naver') {
-    throw new Error('유효하지 않은 사용자 정보입니다.');
-  }
-
-  const projectId = functions.app.options.projectId;
-  const region = 'asia-northeast3';
-  const url = `https://${region}-${projectId}.cloudfunctions.net/${functionName}`;
-
-  const requestOptions = {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      ...data,
-      __naverAuth: { uid: userData.uid, provider: 'naver' }
-    })
-  };
-
-  const response = await fetch(url, requestOptions);
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`HTTP ${response.status}: ${text}`);
-  }
-  const raw = await response.json();
-  return raw && typeof raw === 'object' && 'data' in raw ? raw.data : raw;
+  console.warn('⚠️ callHttpFunction은 deprecated입니다. callFunction을 사용하세요.');
+  return await callFunction(functionName, data);
 };
 
-// ���� ȣȯ: ���� �̸��� �� ���۷� ����
+// 네이버 인증 함수 호출: 이제 일반 Firebase Auth 사용
+// ✅ 보안 강화: Firebase Auth 사용으로 __naverAuth 패턴 제거
 export const callFunctionWithNaverAuth = async (functionName, data = {}) => {
-  // localStorage에서 네이버 사용자 정보 확인
-  const storedUser = localStorage.getItem('currentUser');
-  if (!storedUser) {
+  // Firebase Auth가 설정되어 있으면 자동으로 인증 토큰 포함
+  if (!auth.currentUser) {
     throw new Error('로그인이 필요합니다.');
   }
 
-  let userData;
-  try {
-    userData = JSON.parse(storedUser);
-  } catch (e) {
-    throw new Error('사용자 정보를 읽을 수 없습니다.');
-  }
-
-  if (!userData.uid || userData.provider !== 'naver') {
-    throw new Error('유효하지 않은 사용자 정보입니다.');
-  }
-
-  // __naverAuth 객체를 데이터에 추가
-  const dataWithAuth = {
-    ...data,
-    __naverAuth: { uid: userData.uid, provider: 'naver' }
-  };
-
-  return await callFunctionWithRetry(functionName, dataWithAuth);
+  return await callFunctionWithRetry(functionName, data);
 };
 
 // ----------------------------------------------------------------------------

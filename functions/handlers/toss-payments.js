@@ -7,6 +7,7 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { admin, db } = require('../utils/firebaseAdmin');
+const { ALLOWED_ORIGINS } = require('../common/config');
 const axios = require('axios');
 
 // 토스페이먼츠 API 설정
@@ -17,11 +18,7 @@ const TOSS_API_BASE = 'https://api.tosspayments.com/v1';
  * 토스페이먼츠 결제 승인
  */
 exports.confirmTossPayment = onCall({
-  cors: [
-    'https://cyberbrain.kr',
-    'https://ai-secretary-6e9c8.web.app',
-    'https://ai-secretary-6e9c8.firebaseapp.com'
-  ],
+  cors: ALLOWED_ORIGINS,
   memory: '512MiB',
   timeoutSeconds: 60
 }, async (request) => {
@@ -58,7 +55,7 @@ exports.confirmTossPayment = onCall({
     const paymentData = response.data;
     console.log('✅ 토스페이먼츠 승인 성공:', paymentData.paymentKey);
     
-    // 결제 정보를 Firestore에 저장
+    // 결제 정보를 Firestore에 저장 (PCI DSS 준수 - 카드 정보 제외)
     const paymentRecord = {
       userId: uid,
       paymentKey,
@@ -68,12 +65,17 @@ exports.confirmTossPayment = onCall({
       method: paymentData.method,
       approvedAt: new Date(paymentData.approvedAt),
       orderName: paymentData.orderName,
-      card: paymentData.card || null,
+      // 카드 정보는 마스킹된 정보만 저장
+      card: paymentData.card ? {
+        company: paymentData.card.company,
+        number: paymentData.card.number, // 이미 마스킹됨 (예: 1234-****-****-5678)
+        installmentPlanMonths: paymentData.card.installmentPlanMonths
+      } : null,
       virtualAccount: paymentData.virtualAccount || null,
       transfer: paymentData.transfer || null,
       receipt: paymentData.receipt || null,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      rawPaymentData: paymentData
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+      // rawPaymentData 제거 - PCI DSS 준수
     };
     
     // payments 컬렉션에 저장
@@ -100,13 +102,16 @@ exports.confirmTossPayment = onCall({
     
   } catch (error) {
     console.error('❌ 토스페이먼츠 결제 승인 실패:', error.message);
-    
+
     // 토스페이먼츠 API 에러인 경우
     if (error.response?.data) {
       const tossError = error.response.data;
-      console.error('토스페이먼츠 에러 상세:', tossError);
-      
-      // 실패한 결제 정보도 기록
+      console.error('토스페이먼츠 에러:', {
+        code: tossError.code,
+        message: tossError.message
+      });
+
+      // 실패한 결제 정보 기록 (민감 정보 제외)
       await db.collection('payment_failures').add({
         userId: uid,
         paymentKey,
@@ -114,10 +119,10 @@ exports.confirmTossPayment = onCall({
         amount,
         errorCode: tossError.code,
         errorMessage: tossError.message,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        rawError: tossError
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+        // rawError 제거 - 불필요한 상세 정보 저장 방지
       });
-      
+
       throw new HttpsError('failed-precondition', `결제 승인 실패: ${tossError.message}`);
     }
     

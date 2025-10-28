@@ -1,5 +1,7 @@
 ﻿import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { signInWithCustomToken } from 'firebase/auth';
+import { auth } from '../services/firebase';
 import { callFunctionWithNaverAuth } from '../services/firebaseService';
 
 export const useNaverLogin = () => {
@@ -85,11 +87,19 @@ export const useNaverLogin = () => {
       if (!result?.success) throw new Error('네이버 로그인 처리 실패');
 
       const { registrationRequired, user, naver, customToken } = result;
-      
+
+      // ✅ 보안 강화: customToken이 없으면 에러
+      if (!customToken) {
+        throw new Error('인증 토큰을 받지 못했습니다. 다시 시도해주세요.');
+      }
+
+      // ✅ Firebase Custom Token으로 인증
+      console.log('🔐 Firebase Custom Token으로 인증 중...');
+      const userCredential = await signInWithCustomToken(auth, customToken);
+      console.log('✅ Firebase 인증 완료:', userCredential.user.uid);
+
       if (registrationRequired) {
         // 미가입 회원 - 회원가입 페이지로 이동 (네이버 데이터와 함께)
-        // localStorage를 설정하지 않아서 useAuth에서 프로필 조회를 시도하지 않음
-        console.log('미가입 회원 - 회원가입 페이지로 이동:', naver);
         console.log('🟡 신규 사용자 - 회원가입 페이지로 이동');
         navigate('/register', {
           state: {
@@ -98,7 +108,7 @@ export const useNaverLogin = () => {
           }
         });
       } else {
-        // 기존 회원 - localStorage 설정하고 대시보드로 이동
+        // 기존 회원 - Firebase Auth 완료 후 대시보드로 이동
         console.log('🟢 기존 사용자 - 대시보드로 이동. user 데이터:', user);
         const currentUserData = {
           uid: user.uid,
@@ -107,9 +117,9 @@ export const useNaverLogin = () => {
           photoURL: user.photoURL,
           provider: user.provider,
           profileComplete: user.profileComplete,
-          isAdmin: user.isAdmin
+          role: user.role
         };
-        
+
         localStorage.setItem('currentUser', JSON.stringify(currentUserData));
 
         // useAuth에 즉시 알림

@@ -7,6 +7,7 @@
 
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { admin, db } = require('../utils/firebaseAdmin');
+const { ALLOWED_ORIGINS } = require('../common/config');
 const fetch = require('node-fetch');
 
 // ?�이�?OAuth ?�정 (?�경변???�수)
@@ -67,18 +68,14 @@ async function getNaverUserInfo(accessToken) {
   }
 }
 
-// 기존 onCall ?�수 ?��?
+// 기존 onCall 함수 (deprecated)
 const naverLogin = onCall({
   region: 'asia-northeast3',
-  cors: [
-    'https://cyberbrain.kr',
-    'https://ai-secretary-6e9c8.web.app',
-    'https://ai-secretary-6e9c8.firebaseapp.com'
-  ],
+  cors: ALLOWED_ORIGINS,
   memory: '256MiB',
   timeoutSeconds: 60
 }, async (request) => {
-  // 기존 onCall 로직?� ?�순???��?
+  // 기존 onCall 로직은 더 이상 사용되지 않음
   return { success: false, message: "Use naverLoginHTTP instead" };
 });
 
@@ -102,13 +99,11 @@ const naverLoginHTTP = onRequest({
 
   let stage = 'init';
   try {
-    console.log('?? naverLogin v2 ?�수 ?�작 (onRequest)');
-    console.log('?�� ?�청 ?�보:', {
+    console.log('✅ naverLogin v2 시작 (onRequest)');
+    console.log('📋 요청 정보:', {
       method: request.method,
-      headers: Object.keys(request.headers),
-      bodyExists: !!request.body,
-      bodyData: JSON.stringify(request.body),
-      envVars: {
+      hasBody: !!request.body,
+      envVarsConfigured: {
         naverClientId: !!NAVER_CLIENT_ID,
         naverClientSecret: !!NAVER_CLIENT_SECRET
       }
@@ -122,10 +117,10 @@ const naverLoginHTTP = onRequest({
 
     if (naverUserInfo) {
       stage = 'use_client_userinfo';
-      console.log('???�이�??�용???�이??직접 ?�달):', {
-        id: naverUserInfo.id,
-        email: naverUserInfo.email,
-        name: naverUserInfo.name || naverUserInfo.nickname
+      console.log('ℹ️ 네이버 사용자 데이터 (클라이언트 제공):', {
+        hasId: !!naverUserInfo.id,
+        hasEmail: !!naverUserInfo.email,
+        hasName: !!(naverUserInfo.name || naverUserInfo.nickname)
       });
       naverUserData = naverUserInfo;
     } else if (accessToken) {
@@ -207,16 +202,15 @@ const naverLoginHTTP = onRequest({
           // ?�이�?계정 ?�보 (ID�??�용)
           naverUserId: naverUserData.id,
           name: naverUserData.name || naverUserData.nickname || '네이버사용자',
-          profileImage: naverUserData.profile_image || null,
           gender: mapGender(naverUserData.gender) || null,
           age: naverUserData.age || null,
-          
+
           // 기본 ?�용???�보 (?�중???�로?�에???�정 가??
           status: '?�역', // 기본�?          position: '', // ?�로?�에???�중???�정
           regionMetro: '', // ?�로?�에???�중???�정
           regionLocal: '', // ?�로?�에???�중???�정
           electoralDistrict: '', // ?�로?�에???�중???�정
-          
+
           // 가???�보
           provider: 'naver',
           isNaverUser: true,
@@ -225,24 +219,32 @@ const naverLoginHTTP = onRequest({
           profileComplete: false // ?�로???�성 ?�요
         };
         
-        // ?�용??문서 ?�??        console.log('?�� Firestore???�용???�이???�??�?..', JSON.stringify(newUserData, null, 2));
+        // 사용자 문서 저장
+        console.log('💾 Firestore에 사용자 데이터 저장 중...');
         await newUserRef.set(newUserData);
-        console.log('???�이�??�용???�동 가???�료:', newUserRef.id);
-        
-        // 커스?� ?�큰 ?�??Firebase UID�?반환 (?�론?�엔?�에???�명 로그?????�결)
-        stage = 'return_user_data_new_user';
-        
-        // ?�동 가??+ 로그???�공 ?�답 (?�큰 ?�이)
+        console.log('✅ 네이버 사용자 자동 가입 완료:', newUserRef.id);
+
+        // Firebase Custom Token 생성 (보안 강화)
+        stage = 'create_custom_token_new_user';
+        console.log('🔐 Firebase Custom Token 생성 중...');
+        const customToken = await admin.auth().createCustomToken(newUserRef.id, {
+          provider: 'naver',
+          naverUserId: naverUserData.id
+        });
+        console.log('✅ Custom Token 생성 완료');
+
+        // 자동 가입 + 로그인 성공 응답 (Custom Token 포함)
         return response.status(200).json({
           result: {
             success: true,
             registrationRequired: false,
-            autoRegistered: true, // ?�동 가?�되?�음???�시
+            autoRegistered: true, // 자동 가입되었음을 표시
+            customToken, // Firebase 인증용 Custom Token
             user: {
               uid: newUserRef.id,
               naverUserId: naverUserData.id,
               displayName: newUserData.name,
-              photoURL: newUserData.profileImage,
+              photoURL: naverUserData.profile_image,
               provider: 'naver',
               profileComplete: false
             },
@@ -253,18 +255,16 @@ const naverLoginHTTP = onRequest({
               age: naverUserData.age || null,
               profile_image: naverUserData.profile_image || null
             },
-            message: '?�이�?계정?�로 ?�동 가?�되?�습?�다!'
+            message: '네이버 계정으로 자동 가입되었습니다!'
           }
         });
         
       } catch (registrationError) {
-        console.error('???�이�??�동 가???�류:', {
+        console.error('❌ 네이버 자동 가입 오류:', {
           stage,
-          error: registrationError.message,
-          stack: registrationError.stack,
-          naverUserId: naverUserData.id
+          error: registrationError.message
         });
-        throw new Error(`?�동 가???�패 (${stage}): ${registrationError.message}`);
+        throw new Error(`자동 가입 실패 (${stage}): ${registrationError.message}`);
       }
     }
 
@@ -283,18 +283,28 @@ const naverLoginHTTP = onRequest({
     }
     await userDoc.ref.update(updateExisting);
 
-    // 기존 ?�용??로그???�공 ?�답 (?�큰 ?�이)
+    // Firebase Custom Token 생성 (보안 강화)
+    stage = 'create_custom_token_existing_user';
+    console.log('🔐 Firebase Custom Token 생성 중...');
+    const customToken = await admin.auth().createCustomToken(userDoc.id, {
+      provider: 'naver',
+      naverUserId: naverUserData.id
+    });
+    console.log('✅ Custom Token 생성 완료');
+
+    // 기존 사용자 로그인 성공 응답 (Custom Token 포함)
     stage = 'return_existing_user_data';
-    
+
     return response.status(200).json({
       result: {
         success: true,
         registrationRequired: false,
+        customToken, // Firebase 인증용 Custom Token
         user: {
           uid: userDoc.id,
           naverUserId: userData.naverUserId,
           displayName: userData.name || userData.displayName,
-          photoURL: userData.profileImage || naverUserData.profile_image,
+          photoURL: naverUserData.profile_image,
           provider: 'naver',
           profileComplete: userData.profileComplete || false
         },
@@ -309,24 +319,22 @@ const naverLoginHTTP = onRequest({
     });
 
   } catch (error) {
-    console.error('??naverLogin 최상???�류:', {
+    // 서버 로그에만 상세 정보 기록
+    console.error('❌ naverLogin 최상위 오류:', {
       stage: stage || 'unknown',
       errorMessage: error.message,
       errorStack: error.stack,
-      requestBody: JSON.stringify(request.body),
-      naverClientIdExists: !!NAVER_CLIENT_ID,
-      naverClientSecretExists: !!NAVER_CLIENT_SECRET
+      envVarsConfigured: {
+        naverClientId: !!NAVER_CLIENT_ID,
+        naverClientSecret: !!NAVER_CLIENT_SECRET
+      }
     });
-    
+
+    // 클라이언트에는 일반적인 오류 메시지만 반환 (보안)
     return response.status(500).json({
       error: {
         code: 'internal',
-        message: 'NAVER_LOGIN_INTERNAL',
-        details: { 
-          stage: stage || 'unknown',
-          message: error.message, 
-          stack: (error && error.stack) || null 
-        }
+        message: '네이버 로그인 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
       }
     });
   }

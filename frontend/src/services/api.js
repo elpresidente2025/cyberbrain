@@ -14,21 +14,29 @@ const apiCall = async (endpoint, options = {}) => {
     ...options
   };
 
-  console.log(`🌐 API 호출: ${endpoint}`, config.body ? JSON.parse(config.body) : {});
+  // ✅ 보안: 민감한 요청/응답 데이터 로깅을 개발 환경에서만 활성화
+  if (import.meta.env.DEV) {
+    console.log(`🌐 API 호출: ${endpoint}`, config.body ? JSON.parse(config.body) : {});
+  }
 
   try {
     const response = await fetch(url, config);
-    
+
     if (!response.ok) {
       throw new Error(`API 오류: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
-    console.log(`✅ API 응답: ${endpoint}`, data);
+
+    if (import.meta.env.DEV) {
+      console.log(`✅ API 응답: ${endpoint}`, data);
+    }
+
     return data;
 
   } catch (error) {
-    console.error(`❌ API 호출 실패: ${endpoint}`, error);
+    // 에러는 항상 로깅 (디버깅 필수)
+    console.error(`❌ API 호출 실패: ${endpoint}`, error.message);
     throw error;
   }
 };
