@@ -8,6 +8,8 @@
 const { onCall, HttpsError, onRequest } = require('firebase-functions/v2/https');
 const { CloudTasksClient } = require('@google-cloud/tasks');
 const { admin, db } = require('../utils/firebaseAdmin');
+const { auth } = require('../common/auth');
+const crypto = require('crypto');
 const scraper = require('../services/scraper');
 const trendsAnalyzer = require('../services/trends-analyzer');
 const keywordScorer = require('../services/keyword-scorer');
@@ -22,18 +24,22 @@ exports.requestKeywordAnalysis = onCall({
   memory: '512MiB',
   timeoutSeconds: 60
 }, async (request) => {
-  const { district, topic, userId } = request.data;
+  // 인증 확인 (Firebase Auth 또는 네이버 인증)
+  let authData;
+  try {
+    authData = await auth(request);
+  } catch (error) {
+    throw new HttpsError('unauthenticated', '인증이 필요합니다.');
+  }
 
-  console.log('🔥 [KeywordAnalysis] 분석 요청:', { district, topic, userId });
+  const { district, topic } = request.data;
+  const uid = authData.uid;
+
+  console.log('🔥 [KeywordAnalysis] 분석 요청:', { district, topic, uid });
 
   // 입력 검증
   if (!district || !topic) {
     throw new HttpsError('invalid-argument', '지역구와 주제는 필수입니다.');
-  }
-
-  const uid = request.auth?.uid;
-  if (!uid) {
-    throw new HttpsError('unauthenticated', '인증이 필요합니다.');
   }
 
   try {
@@ -181,8 +187,11 @@ async function executeKeywordAnalysis(params) {
     // 상태 업데이트: processing
     await updateTaskStatus(taskId, 'processing', { progress: 10 });
 
-    // 1. 캐시 확인
-    const cacheKey = `${district}_${topic}`;
+    // 1. 캐시 확인 - 긴 topic을 해시로 변환
+    const cacheKey = crypto
+      .createHash('sha256')
+      .update(`${district}_${topic}`)
+      .digest('hex');
     const cachedResult = await checkCache(cacheKey);
 
     if (cachedResult) {
@@ -438,15 +447,19 @@ exports.getKeywordAnalysisResult = onCall({
   memory: '256MiB',
   timeoutSeconds: 30
 }, async (request) => {
+  // 인증 확인 (Firebase Auth 또는 네이버 인증)
+  let authData;
+  try {
+    authData = await auth(request);
+  } catch (error) {
+    throw new HttpsError('unauthenticated', '인증이 필요합니다.');
+  }
+
   const { taskId } = request.data;
+  const uid = authData.uid;
 
   if (!taskId) {
     throw new HttpsError('invalid-argument', 'taskId가 필요합니다.');
-  }
-
-  const uid = request.auth?.uid;
-  if (!uid) {
-    throw new HttpsError('unauthenticated', '인증이 필요합니다.');
   }
 
   try {
@@ -488,10 +501,15 @@ exports.getKeywordAnalysisHistory = onCall({
   memory: '256MiB',
   timeoutSeconds: 30
 }, async (request) => {
-  const uid = request.auth?.uid;
-  if (!uid) {
+  // 인증 확인 (Firebase Auth 또는 네이버 인증)
+  let authData;
+  try {
+    authData = await auth(request);
+  } catch (error) {
     throw new HttpsError('unauthenticated', '인증이 필요합니다.');
   }
+
+  const uid = authData.uid;
 
   try {
     const { limit = 10 } = request.data || {};

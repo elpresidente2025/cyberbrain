@@ -141,7 +141,7 @@ const naverLoginHTTP = onRequest({ region: 'asia-northeast3', cors: true, timeou
     // 관리자 권한 확인 및 업데이트
     const adminNaverIds = (process.env.ADMIN_NAVER_IDS || 'kjk6206').split(',').map(id => id.trim());
     const shouldBeAdmin = adminNaverIds.includes(naver.id);
-    const isCurrentlyAdmin = userData.isAdmin === true;
+    const isCurrentlyAdmin = userData.role === 'admin';
 
     const updateData = {
       lastLoginAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -155,7 +155,6 @@ const naverLoginHTTP = onRequest({ region: 'asia-northeast3', cors: true, timeou
 
     if (shouldBeAdmin && !isCurrentlyAdmin) {
       console.log(`🔑 기존 사용자를 관리자로 전환: ${naver.id}`);
-      updateData.isAdmin = true;
       updateData.role = 'admin';
       updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
     }
@@ -170,7 +169,7 @@ const naverLoginHTTP = onRequest({ region: 'asia-northeast3', cors: true, timeou
       await admin.auth().createUser({
         uid,
         displayName: userData.name || userData.displayName || null,
-        photoURL: userData.profileImage || naver.profile_image || null,
+        photoURL: naver.profile_image || null,
         disabled: false
       }).catch(() => {});
     }
@@ -187,10 +186,10 @@ const naverLoginHTTP = onRequest({ region: 'asia-northeast3', cors: true, timeou
           uid: uid,
           naverUserId: userData.naverUserId,
           displayName: userData.name || userData.displayName,
-          photoURL: userData.profileImage || naver.profile_image,
+          photoURL: naver.profile_image,
           provider: 'naver',
           profileComplete: userData.profileComplete || false,
-          isAdmin: shouldBeAdmin || isCurrentlyAdmin
+          role: userData.role
         },
         customToken: customToken,
         naver: {
@@ -239,10 +238,27 @@ const naverCompleteRegistration = onRequest({ region: 'asia-northeast3', cors: t
     const adminNaverIds = (process.env.ADMIN_NAVER_IDS || 'kjk6206').split(',').map(id => id.trim());
     const isAdmin = adminNaverIds.includes(naverUserData.id);
 
+    // Bio 처리 (별도 컬렉션에 저장)
+    const bio = profileData.bio ? String(profileData.bio).trim() : '';
+    if (bio) {
+      await db.collection('bios').doc(ref.id).set({
+        userId: ref.id,
+        content: bio,
+        version: 1,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        metadataStatus: 'pending',
+        usage: {
+          generatedPostsCount: 0,
+          avgQualityScore: 0,
+          lastUsedAt: null
+        }
+      });
+    }
+
     const doc = {
       naverUserId: naverUserData.id,
       name: String(profileData.name).trim(),
-      profileImage: naverUserData.profile_image || null,
       gender: mapGender(profileData.gender) || mapGender(naverUserData.gender) || null,
       age: naverUserData.age || null,
       position: profileData.position,
@@ -250,10 +266,9 @@ const naverCompleteRegistration = onRequest({ region: 'asia-northeast3', cors: t
       regionLocal: profileData.regionLocal,
       electoralDistrict: profileData.electoralDistrict,
       status: profileData.status || '현역',
-      bio: profileData.bio || '',
+      isActive: !!bio, // bio 존재 여부로 활성화 상태 결정
       provider: 'naver',
       isNaverUser: true,
-      isAdmin: isAdmin,
       role: isAdmin ? 'admin' : null,
       profileComplete: true,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -277,7 +292,7 @@ const naverCompleteRegistration = onRequest({ region: 'asia-northeast3', cors: t
       await admin.auth().createUser({
         uid: ref.id,
         displayName: doc.name,
-        photoURL: doc.profileImage || null,
+        photoURL: naverUserData.profile_image || null,
         disabled: false
       }).catch(() => {});
     }
@@ -303,7 +318,7 @@ const naverCompleteRegistration = onRequest({ region: 'asia-northeast3', cors: t
           naverUserId: naverUserData.id,
           // displayName을 바로 업데이트하지 않으므로 백엔드로부터 응답하는 name을 제공합니다.
           displayName: doc.name,
-          isAdmin: isAdmin
+          role: doc.role
         }
       }
     });

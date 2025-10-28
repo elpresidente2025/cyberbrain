@@ -16,8 +16,8 @@ exports.requireAdmin = async (uid, token) => {
   try {
     const userDoc = await db.collection('users').doc(uid).get();
     const userData = userDoc.data();
-    
-    if (!userData?.isAdmin || userData?.role !== 'admin') {
+
+    if (userData?.role !== 'admin') {
       throw new HttpsError('permission-denied', '관리자 권한이 확인되지 않습니다.');
     }
   } catch (error) {

@@ -30,7 +30,7 @@ async function expandKeywordsWithGemini(params) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
 
     // 프롬프트 생성
     const prompt = generateExpansionPrompt(district, topic, baseKeywords, targetCount);

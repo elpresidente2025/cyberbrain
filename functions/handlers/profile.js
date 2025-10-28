@@ -243,8 +243,8 @@ exports.updateUserPlan = wrap(async (req) => {
   
   try {
     await userRef.set({
-      plan: plan,
-      subscription: plan, // 호환성을 위해 둘 다 설정
+      plan: plan, // 표준 필드
+      subscription: plan, // 레거시 호환성 (향후 제거 예정)
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
 
@@ -300,14 +300,35 @@ exports.registerWithDistrictCheck = wrap(async (req) => {
   const bio = typeof profileData.bio === 'string' ? profileData.bio.trim() : '';
   const isActive = !!bio;
 
+  // Bio를 bios 컬렉션에 저장 (users 컬렉션이 아닌!)
+  if (bio) {
+    await db.collection('bios').doc(uid).set({
+      userId: uid,
+      content: bio,
+      version: 1,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      metadataStatus: 'pending',
+      usage: {
+        generatedPostsCount: 0,
+        avgQualityScore: 0,
+        lastUsedAt: null
+      }
+    });
+
+    // 비동기 메타데이터 추출
+    const { extractMetadataAsync } = require('./bio');
+    extractMetadataAsync(uid, bio);
+  }
+
   const sanitizedProfileData = { ...profileData };
   delete sanitizedProfileData.isAdmin;
   delete sanitizedProfileData.role;
+  delete sanitizedProfileData.bio; // bio는 bios 컬렉션에 저장했으므로 제거
 
   await db.collection('users').doc(uid).set(
     {
       ...sanitizedProfileData,
-      bio,
       isActive,
       districtKey: newKey,
       subscriptionStatus: 'trial',  // 무료 체험 상태
@@ -330,22 +351,23 @@ exports.registerWithDistrictCheck = wrap(async (req) => {
 // ============================================================================
 
 /**
- * @trigger analyzeUserProfileOnUpdate
- * @description 'users' 문서의 'bio' 필드가 업데이트되면 자동으로 스타일 분석을 실행합니다.
+ * @trigger analyzeBioOnUpdate
+ * @description 'bios' 문서의 'content' 필드가 업데이트되면 자동으로 스타일 분석을 실행합니다.
  */
-exports.analyzeUserProfileOnUpdate = onDocumentUpdated('users/{userId}', async (event) => {
+exports.analyzeBioOnUpdate = onDocumentUpdated('bios/{userId}', async (event) => {
   const newData = event.data.after.data();
   const oldData = event.data.before.data();
   const userId = event.params.userId;
 
-  if (newData.bio && newData.bio !== oldData.bio && newData.bio.length > 50) {
+  if (newData.content && newData.content !== oldData?.content && newData.content.length > 50) {
     console.log(`사용자 ${userId}의 자기소개가 변경되어 스타일 분석을 시작합니다.`);
     try {
-      const styleProfile = await analyzeBioForStyle(newData.bio);
+      const styleProfile = await analyzeBioForStyle(newData.content);
       if (styleProfile) {
-        await event.data.after.ref.update({
+        // users 컬렉션에 스타일 프로필 저장
+        await db.collection('users').doc(userId).update({
           writingStyle: styleProfile,
-          styleLastAnalyzed: new Date(),
+          styleLastAnalyzed: admin.firestore.FieldValue.serverTimestamp(),
         });
         console.log(`사용자 ${userId}의 스타일 프로필을 성공적으로 저장했습니다.`);
       }
