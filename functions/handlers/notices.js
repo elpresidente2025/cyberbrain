@@ -197,7 +197,12 @@ exports.getAdminStats = wrap(async (request) => {
     try {
       const statusDoc = await db.collection('system').doc('gemini_status').get();
       if (statusDoc.exists) {
-        geminiStatus = statusDoc.data();
+        const statusData = statusDoc.data();
+        geminiStatus = {
+          state: statusData.state || 'active',
+          // Timestamp를 ISO 문자열로 변환
+          lastUpdated: statusData.lastUpdated?.toDate?.()?.toISOString() || null
+        };
       }
     } catch (e) {
       console.log('Gemini 상태 문서 없음, 기본값 사용');
