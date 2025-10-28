@@ -2,7 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link as RouterLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { Container, Typography, Box, Paper, TextField, Alert, Link, Grid, FormControlLabel, Checkbox, Dialog, DialogTitle, DialogContent, DialogActions, Button, useTheme } from '@mui/material';
+import { useNaverLogin } from '../hooks/useNaverLogin';
+import { useThemeMode } from '../contexts/ThemeContext';
+import { Container, Typography, Box, Paper, TextField, Alert, Link, Grid, FormControlLabel, Checkbox, Dialog, DialogTitle, DialogContent, DialogActions, Button, useTheme, Divider } from '@mui/material';
 import UserInfoForm from '../components/UserInfoForm';
 import { LoadingButton } from '../components/loading';
 
@@ -10,19 +12,9 @@ function RegisterPage() {
   const location = useLocation();
   const naverUserData = location.state?.naverUserData || null;
   const theme = useTheme();
-
-  // 네이버 사용자 데이터가 없으면 로그인 페이지로 리다이렉트
   const navigate = useNavigate();
-  
-  useEffect(() => {
-    if (!naverUserData) {
-      navigate('/login', {
-        state: {
-          message: '네이버 로그인을 통해서만 회원가입이 가능합니다.'
-        }
-      });
-    }
-  }, [naverUserData, navigate]);
+  const { loginWithNaver, isLoading: naverLoading, error: naverError } = useNaverLogin();
+  const { isDarkMode } = useThemeMode();
 
   const normalizeGender = (g) => {
     if (!g) return '';
@@ -194,11 +186,23 @@ function RegisterPage() {
   const handleNaverConsentDecline = () => {
     setNaverConsentOpen(false);
     // 동의 거부 시 로그인 페이지로 이동
-    navigate('/login', { 
-      state: { 
-        message: '정보 제공에 동의하지 않으면 회원가입을 진행할 수 없습니다.' 
-      } 
+    navigate('/login', {
+      state: {
+        message: '정보 제공에 동의하지 않으면 회원가입을 진행할 수 없습니다.'
+      }
     });
+  };
+
+  // 네이버 회원가입 시작
+  const handleNaverSignup = async () => {
+    setError('');
+    try {
+      await loginWithNaver();
+      // 성공 시 useNaverLogin 훅이 자동으로 회원가입 페이지로 이동시킴
+    } catch (err) {
+      console.error('네이버 회원가입 시작 오류:', err);
+      setError(err.message || '네이버 로그인에 실패했습니다.');
+    }
   };
 
   return (
@@ -210,13 +214,107 @@ function RegisterPage() {
           </Typography>
 
           <Paper elevation={2} sx={{ p: { xs: 2, sm: 4 }, mt: { xs: 2, sm: 3 }, width: '100%' }}>
-            <Box component="form" onSubmit={handleSubmit}>
-              <Grid container spacing={{ xs: 2, sm: 3 }}>
-                <Grid item xs={12}>
-                  <Typography variant="h6" gutterBottom>
-                    계정 정보
+            {/* 네이버 로그인이 안 되어 있으면 버튼 표시 */}
+            {!naverUserData ? (
+              <Box>
+                <Alert severity="info" sx={{ mb: 3 }}>
+                  전자두뇌비서관은 네이버 아이디로만 회원가입이 가능합니다.
+                </Alert>
+
+                <Box sx={{ textAlign: 'center', mb: 3 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                    네이버 아이디로 간편하게 시작하세요
                   </Typography>
-                </Grid>
+
+                  <Box sx={{ position: 'relative', display: 'inline-block', width: '75%' }}>
+                    <Box
+                      component="img"
+                      src={isDarkMode ? "/buttons/login_dark.png" : "/buttons/login_light.png"}
+                      alt="네이버로 회원가입"
+                      onClick={handleNaverSignup}
+                      sx={{
+                        width: '100%',
+                        maxWidth: '225px',
+                        height: 'auto',
+                        cursor: naverLoading ? 'not-allowed' : 'pointer',
+                        opacity: naverLoading ? 0.6 : 1,
+                        transition: 'opacity 0.2s, transform 0.1s',
+                        '&:hover': {
+                          transform: naverLoading ? 'none' : 'scale(1.02)',
+                        },
+                        '&:active': {
+                          transform: naverLoading ? 'none' : 'scale(0.98)',
+                        },
+                        pointerEvents: naverLoading ? 'none' : 'auto'
+                      }}
+                    />
+                    {naverLoading && (
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          top: '50%',
+                          left: '50%',
+                          transform: 'translate(-50%, -50%)',
+                          color: '#03C75A',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            width: 20,
+                            height: 20,
+                            border: '2px solid rgba(3, 199, 90, 0.3)',
+                            borderTop: '2px solid #03C75A',
+                            borderRadius: '50%',
+                            animation: 'spin 1s linear infinite',
+                            '@keyframes spin': {
+                              '0%': { transform: 'rotate(0deg)' },
+                              '100%': { transform: 'rotate(360deg)' }
+                            }
+                          }}
+                        />
+                        <Typography variant="body2" sx={{ color: '#03C75A', fontWeight: 600 }}>
+                          연결 중...
+                        </Typography>
+                      </Box>
+                    )}
+                  </Box>
+                </Box>
+
+                {naverError && (
+                  <Alert severity="error" sx={{ mt: 2 }}>
+                    {naverError}
+                  </Alert>
+                )}
+
+                <Divider sx={{ my: 3 }} />
+
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">
+                    이미 계정이 있으신가요?{' '}
+                    <Link component={RouterLink} to="/login">
+                      로그인
+                    </Link>
+                  </Typography>
+                </Box>
+              </Box>
+            ) : (
+              /* 네이버 로그인 완료 후 회원가입 폼 */
+              <Box component="form" onSubmit={handleSubmit}>
+                <Grid container spacing={{ xs: 2, sm: 3 }}>
+                  <Grid item xs={12}>
+                    <Alert severity="success" sx={{ mb: 2 }}>
+                      네이버 계정 연결 완료! 추가 정보를 입력해주세요.
+                    </Alert>
+                  </Grid>
+
+                  <Grid item xs={12}>
+                    <Typography variant="h6" gutterBottom>
+                      계정 정보
+                    </Typography>
+                  </Grid>
 
                 {/* Username: show for all users but disabled for Naver users */}
                 <Grid item xs={12}>
@@ -288,6 +386,7 @@ function RegisterPage() {
                 </Grid>
               </Grid>
             </Box>
+            )}
           </Paper>
         </Box>
       </Container>
