@@ -178,12 +178,19 @@ exports.getAdminStats = wrap(async (request) => {
       console.log('에러 로그 컬렉션 없음, 기본값 사용');
     }
 
-    // 최근 7일간 활성 사용자
+    // 최근 7일간 활성 사용자 (복합 인덱스 불필요하도록 단순화)
     const activeUsersSnapshot = await db.collection('users')
       .where('updatedAt', '>=', sevenDaysAgo)
-      .where('isActive', '==', true)
       .get();
-    const activeUsers = activeUsersSnapshot.size;
+
+    // 클라이언트 측에서 isActive 필터링
+    let activeUsers = 0;
+    activeUsersSnapshot.forEach(doc => {
+      const data = doc.data();
+      if (data.isActive !== false) { // isActive가 false가 아닌 모든 경우 (true 또는 undefined)
+        activeUsers++;
+      }
+    });
 
     // Gemini 상태
     let geminiStatus = { state: 'active' };
