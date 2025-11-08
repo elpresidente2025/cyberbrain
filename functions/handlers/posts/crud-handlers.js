@@ -10,7 +10,12 @@ const { ok, okMessage } = require('../../utils/posts/helpers');
  * 사용자 포스트 목록 조회
  */
 exports.getUserPosts = wrap(async (req) => {
-  const { uid } = await auth(req);
+  const { uid } = req.auth || {};
+
+  if (!uid) {
+    throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  }
+
   console.log('POST getUserPosts 시작:', { userId: uid });
 
   try {
@@ -45,7 +50,12 @@ exports.getUserPosts = wrap(async (req) => {
  * 특정 포스트 조회
  */
 exports.getPost = wrap(async (req) => {
-  const { uid } = await auth(req);
+  const { uid } = req.auth || {};
+
+  if (!uid) {
+    throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  }
+
   const { postId } = req.data || {};
   console.log('POST getPost 시작:', { userId: uid, postId });
 
@@ -84,7 +94,12 @@ exports.getPost = wrap(async (req) => {
  * 포스트 업데이트
  */
 exports.updatePost = wrap(async (req) => {
-  const { uid } = await auth(req);
+  const { uid } = req.auth || {};
+
+  if (!uid) {
+    throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  }
+
   const { postId, updates } = req.data || {};
   console.log('POST updatePost 시작:', { userId: uid, postId });
 
@@ -128,7 +143,12 @@ exports.updatePost = wrap(async (req) => {
  * 포스트 삭제
  */
 exports.deletePost = wrap(async (req) => {
-  const { uid } = await auth(req);
+  const { uid } = req.auth || {};
+
+  if (!uid) {
+    throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  }
+
   const { postId } = req.data || {};
   console.log('POST deletePost 시작:', { userId: uid, postId });
 
@@ -161,7 +181,12 @@ exports.deletePost = wrap(async (req) => {
  * 사용량 제한 체크
  */
 exports.checkUsageLimit = wrap(async (req) => {
-  const { uid } = await auth(req);
+  const { uid } = req.auth || {};
+
+  if (!uid) {
+    throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  }
+
   console.log('USAGE checkUsageLimit 시작:', { userId: uid });
 
   try {

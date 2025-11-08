@@ -34,8 +34,8 @@ async function loadUserProfile(uid, category, topic, useBonus = false) {
       userProfile = userDoc.data();
       console.log('✅ 사용자 프로필 조회 완료:', userProfile.name || 'Unknown');
 
-      // 권한 및 사용량 체크
-      const isAdmin = userProfile.isAdmin === true;
+      // 권한 및 사용량 체크 (isAdmin 필드 또는 role 필드 체크)
+      const isAdmin = userProfile.isAdmin === true || userProfile.role === 'admin';
 
       if (!isAdmin) {
         // 하루 생성량 체크

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { callHttpFunction } from '../services/firebaseService';
+import { callFunctionWithNaverAuth } from '../services/firebaseService';
 import { useAuth } from './useAuth';
 import { handleHttpError } from '../utils/errorHandler';
 import { sanitizeHtml, stripHtmlTags, getTextLength, isSeoOptimized } from '../utils/contentSanitizer';
@@ -79,7 +79,7 @@ export function useGenerateAPI() {
       console.log('📝 요청 데이터:', requestData);
 
       // HTTP 함수 호출 (비동기)
-      const resultPromise = callHttpFunction(CONFIG.FUNCTIONS.GENERATE_POSTS, requestData);
+      const resultPromise = callFunctionWithNaverAuth(CONFIG.FUNCTIONS.GENERATE_POSTS, requestData);
 
       // sessionId를 예측하여 즉시 Firestore 리스너 등록
       const tempSessionId = `${user.uid}_${Date.now()}`;
@@ -204,7 +204,7 @@ export function useGenerateAPI() {
     try {
       console.log('💾 savePost 호출 시작:', draft.title);
 
-      const result = await callHttpFunction(CONFIG.FUNCTIONS.SAVE_POST, {
+      const result = await callFunctionWithNaverAuth(CONFIG.FUNCTIONS.SAVE_POST, {
         title: draft.title,
         content: draft.content,
         htmlContent: draft.htmlContent,

@@ -61,7 +61,7 @@ import { callFunctionWithNaverAuth } from '../services/firebaseService';
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, refreshUserProfile } = useAuth();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
@@ -74,7 +74,7 @@ const Dashboard = () => {
 
   // useNotification 훅 사용
   const { notification, showNotification, hideNotification } = useNotification();
-  
+
   // 모달 관리
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerPost, setViewerPost] = useState(null);
@@ -185,10 +185,13 @@ const Dashboard = () => {
     }
   };
 
-  // 실제 데이터 로딩 (페이지 마운트 시에만 실행)
+  // 데이터 로딩 (바로 시작 - 프로필은 이미 네이버 로그인에서 로드됨)
   useEffect(() => {
-    fetchDashboardData();
-  }, [user]);
+    if (user?.uid) {
+      console.log('📊 Dashboard: 데이터 로딩 시작');
+      fetchDashboardData();
+    }
+  }, [user?.uid]);
 
   // bio 체크 (사용자 로그인 후) - isLoading이 false가 되면 프로필 로드 완료된 상태
   // ref를 사용하여 한 번만 실행되도록 보장
@@ -207,18 +210,18 @@ const Dashboard = () => {
     }
   }, [user, isLoading]);
 
-  // 공지사항 별도 로딩 (대시보드 데이터와 독립적으로)
+  // 공지사항 별도 로딩
   useEffect(() => {
     const fetchNotices = async () => {
       if (!user?.uid) return;
 
       try {
         const noticesResponse = await callFunctionWithNaverAuth('getActiveNotices');
-        
+
         // 올바른 경로로 공지사항 데이터 추출
         const noticesData = noticesResponse?.notices || [];
         setNotices(noticesData);
-        
+
       } catch (noticeError) {
         console.error('❌ 공지사항 로딩 실패:', noticeError);
         setNotices([]);
@@ -226,7 +229,7 @@ const Dashboard = () => {
     };
 
     fetchNotices();
-  }, [user]);
+  }, [user?.uid]);
 
 
   // 이벤트 핸들러들
@@ -313,24 +316,9 @@ const Dashboard = () => {
     const ok = window.confirm('정말 이 원고를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.');
     if (!ok) return;
     try {
-      // 네이버 인증으로 삭제 요청
-      const response = await fetch('https://asia-northeast3-ai-secretary-6e9c8.cloudfunctions.net/deletePost', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          postId,
-          __naverAuth: { uid: user.uid, provider: 'naver' }
-        })
-      });
-      
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.message || '삭제에 실패했습니다.');
-      }
-      
+      // Firebase Auth를 사용한 삭제 요청
+      await callFunctionWithNaverAuth('deletePost', { postId });
+
       // 대시보드의 최근 포스트 목록에서 제거
       setRecentPosts((prev) => prev.filter((p) => p.id !== postId));
 

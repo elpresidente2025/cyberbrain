@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../services/firebase';
 import { useAuth } from './useAuth';
 import { callFunctionWithNaverAuth } from '../services/firebaseService';
 
-export const useBonus = () => {
+export const useBonus = ({ autoFetch = true } = {}) => {
   const { user } = useAuth();
   const [bonusStats, setBonusStats] = useState({
     hasBonus: false,
@@ -19,7 +19,7 @@ export const useBonus = () => {
   const callUseBonusGeneration = httpsCallable(functions, 'useBonusGeneration');
 
   // 보너스 상태 조회
-  const fetchBonusStats = async () => {
+  const fetchBonusStats = useCallback(async () => {
     if (!user?.uid) return;
 
     try {
@@ -45,7 +45,7 @@ export const useBonus = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.uid]);
 
   // 보너스 사용
   const useBonus = async () => {
@@ -65,10 +65,10 @@ export const useBonus = () => {
   };
 
   useEffect(() => {
-    if (user?.uid) {
+    if (autoFetch && user?.uid) {
       fetchBonusStats();
     }
-  }, [user?.uid]);
+  }, [autoFetch, user?.uid, fetchBonusStats]);
 
   return {
     bonusStats,

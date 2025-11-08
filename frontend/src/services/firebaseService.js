@@ -45,8 +45,27 @@ export const callHttpFunction = async (functionName, data = {}) => {
 // ✅ 보안 강화: Firebase Auth 사용으로 __naverAuth 패턴 제거
 export const callFunctionWithNaverAuth = async (functionName, data = {}) => {
   // Firebase Auth가 설정되어 있으면 자동으로 인증 토큰 포함
+  console.log('🔐 callFunctionWithNaverAuth:', {
+    functionName,
+    hasCurrentUser: !!auth.currentUser,
+    currentUser: auth.currentUser ? {
+      uid: auth.currentUser.uid,
+      email: auth.currentUser.email,
+      displayName: auth.currentUser.displayName
+    } : null
+  });
+
   if (!auth.currentUser) {
+    console.error('❌ Firebase Auth currentUser가 없습니다!');
     throw new Error('로그인이 필요합니다.');
+  }
+
+  // 토큰 확인
+  try {
+    const token = await auth.currentUser.getIdToken();
+    console.log('✅ Firebase Auth 토큰 확인:', token ? '토큰 존재' : '토큰 없음');
+  } catch (e) {
+    console.error('❌ 토큰 가져오기 실패:', e);
   }
 
   return await callFunctionWithRetry(functionName, data);
@@ -146,7 +165,7 @@ export const clearSystemCache = async () => {
 
 export const convertToSNS = async (postId) => {
   const modelName = localStorage.getItem('gemini_model') || 'gemini-2.0-flash-exp';
-  return await callHttpFunction('convertToSNS', { postId, modelName });
+  return await callFunctionWithNaverAuth('convertToSNS', { postId, modelName });
 };
 
 export const testSNS = async () => {
@@ -154,7 +173,7 @@ export const testSNS = async () => {
 };
 
 export const getSNSUsage = async () => {
-  return await callHttpFunction('getSNSUsage', {});
+  return await callFunctionWithNaverAuth('getSNSUsage', {});
 };
 
 export const purchaseSNSAddon = async () => {

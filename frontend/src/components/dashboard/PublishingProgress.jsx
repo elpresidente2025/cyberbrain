@@ -178,15 +178,24 @@ const PublishingProgress = () => {
   };
 
   const getMonthlyTarget = (user) => {
+    // 관리자는 무제한 사용 가능
+    const isAdmin = user?.isAdmin || user?.role === 'admin';
+
     // 사용자의 플랜 정보만 기반으로 목표 결정
     const plan = user?.plan || user?.subscription;
-    
+
     console.log('📊 PublishingProgress - getMonthlyTarget:', {
       user: user,
+      isAdmin: isAdmin,
       userPlan: user?.plan,
       userSubscription: user?.subscription,
       finalPlan: plan
     });
+
+    // 관리자는 목표 없음 (무제한)
+    if (isAdmin) {
+      return 90; // 관리자도 목표는 90으로 표시 (실제로는 무제한)
+    }
 
     if (plan) {
       return 90; // 스탠다드 플랜 통일

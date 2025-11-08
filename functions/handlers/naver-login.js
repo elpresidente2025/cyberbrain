@@ -295,6 +295,14 @@ const naverLoginHTTP = onRequest({
     // 기존 사용자 로그인 성공 응답 (Custom Token 포함)
     stage = 'return_existing_user_data';
 
+    // Timestamp를 ISO 문자열로 변환하는 헬퍼 함수
+    const convertTimestamp = (timestamp) => {
+      if (!timestamp) return null;
+      if (timestamp.toDate) return timestamp.toDate().toISOString();
+      if (timestamp instanceof Date) return timestamp.toISOString();
+      return timestamp;
+    };
+
     return response.status(200).json({
       result: {
         success: true,
@@ -306,7 +314,26 @@ const naverLoginHTTP = onRequest({
           displayName: userData.name || userData.displayName,
           photoURL: naverUserData.profile_image,
           provider: 'naver',
-          profileComplete: userData.profileComplete || false
+          profileComplete: userData.profileComplete || false,
+          // 전체 사용자 정보 포함
+          role: userData.role || null,
+          isAdmin: userData.isAdmin || false,
+          status: userData.status || null,
+          position: userData.position || null,
+          regionMetro: userData.regionMetro || null,
+          regionLocal: userData.regionLocal || null,
+          electoralDistrict: userData.electoralDistrict || null,
+          bio: userData.bio || null,
+          userPlan: userData.userPlan || null,
+          userSubscription: userData.userSubscription || null,
+          finalPlan: userData.finalPlan || null,
+          verificationStatus: userData.verificationStatus || null,
+          lastVerification: userData.lastVerification ? {
+            quarter: userData.lastVerification.quarter,
+            date: convertTimestamp(userData.lastVerification.date)
+          } : null,
+          createdAt: convertTimestamp(userData.createdAt),
+          lastLoginAt: convertTimestamp(userData.lastLoginAt)
         },
         naver: {
           id: naverUserData.id,

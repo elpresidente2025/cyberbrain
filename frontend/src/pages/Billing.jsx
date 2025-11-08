@@ -84,6 +84,27 @@ const Billing = () => {
     ]
   };
 
+  // 당원 인증 상태 판단 함수
+  const getAuthStatus = () => {
+    if (user?.verificationStatus === 'verified' && user?.lastVerification) {
+      return {
+        status: 'active',
+        image: '/buttons/AuthPass.png',
+        title: '인증 완료',
+        message: `${user.lastVerification.quarter} 인증 완료`
+      };
+    } else {
+      return {
+        status: 'warning',
+        image: '/buttons/AuthFail.png',
+        title: '인증 필요',
+        message: '당원 인증이 필요합니다'
+      };
+    }
+  };
+
+  const authStatus = getAuthStatus();
+
   // 결제 시작
   const handleStartSubscription = () => {
     setPaymentDialogOpen(true);
@@ -297,23 +318,51 @@ const Billing = () => {
 
               {/* 당원 인증 카드 */}
               <Grid item xs={12} md={6}>
-                <Paper elevation={0} sx={{ p: `${spacing.lg}px`, height: '100%' }}>
-                  <Typography variant="h6" sx={{ mb: `${spacing.md}px`, display: 'flex', alignItems: 'center' }}>
-                    <VerifiedUser sx={{ mr: `${spacing.xs}px`, color: colors.brand.primary }} />
-                    당원 인증
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.md}px` }}>
-                    더불어민주당 당원 인증을 완료하시면 서비스를 이용하실 수 있습니다.
-                  </Typography>
-                  <Button
-                    variant="outlined"
-                    onClick={handleAuthClick}
-                    startIcon={<Upload />}
-                    fullWidth
-                    sx={{ mt: 'auto' }}
-                  >
-                    당원 인증하기
-                  </Button>
+                <Paper elevation={0} sx={{ p: `${spacing.lg}px`, height: '100%', display: 'flex', alignItems: 'center', gap: `${spacing.md}px` }}>
+                  {/* 좌측: 텍스트와 버튼 */}
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="h6" sx={{ mb: `${spacing.md}px`, display: 'flex', alignItems: 'center' }}>
+                      <VerifiedUser sx={{ mr: `${spacing.xs}px`, color: colors.brand.primary }} />
+                      당원 인증
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.md}px` }}>
+                      더불어민주당 당원 인증을 완료하시면 서비스를 이용하실 수 있습니다.
+                    </Typography>
+                    <Button
+                      variant="contained"
+                      onClick={handleAuthClick}
+                      startIcon={authStatus.status === 'active' ? <CheckCircle /> : <Upload />}
+                      fullWidth
+                      disabled={authStatus.status === 'active'}
+                      sx={{
+                        mt: 'auto',
+                        bgcolor: authStatus.status === 'active' ? '#4caf50' : colors.brand.primary,
+                        color: '#ffffff',
+                        '&:hover': {
+                          bgcolor: authStatus.status === 'active' ? '#4caf50' : colors.brand.primary,
+                          filter: authStatus.status === 'active' ? 'none' : 'brightness(0.9)'
+                        },
+                        '&.Mui-disabled': {
+                          bgcolor: '#4caf50 !important',
+                          color: 'rgba(255, 255, 255, 0.9) !important'
+                        }
+                      }}
+                    >
+                      {authStatus.status === 'active' ? '인증 완료' : '당원 인증하기'}
+                    </Button>
+                  </Box>
+                  {/* 우측: 인증 상태 이미지 */}
+                  <Box
+                    component="img"
+                    src={authStatus.image}
+                    alt={authStatus.title}
+                    sx={{
+                      width: '80px',
+                      height: 'auto',
+                      filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.15))',
+                      flexShrink: 0
+                    }}
+                  />
                 </Paper>
               </Grid>
             </Grid>
@@ -439,49 +488,62 @@ const Billing = () => {
 
               {/* 당원 인증 상태 */}
               <Grid item xs={12} md={4}>
-                <Paper elevation={0} sx={{ p: `${spacing.lg}px`, height: '100%' }}>
-                  <Typography variant="h6" sx={{ mb: `${spacing.md}px`, display: 'flex', alignItems: 'center' }}>
-                    <VerifiedUser sx={{ mr: `${spacing.xs}px`, color: user?.verificationStatus === 'verified' ? '#4caf50' : '#ff9800' }} />
+                <Paper elevation={0} sx={{ p: `${spacing.lg}px`, height: '100%', display: 'flex', flexDirection: 'column', gap: `${spacing.md}px` }}>
+                  <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center' }}>
+                    <VerifiedUser sx={{ mr: `${spacing.xs}px`, color: authStatus.status === 'active' ? '#4caf50' : '#ff9800' }} />
                     당원 인증
                   </Typography>
-                  {user?.verificationStatus === 'verified' && user?.lastVerification ? (
-                    <>
-                      <Alert severity="success" sx={{ mb: `${spacing.md}px` }}>
+
+                  {/* Flex 레이아웃: 좌측 텍스트, 우측 이미지 */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px`, flex: 1 }}>
+                    {/* 좌측: Alert와 버튼 */}
+                    <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: `${spacing.md}px` }}>
+                      <Alert severity={authStatus.status === 'active' ? 'success' : 'warning'}>
                         <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                          인증 완료
+                          {authStatus.title}
                         </Typography>
-                        <Typography variant="caption">
-                          {user.lastVerification.quarter}
-                        </Typography>
-                      </Alert>
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        onClick={handleAuthClick}
-                        startIcon={<Upload />}
-                        fullWidth
-                      >
-                        재인증
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Alert severity="warning" sx={{ mb: `${spacing.md}px` }}>
-                        <Typography variant="body2">
-                          당원 인증이 필요합니다
-                        </Typography>
+                        {authStatus.status === 'active' && user?.lastVerification && (
+                          <Typography variant="caption">
+                            {user.lastVerification.quarter}
+                          </Typography>
+                        )}
                       </Alert>
                       <Button
                         variant="contained"
                         onClick={handleAuthClick}
-                        startIcon={<Upload />}
+                        startIcon={authStatus.status === 'active' ? <CheckCircle /> : <Upload />}
                         fullWidth
-                        sx={{ bgcolor: '#ff9800', '&:hover': { bgcolor: '#f57c00' } }}
+                        disabled={authStatus.status === 'active'}
+                        sx={{
+                          bgcolor: authStatus.status === 'active' ? '#4caf50' : colors.brand.primary,
+                          color: '#ffffff',
+                          '&:hover': {
+                            bgcolor: authStatus.status === 'active' ? '#4caf50' : colors.brand.primary,
+                            filter: authStatus.status === 'active' ? 'none' : 'brightness(0.9)'
+                          },
+                          '&.Mui-disabled': {
+                            bgcolor: '#4caf50 !important',
+                            color: 'rgba(255, 255, 255, 0.9) !important'
+                          }
+                        }}
                       >
-                        당원 인증하기
+                        {authStatus.status === 'active' ? '인증 완료' : '당원 인증하기'}
                       </Button>
-                    </>
-                  )}
+                    </Box>
+
+                    {/* 우측: 인증 상태 이미지 */}
+                    <Box
+                      component="img"
+                      src={authStatus.image}
+                      alt={authStatus.title}
+                      sx={{
+                        width: '60px',
+                        height: 'auto',
+                        filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.15))',
+                        flexShrink: 0
+                      }}
+                    />
+                  </Box>
                 </Paper>
               </Grid>
             </Grid>

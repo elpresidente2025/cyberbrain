@@ -98,6 +98,9 @@ export const useNaverLogin = () => {
       const userCredential = await signInWithCustomToken(auth, customToken);
       console.log('✅ Firebase 인증 완료:', userCredential.user.uid);
 
+      // customToken을 localStorage에 저장 (페이지 새로고침 시 재사용)
+      localStorage.setItem('customToken', customToken);
+
       if (registrationRequired) {
         // 미가입 회원 - 회원가입 페이지로 이동 (네이버 데이터와 함께)
         console.log('🟡 신규 사용자 - 회원가입 페이지로 이동');

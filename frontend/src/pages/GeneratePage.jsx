@@ -1,7 +1,8 @@
 // frontend/src/pages/GeneratePage.jsx
 
 // React 및 UI 라이브러리에서 필요한 기능들을 가져옵니다.
-import React, { Suspense, useEffect } from 'react';
+import React, { Suspense, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Container,
   Alert,
@@ -42,8 +43,13 @@ const PreviewPane = React.lazy(() => import('../components/generate/PreviewPane'
 const GeneratePage = () => {
   // --- 🎨 UI 및 사용자 상태 관리 ---
   const theme = useTheme();
+  const navigate = useNavigate();
   const isMobile = useMediaQuery(theme.breakpoints.down('md')); // 화면 크기에 따라 모바일 여부 판단
-  const { user } = useAuth(); // useAuth 훅을 통해 현재 로그인된 사용자 정보를 가져옴
+  const { user, refreshUserProfile } = useAuth(); // useAuth 훅을 통해 현재 로그인된 사용자 정보를 가져옴
+
+  // 프로필 새로고침 상태
+  const [profileRefreshed, setProfileRefreshed] = React.useState(false);
+  const hasRefreshedProfile = React.useRef(false);
 
   // --- 🧠 커스텀 훅을 통한 핵심 로직 분리 ---
   // 폼의 상태와 관련된 모든 로직을 useGenerateForm 훅이 전담합니다.
@@ -62,24 +68,51 @@ const GeneratePage = () => {
     save,         // 원고 저장 API 호출 함수
   } = useGenerateAPI();
 
-  // --- 🎁 보너스 기능 관련 ---
-  const { bonusStats, fetchBonusStats } = useBonus();
+  // --- 🎁 보너스 기능 관련 (자동 fetch 비활성화) ---
+  const { bonusStats, fetchBonusStats } = useBonus({ autoFetch: false });
 
   // SNS 사용 조건 확인
-  const fetchSNSUsage = async () => {
+  const fetchSNSUsage = useCallback(async () => {
     try {
       const result = await getSNSUsage();
       setSnsUsage(result);
     } catch (error) {
       console.error('SNS 사용량 조회 실패:', error);
     }
-  };
+  }, []);
 
+  // 사용자 프로필 새로고침 (최신 plan/subscription 정보 가져오기)
   useEffect(() => {
-    if (user?.uid) {
+    const doRefresh = async () => {
+      if (user?.uid && refreshUserProfile && !hasRefreshedProfile.current) {
+        console.log('🔄 GeneratePage: 사용자 프로필 새로고침 시작');
+        hasRefreshedProfile.current = true;
+        try {
+          await refreshUserProfile();
+          console.log('✅ GeneratePage: 프로필 새로고침 완료');
+          setProfileRefreshed(true);
+        } catch (error) {
+          console.error('❌ GeneratePage: 프로필 새로고침 실패:', error);
+          // 실패해도 데이터 로딩은 진행
+          setProfileRefreshed(true);
+        }
+      } else if (!user?.uid) {
+        // 사용자가 없으면 바로 진행
+        setProfileRefreshed(true);
+      }
+    };
+
+    doRefresh();
+  }, [user?.uid, refreshUserProfile]);
+
+  // 프로필 새로고침 완료 후 데이터 로딩
+  useEffect(() => {
+    if (profileRefreshed && user?.uid) {
+      console.log('📊 GeneratePage: 프로필 새로고침 완료 - 데이터 로딩 시작');
       fetchSNSUsage();
+      fetchBonusStats();
     }
-  }, [user?.uid]);
+  }, [profileRefreshed, user?.uid, fetchSNSUsage, fetchBonusStats]);
 
   // --- 📢 사용자 피드백(알림창) 상태 관리 ---
   const { notification, showNotification, hideNotification } = useNotification();
@@ -160,10 +193,11 @@ const GeneratePage = () => {
       const result = await save(draft);
 
       if (result.success) {
-        // 저장 성공 시에만 선택된 원고만 남기기
-        setDrafts([draft]);
-        setSelectedDraft(null);
-        showNotification('원고가 저장되었습니다. 이제 SNS 변환을 할 수 있습니다.', 'success');
+        showNotification('원고가 저장되었습니다. 내 원고 목록으로 이동합니다.', 'success');
+        // 저장 성공 후 내 원고 목록으로 이동
+        setTimeout(() => {
+          navigate('/posts');
+        }, 1000);
       } else {
         showNotification(result.error || '저장에 실패했습니다.', 'error');
       }
@@ -279,7 +313,16 @@ const GeneratePage = () => {
           maxWidth="md"
           aria-labelledby="preview-dialog-title"
         >
-          <DialogTitle id="preview-dialog-title">
+          <DialogTitle
+            id="preview-dialog-title"
+            sx={{
+              backgroundColor: theme.palette.mode === 'dark' ? '#1e1e1e' : '#2c3e50',
+              color: '#ffffff !important',
+              '& .MuiTypography-root': {
+                color: '#ffffff !important'
+              }
+            }}
+          >
             원고 미리보기
             <IconButton
               aria-label="close"
@@ -288,7 +331,7 @@ const GeneratePage = () => {
                 position: 'absolute',
                 right: 8,
                 top: 8,
-                color: (theme) => theme.palette.grey[500],
+                color: '#ffffff',
               }}
             >
               <CloseIcon />
@@ -308,8 +351,8 @@ const GeneratePage = () => {
           </DialogContent>
           <DialogActions sx={{ p: `${spacing.md}px`, gap: `${spacing.xs}px`, justifyContent: 'space-between' }}>
             <Box>
-              {/* SNS 변환 조건 충족 시 SNS 버튼 표시 */}
-              {snsUsage?.isActive && selectedDraft && (
+              {/* SNS 변환은 저장된 원고에만 표시 */}
+              {snsUsage?.isActive && selectedDraft?.saved && (
                 <Button
                   variant="outlined"
                   startIcon={<ShareIcon />}

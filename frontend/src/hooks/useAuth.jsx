@@ -31,11 +31,38 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     // 네이버 로그인 전용 - localStorage 기반 인증 확인
-    const checkAuth = () => {
+    const checkAuth = async () => {
       try {
         const naverUser = checkNaverUser();
         if (naverUser) {
           console.log('🔍 useAuth: 네이버 사용자 인증됨:', naverUser);
+
+          // Firebase Auth에도 로그인 (customToken 사용)
+          const customToken = localStorage.getItem('customToken');
+          if (customToken) {
+            try {
+              const { auth } = await import('../services/firebase');
+              const { signInWithCustomToken } = await import('firebase/auth');
+
+              // Firebase Auth에 이미 로그인되어 있는지 확인
+              if (!auth.currentUser) {
+                console.log('🔐 Firebase Auth 로그인 시도...');
+                await signInWithCustomToken(auth, customToken);
+                console.log('✅ Firebase Auth 로그인 완료');
+              } else {
+                console.log('✅ Firebase Auth 이미 로그인됨:', auth.currentUser.uid);
+              }
+            } catch (authError) {
+              console.error('❌ Firebase Auth 로그인 실패:', authError);
+              // customToken이 만료되었을 수 있음 - 재로그인 필요
+              if (authError.code === 'auth/invalid-custom-token') {
+                localStorage.removeItem('customToken');
+              }
+            }
+          } else {
+            console.warn('⚠️ customToken이 없습니다. 재로그인이 필요합니다.');
+          }
+
           setUser(naverUser);
         } else {
           console.log('🔍 useAuth: 네이버 사용자 없음');

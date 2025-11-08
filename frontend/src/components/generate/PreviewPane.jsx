@@ -181,16 +181,24 @@ export default function PreviewPane({ draft }) {
 
         {/* 메타 정보 */}
         {(categoryLabel || draft.keywords || draft.generatedAt) && (
-          <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Box sx={{
+            mt: 2,
+            pt: 2,
+            borderTop: '1px solid',
+            borderColor: 'divider',
+            backgroundColor: theme.palette.mode === 'dark' ? '#1e1e1e' : '#2c3e50',
+            p: 2,
+            borderRadius: 1
+          }}>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
               {categoryLabel && (
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" sx={{ color: '#ffffff !important' }}>
                   카테고리: {categoryLabel}
                 </Typography>
               )}
               {keywordStats && keywordStats.length > 0 && (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: '#ffffff !important' }}>
                     검색어 삽입 횟수:
                   </Typography>
                   {keywordStats.map((stat, index) => (
@@ -198,7 +206,7 @@ export default function PreviewPane({ draft }) {
                       key={index}
                       variant="caption"
                       sx={{
-                        color: stat.count >= Math.floor(characterCount / 400) ? 'success.main' : 'error.main',
+                        color: stat.count >= Math.floor(characterCount / 400) ? '#4caf50 !important' : '#f44336 !important',
                         fontWeight: 500,
                         pl: 1
                       }}
@@ -210,7 +218,7 @@ export default function PreviewPane({ draft }) {
                 </Box>
               )}
               {draft.generatedAt && (
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" sx={{ color: '#ffffff !important' }}>
                   생성 시간: {new Date(draft.generatedAt).toLocaleString()}
                 </Typography>
               )}

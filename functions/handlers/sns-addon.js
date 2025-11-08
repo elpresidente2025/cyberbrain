@@ -54,38 +54,19 @@ exports.testSNS = wrap(async (req) => {
 /**
  * 원고를 모든 SNS용으로 변환
  */
-exports.convertToSNS = httpWrap(async (req) => {
+exports.convertToSNS = wrap(async (req) => {
   console.log('🔥 convertToSNS 함수 시작');
 
-  let uid;
-
-  // 데이터 추출 - Firebase SDK와 HTTP 요청 모두 처리
-  let requestData = req.data || req.rawRequest?.body || {};
-
-  // 중첩된 data 구조 처리
-  if (requestData.data && typeof requestData.data === 'object') {
-    requestData = requestData.data;
-  }
-
-  // 사용자 인증 데이터 확인 (모든 사용자는 네이버 로그인)
-  if (requestData.__naverAuth && requestData.__naverAuth.uid && requestData.__naverAuth.provider === 'naver') {
-    console.log('📱 사용자 인증 처리:', requestData.__naverAuth.uid);
-    uid = requestData.__naverAuth.uid;
-    // 인증 정보 제거 (처리 완료)
-    delete requestData.__naverAuth;
-  } else {
-    console.error('❌ 유효하지 않은 인증 데이터:', requestData);
-    throw new HttpsError('unauthenticated', '인증이 필요합니다.');
-  }
-
-  const { postId, modelName } = requestData;
-
-  console.log('📝 입력 데이터:', { uid, postId, modelName });
+  const { uid } = req.auth || {};
 
   if (!uid) {
     console.log('❌ 인증되지 않은 요청');
     throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
   }
+
+  const { postId, modelName } = req.data || {};
+
+  console.log('📝 입력 데이터:', { uid, postId, modelName });
 
   console.log('🔍 받은 데이터:', { uid, postId, modelName, typeof_postId: typeof postId });
 
@@ -338,29 +319,12 @@ exports.convertToSNS = httpWrap(async (req) => {
 /**
  * SNS 애드온 사용량 조회
  */
-exports.getSNSUsage = httpWrap(async (req) => {
-  let uid;
+exports.getSNSUsage = wrap(async (req) => {
+  const { uid } = req.auth || {};
 
-  // 데이터 추출 - Firebase SDK와 HTTP 요청 모두 처리
-  let requestData = req.data || req.rawRequest?.body || {};
-
-  // 중첩된 data 구조 처리
-  if (requestData.data && typeof requestData.data === 'object') {
-    requestData = requestData.data;
+  if (!uid) {
+    throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
   }
-
-  // 사용자 인증 데이터 확인 (모든 사용자는 네이버 로그인)
-  if (requestData.__naverAuth && requestData.__naverAuth.uid && requestData.__naverAuth.provider === 'naver') {
-    console.log('📱 사용자 인증 처리:', requestData.__naverAuth.uid);
-    uid = requestData.__naverAuth.uid;
-    // 인증 정보 제거 (처리 완료)
-    delete requestData.__naverAuth;
-  } else {
-    console.error('❌ 유효하지 않은 인증 데이터:', requestData);
-    throw new HttpsError('unauthenticated', '인증이 필요합니다.');
-  }
-
-  // auth 함수에서 이미 인증 검증이 완료됨
 
   try {
     const userDoc = await db.collection('users').doc(uid).get();
