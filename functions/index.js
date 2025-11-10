@@ -10,7 +10,6 @@ setGlobalOptions({ region: 'asia-northeast3' });
 const REQUIRED_ENV_VARS = [
   'NAVER_CLIENT_ID',
   'NAVER_CLIENT_SECRET',
-  'TOSS_SECRET_KEY',
   'GEMINI_API_KEY'
 ];
 
@@ -124,14 +123,6 @@ try {
   Object.assign(exports, naverLoginHandlers);
 } catch (e) {
   console.warn('[index] naver-login handler warning:', e?.message);
-}
-
-// Add Toss Payments handlers
-try {
-  const tossPaymentsHandlers = require('./handlers/toss-payments');
-  Object.assign(exports, tossPaymentsHandlers);
-} catch (e) {
-  console.warn('[index] toss-payments handler warning:', e?.message);
 }
 
 // Add Naver Payments handlers

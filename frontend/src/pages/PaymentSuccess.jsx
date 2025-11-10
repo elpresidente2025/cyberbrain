@@ -30,26 +30,24 @@ const PaymentSuccess = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // URL 파라미터에서 결제 정보 추출
-  const paymentKey = searchParams.get('paymentKey');
+  // URL 파라미터에서 결제 정보 추출 (네이버페이)
+  const paymentId = searchParams.get('paymentId');
   const orderId = searchParams.get('orderId');
-  const amount = searchParams.get('amount');
 
   useEffect(() => {
     const confirmPayment = async () => {
-      if (!paymentKey || !orderId || !amount) {
+      if (!paymentId || !orderId) {
         setError('결제 정보가 올바르지 않습니다.');
         setLoading(false);
         return;
       }
 
       try {
-        // Firebase Functions를 통해 결제 승인
-        const confirmPaymentFn = httpsCallable(functions, 'confirmTossPayment');
+        // Firebase Functions를 통해 네이버페이 결제 승인
+        const confirmPaymentFn = httpsCallable(functions, 'confirmNaverPayment');
         const result = await confirmPaymentFn({
-          paymentKey,
-          orderId,
-          amount: parseInt(amount)
+          paymentId,
+          orderId
         });
 
         if (result.data.success) {
@@ -66,7 +64,7 @@ const PaymentSuccess = () => {
     };
 
     confirmPayment();
-  }, [paymentKey, orderId, amount]);
+  }, [paymentId, orderId]);
 
   if (loading) {
     return (
@@ -138,9 +136,9 @@ const PaymentSuccess = () => {
                 />
               </ListItem>
               <ListItem divider>
-                <ListItemText 
-                  primary="결제 수단" 
-                  secondary={`${paymentData.method} (${paymentData.card?.company || ''})`}
+                <ListItemText
+                  primary="결제 수단"
+                  secondary="네이버페이"
                 />
               </ListItem>
               <ListItem divider>

@@ -226,13 +226,13 @@ exports.updateProfile = wrap(async (req) => {
 exports.updateUserPlan = wrap(async (req) => {
   const { uid, token } = await auth(req);
   const { plan } = req.data || {};
-  
+
   if (!plan || typeof plan !== 'string') {
     throw new HttpsError('invalid-argument', '유효한 플랜을 선택해주세요.');
   }
 
-  // 허용된 플랜 목록
-  const allowedPlans = ['로컬 블로거', '리전 인플루언서', '오피니언 리더'];
+  // 단일 플랜: 스탠다드 플랜
+  const allowedPlans = ['스탠다드 플랜'];
   if (!allowedPlans.includes(plan)) {
     throw new HttpsError('invalid-argument', '허용되지 않은 플랜입니다.');
   }
@@ -240,16 +240,17 @@ exports.updateUserPlan = wrap(async (req) => {
   logInfo('updateUserPlan 호출', { userId: uid, email: token?.email, plan });
 
   const userRef = db.collection('users').doc(uid);
-  
+
   try {
     await userRef.set({
       plan: plan, // 표준 필드
       subscription: plan, // 레거시 호환성 (향후 제거 예정)
+      monthlyLimit: 90, // 스탠다드 플랜: 월 90회
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
 
     logInfo('플랜 업데이트 성공', { userId: uid, plan });
-    return ok({ 
+    return ok({
       message: `${plan} 플랜으로 성공적으로 변경되었습니다.`,
       plan: plan
     });
