@@ -357,7 +357,7 @@ const Billing = () => {
                     src={authStatus.image}
                     alt={authStatus.title}
                     sx={{
-                      width: '80px',
+                      width: '150px',
                       height: 'auto',
                       filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.15))',
                       flexShrink: 0
@@ -537,7 +537,7 @@ const Billing = () => {
                       src={authStatus.image}
                       alt={authStatus.title}
                       sx={{
-                        width: '60px',
+                        width: '120px',
                         height: 'auto',
                         filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.15))',
                         flexShrink: 0
