@@ -59,6 +59,7 @@ const Billing = () => {
   const { notification, showNotification, hideNotification } = useNotification();
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [selectedCertFile, setSelectedCertFile] = useState(null);
   const [selectedReceiptFile, setSelectedReceiptFile] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -568,7 +569,7 @@ const Billing = () => {
               <Button
                 variant="outlined"
                 color="error"
-                onClick={() => showNotification('구독 해지 기능은 고객센터로 문의해주세요.', 'info')}
+                onClick={() => setCancelDialogOpen(true)}
               >
                 구독 해지
               </Button>
@@ -650,6 +651,80 @@ const Billing = () => {
             <Button onClick={() => setAuthDialogOpen(false)} disabled={uploading}>취소</Button>
             <Button onClick={handleAuthSubmit} variant="contained" disabled={uploading || (!selectedCertFile && !selectedReceiptFile)}>
               {uploading ? '처리중...' : '제출'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* 구독 해지 확인 다이얼로그 */}
+        <Dialog open={cancelDialogOpen} onClose={() => setCancelDialogOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Warning sx={{ color: '#ff9800' }} />
+              구독 해지
+            </Box>
+          </DialogTitle>
+          <DialogContent>
+            <Box sx={{ mt: `${spacing.md}px` }}>
+              <Typography variant="h6" sx={{ mb: `${spacing.md}px`, fontWeight: 'bold' }}>
+                환불 정책
+              </Typography>
+              <List dense>
+                <ListItem>
+                  <ListItemIcon>
+                    <CheckCircle sx={{ color: colors.brand.primary, fontSize: '1.2rem' }} />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="구매일로부터 7일 이내: 전액 환불 가능"
+                    primaryTypographyProps={{ variant: 'body2' }}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemIcon>
+                    <CheckCircle sx={{ color: colors.brand.primary, fontSize: '1.2rem' }} />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="원고 생성 이용 후: 미사용 횟수만큼 일할 계산하여 환불"
+                    primaryTypographyProps={{ variant: 'body2' }}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemIcon>
+                    <CheckCircle sx={{ color: colors.brand.primary, fontSize: '1.2rem' }} />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="환불 요청 시 7영업일 이내 처리 완료"
+                    primaryTypographyProps={{ variant: 'body2' }}
+                  />
+                </ListItem>
+              </List>
+
+              <Divider sx={{ my: `${spacing.md}px` }} />
+
+              <Alert severity="warning" sx={{ mb: `${spacing.md}px` }}>
+                <Typography variant="body2">
+                  구독을 해지하시면 즉시 서비스 이용이 중단됩니다.
+                </Typography>
+              </Alert>
+
+              <Typography variant="h6" sx={{ textAlign: 'center', fontWeight: 'bold', mt: `${spacing.lg}px` }}>
+                구독을 해지하시겠습니까?
+              </Typography>
+            </Box>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 3 }}>
+            <Button onClick={() => setCancelDialogOpen(false)} variant="outlined" fullWidth>
+              아니오
+            </Button>
+            <Button
+              onClick={() => {
+                setCancelDialogOpen(false);
+                showNotification('구독 해지 요청이 접수되었습니다. 고객센터에서 확인 후 처리해드리겠습니다.', 'info');
+              }}
+              variant="contained"
+              color="error"
+              fullWidth
+            >
+              예, 해지합니다
             </Button>
           </DialogActions>
         </Dialog>
