@@ -46,7 +46,9 @@
       "Read(//e//**)",
       "WebFetch(domain:github.com)",
       "Bash(gcloud projects add-iam-policy-binding:*)",
-      "Bash(firebase apps:sdkconfig:*)"
+      "Bash(firebase apps:sdkconfig:*)",
+      "Bash(rm:*)",
+      "Bash(firebase functions:delete:*)"
     ]
   },
   "mcpServers": {

@@ -30,84 +30,89 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    // 네이버 로그인 전용 - localStorage 기반 인증 확인
-    const checkAuth = async () => {
+    // Firebase Auth의 onAuthStateChanged로 인증 상태 모니터링
+    let unsubscribeAuth = null;
+
+    const initAuth = async () => {
       try {
-        const naverUser = checkNaverUser();
-        if (naverUser) {
-          console.log('🔍 useAuth: 네이버 사용자 인증됨:', naverUser);
+        const { auth } = await import('../services/firebase');
+        const { onAuthStateChanged } = await import('firebase/auth');
 
-          // Firebase Auth에도 로그인 (customToken 사용)
-          const customToken = localStorage.getItem('customToken');
-          if (customToken) {
-            try {
-              const { auth } = await import('../services/firebase');
-              const { signInWithCustomToken } = await import('firebase/auth');
+        // Firebase Auth 상태 변경 리스너
+        unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+          if (firebaseUser) {
+            console.log('🔍 useAuth: Firebase Auth 사용자 인증됨:', firebaseUser.uid);
 
-              // Firebase Auth에 이미 로그인되어 있는지 확인
-              if (!auth.currentUser) {
-                console.log('🔐 Firebase Auth 로그인 시도...');
-                await signInWithCustomToken(auth, customToken);
-                console.log('✅ Firebase Auth 로그인 완료');
-              } else {
-                console.log('✅ Firebase Auth 이미 로그인됨:', auth.currentUser.uid);
-              }
-            } catch (authError) {
-              console.error('❌ Firebase Auth 로그인 실패:', authError);
-              // customToken이 만료되었을 수 있음 - 재로그인 필요
-              if (authError.code === 'auth/invalid-custom-token') {
-                localStorage.removeItem('customToken');
-              }
+            // localStorage에서 사용자 정보 가져오기
+            const naverUser = checkNaverUser();
+            if (naverUser) {
+              setUser(naverUser);
+            } else {
+              // localStorage에 없으면 Firebase Auth 정보로 기본 사용자 설정
+              const basicUser = {
+                uid: firebaseUser.uid,
+                provider: 'naver',
+                displayName: firebaseUser.displayName || '사용자'
+              };
+              setUser(basicUser);
             }
           } else {
-            console.warn('⚠️ customToken이 없습니다. 재로그인이 필요합니다.');
+            console.log('🔍 useAuth: 로그아웃 상태');
+            setUser(null);
           }
-
-          setUser(naverUser);
-        } else {
-          console.log('🔍 useAuth: 네이버 사용자 없음');
-          setUser(null);
-        }
+          setLoading(false);
+        });
       } catch (e) {
-        console.error('🔍 useAuth 에러:', e);
+        console.error('🔍 useAuth 초기화 에러:', e);
         setError(e.message);
         setUser(null);
-      } finally {
         setLoading(false);
       }
     };
 
-    // 초기 인증 확인
-    checkAuth();
+    initAuth();
 
-    // localStorage 변경 감지
+    // localStorage 변경 감지 (다른 탭에서의 로그아웃 등)
     const handleStorageChange = (e) => {
       if (e.key === 'currentUser') {
         console.log('🔍 useAuth: localStorage 변경 감지');
-        checkAuth();
+        const naverUser = checkNaverUser();
+        if (naverUser) {
+          setUser(naverUser);
+        }
       }
     };
 
-    // 커스텀 이벤트 리스너 (네이버 로그인 콜백에서 발생)
+    // 커스텀 이벤트 리스너 (프로필 업데이트 시)
     const handleNaverAuthUpdate = (e) => {
-      console.log('🔍 useAuth: 네이버 인증 업데이트 이벤트:', e.detail);
-      checkAuth();
+      console.log('🔍 useAuth: 프로필 업데이트 이벤트:', e.detail);
+      setUser(e.detail);
     };
 
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('userProfileUpdated', handleNaverAuthUpdate);
 
     return () => {
+      if (unsubscribeAuth) unsubscribeAuth();
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('userProfileUpdated', handleNaverAuthUpdate);
     };
   }, []);
 
   const logout = async () => {
-    // 네이버 로그인은 localStorage만 정리
-    localStorage.removeItem('currentUser');
-    setUser(null);
-    console.log('🔍 useAuth: 네이버 로그아웃 완료');
+    try {
+      // Firebase Auth 로그아웃
+      const { auth } = await import('../services/firebase');
+      const { signOut } = await import('firebase/auth');
+      await signOut(auth);
+
+      // localStorage 정리
+      localStorage.removeItem('currentUser');
+      setUser(null);
+      console.log('🔍 useAuth: 로그아웃 완료');
+    } catch (e) {
+      console.error('🔍 useAuth: 로그아웃 에러:', e);
+    }
   };
 
   const refreshUserProfile = async () => {
