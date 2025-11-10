@@ -712,7 +712,18 @@ const Billing = () => {
             </Box>
           </DialogContent>
           <DialogActions sx={{ px: 3, pb: 3 }}>
-            <Button onClick={() => setCancelDialogOpen(false)} variant="outlined" fullWidth>
+            <Button
+              onClick={() => setCancelDialogOpen(false)}
+              variant="contained"
+              fullWidth
+              sx={{
+                bgcolor: colors.brand.primary,
+                color: '#ffffff',
+                '&:hover': {
+                  bgcolor: colors.brand.primaryHover
+                }
+              }}
+            >
               아니오
             </Button>
             <Button
