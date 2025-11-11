@@ -3,7 +3,7 @@
 const { wrap } = require('../common/wrap');
 const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
-const { requireRole } = require('../common/rbac');
+const { requireAdmin } = require('../common/rbac');
 const { db } = require('../utils/firebaseAdmin');
 
 /**
@@ -34,8 +34,8 @@ exports.getSystemConfig = wrap(async (req) => {
  * 시스템 설정 업데이트 (관리자 전용)
  */
 exports.updateSystemConfig = wrap(async (req) => {
-  const { uid } = await auth(req);
-  await requireRole(req, 'admin'); // 관리자만 수정 가능
+  const { uid, token } = await auth(req);
+  await requireAdmin(uid, token); // 관리자만 수정 가능
 
   const { aiKeywordRecommendationEnabled, testMode, testModeSettings } = req.data;
 
