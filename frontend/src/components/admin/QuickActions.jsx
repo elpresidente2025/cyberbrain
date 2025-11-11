@@ -15,7 +15,7 @@ import {
   Download,
   People,
   Api,
-  Science
+  ToggleOn
 } from '@mui/icons-material';
 import UserListModal from './UserListModal';
 import StatusUpdateModal from './StatusUpdateModal';
@@ -26,9 +26,24 @@ function QuickActions() {
   const theme = useTheme();
   const [userListOpen, setUserListOpen] = useState(false);
   const [statusUpdateOpen, setStatusUpdateOpen] = useState(false);
-  const [testMode, setTestMode] = useState(() => {
-    return localStorage.getItem('admin_test_mode') === 'true';
-  });
+  const [serviceMode, setServiceMode] = useState(null); // null: loading, true: test, false: production
+  const [loadingToggle, setLoadingToggle] = useState(false);
+
+  // 시스템 설정 로드
+  React.useEffect(() => {
+    const loadServiceMode = async () => {
+      try {
+        const result = await callFunctionWithRetry('getSystemConfig');
+        if (result?.config) {
+          setServiceMode(result.config.testMode || false);
+        }
+      } catch (error) {
+        console.error('시스템 설정 로드 실패:', error);
+        setServiceMode(false); // 기본값: 프로덕션 모드
+      }
+    };
+    loadServiceMode();
+  }, []);
 
   const exportAllData = async () => {
     try {
@@ -107,16 +122,35 @@ function QuickActions() {
     }
   };
 
-  const toggleTestMode = () => {
-    const newTestMode = !testMode;
-    setTestMode(newTestMode);
-    localStorage.setItem('admin_test_mode', newTestMode.toString());
-    localStorage.setItem('gemini_model', 'gemini-2.0-flash-exp');
+  const toggleServiceMode = async () => {
+    const newMode = !serviceMode;
+    const modeText = newMode ? '테스트 모드' : '프로덕션 모드';
 
-    if (newTestMode) {
-      alert('🧪 테스트 모드가 활성화되었습니다!\n\nGemini 2.0 Flash Experimental 모델을 사용합니다.\n\n⚠️ 실험적 기능이므로 예상치 못한 동작이 발생할 수 있습니다.');
-    } else {
-      alert('✅ 테스트 모드가 비활성화되었습니다.\n\nGemini 2.0 Flash Experimental 모델을 계속 사용합니다.');
+    const confirmed = confirm(
+      `정말로 ${modeText}로 전환하시겠습니까?\n\n` +
+      (newMode
+        ? '• 모든 사용자에게 월 8회 무료 제공\n• 구독 및 당원 인증 불필요\n• 대시보드에 "테스트 모드" 배지 표시'
+        : '• 즉시 유료 결제 + 당원 인증 필수\n• 사용자는 8회 무료 체험 후 결제 필요')
+    );
+
+    if (!confirmed) return;
+
+    setLoadingToggle(true);
+    try {
+      await callFunctionWithRetry('updateSystemConfig', {
+        testMode: newMode
+      });
+
+      setServiceMode(newMode);
+      alert(`✅ ${modeText}로 전환되었습니다.`);
+
+      // 페이지 새로고침하여 모든 컴포넌트에 반영
+      setTimeout(() => window.location.reload(), 1000);
+    } catch (error) {
+      console.error('서비스 모드 전환 실패:', error);
+      alert('❌ 서비스 모드 전환 실패: ' + error.message);
+    } finally {
+      setLoadingToggle(false);
     }
   };
 
@@ -197,32 +231,50 @@ function QuickActions() {
           <Grid item xs={12} sm={6} md={4}>
             <Button
               fullWidth
-              variant={testMode ? "contained" : "outlined"}
-              startIcon={<Science />}
-              onClick={toggleTestMode}
-              sx={{ 
+              variant={serviceMode ? "contained" : "outlined"}
+              startIcon={<ToggleOn />}
+              onClick={toggleServiceMode}
+              disabled={loadingToggle || serviceMode === null}
+              sx={{
                 py: 2,
-                borderColor: testMode ? '#d22730' : '#d22730',
-                color: testMode ? 'white' : '#d22730',
-                backgroundColor: testMode ? '#d22730' : 'transparent',
+                borderColor: serviceMode ? '#006261' : '#d22730',
+                color: serviceMode ? 'white' : '#d22730',
+                backgroundColor: serviceMode ? '#006261' : 'transparent',
                 '&:hover': {
-                  borderColor: '#d22730',
-                  backgroundColor: testMode ? '#b71c1c' : 'rgba(210, 39, 48, 0.04)'
+                  borderColor: serviceMode ? '#006261' : '#d22730',
+                  backgroundColor: serviceMode ? '#007a74' : 'rgba(210, 39, 48, 0.04)'
+                },
+                '&.Mui-disabled': {
+                  opacity: 0.6
                 }
               }}
             >
-              {testMode ? 'Gemini 2.0 (테스트 모드)' : '테스트 모드'}
+              {serviceMode === null ? '로딩 중...' : (serviceMode ? '🧪 테스트 모드' : '💼 프로덕션 모드')}
             </Button>
           </Grid>
         </Grid>
 
-        {/* 테스트 모드 상태 표시 */}
-        {testMode && (
-          <Alert severity="warning" sx={{ mt: 2 }}>
+        {/* 서비스 모드 상태 표시 */}
+        {serviceMode !== null && (
+          <Alert severity={serviceMode ? "info" : "success"} sx={{ mt: 2 }}>
             <Typography variant="body2">
-              🧪 <strong>테스트 모드 활성화</strong> - Gemini 2.0 Flash Experimental 모델 사용 중
-              <br />
-              ⚠️ 실험적 기능으로 예상치 못한 동작이 발생할 수 있습니다.
+              {serviceMode ? (
+                <>
+                  🧪 <strong>테스트 모드 활성화</strong>
+                  <br />
+                  • 모든 사용자에게 월 8회 무료 제공
+                  <br />
+                  • 구독 및 당원 인증 불필요
+                </>
+              ) : (
+                <>
+                  💼 <strong>프로덕션 모드 활성화</strong>
+                  <br />
+                  • 유료 구독 + 당원 인증 필수
+                  <br />
+                  • 무료 체험 8회 제공 후 결제 필요
+                </>
+              )}
             </Typography>
           </Alert>
         )}

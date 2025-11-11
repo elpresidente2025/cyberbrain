@@ -19,6 +19,10 @@ exports.getSystemConfig = wrap(async (req) => {
   // Timestamp를 ISO 문자열로 변환
   const config = {
     aiKeywordRecommendationEnabled: rawConfig.aiKeywordRecommendationEnabled ?? true,
+    testMode: rawConfig.testMode ?? false,
+    testModeSettings: rawConfig.testModeSettings || {
+      freeMonthlyLimit: 8
+    },
     lastUpdated: rawConfig.lastUpdated?.toDate?.()?.toISOString() || null,
     updatedBy: rawConfig.updatedBy || null
   };
@@ -33,28 +37,42 @@ exports.updateSystemConfig = wrap(async (req) => {
   const { uid } = await auth(req);
   await requireRole(req, 'admin'); // 관리자만 수정 가능
 
-  const { aiKeywordRecommendationEnabled } = req.data;
+  const { aiKeywordRecommendationEnabled, testMode, testModeSettings } = req.data;
 
-  if (typeof aiKeywordRecommendationEnabled !== 'boolean') {
-    throw new Error('aiKeywordRecommendationEnabled는 boolean 값이어야 합니다.');
+  const updates = {
+    lastUpdated: new Date(),
+    updatedBy: uid
+  };
+
+  // aiKeywordRecommendationEnabled 업데이트
+  if (typeof aiKeywordRecommendationEnabled === 'boolean') {
+    updates.aiKeywordRecommendationEnabled = aiKeywordRecommendationEnabled;
+  }
+
+  // testMode 업데이트
+  if (typeof testMode === 'boolean') {
+    updates.testMode = testMode;
+
+    // testMode 변경 시 활성화 정보 기록
+    if (testMode) {
+      updates.testModeSettings = {
+        freeMonthlyLimit: testModeSettings?.freeMonthlyLimit || 8,
+        enabledAt: new Date(),
+        enabledBy: uid
+      };
+    }
   }
 
   const configRef = db.collection('system').doc('config');
-  await configRef.set({
-    aiKeywordRecommendationEnabled,
-    lastUpdated: new Date(),
-    updatedBy: uid
-  }, { merge: true });
+  await configRef.set(updates, { merge: true });
 
   console.log('✅ 시스템 설정 업데이트:', {
-    aiKeywordRecommendationEnabled,
+    ...updates,
     updatedBy: uid
   });
 
   return ok({
     message: '시스템 설정이 업데이트되었습니다.',
-    config: {
-      aiKeywordRecommendationEnabled
-    }
+    config: updates
   });
 });

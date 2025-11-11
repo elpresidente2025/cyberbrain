@@ -42,7 +42,7 @@ async function loadUserProfile(uid, category, topic, useBonus = false) {
         dailyLimitWarning = checkDailyLimit(userProfile);
 
         // 월간 사용량 체크
-        checkUsageLimit(userProfile, useBonus);
+        await checkUsageLimit(userProfile, useBonus);
       } else {
         console.log('✅ 관리자 계정 - 제한 무시');
       }
@@ -143,7 +143,11 @@ function checkDailyLimit(userProfile) {
 /**
  * 사용량 제한 체크
  */
-function checkUsageLimit(userProfile, useBonus) {
+async function checkUsageLimit(userProfile, useBonus) {
+  // System Config에서 testMode 확인
+  const systemConfigDoc = await db.collection('system').doc('config').get();
+  const testMode = systemConfigDoc.exists ? (systemConfigDoc.data().testMode || false) : false;
+
   if (useBonus) {
     const usage = userProfile.usage || { bonusGenerated: 0, bonusUsed: 0 };
     const availableBonus = Math.max(0, usage.bonusGenerated - (usage.bonusUsed || 0));
@@ -153,7 +157,23 @@ function checkUsageLimit(userProfile, useBonus) {
     }
 
     console.log('✅ 보너스 원고 사용 가능', { availableBonus });
+  } else if (testMode) {
+    // === 테스트 모드: 모든 사용자에게 월 8회 무료 제공 ===
+    const testModeLimit = systemConfigDoc.data()?.testModeSettings?.freeMonthlyLimit || 8;
+    const postsThisMonth = userProfile.postsThisMonth || 0;
+
+    if (postsThisMonth >= testModeLimit) {
+      throw new HttpsError('resource-exhausted',
+        `테스트 기간 중 이번 달 생성 가능 횟수(${testModeLimit}회)를 초과했습니다.`);
+    }
+
+    console.log('🧪 테스트 모드 - 원고 생성 가능', {
+      current: postsThisMonth,
+      limit: testModeLimit,
+      remaining: testModeLimit - postsThisMonth
+    });
   } else {
+    // === 프로덕션 모드: 기존 로직 ===
     const subscriptionStatus = userProfile.subscriptionStatus || 'trial';
     const monthlyLimit = userProfile.monthlyLimit || 8;
     const trialPostsRemaining = userProfile.trialPostsRemaining || 0;
@@ -192,6 +212,10 @@ async function updateUsageStats(uid, useBonus, isAdmin) {
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
+  // System Config에서 testMode 확인
+  const systemConfigDoc = await db.collection('system').doc('config').get();
+  const testMode = systemConfigDoc.exists ? (systemConfigDoc.data().testMode || false) : false;
+
   try {
     if (useBonus) {
       await db.collection('users').doc(uid).update({
@@ -202,28 +226,32 @@ async function updateUsageStats(uid, useBonus, isAdmin) {
       console.log('✅ 보너스 원고 사용량 업데이트', isAdmin ? '(관리자 - 하루 카운트 제외)' : '');
     } else {
       if (!isAdmin) {
-        // 사용자 정보 가져와서 구독 상태 확인
-        const userDoc = await db.collection('users').doc(uid).get();
-        const userData = userDoc.data() || {};
-        const subscriptionStatus = userData.subscriptionStatus || 'trial';
-
         const updateData = {
           [`dailyUsage.${todayKey}`]: admin.firestore.FieldValue.increment(1),
-          lastGenerated: admin.firestore.FieldValue.serverTimestamp()
+          lastGenerated: admin.firestore.FieldValue.serverTimestamp(),
+          'usage.postsGenerated': admin.firestore.FieldValue.increment(1)
         };
 
-        if (subscriptionStatus === 'trial') {
-          // 무료 체험: trialPostsRemaining 감소
-          updateData.trialPostsRemaining = admin.firestore.FieldValue.increment(-1);
-          console.log('✅ 무료 체험 횟수 차감');
-        } else if (subscriptionStatus === 'active') {
-          // 유료 구독: postsThisMonth 증가
+        if (testMode) {
+          // === 테스트 모드: postsThisMonth만 증가 ===
           updateData.postsThisMonth = admin.firestore.FieldValue.increment(1);
-          console.log('✅ 이번 달 사용량 증가');
-        }
+          console.log('🧪 테스트 모드 - 이번 달 사용량 증가');
+        } else {
+          // === 프로덕션 모드: 구독 상태에 따라 처리 ===
+          const userDoc = await db.collection('users').doc(uid).get();
+          const userData = userDoc.data() || {};
+          const subscriptionStatus = userData.subscriptionStatus || 'trial';
 
-        // 하위 호환성을 위해 usage.postsGenerated도 업데이트
-        updateData['usage.postsGenerated'] = admin.firestore.FieldValue.increment(1);
+          if (subscriptionStatus === 'trial') {
+            // 무료 체험: trialPostsRemaining 감소
+            updateData.trialPostsRemaining = admin.firestore.FieldValue.increment(-1);
+            console.log('✅ 무료 체험 횟수 차감');
+          } else if (subscriptionStatus === 'active') {
+            // 유료 구독: postsThisMonth 증가
+            updateData.postsThisMonth = admin.firestore.FieldValue.increment(1);
+            console.log('✅ 이번 달 사용량 증가');
+          }
+        }
 
         await db.collection('users').doc(uid).update(updateData);
         console.log('✅ 일반 원고 사용량 및 하루 사용량 업데이트');

@@ -71,6 +71,7 @@ const Dashboard = () => {
   const [notices, setNotices] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [testMode, setTestMode] = useState(false);
 
   // useNotification 훅 사용
   const { notification, showNotification, hideNotification } = useNotification();
@@ -231,6 +232,23 @@ const Dashboard = () => {
     fetchNotices();
   }, [user?.uid]);
 
+  // 시스템 설정 로드 (테스트 모드 확인)
+  useEffect(() => {
+    const loadSystemConfig = async () => {
+      try {
+        const configResponse = await callFunctionWithNaverAuth('getSystemConfig');
+        if (configResponse?.config) {
+          setTestMode(configResponse.config.testMode || false);
+        }
+      } catch (error) {
+        console.error('시스템 설정 로드 실패:', error);
+      }
+    };
+
+    if (user?.uid) {
+      loadSystemConfig();
+    }
+  }, [user?.uid]);
 
   // 이벤트 핸들러들
   const handleGeneratePost = () => {
@@ -394,8 +412,21 @@ const Dashboard = () => {
       >
         {/* 공지사항 배너 - 최상단에 위치 */}
         <NoticeBanner />
-        
-        
+
+        {/* 테스트 모드 배지 */}
+        {testMode && (
+          <Alert severity="info" sx={{ mb: `${spacing.md}px` }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                🧪 테스트 모드
+              </Typography>
+              <Typography variant="body2">
+                | 모든 사용자에게 월 8회 무료 제공
+              </Typography>
+            </Box>
+          </Alert>
+        )}
+
         {/* 사용자 정보 + CTA 버튼 */}
         <Box sx={{ mb: `${spacing.lg}px` }}>
           {/* 상단: 사용자 정보와 프로필 수정 버튼 */}
