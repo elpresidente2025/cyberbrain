@@ -232,7 +232,7 @@ const Dashboard = () => {
     fetchNotices();
   }, [user?.uid]);
 
-  // 시스템 설정 로드 (테스트 모드 확인)
+  // 시스템 설정 로드 (데모 모드 확인)
   useEffect(() => {
     const loadSystemConfig = async () => {
       try {
@@ -413,12 +413,12 @@ const Dashboard = () => {
         {/* 공지사항 배너 - 최상단에 위치 */}
         <NoticeBanner />
 
-        {/* 테스트 모드 배지 */}
+        {/* 데모 모드 배지 */}
         {testMode && (
           <Alert severity="info" sx={{ mb: `${spacing.md}px` }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                🧪 테스트 모드
+                🧪 데모 모드
               </Typography>
               <Typography variant="body2">
                 | 모든 사용자에게 월 8회 무료 제공

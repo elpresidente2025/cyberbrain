@@ -124,12 +124,12 @@ function QuickActions() {
 
   const toggleServiceMode = async () => {
     const newMode = !serviceMode;
-    const modeText = newMode ? '테스트 모드' : '프로덕션 모드';
+    const modeText = newMode ? '데모 모드' : '프로덕션 모드';
 
     const confirmed = confirm(
       `정말로 ${modeText}로 전환하시겠습니까?\n\n` +
       (newMode
-        ? '• 모든 사용자에게 월 8회 무료 제공\n• 구독 및 당원 인증 불필요\n• 대시보드에 "테스트 모드" 배지 표시'
+        ? '• 모든 사용자에게 월 8회 무료 제공\n• 구독 및 당원 인증 불필요\n• 대시보드에 "데모 모드" 배지 표시'
         : '• 즉시 유료 결제 + 당원 인증 필수\n• 사용자는 8회 무료 체험 후 결제 필요')
     );
 
@@ -249,7 +249,7 @@ function QuickActions() {
                 }
               }}
             >
-              {serviceMode === null ? '로딩 중...' : (serviceMode ? '🧪 테스트 모드' : '💼 프로덕션 모드')}
+              {serviceMode === null ? '로딩 중...' : (serviceMode ? '🧪 데모 모드' : '💼 프로덕션 모드')}
             </Button>
           </Grid>
         </Grid>
@@ -260,7 +260,7 @@ function QuickActions() {
             <Typography variant="body2">
               {serviceMode ? (
                 <>
-                  🧪 <strong>테스트 모드 활성화</strong>
+                  🧪 <strong>데모 모드</strong>
                   <br />
                   • 모든 사용자에게 월 8회 무료 제공
                   <br />
@@ -268,7 +268,7 @@ function QuickActions() {
                 </>
               ) : (
                 <>
-                  💼 <strong>프로덕션 모드 활성화</strong>
+                  💼 <strong>프로덕션 모드</strong>
                   <br />
                   • 유료 구독 + 당원 인증 필수
                   <br />
