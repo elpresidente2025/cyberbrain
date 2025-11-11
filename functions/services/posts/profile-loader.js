@@ -158,16 +158,24 @@ async function checkUsageLimit(userProfile, useBonus) {
 
     console.log('✅ 보너스 원고 사용 가능', { availableBonus });
   } else if (testMode) {
-    // === 테스트 모드: 모든 사용자에게 월 8회 무료 제공 ===
+    // === 데모 모드: 당원 인증 필수, 구독 불필요, 월 8회 무료 제공 ===
+    // 1. 당원 인증 체크
+    if (userProfile.verificationStatus !== 'verified') {
+      throw new HttpsError('failed-precondition',
+        '당원 인증이 필요합니다. 결제 페이지에서 당원 인증을 완료해주세요.');
+    }
+
+    // 2. 월간 생성 횟수 체크
     const testModeLimit = systemConfigDoc.data()?.testModeSettings?.freeMonthlyLimit || 8;
     const postsThisMonth = userProfile.postsThisMonth || 0;
 
     if (postsThisMonth >= testModeLimit) {
       throw new HttpsError('resource-exhausted',
-        `테스트 기간 중 이번 달 생성 가능 횟수(${testModeLimit}회)를 초과했습니다.`);
+        `데모 기간 중 이번 달 생성 가능 횟수(${testModeLimit}회)를 초과했습니다.`);
     }
 
-    console.log('🧪 테스트 모드 - 원고 생성 가능', {
+    console.log('🧪 데모 모드 - 원고 생성 가능', {
+      verificationStatus: userProfile.verificationStatus,
       current: postsThisMonth,
       limit: testModeLimit,
       remaining: testModeLimit - postsThisMonth
@@ -233,9 +241,9 @@ async function updateUsageStats(uid, useBonus, isAdmin) {
         };
 
         if (testMode) {
-          // === 테스트 모드: postsThisMonth만 증가 ===
+          // === 데모 모드: postsThisMonth만 증가 ===
           updateData.postsThisMonth = admin.firestore.FieldValue.increment(1);
-          console.log('🧪 테스트 모드 - 이번 달 사용량 증가');
+          console.log('🧪 데모 모드 - 이번 달 사용량 증가');
         } else {
           // === 프로덕션 모드: 구독 상태에 따라 처리 ===
           const userDoc = await db.collection('users').doc(uid).get();

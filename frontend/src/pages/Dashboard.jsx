@@ -421,7 +421,7 @@ const Dashboard = () => {
                 🧪 데모 모드
               </Typography>
               <Typography variant="body2">
-                | 모든 사용자에게 월 8회 무료 제공
+                | 당원 인증 시 월 8회 무료 제공
               </Typography>
             </Box>
           </Alert>
