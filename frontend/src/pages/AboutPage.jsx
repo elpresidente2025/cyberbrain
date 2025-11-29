@@ -39,17 +39,17 @@ const AboutPage = () => {
   // 핵심 가치 3개
   const coreValues = [
     {
-      icon: <AttachMoney sx={{ fontSize: 48, color: theme.palette.brand.primary }} />,
+      icon: <AttachMoney />,
       title: '월 90회 원고 생성',
       description: '충분한 분량'
     },
     {
-      icon: <TrendingUp sx={{ fontSize: 48, color: theme.palette.brand.primary }} />,
+      icon: <TrendingUp />,
       title: '검색 최적화',
       description: '네이버 상위노출'
     },
     {
-      icon: <AccountBalance sx={{ fontSize: 48, color: theme.palette.brand.primary }} />,
+      icon: <AccountBalance />,
       title: '선거구 독점',
       description: '경쟁자 차단'
     }
@@ -113,7 +113,37 @@ const AboutPage = () => {
   return (
     <Box sx={{
       minHeight: '100vh',
-      bgcolor: theme.palette.mode === 'dark' ? '#1A1A1A' : '#F8F9FA'
+      bgcolor: theme.palette.mode === 'dark' ? '#1A1A1A' : '#F8F9FA',
+      position: 'relative',
+      overflow: 'hidden',
+      '&::before': {
+        content: '""',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: '100vh',
+        background: theme.palette.mode === 'dark'
+          ? 'radial-gradient(circle at 50% 0%, rgba(21, 36, 132, 0.15), transparent 70%)'
+          : 'radial-gradient(circle at 50% 0%, rgba(21, 36, 132, 0.08), transparent 70%)',
+        zIndex: 0,
+        pointerEvents: 'none'
+      },
+      '&::after': {
+        content: '""',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: '100vh',
+        backgroundImage: theme.palette.mode === 'dark'
+          ? 'radial-gradient(circle, rgba(21, 36, 132, 0.4) 1px, transparent 1px)'
+          : 'radial-gradient(circle, rgba(21, 36, 132, 0.15) 1px, transparent 1px)',
+        backgroundSize: '30px 30px',
+        zIndex: 0,
+        pointerEvents: 'none',
+        opacity: 0.3
+      }
     }}>
       {/* 로그인 버튼 */}
       <motion.div
@@ -148,12 +178,14 @@ const AboutPage = () => {
       >
         <Container maxWidth="md" sx={{ pt: { xs: 12, md: 16 }, pb: 8, textAlign: 'center' }}>
           <Typography
-            variant="h2"
+            variant="h1"
             sx={{
-              fontWeight: 800,
-              fontSize: { xs: '2rem', md: '3rem' },
+              fontWeight: 900,
+              fontSize: { xs: '2.5rem', md: '4.5rem' },
               mb: 2,
-              color: theme.palette.mode === 'dark' ? 'white' : '#152484'
+              color: theme.palette.mode === 'dark' ? 'white' : '#152484',
+              letterSpacing: '-0.03em',
+              lineHeight: 1.1
             }}
           >
             AI 정치 콘텐츠, 3분이면 끝
@@ -179,16 +211,17 @@ const AboutPage = () => {
               sx={{
                 bgcolor: theme.palette.brand.primary,
                 color: 'white',
-                fontSize: '1.2rem',
+                fontSize: '1.4rem',
                 fontWeight: 700,
-                px: 4,
-                py: 1.5,
+                px: 5,
+                py: 2,
                 borderRadius: 2,
-                boxShadow: '0 8px 24px rgba(21, 36, 132, 0.3)',
+                boxShadow: '0 8px 24px rgba(21, 36, 132, 0.4), 0 0 40px rgba(21, 36, 132, 0.2)',
+                transition: 'all 0.3s ease',
                 '&:hover': {
                   bgcolor: '#0f1f5c',
                   transform: 'translateY(-2px)',
-                  boxShadow: '0 12px 32px rgba(21, 36, 132, 0.4)'
+                  boxShadow: '0 12px 32px rgba(21, 36, 132, 0.5), 0 0 60px rgba(21, 36, 132, 0.3)'
                 }
               }}
             >
@@ -238,16 +271,37 @@ const AboutPage = () => {
                     borderRadius: 3,
                     bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'white',
                     border: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
+                    boxShadow: '0 4px 16px rgba(21, 36, 132, 0.08)',
                     transition: 'all 0.3s ease',
                     '&:hover': {
                       transform: 'translateY(-8px)',
-                      boxShadow: '0 12px 40px rgba(21, 36, 132, 0.15)'
+                      boxShadow: '0 16px 48px rgba(21, 36, 132, 0.2)'
                     }
                   }}
                 >
                   <CardContent>
-                    <Box sx={{ mb: 2 }}>
-                      {value.icon}
+                    <Box sx={{
+                      mb: 3,
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center'
+                    }}>
+                      <Box sx={{
+                        width: 80,
+                        height: 80,
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #152484 0%, #1e3a8a 100%)',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        boxShadow: '0 4px 16px rgba(21, 36, 132, 0.3)',
+                        '& .MuiSvgIcon-root': {
+                          color: 'white',
+                          fontSize: 40
+                        }
+                      }}>
+                        {value.icon}
+                      </Box>
                     </Box>
                     <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
                       {value.title}
@@ -277,14 +331,25 @@ const AboutPage = () => {
               p: 5,
               borderRadius: 3,
               bgcolor: theme.palette.mode === 'dark' ? 'rgba(21, 36, 132, 0.2)' : 'rgba(21, 36, 132, 0.05)',
-              border: `2px solid ${theme.palette.brand.primary}`
+              border: `2px solid ${theme.palette.brand.primary}`,
+              boxShadow: '0 8px 32px rgba(21, 36, 132, 0.15)'
             }}
           >
             <CardContent>
-              <Typography variant="h4" sx={{ fontWeight: 700, mb: 2 }}>
+              <Typography variant="h4" sx={{ fontWeight: 700, mb: 3 }}>
                 스탠다드 플랜 하나뿐
               </Typography>
-              <Typography variant="h3" sx={{ fontWeight: 800, color: theme.palette.brand.primary, mb: 1 }}>
+              <Typography
+                variant="h2"
+                sx={{
+                  fontWeight: 900,
+                  color: theme.palette.brand.primary,
+                  fontSize: { xs: '3rem', md: '4rem' },
+                  mb: 1,
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1
+                }}
+              >
                 월 55,000원
               </Typography>
               <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
@@ -344,9 +409,15 @@ const AboutPage = () => {
                 borderRadius: 2,
                 bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'white',
                 border: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
+                boxShadow: '0 2px 8px rgba(21, 36, 132, 0.06)',
+                transition: 'all 0.3s ease',
                 '&:before': { display: 'none' },
                 '&.Mui-expanded': {
-                  margin: '0 0 16px 0'
+                  margin: '0 0 16px 0',
+                  boxShadow: '0 4px 16px rgba(21, 36, 132, 0.12)'
+                },
+                '&:hover': {
+                  boxShadow: '0 4px 12px rgba(21, 36, 132, 0.1)'
                 }
               }}
             >
