@@ -81,7 +81,7 @@ const Billing = () => {
     features: [
       '월 90회 원고 생성',
       'SNS 원고 무료 생성',
-      '무제한 수정 및 재생성',
+      '최대 3회 재생성',
       '더불어민주당 당원 전용'
     ]
   };
@@ -414,8 +414,8 @@ const Billing = () => {
                         <CheckCircle sx={{ color: colors.brand.primary }} />
                       </ListItemIcon>
                       <ListItemText
-                        primary="무제한 수정 및 재생성"
-                        secondary="만족할 때까지 원고를 수정하고 재생성할 수 있습니다"
+                        primary="최대 3회 재생성"
+                        secondary="동일 주제에 대해 최대 3번까지 다른 버전을 생성할 수 있습니다"
                         primaryTypographyProps={{ fontWeight: 'bold' }}
                       />
                     </ListItem>
