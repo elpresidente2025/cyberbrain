@@ -505,12 +505,28 @@ const Dashboard = () => {
             elevation={0}
             sx={{
               p: `${spacing.md}px`,
-              bgcolor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
+              bgcolor: theme.palette.mode === 'dark'
+                ? 'rgba(255, 255, 255, 0.05)'
+                : 'rgba(255, 255, 255, 0.95)',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
+              border: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'}`,
+              borderRadius: '12px',
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
+                : '0 2px 12px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8)',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
               flexWrap: 'wrap',
-              gap: `${spacing.md}px`
+              gap: `${spacing.md}px`,
+              '&:hover': {
+                transform: 'translateY(-2px)',
+                boxShadow: theme.palette.mode === 'dark'
+                  ? '0 12px 48px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15)'
+                  : '0 4px 20px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 1)',
+              }
             }}
           >
             {/* 플랜 정보 */}
@@ -568,20 +584,47 @@ const Dashboard = () => {
             fullWidth
             sx={{
               mt: `${spacing.md}px`,
-              bgcolor: canGeneratePost ? planColor : '#757575',
+              background: canGeneratePost
+                ? `linear-gradient(135deg, ${planColor} 0%, #1e3a8a 100%)`
+                : '#757575',
               color: '#ffffff',
               fontSize: '1.125rem',
               py: 2.5,
               minHeight: '70px',
               fontWeight: 700,
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+              borderRadius: '12px',
+              boxShadow: canGeneratePost
+                ? '0 8px 24px rgba(21, 36, 132, 0.4), 0 4px 8px rgba(0, 0, 0, 0.2)'
+                : '0 4px 12px rgba(0, 0, 0, 0.3)',
+              transform: 'translateY(0)',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              position: 'relative',
+              overflow: 'hidden',
+              '&::before': canGeneratePost ? {
+                content: '""',
+                position: 'absolute',
+                top: 0,
+                left: '-100%',
+                width: '100%',
+                height: '100%',
+                background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent)',
+                transition: 'left 0.5s',
+              } : {},
               '&:hover': canGeneratePost ? {
-                bgcolor: planColor,
-                filter: 'brightness(0.9)',
+                background: `linear-gradient(135deg, #1e3a8a 0%, ${planColor} 100%)`,
+                boxShadow: '0 12px 32px rgba(21, 36, 132, 0.5), 0 6px 12px rgba(0, 0, 0, 0.3)',
+                transform: 'translateY(-2px)',
+                '&::before': {
+                  left: '100%',
+                }
+              } : {},
+              '&:active': canGeneratePost ? {
+                transform: 'translateY(0)',
               } : {},
               '&.Mui-disabled': {
-                bgcolor: '#757575 !important',
-                color: 'rgba(255, 255, 255, 0.6) !important'
+                background: '#757575 !important',
+                color: 'rgba(255, 255, 255, 0.6) !important',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3) !important',
               }
             }}
           >

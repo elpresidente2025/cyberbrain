@@ -45,10 +45,12 @@ const createCustomTheme = (isDarkMode) => createTheme({
   },
   // 3. 타이포그래피 설정 (가이드 4절)
   typography: {
-    fontFamily: '"Spoqa Han Sans Neo", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif',
+    fontFamily: '"Pretendard Variable", "Spoqa Han Sans Neo", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif',
     h1: {
-      fontFamily: '"NanumSquare", "Spoqa Han Sans Neo", sans-serif',
+      fontFamily: '"Pretendard Variable", "NanumSquare", "Spoqa Han Sans Neo", sans-serif',
       fontSize: '2.5rem', // 기본 폰트 크기 설정
+      fontWeight: 700,
+      letterSpacing: '-0.02em',
       '@media (min-width: 2560px)': {
         fontSize: '3rem', // 2K에서 더 큰 폰트
       },
@@ -57,7 +59,9 @@ const createCustomTheme = (isDarkMode) => createTheme({
       },
     },
     h2: {
-      fontFamily: '"NanumSquare", "Spoqa Han Sans Neo", sans-serif',
+      fontFamily: '"Pretendard Variable", "NanumSquare", "Spoqa Han Sans Neo", sans-serif',
+      fontWeight: 700,
+      letterSpacing: '-0.01em',
       '@media (min-width: 2560px)': {
         fontSize: '2.5rem',
       },
@@ -66,7 +70,9 @@ const createCustomTheme = (isDarkMode) => createTheme({
       },
     },
     h3: {
-      fontFamily: '"NanumSquare", "Spoqa Han Sans Neo", sans-serif',
+      fontFamily: '"Pretendard Variable", "NanumSquare", "Spoqa Han Sans Neo", sans-serif',
+      fontWeight: 600,
+      letterSpacing: '-0.01em',
       '@media (min-width: 2560px)': {
         fontSize: '2rem',
       },
@@ -75,13 +81,16 @@ const createCustomTheme = (isDarkMode) => createTheme({
       },
     },
     h4: {
-      fontFamily: '"NanumSquare", "Spoqa Han Sans Neo", sans-serif',
+      fontFamily: '"Pretendard Variable", "NanumSquare", "Spoqa Han Sans Neo", sans-serif',
+      fontWeight: 600,
     },
     h5: {
-      fontFamily: '"NanumSquare", "Spoqa Han Sans Neo", sans-serif',
+      fontFamily: '"Pretendard Variable", "NanumSquare", "Spoqa Han Sans Neo", sans-serif',
+      fontWeight: 600,
     },
     h6: {
-      fontFamily: '"NanumSquare", "Spoqa Han Sans Neo", sans-serif',
+      fontFamily: '"Pretendard Variable", "NanumSquare", "Spoqa Han Sans Neo", sans-serif',
+      fontWeight: 600,
     },
     body1: {
       '@media (min-width: 2560px)': {
