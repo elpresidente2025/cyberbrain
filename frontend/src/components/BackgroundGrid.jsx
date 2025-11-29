@@ -1,15 +1,83 @@
 import React from 'react';
 import { Box, useTheme } from '@mui/material';
 
-// Centralized background grid with extreme perspective and a mid-page horizon.
-// Uses design tokens from theme.
+// Optimized background grid using Canvas for better performance
+// Reduced from 37+ DOM elements to a single canvas element
 const BackgroundGrid = () => {
   const theme = useTheme();
   const horizontalLineColor = theme.palette.ui.gridLineHorizontal || 'rgba(28, 161, 82, 0.9)';
   const verticalLineColor = theme.palette.ui.gridLineVertical || 'rgba(28, 161, 82, 0.8)';
+  const canvasRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+
+    // Set canvas size
+    const updateSize = () => {
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+      draw();
+    };
+
+    const draw = () => {
+      const width = canvas.width / dpr;
+      const height = canvas.height / dpr;
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Center point (horizon at 50vh)
+      const centerX = width / 2;
+      const centerY = height / 2;
+
+      // Draw horizontal lines (perspective grid)
+      ctx.strokeStyle = horizontalLineColor;
+      ctx.lineWidth = 1;
+      const horizontalOffsets = [5, 12, 20, 29, 39, 51, 65, 82, 102, 126, 155, 190, 232, 282, 342, 415, 500, 600, 720, 860];
+
+      horizontalOffsets.forEach(offset => {
+        ctx.beginPath();
+        ctx.moveTo(0, centerY + offset);
+        ctx.lineTo(width, centerY + offset);
+        ctx.stroke();
+      });
+
+      // Draw vertical lines (radial from center)
+      ctx.strokeStyle = verticalLineColor;
+      const angles = [
+        0, -20, -35, -45, -52, -58, -63, -67, -70, -73, -75, -77, -79, -81, -83, -85, -87, -88, -89, -90,
+        20, 35, 45, 52, 58, 63, 67, 70, 73, 75, 77, 79, 81, 83, 85, 87, 88, 89, 90
+      ];
+
+      angles.forEach(angle => {
+        const rad = (angle * Math.PI) / 180;
+        const length = Math.max(width, height) * 2;
+
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(
+          centerX + Math.sin(rad) * length,
+          centerY + Math.cos(rad) * length
+        );
+        ctx.stroke();
+      });
+    };
+
+    updateSize();
+    window.addEventListener('resize', updateSize);
+
+    return () => window.removeEventListener('resize', updateSize);
+  }, [horizontalLineColor, verticalLineColor]);
 
   return (
     <Box
+      component="canvas"
+      ref={canvasRef}
       aria-hidden
       sx={{
         position: 'fixed',
@@ -19,86 +87,8 @@ const BackgroundGrid = () => {
         height: '100vh',
         zIndex: -2,
         pointerEvents: 'none',
-        perspective: 'var(--grid-perspective)',
-        transformStyle: 'preserve-3d',
-        overflow: 'hidden',
       }}
-    >
-
-      {/* 원근감 가로선들 - 수렴점에서 시작해서 점점 촘촘하게 */}
-      <Box sx={{ position: 'fixed', top: '50vh', left: '50%', width: '1px', height: '1px', zIndex: -1 }}>
-        {/* 가로선들 - 아래로 갈수록 듬성하고 두꺼워짐 */}
-        <Box sx={{ position: 'absolute', top: '5px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '12px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '20px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '29px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '39px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '51px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '65px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '82px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '102px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '126px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '155px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '190px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '232px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '282px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '342px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '415px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '500px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '600px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '720px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-        <Box sx={{ position: 'absolute', top: '860px', left: '-200vw', width: '400vw', height: '1px', background: horizontalLineColor }} />
-      </Box>
-      
-      {/* 수학적으로 계산된 원근감 격자선들 */}
-      <Box sx={{ position: 'fixed', top: '50vh', left: '50%', width: '1px', height: '1px', zIndex: -0.5 }}>
-        {/* 중앙 수직선 - 푸터 위에서 끝남 */}
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(0deg)' }} />
-
-        {/* 좌측 - 각도별 간격: 중앙에서 멀어질수록 지수적으로 촘촘 */}
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-20deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-35deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-45deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-52deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-58deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-63deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-67deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-70deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-73deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-75deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-77deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-79deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-81deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-83deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-85deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-87deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-88deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-89deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(-90deg)' }} />
-
-        {/* 우측 - 대칭으로 배치 */}
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(20deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(35deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(45deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(52deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(58deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(63deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(67deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(70deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(73deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(75deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(77deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(79deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(81deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(83deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(85deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(87deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(88deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(89deg)' }} />
-        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '1px', height: '200vh', background: verticalLineColor, transformOrigin: 'top', transform: 'rotate(90deg)' }} />
-      </Box>
-
-    </Box>
+    />
   );
 };
 

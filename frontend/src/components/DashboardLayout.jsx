@@ -93,7 +93,14 @@ const DashboardLayout = ({ children }) => {
         position="fixed"
         elevation={0}
         sx={{
-          bgcolor: headerBgColor,
+          bgcolor: 'transparent',
+          background: isDarkMode
+            ? 'linear-gradient(180deg, rgba(21, 36, 132, 0.95) 0%, rgba(21, 36, 132, 0.85) 100%)'
+            : 'linear-gradient(180deg, rgba(21, 36, 132, 0.98) 0%, rgba(21, 36, 132, 0.92) 100%)',
+          backdropFilter: 'blur(20px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+          borderBottom: `1px solid ${isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.2)'}`,
+          boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1), 0 1px 0 rgba(255, 255, 255, 0.1) inset',
           top: 0,
           zIndex: (t) => t.zIndex.appBar + 1,
           borderRadius: 0,
@@ -104,9 +111,18 @@ const DashboardLayout = ({ children }) => {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.02) 2px, rgba(255,255,255,0.02) 4px)',
+            background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.05) 50%, transparent 100%)',
             pointerEvents: 'none',
-            zIndex: 1
+            zIndex: 1,
+            animation: 'shimmer 3s ease-in-out infinite',
+          },
+          '@keyframes shimmer': {
+            '0%, 100%': {
+              opacity: 0.3,
+            },
+            '50%': {
+              opacity: 0.6,
+            }
           }
         }}
       >

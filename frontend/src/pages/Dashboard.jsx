@@ -504,28 +504,44 @@ const Dashboard = () => {
           <Paper
             elevation={0}
             sx={{
-              p: `${spacing.md}px`,
+              p: `${spacing.lg}px`,
               bgcolor: theme.palette.mode === 'dark'
-                ? 'rgba(255, 255, 255, 0.05)'
-                : 'rgba(255, 255, 255, 0.95)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
-              border: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'}`,
-              borderRadius: '12px',
+                ? 'rgba(255, 255, 255, 0.08)'
+                : 'rgba(255, 255, 255, 0.98)',
+              backdropFilter: 'blur(30px) saturate(150%)',
+              WebkitBackdropFilter: 'blur(30px) saturate(150%)',
+              border: `2px solid ${theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(21, 36, 132, 0.1)'}`,
+              borderRadius: '16px',
               boxShadow: theme.palette.mode === 'dark'
-                ? '0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
-                : '0 2px 12px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8)',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                ? '0 12px 40px rgba(0, 0, 0, 0.4), inset 0 2px 0 rgba(255, 255, 255, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05) inset'
+                : '0 4px 16px rgba(0, 0, 0, 0.1), inset 0 2px 0 rgba(255, 255, 255, 1), 0 0 0 1px rgba(21, 36, 132, 0.05) inset',
+              transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
               flexWrap: 'wrap',
               gap: `${spacing.md}px`,
+              position: 'relative',
+              overflow: 'hidden',
+              '&::before': {
+                content: '""',
+                position: 'absolute',
+                top: 0,
+                left: '-100%',
+                width: '100%',
+                height: '100%',
+                background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent)',
+                transition: 'left 0.8s ease',
+              },
               '&:hover': {
-                transform: 'translateY(-2px)',
+                transform: 'translateY(-4px)',
                 boxShadow: theme.palette.mode === 'dark'
-                  ? '0 12px 48px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15)'
-                  : '0 4px 20px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 1)',
+                  ? '0 16px 60px rgba(0, 0, 0, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.2), 0 0 0 2px rgba(255, 255, 255, 0.1) inset'
+                  : '0 8px 28px rgba(0, 0, 0, 0.15), inset 0 2px 0 rgba(255, 255, 255, 1), 0 0 0 2px rgba(21, 36, 132, 0.1) inset',
+                borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(21, 36, 132, 0.2)',
+                '&::before': {
+                  left: '100%',
+                }
               }
             }}
           >
@@ -578,26 +594,27 @@ const Dashboard = () => {
           <Button
             variant="contained"
             size="large"
-            startIcon={<Create />}
+            startIcon={<Create sx={{ fontSize: '2rem !important' }} />}
             onClick={handleGeneratePost}
             disabled={!canGeneratePost}
             fullWidth
             sx={{
-              mt: `${spacing.md}px`,
+              mt: `${spacing.lg}px`,
               background: canGeneratePost
                 ? `linear-gradient(135deg, ${planColor} 0%, #1e3a8a 100%)`
                 : '#757575',
               color: '#ffffff',
-              fontSize: '1.125rem',
-              py: 2.5,
-              minHeight: '70px',
-              fontWeight: 700,
-              borderRadius: '12px',
+              fontSize: '1.5rem',
+              py: 4,
+              px: 4,
+              minHeight: '100px',
+              fontWeight: 800,
+              borderRadius: '16px',
               boxShadow: canGeneratePost
-                ? '0 8px 24px rgba(21, 36, 132, 0.4), 0 4px 8px rgba(0, 0, 0, 0.2)'
+                ? '0 16px 48px rgba(21, 36, 132, 0.5), 0 8px 16px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1) inset'
                 : '0 4px 12px rgba(0, 0, 0, 0.3)',
-              transform: 'translateY(0)',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              transform: 'translateY(0) scale(1)',
+              transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
               position: 'relative',
               overflow: 'hidden',
               '&::before': canGeneratePost ? {
@@ -607,19 +624,35 @@ const Dashboard = () => {
                 left: '-100%',
                 width: '100%',
                 height: '100%',
-                background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent)',
-                transition: 'left 0.5s',
+                background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
+                transition: 'left 0.6s ease',
+              } : {},
+              '&::after': canGeneratePost ? {
+                content: '""',
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                width: '0',
+                height: '0',
+                borderRadius: '50%',
+                background: 'rgba(255, 255, 255, 0.3)',
+                transform: 'translate(-50%, -50%)',
+                transition: 'width 0.6s, height 0.6s',
               } : {},
               '&:hover': canGeneratePost ? {
                 background: `linear-gradient(135deg, #1e3a8a 0%, ${planColor} 100%)`,
-                boxShadow: '0 12px 32px rgba(21, 36, 132, 0.5), 0 6px 12px rgba(0, 0, 0, 0.3)',
-                transform: 'translateY(-2px)',
+                boxShadow: '0 20px 60px rgba(21, 36, 132, 0.6), 0 10px 20px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(255, 255, 255, 0.15) inset',
+                transform: 'translateY(-4px) scale(1.02)',
                 '&::before': {
                   left: '100%',
+                },
+                '&::after': {
+                  width: '300px',
+                  height: '300px',
                 }
               } : {},
               '&:active': canGeneratePost ? {
-                transform: 'translateY(0)',
+                transform: 'translateY(-2px) scale(0.98)',
               } : {},
               '&.Mui-disabled': {
                 background: '#757575 !important',
