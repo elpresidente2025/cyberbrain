@@ -178,6 +178,17 @@ const naverLoginHTTP = onRequest({ region: 'asia-northeast3', cors: true, timeou
     // backfill username if missing
     try { if (!userData.username) await claimUsernameForUid(docSnap.id, naver.id); } catch (e) { console.warn('username backfill failed:', e.message); }
 
+    // bios 컬렉션에서 자기소개 조회
+    let bio = '';
+    try {
+      const bioDoc = await admin.firestore().collection('bios').doc(uid).get();
+      if (bioDoc.exists) {
+        bio = bioDoc.data().content || '';
+      }
+    } catch (bioErr) {
+      console.warn('Bio 조회 실패:', bioErr.message);
+    }
+
     return res.status(200).json({
       result: {
         success: true,
@@ -189,7 +200,8 @@ const naverLoginHTTP = onRequest({ region: 'asia-northeast3', cors: true, timeou
           photoURL: naver.profile_image,
           provider: 'naver',
           profileComplete: userData.profileComplete || false,
-          role: userData.role
+          role: userData.role,
+          bio: bio
         },
         customToken: customToken,
         naver: {

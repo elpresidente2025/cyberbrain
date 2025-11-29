@@ -1,6 +1,7 @@
 // frontend/src/pages/PostsListPage.jsx
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import {
   Box,
   Container,
@@ -261,37 +262,48 @@ export default function PostsListPage() {
     <DashboardLayout title="포스트 목록">
       <Container maxWidth="xl" sx={{ py: `${spacing.xl}px`, px: { xs: 1, sm: 2 } }}>
         {/* 페이지 헤더 */}
-        <Box sx={{ mb: `${spacing.xl}px` }}>
-          <Typography variant="h4" sx={{
-            fontWeight: 'bold',
-            mb: `${spacing.xs}px`,
-            color: theme.palette.mode === 'dark' ? 'white' : 'black',
-            display: 'flex',
-            alignItems: 'center',
-            gap: `${spacing.xs}px`
-          }}>
-            <Assignment sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
-            내 원고 목록
-          </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px` }}>
-            <Typography variant="body1" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
-              생성한 원고를 관리할 수 있습니다
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+        >
+          <Box sx={{ mb: `${spacing.xl}px` }}>
+            <Typography variant="h4" sx={{
+              fontWeight: 'bold',
+              mb: `${spacing.xs}px`,
+              color: theme.palette.mode === 'dark' ? 'white' : 'black',
+              display: 'flex',
+              alignItems: 'center',
+              gap: `${spacing.xs}px`
+            }}>
+              <Assignment sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
+              내 원고 목록
             </Typography>
-            <Chip 
-              label={`총 ${posts.length}개`} 
-              sx={{ 
-                bgcolor: 'rgba(128,128,128,0.1)', 
-                color: 'text.primary',
-                borderColor: 'text.secondary'
-              }} 
-              variant="outlined" 
-            />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px` }}>
+              <Typography variant="body1" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
+                생성한 원고를 관리할 수 있습니다
+              </Typography>
+              <Chip
+                label={`총 ${posts.length}개`}
+                sx={{
+                  bgcolor: 'rgba(128,128,128,0.1)',
+                  color: 'text.primary',
+                  borderColor: 'text.secondary'
+                }}
+                variant="outlined"
+              />
+            </Box>
           </Box>
-        </Box>
-        
-        <Paper elevation={0} sx={{ 
-          p: { xs: 2, sm: 3 }
-        }}>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        >
+          <Paper elevation={0} sx={{
+            p: { xs: 2, sm: 3 }
+          }}>
 
           <Typography variant="body2" sx={{ mb: `${spacing.md}px`, color: 'grey.100', fontStyle: 'italic' }}>
             이 화면은 읽기 전용입니다. 카드를 터치/클릭하면 원고가 열립니다.
@@ -421,6 +433,7 @@ export default function PostsListPage() {
             </Grid>
           )}
         </Paper>
+        </motion.div>
 
         {/* 원고 보기 모달 */}
         <PostViewerModal

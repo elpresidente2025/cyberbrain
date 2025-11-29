@@ -68,15 +68,33 @@ exports.getUserProfile = wrap(async (req) => {
     else if (g === 'F' || g === 'FEMALE' || g === '여' || g === '여자') profile.gender = '여성';
   }
 
+  // users 컬렉션의 bio 확인 (디버깅)
+  console.log('📝 [getUserProfile] users 컬렉션의 bio:', {
+    hasBio: !!profile.bio,
+    bioLength: profile.bio?.length || 0,
+    bioPreview: profile.bio?.substring(0, 50)
+  });
+
   // bios 컬렉션에서 자기소개 조회 (호환성 유지)
   try {
     const bioDoc = await db.collection('bios').doc(uid).get();
+    console.log('📝 [getUserProfile] bios 컬렉션 조회:', {
+      exists: bioDoc.exists,
+      hasContent: bioDoc.exists ? !!bioDoc.data()?.content : false
+    });
     if (bioDoc.exists) {
-      profile.bio = bioDoc.data().content || '';
+      const biosContent = bioDoc.data().content || '';
+      console.log('📝 [getUserProfile] bios 컬렉션 content 길이:', biosContent.length);
+      profile.bio = biosContent;
     }
   } catch (error) {
-    console.warn('Bio 조회 실패 (무시):', error.message);
+    console.error('❌ [getUserProfile] Bio 조회 실패:', error);
   }
+
+  console.log('📝 [getUserProfile] 최종 bio:', {
+    hasBio: !!profile.bio,
+    bioLength: profile.bio?.length || 0
+  });
 
   logInfo('getUserProfile 성공', { userId: uid });
   return ok({ profile });

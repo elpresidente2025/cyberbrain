@@ -120,7 +120,8 @@ export const useNaverLogin = () => {
           photoURL: user.photoURL,
           provider: user.provider,
           profileComplete: user.profileComplete,
-          role: user.role
+          role: user.role,
+          bio: user.bio || '' // naverLoginHTTP에서 반환한 bio 포함
         };
 
         localStorage.setItem('currentUser', JSON.stringify(currentUserData));
@@ -136,7 +137,7 @@ export const useNaverLogin = () => {
             // const { callFunctionWithNaverAuth } = await import('../services/firebaseService'); // 정적 import로 변경
             const profileResponse = await Promise.race([
               callFunctionWithNaverAuth('getUserProfile'),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('functions call timeout')), 3000))
+              new Promise((_, reject) => setTimeout(() => reject(new Error('functions call timeout')), 10000))
             ]);
             if (profileResponse?.profile) {
               const updatedUserData = {

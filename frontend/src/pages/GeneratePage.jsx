@@ -3,6 +3,7 @@
 // React 및 UI 라이브러리에서 필요한 기능들을 가져옵니다.
 import React, { Suspense, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import {
   Container,
   Alert,
@@ -240,49 +241,73 @@ const GeneratePage = () => {
   return (
     <DashboardLayout>
       <Container maxWidth="xl" sx={{ py: `${spacing.xl}px` }}>
-        <Box sx={{ mb: `${spacing.xl}px` }}>
-          <Typography variant="h4" sx={{
-            fontWeight: 'bold',
-            mb: `${spacing.xs}px`,
-            color: theme.palette.mode === 'dark' ? 'white' : 'black',
-            display: 'flex',
-            alignItems: 'center',
-            gap: `${spacing.xs}px`
-          }}>
-            <Create sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
-            새 원고 생성
-          </Typography>
-        </Box>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+        >
+          <Box sx={{ mb: `${spacing.xl}px` }}>
+            <Typography variant="h4" sx={{
+              fontWeight: 'bold',
+              mb: `${spacing.xs}px`,
+              color: theme.palette.mode === 'dark' ? 'white' : 'black',
+              display: 'flex',
+              alignItems: 'center',
+              gap: `${spacing.xs}px`
+            }}>
+              <Create sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
+              새 원고 생성
+            </Typography>
+          </Box>
+        </motion.div>
 
         {/* API 에러가 있을 경우, 화면 상단에 에러 메시지를 보여줌 */}
         {error && (
-          <Alert severity="error" sx={{ mb: `${spacing.md}px` }}>
-            {error}
-          </Alert>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+          >
+            <Alert severity="error" sx={{ mb: `${spacing.md}px` }}>
+              {error}
+            </Alert>
+          </motion.div>
         )}
 
         {/* 입력 폼 컴포넌트 */}
-        <PromptForm
-          formData={formData}
-          onChange={updateForm} // 폼 데이터가 변경될 때 호출될 함수
-          disabled={loading}     // 로딩 중일 때는 입력 비활성화
-          categories={CATEGORIES}
-          isMobile={isMobile}
-          user={user}            // 사용자 정보 전달 (검색어 추천에 필요)
-        />
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+        >
+          <PromptForm
+            formData={formData}
+            onChange={updateForm} // 폼 데이터가 변경될 때 호출될 함수
+            disabled={loading}     // 로딩 중일 때는 입력 비활성화
+            categories={CATEGORIES}
+            isMobile={isMobile}
+            user={user}            // 사용자 정보 전달 (검색어 추천에 필요)
+          />
+        </motion.div>
 
         {/* 생성/초기화 버튼 컴포넌트 */}
-        <GenerateActions
-          onGenerate={handleGenerate}
-          onReset={handleReset}
-          loading={loading}
-          canGenerate={finalCanGenerate}
-          attempts={attempts}
-          maxAttempts={maxAttempts}
-          drafts={drafts}
-          progress={progress}
-          isMobile={isMobile}
-        />
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.4 }}
+        >
+          <GenerateActions
+            onGenerate={handleGenerate}
+            onReset={handleReset}
+            loading={loading}
+            canGenerate={finalCanGenerate}
+            attempts={attempts}
+            maxAttempts={maxAttempts}
+            drafts={drafts}
+            progress={progress}
+            isMobile={isMobile}
+          />
+        </motion.div>
 
         {/* 초안 그리드 (Lazy Loading 적용) */}
         <Suspense fallback={

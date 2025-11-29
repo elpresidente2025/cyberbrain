@@ -1,5 +1,6 @@
 // frontend/src/pages/ProfilePage.jsx
 import React, { useEffect, useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   Box,
   Button,
@@ -805,13 +806,13 @@ export default function ProfilePage() {
 
   return (
     <DashboardLayout>
-      <Container 
-        maxWidth="xl" 
-        sx={{ 
+      <Container
+        maxWidth="xl"
+        sx={{
           py: 4,
           maxWidth: {
             xs: '100%',
-            sm: '100%', 
+            sm: '100%',
             md: '900px',
             lg: '1200px',
             xl: '1400px',
@@ -820,24 +821,35 @@ export default function ProfilePage() {
           }
         }}
       >
-        <Box sx={{ mb: `${spacing.xl}px` }}>
-          <Typography variant="h4" sx={{
-            fontWeight: 'bold',
-            mb: `${spacing.xs}px`,
-            color: theme.palette.mode === 'dark' ? 'white' : 'black',
-            display: 'flex',
-            alignItems: 'center',
-            gap: `${spacing.xs}px`
-          }}>
-            <Settings sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
-            프로필 수정
-          </Typography>
-          <Typography variant="body1" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
-            프로필 정보를 바탕으로 맞춤형 원고가 생성됩니다.
-          </Typography>
-        </Box>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+        >
+          <Box sx={{ mb: `${spacing.xl}px` }}>
+            <Typography variant="h4" sx={{
+              fontWeight: 'bold',
+              mb: `${spacing.xs}px`,
+              color: theme.palette.mode === 'dark' ? 'white' : 'black',
+              display: 'flex',
+              alignItems: 'center',
+              gap: `${spacing.xs}px`
+            }}>
+              <Settings sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
+              프로필 수정
+            </Typography>
+            <Typography variant="body1" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
+              프로필 정보를 바탕으로 맞춤형 원고가 생성됩니다.
+            </Typography>
+          </Box>
+        </motion.div>
 
-        <Grid container spacing={3}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        >
+          <Grid container spacing={3}>
           {/* 좌측 컬럼: 기본 정보 */}
           <Grid item xs={12} xxl={6} xxxl={6}>
             <Paper elevation={0} sx={{
@@ -1470,9 +1482,15 @@ export default function ProfilePage() {
             </Paper>
           </Grid>
         </Grid>
+        </motion.div>
 
         {/* 회원탈퇴 버튼 (최하단, 카드 폭과 동일) */}
-        <Box sx={{ mt: `${spacing.xl}px` }}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+        >
+          <Box sx={{ mt: `${spacing.xl}px` }}>
           <Button
             onClick={() => setDeleteDialogOpen(true)}
             variant="contained"
@@ -1489,6 +1507,7 @@ export default function ProfilePage() {
             회원탈퇴
           </Button>
         </Box>
+        </motion.div>
 
         {/* 알림 스낵바 */}
         <NotificationSnackbar

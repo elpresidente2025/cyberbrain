@@ -1,5 +1,6 @@
 // frontend/src/pages/GuidelinesPage.jsx
 import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   Container,
   Typography,
@@ -96,27 +97,38 @@ const GuidelinesPage = () => {
       )
     : guideData;
 
-  
+
   return (
     <DashboardLayout title="전자두뇌비서관 사용 가이드">
       <Box sx={{ height: 20 }} />
       <Container maxWidth="xl">
         {/* 페이지 헤더 */}
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="h4" sx={{ 
-            fontWeight: 'bold', 
-            mb: 1, 
-            color: theme.palette.mode === 'dark' ? 'white' : 'black'
-          }}>
-            전자두뇌비서관 사용 가이드
-          </Typography>
-          <Typography variant="body1" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
-            AI로 정치 콘텐츠를 효과적으로 생성하고 관리하는 방법을 안내합니다
-          </Typography>
-        </Box>
-        
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+        >
+          <Box sx={{ mb: 4 }}>
+            <Typography variant="h4" sx={{
+              fontWeight: 'bold',
+              mb: 1,
+              color: theme.palette.mode === 'dark' ? 'white' : 'black'
+            }}>
+              전자두뇌비서관 사용 가이드
+            </Typography>
+            <Typography variant="body1" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
+              AI로 정치 콘텐츠를 효과적으로 생성하고 관리하는 방법을 안내합니다
+            </Typography>
+          </Box>
+        </motion.div>
+
         {/* 검색 기능 */}
-        <Paper sx={{ p: 2, mb: 3 }}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        >
+          <Paper sx={{ p: 2, mb: 3 }}>
           <TextField
             fullWidth
             placeholder="궁금한 내용을 검색해보세요 (예: 원고 생성, 대시보드, 관리)"
@@ -138,9 +150,15 @@ const GuidelinesPage = () => {
             }}
           />
         </Paper>
-        
+        </motion.div>
+
         {/* 가이드 아코디언 */}
-        <Box>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+        >
+          <Box>
           {filteredGuides.map((guide) => (
             <Accordion
               key={guide.id}
@@ -177,7 +195,8 @@ const GuidelinesPage = () => {
             </Accordion>
           ))}
         </Box>
-        
+        </motion.div>
+
         {/* 검색 결과 없음 */}
         {filteredGuides.length === 0 && (
           <Paper sx={{ p: 4, textAlign: 'center' }}>

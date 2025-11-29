@@ -1,5 +1,6 @@
 // frontend/src/pages/AdminPage.jsx (단순화 버전)
 import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   Container,
   Typography,
@@ -61,14 +62,19 @@ function AdminPage() {
     <DashboardLayout title="시스템 관리">
       <Container maxWidth="xl">
         {/* 헤더 영역 */}
-        <Box sx={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          mb: `${spacing.xl}px`,
-          pb: `${spacing.md}px`,
-          borderBottom: `2px solid ${theme.palette.ui?.header || colors.brand.primary}`
-        }}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+        >
+          <Box sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            mb: `${spacing.xl}px`,
+            pb: `${spacing.md}px`,
+            borderBottom: `2px solid ${theme.palette.ui?.header || colors.brand.primary}`
+          }}>
           <Box>
             <Typography
               variant="h4"
@@ -104,19 +110,37 @@ function AdminPage() {
             </Button>
           </Box>
         </Box>
+        </motion.div>
 
         {/* 대시보드 카드 영역 */}
-        <Box sx={{ mb: `${spacing.xl}px` }}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        >
+          <Box sx={{ mb: `${spacing.xl}px` }}>
           <DashboardCards />
         </Box>
+        </motion.div>
 
         {/* 시스템 설정 영역 */}
-        <Box sx={{ mb: `${spacing.xl}px` }}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+        >
+          <Box sx={{ mb: `${spacing.xl}px` }}>
           <SystemSettings />
         </Box>
+        </motion.div>
 
         {/* 빠른 작업 & 에러 로그 영역 (2열 배치) */}
-        <Grid container spacing={3} sx={{ mb: `${spacing.xl}px` }}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.4 }}
+        >
+          <Grid container spacing={3} sx={{ mb: `${spacing.xl}px` }}>
           <Grid item xs={12} md={6}>
             <QuickActions />
           </Grid>
@@ -124,16 +148,29 @@ function AdminPage() {
             <ErrorsMiniTable />
           </Grid>
         </Grid>
+        </motion.div>
 
         {/* 공지사항 관리 영역 */}
-        <Box sx={{ mb: `${spacing.xl}px` }}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.5 }}
+        >
+          <Box sx={{ mb: `${spacing.xl}px` }}>
           <NoticeManager />
         </Box>
+        </motion.div>
 
         {/* 사용자 관리 영역 */}
-        <Box sx={{ mb: `${spacing.xl}px` }}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.6 }}
+        >
+          <Box sx={{ mb: `${spacing.xl}px` }}>
           <UserManagement />
         </Box>
+        </motion.div>
 
       </Container>
 

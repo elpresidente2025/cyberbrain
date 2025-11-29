@@ -48,7 +48,16 @@
       "Bash(gcloud projects add-iam-policy-binding:*)",
       "Bash(firebase apps:sdkconfig:*)",
       "Bash(rm:*)",
-      "Bash(firebase functions:delete:*)"
+      "Bash(firebase functions:delete:*)",
+      "Bash(firebase auth:export:*)",
+      "Bash(firebase functions:shell:*)",
+      "Bash(curl -X POST https://asia-northeast3-ai-secretary-6e9c8.cloudfunctions.net/emergencyRestoreAdmin -H \"Content-Type: application/json\" -d \"{\"\"data\"\":{}}\")",
+      "Bash(firebase firestore:update:*)",
+      "Bash(firebase firestore:get:*)",
+      "Bash(gcloud logging read:*)",
+      "WebFetch(domain:www.claude.com)",
+      "WebFetch(domain:code.claude.com)",
+      "Bash(/plugin marketplace add:*)"
     ]
   },
   "mcpServers": {

@@ -1,5 +1,6 @@
 // frontend/src/pages/Billing.jsx
 import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import {
   Container,
   Paper,
@@ -228,18 +229,23 @@ const Billing = () => {
     <DashboardLayout>
       <Container maxWidth="lg" sx={{ py: `${spacing.xl}px` }}>
         {/* 페이지 헤더 */}
-        <Box sx={{ mb: `${spacing.xl}px` }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.xs}px` }}>
-            <Typography variant="h4" sx={{
-              fontWeight: 'bold',
-              color: theme.palette.mode === 'dark' ? 'white' : 'black',
-              display: 'flex',
-              alignItems: 'center',
-              gap: `${spacing.xs}px`
-            }}>
-              <CreditCard sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
-              결제 및 인증
-            </Typography>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+        >
+          <Box sx={{ mb: `${spacing.xl}px` }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.xs}px` }}>
+              <Typography variant="h4" sx={{
+                fontWeight: 'bold',
+                color: theme.palette.mode === 'dark' ? 'white' : 'black',
+                display: 'flex',
+                alignItems: 'center',
+                gap: `${spacing.xs}px`
+              }}>
+                <CreditCard sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
+                결제 및 인증
+              </Typography>
 
             {/* 관리자 전용: 구독 상태 토글 */}
             {isAdmin && (
@@ -263,15 +269,21 @@ const Billing = () => {
             {isSubscribed ? '구독 정보와 당원 인증을 관리하세요' : '구독과 당원 인증으로 서비스를 이용하세요'}
           </Typography>
         </Box>
+        </motion.div>
 
         {/* 구독 상태별 UI */}
-        {!isSubscribed ? (
-          // 미구독자: 2x2 그리드 레이아웃
-          <Box sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: `${spacing.lg}px`
-          }}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        >
+          {!isSubscribed ? (
+            // 미구독자: 2x2 그리드 레이아웃
+            <Box sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: `${spacing.lg}px`
+            }}>
             {/* 최상단 2열: CTA 카드 + 당원 인증 카드 */}
             <Grid container spacing={3}>
               {/* CTA 카드 */}
@@ -581,7 +593,8 @@ const Billing = () => {
               </Button>
             </Box>
           </Box>
-        )}
+          )}
+        </motion.div>
 
 
         {/* 당원 인증 다이얼로그 */}
