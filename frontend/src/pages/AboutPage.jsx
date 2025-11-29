@@ -176,34 +176,44 @@ const AboutPage = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
       >
-        <Container maxWidth="md" sx={{ pt: { xs: 12, md: 16 }, pb: 8, textAlign: 'center' }}>
+        <Container maxWidth="md" sx={{ pt: { xs: 16, md: 20 }, pb: 12, textAlign: 'center' }}>
           <Typography
             variant="h1"
             sx={{
               fontWeight: 900,
-              fontSize: { xs: '2.5rem', md: '4.5rem' },
-              mb: 2,
-              color: theme.palette.mode === 'dark' ? 'white' : '#152484',
-              letterSpacing: '-0.03em',
-              lineHeight: 1.1
+              fontSize: { xs: '3rem', md: '6rem' },
+              mb: 3,
+              background: theme.palette.mode === 'dark'
+                ? 'linear-gradient(135deg, #ffffff 0%, #a0b0ff 100%)'
+                : 'linear-gradient(135deg, #152484 0%, #3b5bdb 100%)',
+              backgroundClip: 'text',
+              WebkitBackgroundClip: 'text',
+              color: 'transparent',
+              letterSpacing: '-0.04em',
+              lineHeight: 1.05,
+              wordBreak: 'keep-all'
             }}
           >
-            AI 정치 콘텐츠, 3분이면 끝
+            AI 정치 콘텐츠,
+            <br />
+            3분이면 끝
           </Typography>
 
           <Typography
             variant="h5"
             sx={{
-              mb: 4,
-              color: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
-              fontWeight: 400,
-              fontSize: { xs: '1.1rem', md: '1.5rem' }
+              mb: 6,
+              color: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)',
+              fontWeight: 500,
+              fontSize: { xs: '1.25rem', md: '1.75rem' },
+              lineHeight: 1.5,
+              wordBreak: 'keep-all'
             }}
           >
             검색 노출부터 유권자 소통까지
           </Typography>
 
-          <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <Box sx={{ display: 'flex', gap: 3, justifyContent: 'center', flexWrap: 'wrap' }}>
             <Button
               variant="contained"
               size="large"
@@ -211,17 +221,17 @@ const AboutPage = () => {
               sx={{
                 bgcolor: theme.palette.brand.primary,
                 color: 'white',
-                fontSize: '1.4rem',
-                fontWeight: 700,
-                px: 5,
-                py: 2,
-                borderRadius: 2,
-                boxShadow: '0 8px 24px rgba(21, 36, 132, 0.4), 0 0 40px rgba(21, 36, 132, 0.2)',
-                transition: 'all 0.3s ease',
+                fontSize: '1.5rem',
+                fontWeight: 800,
+                px: 6,
+                py: 2.5,
+                borderRadius: 4,
+                boxShadow: '0 12px 40px rgba(21, 36, 132, 0.4)',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 '&:hover': {
                   bgcolor: '#0f1f5c',
-                  transform: 'translateY(-2px)',
-                  boxShadow: '0 12px 32px rgba(21, 36, 132, 0.5), 0 0 60px rgba(21, 36, 132, 0.3)'
+                  transform: 'translateY(-4px) scale(1.02)',
+                  boxShadow: '0 20px 60px rgba(21, 36, 132, 0.5)'
                 }
               }}
             >
@@ -235,14 +245,18 @@ const AboutPage = () => {
               sx={{
                 color: theme.palette.brand.primary,
                 borderColor: theme.palette.brand.primary,
-                fontSize: '1.1rem',
-                fontWeight: 600,
-                px: 4,
-                py: 1.5,
-                borderRadius: 2,
+                borderWidth: 2,
+                fontSize: '1.25rem',
+                fontWeight: 700,
+                px: 5,
+                py: 2.5,
+                borderRadius: 4,
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 '&:hover': {
+                  borderWidth: 2,
                   borderColor: theme.palette.brand.primary,
-                  bgcolor: 'rgba(21, 36, 132, 0.05)'
+                  bgcolor: 'rgba(21, 36, 132, 0.08)',
+                  transform: 'translateY(-2px)'
                 }
               }}
             >
@@ -258,55 +272,59 @@ const AboutPage = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, delay: 0.2 }}
       >
-        <Container maxWidth="lg" sx={{ py: 8 }}>
-          <Grid container spacing={4}>
+        <Container maxWidth="lg" sx={{ py: 12 }}>
+          <Grid container spacing={5}>
             {coreValues.map((value, index) => (
               <Grid item xs={12} md={4} key={index}>
                 <Card
                   elevation={0}
                   sx={{
                     textAlign: 'center',
-                    p: 4,
+                    p: 5,
                     height: '100%',
-                    borderRadius: 3,
+                    borderRadius: 4,
                     bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'white',
-                    border: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
-                    boxShadow: '0 4px 16px rgba(21, 36, 132, 0.08)',
-                    transition: 'all 0.3s ease',
+                    border: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                    boxShadow: '0 8px 32px rgba(21, 36, 132, 0.12)',
+                    transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                     '&:hover': {
-                      transform: 'translateY(-8px)',
-                      boxShadow: '0 16px 48px rgba(21, 36, 132, 0.2)'
+                      transform: 'translateY(-12px) scale(1.02)',
+                      boxShadow: '0 24px 64px rgba(21, 36, 132, 0.25)'
                     }
                   }}
                 >
                   <CardContent>
                     <Box sx={{
-                      mb: 3,
+                      mb: 4,
                       display: 'flex',
                       justifyContent: 'center',
                       alignItems: 'center'
                     }}>
                       <Box sx={{
-                        width: 80,
-                        height: 80,
+                        width: 100,
+                        height: 100,
                         borderRadius: '50%',
-                        background: 'linear-gradient(135deg, #152484 0%, #1e3a8a 100%)',
+                        background: 'linear-gradient(135deg, #152484 0%, #3b5bdb 100%)',
                         display: 'flex',
                         justifyContent: 'center',
                         alignItems: 'center',
-                        boxShadow: '0 4px 16px rgba(21, 36, 132, 0.3)',
+                        boxShadow: '0 8px 24px rgba(21, 36, 132, 0.4)',
                         '& .MuiSvgIcon-root': {
                           color: 'white',
-                          fontSize: 40
+                          fontSize: 48
                         }
                       }}>
                         {value.icon}
                       </Box>
                     </Box>
-                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+                    <Typography variant="h5" sx={{ fontWeight: 800, mb: 1.5 }}>
                       {value.title}
                     </Typography>
-                    <Typography variant="body1" color="text.secondary">
+                    <Typography variant="body1" sx={{
+                      color: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
+                      fontSize: '1.1rem',
+                      fontWeight: 500
+                    }}>
                       {value.description}
                     </Typography>
                   </CardContent>
@@ -323,36 +341,44 @@ const AboutPage = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, delay: 0.3 }}
       >
-        <Container maxWidth="sm" sx={{ py: 8 }}>
+        <Container maxWidth="sm" sx={{ py: 12 }}>
           <Card
             elevation={0}
             sx={{
               textAlign: 'center',
-              p: 5,
-              borderRadius: 3,
-              bgcolor: theme.palette.mode === 'dark' ? 'rgba(21, 36, 132, 0.2)' : 'rgba(21, 36, 132, 0.05)',
-              border: `2px solid ${theme.palette.brand.primary}`,
-              boxShadow: '0 8px 32px rgba(21, 36, 132, 0.15)'
+              p: 7,
+              borderRadius: 5,
+              bgcolor: theme.palette.mode === 'dark' ? 'rgba(21, 36, 132, 0.15)' : 'rgba(21, 36, 132, 0.04)',
+              border: `3px solid ${theme.palette.brand.primary}`,
+              boxShadow: '0 16px 56px rgba(21, 36, 132, 0.2)'
             }}
           >
             <CardContent>
-              <Typography variant="h4" sx={{ fontWeight: 700, mb: 3 }}>
+              <Typography variant="h4" sx={{ fontWeight: 800, mb: 4, fontSize: '1.5rem' }}>
                 스탠다드 플랜 하나뿐
               </Typography>
               <Typography
-                variant="h2"
+                variant="h1"
                 sx={{
                   fontWeight: 900,
-                  color: theme.palette.brand.primary,
-                  fontSize: { xs: '3rem', md: '4rem' },
-                  mb: 1,
-                  letterSpacing: '-0.02em',
-                  lineHeight: 1
+                  background: 'linear-gradient(135deg, #152484 0%, #3b5bdb 100%)',
+                  backgroundClip: 'text',
+                  WebkitBackgroundClip: 'text',
+                  color: 'transparent',
+                  fontSize: { xs: '4rem', md: '7rem' },
+                  mb: 2,
+                  letterSpacing: '-0.04em',
+                  lineHeight: 0.95
                 }}
               >
                 월 55,000원
               </Typography>
-              <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+              <Typography variant="h6" sx={{
+                color: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)',
+                mb: 5,
+                fontWeight: 600,
+                fontSize: '1.1rem'
+              }}>
                 VAT 포함 · 월 90회 원고 생성
               </Typography>
               <Button
@@ -363,12 +389,16 @@ const AboutPage = () => {
                 sx={{
                   bgcolor: theme.palette.brand.primary,
                   color: 'white',
-                  fontSize: '1.2rem',
-                  fontWeight: 700,
-                  py: 1.5,
-                  borderRadius: 2,
+                  fontSize: '1.5rem',
+                  fontWeight: 800,
+                  py: 2.5,
+                  borderRadius: 4,
+                  boxShadow: '0 12px 40px rgba(21, 36, 132, 0.4)',
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                   '&:hover': {
-                    bgcolor: '#0f1f5c'
+                    bgcolor: '#0f1f5c',
+                    transform: 'translateY(-4px) scale(1.01)',
+                    boxShadow: '0 20px 60px rgba(21, 36, 132, 0.5)'
                   }
                 }}
               >
@@ -385,14 +415,15 @@ const AboutPage = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, delay: 0.4 }}
       >
-        <Container maxWidth="md" sx={{ py: 8 }}>
+        <Container maxWidth="md" sx={{ py: 12 }}>
           <Typography
-            variant="h4"
+            variant="h3"
             sx={{
-              fontWeight: 700,
-              mb: 4,
+              fontWeight: 800,
+              mb: 6,
               textAlign: 'center',
-              color: theme.palette.mode === 'dark' ? 'white' : '#152484'
+              color: theme.palette.mode === 'dark' ? 'white' : '#152484',
+              fontSize: { xs: '2rem', md: '2.5rem' }
             }}
           >
             자주 묻는 질문
@@ -405,36 +436,44 @@ const AboutPage = () => {
               onChange={handleFAQChange(faq.id)}
               elevation={0}
               sx={{
-                mb: 2,
-                borderRadius: 2,
+                mb: 3,
+                borderRadius: 3,
                 bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'white',
-                border: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
-                boxShadow: '0 2px 8px rgba(21, 36, 132, 0.06)',
-                transition: 'all 0.3s ease',
+                border: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                boxShadow: '0 4px 16px rgba(21, 36, 132, 0.08)',
+                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                 '&:before': { display: 'none' },
                 '&.Mui-expanded': {
-                  margin: '0 0 16px 0',
-                  boxShadow: '0 4px 16px rgba(21, 36, 132, 0.12)'
+                  margin: '0 0 24px 0',
+                  boxShadow: '0 8px 32px rgba(21, 36, 132, 0.15)'
                 },
                 '&:hover': {
-                  boxShadow: '0 4px 12px rgba(21, 36, 132, 0.1)'
+                  boxShadow: '0 6px 24px rgba(21, 36, 132, 0.12)',
+                  transform: 'translateY(-2px)'
                 }
               }}
             >
-              <AccordionSummary expandIcon={<ExpandMore />}>
-                <Typography sx={{ fontWeight: 600 }}>
+              <AccordionSummary
+                expandIcon={<ExpandMore />}
+                sx={{ py: 2, px: 3 }}
+              >
+                <Typography sx={{ fontWeight: 700, fontSize: '1.1rem' }}>
                   {faq.question}
                 </Typography>
               </AccordionSummary>
-              <AccordionDetails>
-                <Typography color="text.secondary">
+              <AccordionDetails sx={{ px: 3, py: 2 }}>
+                <Typography sx={{
+                  color: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
+                  fontSize: '1.05rem',
+                  lineHeight: 1.7
+                }}>
                   {faq.answer}
                 </Typography>
               </AccordionDetails>
             </Accordion>
           ))}
 
-          <Box sx={{ textAlign: 'center', mt: 4 }}>
+          <Box sx={{ textAlign: 'center', mt: 6 }}>
             <Button
               variant="outlined"
               size="large"
@@ -442,14 +481,18 @@ const AboutPage = () => {
               sx={{
                 color: theme.palette.brand.primary,
                 borderColor: theme.palette.brand.primary,
-                fontSize: '1rem',
-                fontWeight: 600,
-                px: 4,
-                py: 1.5,
-                borderRadius: 2,
+                borderWidth: 2,
+                fontSize: '1.1rem',
+                fontWeight: 700,
+                px: 5,
+                py: 2,
+                borderRadius: 4,
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 '&:hover': {
+                  borderWidth: 2,
                   borderColor: theme.palette.brand.primary,
-                  bgcolor: 'rgba(21, 36, 132, 0.05)'
+                  bgcolor: 'rgba(21, 36, 132, 0.08)',
+                  transform: 'translateY(-2px)'
                 }
               }}
             >
