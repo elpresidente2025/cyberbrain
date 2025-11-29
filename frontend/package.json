@@ -20,6 +20,7 @@
     "ai-secretary": "file:..",
     "dompurify": "^3.2.7",
     "firebase": "^10.7.0",
+    "framer-motion": "^12.23.24",
     "gsap": "^3.13.0",
     "lucide-react": "^0.541.0",
     "postprocessing": "^6.37.7",

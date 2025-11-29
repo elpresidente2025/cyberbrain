@@ -1,5 +1,6 @@
 // frontend/src/pages/Dashboard.jsx
 import React, { useState, useEffect, useRef } from 'react';
+import { motion } from 'framer-motion';
 import {
   Box,
   Container,
@@ -428,6 +429,11 @@ const Dashboard = () => {
         )}
 
         {/* 사용자 정보 + CTA 버튼 */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+        >
         <Box sx={{ mb: `${spacing.lg}px` }}>
           {/* 상단: 사용자 정보와 프로필 수정 버튼 */}
           <Box sx={{
@@ -676,6 +682,7 @@ const Dashboard = () => {
             </Alert>
           )}
         </Box>
+        </motion.div>
 
         {/* 콘텐츠 섹션 - 기존 구조 유지하되 공지사항은 데이터가 있을 때만 표시 */}
         {isMobile ? (
