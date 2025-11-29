@@ -8,6 +8,7 @@
 import React, { useLayoutEffect, useRef, useState, useEffect, useCallback } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { motion } from 'framer-motion';
 
 gsap.registerPlugin(ScrollTrigger);
 import {
@@ -125,47 +126,59 @@ const AboutPage = ({ showDemo: showDemoProp }) => {
       </Helmet>
 
       {/* 로그인 화면 이동 버튼 */}
-      <Box sx={{ position: 'fixed', right: 16, top: 16, zIndex: 10 }}>
-        <Button
-          onClick={() => navigate('/login')}
-          sx={{
-            color: 'rgba(255,255,255,0.9)',
-            fontSize: '0.95rem',
-            fontWeight: 500,
-            textTransform: 'none',
-            '&:hover': {
-              color: theme.palette.brand.primary,
-              bgcolor: 'transparent'
-            }
-          }}
-        >
-          로그인 화면으로 이동
-        </Button>
-      </Box>
+      <motion.div
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.5, delay: 0.1 }}
+      >
+        <Box sx={{ position: 'fixed', right: 16, top: 16, zIndex: 10 }}>
+          <Button
+            onClick={() => navigate('/login')}
+            sx={{
+              color: 'rgba(255,255,255,0.9)',
+              fontSize: '0.95rem',
+              fontWeight: 500,
+              textTransform: 'none',
+              '&:hover': {
+                color: theme.palette.brand.primary,
+                bgcolor: 'transparent'
+              }
+            }}
+          >
+            로그인 화면으로 이동
+          </Button>
+        </Box>
+      </motion.div>
 
       {/* Demo switch (only in dev or with ?demo=1) */}
       {showDemoSwitch && (
-        <Box sx={{ position: 'fixed', right: 16, top: 56, zIndex: 10 }}>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={demoMode}
-                onChange={(e) => setDemoMode(e.target.checked)}
-                color="info"
-                size="small"
-              />
-            }
-            label="데모 데이터"
-            sx={{
-              color: theme.palette.text.muted75,
-              bgcolor: 'rgba(255,255,255,0.06)',
-              px: 1.25,
-              py: 0.5,
-              borderRadius: 2,
-              border: '1px solid rgba(255,255,255,0.12)',
-            }}
-          />
-        </Box>
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        >
+          <Box sx={{ position: 'fixed', right: 16, top: 56, zIndex: 10 }}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={demoMode}
+                  onChange={(e) => setDemoMode(e.target.checked)}
+                  color="info"
+                  size="small"
+                />
+              }
+              label="데모 데이터"
+              sx={{
+                color: theme.palette.text.muted75,
+                bgcolor: 'rgba(255,255,255,0.06)',
+                px: 1.25,
+                py: 0.5,
+                borderRadius: 2,
+                border: '1px solid rgba(255,255,255,0.12)',
+              }}
+            />
+          </Box>
+        </motion.div>
       )}
 
       {/* Hero Section */}
