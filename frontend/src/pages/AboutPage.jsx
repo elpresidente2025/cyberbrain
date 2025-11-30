@@ -59,6 +59,11 @@ const AboutPage = () => {
   const allFAQs = [
     // Top 3
     {
+      id: 'faq-0',
+      question: 'AI도 많은데 굳이 이걸 써야 하나요?',
+      answer: '일반 AI와 달리 정치 콘텐츠에 특화되어 있으며, 네이버 검색 최적화가 적용됩니다. 또한 선거구 독점으로 같은 지역의 경쟁자는 사용할 수 없습니다.'
+    },
+    {
       id: 'faq-1',
       question: '더불어민주당 당원만 사용 가능한가요?',
       answer: '네, 당원 인증이 필요합니다. 당적증명서 또는 당비납부 영수증을 제출해주세요.'
@@ -107,7 +112,7 @@ const AboutPage = () => {
   ];
 
   const topFAQs = allFAQs.slice(0, 3);
-  const moreFAQs = allFAQs.slice(3, 9);
+  const moreFAQs = allFAQs.slice(3, 10);
   const displayedFAQs = showAllFAQs ? allFAQs : topFAQs;
 
   return (
@@ -420,7 +425,7 @@ const AboutPage = () => {
                 }
               }}
             >
-              {showAllFAQs ? '➖ 질문 접기' : '➕ 더 많은 질문 보기 (6개)'}
+              {showAllFAQs ? '➖ 질문 접기' : '➕ 더 많은 질문 보기 (7개)'}
             </Button>
           </Box>
         </Container>
@@ -445,9 +450,6 @@ const AboutPage = () => {
             }}
           >
             <CardContent>
-              <Typography variant="h4" sx={{ fontWeight: 800, mb: 4, fontSize: '1.5rem' }}>
-                스탠다드 플랜 하나뿐
-              </Typography>
               <Typography
                 variant="h1"
                 sx={{
