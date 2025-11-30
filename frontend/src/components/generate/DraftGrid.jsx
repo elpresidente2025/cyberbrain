@@ -148,9 +148,9 @@ export default function DraftGrid({
             </CardContent>
             
             <CardActions sx={{ justifyContent: 'space-between', px: 2, pb: 2, flexWrap: 'wrap' }}>
-              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
-                {draft.generatedAt ? 
-                  new Date(draft.generatedAt).toLocaleString() : 
+              <Typography variant="caption" sx={{ color: 'white' }}>
+                {draft.generatedAt ?
+                  new Date(draft.generatedAt).toLocaleString() :
                   new Date().toLocaleString()
                 }
               </Typography>
