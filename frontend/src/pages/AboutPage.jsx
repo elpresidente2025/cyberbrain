@@ -194,9 +194,7 @@ const AboutPage = () => {
               wordBreak: 'keep-all'
             }}
           >
-            AI 정치 콘텐츠,
-            <br />
-            3분이면 끝
+            "의원님 덕분에 살기 좋은 동네가 됐어요!"
           </Typography>
 
           <Typography
@@ -210,7 +208,7 @@ const AboutPage = () => {
               wordBreak: 'keep-all'
             }}
           >
-            검색 노출부터 유권자 소통까지
+            홍보하지 않으면 이런 말도 못 듣습니다.
           </Typography>
 
           <Box sx={{ display: 'flex', gap: 3, justifyContent: 'center', flexWrap: 'wrap' }}>
