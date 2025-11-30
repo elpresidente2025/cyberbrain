@@ -233,7 +233,7 @@ const AboutPage = () => {
                 }
               }}
             >
-              💳 월 55,000원으로 시작하기
+              네이버 현수막? 지금 시작
             </Button>
 
             <Button
@@ -493,7 +493,7 @@ const AboutPage = () => {
                   }
                 }}
               >
-                💳 지금 시작하기
+                내 선거구 비어있나? 지금 확인
               </Button>
             </CardContent>
           </Card>
