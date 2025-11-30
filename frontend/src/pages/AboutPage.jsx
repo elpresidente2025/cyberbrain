@@ -335,85 +335,11 @@ const AboutPage = () => {
         </Container>
       </motion.div>
 
-      {/* 가격 섹션 */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.3 }}
-      >
-        <Container maxWidth="sm" sx={{ py: 12 }}>
-          <Card
-            elevation={0}
-            sx={{
-              textAlign: 'center',
-              p: 7,
-              borderRadius: 5,
-              bgcolor: theme.palette.mode === 'dark' ? 'rgba(21, 36, 132, 0.15)' : 'rgba(21, 36, 132, 0.04)',
-              border: `3px solid ${theme.palette.brand.primary}`,
-              boxShadow: '0 16px 56px rgba(21, 36, 132, 0.2)'
-            }}
-          >
-            <CardContent>
-              <Typography variant="h4" sx={{ fontWeight: 800, mb: 4, fontSize: '1.5rem' }}>
-                스탠다드 플랜 하나뿐
-              </Typography>
-              <Typography
-                variant="h1"
-                sx={{
-                  fontWeight: 900,
-                  background: 'linear-gradient(135deg, #152484 0%, #3b5bdb 100%)',
-                  backgroundClip: 'text',
-                  WebkitBackgroundClip: 'text',
-                  color: 'transparent',
-                  fontSize: { xs: '4rem', md: '7rem' },
-                  mb: 2,
-                  letterSpacing: '-0.04em',
-                  lineHeight: 0.95
-                }}
-              >
-                월 55,000원
-              </Typography>
-              <Typography variant="h6" sx={{
-                color: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)',
-                mb: 5,
-                fontWeight: 600,
-                fontSize: '1.1rem'
-              }}>
-                VAT 포함 · 월 90회 원고 생성
-              </Typography>
-              <Button
-                variant="contained"
-                size="large"
-                fullWidth
-                onClick={() => navigate('/login')}
-                sx={{
-                  bgcolor: theme.palette.brand.primary,
-                  color: 'white',
-                  fontSize: '1.5rem',
-                  fontWeight: 800,
-                  py: 2.5,
-                  borderRadius: 4,
-                  boxShadow: '0 12px 40px rgba(21, 36, 132, 0.4)',
-                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                  '&:hover': {
-                    bgcolor: '#0f1f5c',
-                    transform: 'translateY(-4px) scale(1.01)',
-                    boxShadow: '0 20px 60px rgba(21, 36, 132, 0.5)'
-                  }
-                }}
-              >
-                💳 지금 시작하기
-              </Button>
-            </CardContent>
-          </Card>
-        </Container>
-      </motion.div>
-
       {/* FAQ 섹션 */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.4 }}
+        transition={{ duration: 0.6, delay: 0.3 }}
       >
         <Container maxWidth="md" sx={{ py: 12 }}>
           <Typography
@@ -499,6 +425,80 @@ const AboutPage = () => {
               {showAllFAQs ? '➖ 질문 접기' : '➕ 더 많은 질문 보기 (6개)'}
             </Button>
           </Box>
+        </Container>
+      </motion.div>
+
+      {/* 가격 섹션 */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.4 }}
+      >
+        <Container maxWidth="sm" sx={{ py: 12 }}>
+          <Card
+            elevation={0}
+            sx={{
+              textAlign: 'center',
+              p: 7,
+              borderRadius: 5,
+              bgcolor: theme.palette.mode === 'dark' ? 'rgba(21, 36, 132, 0.15)' : 'rgba(21, 36, 132, 0.04)',
+              border: `3px solid ${theme.palette.brand.primary}`,
+              boxShadow: '0 16px 56px rgba(21, 36, 132, 0.2)'
+            }}
+          >
+            <CardContent>
+              <Typography variant="h4" sx={{ fontWeight: 800, mb: 4, fontSize: '1.5rem' }}>
+                스탠다드 플랜 하나뿐
+              </Typography>
+              <Typography
+                variant="h1"
+                sx={{
+                  fontWeight: 900,
+                  background: 'linear-gradient(135deg, #152484 0%, #3b5bdb 100%)',
+                  backgroundClip: 'text',
+                  WebkitBackgroundClip: 'text',
+                  color: 'transparent',
+                  fontSize: { xs: '4rem', md: '7rem' },
+                  mb: 2,
+                  letterSpacing: '-0.04em',
+                  lineHeight: 0.95
+                }}
+              >
+                월 55,000원
+              </Typography>
+              <Typography variant="h6" sx={{
+                color: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)',
+                mb: 5,
+                fontWeight: 600,
+                fontSize: '1.1rem'
+              }}>
+                VAT 포함 · 월 90회 원고 생성
+              </Typography>
+              <Button
+                variant="contained"
+                size="large"
+                fullWidth
+                onClick={() => navigate('/login')}
+                sx={{
+                  bgcolor: theme.palette.brand.primary,
+                  color: 'white',
+                  fontSize: '1.5rem',
+                  fontWeight: 800,
+                  py: 2.5,
+                  borderRadius: 4,
+                  boxShadow: '0 12px 40px rgba(21, 36, 132, 0.4)',
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '&:hover': {
+                    bgcolor: '#0f1f5c',
+                    transform: 'translateY(-4px) scale(1.01)',
+                    boxShadow: '0 20px 60px rgba(21, 36, 132, 0.5)'
+                  }
+                }}
+              >
+                💳 지금 시작하기
+              </Button>
+            </CardContent>
+          </Card>
         </Container>
       </motion.div>
 
