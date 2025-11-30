@@ -450,30 +450,36 @@ const AboutPage = () => {
             }}
           >
             <CardContent>
-              <Typography
-                variant="h1"
-                sx={{
-                  fontWeight: 900,
-                  background: 'linear-gradient(135deg, #152484 0%, #3b5bdb 100%)',
-                  backgroundClip: 'text',
-                  WebkitBackgroundClip: 'text',
-                  color: 'transparent',
-                  fontSize: { xs: '4rem', md: '7rem' },
-                  mb: 2,
-                  letterSpacing: '-0.04em',
-                  lineHeight: 0.95
-                }}
-              >
-                월 55,000원
-              </Typography>
-              <Typography variant="h6" sx={{
-                color: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)',
-                mb: 5,
-                fontWeight: 600,
-                fontSize: '1.1rem'
-              }}>
-                VAT 포함 · 월 90회 원고 생성
-              </Typography>
+              <Box sx={{ mb: 5 }}>
+                <Typography
+                  variant="h1"
+                  component="div"
+                  sx={{
+                    fontWeight: 900,
+                    background: 'linear-gradient(135deg, #152484 0%, #3b5bdb 100%)',
+                    backgroundClip: 'text',
+                    WebkitBackgroundClip: 'text',
+                    color: 'transparent',
+                    fontSize: { xs: '4rem', md: '7rem' },
+                    letterSpacing: '-0.04em',
+                    lineHeight: 0.95,
+                    display: 'inline'
+                  }}
+                >
+                  월 50,000원
+                </Typography>
+                <Typography
+                  component="span"
+                  sx={{
+                    color: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+                    fontSize: { xs: '1rem', md: '1.5rem' },
+                    fontWeight: 500,
+                    ml: 2
+                  }}
+                >
+                  (VAT 별도)
+                </Typography>
+              </Box>
               <Button
                 variant="contained"
                 size="large"
