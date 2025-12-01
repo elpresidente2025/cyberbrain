@@ -23,7 +23,7 @@ export const useNaverLogin = () => {
         callbackUrl,
         isPopup: false,
         callbackHandle: true,
-        scope: 'name,gender,age,profile_image'
+        scope: 'name,email,gender,age,profile_image'
       });
       return naverLogin;
     }
@@ -113,16 +113,24 @@ export const useNaverLogin = () => {
       } else {
         // 기존 회원 - Firebase Auth 완료 후 대시보드로 이동
         console.log('🟢 기존 사용자 - 대시보드로 이동. user 데이터:', user);
+        console.log('🟢 네이버 API 데이터:', naver);
+        console.log('🟢 이메일 확인:', {
+          userEmail: user.email,
+          naverEmail: naver?.email,
+          finalEmail: user.email || naver?.email
+        });
         const currentUserData = {
           uid: user.uid,
           naverUserId: user.naverUserId,
           displayName: user.displayName,
+          email: user.email || naver?.email, // 이메일 포함
           photoURL: user.photoURL,
           provider: user.provider,
           profileComplete: user.profileComplete,
           role: user.role,
           bio: user.bio || '' // naverLoginHTTP에서 반환한 bio 포함
         };
+        console.log('🟢 localStorage에 저장할 데이터:', currentUserData);
 
         localStorage.setItem('currentUser', JSON.stringify(currentUserData));
 

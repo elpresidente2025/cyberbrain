@@ -77,19 +77,12 @@ export const callFunctionWithNaverAuth = async (functionName, data = {}) => {
 
 export const getSystemStatus = async () => {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    const response = await fetch('https://asia-northeast3-ai-secretary-6e9c8.cloudfunctions.net/getSystemStatus', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return await response.json();
+    // onCall 함수로 변경 (CORS 문제 해결 및 일관성 유지)
+    const result = await callFunction('getSystemStatus', {});
+    return result;
   } catch (error) {
-    if (error.name === 'AbortError') throw new Error('Request timeout');
-    return { success: false, status: 'unknown', message: '���� Ȯ�� ����' };
+    console.error('시스템 상태 조회 실패:', error);
+    return { status: 'active', message: '상태 확인 실패 - 정상 상태로 간주' };
   }
 };
 
@@ -144,14 +137,12 @@ export const getUserDetail = async (userEmail) => {
 
 export const updateSystemStatus = async (statusData) => {
   try {
-    const response = await fetch('https://asia-northeast3-ai-secretary-6e9c8.cloudfunctions.net/updateSystemStatus', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(statusData),
-    });
-    return await response.json();
+    // onCall 함수로 변경 (관리자 인증 자동 처리)
+    const result = await callFunctionWithRetry('updateSystemStatus', statusData);
+    return result;
   } catch (error) {
-    return { success: false, message: '�ý��� ���� ������Ʈ ����: ' + error.message };
+    console.error('시스템 상태 업데이트 실패:', error);
+    return { success: false, message: '시스템 상태 업데이트 실패: ' + error.message };
   }
 };
 

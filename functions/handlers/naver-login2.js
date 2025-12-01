@@ -147,6 +147,11 @@ const naverLoginHTTP = onRequest({ region: 'asia-northeast3', cors: true, timeou
       lastLoginAt: admin.firestore.FieldValue.serverTimestamp(),
       naverUserId: naver.id
     };
+    // Backfill email if missing
+    if (!userData.email && naver.email) {
+      updateData.email = naver.email;
+      console.log('📧 Firestore에 email 추가:', naver.email);
+    }
     // Backfill gender if missing
     if (!userData.gender && naver.gender) {
       updateData.gender = mapGender(naver.gender);
@@ -164,11 +169,18 @@ const naverLoginHTTP = onRequest({ region: 'asia-northeast3', cors: true, timeou
     // Ensure Firebase Auth user exists for this uid (use Firestore doc id as Auth uid)
     const uid = docSnap.id;
     try {
-      await admin.auth().getUser(uid);
+      const existingUser = await admin.auth().getUser(uid);
+      // 기존 사용자에게 email이 없으면 업데이트
+      if (!existingUser.email && (userData.email || naver.email)) {
+        await admin.auth().updateUser(uid, {
+          email: userData.email || naver.email
+        }).catch(err => console.warn('Firebase Auth email 업데이트 실패:', err.message));
+      }
     } catch (_e) {
       await admin.auth().createUser({
         uid,
         displayName: userData.name || userData.displayName || null,
+        email: userData.email || naver.email || null,
         photoURL: naver.profile_image || null,
         disabled: false
       }).catch(() => {});
@@ -197,6 +209,7 @@ const naverLoginHTTP = onRequest({ region: 'asia-northeast3', cors: true, timeou
           uid: uid,
           naverUserId: userData.naverUserId,
           displayName: userData.name || userData.displayName,
+          email: userData.email || naver.email || null,
           photoURL: naver.profile_image,
           provider: 'naver',
           profileComplete: userData.profileComplete || false,
@@ -207,6 +220,7 @@ const naverLoginHTTP = onRequest({ region: 'asia-northeast3', cors: true, timeou
         naver: {
           id: naver.id,
           name: naver.name || naver.nickname || null,
+          email: naver.email || null,
           gender: naver.gender || null,
           age: naver.age || null,
           profile_image: naver.profile_image || null

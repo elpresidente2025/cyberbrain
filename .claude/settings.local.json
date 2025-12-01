@@ -57,7 +57,8 @@
       "Bash(gcloud logging read:*)",
       "WebFetch(domain:www.claude.com)",
       "WebFetch(domain:code.claude.com)",
-      "Bash(/plugin marketplace add:*)"
+      "Bash(/plugin marketplace add:*)",
+      "Bash(curl:*)"
     ]
   },
   "mcpServers": {

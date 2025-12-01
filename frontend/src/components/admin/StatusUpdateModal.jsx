@@ -113,13 +113,25 @@ function StatusUpdateModal({ open, onClose }) {
         };
       }
 
-      await updateSystemStatus(statusData);
+      const result = await updateSystemStatus(statusData);
+
+      if (!result.success) {
+        throw new Error(result.message || '상태 업데이트 실패');
+      }
 
       setSuccess(true);
       setCurrentStatus(prev => ({
         ...prev,
-        geminiStatus: { state: newStatus },
-        lastUpdated: new Date().toISOString()
+        status: newStatus,
+        maintenanceInfo: statusData.maintenanceInfo || null,
+        timestamp: new Date().toISOString()
+      }));
+
+      // ✅ sessionStorage 캐시도 즉시 업데이트 (App.jsx에서 캐시 사용)
+      sessionStorage.setItem('systemStatusCache', JSON.stringify({
+        timestamp: Date.now(),
+        status: newStatus,
+        maintenanceInfo: statusData.maintenanceInfo || null
       }));
 
       // 성공 후 잠시 대기한 뒤 모달 닫기
@@ -205,9 +217,9 @@ function StatusUpdateModal({ open, onClose }) {
                 <Grid container spacing={2} alignItems="center">
                   <Grid item>
                     <Chip
-                      icon={getStatusIcon(currentStatus.status === 'operational' ? 'active' : currentStatus.status)}
-                      label={currentStatus.status === 'operational' ? '정상 운영' : getStatusText(currentStatus.status)}
-                      color={getStatusColor(currentStatus.status === 'operational' ? 'active' : currentStatus.status)}
+                      icon={getStatusIcon(currentStatus.status)}
+                      label={getStatusText(currentStatus.status)}
+                      color={getStatusColor(currentStatus.status)}
                     />
                   </Grid>
                   <Grid item>

@@ -134,32 +134,46 @@ exports.logUserActivity = wrap(async (req) => {
   }
 });
 
-// ?�스???�태 ?�체 조회
+// 시스템 상태 전체 조회
 exports.getSystemStatus = wrap(async () => {
-  log('SYSTEM', 'getSystemStatus ?�출');
+  log('SYSTEM', 'getSystemStatus 호출');
 
   try {
     const statusDoc = await db.collection('system').doc('status').get();
     const statusData = statusDoc.exists ? statusDoc.data() : {};
 
-    const systemStatus = {
+    // 프론트엔드가 기대하는 형태: { status: 'active' | 'maintenance' | 'inactive', ... }
+    const response = {
+      status: statusData.status || 'active',  // 문자열: 'active', 'maintenance', 'inactive'
       timestamp: new Date().toISOString(),
       gemini: statusData.gemini || { state: 'unknown' },
-      database: { state: 'healthy' }, // Firestore가 ?�동?��?�?healthy
+      database: { state: 'healthy' },
       version: process.env.FUNCTIONS_EMULATOR ? 'local' : 'production'
     };
 
-    log('SYSTEM', '?�태 조회 ?�공');
-    return ok({ status: systemStatus });
+    // 점검 중인 경우 추가 정보 포함
+    if (statusData.status === 'maintenance' && statusData.maintenanceInfo) {
+      response.maintenanceInfo = statusData.maintenanceInfo;
+    }
+
+    // 변경 이력 정보도 포함
+    if (statusData.reason) {
+      response.reason = statusData.reason;
+    }
+    if (statusData.updatedBy) {
+      response.updatedBy = statusData.updatedBy;
+    }
+
+    log('SYSTEM', '상태 조회 성공', { status: response.status });
+    return ok(response);
   } catch (error) {
-    log('SYSTEM', '?�태 조회 ?�패', error.message);
-    return ok({ 
-      status: { 
-        timestamp: new Date().toISOString(),
-        gemini: { state: 'unknown' },
-        database: { state: 'error', error: error.message },
-        version: 'unknown'
-      } 
+    log('SYSTEM', '상태 조회 실패', error.message);
+    return ok({
+      status: 'active',  // 실패 시 정상 상태로 간주
+      timestamp: new Date().toISOString(),
+      gemini: { state: 'unknown' },
+      database: { state: 'error', error: error.message },
+      version: 'unknown'
     });
   }
 });
@@ -191,4 +205,61 @@ exports.updateGeminiStatus = wrap(async (req) => {
   return ok({ success: true, geminiStatus: { state: newState } });
 });
 
+// 시스템 상태 업데이트 (관리자 전용) - 프론트엔드 StatusUpdateModal에서 사용
+exports.updateSystemStatus = wrap(async (req) => {
+  const { uid } = await auth(req);
+  const { status, reason, maintenanceInfo } = req.data || {};
+
+  log('SYSTEM', 'updateSystemStatus 호출', { userId: uid, status });
+
+  // 관리자 권한 확인
+  const requesterDoc = await db.collection('users').doc(uid).get();
+  const userData = requesterDoc.exists ? requesterDoc.data() : {};
+  const isAdmin = userData.role === 'admin' || userData.isAdmin === true;
+  if (!requesterDoc.exists || !isAdmin) {
+    throw new (require('firebase-functions/v2/https').HttpsError)('permission-denied', '관리자만 시스템 상태를 변경할 수 있습니다.');
+  }
+
+  const allowed = ['active', 'maintenance', 'inactive'];
+  if (!allowed.includes(status)) {
+    throw new (require('firebase-functions/v2/https').HttpsError)('invalid-argument', '유효하지 않은 상태 값입니다. (active, maintenance, inactive 중 하나)');
+  }
+
+  if (!reason || !reason.trim()) {
+    throw new (require('firebase-functions/v2/https').HttpsError)('invalid-argument', '변경 사유를 입력해주세요.');
+  }
+
+  // Firestore에 시스템 상태 저장
+  const updateData = {
+    status,
+    reason: reason.trim(),
+    lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+    updatedBy: uid,
+    timestamp: new Date().toISOString()
+  };
+
+  // 점검 중인 경우 추가 정보 포함
+  if (status === 'maintenance' && maintenanceInfo) {
+    updateData.maintenanceInfo = {
+      title: maintenanceInfo.title || '시스템 점검 안내',
+      message: maintenanceInfo.message || '',
+      estimatedEndTime: maintenanceInfo.estimatedEndTime || '',
+      contactInfo: maintenanceInfo.contactInfo || '',
+      allowAdminAccess: maintenanceInfo.allowAdminAccess !== false
+    };
+  } else {
+    // 점검이 아니면 maintenanceInfo 제거
+    updateData.maintenanceInfo = admin.firestore.FieldValue.delete();
+  }
+
+  await db.collection('system').doc('status').set(updateData, { merge: true });
+
+  log('SYSTEM', '시스템 상태 업데이트 완료', { status, reason });
+  return ok({
+    success: true,
+    status,
+    message: '시스템 상태가 성공적으로 업데이트되었습니다.',
+    timestamp: updateData.timestamp
+  });
+});
 

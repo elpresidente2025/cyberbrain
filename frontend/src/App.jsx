@@ -18,18 +18,11 @@ function App() {
   const location = useLocation();
   const isDarkMode = theme.palette.mode === 'dark';
 
-  // ?�스???�태 ?�인 (?�?�아??10초로 조정)
+  // 시스템 상태 확인 (타임아웃 10초)
   const checkSystemStatus = useCallback(async () => {
     setStatusLoading(true);
     try {
-      // cyberbrain.kr 도메인에서는 CORS 오류 방지를 위해 시스템 상태 체크 건너뛰기
-      if (window.location.hostname === 'cyberbrain.kr') {
-        console.log('🔧 CORS 방지: cyberbrain.kr에서 시스템 상태 체크 건너뛰기');
-        setSystemStatus({ status: 'active' });
-        return;
-      }
-
-      // 10초 타이마웃 설정 (Firebase Functions 응답 시간 고려)
+      // 10초 타임아웃 설정 (Firebase Functions 응답 시간 고려)
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('timeout')), 10000)
       );
@@ -40,6 +33,13 @@ function App() {
       ]);
 
       setSystemStatus(status);
+
+      // ✅ 캐시에 상태와 타임스탬프 함께 저장 (점검 중 새로고침 시 우회 방지)
+      sessionStorage.setItem('systemStatusCache', JSON.stringify({
+        timestamp: Date.now(),
+        status: status.status,
+        maintenanceInfo: status.maintenanceInfo || null
+      }));
     } catch (error) {
       console.error('시스템 상태 확인 실패:', error);
       setSystemStatus({ status: 'active' }); // 실패 시 정상 상태로 간주
@@ -52,21 +52,33 @@ function App() {
   const isAdmin = user?.email === 'kjk6206@gmail.com' || user?.email === 'taesoo@secretart.ai';
 
   useEffect(() => {
-    // 로그???�태가 ?�정???�에�??�스???�태 ?�인 (최초 1?�만)
+    // 로그인 상태가 확정된 후에만 시스템 상태 확인 (최초 1회만)
     if (!loading && systemStatus === null) {
-      // ???�환?�서 ?�아????불필?�한 ?�확??방�?
-      const lastCheck = sessionStorage.getItem('systemStatusLastCheck');
-      const now = Date.now();
-      
-      // 5�??�내???�인?�다�??�킵
-      if (lastCheck && (now - parseInt(lastCheck)) < 300000) {
-        setSystemStatus({ status: 'active' });
-        setStatusLoading(false);
-        return;
+      // ✅ 페이지 새로고침 시 불필요한 재확인 방지 (캐시 활용)
+      const cacheStr = sessionStorage.getItem('systemStatusCache');
+      if (cacheStr) {
+        try {
+          const cache = JSON.parse(cacheStr);
+          const now = Date.now();
+
+          // 5분 이내 캐시된 상태가 있으면 사용 (단, 실제 status 값 사용)
+          if (cache.timestamp && (now - cache.timestamp) < 300000) {
+            console.log('✅ 캐시된 시스템 상태 사용:', cache.status);
+            setSystemStatus({
+              status: cache.status || 'active',
+              maintenanceInfo: cache.maintenanceInfo || null,
+              timestamp: new Date(cache.timestamp).toISOString()
+            });
+            setStatusLoading(false);
+            return;
+          }
+        } catch (e) {
+          console.warn('캐시 파싱 실패:', e);
+        }
       }
-      
+
+      // 캐시가 없거나 만료되었으면 새로 확인
       checkSystemStatus();
-      sessionStorage.setItem('systemStatusLastCheck', now.toString());
     }
   }, [loading, checkSystemStatus, systemStatus]);
 

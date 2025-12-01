@@ -46,13 +46,26 @@ export const AuthProvider = ({ children }) => {
             // localStorage에서 사용자 정보 가져오기
             const naverUser = checkNaverUser();
             if (naverUser) {
-              setUser(naverUser);
+              // localStorage 사용자 정보에 Firebase Auth의 email 정보 병합
+              const updatedUser = {
+                ...naverUser,
+                email: naverUser.email || firebaseUser.email || firebaseUser.providerData?.[0]?.email
+              };
+
+              // localStorage도 업데이트 (email 영구 저장)
+              if (updatedUser.email && !naverUser.email) {
+                localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+                console.log('🔍 useAuth: email 추가하여 localStorage 업데이트:', updatedUser.email);
+              }
+
+              setUser(updatedUser);
             } else {
               // localStorage에 없으면 Firebase Auth 정보로 기본 사용자 설정
               const basicUser = {
                 uid: firebaseUser.uid,
                 provider: 'naver',
-                displayName: firebaseUser.displayName || '사용자'
+                displayName: firebaseUser.displayName || '사용자',
+                email: firebaseUser.email
               };
               setUser(basicUser);
             }

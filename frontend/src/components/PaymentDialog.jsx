@@ -87,37 +87,84 @@ const PaymentDialog = ({ open, onClose, selectedPlan }) => {
               </Typography>
             </Alert>
 
-            <Box sx={{ p: 3, bgcolor: 'grey.50', borderRadius: 2, mb: 3 }}>
-              <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: selectedPlan.color || colors.brand.primary }}>
+            <Box
+              style={{
+                padding: '24px',
+                backgroundColor: '#ffffff',
+                borderRadius: '8px',
+                marginBottom: '24px',
+                border: '1px solid #e0e0e0'
+              }}
+            >
+              <Typography
+                variant="h6"
+                style={{
+                  fontWeight: 'bold',
+                  marginBottom: '16px',
+                  color: selectedPlan.color || colors.brand.primary
+                }}
+              >
                 {selectedPlan.name}
               </Typography>
-              
-              <Typography variant="h4" sx={{ fontWeight: 'bold', mb: 2 }}>
+
+              <Typography
+                variant="h4"
+                component="div"
+                style={{
+                  fontWeight: 'bold',
+                  marginBottom: '16px',
+                  color: '#000000'
+                }}
+              >
                 {selectedPlan.price.toLocaleString()}원/월
               </Typography>
 
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              <Typography
+                variant="body2"
+                component="div"
+                style={{
+                  marginBottom: '16px',
+                  color: '#616161'
+                }}
+              >
                 VAT 포함 가격입니다
               </Typography>
 
               {selectedPlan.features && selectedPlan.features.length > 0 && (
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                <Box style={{ marginBottom: '16px' }}>
+                  <Typography
+                    variant="subtitle2"
+                    component="div"
+                    style={{
+                      fontWeight: 'bold',
+                      marginBottom: '8px',
+                      color: '#000000'
+                    }}
+                  >
                     포함 서비스:
                   </Typography>
                   {selectedPlan.features.map((feature, index) => (
-                    <Typography key={index} variant="body2" sx={{ ml: 1, mb: 0.5 }}>
+                    <Typography
+                      key={index}
+                      variant="body2"
+                      component="div"
+                      style={{
+                        marginLeft: '8px',
+                        marginBottom: '4px',
+                        color: '#424242'
+                      }}
+                    >
                       • {feature}
                     </Typography>
                   ))}
                 </Box>
               )}
 
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" component="div" style={{ color: '#616161' }}>
                 구매자: {user?.displayName || user?.name || '사용자'}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                이메일: {user?.email}
+              <Typography variant="body2" component="div" style={{ color: '#616161' }}>
+                이메일: {user?.email || '(이메일 없음)'}
               </Typography>
             </Box>
 
