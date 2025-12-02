@@ -44,9 +44,22 @@ export const AuthProvider = ({ children }) => {
             console.log('🔍 useAuth: Firebase Auth 사용자 인증됨:', firebaseUser.uid);
 
             // localStorage에서 사용자 정보 가져오기
-            const naverUser = checkNaverUser();
+            let naverUser = checkNaverUser();
+
+            // 🔒 보안: localStorage의 UID와 Firebase Auth UID 일치 검증
+            if (naverUser && naverUser.uid !== firebaseUser.uid) {
+              console.warn('⚠️ useAuth: localStorage UID 불일치 감지! localStorage 무효화', {
+                localStorageUid: naverUser.uid,
+                firebaseUid: firebaseUser.uid
+              });
+              // 불일치 시 localStorage 제거
+              localStorage.removeItem('currentUser');
+              // naverUser를 null로 설정하여 기본 사용자로 처리
+              naverUser = null;
+            }
+
             if (naverUser) {
-              // localStorage 사용자 정보에 Firebase Auth의 email 정보 병합
+              // UID가 일치하는 경우에만 localStorage 사용자 정보에 Firebase Auth의 email 정보 병합
               const updatedUser = {
                 ...naverUser,
                 email: naverUser.email || firebaseUser.email || firebaseUser.providerData?.[0]?.email
@@ -60,7 +73,7 @@ export const AuthProvider = ({ children }) => {
 
               setUser(updatedUser);
             } else {
-              // localStorage에 없으면 Firebase Auth 정보로 기본 사용자 설정
+              // localStorage에 없거나 UID 불일치 시 Firebase Auth 정보로 기본 사용자 설정
               const basicUser = {
                 uid: firebaseUser.uid,
                 provider: 'naver',

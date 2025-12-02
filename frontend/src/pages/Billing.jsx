@@ -607,11 +607,18 @@ const Billing = () => {
                 1. 당적증명서
               </Typography>
               <Button
-                variant="outlined"
+                variant="contained"
                 component="label"
                 startIcon={<AttachFile />}
                 fullWidth
-                sx={{ mb: `${spacing.xs}px` }}
+                sx={{
+                  mb: `${spacing.xs}px`,
+                  bgcolor: colors.brand.primary,
+                  color: '#ffffff',
+                  '&:hover': {
+                    bgcolor: colors.brand.primaryHover
+                  }
+                }}
               >
                 당적증명서 업로드
                 <input
@@ -633,11 +640,18 @@ const Billing = () => {
                 2. 당비납부 영수증
               </Typography>
               <Button
-                variant="outlined"
+                variant="contained"
                 component="label"
                 startIcon={<AttachFile />}
                 fullWidth
-                sx={{ mb: `${spacing.xs}px` }}
+                sx={{
+                  mb: `${spacing.xs}px`,
+                  bgcolor: colors.brand.primary,
+                  color: '#ffffff',
+                  '&:hover': {
+                    bgcolor: colors.brand.primaryHover
+                  }
+                }}
               >
                 당비납부 영수증 업로드
                 <input

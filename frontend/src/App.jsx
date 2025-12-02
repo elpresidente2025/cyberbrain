@@ -48,7 +48,7 @@ function App() {
     }
   }, []);
 
-  // 관리자 계정 ?�인 (useEffect보다 먼�? ?�언)
+  // 관리자 계정 확인 (useEffect보다 먼저 선언)
   const isAdmin = user?.email === 'kjk6206@gmail.com' || user?.email === 'taesoo@secretart.ai';
 
   useEffect(() => {
@@ -82,42 +82,42 @@ function App() {
     }
   }, [loading, checkSystemStatus, systemStatus]);
 
-  // ?��? 모드???�만 주기?�으�??�태 ?�인 (복구 감�???
+  // 점검 모드일 때만 주기적으로 상태 확인 (복구 감지)
   useEffect(() => {
     let interval = null;
-    
+
     if (systemStatus?.status === 'maintenance' && !isAdmin) {
-      // ?��? 중일 ?�만 2분마??복구 ?�인
-      console.log('?�� ?��? 모드: 2분마??복구 ?�태 ?�인 ?�작');
+      // 점검 중일 때만 2분마다 복구 확인
+      console.log('🔧 점검 모드: 2분마다 복구 상태 확인 시작');
       interval = setInterval(checkSystemStatus, 120000);
     }
-    
+
     return () => {
       if (interval) {
-        console.log('?�� ?�태 ?�인 간격 ?�리');
+        console.log('🔧 상태 확인 간격 정리');
         clearInterval(interval);
       }
     };
   }, [systemStatus?.status, isAdmin, checkSystemStatus]);
 
-  // ?��? 중이�??�반 ?�용?�인 경우�??��? ?�이지 ?�시
+  // 점검 중이고 일반 사용자인 경우에 점검 페이지 표시
   const shouldShowMaintenance = () => {
     if (!systemStatus || systemStatus.status !== 'maintenance') {
       return false;
     }
 
-    // 로그?�웃 ?�태?�서??로그???�이지 ?�근 ?�용
+    // 로그아웃 상태에서도 로그인 페이지 접근 허용
     const publicGuestPaths = ['/', '/login', '/about'];
     if (!user && publicGuestPaths.some((p) => location.pathname === p || location.pathname.startsWith(p + '/'))) {
       return false;
     }
 
-    // 관리자????�� ?�근 ?�용 (?��? ?�제�??�해)
+    // 관리자는 모든 접근 허용 (점검 해제를 위해)
     if (isAdmin) {
       return false;
     }
 
-    // 로그?�된 ?�반 ?�용?�는 모든 ?�이지?�서 ?��? ?�이지 ?�시
+    // 로그인된 일반 사용자는 모든 페이지에서 점검 페이지 표시
     if (user && !isAdmin) {
       return true;
     }
@@ -125,7 +125,7 @@ function App() {
     return false;
   };
 
-  // 로딩 �??�시
+  // 로딩 화면 표시
   // 인증 로딩 중에만 로딩 화면 표시 (시스템 상태 확인은 백그라운드에서)
   if (loading) {
     return (
