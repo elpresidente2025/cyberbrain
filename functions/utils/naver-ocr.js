@@ -178,11 +178,19 @@ function extractPartyInfo(ocrResult) {
   }
 
   if (!info.issueDate) {
-    // 더 관대한 발행일 매칭 (발행일, 발급일, 발행일자, 발급일자 등)
-    const issueDateMatch = extractedText.match(/(?:발\s*[행급]\s*[일자]*)[\s:：]*(\d{4})[\s년.\-/]*(\d{1,2})[\s월.\-/]*(\d{1,2})[일\s]*/);
+    // 더 관대한 발행일 매칭 (연도 있는 경우)
+    let issueDateMatch = extractedText.match(/(?:발\s*[행급]\s*[일자]*)[\s:：]*(\d{4})[\s년.\-/]*(\d{1,2})[\s월.\-/]*(\d{1,2})[일\s]*/);
     if (issueDateMatch) {
       info.issueDate = `${issueDateMatch[1]}-${issueDateMatch[2].padStart(2, '0')}-${issueDateMatch[3].padStart(2, '0')}`;
       info.confidence.issueDate = 0.5;
+    } else {
+      // 연도 없는 경우 (예: "12월 02일") - 현재 연도 사용
+      issueDateMatch = extractedText.match(/(\d{1,2})[\s월.\-/]+(\d{1,2})[일\s]*/);
+      if (issueDateMatch) {
+        const currentYear = new Date().getFullYear();
+        info.issueDate = `${currentYear}-${issueDateMatch[1].padStart(2, '0')}-${issueDateMatch[2].padStart(2, '0')}`;
+        info.confidence.issueDate = 0.3;
+      }
     }
   }
 
@@ -289,11 +297,19 @@ function extractPaymentInfo(ocrResult) {
   }
 
   if (!info.issueDate) {
-    // 더 관대한 발행일 매칭
-    const issueDateMatch = extractedText.match(/(?:발\s*[행급]\s*[일자]*)[\s:：]*(\d{4})[\s년.\-/]*(\d{1,2})[\s월.\-/]*(\d{1,2})[일\s]*/);
+    // 더 관대한 발행일 매칭 (연도 있는 경우)
+    let issueDateMatch = extractedText.match(/(?:발\s*[행급]\s*[일자]*)[\s:：]*(\d{4})[\s년.\-/]*(\d{1,2})[\s월.\-/]*(\d{1,2})[일\s]*/);
     if (issueDateMatch) {
       info.issueDate = `${issueDateMatch[1]}-${issueDateMatch[2].padStart(2, '0')}-${issueDateMatch[3].padStart(2, '0')}`;
       info.confidence.issueDate = 0.5;
+    } else {
+      // 연도 없는 경우 (예: "12월 02일") - 현재 연도 사용
+      issueDateMatch = extractedText.match(/(\d{1,2})[\s월.\-/]+(\d{1,2})[일\s]*/);
+      if (issueDateMatch) {
+        const currentYear = new Date().getFullYear();
+        info.issueDate = `${currentYear}-${issueDateMatch[1].padStart(2, '0')}-${issueDateMatch[2].padStart(2, '0')}`;
+        info.confidence.issueDate = 0.3; // 연도 추론이므로 낮은 신뢰도
+      }
     }
   }
 
