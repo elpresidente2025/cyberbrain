@@ -688,6 +688,17 @@ async function saveVerificationRequest(userId, requestData) {
     userId: userId,
     ...requestData
   });
+
+  // 사용자 프로필에 수동 검토 대기 상태 업데이트
+  await db.collection('users').doc(userId).update({
+    verificationStatus: 'pending_manual_review',
+    lastVerification: {
+      quarter: requestData.quarter || getCurrentQuarter(),
+      status: 'pending_manual_review',
+      requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+      type: requestData.type
+    }
+  });
 }
 
 module.exports = {

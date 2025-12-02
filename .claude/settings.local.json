@@ -62,7 +62,8 @@
       "mcp__serena__search_for_pattern",
       "mcp__serena__list_dir",
       "mcp__serena__activate_project",
-      "mcp__serena__get_symbols_overview"
+      "mcp__serena__get_symbols_overview",
+      "Bash(firebase functions:list:*)"
     ]
   },
   "mcpServers": {

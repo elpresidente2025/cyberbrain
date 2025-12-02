@@ -95,6 +95,13 @@ const Billing = () => {
         title: '인증 완료',
         message: `${user.lastVerification.quarter} 인증 완료`
       };
+    } else if (user?.verificationStatus === 'pending_manual_review') {
+      return {
+        status: 'pending',
+        image: '/buttons/AuthFail.png',
+        title: '수동 검토 대기 중',
+        message: '관리자가 확인 중입니다. 1-2 영업일 소요됩니다.'
+      };
     } else {
       return {
         status: 'warning',
@@ -131,6 +138,14 @@ const Billing = () => {
     if (user?.verificationStatus === 'verified') {
       showNotification(
         '이미 당원 인증이 완료되었습니다. 추가 인증이 필요한 경우 고객센터로 문의해주세요.',
+        'info'
+      );
+      return;
+    }
+    // 수동 검토 대기 중인 경우
+    if (user?.verificationStatus === 'pending_manual_review') {
+      showNotification(
+        '현재 관리자가 제출하신 인증서를 검토 중입니다. 1-2 영업일 내에 완료됩니다.',
         'info'
       );
       return;
@@ -344,24 +359,24 @@ const Billing = () => {
                     <Button
                       variant="contained"
                       onClick={handleAuthClick}
-                      startIcon={authStatus.status === 'active' ? <CheckCircle /> : <Upload />}
+                      startIcon={authStatus.status === 'active' ? <CheckCircle /> : authStatus.status === 'pending' ? <Schedule /> : <Upload />}
                       fullWidth
-                      disabled={authStatus.status === 'active'}
+                      disabled={authStatus.status === 'active' || authStatus.status === 'pending'}
                       sx={{
                         mt: 'auto',
-                        bgcolor: authStatus.status === 'active' ? '#4caf50' : colors.brand.primary,
+                        bgcolor: authStatus.status === 'active' ? '#4caf50' : authStatus.status === 'pending' ? '#ff9800' : colors.brand.primary,
                         color: '#ffffff',
                         '&:hover': {
-                          bgcolor: authStatus.status === 'active' ? '#4caf50' : colors.brand.primary,
-                          filter: authStatus.status === 'active' ? 'none' : 'brightness(0.9)'
+                          bgcolor: authStatus.status === 'active' ? '#4caf50' : authStatus.status === 'pending' ? '#ff9800' : colors.brand.primary,
+                          filter: authStatus.status === 'active' || authStatus.status === 'pending' ? 'none' : 'brightness(0.9)'
                         },
                         '&.Mui-disabled': {
-                          bgcolor: '#4caf50 !important',
+                          bgcolor: authStatus.status === 'active' ? '#4caf50 !important' : '#ff9800 !important',
                           color: 'rgba(255, 255, 255, 0.9) !important'
                         }
                       }}
                     >
-                      {authStatus.status === 'active' ? '인증 완료' : '당원 인증하기'}
+                      {authStatus.status === 'active' ? '인증 완료' : authStatus.status === 'pending' ? '검토 대기 중' : '당원 인증하기'}
                     </Button>
                   </Box>
                   {/* 우측: 인증 상태 이미지 */}
@@ -511,7 +526,7 @@ const Billing = () => {
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px`, flex: 1 }}>
                     {/* 좌측: Alert와 버튼 */}
                     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: `${spacing.md}px` }}>
-                      <Alert severity={authStatus.status === 'active' ? 'success' : 'warning'}>
+                      <Alert severity={authStatus.status === 'active' ? 'success' : authStatus.status === 'pending' ? 'info' : 'warning'}>
                         <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
                           {authStatus.title}
                         </Typography>
@@ -520,27 +535,32 @@ const Billing = () => {
                             {user.lastVerification.quarter}
                           </Typography>
                         )}
+                        {authStatus.status === 'pending' && (
+                          <Typography variant="caption">
+                            {authStatus.message}
+                          </Typography>
+                        )}
                       </Alert>
                       <Button
                         variant="contained"
                         onClick={handleAuthClick}
-                        startIcon={authStatus.status === 'active' ? <CheckCircle /> : <Upload />}
+                        startIcon={authStatus.status === 'active' ? <CheckCircle /> : authStatus.status === 'pending' ? <Schedule /> : <Upload />}
                         fullWidth
-                        disabled={authStatus.status === 'active'}
+                        disabled={authStatus.status === 'active' || authStatus.status === 'pending'}
                         sx={{
-                          bgcolor: authStatus.status === 'active' ? '#4caf50' : colors.brand.primary,
+                          bgcolor: authStatus.status === 'active' ? '#4caf50' : authStatus.status === 'pending' ? '#ff9800' : colors.brand.primary,
                           color: '#ffffff',
                           '&:hover': {
-                            bgcolor: authStatus.status === 'active' ? '#4caf50' : colors.brand.primary,
-                            filter: authStatus.status === 'active' ? 'none' : 'brightness(0.9)'
+                            bgcolor: authStatus.status === 'active' ? '#4caf50' : authStatus.status === 'pending' ? '#ff9800' : colors.brand.primary,
+                            filter: authStatus.status === 'active' || authStatus.status === 'pending' ? 'none' : 'brightness(0.9)'
                           },
                           '&.Mui-disabled': {
-                            bgcolor: '#4caf50 !important',
+                            bgcolor: authStatus.status === 'active' ? '#4caf50 !important' : '#ff9800 !important',
                             color: 'rgba(255, 255, 255, 0.9) !important'
                           }
                         }}
                       >
-                        {authStatus.status === 'active' ? '인증 완료' : '당원 인증하기'}
+                        {authStatus.status === 'active' ? '인증 완료' : authStatus.status === 'pending' ? '검토 대기 중' : '당원 인증하기'}
                       </Button>
                     </Box>
 
