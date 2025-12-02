@@ -307,8 +307,8 @@ function extractPaymentInfo(ocrResult) {
     textSample: extractedText.substring(0, 200)
   });
 
-  // 3. 유효성 검증: 필수 필드가 모두 있어야 함
-  info.isValid = !!(info.name && info.paymentMonth && info.issueDate);
+  // 3. 유효성 검증: 성명과 발행일만 필수 (납입연월은 선택사항)
+  info.isValid = !!(info.name && info.issueDate);
 
   return info;
 }

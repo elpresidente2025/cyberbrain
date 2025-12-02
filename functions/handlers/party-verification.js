@@ -355,30 +355,12 @@ const verifyPaymentReceipt = onCall({
         };
       }
 
-      // 납입연월 검증: 현재 분기의 월이어야 함
-      const paymentYearMonth = paymentInfo.paymentMonth;
-      const currentQuarter = getCurrentQuarter();
-      const isValidPaymentMonth = validatePaymentMonth(paymentYearMonth, currentQuarter);
-
-      if (!isValidPaymentMonth) {
-        console.warn('납입연월이 현재 분기가 아님:', paymentYearMonth);
-
-        await saveVerificationRequest(userId, {
-          type: 'payment_receipt',
-          storagePath: storagePath,
-          status: 'pending_manual_review',
-          extractedText: ocrResult.extractedText.text,
-          paymentInfo: paymentInfo,
-          reason: `납입연월이 현재 분기(${currentQuarter})에 해당하지 않습니다. (납입연월: ${paymentYearMonth})`,
-          requestedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return {
-          success: false,
-          requiresManualReview: true,
-          message: `현재 분기(${currentQuarter})의 납입연월이 필요합니다. 올바른 내역서를 제출해주세요.`,
-          extractedInfo: paymentInfo
-        };
+      // 납입연월 검증 제거: 증명서 발급 시점에 따라 당월 당비가 아직 납부되지 않을 수 있음
+      // 성명과 발행일만 검증하고, 납입연월은 선택사항으로 처리
+      if (paymentInfo.paymentMonth) {
+        console.log('납입연월 확인:', paymentInfo.paymentMonth);
+      } else {
+        console.log('납입연월 정보 없음 (증명서 발급 시점에 당월 납부 전일 수 있음)');
       }
 
       // 인증 성공 - Firestore에 저장
