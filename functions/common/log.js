@@ -71,9 +71,21 @@ function logWarn(message, metadata = {}) {
   return logToFirestore(message, 'warn', metadata);
 }
 
-module.exports = { 
-  logToFirestore, 
-  logError, 
-  logInfo, 
-  logWarn 
+/**
+ * 범용 로그 함수 (카테고리별 로깅)
+ * @param {string} category - 로그 카테고리 (SYSTEM, ACTIVITY, DEBUG 등)
+ * @param {string} message - 로그 메시지
+ * @param {object} metadata - 추가 메타데이터
+ */
+function log(category, message, metadata = {}) {
+  console.log(`[${category}] ${message}`, metadata);
+  return Promise.resolve();
+}
+
+module.exports = {
+  log,
+  logToFirestore,
+  logError,
+  logInfo,
+  logWarn
 };
