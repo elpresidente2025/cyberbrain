@@ -160,15 +160,17 @@ function extractPartyInfo(ocrResult) {
 
   // 2. 구조화된 필드가 없으면 정규식으로 Fallback
   if (!info.name) {
-    const nameMatch = extractedText.match(/(?:성명|이름|姓名)[\s:：]*([가-힣]{2,4})/);
+    // 더 관대한 성명 매칭 (성명, 이름, 성 명, 氏名 등)
+    const nameMatch = extractedText.match(/(?:성\s*명|이\s*름|姓\s*名|氏\s*名|성명|이름)[\s:：]*([가-힣]{2,5})/);
     if (nameMatch) {
-      info.name = nameMatch[1];
-      info.confidence.name = 0.5; // 정규식으로 추출한 경우 낮은 신뢰도
+      info.name = nameMatch[1].replace(/\s/g, ''); // 공백 제거
+      info.confidence.name = 0.5;
     }
   }
 
   if (!info.joinDate) {
-    const joinDateMatch = extractedText.match(/(?:입당일|가입일)[\s:：]*(\d{4})[년.\-/]?\s*(\d{1,2})[월.\-/]?\s*(\d{1,2})/);
+    // 더 관대한 입당일 매칭 (입당일, 가입일, 입당연월일, 가입연월일 등)
+    const joinDateMatch = extractedText.match(/(?:입\s*당\s*[일연월]*|가\s*입\s*[일연월]*)[\s:：]*(\d{4})[\s년.\-/]*(\d{1,2})[\s월.\-/]*(\d{1,2})[일\s]*/);
     if (joinDateMatch) {
       info.joinDate = `${joinDateMatch[1]}-${joinDateMatch[2].padStart(2, '0')}-${joinDateMatch[3].padStart(2, '0')}`;
       info.confidence.joinDate = 0.5;
@@ -176,12 +178,23 @@ function extractPartyInfo(ocrResult) {
   }
 
   if (!info.issueDate) {
-    const issueDateMatch = extractedText.match(/(?:발행일|발급일)[\s:：]*(\d{4})[년.\-/]?\s*(\d{1,2})[월.\-/]?\s*(\d{1,2})/);
+    // 더 관대한 발행일 매칭 (발행일, 발급일, 발행일자, 발급일자 등)
+    const issueDateMatch = extractedText.match(/(?:발\s*[행급]\s*[일자]*)[\s:：]*(\d{4})[\s년.\-/]*(\d{1,2})[\s월.\-/]*(\d{1,2})[일\s]*/);
     if (issueDateMatch) {
       info.issueDate = `${issueDateMatch[1]}-${issueDateMatch[2].padStart(2, '0')}-${issueDateMatch[3].padStart(2, '0')}`;
       info.confidence.issueDate = 0.5;
     }
   }
+
+  // 디버깅: 추출 결과 로그
+  console.log('당적증명서 정보 추출 결과:', {
+    name: info.name,
+    joinDate: info.joinDate,
+    issueDate: info.issueDate,
+    isValid: info.isValid,
+    textLength: extractedText.length,
+    textSample: extractedText.substring(0, 200)
+  });
 
   // 3. 유효성 검증: 필수 필드가 모두 있어야 함
   info.isValid = !!(info.name && info.joinDate && info.issueDate);
@@ -258,15 +271,17 @@ function extractPaymentInfo(ocrResult) {
 
   // 2. 구조화된 필드가 없으면 정규식으로 Fallback
   if (!info.name) {
-    const nameMatch = extractedText.match(/(?:성명|납부자|입금자)[\s:：]*([가-힣]{2,4})/);
+    // 더 관대한 성명 매칭
+    const nameMatch = extractedText.match(/(?:성\s*명|납\s*부\s*자|입\s*금\s*자|성명|납부자|입금자)[\s:：]*([가-힣]{2,5})/);
     if (nameMatch) {
-      info.name = nameMatch[1];
+      info.name = nameMatch[1].replace(/\s/g, '');
       info.confidence.name = 0.5;
     }
   }
 
   if (!info.paymentMonth) {
-    const paymentMatch = extractedText.match(/(?:납입연월|납부연월|납입월|납부월)[\s:：]*(\d{4})[년.\-/]?\s*(\d{1,2})/);
+    // 더 관대한 납입연월 매칭
+    const paymentMatch = extractedText.match(/(?:납\s*[입부]\s*[연]*\s*월|납입연월|납부연월|납입월|납부월)[\s:：]*(\d{4})[\s년.\-/]*(\d{1,2})[월\s]*/);
     if (paymentMatch) {
       info.paymentMonth = `${paymentMatch[1]}-${paymentMatch[2].padStart(2, '0')}`;
       info.confidence.paymentMonth = 0.5;
@@ -274,12 +289,23 @@ function extractPaymentInfo(ocrResult) {
   }
 
   if (!info.issueDate) {
-    const issueDateMatch = extractedText.match(/(?:발행일|발급일)[\s:：]*(\d{4})[년.\-/]?\s*(\d{1,2})[월.\-/]?\s*(\d{1,2})/);
+    // 더 관대한 발행일 매칭
+    const issueDateMatch = extractedText.match(/(?:발\s*[행급]\s*[일자]*)[\s:：]*(\d{4})[\s년.\-/]*(\d{1,2})[\s월.\-/]*(\d{1,2})[일\s]*/);
     if (issueDateMatch) {
       info.issueDate = `${issueDateMatch[1]}-${issueDateMatch[2].padStart(2, '0')}-${issueDateMatch[3].padStart(2, '0')}`;
       info.confidence.issueDate = 0.5;
     }
   }
+
+  // 디버깅: 추출 결과 로그
+  console.log('당비납부내역 정보 추출 결과:', {
+    name: info.name,
+    paymentMonth: info.paymentMonth,
+    issueDate: info.issueDate,
+    isValid: info.isValid,
+    textLength: extractedText.length,
+    textSample: extractedText.substring(0, 200)
+  });
 
   // 3. 유효성 검증: 필수 필드가 모두 있어야 함
   info.isValid = !!(info.name && info.paymentMonth && info.issueDate);

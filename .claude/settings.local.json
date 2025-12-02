@@ -63,7 +63,8 @@
       "mcp__serena__list_dir",
       "mcp__serena__activate_project",
       "mcp__serena__get_symbols_overview",
-      "Bash(firebase functions:list:*)"
+      "Bash(firebase functions:list:*)",
+      "Bash(gcloud firestore documents list:*)"
     ]
   },
   "mcpServers": {
