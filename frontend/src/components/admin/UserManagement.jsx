@@ -141,6 +141,25 @@ const UserManagement = () => {
     }
   };
 
+  const handleResetUsage = async (user) => {
+    if (!confirm(`${user.name || '사용자'}님의 이번 달 사용량을 초기화하시겠습니까?\n\n포스트는 유지되지만, 게이지에서 카운트되지 않습니다.`)) {
+      return;
+    }
+
+    try {
+      const response = await callFunction('resetUserUsage', {
+        targetUserId: user.uid
+      });
+
+      if (response.success) {
+        showNotification(response.message || '사용량이 초기화되었습니다.', 'success');
+      }
+    } catch (error) {
+      console.error('사용량 초기화 실패:', error);
+      showNotification('사용량 초기화 중 오류가 발생했습니다.', 'error');
+    }
+  };
+
   const filteredUsers = users.filter(user => 
     user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.electoralDistrict?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -251,6 +270,15 @@ const UserManagement = () => {
                   <TableCell sx={{ color: 'text.secondary' }}>{formatDate(user.createdAt)}</TableCell>
                   <TableCell align="center">
                     <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Tooltip title="사용량 초기화">
+                        <IconButton
+                          size="small"
+                          color="info"
+                          onClick={() => handleResetUsage(user)}
+                        >
+                          <Refresh />
+                        </IconButton>
+                      </Tooltip>
                       {user.isActive ? (
                         <Tooltip title="계정 비활성화">
                           <IconButton

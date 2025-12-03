@@ -106,7 +106,7 @@ const getPublishingStats = wrap(async (request) => {
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    // 현재 달에 생성된 포스트 개수 조회 (저장 시점 기준)
+    // 현재 달에 생성된 포스트 개수 조회 (저장 시점 기준, excludeFromCount 제외)
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
@@ -116,7 +116,8 @@ const getPublishingStats = wrap(async (request) => {
       .where('createdAt', '<=', endOfMonth)
       .get();
 
-    const publishedThisMonth = postsSnapshot.size; // 저장된 포스트 개수
+    // excludeFromCount가 true인 포스트는 제외
+    const publishedThisMonth = postsSnapshot.docs.filter(doc => !doc.data().excludeFromCount).length;
 
     // 발행 데이터 조회 (기존 발행 기록용)
     const publishingDoc = await db.collection('user_publishing').doc(uid).get();
@@ -278,10 +279,69 @@ const getMonthlyTarget = (role) => {
   }
 };
 
+// 관리자: 사용자 사용량 초기화 (현재 달 포스트 카운트 제외)
+const resetUserUsage = wrap(async (request) => {
+  const { uid: adminUid } = await auth(request);
+  const { targetUserId } = request.data;
+
+  if (!targetUserId) {
+    throw new HttpsError('invalid-argument', '대상 사용자 ID가 필요합니다.');
+  }
+
+  try {
+    const db = admin.firestore();
+
+    // 관리자 권한 확인
+    const adminDoc = await db.collection('users').doc(adminUid).get();
+    const isAdmin = adminDoc.exists && (adminDoc.data().role === 'admin' || adminDoc.data().isAdmin === true);
+
+    if (!isAdmin) {
+      throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
+    }
+
+    // 현재 달의 시작과 끝
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    // 현재 달에 생성된 포스트 조회
+    const postsSnapshot = await db.collection('posts')
+      .where('userId', '==', targetUserId)
+      .where('createdAt', '>=', startOfMonth)
+      .where('createdAt', '<=', endOfMonth)
+      .get();
+
+    // 배치 업데이트로 excludeFromCount 플래그 추가
+    const batch = db.batch();
+    let count = 0;
+
+    postsSnapshot.forEach((doc) => {
+      batch.update(doc.ref, { excludeFromCount: true });
+      count++;
+    });
+
+    await batch.commit();
+
+    return {
+      success: true,
+      message: `${count}개의 포스트가 카운트에서 제외되었습니다.`,
+      excludedCount: count
+    };
+
+  } catch (error) {
+    console.error('Reset user usage error:', error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', '사용량 초기화 중 오류가 발생했습니다.');
+  }
+});
+
 module.exports = {
   publishPost,
   getPublishingStats,
   checkBonusEligibility,
   useBonusGeneration,
-  getMonthlyTarget
+  getMonthlyTarget,
+  resetUserUsage
 };
