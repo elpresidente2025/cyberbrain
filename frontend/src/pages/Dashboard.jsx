@@ -422,76 +422,6 @@ const Dashboard = () => {
           transition={{ duration: 0.5, delay: 0.1 }}
         >
         <Box sx={{ mb: `${spacing.lg}px` }}>
-          {/* 상단: 사용자 정보와 프로필 수정 버튼 */}
-          <Box sx={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            mb: `${spacing.md}px`,
-            flexWrap: 'wrap',
-            gap: `${spacing.xs}px`
-          }}>
-            {/* 사용자 정보 */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px`, flexWrap: 'wrap' }}>
-              <Typography variant="h5" sx={{
-                fontWeight: 600,
-                color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000'
-              }}>
-                {user?.displayName || user?.name || '사용자'} {getUserDisplayTitle(user)} {userIcon}
-              </Typography>
-              {regionInfo && (
-                <Chip
-                  label={regionInfo}
-                  size="medium"
-                  sx={{
-                    bgcolor: theme.palette.mode === 'dark' ? colors.brand.primaryLight10 : 'rgba(21, 36, 132, 0.15)',
-                    color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.9)' : colors.brand.primary,
-                    fontWeight: 500
-                  }}
-                />
-              )}
-              <Chip
-                label={`D-${(() => {
-                  const electionDate = new Date('2026-06-03');
-                  const today = new Date();
-                  const diffTime = electionDate - today;
-                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                  return diffDays;
-                })()}`}
-                size="medium"
-                sx={{ bgcolor: colors.brand.primary, color: 'white', fontWeight: 600 }}
-              />
-            </Box>
-
-            {/* 프로필 수정 버튼 */}
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<Settings />}
-              onClick={handleChangePlan}
-              sx={{
-                bgcolor: showBioAlert ? colors.brand.gold : 'transparent',
-                color: showBioAlert ? '#ffffff' : (theme.palette.mode === 'dark' ? '#ffffff' : '#000000'),
-                borderColor: showBioAlert ? colors.brand.gold : (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : 'rgba(0, 0, 0, 0.23)'),
-                fontSize: '0.75rem',
-                py: 0.5,
-                px: 1.5,
-                '&:hover': {
-                  bgcolor: showBioAlert ? '#e6a91c' : 'rgba(0, 0, 0, 0.04)',
-                  borderColor: showBioAlert ? '#e6a91c' : 'rgba(0, 0, 0, 0.23)',
-                },
-                ...(showBioAlert && {
-                  animation: 'profileEditBlink 2s ease-in-out infinite',
-                  '@keyframes profileEditBlink': {
-                    '0%, 50%, 100%': { opacity: 1 },
-                    '25%, 75%': { opacity: 0.6 }
-                  }
-                })
-              }}
-            >
-              프로필 수정{showBioAlert && ' ⚠️'}
-            </Button>
-          </Box>
 
           {/* 플랜 정보 및 사용량 */}
           <Paper
@@ -540,19 +470,62 @@ const Dashboard = () => {
           >
             {/* 사용자 정보 */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px`, flexWrap: 'wrap' }}>
-              <Typography variant="h6" sx={{ color: theme.palette.text.primary }}>
-                <strong>{user.name || '사용자'}</strong>
+              <Typography variant="h5" sx={{
+                fontWeight: 600,
+                color: theme.palette.text.primary
+              }}>
+                {user.name || '사용자'} {getUserDisplayTitle(user)} {userIcon}
               </Typography>
               {user.position && (
-                <Chip label={user.position} size="small" sx={{ bgcolor: 'rgba(21, 36, 132, 0.1)', color: colors.brand.primary }} />
+                <Chip label={user.position} size="medium" sx={{ bgcolor: 'rgba(21, 36, 132, 0.1)', color: colors.brand.primary, fontWeight: 500 }} />
               )}
               {user.electoralDistrict && (
-                <Chip label={user.electoralDistrict} size="small" variant="outlined" sx={{ borderColor: colors.brand.primary, color: colors.brand.primary }} />
+                <Chip label={user.electoralDistrict} size="medium" variant="outlined" sx={{ borderColor: colors.brand.primary, color: colors.brand.primary, fontWeight: 500 }} />
               )}
+              <Chip
+                label={`D-${(() => {
+                  const electionDate = new Date('2026-06-03');
+                  const today = new Date();
+                  const diffTime = electionDate - today;
+                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                  return diffDays;
+                })()}`}
+                size="medium"
+                sx={{ bgcolor: colors.brand.primary, color: 'white', fontWeight: 600 }}
+              />
               {isAdmin && (
-                <Chip label="관리자" sx={{ bgcolor: colors.brand.primary, color: 'white' }} />
+                <Chip label="관리자" size="medium" sx={{ bgcolor: colors.brand.primary, color: 'white', fontWeight: 600 }} />
               )}
             </Box>
+
+            {/* 프로필 수정 버튼 */}
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<Settings />}
+              onClick={handleChangePlan}
+              sx={{
+                bgcolor: showBioAlert ? colors.brand.gold : 'transparent',
+                color: showBioAlert ? '#ffffff' : (theme.palette.mode === 'dark' ? '#ffffff' : '#000000'),
+                borderColor: showBioAlert ? colors.brand.gold : (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : 'rgba(0, 0, 0, 0.23)'),
+                fontSize: '0.75rem',
+                py: 0.5,
+                px: 1.5,
+                '&:hover': {
+                  bgcolor: showBioAlert ? '#e6a91c' : 'rgba(0, 0, 0, 0.04)',
+                  borderColor: showBioAlert ? '#e6a91c' : 'rgba(0, 0, 0, 0.23)',
+                },
+                ...(showBioAlert && {
+                  animation: 'profileEditBlink 2s ease-in-out infinite',
+                  '@keyframes profileEditBlink': {
+                    '0%, 50%, 100%': { opacity: 1 },
+                    '25%, 75%': { opacity: 0.6 }
+                  }
+                })
+              }}
+            >
+              프로필 수정{showBioAlert && ' ⚠️'}
+            </Button>
 
             {/* 인증 상태 */}
             <Box
