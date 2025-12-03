@@ -450,7 +450,8 @@ const PublishingProgress = () => {
               
               {/* 구분선들 (목표에 따라 동적 등분) */}
               {(() => {
-                const divisions = basicTarget; // 8회면 8등분, 90회면 90등분
+                // 8회 목표면 8칸, 90회 목표면 9칸으로 표시
+                const divisions = basicTarget === 8 ? 8 : 9;
                 const divisionPercents = [];
                 for (let i = 1; i < divisions; i++) {
                   divisionPercents.push((i / divisions) * 100);
