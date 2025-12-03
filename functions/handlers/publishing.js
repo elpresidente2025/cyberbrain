@@ -157,20 +157,32 @@ const getPublishingStats = wrap(async (request) => {
 
   try {
     const db = admin.firestore();
-    
+
     // 사용자 정보 조회 (없으면 기본값 사용)
     const userDoc = await db.collection('users').doc(uid).get();
     const userData = userDoc.exists ? userDoc.data() : {};
     const userRole = userData.role || 'local_blogger';
     const monthlyTarget = getMonthlyTarget(userRole);
 
-    // 발행 데이터 조회
-    const publishingDoc = await db.collection('user_publishing').doc(uid).get();
-    const publishingData = publishingDoc.exists ? publishingDoc.data() : { months: {} };
-
     // 현재 월 정보
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    // 현재 달에 생성된 포스트 개수 조회 (저장 시점 기준)
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    const postsSnapshot = await db.collection('posts')
+      .where('userId', '==', uid)
+      .where('createdAt', '>=', startOfMonth)
+      .where('createdAt', '<=', endOfMonth)
+      .get();
+
+    const publishedThisMonth = postsSnapshot.size; // 저장된 포스트 개수
+
+    // 발행 데이터 조회 (기존 발행 기록용)
+    const publishingDoc = await db.collection('user_publishing').doc(uid).get();
+    const publishingData = publishingDoc.exists ? publishingDoc.data() : { months: {} };
     const currentMonthData = publishingData.months[currentMonth] || { published: 0, posts: [] };
 
     // 이번 달 보너스 확인
