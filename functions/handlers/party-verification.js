@@ -14,7 +14,6 @@ const db = admin.firestore();
  */
 const verifyPartyCertificate = onCall({
   region: 'asia-northeast3',
-  secrets: [NAVER_OCR_SECRET_KEY, NAVER_OCR_API_URL],
   timeoutSeconds: 120,
   memory: '512MiB'
 }, async (request) => {
@@ -38,158 +37,45 @@ const verifyPartyCertificate = onCall({
 
     console.log(`당적증명서 인증 시작: userId=${userId}, fileName=${fileName}`);
 
-    // 사용자 프로필에서 성명 가져오기
+    // 사용자 프로필 조회
     const userDoc = await db.collection('users').doc(userId).get();
     const userData = userDoc.data();
-    const userName = userData?.name;
 
-    if (!userName) {
-      throw new HttpsError(
-        'failed-precondition',
-        '사용자 프로필에 성명이 등록되지 않았습니다. 먼저 프로필을 완성해주세요.'
-      );
-    }
+    // Storage 경로 (로깅용)
+    const storagePath = `party-certificates/${userId}/${fileName}`;
+    console.log(`파일 업로드 확인: ${storagePath}`);
 
-    // Storage 저장 없이 바로 OCR 처리 (Base64 데이터 사용)
-    const storagePath = `party-certificates/${userId}/${fileName}`; // 로깅용
-    console.log(`OCR 처리 시작: ${storagePath}`);
-
-    // OCR 실행 (Base64 데이터 + 당적증명서 템플릿 ID 전달)
-    const PARTY_CERT_TEMPLATE_ID = 39477;
-    console.log(`템플릿 ID ${PARTY_CERT_TEMPLATE_ID} 사용하여 OCR 호출`);
-    const ocrResult = await extractTextFromImage(base64Data, imageFormat, PARTY_CERT_TEMPLATE_ID);
-
-      // OCR 결과 전체 로그 출력 (디버깅)
-      console.log('OCR 원본 결과:', JSON.stringify(ocrResult.extractedText, null, 2));
-
-      if (!ocrResult.success) {
-        console.error('OCR 처리 실패:', ocrResult.error);
-
-        // OCR 실패 시 수동 검토로 전환
-        await saveVerificationRequest(userId, {
-          type: 'party_certificate',
-          storagePath: storagePath,
-          status: 'pending_manual_review',
-          ocrError: ocrResult.error,
-          requestedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return {
-          success: false,
-          requiresManualReview: true,
-          message: 'OCR 자동 인증에 실패했습니다. 수동 검토로 전환되었습니다.'
-        };
-      }
-
-      // 당적 정보 추출 (전체 ocrResult 객체 전달)
-      const partyInfo = extractPartyInfo(ocrResult.extractedText);
-
-      // 유효성 검증
-      if (!partyInfo.isValid) {
-        console.warn('당적증명서 유효성 검증 실패:', partyInfo);
-
-        // 수동 검토 요청
-        await saveVerificationRequest(userId, {
-          type: 'party_certificate',
-          storagePath: storagePath,
-          status: 'pending_manual_review',
-          extractedText: ocrResult.extractedText.text,
-          partyInfo: partyInfo,
-          reason: '필수 정보를 찾을 수 없습니다.',
-          requestedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return {
-          success: false,
-          requiresManualReview: true,
-          message: '당적증명서에서 필수 정보를 찾을 수 없습니다. 수동 검토로 전환되었습니다.',
-          extractedInfo: partyInfo
-        };
-      }
-
-      // 성명 검증: 사용자 프로필의 이름과 일치하는지 확인
-      if (partyInfo.name !== userName) {
-        console.warn('성명 불일치:', { extracted: partyInfo.name, user: userName });
-
-        await saveVerificationRequest(userId, {
-          type: 'party_certificate',
-          storagePath: storagePath,
-          status: 'pending_manual_review',
-          extractedText: ocrResult.extractedText.text,
-          partyInfo: partyInfo,
-          userName: userName,
-          reason: `성명이 일치하지 않습니다. (증명서: ${partyInfo.name}, 프로필: ${userName})`,
-          requestedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return {
-          success: false,
-          requiresManualReview: true,
-          message: '당적증명서의 성명이 프로필 정보와 일치하지 않습니다. 수동 검토로 전환되었습니다.',
-          extractedInfo: partyInfo
-        };
-      }
-
-      // 발행일 검증: 당월에 발행된 증명서만 유효
-      const issueDate = new Date(partyInfo.issueDate);
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth(); // 0-11
-
-      if (issueDate.getFullYear() !== currentYear || issueDate.getMonth() !== currentMonth) {
-        console.warn('발행일이 당월이 아님:', partyInfo.issueDate);
-
-        await saveVerificationRequest(userId, {
-          type: 'party_certificate',
-          storagePath: storagePath,
-          status: 'pending_manual_review',
-          extractedText: ocrResult.extractedText.text,
-          partyInfo: partyInfo,
-          reason: `발행일이 당월이 아닙니다. (발행일: ${partyInfo.issueDate}, 현재: ${currentYear}-${String(currentMonth + 1).padStart(2, '0')})`,
-          requestedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return {
-          success: false,
-          requiresManualReview: true,
-          message: '당월에 발행된 증명서만 인증 가능합니다. 최신 증명서를 제출해주세요.',
-          extractedInfo: partyInfo
-        };
-      }
-
-      // 분기별 인증 필요 여부 확인
-      const verificationCheck = await checkQuarterlyVerification(userId, userData);
-      if (!verificationCheck.needsVerification) {
-        console.log(`분기 인증 면제: ${verificationCheck.reason}`);
-
-        return {
-          success: true,
-          exempted: true,
-          message: verificationCheck.reason,
-          nextVerificationQuarter: verificationCheck.nextQuarter
-        };
-      }
-
-      // 인증 성공 - Firestore에 저장
-      const quarter = getCurrentQuarter();
-      await saveVerificationResult(userId, {
-        type: 'party_certificate',
-        quarter: quarter,
-        status: 'verified',
-        method: 'ocr_auto',
-        partyInfo: partyInfo,
-        storagePath: storagePath,
-        verifiedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      console.log(`당적증명서 인증 완료: userId=${userId}, quarter=${quarter}`);
+    // 분기별 인증 필요 여부 확인
+    const verificationCheck = await checkQuarterlyVerification(userId, userData);
+    if (!verificationCheck.needsVerification) {
+      console.log(`분기 인증 면제: ${verificationCheck.reason}`);
 
       return {
         success: true,
-        message: '당적증명서 인증이 완료되었습니다.',
-        quarter: quarter,
-        partyInfo: partyInfo
+        exempted: true,
+        message: verificationCheck.reason,
+        nextVerificationQuarter: verificationCheck.nextQuarter
       };
+    }
+
+    // 인증 성공 - Firestore에 저장 (OCR 없이 자동 승인)
+    const quarter = getCurrentQuarter();
+    await saveVerificationResult(userId, {
+      type: 'party_certificate',
+      quarter: quarter,
+      status: 'verified',
+      method: 'auto_approval',
+      storagePath: storagePath,
+      verifiedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log(`당적증명서 인증 완료: userId=${userId}, quarter=${quarter}`);
+
+    return {
+      success: true,
+      message: '당적증명서 인증이 완료되었습니다.',
+      quarter: quarter
+    };
 
   } catch (error) {
     console.error('당적증명서 인증 중 오류:', error);
@@ -212,7 +98,6 @@ const verifyPartyCertificate = onCall({
  */
 const verifyPaymentReceipt = onCall({
   region: 'asia-northeast3',
-  secrets: [NAVER_OCR_SECRET_KEY, NAVER_OCR_API_URL],
   timeoutSeconds: 120,
   memory: '512MiB'
 }, async (request) => {
@@ -236,152 +121,28 @@ const verifyPaymentReceipt = onCall({
 
     console.log(`당비 납부 내역 인증 시작: userId=${userId}, fileName=${fileName}`);
 
-    // 사용자 프로필에서 성명 가져오기
-    const userDoc = await db.collection('users').doc(userId).get();
-    const userData = userDoc.data();
-    const userName = userData?.name;
+    // Storage 경로 (로깅용)
+    const storagePath = `payment-receipts/${userId}/${fileName}`;
+    console.log(`파일 업로드 확인: ${storagePath}`);
 
-    if (!userName) {
-      throw new HttpsError(
-        'failed-precondition',
-        '사용자 프로필에 성명이 등록되지 않았습니다. 먼저 프로필을 완성해주세요.'
-      );
-    }
+    // 인증 성공 - Firestore에 저장 (OCR 없이 자동 승인)
+    const currentQuarter = getCurrentQuarter();
+    await saveVerificationResult(userId, {
+      type: 'payment_receipt',
+      quarter: currentQuarter,
+      status: 'verified',
+      method: 'auto_approval',
+      storagePath: storagePath,
+      verifiedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
 
-    // Storage 저장 없이 바로 OCR 처리 (Base64 데이터 사용)
-    const storagePath = `payment-receipts/${userId}/${fileName}`; // 로깅용
-    console.log(`OCR 처리 시작: ${storagePath}`);
+    console.log(`당비 납부 내역 인증 완료: userId=${userId}, quarter=${currentQuarter}`);
 
-    // OCR 실행 (Base64 데이터 + 당비납부내역서 템플릿 ID 전달)
-    const PAYMENT_RECEIPT_TEMPLATE_ID = 39478;
-    console.log(`템플릿 ID ${PAYMENT_RECEIPT_TEMPLATE_ID} 사용하여 OCR 호출`);
-    const ocrResult = await extractTextFromImage(base64Data, imageFormat, PAYMENT_RECEIPT_TEMPLATE_ID);
-
-      // OCR 결과 전체 로그 출력 (디버깅)
-      console.log('OCR 원본 결과:', JSON.stringify(ocrResult.extractedText, null, 2));
-
-      if (!ocrResult.success) {
-        console.error('OCR 처리 실패:', ocrResult.error);
-
-        // OCR 실패 시 수동 검토로 전환
-        await saveVerificationRequest(userId, {
-          type: 'payment_receipt',
-          storagePath: storagePath,
-          status: 'pending_manual_review',
-          ocrError: ocrResult.error,
-          requestedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return {
-          success: false,
-          requiresManualReview: true,
-          message: 'OCR 자동 인증에 실패했습니다. 수동 검토로 전환되었습니다.'
-        };
-      }
-
-      // 납부 정보 추출 (전체 ocrResult 객체 전달)
-      const paymentInfo = extractPaymentInfo(ocrResult.extractedText);
-
-      // 유효성 검증
-      if (!paymentInfo.isValid) {
-        console.warn('당비 납부 내역 유효성 검증 실패:', paymentInfo);
-
-        // 수동 검토 요청
-        await saveVerificationRequest(userId, {
-          type: 'payment_receipt',
-          storagePath: storagePath,
-          status: 'pending_manual_review',
-          extractedText: ocrResult.extractedText.text,
-          paymentInfo: paymentInfo,
-          reason: '필수 정보를 찾을 수 없습니다.',
-          requestedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return {
-          success: false,
-          requiresManualReview: true,
-          message: '납부 내역에서 필수 정보를 찾을 수 없습니다. 수동 검토로 전환되었습니다.',
-          extractedInfo: paymentInfo
-        };
-      }
-
-      // 성명 검증: 사용자 프로필의 이름과 일치하는지 확인
-      if (paymentInfo.name !== userName) {
-        console.warn('성명 불일치:', { extracted: paymentInfo.name, user: userName });
-
-        await saveVerificationRequest(userId, {
-          type: 'payment_receipt',
-          storagePath: storagePath,
-          status: 'pending_manual_review',
-          extractedText: ocrResult.extractedText.text,
-          paymentInfo: paymentInfo,
-          userName: userName,
-          reason: `성명이 일치하지 않습니다. (납부내역서: ${paymentInfo.name}, 프로필: ${userName})`,
-          requestedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return {
-          success: false,
-          requiresManualReview: true,
-          message: '납부내역서의 성명이 프로필 정보와 일치하지 않습니다. 수동 검토로 전환되었습니다.',
-          extractedInfo: paymentInfo
-        };
-      }
-
-      // 발행일 검증: 당월에 발행된 내역서만 유효
-      const issueDate = new Date(paymentInfo.issueDate);
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth(); // 0-11
-
-      if (issueDate.getFullYear() !== currentYear || issueDate.getMonth() !== currentMonth) {
-        console.warn('발행일이 당월이 아님:', paymentInfo.issueDate);
-
-        await saveVerificationRequest(userId, {
-          type: 'payment_receipt',
-          storagePath: storagePath,
-          status: 'pending_manual_review',
-          extractedText: ocrResult.extractedText.text,
-          paymentInfo: paymentInfo,
-          reason: `발행일이 당월이 아닙니다. (발행일: ${paymentInfo.issueDate}, 현재: ${currentYear}-${String(currentMonth + 1).padStart(2, '0')})`,
-          requestedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return {
-          success: false,
-          requiresManualReview: true,
-          message: '당월에 발행된 납부내역서만 인증 가능합니다. 최신 내역서를 제출해주세요.',
-          extractedInfo: paymentInfo
-        };
-      }
-
-      // 납입연월 검증 제거: 증명서 발급 시점에 따라 당월 당비가 아직 납부되지 않을 수 있음
-      // 성명과 발행일만 검증하고, 납입연월은 선택사항으로 처리
-      if (paymentInfo.paymentMonth) {
-        console.log('납입연월 확인:', paymentInfo.paymentMonth);
-      } else {
-        console.log('납입연월 정보 없음 (증명서 발급 시점에 당월 납부 전일 수 있음)');
-      }
-
-      // 인증 성공 - Firestore에 저장
-      await saveVerificationResult(userId, {
-        type: 'payment_receipt',
-        quarter: currentQuarter,
-        status: 'verified',
-        method: 'ocr_auto',
-        paymentInfo: paymentInfo,
-        storagePath: storagePath,
-        verifiedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      console.log(`당비 납부 내역 인증 완료: userId=${userId}, quarter=${currentQuarter}`);
-
-      return {
-        success: true,
-        message: '당비 납부 내역 인증이 완료되었습니다.',
-        quarter: currentQuarter,
-        paymentInfo: paymentInfo
-      };
+    return {
+      success: true,
+      message: '당비 납부 내역 인증이 완료되었습니다.',
+      quarter: currentQuarter
+    };
 
   } catch (error) {
     console.error('당비 납부 내역 인증 중 오류:', error);
