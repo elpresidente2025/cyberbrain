@@ -556,11 +556,6 @@ const Dashboard = () => {
               <Typography variant="h6" sx={{ color: theme.palette.text.primary }}>
                 플랜: <strong style={{ color: planColor }}>{planName}</strong>
               </Typography>
-              {!isAdmin && (
-                <Typography variant="body1" color="text.secondary">
-                  · 발행 목표: {usage.postsGenerated}/{usage.monthlyLimit}회
-                </Typography>
-              )}
               {isAdmin && (
                 <Chip label="무제한" sx={{ bgcolor: planColor, color: 'white' }} />
               )}

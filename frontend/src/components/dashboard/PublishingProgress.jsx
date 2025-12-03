@@ -201,8 +201,8 @@ const PublishingProgress = () => {
       return 90; // 스탠다드 플랜 통일
     }
 
-    // 플랜 정보가 없으면 결제되지 않은 상태
-    return null;
+    // 플랜 정보가 없으면 무료 티어 (월 8회)
+    return 8;
   };
 
   const getBonusAmount = (user) => {
@@ -268,64 +268,8 @@ const PublishingProgress = () => {
     finalPlan: plan,
     isAdmin
   });
-  
-  if (!plan && !isAdmin) {
-    return (
-      <Card
-        onMouseEnter={() => setCurrentGlowColor(getRandomGlowColor())}
-        elevation={0}
-        sx={{ 
-          height: '100%',
-          bgcolor: 'transparent',
-          cursor: 'pointer',
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          '&:hover': {
-            transform: 'scale(0.98)',
-            boxShadow: `0 8px 32px ${currentGlowColor}40, 0 4px 16px ${currentGlowColor}20, inset 0 1px 0 ${currentGlowColor}10`,
-            border: `1px solid ${currentGlowColor}30`
-          }
-        }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <Publish sx={{ color: '#152484' }} />
-            <Typography variant="h6">발행 목표</Typography>
-          </Box>
-          
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
-              요금제가 설정되지 않았습니다
-            </Typography>
-            <Typography variant="body2">
-              발행 목표를 확인하려면 요금제를 선택해주세요.
-            </Typography>
-          </Alert>
-          
-          <Button 
-            variant="contained" 
-            fullWidth 
-            sx={{ 
-              bgcolor: '#f8c023',
-              color: '#ffffff',
-              border: 'none',
-              '&:hover': { 
-                bgcolor: '#e6a91c',
-              },
-              animation: 'planSelectBlink 2s ease-in-out infinite',
-              '@keyframes planSelectBlink': {
-                '0%, 50%, 100%': { opacity: 1 },
-                '25%, 75%': { opacity: 0.6 }
-              }
-            }}
-            onClick={() => window.location.href = '/billing'}
-          >
-            요금제 선택하기 ⚠️
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-  
-  // 관리자이거나 플랜이 있는 경우 정상 처리 - 2단계 시스템
+
+  // 모든 사용자에게 정상 게이지 표시 (무료: 8회, 유료: 90회)
   const basicTarget = getMonthlyTarget(user);
   const fullTarget = getFullTarget(user);
   const bonusAmount = getBonusAmount(user);
@@ -504,21 +448,28 @@ const PublishingProgress = () => {
                 }}
               />
               
-              {/* 구분선들 (33.33%, 66.67% 지점 - 30개씩 3등분) */}
-              {[33.33, 66.67].map(percent => (
-                <Box
-                  key={percent}
-                  sx={{
-                    position: 'absolute',
-                    left: `${percent}%`,
-                    top: 0,
-                    width: '1px',
-                    height: '100%',
-                    backgroundColor: 'rgba(255,255,255,0.3)',
-                    zIndex: 1
-                  }}
-                />
-              ))}
+              {/* 구분선들 (목표에 따라 동적 등분) */}
+              {(() => {
+                const divisions = basicTarget; // 8회면 8등분, 90회면 90등분
+                const divisionPercents = [];
+                for (let i = 1; i < divisions; i++) {
+                  divisionPercents.push((i / divisions) * 100);
+                }
+                return divisionPercents.map(percent => (
+                  <Box
+                    key={percent}
+                    sx={{
+                      position: 'absolute',
+                      left: `${percent}%`,
+                      top: 0,
+                      width: '1px',
+                      height: '100%',
+                      backgroundColor: 'rgba(255,255,255,0.3)',
+                      zIndex: 1
+                    }}
+                  />
+                ));
+              })()}
 
               {/* 다음 목표 지점 점멸 효과 */}
               {(() => {
@@ -613,6 +564,31 @@ const PublishingProgress = () => {
               size="small"
               sx={{ backgroundColor: 'rgba(21, 36, 132, 0.1)' }}
             />
+          </Box>
+        )}
+
+        {/* 무료 티어 업그레이드 안내 */}
+        {!plan && !isAdmin && (
+          <Box sx={{ mt: 2 }}>
+            <Alert severity="info" sx={{ mb: 0 }}>
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                <strong>프리미엄으로 업그레이드</strong>하면 월 90회까지 사용 가능합니다
+              </Typography>
+              <Button
+                variant="contained"
+                size="small"
+                sx={{
+                  bgcolor: '#152484',
+                  color: '#ffffff',
+                  '&:hover': {
+                    bgcolor: '#0d1850',
+                  }
+                }}
+                onClick={() => window.location.href = '/billing'}
+              >
+                프리미엄 시작하기
+              </Button>
+            </Alert>
           </Box>
         )}
       </CardContent>
