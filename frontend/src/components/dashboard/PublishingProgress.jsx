@@ -279,7 +279,10 @@ const PublishingProgress = () => {
   const nextStageTarget = actualData?.currentMonth?.nextStageTarget || basicTarget;
   const achievements = actualData?.achievements || {};
   
-  console.log('🎯 2단계 시스템 상태:', {
+  console.log('🎯 게이지 데이터 확인:', {
+    publishingStats,
+    actualData,
+    currentMonth,
     published,
     basicTarget,
     fullTarget,
