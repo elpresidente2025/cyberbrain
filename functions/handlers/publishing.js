@@ -72,68 +72,6 @@ const publishPost = wrap(async (request) => {
       publishingData.totalPublished = (publishingData.totalPublished || 0) + 1;
 
       transaction.set(publishingRef, publishingData, { merge: true });
-
-      // 3. 사용자 정보 조회하여 보너스 계산
-      const userRef = db.collection('users').doc(uid);
-      const userDoc = await transaction.get(userRef);
-      
-      if (userDoc.exists) {
-        const userData = userDoc.data();
-        const userRole = userData.role || 'local_blogger';
-        const monthlyTarget = getMonthlyTarget(userRole);
-        
-        const publishedThisMonth = publishingData.months[monthKey].published;
-        const fullTarget = getFullTarget(userRole);
-        
-        // 1단계: 기본 목표 달성 시 보너스 제공
-        if (publishedThisMonth === monthlyTarget) {
-          const bonusAmount = getBonusAmount(userRole);
-          const currentUsage = userData.usage || { postsGenerated: 0, monthlyLimit: 50, bonusGenerated: 0 };
-          
-          transaction.update(userRef, {
-            'usage.bonusGenerated': (currentUsage.bonusGenerated || 0) + bonusAmount,
-            lastBonusEarned: now,
-            lastBonusMonth: monthKey
-          });
-
-          // 보너스 기록
-          const bonusRef = db.collection('bonus_awards').doc();
-          transaction.set(bonusRef, {
-            userId: uid,
-            month: monthKey,
-            bonusAmount: bonusAmount,
-            userRole: userRole,
-            targetAchieved: monthlyTarget,
-            stage: 1,
-            awardedAt: now
-          });
-        }
-        
-        // 2단계: 전체 목표 달성 시 SNS 무료 자격 부여
-        if (publishedThisMonth === fullTarget) {
-          // 다음 달 SNS 무료 자격 설정
-          const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-          const nextMonthKey = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`;
-          
-          transaction.update(userRef, {
-            snsFreeMonth: nextMonthKey,
-            lastSNSFreeEarned: now,
-            lastFullTargetMonth: monthKey
-          });
-
-          // SNS 무료 자격 기록
-          const snsRef = db.collection('sns_free_awards').doc();
-          transaction.set(snsRef, {
-            userId: uid,
-            earnedMonth: monthKey,
-            eligibleMonth: nextMonthKey,
-            userRole: userRole,
-            fullTargetAchieved: fullTarget,
-            stage: 2,
-            awardedAt: now
-          });
-        }
-      }
     });
 
     return {
@@ -185,53 +123,16 @@ const getPublishingStats = wrap(async (request) => {
     const publishingData = publishingDoc.exists ? publishingDoc.data() : { months: {} };
     const currentMonthData = publishingData.months[currentMonth] || { published: 0, posts: [] };
 
-    // 이번 달 보너스 확인
-    const bonusGenerated = userData.usage?.bonusGenerated || 0;
-    const lastBonusMonth = userData.lastBonusMonth;
-    const isCurrentMonthBonus = lastBonusMonth === currentMonth;
-    
-    // 2단계 목표 및 SNS 무료 확인
-    const fullTarget = getFullTarget(userRole);
-    // publishedThisMonth는 위에서 이미 계산됨 (저장된 포스트 개수)
-    const snsFreeMonth = userData.snsFreeMonth;
-    const isSNSFreeThisMonth = snsFreeMonth === currentMonth;
-    
-    // 현재 진행 상태 결정
-    let currentStage = 'basic'; // basic, bonus, completed
-    let nextStageTarget = monthlyTarget;
-    
-    if (publishedThisMonth >= fullTarget) {
-      currentStage = 'completed';
-      nextStageTarget = fullTarget;
-    } else if (publishedThisMonth >= monthlyTarget) {
-      currentStage = 'bonus';
-      nextStageTarget = fullTarget;
-    }
-
     return {
       success: true,
       data: {
         currentMonth: {
           published: publishedThisMonth,
           target: monthlyTarget,
-          fullTarget: fullTarget,
-          currentStage: currentStage,
-          nextStageTarget: nextStageTarget,
           posts: currentMonthData.posts || []
         },
         userRole: userRole,
         totalPublished: publishingData.totalPublished || 0,
-        bonusEarned: isCurrentMonthBonus ? getBonusAmount(userRole) : 0,
-        totalBonusGenerated: bonusGenerated,
-        nextBonusEligible: publishedThisMonth < monthlyTarget,
-        snsFreeThisMonth: isSNSFreeThisMonth,
-        snsFreeEligibleMonth: snsFreeMonth,
-        achievements: {
-          stage1Complete: publishedThisMonth >= monthlyTarget,
-          stage2Complete: publishedThisMonth >= fullTarget,
-          bonusAmount: getBonusAmount(userRole),
-          fullTarget: fullTarget
-        },
         monthlyHistory: publishingData.months || {}
       }
     };
@@ -377,41 +278,10 @@ const getMonthlyTarget = (role) => {
   }
 };
 
-const getBonusAmount = (role) => {
-  switch (role) {
-    case 'opinion_leader':
-    case '오피니언 리더':
-      return 30; // 60회 달성 시 익월 30회 추가 제공
-    case 'regional_influencer':
-    case '리전 인플루언서':
-      return 10;
-    case 'local_blogger':
-    case '로컬 블로거':
-    default:
-      return 4;
-  }
-};
-
-// 2단계 목표 (기본 + 보너스)
-const getFullTarget = (role) => {
-  const basic = getMonthlyTarget(role);
-  const bonus = getBonusAmount(role);
-  return basic + bonus;
-};
-
-// 다음 달 SNS 무료 자격 확인
-const checkSNSFreeEligibility = (publishedCount, role) => {
-  const fullTarget = getFullTarget(role);
-  return publishedCount >= fullTarget;
-};
-
 module.exports = {
   publishPost,
   getPublishingStats,
   checkBonusEligibility,
   useBonusGeneration,
-  getMonthlyTarget,
-  getBonusAmount,
-  getFullTarget,
-  checkSNSFreeEligibility
+  getMonthlyTarget
 };

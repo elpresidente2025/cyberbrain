@@ -205,16 +205,6 @@ const PublishingProgress = () => {
     return 8;
   };
 
-  const getBonusAmount = (user) => {
-    // 스탠다드 플랜은 별도 보너스 없음
-    return 0;
-  };
-
-  const getFullTarget = (user) => {
-    const basicTarget = getMonthlyTarget(user);
-    const bonusAmount = getBonusAmount(user);
-    return basicTarget ? basicTarget + bonusAmount : null;
-  };
 
   const getCurrentMonth = () => {
     const now = new Date();
@@ -270,67 +260,21 @@ const PublishingProgress = () => {
   });
 
   // 모든 사용자에게 정상 게이지 표시 (무료: 8회, 유료: 90회)
-  const basicTarget = getMonthlyTarget(user);
-  const fullTarget = getFullTarget(user);
-  const bonusAmount = getBonusAmount(user);
-  
-  // 백엔드에서 받은 데이터 우선, 없으면 프론트엔드 계산값 사용
-  const currentStage = actualData?.currentMonth?.currentStage || 'basic';
-  const nextStageTarget = actualData?.currentMonth?.nextStageTarget || basicTarget;
-  const achievements = actualData?.achievements || {};
-  
+  const target = getMonthlyTarget(user);
+
   console.log('🎯 게이지 데이터 확인:', {
     publishingStats,
     actualData,
     currentMonth,
     published,
-    basicTarget,
-    fullTarget,
-    currentStage,
-    nextStageTarget,
-    achievements,
+    target,
     userPlan: user?.plan || user?.subscription
   });
-  
-  // 현재 진행 상황에 따른 UI 결정
-  let displayTarget, progress, isCompleted, remaining, statusMessage;
-  
-  if (currentStage === 'completed') {
-    // 2단계 완료 (SNS 무료 자격 획득)
-    displayTarget = fullTarget;
-    progress = 100;
-    isCompleted = true;
-    remaining = 0;
-    statusMessage = {
-      icon: 'trophy',
-      text: `완전 달성! 다음 달 SNS 원고 무료 생성`,
-      color: '#006261'
-    };
-  } else if (currentStage === 'bonus') {
-    // 1단계 완료, 2단계 진행 중
-    displayTarget = fullTarget;
-    progress = Math.min((published / fullTarget) * 100, 100);
-    isCompleted = false;
-    remaining = Math.max(fullTarget - published, 0);
-    statusMessage = {
-      icon: 'star',
-      text: `보너스 단계! ${remaining}회 더 발행하면 SNS 무료 획득`,
-      color: '#55207D'
-    };
-  } else {
-    // 기본 단계
-    displayTarget = basicTarget;
-    progress = Math.min((published / basicTarget) * 100, 100);
-    isCompleted = published >= basicTarget;
-    remaining = Math.max(basicTarget - published, 0);
-    statusMessage = {
-      icon: 'trending',
-      text: isCompleted 
-        ? `1단계 달성! 익월 보너스 ${bonusAmount}회 제공 예정`
-        : `${remaining}회 더 발행하면 보너스 ${bonusAmount}회 획득!`,
-      color: isCompleted ? '#006261' : '#152484'
-    };
-  }
+
+  // 진행 상황 계산
+  const progress = Math.min((published / target) * 100, 100);
+  const isCompleted = published >= target;
+  const remaining = Math.max(target - published, 0);
 
   return (
     <Card
@@ -349,16 +293,9 @@ const PublishingProgress = () => {
         }
       }}>
       <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-          <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Publish sx={{ color: '#152484' }} />
-            발행 목표
-          </Typography>
-          <Tooltip title="월간 목표 달성 시 익월 보너스 원고 제공">
-            <IconButton size="small">
-              <Info fontSize="small" sx={{ color: '#55207D' }} />
-            </IconButton>
-          </Tooltip>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+          <Publish sx={{ color: '#152484', mr: 1 }} />
+          <Typography variant="h6">발행 목표</Typography>
         </Box>
 
         <Typography variant="body2" color="text.secondary" gutterBottom>
@@ -414,7 +351,7 @@ const PublishingProgress = () => {
               }}
             >
               {(() => {
-                const totalCells = basicTarget; // 8칸 또는 90칸
+                const totalCells = target; // 8칸 또는 90칸
                 const cells = [];
 
                 for (let i = 0; i < totalCells; i++) {
@@ -457,40 +394,19 @@ const PublishingProgress = () => {
 
         <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #e0e0e0' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {statusMessage.icon === 'trophy' && <EmojiEvents sx={{ color: statusMessage.color }} />}
-            {statusMessage.icon === 'star' && <AutoAwesome sx={{ color: statusMessage.color }} />}
-            {statusMessage.icon === 'trending' && <TrendingUp sx={{ color: statusMessage.color }} />}
-            
-            <Typography variant="body2" sx={{ 
-              color: statusMessage.color, 
-              fontWeight: currentStage !== 'basic' ? 600 : 'normal' 
-            }}>
-              {statusMessage.text}
+            {isCompleted ? (
+              <EmojiEvents sx={{ color: '#006261' }} />
+            ) : (
+              <TrendingUp sx={{ color: '#152484' }} />
+            )}
+
+            <Typography variant="body2" sx={{ color: isCompleted ? '#006261' : '#152484' }}>
+              {isCompleted
+                ? `목표 달성! ${published}/${target}회 완료`
+                : `${remaining}회 더 작성하면 목표 달성!`}
             </Typography>
           </Box>
-          
-          {/* 진행 상태 표시 */}
-          {fullTarget && currentStage !== 'completed' && (
-            <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="caption" color="text.secondary">
-                전체 진행률: {published}/{fullTarget} ({Math.round((published / fullTarget) * 100)}%)
-              </Typography>
-            </Box>
-          )}
         </Box>
-
-        {(actualData?.bonusEarned || 0) > 0 && (
-          <Box sx={{ mt: 2 }}>
-            <Chip
-              icon={<AutoAwesome />}
-              label={`이번 달 보너스: ${actualData.bonusEarned}회`}
-              color="primary"
-              variant="outlined"
-              size="small"
-              sx={{ backgroundColor: 'rgba(21, 36, 132, 0.1)' }}
-            />
-          </Box>
-        )}
 
         {/* 무료 티어 업그레이드 안내 */}
         {!plan && !isAdmin && (
