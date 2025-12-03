@@ -192,7 +192,7 @@ const getPublishingStats = wrap(async (request) => {
     
     // 2단계 목표 및 SNS 무료 확인
     const fullTarget = getFullTarget(userRole);
-    const publishedThisMonth = currentMonthData.published;
+    // publishedThisMonth는 위에서 이미 계산됨 (저장된 포스트 개수)
     const snsFreeMonth = userData.snsFreeMonth;
     const isSNSFreeThisMonth = snsFreeMonth === currentMonth;
     
