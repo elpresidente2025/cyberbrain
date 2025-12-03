@@ -397,135 +397,56 @@ const PublishingProgress = () => {
           </Box>
 
           <Box sx={{ flexGrow: 1, position: 'relative' }}>
-            {/* 사이버펑크 스타일 게이지 */}
+            {/* 칸 단위 게이지 */}
             <Box
               sx={{
-                position: 'relative',
+                display: 'flex',
+                gap: '2px',
                 height: 16,
                 backgroundColor: '#0a0a0a',
                 border: '1px solid #333',
                 borderRadius: 2,
-                overflow: 'hidden',
+                padding: '2px',
                 boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.3)'
               }}
             >
-              {/* 배경 그리드 패턴 */}
-              <Box
-                sx={{
-                  position: 'absolute',
-                  width: '100%',
-                  height: '100%',
-                  background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.05) 50%, transparent 100%)',
-                  backgroundSize: '8px 100%',
-                  animation: currentStage !== 'basic' ? 'cyberpunkScan 2s infinite linear' : 'none',
-                  '@keyframes cyberpunkScan': {
-                    '0%': { transform: 'translateX(-100%)' },
-                    '100%': { transform: 'translateX(100%)' }
-                  }
-                }}
-              />
-              
-              {/* 진행 바 - 사용자 플랜 색상 */}
-              <Box
-                sx={{
-                  position: 'absolute',
-                  left: 0,
-                  top: 0,
-                  height: '100%',
-                  width: `${progress}%`,
-                  background: currentStage === 'completed'
-                    ? `linear-gradient(90deg, ${currentColor}, #39ff14)`
-                    : currentStage === 'bonus'
-                    ? 'linear-gradient(90deg, #f8c023, #ffff00)' // 보너스 단계는 노란색
-                    : `linear-gradient(90deg, ${currentColor}, ${currentColor}AA)`,
-                  boxShadow: currentStage === 'completed'
-                    ? '0 0 12px #39ff14, inset 0 0 8px rgba(57,255,20,0.3)'
-                    : currentStage === 'bonus'
-                    ? '0 0 12px #f8c023, inset 0 0 8px rgba(248,192,35,0.3)'
-                    : `0 0 12px ${currentColor}, inset 0 0 8px ${currentColor}50`,
-                  transition: 'all 0.5s ease',
-                  borderRadius: '1px'
-                }}
-              />
-              
-              {/* 구분선들 (목표에 따라 동적 등분) */}
               {(() => {
-                // 8회 목표면 8칸, 90회 목표면 9칸으로 표시
-                const divisions = basicTarget === 8 ? 8 : 9;
-                const divisionPercents = [];
-                for (let i = 1; i < divisions; i++) {
-                  divisionPercents.push((i / divisions) * 100);
-                }
-                return divisionPercents.map(percent => (
-                  <Box
-                    key={percent}
-                    sx={{
-                      position: 'absolute',
-                      left: `${percent}%`,
-                      top: 0,
-                      width: '1px',
-                      height: '100%',
-                      backgroundColor: 'rgba(255,255,255,0.3)',
-                      zIndex: 1
-                    }}
-                  />
-                ));
-              })()}
+                const totalCells = basicTarget; // 8칸 또는 90칸
+                const cells = [];
 
-              {/* 다음 목표 지점 점멸 효과 */}
-              {(() => {
-                const nextGoalCount = published + 1;
-                const nextGoalPercent = (nextGoalCount / displayTarget) * 100;
-                
-                if (nextGoalCount <= displayTarget) {
-                  return (
+                for (let i = 0; i < totalCells; i++) {
+                  const isFilled = i < published; // 발행된 횟수만큼 채워짐
+                  const isNext = i === published; // 다음 칸은 점멸
+
+                  cells.push(
                     <Box
+                      key={i}
                       sx={{
-                        position: 'absolute',
-                        left: `${nextGoalPercent}%`,
-                        top: '-2px',
-                        width: '4px',
-                        height: '20px',
-                        backgroundColor: '#f8c023',
-                        zIndex: 2,
-                        animation: 'nextGoalBlink 1.5s infinite ease-in-out',
-                        boxShadow: '0 0 12px #f8c023',
-                        borderRadius: '2px',
-                        '@keyframes nextGoalBlink': {
-                          '0%, 100%': { 
-                            opacity: 0.4,
-                            transform: 'translateX(-50%) scaleY(0.8)'
-                          },
-                          '50%': { 
-                            opacity: 1,
-                            transform: 'translateX(-50%) scaleY(1.2)'
-                          }
+                        flex: 1,
+                        height: '100%',
+                        backgroundColor: isFilled
+                          ? currentColor
+                          : isNext
+                          ? currentColor
+                          : 'rgba(255,255,255,0.1)',
+                        opacity: isFilled ? 1 : isNext ? 0.5 : 1,
+                        boxShadow: isFilled
+                          ? `0 0 4px ${currentColor}`
+                          : 'none',
+                        borderRadius: '1px',
+                        transition: 'all 0.3s ease',
+                        animation: isNext ? 'cellBlink 1.5s infinite ease-in-out' : 'none',
+                        '@keyframes cellBlink': {
+                          '0%, 100%': { opacity: 0.3 },
+                          '50%': { opacity: 0.8 }
                         }
                       }}
                     />
                   );
                 }
-                return null;
+
+                return cells;
               })()}
-              
-              {/* 목표 달성 시 반짝임 효과 */}
-              {isCompleted && (
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    background: 'linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%)',
-                    animation: 'cyberpunkGlow 1.5s infinite ease-in-out',
-                    '@keyframes cyberpunkGlow': {
-                      '0%, 100%': { opacity: 0 },
-                      '50%': { opacity: 1 }
-                    }
-                  }}
-                />
-              )}
             </Box>
           </Box>
         </Box>
