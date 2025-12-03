@@ -90,21 +90,8 @@ const Dashboard = () => {
   const userIcon = getUserStatusIcon(user);
   const regionInfo = getUserRegionInfo(user);
   
-  // 플랜 정보 (실제 사용자 데이터 기반)
+  // 관리자 확인
   const isAdmin = user?.role === 'admin';
-  const planName = isAdmin ? '관리자' : getPlanName(usage.monthlyLimit);
-
-  // 플랜명 결정 함수
-  function getPlanName(limit) {
-    return '스탠다드 플랜';
-  }
-
-  // 플랜별 색상 가져오기
-  function getPlanColor(planName) {
-    return colors.brand.primary; // 스탠다드 플랜 색상
-  }
-
-  const planColor = getPlanColor(planName);
 
   // 데이터 로딩 함수 (재사용 가능하도록 분리)
   const fetchDashboardData = async () => {
@@ -551,13 +538,19 @@ const Dashboard = () => {
               }
             }}
           >
-            {/* 플랜 정보 */}
+            {/* 사용자 정보 */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px`, flexWrap: 'wrap' }}>
               <Typography variant="h6" sx={{ color: theme.palette.text.primary }}>
-                플랜: <strong style={{ color: planColor }}>{planName}</strong>
+                <strong>{user.name || '사용자'}</strong>
               </Typography>
+              {user.position && (
+                <Chip label={user.position} size="small" sx={{ bgcolor: 'rgba(21, 36, 132, 0.1)', color: colors.brand.primary }} />
+              )}
+              {user.electoralDistrict && (
+                <Chip label={user.electoralDistrict} size="small" variant="outlined" sx={{ borderColor: colors.brand.primary, color: colors.brand.primary }} />
+              )}
               {isAdmin && (
-                <Chip label="무제한" sx={{ bgcolor: planColor, color: 'white' }} />
+                <Chip label="관리자" sx={{ bgcolor: colors.brand.primary, color: 'white' }} />
               )}
             </Box>
 
@@ -602,7 +595,7 @@ const Dashboard = () => {
             sx={{
               mt: `${spacing.lg}px`,
               background: canGeneratePost
-                ? `linear-gradient(135deg, ${planColor} 0%, #1e3a8a 100%)`
+                ? `linear-gradient(135deg, ${colors.brand.primary} 0%, #1e3a8a 100%)`
                 : '#757575',
               color: '#ffffff',
               fontSize: '1.5rem',
@@ -641,7 +634,7 @@ const Dashboard = () => {
                 transition: 'width 0.6s, height 0.6s',
               } : {},
               '&:hover': canGeneratePost ? {
-                background: `linear-gradient(135deg, #1e3a8a 0%, ${planColor} 100%)`,
+                background: `linear-gradient(135deg, #1e3a8a 0%, ${colors.brand.primary} 100%)`,
                 boxShadow: '0 20px 60px rgba(21, 36, 132, 0.6), 0 10px 20px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(255, 255, 255, 0.15) inset',
                 transform: 'translateY(-4px) scale(1.02)',
                 '&::before': {
@@ -746,7 +739,7 @@ const Dashboard = () => {
 
                 {notices.length > 5 && (
                   <Box sx={{ p: `${spacing.md}px`, textAlign: 'center' }}>
-                    <Button variant="text" size="small" sx={{ color: planColor }}>
+                    <Button variant="text" size="small" sx={{ color: colors.brand.primary }}>
                       더 보기 ({notices.length - 5}개 더)
                     </Button>
                   </Box>
@@ -796,7 +789,7 @@ const Dashboard = () => {
                     ))}
                   </List>
                   <Box sx={{ p: `${spacing.md}px`, textAlign: 'center' }}>
-                    <Button variant="text" onClick={handleViewAllPosts} sx={{ color: planColor }}>
+                    <Button variant="text" onClick={handleViewAllPosts} sx={{ color: colors.brand.primary }}>
                       전체 보기
                     </Button>
                   </Box>
@@ -948,7 +941,7 @@ const Dashboard = () => {
 
                     {notices.length > 8 && (
                       <Box sx={{ p: `${spacing.md}px`, textAlign: 'center' }}>
-                        <Button variant="text" size="small" sx={{ color: planColor }}>
+                        <Button variant="text" size="small" sx={{ color: colors.brand.primary }}>
                           더 보기 ({notices.length - 8}개 더)
                         </Button>
                       </Box>
@@ -1035,7 +1028,7 @@ const Dashboard = () => {
 
                         {notices.length > 5 && (
                           <Box sx={{ p: `${spacing.md}px`, textAlign: 'center' }}>
-                            <Button variant="text" size="small" sx={{ color: planColor }}>
+                            <Button variant="text" size="small" sx={{ color: colors.brand.primary }}>
                               더 보기 ({notices.length - 5}개 더)
                             </Button>
                           </Box>
