@@ -5,10 +5,92 @@
 
 'use strict';
 
+// ============================================================================
+// 작성 예시 (사용자가 실제 내용을 채워넣을 템플릿)
+// ============================================================================
+
+const WRITING_EXAMPLES = {
+  // TODO: 실제 좋은 원고로 교체 필요
+  SOLUTION_FIRST: `
+**참고 예시 - 대안 우선 구조**
+
+배경정보: [정책/인물/사건에 대한 구체적 정보]
+
+생성 결과:
+\`\`\`json
+{
+  "title": "[제목]",
+  "content": "<p>존경하는 [지역] 여러분, [이름]입니다.</p><h2>[대안 제목 - 이렇게 해야 합니다]</h2><p>[구체적 대안: 수치, 연도, 계획 포함]</p><h2>[비판 제목 - 그런데 현재는]</h2><p>[문제 지적 및 대비]</p><h2>[다짐 제목]</h2><p>[대안 재강조]</p>",
+  "wordCount": 1800
+}
+\`\`\`
+
+위 예시처럼:
+- 대안을 먼저 제시 (구체적 수치 포함)
+- 그 다음 문제를 대비시킴
+- 마지막에 다짐으로 대안 재강조
+`,
+
+  PROBLEM_FIRST: `
+**참고 예시 - 문제 우선 구조 (전통적)**
+
+배경정보: [문제 상황에 대한 구체적 정보]
+
+생성 결과:
+\`\`\`json
+{
+  "title": "[제목]",
+  "content": "<p>존경하는 [지역] 여러분, [이름]입니다.</p><h2>[문제 제목]</h2><p>[문제 현상 및 데이터]</p><h2>[원인 분석]</h2><p>[왜 이런 일이 발생했는가]</p><h2>[대안 제시]</h2><p>[구체적 해결 방안]</p>",
+  "wordCount": 1800
+}
+\`\`\`
+`
+};
+
+// 비판 구조에 따라 관련 예시 선택
+function getRelevantExample(criticalStructureId) {
+  if (criticalStructureId === 'solution_first_criticism') {
+    return WRITING_EXAMPLES.SOLUTION_FIRST;
+  } else if (criticalStructureId === 'problem_first_criticism' || criticalStructureId === 'policy_failure_criticism') {
+    return WRITING_EXAMPLES.PROBLEM_FIRST;
+  }
+  // 기본값: 대안 우선 예시
+  return WRITING_EXAMPLES.SOLUTION_FIRST;
+}
+
 const CRITICAL_STRUCTURES = {
+  // 🆕 대안 우선 비판 구조 (두괄식) - 기본값으로 사용
+  SOLUTION_FIRST_CRITICISM: {
+    id: 'solution_first_criticism',
+    name: '대안 우선 비판 구조 (두괄식)',
+    instruction: `글을 다음 3단계로 구성하세요:
+
+1. **대안 제시 (앞 40%, 구체적으로)**
+   - 먼저 "이렇게 해야 합니다"를 명확히 제시
+   - 구체적 수치, 연도, 계획 포함 (예: "2025년까지", "3만개 일자리", "5천억 투자")
+   - 독자에게 "이 사람은 준비된 리더"라는 인상을 각인
+
+2. **문제 지적 (중간 40%, 대비 강화)**
+   - "그런데 현재는/상대방은 이렇게 하고 있습니다"로 전환
+   - 앞서 제시한 올바른 방법과 대비시켜 상대의 무능/무책임 부각
+   - 팩트 기반으로 냉정하게 비판
+
+3. **다짐 강화 (뒤 20%, 재확인)**
+   - 대안을 다시 한 번 강조하며 마무리
+   - "저는 준비되어 있습니다", "성과로 보여드리겠습니다"
+
+**핵심:** 독자가 기억하는 것은 "비판받는 사람"이 아니라 "대안을 가진 당신"이어야 합니다.`
+  },
+
   MEDIA_FRAME_CRITICISM: { id: 'media_frame_criticism', name: '언론 프레이밍 비판 구조', instruction: "글을 '문제 보도 인용 → 숨은 의도 및 프레임 지적 → 대중에게 질문'의 3단계로 구성하세요. 언론의 보도가 단순한 실수가 아닌, 의도적인 프레임을 갖고 있음을 암시하며 여론전을 유도해야 합니다." },
+
   FACT_CHECK_REBUTTAL: { id: 'fact_check_rebuttal', name: '가짜뉴스 반박 구조', instruction: "글을 '허위 주장 요약 → 명백한 사실/데이터 제시 → 법적/정치적 책임 경고'의 순서로 구성하세요. 감정적 대응을 자제하고, 명확한 증거를 통해 상대 주장의 신뢰도를 완전히 무너뜨려야 합니다." },
+
+  PROBLEM_FIRST_CRITICISM: { id: 'problem_first_criticism', name: '문제 우선 비판 구조 (전통식)', instruction: "글을 '문제 현상 제시 → 데이터/통계를 통한 원인 분석 → 구체적인 정책 대안 촉구'의 흐름으로 구성하세요. 단순한 비난이 아닌, 대안을 가진 책임 있는 비판의 모습을 보여주어야 합니다." },
+
+  // 하위 호환성을 위해 유지 (PROBLEM_FIRST_CRITICISM과 동일)
   POLICY_FAILURE_CRITICISM: { id: 'policy_failure_criticism', name: '정책 실패 비판 구조', instruction: "글을 '문제 현상 제시 → 데이터/통계를 통한 원인 분석 → 구체적인 정책 대안 촉구'의 흐름으로 구성하세요. 단순한 비난이 아닌, 대안을 가진 책임 있는 비판의 모습을 보여주어야 합니다." },
+
   OFFICIAL_MISCONDUCT_CRITICISM: { id: 'official_misconduct_criticism', name: '공직자 비위 비판 구조', instruction: "글을 '의혹 사실 요약 → 법적/윤리적 문제점 지적 → 사퇴/징계 등 구체적인 책임 요구' 순으로 구성하세요. 개인적인 비난이 아닌, 공직자로서의 책임을 묻는다는 점을 명확히 해야 합니다." },
 };
 
@@ -40,9 +122,12 @@ function buildCriticalWritingPrompt(options) {
     vocabularyModuleId,
   } = options;
 
-  const criticalStructure = Object.values(CRITICAL_STRUCTURES).find(s => s.id === criticalStructureId) || CRITICAL_STRUCTURES.POLICY_FAILURE_CRITICISM;
+  const criticalStructure = Object.values(CRITICAL_STRUCTURES).find(s => s.id === criticalStructureId) || CRITICAL_STRUCTURES.SOLUTION_FIRST_CRITICISM;
   const offensiveTactic = Object.values(OFFENSIVE_TACTICS).find(t => t.id === offensiveTacticId) || OFFENSIVE_TACTICS.EXPOSING_CONTRADICTION;
   const vocabularyModule = Object.values(VOCABULARY_MODULES).find(m => m.id === vocabularyModuleId) || VOCABULARY_MODULES.LEGAL_FACTUAL;
+
+  // 🆕 관련 예시 가져오기
+  const relevantExample = getRelevantExample(criticalStructure.id);
 
   const backgroundSection = instructions ? `
 [배경 정보 및 필수 포함 내용]
@@ -72,6 +157,15 @@ ${newsContext}
 - 글의 주제: "${topic}"
 - 목표 분량: ${targetWordCount || 1700}자 (공백 제외)
 ${backgroundSection}${keywordsSection}${hintsSection}${newsSection}
+
+[📖 참고: 올바른 작성 예시]
+${relevantExample}
+
+---
+⚠️ **중요:** 위 예시의 구조와 스타일을 참고하되, 제공된 [배경 정보]를 바탕으로 완전히 새로운 원고를 작성하라.
+배경정보를 그대로 복사하지 말고, 자연스럽게 재구성하여 본론에 녹여내라.
+---
+
 [🚫 절대 원칙: 사실 기반 글쓰기 (Hallucination Guardrail)]
 - 너는 절대로 사실을 지어내거나 추측해서는 안 된다.
 - 모든 비판과 주장은 오직 사용자가 [기본 정보] 및 [배경 정보]에 제공한 내용에만 100% 근거해야 한다.

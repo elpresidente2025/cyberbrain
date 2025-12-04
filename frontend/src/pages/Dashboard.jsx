@@ -468,92 +468,92 @@ const Dashboard = () => {
               }
             }}
           >
-            {/* 사용자 정보 */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px`, flexWrap: 'wrap' }}>
-              <Typography variant="h5" sx={{
-                fontWeight: 600,
-                color: theme.palette.text.primary
-              }}>
-                {user.name || '사용자'} {getUserDisplayTitle(user)} {userIcon}
-              </Typography>
-              {user.position && (
-                <Chip label={user.position} size="medium" sx={{ bgcolor: 'rgba(21, 36, 132, 0.1)', color: colors.brand.primary, fontWeight: 500 }} />
-              )}
-              {user.electoralDistrict && (
-                <Chip label={user.electoralDistrict} size="medium" variant="outlined" sx={{ borderColor: colors.brand.primary, color: colors.brand.primary, fontWeight: 500 }} />
-              )}
-              <Chip
-                label={`D-${(() => {
-                  const electionDate = new Date('2026-06-03');
-                  const today = new Date();
-                  const diffTime = electionDate - today;
-                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                  return diffDays;
-                })()}`}
-                size="medium"
-                sx={{ bgcolor: colors.brand.primary, color: 'white', fontWeight: 600 }}
-              />
-              {isAdmin && (
-                <Chip label="관리자" size="medium" sx={{ bgcolor: colors.brand.primary, color: 'white', fontWeight: 600 }} />
-              )}
-            </Box>
+            {/* 2열 레이아웃 */}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'stretch', width: '100%', gap: `${spacing.lg}px` }}>
+              {/* 왼쪽: 사용자 정보 */}
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px`, flex: 1 }}>
+                {/* 첫 줄: 이름 + 직책 */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px` }}>
+                  <Typography variant="h5" sx={{
+                    fontWeight: 600,
+                    color: theme.palette.text.primary
+                  }}>
+                    {user.name || '사용자'}
+                  </Typography>
+                  {user.position && (
+                    <Chip label={user.position} size="small" sx={{ bgcolor: 'rgba(21, 36, 132, 0.1)', color: colors.brand.primary, fontWeight: 500 }} />
+                  )}
+                </Box>
 
-            {/* 프로필 수정 버튼 */}
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<Settings />}
-              onClick={handleChangePlan}
-              sx={{
-                bgcolor: showBioAlert ? colors.brand.gold : 'transparent',
-                color: showBioAlert ? '#ffffff' : (theme.palette.mode === 'dark' ? '#ffffff' : '#000000'),
-                borderColor: showBioAlert ? colors.brand.gold : (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : 'rgba(0, 0, 0, 0.23)'),
-                fontSize: '0.75rem',
-                py: 0.5,
-                px: 1.5,
-                '&:hover': {
-                  bgcolor: showBioAlert ? '#e6a91c' : 'rgba(0, 0, 0, 0.04)',
-                  borderColor: showBioAlert ? '#e6a91c' : 'rgba(0, 0, 0, 0.23)',
-                },
-                ...(showBioAlert && {
-                  animation: 'profileEditBlink 2s ease-in-out infinite',
-                  '@keyframes profileEditBlink': {
-                    '0%, 50%, 100%': { opacity: 1 },
-                    '25%, 75%': { opacity: 0.6 }
-                  }
-                })
-              }}
-            >
-              프로필 수정{showBioAlert && ' ⚠️'}
-            </Button>
+                {/* 둘째 줄: 선거구 */}
+                {user.electoralDistrict && (
+                  <Typography variant="body1" sx={{ color: theme.palette.text.secondary }}>
+                    {user.electoralDistrict}
+                  </Typography>
+                )}
 
-            {/* 인증 상태 */}
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: `${spacing.xs}px`,
-                cursor: 'pointer',
-                transition: 'transform 0.2s ease',
-                '&:hover': {
-                  transform: 'scale(1.02)'
-                }
-              }}
-              onClick={handleViewBilling}
-            >
+                {/* 셋째 줄: 프로필 수정 버튼 */}
+                <Box>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<Settings />}
+                    onClick={handleChangePlan}
+                    sx={{
+                      bgcolor: showBioAlert ? colors.brand.gold : 'transparent',
+                      color: showBioAlert ? '#ffffff' : (theme.palette.mode === 'dark' ? '#ffffff' : '#000000'),
+                      borderColor: showBioAlert ? colors.brand.gold : (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : 'rgba(0, 0, 0, 0.23)'),
+                      fontSize: '0.75rem',
+                      py: 0.5,
+                      px: 1.5,
+                      '&:hover': {
+                        bgcolor: showBioAlert ? '#e6a91c' : 'rgba(0, 0, 0, 0.04)',
+                        borderColor: showBioAlert ? '#e6a91c' : 'rgba(0, 0, 0, 0.23)',
+                      },
+                      ...(showBioAlert && {
+                        animation: 'profileEditBlink 2s ease-in-out infinite',
+                        '@keyframes profileEditBlink': {
+                          '0%, 50%, 100%': { opacity: 1 },
+                          '25%, 75%': { opacity: 0.6 }
+                        }
+                      })
+                    }}
+                  >
+                    프로필 수정{showBioAlert && ' ⚠️'}
+                  </Button>
+                </Box>
+              </Box>
+
+              {/* 오른쪽: 인증 상태 */}
               <Box
-                component="img"
-                src={authStatus.image}
-                alt={authStatus.title}
                 sx={{
-                  width: '50px',
-                  height: 'auto',
-                  filter: 'drop-shadow(0 1px 4px rgba(0,0,0,0.1))'
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-end',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  transition: 'transform 0.2s ease',
+                  '&:hover': {
+                    transform: 'scale(1.02)'
+                  }
                 }}
-              />
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', fontWeight: 500 }}>
-                {authStatus.message}
-              </Typography>
+                onClick={handleViewBilling}
+              >
+                <Box
+                  component="img"
+                  src={authStatus.image}
+                  alt={authStatus.title}
+                  sx={{
+                    width: '60px',
+                    height: 'auto',
+                    filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.15))',
+                    mb: `${spacing.xs}px`
+                  }}
+                />
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', fontWeight: 500, textAlign: 'right' }}>
+                  {authStatus.message}
+                </Typography>
+              </Box>
             </Box>
           </Paper>
 

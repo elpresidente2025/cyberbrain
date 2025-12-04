@@ -61,8 +61,10 @@ function processGeneratedContent({ content, fullName, fullRegion, currentStatus,
 
   // 4. 시작 문장에 호칭 포함 체크
   if (!fixedContent.includes(`${fullName}입니다`)) {
+    // fullRegion은 이미 "민"이 붙어있으므로 "도민" 하드코딩 제거
+    const greeting = fullRegion ? `존경하는 ${fullRegion} 여러분` : '존경하는 여러분';
     fixedContent = fixedContent.replace(/^<p>[^<]*?<\/p>/,
-      `<p>존경하는 ${fullRegion} 도민 여러분 ${fullName}입니다.</p>`);
+      `<p>${greeting}, ${fullName}입니다.</p>`);
   }
 
   // 5. 마지막에 서명 수정
