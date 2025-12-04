@@ -52,9 +52,20 @@ export default function PromptForm({
     const newList = [...instructionsList];
     newList[index] = value;
     setInstructionsList(newList);
-    
+
     // 부모 컴포넌트에 배열로 전달
     onChange({ instructions: newList });
+  };
+
+  // 🔧 수정: 참고자료 onBlur 핸들러 - 포커스를 잃을 때 확실히 업데이트
+  const handleInstructionBlur = (index) => (event) => {
+    const { value } = event.target;
+    if (instructionsList[index] !== value) {
+      const newList = [...instructionsList];
+      newList[index] = value;
+      setInstructionsList(newList);
+      onChange({ instructions: newList });
+    }
   };
 
   // 참고자료 입력창 추가
@@ -82,6 +93,15 @@ export default function PromptForm({
       onChange({ category: value, subCategory: '' });
     } else {
       // 그 외의 경우는 해당 필드만 업데이트하라는 신호를 보냅니다.
+      onChange({ [field]: value });
+    }
+  };
+
+  // 🔧 수정: onBlur 핸들러 추가 - 포커스를 잃을 때 확실히 업데이트
+  const handleInputBlur = (field) => (event) => {
+    const { value } = event.target;
+    // 현재 formData와 다른 경우에만 업데이트 (불필요한 리렌더링 방지)
+    if (formData[field] !== value) {
       onChange({ [field]: value });
     }
   };
@@ -159,6 +179,7 @@ export default function PromptForm({
             placeholder="어떤 내용의 원고를 작성하고 싶으신가요?"
             value={formData.topic || ''}
             onChange={handleInputChange('topic')}
+            onBlur={handleInputBlur('topic')}
             disabled={disabled}
             multiline
             rows={2}
@@ -209,12 +230,13 @@ export default function PromptForm({
                   fullWidth
                   size={formSize}
                   label={`참고자료 ${index + 1}`}
-                  placeholder={index === 0 
+                  placeholder={index === 0
                     ? "실제 뉴스, 정책 내용, 통계 데이터 등 원고 작성에 참고할 배경정보를 입력하세요."
                     : "추가 참고자료나 배경정보를 입력하세요."
                   }
                   value={instruction}
                   onChange={handleInstructionChange(index)}
+                  onBlur={handleInstructionBlur(index)}
                   disabled={disabled}
                   multiline
                   rows={index === 0 ? 4 : 3}
@@ -275,6 +297,7 @@ export default function PromptForm({
               placeholder="쉼표(,)로 구분하여 입력하세요"
               value={formData.keywords || ''}
               onChange={handleInputChange('keywords')}
+              onBlur={handleInputBlur('keywords')}
               disabled={disabled}
               helperText="예: 성수역 3번 출구, 울산대 대학로, 계양IC 정체 등"
               FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
