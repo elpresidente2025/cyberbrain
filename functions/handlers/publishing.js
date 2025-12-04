@@ -299,6 +299,10 @@ const resetUserUsage = wrap(async (request) => {
       throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
     }
 
+    // System Config에서 testMode 확인
+    const systemConfigDoc = await db.collection('system').doc('config').get();
+    const testMode = systemConfigDoc.exists ? (systemConfigDoc.data().testMode || false) : false;
+
     // 대상 사용자 정보 조회
     const userDoc = await db.collection('users').doc(targetUserId).get();
     if (!userDoc.exists) {
@@ -322,7 +326,12 @@ const resetUserUsage = wrap(async (request) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
-    if (subscriptionStatus === 'trial') {
+    if (testMode) {
+      // === 데모 모드: monthlyUsage 초기화 (구독 상태 무관) ===
+      updateData[`monthlyUsage.${currentMonthKey}`] = 0;
+
+      console.log(`🧪 데모 모드 사용자 초기화: ${currentMonthUsage} -> 0`);
+    } else if (subscriptionStatus === 'trial') {
       // 무료 체험: trialPostsRemaining 복구
       const monthlyLimit = userData.monthlyLimit || 8;
       updateData.trialPostsRemaining = monthlyLimit;
@@ -338,14 +347,28 @@ const resetUserUsage = wrap(async (request) => {
     // 사용자 문서 업데이트
     await db.collection('users').doc(targetUserId).update(updateData);
 
+    // 응답 메시지 생성
+    let message, before, after;
+    if (testMode) {
+      message = `데모 모드 사용량이 초기화되었습니다. (${currentMonthUsage} -> 0)`;
+      before = currentMonthUsage;
+      after = 0;
+    } else if (subscriptionStatus === 'trial') {
+      message = `무료 체험 횟수가 초기화되었습니다. (${trialRemaining} -> ${updateData.trialPostsRemaining})`;
+      before = trialRemaining;
+      after = updateData.trialPostsRemaining;
+    } else {
+      message = `이번 달 사용량이 초기화되었습니다. (${currentMonthUsage} -> 0)`;
+      before = currentMonthUsage;
+      after = 0;
+    }
+
     return {
       success: true,
-      message: subscriptionStatus === 'trial'
-        ? `무료 체험 횟수가 초기화되었습니다. (${trialRemaining} -> ${updateData.trialPostsRemaining})`
-        : `이번 달 사용량이 초기화되었습니다. (${currentMonthUsage} -> 0)`,
-      subscriptionStatus,
-      before: subscriptionStatus === 'trial' ? trialRemaining : currentMonthUsage,
-      after: subscriptionStatus === 'trial' ? updateData.trialPostsRemaining : 0,
+      message,
+      mode: testMode ? 'demo' : subscriptionStatus,
+      before,
+      after,
       monthKey: currentMonthKey
     };
 
