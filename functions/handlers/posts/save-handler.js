@@ -4,6 +4,7 @@ const { HttpsError } = require('firebase-functions/v2/https');
 const { httpWrap } = require('../../common/http-wrap');
 const { admin, db } = require('../../utils/firebaseAdmin');
 const { ok } = require('../../utils/posts/helpers');
+const { completeSession } = require('../../services/generation-session');
 
 /**
  * 선택된 원고 저장
@@ -42,8 +43,9 @@ exports.saveSelectedPost = httpWrap(async (req) => {
   }
 
   const data = requestData;
+  const sessionId = data.sessionId || null; // 생성 세션 ID
 
-  console.log('POST saveSelectedPost 시작:', { userId: uid, data });
+  console.log('POST saveSelectedPost 시작:', { userId: uid, sessionId, data });
 
   if (!data.title || !data.content) {
     throw new HttpsError('invalid-argument', '제목과 내용이 필요합니다');
@@ -65,7 +67,14 @@ exports.saveSelectedPost = httpWrap(async (req) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
+    // 원고 저장
     const docRef = await db.collection('posts').add(postData);
+
+    // 세션 완료 처리 (있는 경우)
+    if (sessionId) {
+      await completeSession(sessionId);
+      console.log('✅ 생성 세션 완료:', sessionId);
+    }
 
     console.log('POST saveSelectedPost 완료:', { postId: docRef.id, wordCount });
 

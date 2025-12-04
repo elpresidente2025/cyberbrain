@@ -67,6 +67,11 @@ const GeneratePage = () => {
     generate,     // 원고 생성 API 호출 함수
     reset,        // API 상태 초기화 함수
     save,         // 원고 저장 API 호출 함수
+    // 🆕 세션 정보
+    sessionId,
+    sessionAttempts,
+    maxSessionAttempts,
+    canRegenerate,
   } = useGenerateAPI();
 
   // --- 🎁 보너스 기능 관련 (자동 fetch 비활성화) ---
@@ -306,6 +311,9 @@ const GeneratePage = () => {
             drafts={drafts}
             progress={progress}
             isMobile={isMobile}
+            sessionAttempts={sessionAttempts}
+            maxSessionAttempts={maxSessionAttempts}
+            canRegenerate={canRegenerate}
           />
         </motion.div>
 

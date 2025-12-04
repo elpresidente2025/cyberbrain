@@ -102,6 +102,12 @@ exports.checkAdminStatus = wrap(async (req) => {
 
   const userData = userDoc.data();
 
+  // 현재 월 키 계산
+  const now = new Date();
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const monthlyUsage = userData.monthlyUsage || {};
+  const currentMonthPosts = monthlyUsage[currentMonthKey] || 0;
+
   return ok({
     uid: uid,
     name: userData.name,
@@ -110,7 +116,9 @@ exports.checkAdminStatus = wrap(async (req) => {
     subscriptionStatus: userData.subscriptionStatus,
     trialPostsRemaining: userData.trialPostsRemaining,
     monthlyLimit: userData.monthlyLimit,
-    postsThisMonth: userData.postsThisMonth
+    monthlyUsage: userData.monthlyUsage || {},
+    currentMonthPosts: currentMonthPosts,
+    currentMonthKey: currentMonthKey
   });
 });
 

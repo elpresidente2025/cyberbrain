@@ -17,6 +17,12 @@ export function useGenerateAPI() {
   const [attempts, setAttempts] = useState(0);
   const [progress, setProgress] = useState(null); // { step, progress, message }
 
+  // 🆕 생성 세션 관리
+  const [sessionId, setSessionId] = useState(null);
+  const [sessionAttempts, setSessionAttempts] = useState(0);
+  const [maxAttempts, setMaxAttempts] = useState(3);
+  const [canRegenerate, setCanRegenerate] = useState(false);
+
   // 📌 메모리 누수 방지: 최대 개수 제한
   const addDraft = useCallback((newDraft) => {
     setDrafts(prev => [
@@ -71,7 +77,8 @@ export function useGenerateAPI() {
         generateSingle: true,
         useBonus: useBonus,
         modelName: modelName,
-        applyEditorialRules: true
+        applyEditorialRules: true,
+        sessionId: sessionId // 🆕 재생성 시 세션 ID 전달
       };
 
       delete requestData.topic;
@@ -157,18 +164,32 @@ export function useGenerateAPI() {
       // 📌 메모리 누수 방지: 제한된 개수로 추가
       addDraft(newDraft);
       setAttempts(prev => prev + 1);
-      
+
+      // 🆕 세션 정보 업데이트
+      if (responseData.sessionId) {
+        setSessionId(responseData.sessionId);
+        setSessionAttempts(responseData.attempts || 1);
+        setMaxAttempts(responseData.maxAttempts || 3);
+        setCanRegenerate(responseData.canRegenerate || false);
+        console.log('✅ 세션 정보 업데이트:', {
+          sessionId: responseData.sessionId,
+          attempts: responseData.attempts,
+          maxAttempts: responseData.maxAttempts,
+          canRegenerate: responseData.canRegenerate
+        });
+      }
+
       // 🆕 메타데이터 수집 (비동기, 에러 무시)
       collectMetadata(newDraft).catch(console.warn);
-      
-      console.log('✅ 원고 생성 완료:', { 
-        title: newDraft.title, 
+
+      console.log('✅ 원고 생성 완료:', {
+        title: newDraft.title,
         wordCount: newDraft.wordCount,
-        seoOptimized: newDraft.seoOptimized 
+        seoOptimized: newDraft.seoOptimized
       });
-      
-      const message = useBonus 
-        ? `보너스 원고가 성공적으로 생성되었습니다! (${newDraft.wordCount}자)` 
+
+      const message = useBonus
+        ? `보너스 원고가 성공적으로 생성되었습니다! (${newDraft.wordCount}자)`
         : `AI 원고가 성공적으로 생성되었습니다! (${newDraft.wordCount}자)`;
 
       return {
@@ -215,7 +236,8 @@ export function useGenerateAPI() {
         wordCount: draft.wordCount,
         style: draft.style,
         type: draft.type,
-        meta: draft.meta
+        meta: draft.meta,
+        sessionId: sessionId // 🆕 세션 ID 전달 (세션 완료 처리용)
       });
 
       console.log('✅ savePost 응답 수신:', result);
@@ -245,7 +267,7 @@ export function useGenerateAPI() {
 
       return { success: false, error: errorMessage };
     }
-  }, [collectMetadata]);
+  }, [collectMetadata, sessionId]);
 
   // 상태 초기화 함수
   const reset = useCallback(() => {
@@ -253,6 +275,10 @@ export function useGenerateAPI() {
     setAttempts(0);
     setError(null);
     setProgress(null);
+    // 🆕 세션 초기화
+    setSessionId(null);
+    setSessionAttempts(0);
+    setCanRegenerate(false);
   }, []);
 
   return {
@@ -266,6 +292,11 @@ export function useGenerateAPI() {
     generate,
     save,
     reset,
+    // 🆕 세션 정보
+    sessionId,
+    sessionAttempts,
+    maxSessionAttempts: maxAttempts,
+    canRegenerate,
     // 📌 개선: 유틸리티 함수들은 직접 import해서 사용
     // stripHtmlTags, sanitizeHtml 제거됨 - utils/contentSanitizer에서 직접 import
   };

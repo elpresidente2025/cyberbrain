@@ -141,6 +141,14 @@ function checkDailyLimit(userProfile) {
 }
 
 /**
+ * 현재 월 키 생성 (YYYY-MM 형식)
+ */
+function getCurrentMonthKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
  * 사용량 제한 체크
  */
 async function checkUsageLimit(userProfile, useBonus) {
@@ -165,27 +173,29 @@ async function checkUsageLimit(userProfile, useBonus) {
         '당원 인증이 필요합니다. 결제 페이지에서 당원 인증을 완료해주세요.');
     }
 
-    // 2. 월간 생성 횟수 체크
+    // 2. 월간 생성 횟수 체크 (월별 키 사용)
     const testModeLimit = systemConfigDoc.data()?.testModeSettings?.freeMonthlyLimit || 8;
-    const postsThisMonth = userProfile.postsThisMonth || 0;
+    const currentMonthKey = getCurrentMonthKey();
+    const monthlyUsage = userProfile.monthlyUsage || {};
+    const currentMonthPosts = monthlyUsage[currentMonthKey] || 0;
 
-    if (postsThisMonth >= testModeLimit) {
+    if (currentMonthPosts >= testModeLimit) {
       throw new HttpsError('resource-exhausted',
         `데모 기간 중 이번 달 생성 가능 횟수(${testModeLimit}회)를 초과했습니다.`);
     }
 
     console.log('🧪 데모 모드 - 원고 생성 가능', {
       verificationStatus: userProfile.verificationStatus,
-      current: postsThisMonth,
+      monthKey: currentMonthKey,
+      current: currentMonthPosts,
       limit: testModeLimit,
-      remaining: testModeLimit - postsThisMonth
+      remaining: testModeLimit - currentMonthPosts
     });
   } else {
     // === 프로덕션 모드: 기존 로직 ===
     const subscriptionStatus = userProfile.subscriptionStatus || 'trial';
     const monthlyLimit = userProfile.monthlyLimit || 8;
     const trialPostsRemaining = userProfile.trialPostsRemaining || 0;
-    const postsThisMonth = userProfile.postsThisMonth || 0;
 
     if (subscriptionStatus === 'trial') {
       // 무료 체험 상태
@@ -196,13 +206,19 @@ async function checkUsageLimit(userProfile, useBonus) {
         remaining: trialPostsRemaining
       });
     } else if (subscriptionStatus === 'active') {
-      // 유료 구독 상태
-      if (postsThisMonth >= monthlyLimit) {
+      // 유료 구독 상태 (월별 키 사용)
+      const currentMonthKey = getCurrentMonthKey();
+      const monthlyUsage = userProfile.monthlyUsage || {};
+      const currentMonthPosts = monthlyUsage[currentMonthKey] || 0;
+
+      if (currentMonthPosts >= monthlyLimit) {
         throw new HttpsError('resource-exhausted', '월간 생성 횟수를 초과했습니다.');
       }
       console.log('✅ 유료 구독 원고 생성 가능', {
-        current: postsThisMonth,
-        limit: monthlyLimit
+        monthKey: currentMonthKey,
+        current: currentMonthPosts,
+        limit: monthlyLimit,
+        remaining: monthlyLimit - currentMonthPosts
       });
     } else {
       // 만료 또는 기타 상태
@@ -219,6 +235,7 @@ async function updateUsageStats(uid, useBonus, isAdmin) {
 
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const currentMonthKey = getCurrentMonthKey();
 
   // System Config에서 testMode 확인
   const systemConfigDoc = await db.collection('system').doc('config').get();
@@ -241,9 +258,9 @@ async function updateUsageStats(uid, useBonus, isAdmin) {
         };
 
         if (testMode) {
-          // === 데모 모드: postsThisMonth만 증가 ===
-          updateData.postsThisMonth = admin.firestore.FieldValue.increment(1);
-          console.log('🧪 데모 모드 - 이번 달 사용량 증가');
+          // === 데모 모드: monthlyUsage 증가 (월별 키 사용) ===
+          updateData[`monthlyUsage.${currentMonthKey}`] = admin.firestore.FieldValue.increment(1);
+          console.log('🧪 데모 모드 - 이번 달 사용량 증가', { monthKey: currentMonthKey });
         } else {
           // === 프로덕션 모드: 구독 상태에 따라 처리 ===
           const userDoc = await db.collection('users').doc(uid).get();
@@ -251,13 +268,22 @@ async function updateUsageStats(uid, useBonus, isAdmin) {
           const subscriptionStatus = userData.subscriptionStatus || 'trial';
 
           if (subscriptionStatus === 'trial') {
-            // 무료 체험: trialPostsRemaining 감소
-            updateData.trialPostsRemaining = admin.firestore.FieldValue.increment(-1);
-            console.log('✅ 무료 체험 횟수 차감');
+            // 무료 체험: trialPostsRemaining 감소 (음수 방지를 위해 현재 값 확인)
+            const currentRemaining = userData.trialPostsRemaining || 0;
+
+            if (currentRemaining > 0) {
+              updateData.trialPostsRemaining = admin.firestore.FieldValue.increment(-1);
+              console.log('✅ 무료 체험 횟수 차감', {
+                before: currentRemaining,
+                after: currentRemaining - 1
+              });
+            } else {
+              console.warn('⚠️ trialPostsRemaining이 이미 0 이하입니다. 차감하지 않습니다.');
+            }
           } else if (subscriptionStatus === 'active') {
-            // 유료 구독: postsThisMonth 증가
-            updateData.postsThisMonth = admin.firestore.FieldValue.increment(1);
-            console.log('✅ 이번 달 사용량 증가');
+            // 유료 구독: monthlyUsage 증가 (월별 키 사용)
+            updateData[`monthlyUsage.${currentMonthKey}`] = admin.firestore.FieldValue.increment(1);
+            console.log('✅ 이번 달 사용량 증가', { monthKey: currentMonthKey });
           }
         }
 

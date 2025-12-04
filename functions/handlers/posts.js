@@ -38,6 +38,7 @@ const { generateTitleFromContent } = require('../services/posts/title-generator'
 const { buildSmartPrompt } = require('../prompts/prompts');
 const { fetchNaverNews, compressNewsWithAI, formatNewsForPrompt, shouldFetchNews } = require('../services/news-fetcher');
 const { ProgressTracker } = require('../utils/progress-tracker');
+const { createGenerationSession, incrementSessionAttempt } = require('../services/generation-session');
 
 // CRUD 엔드포인트 export
 exports.getUserPosts = getUserPosts;
@@ -88,6 +89,7 @@ exports.generatePosts = httpWrap(async (req) => {
   console.log('✅ 사용자 인증 완료:', uid);
 
   const useBonus = requestData?.useBonus || false;
+  const sessionId = requestData?.sessionId || null; // 세션 ID (재생성 시)
   const data = requestData;
 
   // 데이터 검증
@@ -105,8 +107,8 @@ exports.generatePosts = httpWrap(async (req) => {
   }
 
   // 🔔 진행 상황 추적 시작
-  const sessionId = `${uid}_${Date.now()}`;
-  const progress = new ProgressTracker(sessionId);
+  const progressSessionId = `${uid}_${Date.now()}`;
+  const progress = new ProgressTracker(progressSessionId);
 
   try {
     // 1단계: 준비 중
@@ -119,6 +121,25 @@ exports.generatePosts = httpWrap(async (req) => {
       dailyLimitWarning,
       isAdmin
     } = await loadUserProfile(uid, category, topic, useBonus);
+
+    // 🔥 세션 관리 및 차감 로직
+    let session;
+    if (!sessionId) {
+      // 새 세션 시작 = 1회 생성 시작 = 즉시 차감
+      console.log('🆕 새 생성 세션 시작 - 사용량 차감');
+
+      // 사용량 차감 (먼저!)
+      await updateUsageStats(uid, useBonus, isAdmin);
+
+      // 세션 생성
+      session = await createGenerationSession(uid);
+      console.log('✅ 세션 생성 완료:', session);
+    } else {
+      // 재생성 (기존 세션) = 차감 안 함, 시도 횟수만 증가
+      console.log('🔄 재생성 요청 - 세션 시도 증가:', sessionId);
+      session = await incrementSessionAttempt(sessionId, uid);
+      console.log('✅ 세션 시도 증가 완료:', session);
+    }
 
     // 사용자 상태 설정
     const currentStatus = userProfile.status || '현역';
@@ -286,9 +307,6 @@ exports.generatePosts = httpWrap(async (req) => {
       generatedAt: new Date().toISOString()
     };
 
-    // 사용량 업데이트
-    await updateUsageStats(uid, useBonus, isAdmin);
-
     // 진행 상황 완료 표시
     await progress.complete();
 
@@ -298,12 +316,21 @@ exports.generatePosts = httpWrap(async (req) => {
       message += '\n\n⚠️ 하루 3회 이상 원고를 생성하셨습니다. 네이버 블로그 정책상 과도한 발행은 스팸으로 분류될 수 있으므로, 반드시 마지막 포스팅으로부터 3시간 경과 후 발행해 주세요';
     }
 
+    // 재생성 안내 메시지 추가
+    if (session.attempts < session.maxAttempts) {
+      message += `\n\n💡 마음에 들지 않으시면 재생성을 ${session.maxAttempts - session.attempts}회 더 하실 수 있습니다.`;
+    }
+
     return ok({
       success: true,
       message: message,
       dailyLimitWarning: dailyLimitWarning,
       drafts: draftData,
-      sessionId: sessionId, // 프론트엔드에 세션 ID 전달
+      // 세션 정보 (프론트엔드에서 재생성 시 사용)
+      sessionId: session.sessionId,
+      attempts: session.attempts,
+      maxAttempts: session.maxAttempts,
+      canRegenerate: session.attempts < session.maxAttempts,
       metadata: {
         generatedAt: new Date().toISOString(),
         userId: uid,

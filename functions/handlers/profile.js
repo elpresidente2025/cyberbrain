@@ -264,6 +264,8 @@ exports.updateUserPlan = wrap(async (req) => {
       plan: plan, // 표준 필드
       subscription: plan, // 레거시 호환성 (향후 제거 예정)
       monthlyLimit: 90, // 스탠다드 플랜: 월 90회
+      subscriptionStatus: 'active', // 유료 플랜 활성화
+      monthlyUsage: {}, // 월별 사용량 초기화
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
 
@@ -353,7 +355,7 @@ exports.registerWithDistrictCheck = wrap(async (req) => {
       subscriptionStatus: 'trial',  // 무료 체험 상태
       trialPostsRemaining: 8,  // 무료 체험 8회
       monthlyLimit: 8,  // 체험 기간 제한
-      postsThisMonth: 0,  // 이번 달 생성 회수
+      monthlyUsage: {},  // 월별 사용량 (자동 초기화되는 구조)
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     },

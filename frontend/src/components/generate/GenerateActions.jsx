@@ -20,7 +20,11 @@ export default function GenerateActions({
   maxAttempts = 3,
   drafts = [],
   progress = null,
-  isMobile = false
+  isMobile = false,
+  // 🆕 세션 정보
+  sessionAttempts = 0,
+  maxSessionAttempts = 3,
+  canRegenerate = false
 }) {
   const attemptsRemaining = maxAttempts - attempts;
 
@@ -77,18 +81,20 @@ export default function GenerateActions({
             }}
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <span>{attempts === 0 ? '새 원고 생성' : '다른 버전 생성'}</span>
-              <Chip
-                label={`${attemptsRemaining}/${maxAttempts}`}
-                size="small"
-                sx={{
-                  bgcolor: canGenerate ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.2)',
-                  color: 'white',
-                  fontSize: '0.75rem',
-                  height: '20px',
-                  fontWeight: 600
-                }}
-              />
+              <span>{sessionAttempts === 0 ? '새 원고 생성' : '재생성'}</span>
+              {sessionAttempts > 0 && (
+                <Chip
+                  label={`${sessionAttempts}/${maxSessionAttempts}`}
+                  size="small"
+                  sx={{
+                    bgcolor: canRegenerate ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 0, 0, 0.3)',
+                    color: 'white',
+                    fontSize: '0.75rem',
+                    height: '20px',
+                    fontWeight: 600
+                  }}
+                />
+              )}
             </Box>
           </LoadingButton>
 
