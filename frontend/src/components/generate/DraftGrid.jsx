@@ -29,8 +29,8 @@ export default function DraftGrid({
           AI 원고 생성을 시작해보세요
         </Typography>
         <Typography variant="body2" sx={{ color: 'black' }}>
-          상단 폼을 작성하고 "새 원고 생성" 버튼을 클릭하세요.<br />
-          최대 {maxAttempts}개까지 다른 버전의 초안을 생성할 수 있습니다.
+          상단 폼을 작성하고 "원고 생성 시도" 버튼을 클릭하세요.<br />
+          한 번의 시도당 최대 {maxAttempts}회까지 재생성할 수 있습니다.
         </Typography>
       </Paper>
     );

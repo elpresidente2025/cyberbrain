@@ -81,7 +81,7 @@ export default function GenerateActions({
             }}
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <span>{sessionAttempts === 0 ? '새 원고 생성' : '재생성'}</span>
+              <span>{sessionAttempts === 0 ? '원고 생성 시도' : '재생성'}</span>
               {sessionAttempts > 0 && (
                 <Chip
                   label={`${sessionAttempts}/${maxSessionAttempts}`}
