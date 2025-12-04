@@ -279,7 +279,7 @@ const getMonthlyTarget = (role) => {
   }
 };
 
-// 관리자: 사용자 사용량 초기화 (현재 달 포스트 카운트 제외)
+// 관리자: 사용자 사용량 초기화 (월별 사용량 리셋)
 const resetUserUsage = wrap(async (request) => {
   const { uid: adminUid } = await auth(request);
   const { targetUserId } = request.data;
@@ -299,33 +299,54 @@ const resetUserUsage = wrap(async (request) => {
       throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
     }
 
-    // 현재 달의 시작과 끝
+    // 대상 사용자 정보 조회
+    const userDoc = await db.collection('users').doc(targetUserId).get();
+    if (!userDoc.exists) {
+      throw new HttpsError('not-found', '사용자를 찾을 수 없습니다.');
+    }
+
+    const userData = userDoc.data();
+    const subscriptionStatus = userData.subscriptionStatus || 'trial';
+
+    // 현재 월 키 생성
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    // 현재 달에 생성된 포스트 조회
-    const postsSnapshot = await db.collection('posts')
-      .where('userId', '==', targetUserId)
-      .where('createdAt', '>=', startOfMonth)
-      .where('createdAt', '<=', endOfMonth)
-      .get();
+    // 현재 사용량 확인
+    const monthlyUsage = userData.monthlyUsage || {};
+    const currentMonthUsage = monthlyUsage[currentMonthKey] || 0;
+    const trialRemaining = userData.trialPostsRemaining || 0;
 
-    // 배치 업데이트로 excludeFromCount 플래그 추가
-    const batch = db.batch();
-    let count = 0;
+    // 업데이트할 데이터
+    const updateData = {
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
 
-    postsSnapshot.forEach((doc) => {
-      batch.update(doc.ref, { excludeFromCount: true });
-      count++;
-    });
+    if (subscriptionStatus === 'trial') {
+      // 무료 체험: trialPostsRemaining 복구
+      const monthlyLimit = userData.monthlyLimit || 8;
+      updateData.trialPostsRemaining = monthlyLimit;
 
-    await batch.commit();
+      console.log(`✅ 무료 체험 사용자 초기화: ${trialRemaining} -> ${monthlyLimit}`);
+    } else if (subscriptionStatus === 'active') {
+      // 유료 구독: monthlyUsage 초기화
+      updateData[`monthlyUsage.${currentMonthKey}`] = 0;
+
+      console.log(`✅ 유료 구독 사용자 초기화: ${currentMonthUsage} -> 0`);
+    }
+
+    // 사용자 문서 업데이트
+    await db.collection('users').doc(targetUserId).update(updateData);
 
     return {
       success: true,
-      message: `${count}개의 포스트가 카운트에서 제외되었습니다.`,
-      excludedCount: count
+      message: subscriptionStatus === 'trial'
+        ? `무료 체험 횟수가 초기화되었습니다. (${trialRemaining} -> ${updateData.trialPostsRemaining})`
+        : `이번 달 사용량이 초기화되었습니다. (${currentMonthUsage} -> 0)`,
+      subscriptionStatus,
+      before: subscriptionStatus === 'trial' ? trialRemaining : currentMonthUsage,
+      after: subscriptionStatus === 'trial' ? updateData.trialPostsRemaining : 0,
+      monthKey: currentMonthKey
     };
 
   } catch (error) {
