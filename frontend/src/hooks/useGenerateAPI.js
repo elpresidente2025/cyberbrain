@@ -47,8 +47,9 @@ export function useGenerateAPI() {
 
   // 원고 생성 함수
   const generate = useCallback(async (formData, useBonus = false) => {
-    if (attempts >= CONFIG.MAX_GENERATION_ATTEMPTS) {
-      return { success: false, error: '재생성 한도에 도달했습니다.' };
+    // 세션 기반 제한 체크: 재생성 시 세션 한도 확인
+    if (sessionId && !canRegenerate) {
+      return { success: false, error: '재생성 한도에 도달했습니다. 새로운 원고를 생성해주세요.' };
     }
 
     setLoading(true);
@@ -218,7 +219,7 @@ export function useGenerateAPI() {
         }, 2000); // 2초 후 해제 (완료 메시지 표시 시간 확보)
       }
     }
-  }, [attempts, addDraft, collectMetadata, user]);
+  }, [sessionId, canRegenerate, addDraft, collectMetadata, user]);
 
   // 초안 저장 함수
   const save = useCallback(async (draft) => {

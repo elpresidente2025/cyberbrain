@@ -240,7 +240,8 @@ const GeneratePage = () => {
 
 
   // '생성하기' 버튼을 활성화할지 최종적으로 결정하는 변수
-  const finalCanGenerate = canGenerate && attempts < maxAttempts && !loading;
+  // 세션 기반 로직: 첫 생성이거나 재생성 가능한 경우만 활성화
+  const finalCanGenerate = canGenerate && (sessionAttempts === 0 || canRegenerate) && !loading;
 
   // --- 🖥️ 화면 렌더링 ---
   return (
