@@ -78,9 +78,9 @@ async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.0-
   const isGemini2 = modelName.includes('gemini-2.0');
 
   const generationConfig = {
-    temperature: 0.3, // 정치인 원고: 창의성보다 지시 준수율 우선
-    topK: 25,
-    topP: 0.85,
+    temperature: 0.25, // 정치인 원고: 지시 준수율 최우선 (중언부언 방지)
+    topK: 20,          // 선택지 축소로 더 보수적인 생성
+    topP: 0.80,        // 확률 분포 축소로 규칙 준수 강화
     maxOutputTokens: isGemini2 ? 20000 : 20000, // 한국어 장문 콘텐츠 생성을 위한 토큰 증가
     stopSequences: [], // stopSequences는 출력을 제한하지만, 프롬프트 템플릿의 구분자(---)도 차단하므로 제거
   };
