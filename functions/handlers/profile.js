@@ -114,7 +114,7 @@ exports.updateProfile = wrap(async (req) => {
 
   const allowed = [
     'name', 'position', 'regionMetro', 'regionLocal',
-    'electoralDistrict', 'status', 'bio', // bio는 별도 처리
+    'electoralDistrict', 'status', 'bio', 'customTitle', // bio는 별도 처리, customTitle 추가
     // 개인화 정보 필드들
     'ageDecade', 'ageDetail', 'familyStatus', 'backgroundCareer',
     'localConnection', 'politicalExperience', 'committees', 'customCommittees',
@@ -347,6 +347,10 @@ exports.registerWithDistrictCheck = wrap(async (req) => {
   delete sanitizedProfileData.role;
   delete sanitizedProfileData.bio; // bio는 bios 컬렉션에 저장했으므로 제거
 
+  // 무료 체험 만료일 계산 (가입일이 속한 달의 말일 23:59:59)
+  const now = new Date();
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
   await db.collection('users').doc(uid).set(
     {
       ...sanitizedProfileData,
@@ -354,6 +358,7 @@ exports.registerWithDistrictCheck = wrap(async (req) => {
       districtKey: newKey,
       subscriptionStatus: 'trial',  // 무료 체험 상태
       trialPostsRemaining: 8,  // 무료 체험 8회
+      trialExpiresAt: admin.firestore.Timestamp.fromDate(endOfMonth),  // 말일까지 체험 가능
       monthlyLimit: 8,  // 체험 기간 제한
       monthlyUsage: {},  // 월별 사용량 (자동 초기화되는 구조)
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
