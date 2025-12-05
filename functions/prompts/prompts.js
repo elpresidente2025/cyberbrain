@@ -10,6 +10,7 @@
 // 가이드라인 및 규칙 import
 const { SEO_RULES, FORMAT_RULES } = require('./guidelines/editorial');
 const { OVERRIDE_KEYWORDS, HIGH_RISK_KEYWORDS, POLITICAL_FRAMES } = require('./guidelines/framingRules');
+const { generateNonLawmakerWarning, generateFamilyStatusWarning } = require('./utils/non-lawmaker-warning');
 
 // [신규] 작법별 프롬프트 빌더 모듈 import
 const { buildDailyCommunicationPrompt } = require('./templates/daily-communication');
@@ -34,6 +35,56 @@ function analyzeAndSelectFrame(topic) {
 function applyFramingToPrompt(basePrompt, frame) {
   if (!frame) return basePrompt;
   return `${frame.promptInjection}\n\n---\n\n${basePrompt}`;
+}
+
+// ============================================================================
+// 공통 품질 규칙 주입기
+// ============================================================================
+
+/**
+ * 모든 템플릿에 공통으로 적용되는 품질 규칙
+ * @param {string} basePrompt - 기본 프롬프트
+ * @returns {string} 품질 규칙이 추가된 프롬프트
+ */
+function injectUniversalQualityRules(basePrompt) {
+  const qualityRules = `
+
+╔═══════════════════════════════════════════════════════════════╗
+║  ⛔ 필수 품질 규칙 - 모든 원고에 공통 적용  ⛔                  ║
+╚═══════════════════════════════════════════════════════════════╝
+
+** 이 규칙을 위반하면 원고가 자동으로 폐기되고 재생성됩니다 **
+
+1. **반복 절대 금지**
+   - 동일하거나 유사한 문장을 반복하지 말 것
+   - 동일하거나 유사한 문단을 반복하지 말 것
+   - 이미 작성한 내용을 다시 작성하지 마세요
+   - 각 문장과 문단은 새로운 정보나 관점을 제공해야 함
+
+   예시:
+   ❌ "A 정책이 필요합니다. ...중략... A 정책이 필요합니다." (같은 문장 반복)
+   ❌ "<p>첫 번째 문단</p> ...중략... <p>첫 번째 문단</p>" (같은 문단 반복)
+   ✅ 각 문단이 서로 다른 내용을 담고 있어야 함
+
+2. **구조 일관성**
+   - JSON 형식으로 출력할 때, content 필드는 단 하나만 존재해야 함
+   - 마무리 표현 후 본문이 다시 시작되지 않도록 할 것
+   - 글의 끝은 명확하게 한 번만 맺을 것
+
+3. **문장 완결성**
+   - 모든 문장이 완전한 구조를 갖출 것 (주어-서술어 완비)
+   - 조사나 어미가 누락되지 않도록 할 것
+   - 문장 중간에 끊기지 않도록 할 것
+
+   예시:
+   ❌ "이러한 사실을 알리는 것이 지역 의원으" (문장 미완성)
+   ✅ "이러한 사실을 알리는 것이 지역 의원으로서의 책임입니다" (완성)
+
+---
+
+`;
+
+  return qualityRules + basePrompt;
 }
 
 // ============================================================================
@@ -68,11 +119,34 @@ async function buildSmartPrompt(options) {
         break;
     }
 
-    // 2. [프레이밍] 지능적 프레이밍 적용
-    const selectedFrame = analyzeAndSelectFrame(topic);
-    const framedPrompt = applyFramingToPrompt(generatedPrompt, selectedFrame);
+    // 2. [원외 인사 경고] 공통 적용
+    const nonLawmakerWarning = generateNonLawmakerWarning({
+      isCurrentLawmaker: options.isCurrentLawmaker,
+      politicalExperience: options.politicalExperience,
+      authorBio: options.authorBio
+    });
 
-    // 3. [Editorial] SEO 규칙 적용 (필요시)
+    if (nonLawmakerWarning) {
+      generatedPrompt = nonLawmakerWarning + '\n\n' + generatedPrompt;
+    }
+
+    // 2.5. [가족 상황 경고] 공통 적용 (자녀 환각 방지)
+    const familyWarning = generateFamilyStatusWarning({
+      familyStatus: options.familyStatus
+    });
+
+    if (familyWarning) {
+      generatedPrompt = familyWarning + '\n\n' + generatedPrompt;
+    }
+
+    // 3. [공통 품질 규칙] 모든 템플릿에 적용
+    const qualityEnhancedPrompt = injectUniversalQualityRules(generatedPrompt);
+
+    // 4. [프레이밍] 지능적 프레이밍 적용
+    const selectedFrame = analyzeAndSelectFrame(topic);
+    const framedPrompt = applyFramingToPrompt(qualityEnhancedPrompt, selectedFrame);
+
+    // 5. [Editorial] SEO 규칙 적용 (필요시)
     const finalPrompt = options.applyEditorialRules
       ? injectEditorialRules(framedPrompt, options)
       : framedPrompt;
