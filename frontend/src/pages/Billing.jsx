@@ -74,7 +74,7 @@ const Billing = () => {
     ? adminOverrideSubscription
     : user?.subscriptionStatus === 'active';
   const planInfo = {
-    name: '스탠다드 플랜',
+    name: '공식 파트너십',
     price: 55000,
     monthlyLimit: 90,
     color: colors.brand.primary,

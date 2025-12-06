@@ -198,7 +198,7 @@ const PublishingProgress = () => {
     }
 
     if (plan) {
-      return 90; // 스탠다드 플랜 통일
+      return 90; // 공식 파트너십: 월 90회
     }
 
     // 플랜 정보가 없으면 무료 티어 (월 8회)
@@ -427,7 +427,7 @@ const PublishingProgress = () => {
                 }}
                 onClick={() => window.location.href = '/billing'}
               >
-                프리미엄 시작하기
+                공식 파트너십 체결
               </Button>
             </Alert>
           </Box>

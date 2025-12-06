@@ -263,7 +263,7 @@ exports.updateUserPlan = wrap(async (req) => {
     await userRef.set({
       plan: plan, // 표준 필드
       subscription: plan, // 레거시 호환성 (향후 제거 예정)
-      monthlyLimit: 90, // 스탠다드 플랜: 월 90회
+      monthlyLimit: 90, // 공식 파트너십: 월 90회
       subscriptionStatus: 'active', // 유료 플랜 활성화
       monthlyUsage: {}, // 월별 사용량 초기화
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),

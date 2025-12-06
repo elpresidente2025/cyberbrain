@@ -210,8 +210,8 @@ async function updateUserSubscription(uid, orderId, paymentData) {
   try {
     // 주문번호에서 플랜 정보 추출
     const orderName = paymentData.body?.productName || '';
-    const planName = '스탠다드 플랜';
-    const monthlyLimit = 90; // 단일 플랜 90회
+    const planName = '공식 파트너십';
+    const monthlyLimit = 90; // 공식 파트너십: 월 90회
 
     // 사용자 정보 가져오기
     const userRef = db.collection('users').doc(uid);

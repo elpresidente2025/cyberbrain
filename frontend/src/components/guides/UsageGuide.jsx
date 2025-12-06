@@ -14,7 +14,7 @@ import { CheckCircleOutline, TrendingUp } from '@mui/icons-material';
 
 const UsageGuide = () => {
   const plans = [
-    { name: '스탠다드 플랜', limit: '월 90회 원고 생성 + SNS 원고 무료 생성' }
+    { name: '공식 파트너십', limit: '월 90회 원고 생성 + SNS 원고 무료 생성' }
   ];
 
   const bonus = [
