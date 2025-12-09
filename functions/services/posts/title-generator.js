@@ -9,12 +9,15 @@ const { callGenerativeModel } = require('../gemini');
  * @param {string} params.content - 생성된 본문 내용
  * @param {string|Array} params.backgroundInfo - 배경정보
  * @param {Array} params.keywords - 키워드 목록
+ * @param {Array} params.userKeywords - 사용자가 직접 입력한 노출 희망 검색어
  * @param {string} params.topic - 주제
  * @param {string} params.fullName - 작성자 이름
  * @param {string} params.modelName - 사용할 AI 모델명
+ * @param {string} params.category - 카테고리
+ * @param {string} params.subCategory - 하위 카테고리
  * @returns {Promise<string>} - 생성된 제목
  */
-async function generateTitleFromContent({ content, backgroundInfo, keywords, topic, fullName, modelName }) {
+async function generateTitleFromContent({ content, backgroundInfo, keywords, userKeywords, topic, fullName, modelName, category, subCategory }) {
   console.log('📝 2단계: 본문 기반 제목 생성 시작');
 
   // 본문에서 HTML 태그 제거하고 미리보기 추출
@@ -31,7 +34,10 @@ async function generateTitleFromContent({ content, backgroundInfo, keywords, top
     backgroundText,
     topic,
     fullName,
-    keywords
+    keywords,
+    userKeywords,
+    category,
+    subCategory
   });
 
   try {

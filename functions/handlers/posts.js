@@ -30,7 +30,7 @@ const { httpWrap } = require('../common/http-wrap');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { ok, generateNaturalRegionTitle } = require('../utils/posts/helpers');
 const { STATUS_CONFIG, CATEGORY_TO_WRITING_METHOD } = require('../utils/posts/constants');
-const { loadUserProfile, updateUsageStats } = require('../services/posts/profile-loader');
+const { loadUserProfile, startOrContinueSession } = require('../services/posts/profile-loader');
 const { extractKeywordsFromInstructions } = require('../services/posts/keyword-extractor');
 const { validateAndRetry } = require('../services/posts/validation');
 const { processGeneratedContent } = require('../services/posts/content-processor');
@@ -38,7 +38,8 @@ const { generateTitleFromContent } = require('../services/posts/title-generator'
 const { buildSmartPrompt } = require('../prompts/prompts');
 const { fetchNaverNews, compressNewsWithAI, formatNewsForPrompt, shouldFetchNews } = require('../services/news-fetcher');
 const { ProgressTracker } = require('../utils/progress-tracker');
-const { createGenerationSession, incrementSessionAttempt } = require('../services/generation-session');
+// 세션 관리는 이제 profile-loader에서 통합 관리 (users 문서의 activeGenerationSession 필드)
+// const { createGenerationSession, incrementSessionAttempt } = require('../services/generation-session');
 
 // CRUD 엔드포인트 export
 exports.getUserPosts = getUserPosts;
@@ -122,27 +123,15 @@ exports.generatePosts = httpWrap(async (req) => {
       isAdmin
     } = await loadUserProfile(uid, category, topic, useBonus);
 
-    // 🔥 세션 관리 및 차감 로직
-    let session;
-    if (!sessionId) {
-      // 새 세션 시작 = 1회 생성 시작 = 즉시 차감
-      console.log('🆕 새 생성 세션 시작 - 사용량 차감');
-
-      // 사용량 차감 (먼저!)
-      await updateUsageStats(uid, useBonus, isAdmin);
-
-      // 세션 생성
-      session = await createGenerationSession(uid);
-      console.log('✅ 세션 생성 완료:', session);
-    } else {
-      // 재생성 (기존 세션) = 차감 안 함, 시도 횟수만 증가
-      console.log('🔄 재생성 요청 - 세션 시도 증가:', sessionId);
-      session = await incrementSessionAttempt(sessionId, uid);
-      console.log('✅ 세션 시도 증가 완료:', session);
-    }
+    // 🔥 세션 시작 또는 계속 (생성 vs 시도 구분)
+    // - 새 세션: generationsRemaining 즉시 차감, attempts = 1
+    // - 기존 세션: attempts만 증가 (최대 3회)
+    console.log('🔄 세션 관리:', sessionId ? '기존 세션 계속' : '새 세션 시작');
+    const session = await startOrContinueSession(uid, useBonus, isAdmin, category, topic);
 
     // 사용자 상태 설정
     const currentStatus = userProfile.status || '현역';
+    const politicalExperience = userProfile.politicalExperience || '정치 신인';
     const config = STATUS_CONFIG[currentStatus] || STATUS_CONFIG['현역'];
 
     // 사용자 정보
@@ -150,10 +139,26 @@ exports.generatePosts = httpWrap(async (req) => {
     const fullRegion = generateNaturalRegionTitle(userProfile.regionLocal, userProfile.regionMetro);
     const customTitle = userProfile.customTitle || '';
 
-    // 호칭 결정: '준비' 상태이고 customTitle이 있으면 사용, 아니면 config.title 사용
-    let displayTitle = config.title || '';
-    if (currentStatus === '준비' && customTitle) {
+    // 🔥 현역 의원 여부 판단 (politicalExperience 활용)
+    const isCurrentLawmaker = ['초선', '재선', '3선이상'].includes(politicalExperience);
+
+    // 가족 상황 (자녀 없는 사용자의 환각 방지용)
+    const familyStatus = userProfile.familyStatus || '';
+
+    // 호칭 결정
+    let displayTitle = '';
+    if (isCurrentLawmaker && currentStatus !== '은퇴') {
+      // 의원 경험 있음 → "의원" 사용
+      displayTitle = '의원';
+    } else if (currentStatus === '준비') {
+      // 원외 인사 → customTitle 우선, 없으면 빈 문자열
       displayTitle = customTitle;
+
+      if (!displayTitle && politicalExperience === '정치 신인') {
+        console.warn('⚠️ 원외 출마 준비자의 직위 정보 없음 - AI 오판 위험 (customTitle 설정 권장)');
+      }
+    } else {
+      displayTitle = config.title || '';
     }
 
     // 2단계: 자료 수집 중
@@ -204,7 +209,13 @@ exports.generatePosts = httpWrap(async (req) => {
       keywords: backgroundKeywords,
       newsContext,
       personalizedHints,
-      applyEditorialRules: true
+      applyEditorialRules: true,
+      // 원외 인사 판단 정보 추가
+      isCurrentLawmaker,
+      politicalExperience,
+      currentStatus,
+      // 가족 상황 (자녀 환각 방지)
+      familyStatus
     });
 
     // 🔍 디버깅: 프롬프트 로깅 (처음 1000자만)
@@ -281,7 +292,8 @@ exports.generatePosts = httpWrap(async (req) => {
         userProfile,
         config,
         customTitle,
-        displayTitle
+        displayTitle,
+        isCurrentLawmaker  // 추가
       });
     }
 
@@ -290,9 +302,12 @@ exports.generatePosts = httpWrap(async (req) => {
       content: parsedResponse.content || '',
       backgroundInfo: data.instructions,
       keywords: backgroundKeywords,
+      userKeywords: userKeywords,  // 사용자가 직접 입력한 노출 희망 검색어
       topic,
       fullName,
-      modelName
+      modelName,
+      category: data.category,  // 추가
+      subCategory: data.subCategory  // 추가
     });
 
     // 응답 데이터 구성

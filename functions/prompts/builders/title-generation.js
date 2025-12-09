@@ -13,11 +13,51 @@
  * @param {string} params.topic - 주제
  * @param {string} params.fullName - 작성자 이름
  * @param {Array<string>} params.keywords - 필수 키워드 목록
+ * @param {string} params.category - 카테고리
+ * @param {string} params.subCategory - 하위 카테고리
  * @returns {string} 완성된 제목 생성 프롬프트
  */
-function buildTitlePrompt({ contentPreview, backgroundText, topic, fullName, keywords }) {
+function buildTitlePrompt({ contentPreview, backgroundText, topic, fullName, keywords, userKeywords, category, subCategory }) {
+  // 카테고리별 제목 가이드라인
+  const categoryGuides = {
+    'daily-communication': {
+      'gratitude_message': '감사 메시지: "~에 감사드립니다", "고마운 마음을 전합니다", "따뜻한 격려에 감사합니다" 스타일. 감사와 따뜻함이 느껴지는 제목',
+      'encouragement_support': '격려 및 응원: "함께 이겨냅시다", "응원합니다", "힘내세요" 스타일',
+      'celebration_congratulation': '축하 및 기념: "축하드립니다", "뜻깊은 순간", "기념하며" 스타일',
+      'daily_life_sharing': '일상 공유: "~한 하루", "~를 만나다", "~한 시간" 스타일'
+    },
+    'current-affairs': {
+      'current_affairs_commentary': '시사 논평: "~의 문제점", "~왜 불참했나?", "~에 대한 입장" 스타일',
+      'fake_news_rebuttal': '가짜뉴스 반박: "사실이 아닙니다", "진실은", "왜곡된 ~" 스타일'
+    },
+    'activity-report': {
+      'performance_report': '성과 보고: "~확보했습니다", "~달성했습니다", "예산 XX억 확보" 스타일',
+      'parliamentary_audit_report': '국정감사: "국정감사에서 ~", "지적했습니다", "시정 요구" 스타일',
+      'bill_ordinance_report': '법안/조례: "~법안 발의", "~조례 제정", "제도 개선" 스타일'
+    },
+    'local-issues': {
+      'local_issue_analysis': '지역 현안: "~문제, 이렇게 해결", "~의 실태", "현장에서" 스타일',
+      'event_complaint_report': '행사/민원: "~행사 개최", "민원 해결", "주민과 함께" 스타일',
+      'volunteering_review': '봉사 후기: "~에서의 하루", "봉사하며 느낀", "함께한 시간" 스타일'
+    },
+    'policy-proposal': {
+      'policy_pledge_announcement': '정책/공약: "~정책 제안", "~하겠습니다", "약속" 스타일',
+      'vision_philosophy_declaration': '비전/철학: "~을 꿈꾸며", "제가 그리는 미래", "신념" 스타일'
+    }
+  };
+
+  const categoryGuide = categoryGuides[category]?.[subCategory] || '본문의 핵심 내용을 반영하여 작성';
+
   return `[제목 생성 가이드]
 너는 본문 내용의 핵심을 담아, 아래 원칙과 예시를 깊이 학습하여 가장 효과적인 제목을 만들어야 한다.
+
+---
+
+[🎯 카테고리별 제목 스타일 가이드]
+**현재 카테고리: ${category} → ${subCategory}**
+**제목 스타일 가이드: ${categoryGuide}**
+
+⚠️ 중요: 이 카테고리 스타일을 반드시 준수하세요. 본문 내용이 다른 주제를 다루더라도, 제목은 이 카테고리에 맞는 스타일로 작성해야 합니다.
 
 ---
 
@@ -55,14 +95,22 @@ ${backgroundText.substring(0, 500)}
 
 주제: ${topic}
 작성자: ${fullName}
-필수 포함 키워드: ${keywords.slice(0, 5).join(', ')}
+
+⚠️ **필수 포함 키워드 (최우선 - 사용자 지정)**:
+${userKeywords && userKeywords.length > 0 ? userKeywords.join(', ') : '(지정 없음)'}
+→ 이 키워드들은 사용자가 직접 입력한 "노출 희망 검색어"입니다.
+   제목에 이 중 최소 1개는 **반드시 정확하게** 포함되어야 합니다.
+
+참고 키워드 (선택):
+${userKeywords && userKeywords.length > 0 ? keywords.filter(k => !userKeywords.includes(k)).slice(0, 5).join(', ') : keywords.slice(0, 5).join(', ')}
 
 ---
 
 [최종 요구사항]
 1. 제목 길이: 20-30자 (엄수)
 2. 본문의 핵심 내용과 감정 톤을 정확히 반영
-3. 필수 키워드 중 최소 1개 이상 자연스럽게 포함
+3. **필수 포함 키워드(사용자 지정)** 중 최소 1개는 **반드시** 제목에 포함 (최우선 조건)
+   - 참고 키워드는 선택적으로 활용 가능
 4. 위 5가지 핵심 원칙 중 본문에 가장 적합한 원칙들을 조합하여 활용
 5. 좋은 예시의 패턴을 학습하되, 나쁜 예시의 오류는 절대 반복하지 말 것
 
