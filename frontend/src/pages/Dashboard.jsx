@@ -481,7 +481,7 @@ const Dashboard = () => {
                     {user.name || '사용자'}
                   </Typography>
                   {user.position && (
-                    <Chip label={user.position} size="small" sx={{ bgcolor: 'rgba(21, 36, 132, 0.1)', color: colors.brand.primary, fontWeight: 500 }} />
+                    <Chip label={user.position} size="small" sx={{ bgcolor: colors.brand.primary, color: '#ffffff', fontWeight: 500 }} />
                   )}
                 </Box>
 

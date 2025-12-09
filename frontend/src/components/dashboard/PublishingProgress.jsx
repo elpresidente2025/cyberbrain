@@ -413,7 +413,7 @@ const PublishingProgress = () => {
           <Box sx={{ mt: 2 }}>
             <Alert severity="info" sx={{ mb: 0 }}>
               <Typography variant="body2" sx={{ mb: 1 }}>
-                <strong>프리미엄으로 업그레이드</strong>하면 월 90회까지 사용 가능합니다
+                <strong>더 많은 원고가 필요하신가요?</strong> 월 90회까지 사용 가능합니다
               </Typography>
               <Button
                 variant="contained"
