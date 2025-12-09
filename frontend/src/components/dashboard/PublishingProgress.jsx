@@ -92,6 +92,7 @@ const PublishingProgress = () => {
   const { currentColor } = useColor();
   const [publishingStats, setPublishingStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [testMode, setTestMode] = useState(false);
 
   // 호버 시 랜덤 글로우 색상 생성 함수
   const getRandomGlowColor = () => {
@@ -103,9 +104,25 @@ const PublishingProgress = () => {
 
   // ColorContext에서 색상을 자동으로 동기화하므로 별도 로직 불필요
 
+  // 시스템 설정 로드 (데모 모드 확인)
+  useEffect(() => {
+    const loadSystemConfig = async () => {
+      try {
+        const configResponse = await callFunctionWithNaverAuth('getSystemConfig');
+        if (configResponse?.config) {
+          setTestMode(configResponse.config.testMode || false);
+        }
+      } catch (error) {
+        console.error('시스템 설정 로드 실패:', error);
+      }
+    };
+
+    loadSystemConfig();
+  }, []);
+
   useEffect(() => {
     let mounted = true;
-    
+
     const loadStats = async () => {
       if (user?.uid && mounted) {
         try {
@@ -115,9 +132,9 @@ const PublishingProgress = () => {
         }
       }
     };
-    
+
     loadStats();
-    
+
     return () => {
       mounted = false;
     };
@@ -413,22 +430,24 @@ const PublishingProgress = () => {
           <Box sx={{ mt: 2 }}>
             <Alert severity="info" sx={{ mb: 0 }}>
               <Typography variant="body2" sx={{ mb: 1 }}>
-                <strong>더 많은 원고가 필요하신가요?</strong> 월 90회까지 사용 가능합니다
+                <strong>더 많은 원고가 필요하신가요?</strong> {testMode ? '정식 출시를 기다려 주세요!' : '월 90회까지 사용 가능합니다'}
               </Typography>
-              <Button
-                variant="contained"
-                size="small"
-                sx={{
-                  bgcolor: '#152484',
-                  color: '#ffffff',
-                  '&:hover': {
-                    bgcolor: '#0d1850',
-                  }
-                }}
-                onClick={() => window.location.href = '/billing'}
-              >
-                공식 파트너십 체결
-              </Button>
+              {!testMode && (
+                <Button
+                  variant="contained"
+                  size="small"
+                  sx={{
+                    bgcolor: '#152484',
+                    color: '#ffffff',
+                    '&:hover': {
+                      bgcolor: '#0d1850',
+                    }
+                  }}
+                  onClick={() => window.location.href = '/billing'}
+                >
+                  공식 파트너십 체결
+                </Button>
+              )}
             </Alert>
           </Box>
         )}
