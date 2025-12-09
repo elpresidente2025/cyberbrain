@@ -51,6 +51,7 @@ import PublishingProgress from '../components/dashboard/PublishingProgress';
 import { useAuth } from '../hooks/useAuth';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../services/firebase';
+import { callFunctionWithNaverAuth } from '../services/firebaseService';
 import { NotificationSnackbar, useNotification } from '../components/ui';
 import { colors, spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
 
@@ -64,6 +65,7 @@ const Billing = () => {
   const [selectedCertFile, setSelectedCertFile] = useState(null);
   const [selectedReceiptFile, setSelectedReceiptFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [testMode, setTestMode] = useState(false);
 
   // 관리자 전용: 구독 상태 오버라이드
   const [adminOverrideSubscription, setAdminOverrideSubscription] = useState(null);
@@ -114,8 +116,28 @@ const Billing = () => {
 
   const authStatus = getAuthStatus();
 
+  // 시스템 설정 로드 (데모 모드 확인)
+  useEffect(() => {
+    const loadSystemConfig = async () => {
+      try {
+        const configResponse = await callFunctionWithNaverAuth('getSystemConfig');
+        if (configResponse?.config) {
+          setTestMode(configResponse.config.testMode || false);
+        }
+      } catch (error) {
+        console.error('시스템 설정 로드 실패:', error);
+      }
+    };
+
+    loadSystemConfig();
+  }, []);
+
   // 결제 시작
   const handleStartSubscription = () => {
+    if (testMode) {
+      showNotification('데모 모드에서는 구독을 이용할 수 없습니다. 정식 출시를 기다려 주세요!', 'info');
+      return;
+    }
     setPaymentDialogOpen(true);
   };
 
@@ -321,25 +343,30 @@ const Billing = () => {
                     {planInfo.price.toLocaleString()}원/월
                   </Typography>
                   <Typography variant="body1" sx={{ mb: `${spacing.lg}px`, opacity: 0.9, color: '#ffffff !important' }}>
-                    VAT 포함 · 월 {planInfo.monthlyLimit}회 원고 생성
+                    {testMode ? '정식 출시 예정' : `VAT 포함 · 월 ${planInfo.monthlyLimit}회 원고 생성`}
                   </Typography>
                   <Button
                     variant="contained"
                     size="large"
                     onClick={handleStartSubscription}
+                    disabled={testMode}
                     sx={{
-                      bgcolor: 'white',
-                      color: colors.brand.primary,
+                      bgcolor: testMode ? '#cccccc' : 'white',
+                      color: testMode ? '#666666' : colors.brand.primary,
                       fontSize: '1.1rem',
                       fontWeight: 'bold',
                       py: 1.5,
                       px: 4,
                       '&:hover': {
-                        bgcolor: '#f0f0f0'
+                        bgcolor: testMode ? '#cccccc' : '#f0f0f0'
+                      },
+                      '&.Mui-disabled': {
+                        bgcolor: '#cccccc',
+                        color: '#666666'
                       }
                     }}
                   >
-                    💳 구독
+                    {testMode ? '🔒 준비 중' : '💳 구독'}
                   </Button>
                 </Paper>
               </Grid>
