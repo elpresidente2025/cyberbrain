@@ -401,20 +401,6 @@ const Dashboard = () => {
         {/* 공지사항 배너 - 최상단에 위치 */}
         <NoticeBanner />
 
-        {/* 데모 모드 배지 */}
-        {testMode && (
-          <Alert severity="info" sx={{ mb: `${spacing.md}px` }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                🧪 데모 모드
-              </Typography>
-              <Typography variant="body2">
-                | 당원 인증 시 월 8회 무료 제공
-              </Typography>
-            </Box>
-          </Alert>
-        )}
-
         {/* 사용자 정보 + CTA 버튼 */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
