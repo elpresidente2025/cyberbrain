@@ -342,7 +342,7 @@ async function startOrContinueSession(uid, useBonus, isAdmin, category, topic) {
 
         // 세션 관리
         if (!activeSession) {
-          // === 새 세션 시작: 생성 횟수 즉시 차감 ===
+          // === 새 세션 시작: 생성 횟수는 검증 성공 시 차감 ===
           const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
           updateData.activeGenerationSession = {
@@ -350,36 +350,29 @@ async function startOrContinueSession(uid, useBonus, isAdmin, category, topic) {
             startedAt: admin.firestore.FieldValue.serverTimestamp(),
             attempts: 1,
             category: category || '',
-            topic: topic || ''
+            topic: topic || '',
+            subscriptionStatus: subscriptionStatus // 나중에 차감할 때 사용
           };
 
-          sessionInfo = { sessionId, attempts: 1, maxAttempts: 3, isNewSession: true };
+          sessionInfo = { sessionId, attempts: 1, maxAttempts: 3, isNewSession: true, subscriptionStatus };
+
+          // 생성 횟수 차감은 검증 성공 시 posts.js에서 처리
+          const currentRemaining = userData.generationsRemaining || userData.trialPostsRemaining || 0;
+          const currentMonthGenerations = userData.monthlyUsage?.[currentMonthKey]?.generations || 0;
 
           if (testMode || subscriptionStatus === 'trial') {
-            // 데모/무료 체험: generationsRemaining 차감
-            const currentRemaining = userData.generationsRemaining || userData.trialPostsRemaining || 0;
-
-            if (currentRemaining > 0) {
-              updateData.generationsRemaining = admin.firestore.FieldValue.increment(-1);
-              const modeLabel = testMode ? '🧪 데모 모드' : '✅ 무료 체험';
-              console.log(`${modeLabel} - 새 세션 시작, 생성 횟수 차감`, {
-                sessionId,
-                generationsBefore: currentRemaining,
-                generationsAfter: currentRemaining - 1
-              });
-            } else {
-              console.warn('⚠️ generationsRemaining이 이미 0 이하입니다. 차감하지 않습니다.');
-            }
+            const modeLabel = testMode ? '🧪 데모 모드' : '✅무료 체험';
+            console.log(`${modeLabel} - 새 세션 시작 (생성 횟수 차감은 검증 성공 시)`, {
+              sessionId,
+              currentRemaining
+            });
           } else if (subscriptionStatus === 'active') {
-            // 유료 구독: monthlyUsage 증가
-            const currentMonthGenerations = userData.monthlyUsage?.[currentMonthKey]?.generations || 0;
-            updateData[`monthlyUsage.${currentMonthKey}.generations`] = admin.firestore.FieldValue.increment(1);
+            // 유료 구독: 시도 횟수만 기록 (생성 횟수는 검증 성공 시)
             updateData[`monthlyUsage.${currentMonthKey}.attempts`] = admin.firestore.FieldValue.increment(1);
-            console.log('✅ 유료 구독 - 새 세션 시작, 월별 생성 횟수 증가', {
+            console.log('✅ 유료 구독 - 새 세션 시작 (생성 횟수 차감은 검증 성공 시)', {
               sessionId,
               monthKey: currentMonthKey,
-              generationsBefore: currentMonthGenerations,
-              generationsAfter: currentMonthGenerations + 1
+              currentMonthGenerations
             });
           }
         } else {

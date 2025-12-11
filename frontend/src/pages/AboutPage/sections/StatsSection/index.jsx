@@ -28,7 +28,7 @@ function StatsSection() {
                 <Card sx={{
                   bgcolor: 'rgba(255,255,255,0.05)',
                   border: '1px solid rgba(0, 212, 255, 0.2)',
-                  borderRadius: 3,
+                  borderRadius: 0.75,
                   height: '100%',
                   transition: 'all 0.3s ease',
                   '&:hover': {

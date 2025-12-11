@@ -149,7 +149,7 @@ export const CTAButton = styled(Button)(({ theme }) => ({
   color: '#041120',
   fontWeight: 700,
   padding: theme.spacing(1.25, 3),
-  borderRadius: 12,
+  borderRadius: 2,
   letterSpacing: '0.02em',
   transition: 'transform 200ms ease, background-color 200ms ease',
   '&:hover': {
@@ -163,7 +163,7 @@ export const OutlineButton = styled(Button)(({ theme }) => ({
   color: '#00d4ff',
   fontWeight: 700,
   padding: theme.spacing(1.25, 3),
-  borderRadius: 12,
+  borderRadius: 2,
   letterSpacing: '0.02em',
   '&:hover': {
     backgroundColor: 'rgba(0, 212, 255, 0.10)',
@@ -173,7 +173,7 @@ export const OutlineButton = styled(Button)(({ theme }) => ({
 
 export const CardSoft = styled(Card)({
   backgroundColor: 'rgba(255,255,255,0.04)',
-  borderRadius: 16,
+  borderRadius: 3,
   border: '1px solid rgba(255,255,255,0.06)',
   backdropFilter: 'blur(6px)',
   transition: 'all 0.3s ease',
@@ -187,7 +187,7 @@ export const CardSoft = styled(Card)({
 
 export const CardEmphasis = styled(Card)({
   backgroundColor: 'rgba(0, 212, 255, 0.10)',
-  borderRadius: 16,
+  borderRadius: 3,
   border: '1px solid rgba(0, 212, 255, 0.25)',
   backdropFilter: 'blur(6px)',
   transition: 'all 0.3s ease',
@@ -218,7 +218,7 @@ export const DemoWatermark = styled(Box)({
   bottom: 12,
   padding: '4px 8px',
   fontSize: 12,
-  borderRadius: 8,
+  borderRadius: 2,
   color: 'rgba(255,255,255,0.85)',
   background: 'rgba(0,0,0,0.35)',
   border: '1px solid rgba(255,255,255,0.25)',

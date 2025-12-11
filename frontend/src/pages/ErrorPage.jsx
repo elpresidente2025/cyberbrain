@@ -49,7 +49,7 @@ export default function ErrorPage() {
           p: 4,
           width: '100%',
           textAlign: 'center',
-          borderRadius: 2,
+          borderRadius: 0.5,
           backgroundColor: 'rgba(255,255,255,0.04)',
           backdropFilter: 'blur(6px)',
           border: '1px solid rgba(255,255,255,0.08)'

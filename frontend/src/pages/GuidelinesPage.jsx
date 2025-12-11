@@ -169,7 +169,7 @@ const GuidelinesPage = () => {
                 border: theme.palette.mode === 'dark' 
                   ? '1px solid rgba(255, 255, 255, 0.1)' 
                   : '1px solid #ddd', 
-                borderRadius: '8px !important' 
+                borderRadius: '2px !important' 
               }}
             >
               <AccordionSummary
@@ -178,7 +178,7 @@ const GuidelinesPage = () => {
                   bgcolor: theme.palette.mode === 'dark' 
                     ? 'rgba(255, 255, 255, 0.05)' 
                     : '#f8f9fa',
-                  borderRadius: expandedAccordion === guide.id ? '8px 8px 0 0' : '8px'
+                  borderRadius: expandedAccordion === guide.id ? '2px 2px 0 0' : '2px'
                 }}
               >
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>

@@ -25,7 +25,7 @@ function SampleSpeechModal({ open, onClose }) {
         sx: {
           backgroundColor: 'rgba(0,0,0,0.9)',
           border: '1px solid rgba(255,255,255,0.12)',
-          borderRadius: 2
+          borderRadius: 0.5
         }
       }}
     >
@@ -39,7 +39,7 @@ function SampleSpeechModal({ open, onClose }) {
             <Card sx={{
               backgroundColor: 'rgba(255,255,255,0.02)',
               border: '2px solid rgba(255,255,255,0.1)',
-              borderRadius: 2
+              borderRadius: 0.5
             }}>
               <CardContent sx={{ p: 3 }}>
                 <Typography variant="h6" sx={{ fontWeight: 700, mb: 3 }} style={{ color: '#fff' }}>
@@ -50,7 +50,7 @@ function SampleSpeechModal({ open, onClose }) {
                     minHeight: 300,
                     backgroundColor: 'rgba(255,255,255,0.02)',
                     border: '2px dashed rgba(255,255,255,0.2)',
-                    borderRadius: 2,
+                    borderRadius: 0.5,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -75,7 +75,7 @@ function SampleSpeechModal({ open, onClose }) {
             <Card sx={{
               backgroundColor: 'rgba(79, 195, 247, 0.05)',
               border: '2px solid rgba(79, 195, 247, 0.3)',
-              borderRadius: 2
+              borderRadius: 0.5
             }}>
               <CardContent sx={{ p: 3 }}>
                 <Typography variant="h6" sx={{ fontWeight: 800, mb: 3 }} style={{ color: '#fff' }}>
@@ -86,7 +86,7 @@ function SampleSpeechModal({ open, onClose }) {
                     minHeight: 300,
                     backgroundColor: 'rgba(79, 195, 247, 0.05)',
                     border: '2px dashed rgba(79, 195, 247, 0.3)',
-                    borderRadius: 2,
+                    borderRadius: 0.5,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',

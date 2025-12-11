@@ -396,7 +396,7 @@ export default function ProfilePage() {
           bioCard.style.position = 'relative';
           bioCard.style.zIndex = '100';
           bioCard.style.boxShadow = '0 0 15px 3px rgba(0, 188, 212, 0.5), 0 0 25px 8px rgba(0, 188, 212, 0.2)';
-          bioCard.style.borderRadius = '12px';
+          bioCard.style.borderRadius = '2px';
           bioCard.style.transition = 'all 0.3s ease';
           bioCard.style.transform = 'scale(1.01)';
 
@@ -1666,7 +1666,7 @@ export default function ProfilePage() {
                   bioCard.style.position = 'relative';
                   bioCard.style.zIndex = '100';
                   bioCard.style.boxShadow = '0 0 15px 3px rgba(0, 188, 212, 0.5), 0 0 25px 8px rgba(0, 188, 212, 0.2)';
-                  bioCard.style.borderRadius = '12px';
+                  bioCard.style.borderRadius = '2px';
                   bioCard.style.transition = 'all 0.3s ease';
                   bioCard.style.transform = 'scale(1.01)';
 

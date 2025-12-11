@@ -248,8 +248,57 @@ exports.generatePosts = httpWrap(async (req) => {
       targetWordCount,
       userKeywords,        // 사용자 입력 키워드 (엄격 검증)
       autoKeywords: extractedKeywords,  // 자동 추출 키워드 (완화 검증)
-      maxAttempts: 3
+      maxAttempts: 10
     });
+
+    // 🎉 검증 성공! 이제 생성 횟수 차감
+    if (session.isNewSession && !useBonus) {
+      const userDoc = await db.collection('users').doc(uid).get();
+      const userData = userDoc.data() || {};
+      const subscriptionStatus = userData.subscriptionStatus || 'trial';
+
+      // System Config에서 testMode 확인
+      const systemConfigDoc = await db.collection('system').doc('config').get();
+      const testMode = systemConfigDoc.exists ? (systemConfigDoc.data().testMode || false) : false;
+
+      const updateData = {};
+
+      if (testMode || subscriptionStatus === 'trial') {
+        // 데모/무료 체험: generationsRemaining 차감
+        const currentRemaining = userData.generationsRemaining || userData.trialPostsRemaining || 0;
+
+        if (currentRemaining > 0) {
+          updateData.generationsRemaining = admin.firestore.FieldValue.increment(-1);
+          const modeLabel = testMode ? '🧪 데모 모드' : '✅ 무료 체험';
+          console.log(`${modeLabel} - 검증 성공, 생성 횟수 차감`, {
+            sessionId: session.sessionId,
+            generationsBefore: currentRemaining,
+            generationsAfter: currentRemaining - 1
+          });
+        }
+      } else if (subscriptionStatus === 'active') {
+        // 유료 구독: monthlyUsage 증가
+        const currentMonthKey = (() => {
+          const now = new Date();
+          return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        })();
+
+        const currentMonthGenerations = userData.monthlyUsage?.[currentMonthKey]?.generations || 0;
+        updateData[`monthlyUsage.${currentMonthKey}.generations`] = admin.firestore.FieldValue.increment(1);
+        console.log('✅ 유료 구독 - 검증 성공, 월별 생성 횟수 증가', {
+          sessionId: session.sessionId,
+          monthKey: currentMonthKey,
+          generationsBefore: currentMonthGenerations,
+          generationsAfter: currentMonthGenerations + 1
+        });
+      }
+
+      // 업데이트 실행
+      if (Object.keys(updateData).length > 0) {
+        await db.collection('users').doc(uid).update(updateData);
+        console.log('✅ 생성 횟수 차감 완료');
+      }
+    }
 
     // 4단계: 품질 검증 중 (validateAndRetry에서 이미 검증 완료)
     await progress.stepValidating();

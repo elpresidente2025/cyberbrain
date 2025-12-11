@@ -316,7 +316,7 @@ async function validateAndRetry({
   targetWordCount,
   userKeywords = [],
   autoKeywords = [],
-  maxAttempts = 3
+  maxAttempts = 10
 }) {
   let apiResponse;
   let attempt = 0;
