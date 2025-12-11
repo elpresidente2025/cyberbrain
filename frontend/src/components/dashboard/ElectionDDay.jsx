@@ -267,7 +267,7 @@ const SevenSegmentDisplay = ({ dDay, cardHeight = '140px', onColorChange }) => {
       sx={{
         backgroundColor: '#0a0a0a',
         border: '2px solid #333',
-        borderRadius: 2,
+        borderRadius: 1,
         padding: { xs: '8px', sm: '12px' },
         width: '100%',
         maxWidth: '100%',
@@ -554,7 +554,7 @@ function ElectionDDay({ position, status }) {
           <Box
             sx={{
               p: { xs: 1, sm: 1.5 },
-              borderRadius: 2,
+              borderRadius: 1,
               bgcolor: electionInfo.color,
               color: 'white',
               display: 'flex',

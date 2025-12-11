@@ -112,15 +112,40 @@ export default function GenerateActions({
               {isMobile ? '초기화' : '새로 시작'}
             </Button>
           )}
+
+          {/* 🆕 세션 막혔을 때 '새 생성 시작' 버튼 */}
+          {!canRegenerate && sessionAttempts >= maxSessionAttempts && sessionAttempts > 0 && (
+            <Button
+              variant="contained"
+              size={isMobile ? "medium" : "large"}
+              startIcon={<Refresh />}
+              onClick={onReset}
+              disabled={loading}
+              color="warning"
+              sx={{
+                flexShrink: 0,
+                bgcolor: '#ff9800 !important',
+                '&:hover': {
+                  bgcolor: '#f57c00 !important'
+                }
+              }}
+            >
+              새 생성 시작
+            </Button>
+          )}
         </Box>
 
       </Box>
 
-      {/* 모바일에서 추가 안내 */}
-      {isMobile && (
-        <Typography variant="caption" sx={{ display: 'block', mt: 1, textAlign: 'center', color: 'black' }}>
-          한 번에 1개만 생성
-        </Typography>
+      {/* 🆕 세션 한도 도달 안내 */}
+      {!canRegenerate && sessionAttempts >= maxSessionAttempts && sessionAttempts > 0 && (
+        <Alert severity="info" sx={{ mt: 2 }}>
+          <Typography variant="body2" fontWeight="bold" sx={{ color: 'black' }}>ℹ️ 재생성 한도 도달</Typography>
+          <Typography variant="body2" sx={{ color: 'black' }}>
+            현재 생성 세션에서 {maxSessionAttempts}회 시도를 모두 사용했습니다.
+            위의 원고 중 하나를 선택하여 저장하거나, "새 생성 시작" 버튼을 눌러 새로운 원고를 생성해주세요.
+          </Typography>
+        </Alert>
       )}
 
       {/* 주의사항 */}

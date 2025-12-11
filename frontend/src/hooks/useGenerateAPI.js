@@ -31,6 +31,76 @@ export function useGenerateAPI() {
     ]);
   }, []);
 
+  // 🆕 페이지 로드 시 세션 복원
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    try {
+      // localStorage에서 모든 세션 찾기
+      const allKeys = Object.keys(localStorage);
+      const sessionKeys = allKeys.filter(key => key.startsWith('draft_session_'));
+
+      if (sessionKeys.length === 0) {
+        console.log('📭 복원할 세션 없음');
+        return;
+      }
+
+      // 가장 최근 세션 찾기
+      let latestSession = null;
+      let latestTime = 0;
+
+      sessionKeys.forEach(key => {
+        try {
+          const dataStr = localStorage.getItem(key);
+          const data = JSON.parse(dataStr);
+          if (data.savedAt > latestTime) {
+            latestTime = data.savedAt;
+            latestSession = { key, data };
+          }
+        } catch (e) {
+          console.warn('⚠️ 세션 파싱 실패:', key, e);
+        }
+      });
+
+      if (!latestSession) {
+        console.log('📭 유효한 세션 없음');
+        return;
+      }
+
+      // 30분 체크 (1800000ms)
+      const SESSION_TIMEOUT = 30 * 60 * 1000;
+      const age = Date.now() - latestSession.data.savedAt;
+
+      if (age > SESSION_TIMEOUT) {
+        console.log('🕒 세션 만료 (30분 초과) - 삭제:', {
+          sessionId: latestSession.data.sessionId,
+          age: Math.floor(age / 1000 / 60) + '분'
+        });
+        localStorage.removeItem(latestSession.key);
+        return;
+      }
+
+      // 세션 복원
+      const { sessionId, attempts, maxAttempts, canRegenerate, drafts } = latestSession.data;
+
+      console.log('✨ 세션 복원:', {
+        sessionId,
+        attempts,
+        draftCount: drafts.length,
+        age: Math.floor(age / 1000 / 60) + '분'
+      });
+
+      setSessionId(sessionId);
+      setSessionAttempts(attempts);
+      setMaxAttempts(maxAttempts);
+      setCanRegenerate(canRegenerate);
+      setDrafts(drafts);
+
+    } catch (error) {
+      console.error('❌ 세션 복원 실패:', error);
+    }
+  }, [user?.uid]);
+
   // 메타데이터 수집 함수 (향후 기능)
   const collectMetadata = useCallback(async (draft) => {
     try {
@@ -168,16 +238,47 @@ export function useGenerateAPI() {
 
       // 🆕 세션 정보 업데이트
       if (responseData.sessionId) {
-        setSessionId(responseData.sessionId);
-        setSessionAttempts(responseData.attempts || 1);
-        setMaxAttempts(responseData.maxAttempts || 3);
-        setCanRegenerate(responseData.canRegenerate || false);
+        const newSessionId = responseData.sessionId;
+        const newAttempts = responseData.attempts || 1;
+        const newMaxAttempts = responseData.maxAttempts || 3;
+        const newCanRegenerate = responseData.canRegenerate || false;
+
+        setSessionId(newSessionId);
+        setSessionAttempts(newAttempts);
+        setMaxAttempts(newMaxAttempts);
+        setCanRegenerate(newCanRegenerate);
+
         console.log('✅ 세션 정보 업데이트:', {
-          sessionId: responseData.sessionId,
-          attempts: responseData.attempts,
-          maxAttempts: responseData.maxAttempts,
-          canRegenerate: responseData.canRegenerate
+          sessionId: newSessionId,
+          attempts: newAttempts,
+          maxAttempts: newMaxAttempts,
+          canRegenerate: newCanRegenerate
         });
+
+        // 🆕 localStorage에 세션 및 원고 저장 (누적)
+        try {
+          // 기존 세션 데이터 불러오기 (재생성 시 누적)
+          const existingDataStr = localStorage.getItem(`draft_session_${newSessionId}`);
+          const existingData = existingDataStr ? JSON.parse(existingDataStr) : null;
+          const existingDrafts = existingData?.drafts || [];
+
+          const sessionData = {
+            sessionId: newSessionId,
+            attempts: newAttempts,
+            maxAttempts: newMaxAttempts,
+            canRegenerate: newCanRegenerate,
+            drafts: [...existingDrafts, newDraft], // 누적 저장
+            savedAt: Date.now(),
+            formData: formData
+          };
+          localStorage.setItem(`draft_session_${newSessionId}`, JSON.stringify(sessionData));
+          console.log('💾 localStorage에 세션 저장 (누적):', {
+            sessionId: newSessionId,
+            draftCount: sessionData.drafts.length
+          });
+        } catch (storageError) {
+          console.warn('⚠️ localStorage 저장 실패:', storageError.message);
+        }
       }
 
       // 🆕 메타데이터 수집 (비동기, 에러 무시)
@@ -251,7 +352,17 @@ export function useGenerateAPI() {
           ...draft,
           savedAt: new Date().toISOString()
         }).catch(console.warn);
-        
+
+        // 🆕 저장 완료 시 localStorage 세션 삭제
+        if (sessionId) {
+          try {
+            localStorage.removeItem(`draft_session_${sessionId}`);
+            console.log('🗑️ 저장 완료 - localStorage 세션 삭제:', sessionId);
+          } catch (e) {
+            console.warn('⚠️ localStorage 삭제 실패:', e);
+          }
+        }
+
         return {
           success: true,
           message: result.message || '원고가 성공적으로 저장되었습니다.'
@@ -276,11 +387,21 @@ export function useGenerateAPI() {
     setAttempts(0);
     setError(null);
     setProgress(null);
-    // 🆕 세션 초기화
+
+    // 🆕 세션 초기화 및 localStorage 정리
+    if (sessionId) {
+      try {
+        localStorage.removeItem(`draft_session_${sessionId}`);
+        console.log('🗑️ localStorage 세션 삭제:', sessionId);
+      } catch (e) {
+        console.warn('⚠️ localStorage 삭제 실패:', e);
+      }
+    }
+
     setSessionId(null);
     setSessionAttempts(0);
     setCanRegenerate(false);
-  }, []);
+  }, [sessionId]);
 
   return {
     loading,

@@ -19,10 +19,14 @@ const publishPost = wrap(async (request) => {
 
     // 트랜잭션으로 처리
     await db.runTransaction(async (transaction) => {
-      // 1. 원고 업데이트
+      // 모든 읽기 작업을 먼저 수행 (Firestore 트랜잭션 규칙)
       const postRef = db.collection('posts').doc(postId);
       const postDoc = await transaction.get(postRef);
 
+      const publishingRef = db.collection('user_publishing').doc(uid);
+      const publishingDoc = await transaction.get(publishingRef);
+
+      // 검증
       if (!postDoc.exists || postDoc.data().userId !== uid) {
         throw new HttpsError('not-found', '원고를 찾을 수 없습니다.');
       }
@@ -32,27 +36,17 @@ const publishPost = wrap(async (request) => {
         throw new HttpsError('already-exists', '이미 발행된 원고입니다.');
       }
 
-      transaction.update(postRef, {
-        publishUrl: publishUrl,
-        publishedAt: publishedAt,
-        status: 'published',
-        updatedAt: now
-      });
-
-      // 2. 발행 기록 추가
-      const publishingRef = db.collection('user_publishing').doc(uid);
-      const publishingDoc = await transaction.get(publishingRef);
-
+      // 발행 데이터 준비
       const currentYear = publishedAt.getFullYear();
       const currentMonth = publishedAt.getMonth() + 1;
       const monthKey = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
 
       const publishingData = publishingDoc.exists ? publishingDoc.data() : {};
-      
+
       if (!publishingData.months) {
         publishingData.months = {};
       }
-      
+
       if (!publishingData.months[monthKey]) {
         publishingData.months[monthKey] = {
           published: 0,
@@ -70,6 +64,14 @@ const publishPost = wrap(async (request) => {
 
       publishingData.lastUpdated = now;
       publishingData.totalPublished = (publishingData.totalPublished || 0) + 1;
+
+      // 모든 쓰기 작업 수행
+      transaction.update(postRef, {
+        publishUrl: publishUrl,
+        publishedAt: publishedAt,
+        status: 'published',
+        updatedAt: now
+      });
 
       transaction.set(publishingRef, publishingData, { merge: true });
     });
@@ -327,19 +329,25 @@ const resetUserUsage = wrap(async (request) => {
     };
 
     if (testMode) {
-      // === 데모 모드: monthlyUsage 초기화 (구독 상태 무관) ===
-      updateData[`monthlyUsage.${currentMonthKey}`] = 0;
-
-      console.log(`🧪 데모 모드 사용자 초기화: ${currentMonthUsage} -> 0`);
-    } else if (subscriptionStatus === 'trial') {
-      // 무료 체험: trialPostsRemaining 복구
+      // === 데모 모드: generationsRemaining 및 세션 초기화 ===
       const monthlyLimit = userData.monthlyLimit || 8;
-      updateData.trialPostsRemaining = monthlyLimit;
-
-      console.log(`✅ 무료 체험 사용자 초기화: ${trialRemaining} -> ${monthlyLimit}`);
-    } else if (subscriptionStatus === 'active') {
-      // 유료 구독: monthlyUsage 초기화
+      updateData.generationsRemaining = monthlyLimit;
+      updateData.activeGenerationSession = admin.firestore.FieldValue.delete();
       updateData[`monthlyUsage.${currentMonthKey}`] = 0;
+
+      console.log(`🧪 데모 모드 사용자 초기화: generationsRemaining ${userData.generationsRemaining || 0} -> ${monthlyLimit}`);
+    } else if (subscriptionStatus === 'trial') {
+      // 무료 체험: generationsRemaining 복구
+      const monthlyLimit = userData.monthlyLimit || 8;
+      updateData.generationsRemaining = monthlyLimit;
+      updateData.trialPostsRemaining = monthlyLimit;  // 하위 호환성
+      updateData.activeGenerationSession = admin.firestore.FieldValue.delete();
+
+      console.log(`✅ 무료 체험 사용자 초기화: generationsRemaining ${userData.generationsRemaining || 0} -> ${monthlyLimit}`);
+    } else if (subscriptionStatus === 'active') {
+      // 유료 구독: monthlyUsage 초기화 및 세션 초기화
+      updateData[`monthlyUsage.${currentMonthKey}`] = 0;
+      updateData.activeGenerationSession = admin.firestore.FieldValue.delete();
 
       console.log(`✅ 유료 구독 사용자 초기화: ${currentMonthUsage} -> 0`);
     }
@@ -349,16 +357,20 @@ const resetUserUsage = wrap(async (request) => {
 
     // 응답 메시지 생성
     let message, before, after;
+    const currentGenerationsRemaining = userData.generationsRemaining || userData.trialPostsRemaining || 0;
+
     if (testMode) {
-      message = `데모 모드 사용량이 초기화되었습니다. (${currentMonthUsage} -> 0)`;
-      before = currentMonthUsage;
-      after = 0;
+      const monthlyLimit = userData.monthlyLimit || 8;
+      message = `데모 모드 생성 횟수가 초기화되었습니다. (${currentGenerationsRemaining}회 -> ${monthlyLimit}회)`;
+      before = currentGenerationsRemaining;
+      after = monthlyLimit;
     } else if (subscriptionStatus === 'trial') {
-      message = `무료 체험 횟수가 초기화되었습니다. (${trialRemaining} -> ${updateData.trialPostsRemaining})`;
-      before = trialRemaining;
-      after = updateData.trialPostsRemaining;
+      const monthlyLimit = userData.monthlyLimit || 8;
+      message = `무료 체험 생성 횟수가 초기화되었습니다. (${currentGenerationsRemaining}회 -> ${monthlyLimit}회)`;
+      before = currentGenerationsRemaining;
+      after = monthlyLimit;
     } else {
-      message = `이번 달 사용량이 초기화되었습니다. (${currentMonthUsage} -> 0)`;
+      message = `이번 달 사용량이 초기화되었습니다. (${currentMonthUsage}회 -> 0회)`;
       before = currentMonthUsage;
       after = 0;
     }

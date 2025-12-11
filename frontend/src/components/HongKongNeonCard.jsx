@@ -20,8 +20,8 @@ const HongKongNeonCard = ({
       0 4px 15px rgba(0, 0, 0, 0.1),
       inset 0 1px 0 rgba(255, 255, 255, 0.1)
     `,
-    
-    borderRadius: '12px',
+
+    borderRadius: '2px',
     position: 'relative',
     overflow: 'hidden',
     

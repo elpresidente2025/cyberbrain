@@ -135,10 +135,10 @@ export const spacing = {
  */
 export const borders = {
   radius: {
-    sm: 4,
-    md: 8,
-    lg: 12,
-    xl: 16,
+    sm: 1,
+    md: 2,
+    lg: 2,
+    xl: 3,
     round: 9999,
   },
   width: {

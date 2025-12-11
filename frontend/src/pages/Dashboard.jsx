@@ -420,7 +420,7 @@ const Dashboard = () => {
               backdropFilter: 'blur(30px) saturate(150%)',
               WebkitBackdropFilter: 'blur(30px) saturate(150%)',
               border: `2px solid ${theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(21, 36, 132, 0.1)'}`,
-              borderRadius: '16px',
+              borderRadius: '2px',
               boxShadow: theme.palette.mode === 'dark'
                 ? '0 12px 40px rgba(0, 0, 0, 0.4), inset 0 2px 0 rgba(255, 255, 255, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05) inset'
                 : '0 4px 16px rgba(0, 0, 0, 0.1), inset 0 2px 0 rgba(255, 255, 255, 1), 0 0 0 1px rgba(21, 36, 132, 0.05) inset',
@@ -562,7 +562,7 @@ const Dashboard = () => {
               px: 4,
               minHeight: '100px',
               fontWeight: 800,
-              borderRadius: '16px',
+              borderRadius: '2px',
               boxShadow: canGeneratePost
                 ? '0 16px 48px rgba(21, 36, 132, 0.5), 0 8px 16px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1) inset'
                 : '0 4px 12px rgba(0, 0, 0, 0.3)',

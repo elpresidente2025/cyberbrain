@@ -12,7 +12,10 @@ import {
   Chip,
   Typography,
   Box,
+  Button,
+  Stack,
 } from '@mui/material';
+import { Add } from '@mui/icons-material';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../services/firebase';
 import allLocations from '../data/location/locations.index';
@@ -75,12 +78,14 @@ function getAutomaticTitle(position, regionMetro, regionLocal) {
  * @param {Object} props
  * @param {string} props.name - 이름
  * @param {string} props.status - 상태 (현역/예비/준비)
- * @param {string} props.customTitle - 사용자 지정 직위 (준비 상태일 때 사용)
+ * @param {string} props.customTitle - 사용자 지정 직위 (입력 중인 값)
+ * @param {string} props.savedCustomTitle - DB에 저장된 직위 (배지 표시용, 쉼표로 구분)
  * @param {string} props.position - 직책
  * @param {string} props.regionMetro - 광역자치단체
  * @param {string} props.regionLocal - 기초자치단체
  * @param {string} props.electoralDistrict - 선거구
  * @param {function} props.onChange - 값 변경 콜백 (name, value)
+ * @param {function} props.onCustomTitleSave - 직위 즉시 저장 콜백 (newCustomTitle)
  * @param {boolean} props.disabled - 비활성화 여부
  * @param {boolean} props.nameDisabled - 이름 필드만 비활성화 여부
  * @param {boolean} props.enableDuplicateCheck - 중복 체크 활성화 (기본: true)
@@ -91,11 +96,13 @@ export default function UserInfoForm({
   name = '',
   status = '현역',
   customTitle = '',
+  savedCustomTitle = '',
   position = '',
   regionMetro = '',
   regionLocal = '',
   electoralDistrict = '',
   onChange,
+  onCustomTitleSave,
   disabled = false,
   nameDisabled = false,
   enableDuplicateCheck = false, // 🔧 기본값을 false로 변경
@@ -162,6 +169,56 @@ export default function UserInfoForm({
     return parts.length > 0 ? parts.join(' > ') : '선택해주세요';
   };
 
+  // 저장된 직위를 배열로 변환 (쉼표로 구분)
+  const savedTitles = useMemo(() => {
+    if (!savedCustomTitle || savedCustomTitle.trim() === '') return [];
+    return savedCustomTitle.split(',').map(t => t.trim()).filter(t => t);
+  }, [savedCustomTitle]);
+
+  // 직위 추가 핸들러
+  const handleAddTitle = () => {
+    const trimmedTitle = customTitle.trim();
+    if (!trimmedTitle) return;
+
+    // 이미 존재하는 직위인지 확인
+    if (savedTitles.includes(trimmedTitle)) {
+      alert('이미 추가된 직위입니다.');
+      return;
+    }
+
+    // 새로운 직위 목록 생성 (쉼표로 조인)
+    const newTitles = [...savedTitles, trimmedTitle];
+    const newCustomTitle = newTitles.join(', ');
+
+    // 입력 필드 초기화
+    onChange('customTitle', '');
+
+    // 부모 컴포넌트에 즉시 저장 요청 (추가 액션)
+    if (onCustomTitleSave) {
+      onCustomTitleSave(newCustomTitle, 'add');
+    }
+  };
+
+  // 직위 삭제 핸들러
+  const handleDeleteTitle = (titleToDelete) => {
+    // 해당 직위 제거
+    const newTitles = savedTitles.filter(t => t !== titleToDelete);
+    const newCustomTitle = newTitles.join(', ');
+
+    // 부모 컴포넌트에 즉시 저장 요청 (삭제 액션)
+    if (onCustomTitleSave) {
+      onCustomTitleSave(newCustomTitle, 'delete');
+    }
+  };
+
+  // Enter 키로 직위 추가
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddTitle();
+    }
+  };
+
   return (
     <>
       {/* 제목 */}
@@ -218,16 +275,68 @@ export default function UserInfoForm({
       {/* 직위 (준비 상태일 때만 표시) */}
       {status === '준비' && (
         <Grid item xs={12}>
-          <TextField
-            fullWidth
-            label="직위 (선택사항)"
-            name="customTitle"
-            value={customTitle}
-            onChange={handleTextFieldChange}
-            disabled={disabled}
-            placeholder="예: 청년위원장, 정책위원장, 여성위원장 등"
-            helperText="당내 직위가 있다면 입력해주세요. 원고 검수 시 직접 편집하여 추가하거나 삭제할 수 있습니다."
-          />
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+            <TextField
+              fullWidth
+              label="직위 (선택사항)"
+              name="customTitle"
+              value={customTitle}
+              onChange={handleTextFieldChange}
+              onKeyPress={handleKeyPress}
+              disabled={disabled}
+              placeholder="예: 청년위원장, 정책위원장, 여성위원장 등"
+              helperText="직위를 입력하고 추가 버튼을 클릭하세요. (Enter 키로도 추가 가능)"
+            />
+            <Button
+              variant="contained"
+              onClick={handleAddTitle}
+              disabled={disabled || !customTitle.trim()}
+              startIcon={<Add />}
+              sx={{
+                mt: 0,
+                minWidth: 100,
+                height: 56,
+                bgcolor: 'primary.main',
+                '&:hover': { bgcolor: 'primary.dark' }
+              }}
+            >
+              추가
+            </Button>
+          </Box>
+
+          {/* 저장된 직위 배지 표시 (항상 표시) */}
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+              현재 저장된 직위:
+            </Typography>
+            {savedTitles.length > 0 ? (
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                {savedTitles.map((title, index) => (
+                  <Chip
+                    key={index}
+                    label={title}
+                    onDelete={() => handleDeleteTitle(title)}
+                    disabled={disabled}
+                    color="primary"
+                    size="medium"
+                    sx={{
+                      fontWeight: 500,
+                      color: 'white',
+                      mb: 1
+                    }}
+                  />
+                ))}
+              </Stack>
+            ) : (
+              <Chip
+                label="저장된 직위 없음"
+                disabled
+                color="default"
+                size="small"
+                sx={{ fontWeight: 400 }}
+              />
+            )}
+          </Box>
         </Grid>
       )}
 

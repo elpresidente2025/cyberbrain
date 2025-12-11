@@ -29,7 +29,7 @@ const GlobalAuthorityCaseContainer = () => {
                maxHeight: '70%',
                width: 'auto',
                height: 'auto',
-               borderRadius: 2,
+               borderRadius: 1,
                border: '1px solid rgba(255,255,255,0.1)',
                objectFit: 'contain'
              }} />
@@ -45,7 +45,7 @@ const GlobalAuthorityCaseContainer = () => {
                maxHeight: '70%',
                width: 'auto',
                height: 'auto',
-               borderRadius: 2,
+               borderRadius: 1,
                border: '1px solid rgba(255,255,255,0.1)',
                objectFit: 'contain'
              }} />
@@ -145,7 +145,7 @@ function GlobalCasesSection() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: 2,
+                    borderRadius: 1,
                     p: 2,
                     // [태블릿] 패딩 조정
                     '@media (min-aspect-ratio: 9/16) and (max-aspect-ratio: 16/9)': {
@@ -162,7 +162,7 @@ function GlobalCasesSection() {
                       style={{
                         maxWidth: '95%',
                         maxHeight: '95%',
-                        borderRadius: 8,
+                        borderRadius: 1,
                         objectFit: 'contain'
                       }}
                     />
@@ -189,7 +189,7 @@ function GlobalCasesSection() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: 2,
+                    borderRadius: 1,
                     p: 2,
                     // [태블릿] 패딩 조정
                     '@media (min-aspect-ratio: 9/16) and (max-aspect-ratio: 16/9)': {
@@ -206,7 +206,7 @@ function GlobalCasesSection() {
                       style={{
                         maxWidth: '95%',
                         maxHeight: '95%',
-                        borderRadius: 8,
+                        borderRadius: 1,
                         objectFit: 'contain'
                       }}
                     />

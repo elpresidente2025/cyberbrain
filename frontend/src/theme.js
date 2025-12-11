@@ -136,13 +136,13 @@ const createCustomTheme = (isDarkMode) => createTheme({
       styleOverrides: {
         root: {
           // 글래스모피즘 효과
-          backgroundColor: isDarkMode 
-            ? 'rgba(255, 255, 255, 0.05)' 
+          backgroundColor: isDarkMode
+            ? 'rgba(255, 255, 255, 0.05)'
             : 'rgba(255, 255, 255, 0.15)',
           color: isDarkMode ? '#ffffff' : '#000000',
-          borderRadius: '12px',
-          border: isDarkMode 
-            ? '1px solid rgba(255, 255, 255, 0.1)' 
+          borderRadius: '2px',
+          border: isDarkMode
+            ? '1px solid rgba(255, 255, 255, 0.1)'
             : '1px solid rgba(255, 255, 255, 0.2)',
           backdropFilter: 'blur(3px)',
           WebkitBackdropFilter: 'blur(3px)',
@@ -156,13 +156,13 @@ const createCustomTheme = (isDarkMode) => createTheme({
       styleOverrides: {
         root: {
           // 글래스모피즘 효과
-          backgroundColor: isDarkMode 
-            ? 'rgba(255, 255, 255, 0.05)' 
+          backgroundColor: isDarkMode
+            ? 'rgba(255, 255, 255, 0.05)'
             : 'rgba(255, 255, 255, 0.15)',
           color: isDarkMode ? '#ffffff' : '#000000',
-          borderRadius: '12px',
-          border: isDarkMode 
-            ? '1px solid rgba(255, 255, 255, 0.1)' 
+          borderRadius: '2px',
+          border: isDarkMode
+            ? '1px solid rgba(255, 255, 255, 0.1)'
             : '1px solid rgba(255, 255, 255, 0.2)',
           backdropFilter: 'blur(3px)',
           WebkitBackdropFilter: 'blur(3px)',
@@ -303,12 +303,12 @@ const createCustomTheme = (isDarkMode) => createTheme({
           boxShadow: isDarkMode
             ? '0 0 80px rgba(79, 195, 247, 0.3), 0 20px 60px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
             : '0 0 60px rgba(1, 60, 149, 0.25), 0 20px 60px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.8)',
-          border: isDarkMode 
-            ? '2px solid rgba(79, 195, 247, 0.3)' 
+          border: isDarkMode
+            ? '2px solid rgba(79, 195, 247, 0.3)'
             : '2px solid rgba(1, 60, 149, 0.2)',
-          borderRadius: '12px',
-          backgroundColor: isDarkMode 
-            ? 'rgba(26, 26, 26, 0.95)' 
+          borderRadius: '2px',
+          backgroundColor: isDarkMode
+            ? 'rgba(26, 26, 26, 0.95)'
             : 'rgba(255, 255, 255, 0.95)',
           backdropFilter: 'blur(3px)',
           WebkitBackdropFilter: 'blur(3px)',

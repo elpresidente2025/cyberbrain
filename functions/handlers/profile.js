@@ -80,12 +80,20 @@ exports.getUserProfile = wrap(async (req) => {
     const bioDoc = await db.collection('bios').doc(uid).get();
     console.log('📝 [getUserProfile] bios 컬렉션 조회:', {
       exists: bioDoc.exists,
-      hasContent: bioDoc.exists ? !!bioDoc.data()?.content : false
+      hasContent: bioDoc.exists ? !!bioDoc.data()?.content : false,
+      hasEntries: bioDoc.exists ? !!bioDoc.data()?.entries : false
     });
     if (bioDoc.exists) {
-      const biosContent = bioDoc.data().content || '';
+      const bioData = bioDoc.data();
+      const biosContent = bioData.content || '';
       console.log('📝 [getUserProfile] bios 컬렉션 content 길이:', biosContent.length);
       profile.bio = biosContent;
+
+      // bioEntries도 불러오기
+      if (bioData.entries && Array.isArray(bioData.entries)) {
+        profile.bioEntries = bioData.entries;
+        console.log('📝 [getUserProfile] bioEntries 불러오기:', { count: bioData.entries.length });
+      }
     }
   } catch (error) {
     console.error('❌ [getUserProfile] Bio 조회 실패:', error);
@@ -114,7 +122,7 @@ exports.updateProfile = wrap(async (req) => {
 
   const allowed = [
     'name', 'position', 'regionMetro', 'regionLocal',
-    'electoralDistrict', 'status', 'bio', 'customTitle', // bio는 별도 처리, customTitle 추가
+    'electoralDistrict', 'status', 'bio', 'customTitle', 'bioEntries', // bio는 별도 처리, customTitle 추가, bioEntries 추가
     // 개인화 정보 필드들
     'ageDecade', 'ageDetail', 'familyStatus', 'backgroundCareer',
     'localConnection', 'politicalExperience', 'committees', 'customCommittees',
@@ -161,43 +169,55 @@ exports.updateProfile = wrap(async (req) => {
     ? districtKey(nextFields)
     : null;
 
-  console.log('🔍 [DEBUG] 선거구 키 생성 결과:', { 
-    uid, 
-    oldKey, 
-    newKey, 
+  console.log('🔍 [DEBUG] 선거구 키 생성 결과:', {
+    uid,
+    oldKey,
+    newKey,
     nextFields,
-    willCheckDistrict: !!(newKey && newKey !== oldKey),
+    willChangeDistrict: !!(newKey && newKey !== oldKey),
     timestamp: new Date().toISOString()
   });
 
-  if (newKey) {
+  // ✅ 우선권 시스템: 선거구 변경 처리
+  if (newKey && newKey !== oldKey) {
     try {
-      console.log('🔒 선거구 점유 시도 중...', { uid, newKey, oldKey });
-      await claimDistrict({ uid, newKey, oldKey });
-      console.log('🧹 중복 점유자 정리 중...', { uid, newKey });
-      await scrubDuplicateHolders({ key: newKey, ownerUid: uid });
-      logInfo('선거구 점유 성공', { oldKey, newKey, changed: oldKey !== newKey });
+      console.log('🔄 선거구 변경 중...', { uid, oldKey, newKey });
+      const { changeUserDistrict } = require('../services/district-priority');
+      await changeUserDistrict({ uid, oldDistrictKey: oldKey, newDistrictKey: newKey });
+      logInfo('선거구 변경 성공', { oldKey, newKey });
     } catch (e) {
-      console.error('❌ [updateProfile][claimDistrict] 실패:', { uid, oldKey, newKey, error: e?.message, code: e?.code });
-      throw new HttpsError('failed-precondition', e?.message || '선거구 점유 중 오류');
+      console.error('❌ [updateProfile][changeUserDistrict] 실패:', {
+        uid,
+        oldKey,
+        newKey,
+        error: e?.message,
+        code: e?.code
+      });
+      throw new HttpsError('failed-precondition', e?.message || '선거구 변경 중 오류');
     }
+  } else if (newKey && newKey === oldKey) {
+    console.log('ℹ️ 선거구 변경 없음 - 동일한 선거구:', newKey);
   } else {
-    console.log('ℹ️ 선거구 키 생성 불가', { oldKey, newKey, hasAllFields: !!(nextFields.position && nextFields.regionMetro && nextFields.regionLocal && nextFields.electoralDistrict) });
+    console.log('ℹ️ 선거구 키 생성 불가', {
+      oldKey,
+      newKey,
+      hasAllFields: !!(nextFields.position && nextFields.regionMetro && nextFields.regionLocal && nextFields.electoralDistrict)
+    });
   }
 
   // Bio 처리 (별도 컬렉션으로 분리)
   const bio = typeof sanitized.bio === 'string' ? sanitized.bio.trim() : '';
+  const bioEntries = Array.isArray(sanitized.bioEntries) ? sanitized.bioEntries : null;
   let isActive = false;
 
-  if (bio) {
+  if (bio || bioEntries) {
     // bios 컬렉션에 저장
     const bioRef = db.collection('bios').doc(uid);
     const existingBio = await bioRef.get();
     const currentVersion = existingBio.exists ? (existingBio.data().version || 0) : 0;
 
-    await bioRef.set({
+    const bioData = {
       userId: uid,
-      content: bio,
       version: currentVersion + 1,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       createdAt: existingBio.exists ? existingBio.data().createdAt : admin.firestore.FieldValue.serverTimestamp(),
@@ -207,22 +227,38 @@ exports.updateProfile = wrap(async (req) => {
         avgQualityScore: 0,
         lastUsedAt: null
       }
-    }, { merge: true });
+    };
+
+    // bio가 있으면 content 필드 추가
+    if (bio) {
+      bioData.content = bio;
+    }
+
+    // bioEntries가 있으면 entries 필드 추가
+    if (bioEntries) {
+      bioData.entries = bioEntries;
+      console.log('📝 [updateProfile] bioEntries 저장:', { count: bioEntries.length });
+    }
+
+    await bioRef.set(bioData, { merge: true });
 
     isActive = true;
 
-    // 비동기 메타데이터 추출
-    const { extractMetadataAsync } = require('./bio');
-    extractMetadataAsync(uid, bio);
+    // 비동기 메타데이터 추출 (bio가 있는 경우만)
+    if (bio) {
+      const { extractMetadataAsync } = require('./bio');
+      extractMetadataAsync(uid, bio);
+    }
   } else {
     // users 컬렉션에서 기존 bio 컬렉션 확인
     const bioDoc = await db.collection('bios').doc(uid).get();
-    isActive = bioDoc.exists && bioDoc.data().content;
+    isActive = bioDoc.exists && (bioDoc.data().content || bioDoc.data().entries);
   }
 
   delete sanitized.isAdmin;
   delete sanitized.role;
   delete sanitized.bio; // bio는 별도 컬렉션에 저장했으므로 users에서 제거
+  delete sanitized.bioEntries; // bioEntries도 별도 컬렉션에 저장했으므로 users에서 제거
 
   await userRef.set(
     {
@@ -296,7 +332,7 @@ exports.checkDistrictAvailability = wrap(async (req) => {
 });
 
 /**
- * 회원가입 + 선거구 중복 검사
+ * 회원가입 + 선거구 등록 (중복 허용)
  */
 exports.registerWithDistrictCheck = wrap(async (req) => {
   const { uid, token } = await auth(req);
@@ -311,12 +347,15 @@ exports.registerWithDistrictCheck = wrap(async (req) => {
   }
 
   const newKey = districtKey({ position, regionMetro, regionLocal, electoralDistrict });
-  const availability = await checkDistrictAvailabilityService({ newKey });
-  if (!availability.available) {
-    throw new HttpsError('already-exists', '해당 선거구는 이미 다른 사용자가 사용 중입니다.');
-  }
 
-  await claimDistrict({ uid, newKey, oldKey: null });
+  // ✅ 우선권 시스템: 중복 허용, 경고만 표시
+  const { addUserToDistrict, getDistrictStatus } = require('../services/district-priority');
+  const districtStatus = await getDistrictStatus({ districtKey: newKey });
+
+  console.log('📍 [registerWithDistrictCheck] 선거구 상태:', districtStatus);
+
+  // 선거구에 사용자 추가 (중복 허용)
+  await addUserToDistrict({ uid, districtKey: newKey });
 
   const bio = typeof profileData.bio === 'string' ? profileData.bio.trim() : '';
   const isActive = !!bio;
@@ -356,19 +395,37 @@ exports.registerWithDistrictCheck = wrap(async (req) => {
       ...sanitizedProfileData,
       isActive,
       districtKey: newKey,
+      // 우선권 시스템 필드
+      districtPriority: null,  // 결제 전까지는 null
+      isPrimaryInDistrict: false,  // 결제 전까지는 false
+      districtStatus: 'trial',  // trial | primary | waiting | cancelled
+      // 구독 정보
       subscriptionStatus: 'trial',  // 무료 체험 상태
-      trialPostsRemaining: 8,  // 무료 체험 8회
+      paidAt: null,  // 결제 시점 (결제 후 업데이트)
+      trialPostsRemaining: 8,  // 무료 체험 8회 (레거시, 하위 호환용)
+      generationsRemaining: 8,  // 생성 횟수 8회 (= 24회 시도)
       trialExpiresAt: admin.firestore.Timestamp.fromDate(endOfMonth),  // 말일까지 체험 가능
       monthlyLimit: 8,  // 체험 기간 제한
       monthlyUsage: {},  // 월별 사용량 (자동 초기화되는 구조)
+      activeGenerationSession: null,  // 활성 세션 없음
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     },
     { merge: true }
   );
 
-  logInfo('회원가입 성공', { newKey, isActive, subscriptionStatus: 'trial', trialPostsRemaining: 8 });
-  return ok({ message: '회원가입이 완료되었습니다.', isActive });
+  logInfo('회원가입 성공', {
+    newKey,
+    isActive,
+    subscriptionStatus: 'trial',
+    districtWarning: districtStatus.message
+  });
+
+  return ok({
+    message: '회원가입이 완료되었습니다.',
+    isActive,
+    districtWarning: districtStatus.message  // 선거구 상황 안내
+  });
 });
 
 

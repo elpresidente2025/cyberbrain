@@ -30,7 +30,7 @@ function FAQSection({ expandedFaq, handleAccordionChange }) {
                 disableGutters
                 expanded={expandedFaq === `panel${i}`}
                 onChange={handleAccordionChange(`panel${i}`)}
-                sx={{ backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 2, '&::before': { display: 'none' } }}
+                sx={{ backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 1, '&::before': { display: 'none' } }}
               >
                 <AccordionSummary
                   expandIcon={<ExpandMoreIcon sx={{ color: '#00d4ff' }} />}

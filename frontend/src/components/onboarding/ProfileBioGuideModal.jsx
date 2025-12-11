@@ -79,7 +79,7 @@ const ProfileBioGuideModal = ({ open, onClose, onStartWriting, userName }) => {
       disableEscapeKeyDown
       sx={{
         '& .MuiDialog-paper': {
-          borderRadius: 2,
+          borderRadius: 1,
           bgcolor: 'background.paper'
         }
       }}
@@ -114,7 +114,7 @@ const ProfileBioGuideModal = ({ open, onClose, onStartWriting, userName }) => {
 
           <Box sx={{
             bgcolor: 'rgba(21, 36, 132, 0.05)',
-            borderRadius: 2,
+            borderRadius: 1,
             p: 2,
             mb: 3,
             border: '1px solid rgba(21, 36, 132, 0.1)',

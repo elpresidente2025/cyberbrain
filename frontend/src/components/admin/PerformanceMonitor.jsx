@@ -228,10 +228,10 @@ const PerformanceMonitor = ({ open, onClose }) => {
                       페이지 로드 시간
                     </Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                      <LinearProgress 
-                        variant="determinate" 
-                        value={Math.min((metrics.browser?.pageLoad || 0) / 50, 100)} 
-                        sx={{ flexGrow: 1, height: 8, borderRadius: 4 }}
+                      <LinearProgress
+                        variant="determinate"
+                        value={Math.min((metrics.browser?.pageLoad || 0) / 50, 100)}
+                        sx={{ flexGrow: 1, height: 8, borderRadius: 0.5 }}
                       />
                       <Typography variant="h6">
                         {formatTime(metrics.browser?.pageLoad || 0)}
@@ -244,10 +244,10 @@ const PerformanceMonitor = ({ open, onClose }) => {
                       메모리 사용량
                     </Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                      <LinearProgress 
-                        variant="determinate" 
+                      <LinearProgress
+                        variant="determinate"
                         value={Math.min(((metrics.browser?.memoryUsage?.used || 0) / (metrics.browser?.memoryUsage?.limit || 100)) * 100, 100)}
-                        sx={{ flexGrow: 1, height: 8, borderRadius: 4 }}
+                        sx={{ flexGrow: 1, height: 8, borderRadius: 0.5 }}
                       />
                       <Typography variant="body2">
                         {formatBytes(metrics.browser?.memoryUsage?.used || 0)} / {formatBytes(metrics.browser?.memoryUsage?.limit || 0)}

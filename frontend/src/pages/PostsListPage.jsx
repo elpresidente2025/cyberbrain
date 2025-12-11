@@ -216,9 +216,9 @@ export default function PostsListPage() {
       });
       
       // 로컬 상태 업데이트
-      setPosts(prev => prev.map(p => 
-        p.id === publishPost.id 
-          ? { ...p, publishUrl: publishUrl.trim(), publishedAt: new Date().toISOString() }
+      setPosts(prev => prev.map(p =>
+        p.id === publishPost.id
+          ? { ...p, publishUrl: publishUrl.trim(), publishedAt: new Date().toISOString(), status: 'published' }
           : p
       ));
       
@@ -323,6 +323,10 @@ export default function PostsListPage() {
                 const status = p.status || 'draft';
                 const statusColor =
                   status === 'published' ? 'success' : status === 'scheduled' ? 'warning' : 'default';
+                const statusLabel =
+                  status === 'published' ? '발행 완료' : status === 'scheduled' ? '대기 중' : status;
+                const statusBgColor =
+                  status === 'published' ? '#2E7D32' : status === 'scheduled' ? '#F57C00' : undefined;
 
                 return (
                   <Grid item xs={12} sm={6} md={4} key={p.id}>
@@ -337,7 +341,7 @@ export default function PostsListPage() {
                       <CardActionArea onClick={() => openViewer(p)} sx={{ flexGrow: 1 }}>
                         <CardContent>
                           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.xs}px` }}>
-                            <Chip size="small" label={status} color={statusColor} variant="outlined" />
+                            <Chip size="small" label={statusLabel} color={statusColor} sx={{ color: 'white', backgroundColor: statusBgColor }} />
                             <Typography variant="caption" color="text.secondary">
                               {formatDate(p.updatedAt) || formatDate(p.createdAt)}
                             </Typography>
@@ -387,19 +391,7 @@ export default function PostsListPage() {
                         </CardContent>
                       </CardActionArea>
 
-                      <CardActions sx={{ justifyContent: 'space-between', pt: 0 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          {p.publishUrl && (
-                            <Chip 
-                              size="small" 
-                              label="URL등록완료" 
-                              color="primary" 
-                              variant="outlined"
-                              icon={<AddLink />}
-                              sx={{ fontSize: '0.7rem' }}
-                            />
-                          )}
-                        </Box>
+                      <CardActions sx={{ justifyContent: 'flex-end', pt: 0 }}>
                         <Box>
                           <Tooltip title="SNS 변환">
                             <IconButton

@@ -4,7 +4,7 @@ const { HttpsError } = require('firebase-functions/v2/https');
 const { httpWrap } = require('../../common/http-wrap');
 const { admin, db } = require('../../utils/firebaseAdmin');
 const { ok } = require('../../utils/posts/helpers');
-const { completeSession } = require('../../services/generation-session');
+const { endSession } = require('../../services/posts/profile-loader');
 
 /**
  * 선택된 원고 저장
@@ -70,11 +70,9 @@ exports.saveSelectedPost = httpWrap(async (req) => {
     // 원고 저장
     const docRef = await db.collection('posts').add(postData);
 
-    // 세션 완료 처리 (있는 경우)
-    if (sessionId) {
-      await completeSession(sessionId);
-      console.log('✅ 생성 세션 완료:', sessionId);
-    }
+    // 세션 종료 처리 (activeGenerationSession 삭제)
+    await endSession(uid);
+    console.log('✅ 생성 세션 종료 (원고 저장 완료)');
 
     console.log('POST saveSelectedPost 완료:', { postId: docRef.id, wordCount });
 

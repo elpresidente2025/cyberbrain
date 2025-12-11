@@ -377,7 +377,7 @@ function SNSConversionModal({ open, onClose, post }) {
                           },
                           '&::-webkit-scrollbar-thumb': {
                             backgroundColor: 'grey.400',
-                            borderRadius: '3px',
+                            borderRadius: '2px',
                           },
                           '&::-webkit-scrollbar-thumb:hover': {
                             backgroundColor: 'grey.600',

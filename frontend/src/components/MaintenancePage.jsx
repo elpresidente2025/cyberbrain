@@ -62,7 +62,7 @@ function MaintenancePage({ maintenanceInfo, onRetry, isAdmin, onLogout }) {
           elevation={8}
           sx={{
             padding: { xs: 3, md: 5 },
-            borderRadius: 3,
+            borderRadius: 1,
             textAlign: 'center',
             position: 'relative'
           }}

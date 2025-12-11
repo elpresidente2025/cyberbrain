@@ -37,6 +37,14 @@ try {
   console.warn('[index] posts-getUserPosts handler warning:', e?.message);
 }
 
+// Add getPost handler
+try {
+  const postHandler = require('./handlers/posts-getPost');
+  Object.assign(exports, postHandler);
+} catch (e) {
+  console.warn('[index] posts-getPost handler warning:', e?.message);
+}
+
 // Add emergency admin restore handler
 try {
   const emergencyAdminHandlers = require('./handlers/emergency-admin');
@@ -91,6 +99,38 @@ try {
   Object.assign(exports, noticesHandlers);
 } catch (e) {
   console.warn('[index] notices handler warning:', e?.message);
+}
+
+// Add notifications handlers
+try {
+  const notificationsHandlers = require('./handlers/notifications');
+  Object.assign(exports, notificationsHandlers);
+} catch (e) {
+  console.warn('[index] notifications handler warning:', e?.message);
+}
+
+// Add payment handlers
+try {
+  const paymentHandlers = require('./handlers/payment');
+  Object.assign(exports, paymentHandlers);
+} catch (e) {
+  console.warn('[index] payment handler warning:', e?.message);
+}
+
+// Add migration handlers
+try {
+  const migrationHandlers = require('./handlers/migration');
+  Object.assign(exports, migrationHandlers);
+} catch (e) {
+  console.warn('[index] migration handler warning:', e?.message);
+}
+
+// Add session handlers
+try {
+  const sessionHandlers = require('./handlers/session');
+  Object.assign(exports, sessionHandlers);
+} catch (e) {
+  console.warn('[index] session handler warning:', e?.message);
 }
 
 // Add publishing handlers

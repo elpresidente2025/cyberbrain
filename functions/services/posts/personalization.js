@@ -90,9 +90,7 @@ function generatePersonaHints(userProfile, category, topic) {
   const relevantInfo = getRelevantPersonalInfo(userProfile, category, topicLower);
 
   // 선택된 정보만 자연스럽게 구성
-  if (relevantInfo.age) {
-    hints.push(relevantInfo.age);
-  }
+  // 🔥 나이대 직접 언급 제거됨 - 부자연스러운 "저는 50대로서..." 표현 방지
 
   if (relevantInfo.family) {
     hints.push(relevantInfo.family);
@@ -124,20 +122,19 @@ function generatePersonaHints(userProfile, category, topic) {
 function getRelevantPersonalInfo(userProfile, category, topicLower) {
   const result = {};
 
-  // 나이대 (일상 소통, 가정/육아 관련 주제에서 관련성 높음)
-  if (category === 'daily-communication' ||
-      topicLower.includes('family') || topicLower.includes('youth') || topicLower.includes('romance')) {
-    if (userProfile.ageDecade) {
-      result.age = userProfile.ageDetail ?
-        `${userProfile.ageDecade} ${userProfile.ageDetail}` : userProfile.ageDecade;
-    }
-  }
+  // 🔥 나이대 직접 언급 제거
+  // 이유: "저는 50대로서..." 같은 기계적이고 부자연스러운 표현 방지
+  // 나이 정보는 가족 상황 표현(예: "어린 자녀를 키우는")을 통해 간접적으로만 전달
 
   // 가정 상황 (교육, 복지, 일상 소통에서 관련성 높음)
   if (category === 'daily-communication' ||
       topicLower.includes('교육') || topicLower.includes('육아') || topicLower.includes('복지')) {
     if (userProfile.familyStatus) {
-      result.family = FAMILY_STATUS_MAP[userProfile.familyStatus];
+      // 🔥 나이대를 고려한 가족 표현 (기계적 적용 방지)
+      result.family = getAgeSensitiveFamilyExpression(
+        userProfile.familyStatus,
+        userProfile.ageDecade
+      );
     }
   }
 
@@ -154,7 +151,13 @@ function getRelevantPersonalInfo(userProfile, category, topicLower) {
   // 정치 경험 (의정활동 보고, 정책 제안에서 관련성 높음)
   if (category === 'activity-report' || category === 'policy-proposal') {
     if (userProfile.politicalExperience) {
-      result.experience = POLITICAL_EXPERIENCE_MAP[userProfile.politicalExperience];
+      // 🔥 정치 신인은 "의원" 표현이 없는 힌트만 사용
+      if (userProfile.politicalExperience === '정치 신인') {
+        result.experience = POLITICAL_EXPERIENCE_MAP['정치 신인'];
+      } else if (['초선', '재선', '3선이상'].includes(userProfile.politicalExperience)) {
+        // 의원 경험자만 의정활동 관련 힌트 사용
+        result.experience = POLITICAL_EXPERIENCE_MAP[userProfile.politicalExperience];
+      }
     }
   }
 
@@ -179,6 +182,42 @@ function getRelevantPersonalInfo(userProfile, category, topicLower) {
   }
 
   return result;
+}
+
+/**
+ * 나이대를 고려한 가족 상황 표현 생성
+ * @param {string} familyStatus - 가족 상황
+ * @param {string} ageDecade - 나이대
+ * @returns {string} 나이대에 맞는 가족 표현 (빈 문자열 = 사용 안 함)
+ */
+function getAgeSensitiveFamilyExpression(familyStatus, ageDecade) {
+  // 기혼(자녀 있음)의 경우 나이대별로 다르게 처리
+  if (familyStatus === '기혼(자녀 있음)') {
+    switch(ageDecade) {
+      case '20대':
+      case '30대':
+        // 20-30대는 육아가 주요 관심사
+        return '어린 자녀를 키우는';
+      case '40대':
+        // 40대는 자녀 교육 시기
+        return '자녀를 키우는';
+      case '50대':
+      case '60대':
+      case '70대 이상':
+        // 50대 이상은 가족 상황 언급하지 않음 (자녀 독립 연령)
+        return '';
+      default:
+        return '';
+    }
+  }
+
+  // 한부모 가정은 나이 상관없이 언급 (정책 관련성 높음)
+  if (familyStatus === '한부모') {
+    return FAMILY_STATUS_MAP['한부모'];
+  }
+
+  // 미혼, 기혼(자녀 없음)은 굳이 언급 안 함
+  return '';
 }
 
 module.exports = {

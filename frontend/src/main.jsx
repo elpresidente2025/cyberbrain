@@ -78,6 +78,10 @@ const router = createBrowserRouter([
         element: <ProtectedRoute><ProfileRequiredRoute><PostsListPage /></ProfileRequiredRoute></ProtectedRoute>,
       },
       {
+        path: 'posts/:id',
+        element: <ProtectedRoute><ProfileRequiredRoute><PostDetailPage /></ProfileRequiredRoute></ProtectedRoute>,
+      },
+      {
         path: 'guidelines',
         element: <ProtectedRoute><ProfileRequiredRoute><GuidelinesPage /></ProfileRequiredRoute></ProtectedRoute>,
       },

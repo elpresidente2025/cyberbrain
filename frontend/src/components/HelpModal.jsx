@@ -19,7 +19,7 @@ const HelpModal = ({ open, onClose, title, children }) => {
       fullWidth
       PaperProps={{
         sx: {
-          borderRadius: 2,
+          borderRadius: 1,
           maxHeight: '80vh',
         }
       }}

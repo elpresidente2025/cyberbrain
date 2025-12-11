@@ -130,12 +130,12 @@ const GenerateGuide = () => {
       ))}
 
       {/* 주의사항 섹션 */}
-      <Box sx={{ 
-        mt: 4, 
-        p: 3, 
-        bgcolor: theme.palette.mode === 'dark' ? 'rgba(255, 152, 0, 0.1)' : '#fff3e0', 
-        borderRadius: 2, 
-        border: theme.palette.mode === 'dark' ? '1px solid rgba(255, 152, 0, 0.3)' : '1px solid #ffb74d' 
+      <Box sx={{
+        mt: 4,
+        p: 3,
+        bgcolor: theme.palette.mode === 'dark' ? 'rgba(255, 152, 0, 0.1)' : '#fff3e0',
+        borderRadius: 1,
+        border: theme.palette.mode === 'dark' ? '1px solid rgba(255, 152, 0, 0.3)' : '1px solid #ffb74d'
       }}>
         <Typography variant="h6" sx={{ 
           fontWeight: 600, 

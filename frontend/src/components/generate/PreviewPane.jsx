@@ -122,7 +122,7 @@ export default function PreviewPane({ draft }) {
             color: theme.palette.ui?.header || '#152484', // 남색 계열로 텍스트 색상 강조
             backgroundColor: 'rgba(33, 150, 243, 0.1)', // 아주 연한 하늘색 배경 추가
             padding: '2px 5px',
-            borderRadius: '4px',
+            borderRadius: '2px',
             boxDecorationBreak: 'clone', // 줄바꿈 시에도 스타일 유지
             WebkitBoxDecorationBreak: 'clone',
           }

@@ -30,7 +30,7 @@ export default function DraftGrid({
         </Typography>
         <Typography variant="body2" sx={{ color: 'black' }}>
           상단 폼을 작성하고 "원고 생성 시도" 버튼을 클릭하세요.<br />
-          한 번의 시도당 최대 {maxAttempts}회까지 재생성할 수 있습니다.
+          한 번의 생성에서 최대 {maxAttempts}회까지 시도할 수 있습니다.
         </Typography>
       </Paper>
     );

@@ -330,7 +330,7 @@ const Billing = () => {
                   background: `linear-gradient(135deg, ${colors.brand.primary} 0%, ${colors.brand.primaryHover} 100%)`,
                   color: 'white',
                   textAlign: 'center',
-                  borderRadius: 3,
+                  borderRadius: 1,
                   height: '100%',
                   display: 'flex',
                   flexDirection: 'column',

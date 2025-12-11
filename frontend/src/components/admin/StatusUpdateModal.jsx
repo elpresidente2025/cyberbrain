@@ -208,7 +208,7 @@ function StatusUpdateModal({ open, onClose }) {
         ) : (
           <>
             {/* 현재 상태 표시 */}
-            <Box sx={{ mb: 3, p: 2, backgroundColor: '#f5f5f5', borderRadius: 1 }}>
+            <Box sx={{ mb: 3, p: 2, backgroundColor: '#f5f5f5', borderRadius: 0.5 }}>
               <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 600 }}>
                 현재 시스템 상태
               </Typography>

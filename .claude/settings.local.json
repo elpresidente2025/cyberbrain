@@ -65,7 +65,26 @@
       "mcp__serena__get_symbols_overview",
       "Bash(firebase functions:list:*)",
       "Bash(gcloud firestore documents list:*)",
-      "mcp__serena__find_file"
+      "mcp__serena__find_file",
+      "mcp__serena__find_symbol",
+      "Bash(열심히 하겠습니다.\" and ensures concrete, meaningful political communication.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(npm run deploy:*)",
+      "Bash(npm run deploy:functions:*)",
+      "Bash(npm run deploy:hosting:*)",
+      "Bash(당원 인증 시 월 8회 무료 제공\" Alert 배너 완전 제거\n- 데모 모드는 PublishingProgress 컴포넌트에서만 조건부 문구로 처리\n\n사용자 경험:\n- 중복된 데모 모드 안내 제거로 UI 간소화\n- 필요한 곳에서만 적절한 안내 표시\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(node scripts/migrate-to-priority-system.js:*)",
+      "Bash(firebase ext:install:*)",
+      "Bash(gcloud auth application-default login:*)",
+      "Bash(dir \"C:\\Users\\강정구학부졸업미디어문예창작학과\\.claude\\plugins\\cache\\thedotmack\\claude-mem\")",
+      "Bash(dir \"C:\\Users\\강정구학부졸업미디어문예창작학과\\.claude\\plugins\\marketplaces\\thedotmack\")",
+      "Bash(dir \"C:\\Users\\강정구학부졸업미디어문예창작학과\\.claude\\plugins\\marketplaces\\thedotmack\\scripts\")",
+      "Bash(dir \"C:\\Users\\강정구학부졸업미디어문예창작학과\\.claude\\plugins\\cache\\thedotmack\\claude-mem\\7.0.3\")",
+      "Bash(dir \"C:\\Users\\강정구학부졸업미디어문예창작학과\\.claude\\plugins\\cache\\thedotmack\\claude-mem\\7.0.3\\scripts\")",
+      "Bash(npm install)",
+      "Bash(npm run worker:start:*)",
+      "Bash(npm run worker:logs:*)",
+      "mcp__plugin_claude-mem_claude-mem-search__search",
+      "Bash(git commit -m \"$(cat <<''EOF''\nui: reduce border radius for sharper, minimal corners\n\n- Update theme tokens: reduce border radius values (sm:1px, md:2px, lg:2px, xl:3px)\n- Update MUI global styles: set borderRadius to 2px for Paper, Card, Dialog\n- Update all component-level borderRadius values across 20+ files\n- Update dashboard \"Generate Post\" button with minimal corner radius\n- Update base button styles in index.css to 2px\n\nCreates a more modern, sharp aesthetic with subtle rounding throughout the UI.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n)\")"
     ]
   },
   "mcpServers": {

@@ -11,14 +11,50 @@
  * @param {Object} params.config - 상태별 설정
  * @param {string} params.customTitle - 사용자 지정 직위 (선택)
  * @param {string} params.displayTitle - 표시할 직위 (customTitle 또는 config.title)
+ * @param {boolean} params.isCurrentLawmaker - 현역 의원 여부
  * @returns {string} 수정된 원고 내용
  */
-function processGeneratedContent({ content, fullName, fullRegion, currentStatus, userProfile, config, customTitle, displayTitle }) {
+function processGeneratedContent({ content, fullName, fullRegion, currentStatus, userProfile, config, customTitle, displayTitle, isCurrentLawmaker }) {
   console.log('🔩 후처리 시작 - 필수 정보 강제 삽입');
 
   if (!content) return content;
 
   let fixedContent = content;
+
+  // 🔥 원외 인사의 경우 강력한 "의원" 표현 제거
+  if (isCurrentLawmaker === false) {
+    console.log('⚠️ 원외 인사 감지 - "의원" 및 "지역구" 표현 강력 제거 시작');
+
+    // "국회의원", "지역구 국회의원" 등 제거
+    fixedContent = fixedContent.replace(/국회\s*의원/g, fullName);
+    fixedContent = fixedContent.replace(/지역구\s*국회\s*의원/g, fullName);
+    fixedContent = fixedContent.replace(/지역구\s*의원/g, fullName);
+
+    // "의원으로서" → "저로서" 또는 customTitle
+    const asPhrase = customTitle ? `${customTitle}으로서` : '저로서';
+    fixedContent = fixedContent.replace(/의원으로서/g, asPhrase);
+
+    // "의원입니다" → 이름
+    fixedContent = fixedContent.replace(/의원입니다/g, `${fullName}입니다`);
+
+    // "의원의 한 사람으로서" → "시민의 한 사람으로서"
+    fixedContent = fixedContent.replace(/의원의 한 사람으로서/g, '시민의 한 사람으로서');
+
+    // "의정활동" → "활동"
+    fixedContent = fixedContent.replace(/의정활동/g, '활동');
+
+    // 🔥 "지역구" 표현 제거 (국회의원 전용 용어)
+    // "지역구 발전" → "부산 발전" 또는 "지역 발전"
+    const regionName = fullRegion || '지역';
+    fixedContent = fixedContent.replace(/지역구\s*발전/g, `${regionName} 발전`);
+    fixedContent = fixedContent.replace(/지역구\s*주민/g, `${regionName} 주민`);
+    fixedContent = fixedContent.replace(/지역구\s*현안/g, `${regionName} 현안`);
+    fixedContent = fixedContent.replace(/지역구를/g, `${regionName}을`);
+    fixedContent = fixedContent.replace(/지역구의/g, `${regionName}의`);
+    fixedContent = fixedContent.replace(/지역구에/g, `${regionName}에`);
+
+    console.log('✅ 원외 인사 "의원" 및 "지역구" 표현 제거 완료');
+  }
 
   // 1. 기본적인 호칭 수정
   // '준비' 상태는 이름만 사용하므로 직위 표현을 제거

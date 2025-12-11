@@ -91,7 +91,7 @@ const PaymentDialog = ({ open, onClose, selectedPlan }) => {
               style={{
                 padding: '24px',
                 backgroundColor: '#ffffff',
-                borderRadius: '8px',
+                borderRadius: '2px',
                 marginBottom: '24px',
                 border: '1px solid #e0e0e0'
               }}

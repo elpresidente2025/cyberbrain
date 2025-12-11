@@ -47,7 +47,7 @@ const NaverPayment = ({
   return (
     <Box sx={{ width: '100%', maxWidth: 540, mx: 'auto' }}>
       {/* 결제 금액 표시 */}
-      <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 2 }}>
+      <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
         <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>
           결제 정보
         </Typography>

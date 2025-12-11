@@ -195,7 +195,7 @@ async function scrubDuplicateHolders({ key, ownerUid }) {
   try {
     // 동일한 선거구를 점유한 모든 문서 조회
     const snapshot = await db.collection('district_claims').where('userId', '==', ownerUid).get();
-    
+
     const batch = db.batch();
     let hasChanges = false;
 
@@ -213,6 +213,43 @@ async function scrubDuplicateHolders({ key, ownerUid }) {
   } catch (error) {
     console.warn('[scrubDuplicateHolders] 정리 중 오류 (무시):', error.message);
     // 정리 작업 실패는 메인 프로세스에 영향을 주지 않음
+  }
+}
+
+/**
+ * 우선권 변경 알림 발송 (비동기)
+ * 결제 기반 우선권 시스템에서 사용
+ */
+async function notifyPriorityChange({ newPrimaryUserId, oldPrimaryUserId, districtKey }) {
+  if (!newPrimaryUserId || !districtKey) return;
+
+  try {
+    const { notifyPriorityGained, notifyPriorityLost } = require('./notification');
+
+    // 새 우선권자에게 알림
+    await notifyPriorityGained({
+      userId: newPrimaryUserId,
+      districtKey,
+      previousUserId: oldPrimaryUserId
+    });
+
+    // 이전 우선권자에게 알림 (선택사항)
+    if (oldPrimaryUserId) {
+      await notifyPriorityLost({
+        userId: oldPrimaryUserId,
+        districtKey,
+        newPrimaryUserId
+      });
+    }
+
+    console.log('✅ [notifyPriorityChange] 알림 발송 완료:', {
+      newPrimaryUserId,
+      oldPrimaryUserId,
+      districtKey
+    });
+  } catch (error) {
+    console.error('❌ [notifyPriorityChange] 알림 발송 실패 (무시):', error.message);
+    // 알림 실패는 메인 프로세스에 영향을 주지 않음
   }
 }
 
@@ -287,6 +324,7 @@ module.exports = {
   checkDistrictAvailability,
   claimDistrict,
   scrubDuplicateHolders,
+  notifyPriorityChange,
   forceReleaseDistrict,
   getDistrictStatus
 };

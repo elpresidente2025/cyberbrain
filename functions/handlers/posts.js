@@ -89,6 +89,20 @@ exports.generatePosts = httpWrap(async (req) => {
 
   console.log('✅ 사용자 인증 완료:', uid);
 
+  // 🔒 우선권 체크 (결제 기반 시스템)
+  const { checkGenerationPermission } = require('../services/district-priority');
+  const permissionCheck = await checkGenerationPermission({ uid });
+
+  if (!permissionCheck.allowed) {
+    console.warn('⚠️ 생성 권한 없음:', { uid, reason: permissionCheck.reason });
+    throw new HttpsError('permission-denied', permissionCheck.message, {
+      reason: permissionCheck.reason,
+      suggestion: permissionCheck.suggestion
+    });
+  }
+
+  console.log('✅ 생성 권한 확인:', { reason: permissionCheck.reason, remaining: permissionCheck.remaining });
+
   const useBonus = requestData?.useBonus || false;
   const sessionId = requestData?.sessionId || null; // 세션 ID (재생성 시)
   const data = requestData;

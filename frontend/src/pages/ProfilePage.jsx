@@ -96,6 +96,9 @@ export default function ProfilePage() {
     constituencyType: '',
   });
 
+  // DB에 실제 저장된 직위 값 (배지 표시용)
+  const [savedCustomTitle, setSavedCustomTitle] = useState('');
+
 
   // 회원탈퇴 처리
   const handleDeleteAccount = async () => {
@@ -165,73 +168,51 @@ export default function ProfilePage() {
     }
   ]);
 
-  // 최초 로드
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        setLoading(true);
-        
-        const res = await callFunctionWithNaverAuth('getUserProfile');
-        
-        if (!mounted) return;
+  // 프로필 다시 불러오기 함수 (저장 후 서버 값 확인용)
+  const reloadProfile = async () => {
+    try {
+      const res = await callFunctionWithNaverAuth('getUserProfile');
+      let profileData = res?.profile || res || {};
 
-        // callFunctionWithNaverAuth는 이미 .data를 반환하므로 직접 사용
-        let profileData = res?.profile || res || {};
+      const newProfile = {
+        name: profileData.name || profileData.displayName || '',
+        status: profileData.status || '현역',
+        position: profileData.position || '',
+        regionMetro: profileData.regionMetro || '',
+        regionLocal: profileData.regionLocal || '',
+        electoralDistrict: profileData.electoralDistrict || '',
+        bio: profileData.bio || '',
+        customTitle: profileData.customTitle || '',
+        // 개인화 정보 (선택사항)
+        ageDecade: profileData.ageDecade || '',
+        ageDetail: profileData.ageDetail || '',
+        familyStatus: profileData.familyStatus || '',
+        backgroundCareer: profileData.backgroundCareer || '',
+        localConnection: profileData.localConnection || '',
+        politicalExperience: profileData.politicalExperience || '',
+        gender: profileData.gender || '',
+        twitterPremium: profileData.twitterPremium || false,
+        committees: profileData.committees || [''],
+        customCommittees: profileData.customCommittees || [],
+        constituencyType: profileData.constituencyType || '',
+      };
 
+      setProfile(newProfile);
 
-        const newProfile = {
-          name: profileData.name || profileData.displayName || '',
-          status: profileData.status || '현역',
-          position: profileData.position || '',
-          regionMetro: profileData.regionMetro || '',
-          regionLocal: profileData.regionLocal || '',
-          electoralDistrict: profileData.electoralDistrict || '',
-          bio: profileData.bio || '',
-          customTitle: profileData.customTitle || '',
-          // 개인화 정보 (선택사항)
-          ageDecade: profileData.ageDecade || '',
-          ageDetail: profileData.ageDetail || '',
-          familyStatus: profileData.familyStatus || '',
-          backgroundCareer: profileData.backgroundCareer || '',
-          localConnection: profileData.localConnection || '',
-          politicalExperience: profileData.politicalExperience || '',
-          gender: profileData.gender || '',
-          twitterPremium: profileData.twitterPremium || false,
-          committees: profileData.committees || [''],
-          customCommittees: profileData.customCommittees || [],
-          constituencyType: profileData.constituencyType || '',
-        };
-
-        setProfile(newProfile);
-
-        // localStorage의 사용자 정보도 서버 데이터로 업데이트
-        try {
-          const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-          const updatedUser = {
-            ...currentUser,
-            ...newProfile,
-            bio: profileData.bio || '' // bio 필드 명시적으로 업데이트
-          };
-          localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-          console.log('✅ ProfilePage: localStorage 사용자 정보 업데이트 완료 (bio 길이:', profileData.bio?.length || 0, ')');
-
-          // useAuth에 사용자 정보 업데이트 알림
-          window.dispatchEvent(new CustomEvent('userProfileUpdated', {
-            detail: updatedUser
-          }));
-        } catch (e) {
-          console.warn('ProfilePage: localStorage 업데이트 실패:', e);
-        }
-
-        // Bio 엔트리 초기화 (기존 bio를 첫 번째 엔트리로)
-        if (profileData.bio && profileData.bio.trim()) {
+      // bioEntries 복원 (서버에서 받아온 값이 있으면 사용)
+      if (profileData.bioEntries && Array.isArray(profileData.bioEntries)) {
+        console.log('🔍 [reloadProfile] bioEntries 복원:', { count: profileData.bioEntries.length });
+        setBioEntries(profileData.bioEntries);
+      } else {
+        // bioEntries가 없으면 기본값으로 초기화
+        console.log('🔍 [reloadProfile] bioEntries 없음 - 기본값 사용');
+        if (newProfile.bio && newProfile.bio.trim()) {
           setBioEntries([
             {
               id: 'entry_initial',
               type: 'self_introduction',
               title: '자기소개',
-              content: profileData.bio.trim(),
+              content: newProfile.bio.trim(),
               tags: [],
               weight: 1.0
             },
@@ -245,7 +226,6 @@ export default function ProfilePage() {
             }
           ]);
         } else {
-          // bio가 없는 경우에도 기본 엔트리들 유지
           setBioEntries([
             {
               id: 'entry_initial',
@@ -264,15 +244,62 @@ export default function ProfilePage() {
               weight: 1.0
             }
           ]);
-
         }
+      }
+
+      // DB에 저장된 실제 값 업데이트 (배지 표시용)
+      const savedTitle = profileData.customTitle || '';
+      console.log('🔍 [reloadProfile] customTitle 업데이트:', {
+        raw: profileData.customTitle,
+        saved: savedTitle,
+        willUpdate: savedTitle
+      });
+      setSavedCustomTitle(savedTitle);
+
+      // localStorage의 사용자 정보도 서버 데이터로 업데이트
+      try {
+        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+        const updatedUser = {
+          ...currentUser,
+          ...newProfile,
+          bio: profileData.bio || ''
+        };
+        localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+        console.log('✅ ProfilePage: 프로필 리로드 완료 (customTitle:', newProfile.customTitle, ')');
+
+        window.dispatchEvent(new CustomEvent('userProfileUpdated', {
+          detail: updatedUser
+        }));
+      } catch (e) {
+        console.warn('ProfilePage: localStorage 업데이트 실패:', e);
+      }
+
+      return newProfile;
+    } catch (error) {
+      console.error('프로필 리로드 실패:', error);
+      throw error;
+    }
+  };
+
+  // 최초 로드
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoading(true);
+
+        const newProfile = await reloadProfile();
+
+        if (!mounted) return;
+
+        // bioEntries는 reloadProfile에서 이미 초기화됨 (중복 제거)
 
         // bio가 없는 경우 가이드 모달 표시 (온보딩에서 넘어온 경우)
-        const hasSufficientBio = profileData.bio && profileData.bio.trim().length >= 200;
+        const hasSufficientBio = newProfile.bio && newProfile.bio.trim().length >= 200;
         if (!hasSufficientBio) {
           console.log('🎯 Profile 페이지 - Bio 가이드 모달 표시', {
-            bio: profileData.bio,
-            length: profileData.bio?.length || 0,
+            bio: newProfile.bio,
+            length: newProfile.bio?.length || 0,
             hasSufficientBio
           });
           // 페이지 로딩 완료 후 잠시 뒤에 글로우 효과와 함께 모달 표시 (자연스러운 UX)
@@ -282,8 +309,8 @@ export default function ProfilePage() {
           }, 800);
         } else {
           console.log('🎯 충분한 Bio가 있어서 가이드 모달 표시하지 않음', {
-            bio: profileData.bio?.substring(0, 50) + '...',
-            length: profileData.bio?.length || 0
+            bio: newProfile.bio?.substring(0, 50) + '...',
+            length: newProfile.bio?.length || 0
           });
         }
         
@@ -303,6 +330,43 @@ export default function ProfilePage() {
   const handleUserInfoChange = (name, value) => {
     setError('');
     setProfile((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // 직위 즉시 저장 핸들러 (추가/삭제 시 즉시 DB에 저장)
+  const handleCustomTitleSave = async (newCustomTitle, action = 'save') => {
+    try {
+      setSaving(true);
+      console.log('🔄 직위 즉시 저장:', newCustomTitle, '액션:', action);
+
+      const payload = {
+        customTitle: newCustomTitle
+      };
+
+      const res = await callFunctionWithNaverAuth('updateProfile', payload);
+      console.log('updateProfile 응답:', res);
+
+      if (res) {
+        // 서버에서 저장된 프로필 다시 불러오기
+        await reloadProfile();
+        console.log('✅ 직위 저장 후 프로필 리로드 완료');
+
+        // 액션에 따라 다른 메시지 표시
+        if (action === 'delete') {
+          showNotification('직위가 삭제되었습니다.', 'success');
+        } else {
+          showNotification('직위가 저장되었습니다.', 'success');
+        }
+      } else {
+        throw new Error('서버 응답이 올바르지 않습니다.');
+      }
+    } catch (e) {
+      console.error('[직위 저장 오류]', e);
+      setError('직위 저장 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.');
+      // 실패 시 프로필 다시 불러와서 UI와 DB 동기화
+      await reloadProfile();
+    } finally {
+      setSaving(false);
+    }
   };
 
   // 자기소개 카드에 순차적으로 스크롤->글로우 2회->팝업 효과를 주는 함수
@@ -502,6 +566,7 @@ export default function ProfilePage() {
       const payload = {
         name: profile.name,
         status: profile.status,
+        customTitle: profile.customTitle,
         position: profile.position,
         regionMetro: profile.regionMetro,
         regionLocal: profile.regionLocal,
@@ -514,20 +579,13 @@ export default function ProfilePage() {
       console.log('updateProfile 응답:', res);
 
       if (res) {
-        // localStorage 업데이트
+        // 서버에서 저장된 프로필 다시 불러오기 (저장 확인)
         try {
-          const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-          const updatedUser = {
-            ...currentUser,
-            ...payload
-          };
-          localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-          window.dispatchEvent(new CustomEvent('userProfileUpdated', {
-            detail: updatedUser
-          }));
-          console.log('✅ 프로필 정보 업데이트 완료');
-        } catch (e) {
-          console.warn('사용자 정보 업데이트 실패:', e);
+          await reloadProfile();
+          console.log('✅ 기본정보 저장 후 프로필 리로드 완료 (서버 값 확인)');
+        } catch (reloadError) {
+          console.warn('프로필 리로드 실패:', reloadError);
+          // 리로드 실패해도 저장은 성공했으므로 계속 진행
         }
 
         showNotification('프로필 정보가 저장되었습니다.', 'success');
@@ -583,6 +641,7 @@ export default function ProfilePage() {
       const payload = {
         bio: profile.bio,
         customTitle: profile.customTitle,
+        bioEntries: bioEntries, // 정책/공약 등 추가 정보 엔트리
         ageDecade: profile.ageDecade,
         ageDetail: profile.ageDetail,
         familyStatus: profile.familyStatus,
@@ -597,25 +656,19 @@ export default function ProfilePage() {
       };
 
       console.log('전송할 자기소개 데이터:', JSON.stringify(payload, null, 2));
+      console.log('🔍 [저장] bioEntries:', bioEntries.length, '개');
 
       const res = await callFunctionWithNaverAuth('updateProfile', payload);
       console.log('updateProfile 응답:', res);
 
       if (res) {
-        // localStorage 업데이트
+        // 서버에서 저장된 프로필 다시 불러오기 (저장 확인)
         try {
-          const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-          const updatedUser = {
-            ...currentUser,
-            ...payload
-          };
-          localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-          window.dispatchEvent(new CustomEvent('userProfileUpdated', {
-            detail: updatedUser
-          }));
-          console.log('✅ 자기소개 정보 업데이트 완료');
-        } catch (e) {
-          console.warn('사용자 정보 업데이트 실패:', e);
+          await reloadProfile();
+          console.log('✅ 자기소개 저장 후 프로필 리로드 완료 (서버 값 확인)');
+        } catch (reloadError) {
+          console.warn('프로필 리로드 실패:', reloadError);
+          // 리로드 실패해도 저장은 성공했으므로 계속 진행
         }
 
         // 첫 번째 bio 완성인 경우 축하 모달 표시
@@ -683,7 +736,8 @@ export default function ProfilePage() {
       };
       
       console.log('전송할 데이터 (전체):', JSON.stringify(payload, null, 2));
-      
+      console.log('🔍 [저장] customTitle 값:', payload.customTitle);
+
       const res = await callFunctionWithNaverAuth('updateProfile', payload);
       console.log('updateProfile 응답:', res);
       
@@ -694,24 +748,13 @@ export default function ProfilePage() {
           message = res.message;
         }
 
-        // localStorage의 사용자 정보 업데이트
+        // 서버에서 저장된 프로필 다시 불러오기 (저장 확인)
         try {
-          const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-          const updatedUser = {
-            ...currentUser,
-            ...profile,
-            bio: profile.bio // bio 필드 명시적으로 업데이트
-          };
-          localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-
-          // useAuth에 사용자 정보 업데이트 알림
-          window.dispatchEvent(new CustomEvent('userProfileUpdated', {
-            detail: updatedUser
-          }));
-
-          console.log('✅ 사용자 정보 업데이트 완료:', updatedUser);
-        } catch (e) {
-          console.warn('사용자 정보 업데이트 실패:', e);
+          await reloadProfile();
+          console.log('✅ 저장 후 프로필 리로드 완료 (서버 값 확인)');
+        } catch (reloadError) {
+          console.warn('프로필 리로드 실패:', reloadError);
+          // 리로드 실패해도 저장은 성공했으므로 계속 진행
         }
 
         // 첫 번째 bio 완성인 경우 축하 모달 표시
@@ -864,11 +907,13 @@ export default function ProfilePage() {
                 name={profile.name}
                 status={profile.status}
                 customTitle={profile.customTitle}
+                savedCustomTitle={savedCustomTitle}
                 position={profile.position}
                 regionMetro={profile.regionMetro}
                 regionLocal={profile.regionLocal}
                 electoralDistrict={profile.electoralDistrict}
                 onChange={handleUserInfoChange}
+                onCustomTitleSave={handleCustomTitleSave}
                 nameDisabled={true}
                 disabled={saving}
                 showTitle={true}
@@ -1372,12 +1417,12 @@ export default function ProfilePage() {
                         }}>
                           <CardContent sx={{ flex: 1 }}>
                             <Box sx={{ mb: `${spacing.md}px` }}>
-                              <Chip 
+                              <Chip
                                 label={typeConfig.name}
                                 size="small"
-                                sx={{ 
-                                  bgcolor: typeConfig.color + '20',
-                                  color: typeConfig.color,
+                                sx={{
+                                  bgcolor: typeConfig.color,
+                                  color: 'white',
                                   fontWeight: 600
                                 }}
                               />

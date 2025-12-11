@@ -74,7 +74,7 @@ export default function SystemSettings() {
 
   if (loading) {
     return (
-      <Paper sx={{ p: 3, borderRadius: 2 }}>
+      <Paper sx={{ p: 3, borderRadius: 1 }}>
         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
           <CircularProgress />
         </Box>
@@ -83,7 +83,7 @@ export default function SystemSettings() {
   }
 
   return (
-    <Paper sx={{ p: 3, borderRadius: 2, boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}>
+    <Paper sx={{ p: 3, borderRadius: 1, boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}>
       {/* 헤더 */}
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
         <Settings sx={{ fontSize: 28, color: '#006261', mr: 1.5 }} />

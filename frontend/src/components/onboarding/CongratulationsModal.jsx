@@ -48,7 +48,7 @@ const CongratulationsModal = ({ open, onClose, userName, bioContent }) => {
       fullWidth
       sx={{
         '& .MuiDialog-paper': {
-          borderRadius: 2,
+          borderRadius: 1,
           bgcolor: 'background.paper'
         }
       }}
@@ -119,7 +119,7 @@ const CongratulationsModal = ({ open, onClose, userName, bioContent }) => {
 
         <Box sx={{
           bgcolor: 'rgba(21, 36, 132, 0.05)',
-          borderRadius: 2,
+          borderRadius: 1,
           p: 3,
           border: '1px solid rgba(21, 36, 132, 0.1)',
           mb: 2
