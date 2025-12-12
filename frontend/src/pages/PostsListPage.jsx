@@ -392,15 +392,14 @@ export default function PostsListPage() {
                       <CardActions sx={{ justifyContent: 'flex-end', pt: 0, gap: 1 }}>
                         <Button
                           size="small"
-                          variant="outlined"
+                          variant="contained"
                           startIcon={<Transform fontSize="small" />}
                           onClick={(e) => handleSNSConvert(p, e)}
                           sx={{
-                            color: theme.palette.ui?.header || colors.brand.primary,
-                            borderColor: theme.palette.ui?.header || colors.brand.primary,
+                            bgcolor: theme.palette.ui?.header || colors.brand.primary,
+                            color: 'white',
                             '&:hover': {
-                              borderColor: theme.palette.ui?.headerHover || colors.brand.primaryHover,
-                              bgcolor: 'rgba(25, 118, 210, 0.04)'
+                              bgcolor: theme.palette.ui?.headerHover || colors.brand.primaryHover
                             }
                           }}
                         >
@@ -408,15 +407,14 @@ export default function PostsListPage() {
                         </Button>
                         <Button
                           size="small"
-                          variant="outlined"
+                          variant="contained"
                           startIcon={<AddLink fontSize="small" />}
                           onClick={(e) => handlePublish(p, e)}
                           sx={{
-                            color: p.publishUrl ? colors.brand.primary : (theme.palette.ui?.header || colors.brand.primary),
-                            borderColor: p.publishUrl ? colors.brand.primary : (theme.palette.ui?.header || colors.brand.primary),
+                            bgcolor: p.publishUrl ? '#2e7d32' : (theme.palette.ui?.header || colors.brand.primary),
+                            color: 'white',
                             '&:hover': {
-                              borderColor: theme.palette.ui?.headerHover || colors.brand.primaryHover,
-                              bgcolor: 'rgba(25, 118, 210, 0.04)'
+                              bgcolor: p.publishUrl ? '#1b5e20' : (theme.palette.ui?.headerHover || colors.brand.primaryHover)
                             }
                           }}
                         >
@@ -424,10 +422,13 @@ export default function PostsListPage() {
                         </Button>
                         <Button
                           size="small"
-                          variant="outlined"
+                          variant="contained"
                           color="error"
                           startIcon={<DeleteOutline fontSize="small" />}
                           onClick={(e) => handleDelete(p.id, e)}
+                          sx={{
+                            color: 'white'
+                          }}
                         >
                           삭제
                         </Button>
