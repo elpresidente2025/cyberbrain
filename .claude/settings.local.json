@@ -84,7 +84,11 @@
       "Bash(npm run worker:start:*)",
       "Bash(npm run worker:logs:*)",
       "mcp__plugin_claude-mem_claude-mem-search__search",
-      "Bash(git commit -m \"$(cat <<''EOF''\nui: reduce border radius for sharper, minimal corners\n\n- Update theme tokens: reduce border radius values (sm:1px, md:2px, lg:2px, xl:3px)\n- Update MUI global styles: set borderRadius to 2px for Paper, Card, Dialog\n- Update all component-level borderRadius values across 20+ files\n- Update dashboard \"Generate Post\" button with minimal corner radius\n- Update base button styles in index.css to 2px\n\nCreates a more modern, sharp aesthetic with subtle rounding throughout the UI.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git commit -m \"$(cat <<''EOF''\nui: reduce border radius for sharper, minimal corners\n\n- Update theme tokens: reduce border radius values (sm:1px, md:2px, lg:2px, xl:3px)\n- Update MUI global styles: set borderRadius to 2px for Paper, Card, Dialog\n- Update all component-level borderRadius values across 20+ files\n- Update dashboard \"Generate Post\" button with minimal corner radius\n- Update base button styles in index.css to 2px\n\nCreates a more modern, sharp aesthetic with subtle rounding throughout the UI.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(dir:*)",
+      "Bash(tree:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: add 3-layer election law compliance system\n\n- Add ELECTION_EXPRESSION_RULES to constants.js (stage-based rules)\n- Inject election compliance instructions in policy-proposal.js (1st defense)\n- Extend LEGAL_GUARDRAIL.json with election patterns (v1→v2)\n- Add validateElectionCompliance() and sanitizeElectionContent() to election-compliance.js (2nd/3rd defense)\n- Connect auto-sanitization in content-processor.js\n\nAutomatically replaces forbidden expressions based on user status:\n- Stage 1 (준비/현역): \"공약\"→\"정책 방향\", \"약속드립니다\"→\"이 방향으로 노력하겠습니다\"\n- Stage 2 (예비): Only \"투표해 주십시오\" forbidden\n- Stage 3 (후보): Only illegal expressions forbidden\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(firebase login:list:*)"
     ]
   },
   "mcpServers": {

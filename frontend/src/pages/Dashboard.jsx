@@ -711,6 +711,11 @@ const Dashboard = () => {
               <PublishingProgress />
             </Box>
 
+            {/* 선거 D-Day 카드 */}
+            <Box sx={{ mb: `${spacing.lg}px` }}>
+              <ElectionDDay position={user?.position} status={user?.currentStatus} />
+            </Box>
+
             {/* 최근 생성한 글 */}
             <Paper elevation={0} sx={{
               mb: `${spacing.lg}px`,
@@ -916,6 +921,8 @@ const Dashboard = () => {
                 {/* 발행 진행률 카드 - 항상 상단에 */}
                 <PublishingProgress />
 
+                {/* 선거 D-Day 카드 */}
+                <ElectionDDay position={user?.position} status={user?.currentStatus} />
 
                 {/* 2K 미만에서만 표시되는 공지사항 */}
                 <Box sx={{ display: { xs: 'block', xl: 'none' } }}>
