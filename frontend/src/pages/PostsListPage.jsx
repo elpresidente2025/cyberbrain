@@ -396,10 +396,10 @@ export default function PostsListPage() {
                           startIcon={<Transform fontSize="small" />}
                           onClick={(e) => handleSNSConvert(p, e)}
                           sx={{
-                            bgcolor: colors.brand.primary,
+                            bgcolor: theme.palette.ui?.header || colors.brand.primary,
                             color: 'white',
                             '&:hover': {
-                              bgcolor: colors.brand.primaryHover
+                              bgcolor: theme.palette.ui?.headerHover || colors.brand.primaryHover
                             }
                           }}
                         >
