@@ -378,8 +378,14 @@ function ElectionDDay({ position, status }) {
     const getElectionInfo = () => {
       const today = new Date();
       const currentYear = today.getFullYear();
-      
-      if (position === '국회의원') {
+
+      // position 값 정규화 (다양한 형식 지원)
+      const normalizedPosition = (position || '').toLowerCase();
+      const isNationalAssembly = normalizedPosition.includes('국회') ||
+                                  normalizedPosition === '국회의원' ||
+                                  normalizedPosition.includes('국회의원');
+
+      if (isNationalAssembly) {
         // 총선: 4년주기, 기준일: 2028-04-12
         const baseElection = {
           year: 2028,
@@ -387,10 +393,10 @@ function ElectionDDay({ position, status }) {
           day: 12,
           cycle: 4
         };
-        
+
         const nextElection = getNextElectionDate(baseElection, today);
         const termNumber = Math.floor((nextElection.year - 2024) / 4) + 22; // 22대부터 시작
-        
+
         return {
           type: `제${termNumber}대 국회의원 선거`,
           date: nextElection.date,
@@ -399,7 +405,8 @@ function ElectionDDay({ position, status }) {
           color: '#003A87',
           cycle: '4년'
         };
-      } else if (position === '광역의원' || position === '기초의원') {
+      } else {
+        // 지방선거 (기본값) - 광역의원, 기초의원, 또는 position이 없는 경우 모두 포함
         // 지방 4년주기, 기준일: 2026-06-03
         const baseElection = {
           year: 2026,
@@ -407,21 +414,19 @@ function ElectionDDay({ position, status }) {
           day: 3,
           cycle: 4
         };
-        
+
         const nextElection = getNextElectionDate(baseElection, today);
         const termNumber = Math.floor((nextElection.year - 2026) / 4) + 9; // 9기부터 시작
-        
+
         return {
           type: `제${termNumber}회 전국동시지방선거`,
           date: nextElection.date,
-          description: '지방',
+          description: '지방선거',
           icon: People,
           color: '#006261',
           cycle: '4년'
         };
       }
-      
-      return null;
     };
 
     // ?�음 ?�거??계산 ?�수
