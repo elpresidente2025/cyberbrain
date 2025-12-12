@@ -352,10 +352,10 @@ const SevenSegmentDisplay = ({ dDay, cardHeight = '140px', onColorChange }) => {
 };
 
 /**
- * ?�거???�데??컴포?�트
+ * 선거일 D-Day 컴포넌트
  * @param {Object} props
- * @param {string} props.position - 직책 ('�?��?�원', '광역?�원', '기초?�원')
- * @param {string} props.status - ?�태 ('?�역', '?�비')
+ * @param {string} props.position - 직책 ('국회의원', '광역의원', '기초의원')
+ * @param {string} props.status - 상태 ('현역', '예비')
  */
 function ElectionDDay({ position, status }) {
 
@@ -373,7 +373,7 @@ function ElectionDDay({ position, status }) {
 
   const [currentGlowColor, setCurrentGlowColor] = useState('#00ffff');
 
-  // ?�거 ?�보 ?�정
+  // 선거 정보 설정
   useEffect(() => {
     const getElectionInfo = () => {
       const today = new Date();
@@ -429,15 +429,15 @@ function ElectionDDay({ position, status }) {
       }
     };
 
-    // ?�음 ?�거??계산 ?�수
+    // 다음 선거일 계산 함수
     const getNextElectionDate = (baseElection, today) => {
       const { year: baseYear, month: baseMonth, day: baseDay, cycle } = baseElection;
-      
-      // 기�? ?�거??
+
+      // 기준 선거일
       let candidateYear = baseYear;
       let candidateDate = new Date(candidateYear, baseMonth, baseDay);
-      
-      // ?�늘 ?�후??가??가까운 ?�거??찾기
+
+      // 오늘 이후의 가장 가까운 선거일 찾기
       while (candidateDate <= today) {
         candidateYear += cycle;
         candidateDate = new Date(candidateYear, baseMonth, baseDay);
@@ -453,15 +453,15 @@ function ElectionDDay({ position, status }) {
     setElectionInfo(info);
   }, [position]);
 
-  // ?�데??계산
+  // D-Day 계산
   useEffect(() => {
     if (!electionInfo) return;
 
     const calculateDDay = () => {
       const today = new Date();
       const electionDate = electionInfo.date;
-      
-      // ?�간 ?�규??(?�짜�?비교)
+
+      // 시간 정규화 (날짜만 비교)
       today.setHours(0, 0, 0, 0);
       electionDate.setHours(0, 0, 0, 0);
       
@@ -474,18 +474,18 @@ function ElectionDDay({ position, status }) {
     const days = calculateDDay();
     setDDay(days);
 
-    // 매일 ?�정???�데?�트
+    // 매일 자정에 업데이트
     const now = new Date();
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(0, 0, 0, 0);
-    
+
     const msUntilMidnight = tomorrow - now;
-    
+
     const timeout = setTimeout(() => {
       setDDay(calculateDDay());
-      
-      // ?�후 24?�간마다 ?�데?�트
+
+      // 이후 24시간마다 업데이트
       const interval = setInterval(() => {
         setDDay(calculateDDay());
       }, 24 * 60 * 60 * 1000);
