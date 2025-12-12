@@ -103,7 +103,6 @@ exports.generatePosts = httpWrap(async (req) => {
 
   console.log('✅ 생성 권한 확인:', { reason: permissionCheck.reason, remaining: permissionCheck.remaining });
 
-  const useBonus = requestData?.useBonus || false;
   const sessionId = requestData?.sessionId || null; // 세션 ID (재생성 시)
   const data = requestData;
 
@@ -135,13 +134,13 @@ exports.generatePosts = httpWrap(async (req) => {
       personalizedHints,
       dailyLimitWarning,
       isAdmin
-    } = await loadUserProfile(uid, category, topic, useBonus);
+    } = await loadUserProfile(uid, category, topic);
 
     // 🔥 세션 조회 또는 생성 (attempts는 아직 증가하지 않음)
     // - 새 세션: attempts = 0으로 시작, 검증 성공 후 증가
     // - 기존 세션: 기존 attempts 유지, 검증 성공 후 증가
     console.log('🔄 세션 관리:', sessionId ? '기존 세션 계속' : '새 세션 시작');
-    let session = await getOrCreateSession(uid, useBonus, isAdmin, category, topic);
+    let session = await getOrCreateSession(uid, isAdmin, category, topic);
 
     // 사용자 상태 설정
     const currentStatus = userProfile.status || '현역';
@@ -252,15 +251,15 @@ exports.generatePosts = httpWrap(async (req) => {
     });
 
     // 🎉 검증 성공! 이제 attempts 증가 및 생성 횟수 차감
-    // 1단계: attempts 증가 (보너스 포함)
-    session = await incrementSessionAttempts(uid, session, useBonus, isAdmin);
+    // 1단계: attempts 증가
+    session = await incrementSessionAttempts(uid, session, isAdmin);
     console.log('✅ 검증 성공 - attempts 증가 완료:', {
       sessionId: session.sessionId,
       attempts: session.attempts
     });
 
-    // 2단계: 생성 횟수 차감 (새 세션이고 보너스가 아닌 경우)
-    if (session.isNewSession && !useBonus) {
+    // 2단계: 생성 횟수 차감 (새 세션인 경우)
+    if (session.isNewSession) {
       const userDoc = await db.collection('users').doc(uid).get();
       const userData = userDoc.data() || {};
       const subscriptionStatus = userData.subscriptionStatus || 'trial';
@@ -397,7 +396,7 @@ exports.generatePosts = httpWrap(async (req) => {
     await progress.complete();
 
     // 최종 응답
-    let message = useBonus ? '보너스 원고가 성공적으로 생성되었습니다' : '원고가 성공적으로 생성되었습니다';
+    let message = '원고가 성공적으로 생성되었습니다';
     if (dailyLimitWarning) {
       message += '\n\n⚠️ 하루 3회 이상 원고를 생성하셨습니다. 네이버 블로그 정책상 과도한 발행은 스팸으로 분류될 수 있으므로, 반드시 마지막 포스팅으로부터 3시간 경과 후 발행해 주세요';
     }
@@ -420,8 +419,7 @@ exports.generatePosts = httpWrap(async (req) => {
       metadata: {
         generatedAt: new Date().toISOString(),
         userId: uid,
-        processingTime: Date.now(),
-        usedBonus: useBonus
+        processingTime: Date.now()
       }
     });
 
