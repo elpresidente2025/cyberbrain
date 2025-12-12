@@ -13,8 +13,6 @@ import {
   CardActions,
   CardActionArea,
   Chip,
-  IconButton,
-  Tooltip,
   useTheme,
   Button,
   Divider,
@@ -391,32 +389,48 @@ export default function PostsListPage() {
                         </CardContent>
                       </CardActionArea>
 
-                      <CardActions sx={{ justifyContent: 'flex-end', pt: 0 }}>
-                        <Box>
-                          <Tooltip title="SNS 변환">
-                            <IconButton
-                              size="small"
-                              onClick={(e) => handleSNSConvert(p, e)}
-                              sx={{ color: theme.palette.ui?.header || colors.brand.primary }}
-                            >
-                              <Transform fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="URL 등록">
-                            <IconButton 
-                              size="small"
-                              onClick={(e) => handlePublish(p, e)}
-                              sx={{ color: p.publishUrl ? colors.brand.primary : (theme.palette.ui?.header || colors.brand.primary) }}
-                            >
-                              <AddLink fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="삭제">
-                            <IconButton size="small" color="error" onClick={(e) => handleDelete(p.id, e)}>
-                              <DeleteOutline fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
+                      <CardActions sx={{ justifyContent: 'flex-end', pt: 0, gap: 1 }}>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={<Transform fontSize="small" />}
+                          onClick={(e) => handleSNSConvert(p, e)}
+                          sx={{
+                            color: theme.palette.ui?.header || colors.brand.primary,
+                            borderColor: theme.palette.ui?.header || colors.brand.primary,
+                            '&:hover': {
+                              borderColor: theme.palette.ui?.headerHover || colors.brand.primaryHover,
+                              bgcolor: 'rgba(25, 118, 210, 0.04)'
+                            }
+                          }}
+                        >
+                          SNS 변환
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={<AddLink fontSize="small" />}
+                          onClick={(e) => handlePublish(p, e)}
+                          sx={{
+                            color: p.publishUrl ? colors.brand.primary : (theme.palette.ui?.header || colors.brand.primary),
+                            borderColor: p.publishUrl ? colors.brand.primary : (theme.palette.ui?.header || colors.brand.primary),
+                            '&:hover': {
+                              borderColor: theme.palette.ui?.headerHover || colors.brand.primaryHover,
+                              bgcolor: 'rgba(25, 118, 210, 0.04)'
+                            }
+                          }}
+                        >
+                          URL 입력
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="error"
+                          startIcon={<DeleteOutline fontSize="small" />}
+                          onClick={(e) => handleDelete(p.id, e)}
+                        >
+                          삭제
+                        </Button>
                       </CardActions>
                     </Card>
                   </Grid>
