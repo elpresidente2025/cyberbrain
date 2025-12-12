@@ -50,7 +50,7 @@ const SEO_RULES = {
       h4: { count: '필요시', rule: '상세 분류용' }
     },
     paragraphs: {
-      count: '6-8개',
+      count: '10-15개',
       length: '150-250자',
       rule: '한 문단 하나의 주제'
     },
