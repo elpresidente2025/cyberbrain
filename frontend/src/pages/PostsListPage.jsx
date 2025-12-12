@@ -15,6 +15,7 @@ import {
   Chip,
   useTheme,
   Button,
+  IconButton,
   Divider,
   TextField,
   Dialog,
@@ -420,18 +421,13 @@ export default function PostsListPage() {
                         >
                           URL 입력
                         </Button>
-                        <Button
+                        <IconButton
                           size="small"
-                          variant="contained"
-                          color="error"
-                          startIcon={<DeleteOutline fontSize="small" />}
                           onClick={(e) => handleDelete(p.id, e)}
-                          sx={{
-                            color: 'white'
-                          }}
+                          sx={{ color: 'text.secondary' }}
                         >
-                          삭제
-                        </Button>
+                          <DeleteOutline fontSize="small" />
+                        </IconButton>
                       </CardActions>
                     </Card>
                   </Grid>
