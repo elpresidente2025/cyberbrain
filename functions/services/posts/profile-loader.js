@@ -297,12 +297,12 @@ async function checkUsageLimit(uid, userProfile, useBonus) {
 }
 
 /**
- * 세션 시작 또는 계속 (생성 vs 시도 구분)
- * - 새 세션: generationsRemaining 즉시 차감, 세션 생성, attempts = 1
- * - 기존 세션: attempts만 증가
+ * 세션 조회 또는 생성 (attempts는 변경하지 않음)
+ * - 새 세션: 세션 생성, attempts = 0
+ * - 기존 세션: 기존 세션 정보 반환
  * @returns {Object} 세션 정보 { sessionId, attempts, maxAttempts, isNewSession }
  */
-async function startOrContinueSession(uid, useBonus, isAdmin, category, topic) {
+async function getOrCreateSession(uid, useBonus, isAdmin, category, topic) {
   if (!uid) return { sessionId: null, attempts: 0, maxAttempts: 3, isNewSession: false };
 
   const today = new Date();
@@ -317,15 +317,9 @@ async function startOrContinueSession(uid, useBonus, isAdmin, category, topic) {
 
   try {
     if (useBonus) {
-      // 보너스 사용
-      await db.collection('users').doc(uid).update({
-        'usage.bonusUsed': admin.firestore.FieldValue.increment(1),
-        [`dailyUsage.${todayKey}`]: isAdmin ? 0 : admin.firestore.FieldValue.increment(1),
-        lastBonusUsed: admin.firestore.FieldValue.serverTimestamp()
-      });
-      console.log('✅ 보너스 원고 사용량 업데이트', isAdmin ? '(관리자 - 하루 카운트 제외)' : '');
-      // 보너스는 세션 관리 없음
-      sessionInfo = { sessionId: null, attempts: 1, maxAttempts: 1, isNewSession: true };
+      // 보너스 사용 - 세션 관리 없음
+      console.log('✅ 보너스 원고 사용 준비');
+      sessionInfo = { sessionId: null, attempts: 0, maxAttempts: 1, isNewSession: true };
     } else {
       if (!isAdmin) {
         // 현재 사용자 데이터 조회
@@ -342,72 +336,60 @@ async function startOrContinueSession(uid, useBonus, isAdmin, category, topic) {
 
         // 세션 관리
         if (!activeSession) {
-          // === 새 세션 시작: 생성 횟수는 검증 성공 시 차감 ===
+          // === 새 세션 생성: attempts는 0으로 시작 (검증 성공 후 증가) ===
           const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
           updateData.activeGenerationSession = {
             id: sessionId,
             startedAt: admin.firestore.FieldValue.serverTimestamp(),
-            attempts: 1,
+            attempts: 0,
             category: category || '',
             topic: topic || '',
-            subscriptionStatus: subscriptionStatus // 나중에 차감할 때 사용
+            subscriptionStatus: subscriptionStatus
           };
 
-          sessionInfo = { sessionId, attempts: 1, maxAttempts: 3, isNewSession: true, subscriptionStatus };
+          sessionInfo = { sessionId, attempts: 0, maxAttempts: 10, isNewSession: true, subscriptionStatus };
 
-          // 생성 횟수 차감은 검증 성공 시 posts.js에서 처리
           const currentRemaining = userData.generationsRemaining || userData.trialPostsRemaining || 0;
           const currentMonthGenerations = userData.monthlyUsage?.[currentMonthKey]?.generations || 0;
 
           if (testMode || subscriptionStatus === 'trial') {
             const modeLabel = testMode ? '🧪 데모 모드' : '✅무료 체험';
-            console.log(`${modeLabel} - 새 세션 시작 (생성 횟수 차감은 검증 성공 시)`, {
+            console.log(`${modeLabel} - 새 세션 생성 (attempts=0, 검증 성공 후 증가)`, {
               sessionId,
               currentRemaining
             });
           } else if (subscriptionStatus === 'active') {
-            // 유료 구독: 시도 횟수만 기록 (생성 횟수는 검증 성공 시)
-            updateData[`monthlyUsage.${currentMonthKey}.attempts`] = admin.firestore.FieldValue.increment(1);
-            console.log('✅ 유료 구독 - 새 세션 시작 (생성 횟수 차감은 검증 성공 시)', {
+            console.log('✅ 유료 구독 - 새 세션 생성 (attempts=0, 검증 성공 후 증가)', {
               sessionId,
               monthKey: currentMonthKey,
               currentMonthGenerations
             });
           }
         } else {
-          // === 기존 세션 계속: 시도 횟수만 증가 ===
-          const newAttempts = activeSession.attempts + 1;
-          updateData['activeGenerationSession.attempts'] = admin.firestore.FieldValue.increment(1);
-
+          // === 기존 세션 조회: attempts는 현재 값 유지 (검증 성공 후 증가) ===
           sessionInfo = {
             sessionId: activeSession.id,
-            attempts: newAttempts,
-            maxAttempts: 3,
+            attempts: activeSession.attempts || 0,
+            maxAttempts: 10,
             isNewSession: false
           };
 
-          if (subscriptionStatus === 'active') {
-            // 유료 구독: 시도 횟수도 기록
-            updateData[`monthlyUsage.${currentMonthKey}.attempts`] = admin.firestore.FieldValue.increment(1);
-          }
-
-          console.log('✅ 기존 세션 계속 - 시도 횟수 증가', {
+          console.log('✅ 기존 세션 조회', {
             sessionId: activeSession.id,
-            attemptsBefore: activeSession.attempts,
-            attemptsAfter: newAttempts
+            currentAttempts: activeSession.attempts || 0
           });
         }
 
         await db.collection('users').doc(uid).update(updateData);
-        console.log('✅ 세션 및 사용량 업데이트 완료');
+        console.log('✅ 세션 정보 업데이트 완료 (attempts 변경 없음)');
       } else {
         // 관리자는 세션 관리 없이 기록만
         await db.collection('users').doc(uid).update({
           lastGenerated: admin.firestore.FieldValue.serverTimestamp()
         });
         console.log('✅ 관리자 계정 - 사용량 카운트 없이 기록만 업데이트');
-        sessionInfo = { sessionId: 'admin', attempts: 1, maxAttempts: 999, isNewSession: false };
+        sessionInfo = { sessionId: 'admin', attempts: 0, maxAttempts: 999, isNewSession: false };
       }
     }
 
@@ -415,6 +397,67 @@ async function startOrContinueSession(uid, useBonus, isAdmin, category, topic) {
   } catch (updateError) {
     console.warn('⚠️ 세션 업데이트 실패:', updateError.message);
     throw updateError;
+  }
+}
+
+/**
+ * 검증 성공 후 세션 attempts 증가
+ * - 보너스 사용 시: bonusUsed 증가
+ * - 일반 사용 시: activeGenerationSession.attempts 증가
+ * @param {string} uid - 사용자 ID
+ * @param {Object} session - 세션 정보
+ * @param {boolean} useBonus - 보너스 사용 여부
+ * @param {boolean} isAdmin - 관리자 여부
+ * @returns {Object} 업데이트된 세션 정보
+ */
+async function incrementSessionAttempts(uid, session, useBonus, isAdmin) {
+  if (!uid || isAdmin) {
+    // 관리자는 attempts 관리 안 함
+    return { ...session, attempts: session.attempts + 1 };
+  }
+
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const currentMonthKey = getCurrentMonthKey();
+
+  try {
+    if (useBonus) {
+      // 보너스 사용량 증가
+      await db.collection('users').doc(uid).update({
+        'usage.bonusUsed': admin.firestore.FieldValue.increment(1),
+        lastBonusUsed: admin.firestore.FieldValue.serverTimestamp()
+      });
+      console.log('✅ 보너스 원고 사용량 증가');
+      return { ...session, attempts: 1 };
+    } else {
+      // 세션 attempts 증가
+      const updateData = {
+        'activeGenerationSession.attempts': admin.firestore.FieldValue.increment(1)
+      };
+
+      // 유료 구독: 시도 횟수도 기록
+      const userDoc = await db.collection('users').doc(uid).get();
+      const userData = userDoc.data() || {};
+      const subscriptionStatus = userData.subscriptionStatus || 'trial';
+
+      if (subscriptionStatus === 'active') {
+        updateData[`monthlyUsage.${currentMonthKey}.attempts`] = admin.firestore.FieldValue.increment(1);
+      }
+
+      await db.collection('users').doc(uid).update(updateData);
+
+      const newAttempts = session.attempts + 1;
+      console.log('✅ 세션 attempts 증가 (검증 성공)', {
+        sessionId: session.sessionId,
+        attemptsBefore: session.attempts,
+        attemptsAfter: newAttempts
+      });
+
+      return { ...session, attempts: newAttempts };
+    }
+  } catch (error) {
+    console.error('❌ attempts 증가 실패:', error.message);
+    throw error;
   }
 }
 
@@ -436,6 +479,7 @@ async function endSession(uid) {
 
 module.exports = {
   loadUserProfile,
-  startOrContinueSession,
+  getOrCreateSession,
+  incrementSessionAttempts,
   endSession
 };

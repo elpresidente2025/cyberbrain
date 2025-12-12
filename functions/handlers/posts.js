@@ -30,7 +30,7 @@ const { httpWrap } = require('../common/http-wrap');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { ok, generateNaturalRegionTitle } = require('../utils/posts/helpers');
 const { STATUS_CONFIG, CATEGORY_TO_WRITING_METHOD } = require('../utils/posts/constants');
-const { loadUserProfile, startOrContinueSession } = require('../services/posts/profile-loader');
+const { loadUserProfile, getOrCreateSession, incrementSessionAttempts } = require('../services/posts/profile-loader');
 const { extractKeywordsFromInstructions } = require('../services/posts/keyword-extractor');
 const { validateAndRetry } = require('../services/posts/validation');
 const { processGeneratedContent } = require('../services/posts/content-processor');
@@ -137,11 +137,11 @@ exports.generatePosts = httpWrap(async (req) => {
       isAdmin
     } = await loadUserProfile(uid, category, topic, useBonus);
 
-    // 🔥 세션 시작 또는 계속 (생성 vs 시도 구분)
-    // - 새 세션: generationsRemaining 즉시 차감, attempts = 1
-    // - 기존 세션: attempts만 증가 (최대 3회)
+    // 🔥 세션 조회 또는 생성 (attempts는 아직 증가하지 않음)
+    // - 새 세션: attempts = 0으로 시작, 검증 성공 후 증가
+    // - 기존 세션: 기존 attempts 유지, 검증 성공 후 증가
     console.log('🔄 세션 관리:', sessionId ? '기존 세션 계속' : '새 세션 시작');
-    const session = await startOrContinueSession(uid, useBonus, isAdmin, category, topic);
+    let session = await getOrCreateSession(uid, useBonus, isAdmin, category, topic);
 
     // 사용자 상태 설정
     const currentStatus = userProfile.status || '현역';
@@ -251,7 +251,15 @@ exports.generatePosts = httpWrap(async (req) => {
       maxAttempts: 10
     });
 
-    // 🎉 검증 성공! 이제 생성 횟수 차감
+    // 🎉 검증 성공! 이제 attempts 증가 및 생성 횟수 차감
+    // 1단계: attempts 증가 (보너스 포함)
+    session = await incrementSessionAttempts(uid, session, useBonus, isAdmin);
+    console.log('✅ 검증 성공 - attempts 증가 완료:', {
+      sessionId: session.sessionId,
+      attempts: session.attempts
+    });
+
+    // 2단계: 생성 횟수 차감 (새 세션이고 보너스가 아닌 경우)
     if (session.isNewSession && !useBonus) {
       const userDoc = await db.collection('users').doc(uid).get();
       const userData = userDoc.data() || {};
