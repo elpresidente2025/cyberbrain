@@ -411,10 +411,10 @@ export default function PostsListPage() {
                           startIcon={<AddLink fontSize="small" />}
                           onClick={(e) => handlePublish(p, e)}
                           sx={{
-                            bgcolor: p.publishUrl ? '#757575' : '#1976d2',
+                            bgcolor: p.publishUrl ? '#757575' : (theme.palette.ui?.header || colors.brand.primary),
                             color: 'white',
                             '&:hover': {
-                              bgcolor: p.publishUrl ? '#616161' : '#1565c0'
+                              bgcolor: p.publishUrl ? '#616161' : (theme.palette.ui?.headerHover || colors.brand.primaryHover)
                             }
                           }}
                         >
