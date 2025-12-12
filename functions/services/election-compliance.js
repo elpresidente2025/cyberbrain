@@ -4,6 +4,7 @@
  */
 
 const { ELECTION_TYPES, ELECTION_MILESTONES, CONTENT_RESTRICTIONS, WARNING_MESSAGES, ElectionCalendarUtils } = require('../constants/election-calendar');
+const { ELECTION_EXPRESSION_RULES, getElectionStage } = require('../utils/posts/constants');
 
 /**
  * 원고 생성 전 선거법 준수 검사
@@ -191,8 +192,187 @@ function getRecommendedContentTypes(phase, electionType) {
   return recommendations[phase] || [];
 }
 
+// ============================================================================
+// 2차 방어: 생성된 콘텐츠 선거법 준수 검증
+// ============================================================================
+
+/**
+ * 생성된 콘텐츠에서 선거법 위반 표현 검출
+ * @param {string} content - 검사할 콘텐츠
+ * @param {string} userStatus - 사용자 상태 (준비/현역/예비/후보)
+ * @returns {Object} 검증 결과 { valid, violations, violationCount }
+ */
+function validateElectionCompliance(content, userStatus) {
+  if (!content || !userStatus) {
+    return { valid: true, violations: [], violationCount: 0 };
+  }
+
+  const stage = getElectionStage(userStatus);
+  if (!stage || !stage.forbidden) {
+    return { valid: true, violations: [], violationCount: 0 };
+  }
+
+  const violations = [];
+
+  // 모든 금지 카테고리 검사
+  for (const [category, patterns] of Object.entries(stage.forbidden)) {
+    for (const pattern of patterns) {
+      // 정규식 플래그 재설정 (lastIndex 초기화)
+      const regex = new RegExp(pattern.source, pattern.flags);
+      const matches = content.match(regex);
+      if (matches) {
+        violations.push({
+          category,
+          pattern: pattern.source,
+          matches: [...new Set(matches)],  // 중복 제거
+          count: matches.length
+        });
+      }
+    }
+  }
+
+  return {
+    valid: violations.length === 0,
+    violations,
+    violationCount: violations.reduce((sum, v) => sum + v.count, 0),
+    stage: stage.name,
+    userStatus
+  };
+}
+
+// ============================================================================
+// 3차 방어: 선거법 위반 표현 자동 치환
+// ============================================================================
+
+/**
+ * 생성된 콘텐츠에서 선거법 위반 표현을 자동으로 안전한 표현으로 치환
+ * @param {string} content - 원본 콘텐츠
+ * @param {string} userStatus - 사용자 상태 (준비/현역/예비/후보)
+ * @returns {Object} { sanitizedContent, replacementsMade, replacementLog }
+ */
+function sanitizeElectionContent(content, userStatus) {
+  if (!content || !userStatus) {
+    return {
+      sanitizedContent: content,
+      replacementsMade: 0,
+      replacementLog: []
+    };
+  }
+
+  const stage = getElectionStage(userStatus);
+  if (!stage || !stage.replacements) {
+    return {
+      sanitizedContent: content,
+      replacementsMade: 0,
+      replacementLog: []
+    };
+  }
+
+  let sanitizedContent = content;
+  const replacementLog = [];
+  let replacementsMade = 0;
+
+  // 긴 표현부터 먼저 치환 (부분 일치 방지)
+  const sortedReplacements = Object.entries(stage.replacements)
+    .sort((a, b) => b[0].length - a[0].length);
+
+  for (const [forbidden, replacement] of sortedReplacements) {
+    // 정규식 특수문자 이스케이프
+    const escapedForbidden = forbidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escapedForbidden, 'g');
+
+    const matches = sanitizedContent.match(regex);
+    if (matches) {
+      const count = matches.length;
+      sanitizedContent = sanitizedContent.replace(regex, replacement);
+      replacementsMade += count;
+      replacementLog.push({
+        original: forbidden,
+        replacement: replacement || '(삭제됨)',
+        count
+      });
+    }
+  }
+
+  // 추가 정리: 빈 문자열 치환으로 인한 이중 공백 제거
+  sanitizedContent = sanitizedContent.replace(/\s{2,}/g, ' ');
+  // 빈 괄호 제거
+  sanitizedContent = sanitizedContent.replace(/\(\s*\)/g, '');
+  // 문장 시작의 공백 제거
+  sanitizedContent = sanitizedContent.replace(/<p>\s+/g, '<p>');
+
+  console.log(`🛡️ 선거법 준수 치환 완료: ${replacementsMade}개 표현 수정 (상태: ${userStatus})`);
+
+  if (replacementLog.length > 0) {
+    console.log('📝 치환 내역:', JSON.stringify(replacementLog, null, 2));
+  }
+
+  return {
+    sanitizedContent,
+    replacementsMade,
+    replacementLog,
+    stage: stage.name,
+    userStatus
+  };
+}
+
+/**
+ * 검증 + 치환을 한 번에 수행하는 통합 함수
+ * @param {string} content - 원본 콘텐츠
+ * @param {string} userStatus - 사용자 상태
+ * @returns {Object} 통합 결과
+ */
+function enforceElectionCompliance(content, userStatus) {
+  // 1. 먼저 검증
+  const validationResult = validateElectionCompliance(content, userStatus);
+
+  // 2. 위반이 있으면 치환
+  if (!validationResult.valid) {
+    const sanitizationResult = sanitizeElectionContent(content, userStatus);
+
+    // 3. 치환 후 재검증
+    const revalidationResult = validateElectionCompliance(
+      sanitizationResult.sanitizedContent,
+      userStatus
+    );
+
+    return {
+      originalContent: content,
+      sanitizedContent: sanitizationResult.sanitizedContent,
+      wasModified: true,
+      initialViolations: validationResult.violations,
+      replacementsMade: sanitizationResult.replacementsMade,
+      replacementLog: sanitizationResult.replacementLog,
+      remainingViolations: revalidationResult.violations,
+      fullyCompliant: revalidationResult.valid,
+      stage: validationResult.stage,
+      userStatus
+    };
+  }
+
+  // 위반 없음
+  return {
+    originalContent: content,
+    sanitizedContent: content,
+    wasModified: false,
+    initialViolations: [],
+    replacementsMade: 0,
+    replacementLog: [],
+    remainingViolations: [],
+    fullyCompliant: true,
+    stage: validationResult.stage,
+    userStatus
+  };
+}
+
 module.exports = {
   checkElectionCompliance,
   getRecommendedContentTypes,
-  getUserElectionInfo
+  getUserElectionInfo,
+  // 2차 방어: 후검증
+  validateElectionCompliance,
+  // 3차 방어: 자동 치환
+  sanitizeElectionContent,
+  // 통합 함수
+  enforceElectionCompliance
 };

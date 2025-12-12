@@ -1,5 +1,7 @@
 'use strict';
 
+const { sanitizeElectionContent } = require('../election-compliance');
+
 /**
  * AI가 생성한 원고에 대한 후처리 및 보정
  * @param {Object} params
@@ -128,6 +130,19 @@ function processGeneratedContent({ content, fullName, fullRegion, currentStatus,
 
   // 최종 중복 이름 패턴 제거
   fixedContent = removeDuplicateNames(fixedContent, fullName);
+
+  // 🛡️ 선거법 준수 자동 치환 (3차 방어)
+  if (currentStatus) {
+    console.log(`🛡️ 선거법 준수 검사 시작 (상태: ${currentStatus})`);
+    const electionResult = sanitizeElectionContent(fixedContent, currentStatus);
+
+    if (electionResult.replacementsMade > 0) {
+      console.log(`⚠️ 선거법 위반 표현 ${electionResult.replacementsMade}개 자동 수정됨`);
+      fixedContent = electionResult.sanitizedContent;
+    } else {
+      console.log('✅ 선거법 준수 검사 통과 - 수정 필요 없음');
+    }
+  }
 
   console.log('✅ 후처리 완료 - 필수 정보 삽입됨');
   return fixedContent;

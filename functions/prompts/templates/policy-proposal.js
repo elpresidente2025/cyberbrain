@@ -6,6 +6,8 @@
 
 'use strict';
 
+const { getElectionStage } = require('../../utils/posts/constants');
+
 const LOGICAL_STRUCTURES = {
   STEP_BY_STEP: { id: 'step_by_step', name: '단계적 논증 구조', instruction: "글을 '문제 제시 → 근거/원인 분석 → 명료한 결론'의 3단계로 명확하게 구성하세요. 각 단계가 논리적으로 연결되어 독자가 자연스럽게 결론에 도달하도록 이끌어야 합니다." },
   ENUMERATIVE: { id: 'enumerative', name: '열거식 병렬 구조', instruction: "하나의 핵심 주장을 뒷받침하는 여러 근거나 문제점을 '첫째, 둘째, 셋째...' 또는 글머리 기호 방식으로 조목조목 나열하세요. 다양한 각도에서 주장을 증명하여 논리의 깊이를 더해야 합니다." },
@@ -18,7 +20,7 @@ const LOGICAL_STRUCTURES = {
 const ARGUMENTATION_TACTICS = {
   EVIDENCE_CITATION: { id: 'evidence_citation', name: '사례 및 데이터 인용', instruction: "당신의 주장을 뒷받침할 수 있는 구체적인 통계, 연구 결과, 실제 사례, 전문가 의견 등을 풍부하게 인용하여 글의 객관성과 신뢰도를 높여야 합니다." },
   ANALOGY: { id: 'analogy', name: '유추 기반 논증', instruction: "과거의 유사한 역사적 사례나 다른 영역의 원칙을 끌어와 현재의 문제에 적용(유추)하여 주장의 정당성을 확보하세요. 독자가 익숙한 사례를 통해 새로운 문제를 쉽게 이해하도록 돕습니다." },
-  BENEFIT_EMPHASIS: { id: 'benefit_emphasis', name: '기대효과 강조', instruction: "정책이나 공약이 시행되었을 때 국민들의 삶이 어떻게 긍정적으로 변화하는지를 구체적인 예시와 함께 생생하게 묘사하세요. '만약 ~된다면, 우리 아이들은...'과 같이 미래의 긍정적 모습을 그려주어 설득력을 높입니다." },
+  BENEFIT_EMPHASIS: { id: 'benefit_emphasis', name: '기대효과 강조', instruction: "정책이 시행되었을 때 국민들의 삶이 어떻게 긍정적으로 변화하는지를 구체적인 예시와 함께 생생하게 묘사하세요. '만약 ~된다면, 우리 아이들은...'과 같이 미래의 긍정적 모습을 그려주어 설득력을 높입니다." },
 };
 
 const VOCABULARY_MODULES = {
@@ -40,7 +42,20 @@ function buildLogicalWritingPrompt(options) {
     logicalStructureId,
     argumentationTacticId,
     vocabularyModuleId,
+    currentStatus,  // 사용자 상태 (준비/현역/예비/후보)
   } = options;
+
+  // 선거법 준수 지시문 생성
+  const electionStage = getElectionStage(currentStatus);
+  const electionComplianceSection = electionStage && electionStage.promptInstruction
+    ? `
+╔═══════════════════════════════════════════════════════════════╗
+║  🚨 선거법 준수 필수 - 위반 시 법적 책임 발생 🚨                  ║
+╚═══════════════════════════════════════════════════════════════╝
+${electionStage.promptInstruction}
+---
+`
+    : '';
 
   const logicalStructure = Object.values(LOGICAL_STRUCTURES).find(s => s.id === logicalStructureId) || LOGICAL_STRUCTURES.STEP_BY_STEP;
   const argumentationTactic = Object.values(ARGUMENTATION_TACTICS).find(t => t.id === argumentationTacticId) || ARGUMENTATION_TACTICS.EVIDENCE_CITATION;
@@ -69,6 +84,7 @@ ${newsContext}
   const prompt = `
 # 전자두뇌비서관 - 논리적 글쓰기 원고 생성 (정책/비전)
 
+${electionComplianceSection}
 [기본 정보]
 - 작성자: ${authorBio}
 - 글의 주제: "${topic}"
