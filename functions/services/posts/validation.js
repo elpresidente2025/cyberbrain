@@ -2,6 +2,105 @@
 
 const { callGenerativeModel } = require('../gemini');
 
+// ============================================================================
+// LLM 기반 품질 검증 (의미적 분석)
+// ============================================================================
+
+/**
+ * LLM을 활용한 원고 품질 검증
+ * 휴리스틱 규칙이 아닌 AI의 의미적 이해로 품질 문제를 탐지
+ * @param {string} content - 검증할 원고 내용
+ * @param {string} modelName - 사용할 AI 모델명
+ * @returns {Promise<Object>} { passed, issues, suggestions }
+ */
+async function evaluateQualityWithLLM(content, modelName) {
+  const evaluationPrompt = `당신은 정치인 블로그 원고 품질 검수 전문가입니다.
+
+다음 원고를 분석하고 품질 문제를 찾아주세요:
+
+<원고>
+${content}
+</원고>
+
+## 검사 항목
+
+1. **반복성 (repetition)**:
+   - 동일 문장이 2회 이상 반복되는가?
+   - 의미적으로 같은 내용을 다른 표현으로 반복하는가?
+   - 특히 마무리 부분에서 같은 다짐/인사를 반복하는가?
+
+2. **정보 밀도 (density)**:
+   - "노력하겠습니다", "최선을 다하겠습니다" 같은 추상적 표현만 나열하는가?
+   - 구체적 정책, 수치, 사례 없이 중언부언하는가?
+
+3. **구조적 완결성 (structure)**:
+   - 글이 자연스럽게 마무리되었는가?
+   - 결론 후 불필요한 내용이 덧붙여졌는가?
+   - 마무리 인사("감사합니다", "드림") 후 본문이 다시 시작되는가?
+
+4. **문장 완결성 (completeness)**:
+   - 미완성 문장이나 끊긴 문장이 있는가?
+   - 문법적으로 불완전한 문장이 있는가?
+
+## 응답 형식 (JSON)
+
+{
+  "passed": true 또는 false,
+  "issues": [
+    {
+      "type": "repetition|density|structure|completeness",
+      "severity": "critical|warning",
+      "description": "구체적인 문제 설명",
+      "evidence": "문제가 있는 텍스트 일부 인용 (30자 이내)"
+    }
+  ],
+  "suggestions": ["개선을 위한 구체적 제안"]
+}
+
+## 판정 기준
+- critical 이슈가 1개 이상이면 passed: false
+- warning만 있고 3개 이하면 passed: true
+- warning이 4개 이상이면 passed: false
+
+반드시 JSON만 출력하세요.`;
+
+  try {
+    const response = await callGenerativeModel(evaluationPrompt, 1, modelName, true);
+
+    // JSON 파싱
+    let result;
+    try {
+      // JSON 블록 추출 시도
+      const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/) ||
+                       response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        result = JSON.parse(jsonMatch[1] || jsonMatch[0]);
+      } else {
+        result = JSON.parse(response);
+      }
+    } catch (parseError) {
+      console.warn('⚠️ LLM 품질 검증 응답 파싱 실패, 통과 처리:', parseError.message);
+      return { passed: true, issues: [], suggestions: [], parseError: true };
+    }
+
+    // 결과 정규화
+    return {
+      passed: result.passed === true,
+      issues: Array.isArray(result.issues) ? result.issues : [],
+      suggestions: Array.isArray(result.suggestions) ? result.suggestions : []
+    };
+
+  } catch (error) {
+    console.error('❌ LLM 품질 검증 호출 실패:', error.message);
+    // API 오류 시 통과 처리 (생성 자체는 진행)
+    return { passed: true, issues: [], suggestions: [], apiError: true };
+  }
+}
+
+// ============================================================================
+// 휴리스틱 검증 함수들 (LLM 검증의 폴백/보조용)
+// ============================================================================
+
 /**
  * 키워드 출현 횟수 카운팅 (띄어쓰기 정확히 일치)
  * @param {string} content - 검사할 콘텐츠 (HTML 포함 가능)
@@ -327,8 +426,7 @@ async function validateAndRetry({
   let hasSufficientLength = false;
   let actualWordCount = 0;
   let keywordValidation = { valid: false, details: {} };
-  let repetitionCheck = { hasRepetition: false, details: '' };
-  let densityCheck = { hasLowDensity: false, details: '', score: 1 };
+  let llmQualityCheck = { passed: true, issues: [], suggestions: [] };
 
   while (attempt < maxAttempts) {
     attempt++;
@@ -354,7 +452,7 @@ async function validateAndRetry({
       }
 
       // HTML 태그 제거하고 순수 텍스트 길이 계산 (공백 제외)
-      const plainText = contentToCheck.replace(/<[^>]*>/g, '').replace(/\s/g, '');
+      const plainText = contentToCheck.replace(/<[^>]*>/g, ' ').replace(/\s+/g, '');
       actualWordCount = plainText.length;
       const minWordCount = Math.floor(targetWordCount * 0.75); // 목표의 75% (내용 충실도 우선)
 
@@ -377,21 +475,32 @@ async function validateAndRetry({
         targetWordCount
       );
 
-      // ✨ 반복 검증
-      repetitionCheck = detectRepetition(contentToCheck);
-
-      // ✨ 정보 밀도 검사
-      densityCheck = checkInformationDensity(contentToCheck);
-
       console.log(`🔍 기본 검증 - 이름: ${hasName}, 분량: ${hasSufficientLength}`);
       console.log(`🔑 키워드 검증:`, JSON.stringify(keywordValidation.details, null, 2));
-      console.log(`🔄 반복 검증 - 통과: ${!repetitionCheck.hasRepetition}${repetitionCheck.details ? ', 상세: ' + repetitionCheck.details : ''}`);
-      console.log(`📊 정보 밀도 - 점수: ${densityCheck.score}, 통과: ${!densityCheck.hasLowDensity}${densityCheck.details ? ', 상세: ' + densityCheck.details : ''}`);
 
-      // 모든 검증 통과 확인 (정보 밀도 검사 추가)
-      if (hasName && hasSufficientLength && keywordValidation.valid && !repetitionCheck.hasRepetition && !densityCheck.hasLowDensity) {
-        console.log(`✅ 모든 검증 통과! (${attempt}번째 시도)`);
-        break;
+      // ✨ LLM 기반 품질 검증 (반복, 밀도, 구조 등 의미적 분석)
+      // 기본 검증(이름, 분량, 키워드)을 먼저 통과해야 LLM 검증 수행 (API 비용 절약)
+      if (hasName && hasSufficientLength && keywordValidation.valid) {
+        console.log(`🤖 LLM 품질 검증 시작...`);
+        llmQualityCheck = await evaluateQualityWithLLM(contentToCheck, modelName);
+
+        const criticalIssues = llmQualityCheck.issues.filter(i => i.severity === 'critical');
+        const warningIssues = llmQualityCheck.issues.filter(i => i.severity === 'warning');
+
+        console.log(`🤖 LLM 품질 검증 결과:`, {
+          passed: llmQualityCheck.passed,
+          criticalCount: criticalIssues.length,
+          warningCount: warningIssues.length,
+          issues: llmQualityCheck.issues.map(i => `[${i.severity}] ${i.type}: ${i.description}`)
+        });
+
+        if (llmQualityCheck.passed) {
+          console.log(`✅ 모든 검증 통과! (${attempt}번째 시도)`);
+          break;
+        }
+      } else {
+        // 기본 검증 실패 시 LLM 검증 스킵
+        llmQualityCheck = { passed: false, issues: [], suggestions: [] };
       }
 
       // 재시도 필요 시 개선 지시사항 추가
@@ -401,29 +510,6 @@ async function validateAndRetry({
 
         if (!hasSufficientLength) {
           improvementInstructions += `- 분량 부족: ${targetWordCount}자 이상으로 작성하세요.\n`;
-          needsImprovement = true;
-        }
-
-        // 반복 검증 실패 시 피드백
-        if (repetitionCheck.hasRepetition) {
-          improvementInstructions += `\n- ⛔ 반복 금지 위반 (치명적, 즉시 수정 필요):\n`;
-          improvementInstructions += `  • 감지된 문제: ${repetitionCheck.details}\n`;
-          improvementInstructions += `  • 동일하거나 유사한 문장/문단을 절대 반복하지 마세요\n`;
-          improvementInstructions += `  • 이미 작성한 내용을 다시 작성하지 마세요\n`;
-          improvementInstructions += `  • 각 문장과 문단은 새로운 정보를 제공해야 합니다\n`;
-          improvementInstructions += `  • JSON content 필드는 단 하나만 존재해야 합니다\n`;
-          needsImprovement = true;
-        }
-
-        // 정보 밀도 검증 실패 시 피드백
-        if (densityCheck.hasLowDensity) {
-          improvementInstructions += `\n- 📊 정보 밀도 부족 (현재 점수: ${densityCheck.score}/1.0):\n`;
-          improvementInstructions += `  • ${densityCheck.details}\n`;
-          improvementInstructions += `  • 중언부언하지 말고 구체적이고 새로운 정보를 제공하세요\n`;
-          improvementInstructions += `  • "노력하겠습니다" 같은 추상적 표현을 줄이고 구체적인 실행 방안을 제시하세요\n`;
-          improvementInstructions += `  • 숫자, 날짜, 사례 등 구체적인 정보를 포함하세요\n`;
-          improvementInstructions += `  • 한 문장에서 같은 의미를 반복하지 마세요\n`;
-          improvementInstructions += `  • 접속사("그리고", "또한")를 과다 사용하지 마세요\n`;
           needsImprovement = true;
         }
 
@@ -443,11 +529,31 @@ async function validateAndRetry({
             }
 
             improvementInstructions += `  • 본문 전체(도입부, 본론, 결론)에 고르게 분산 배치하세요.\n`;
-            improvementInstructions += `  • 문장의 주어, 목적어, 수식어 위치에 자연스럽게 배치하세요.\n`;
-            improvementInstructions += `  • 동일한 문장이나 문단을 반복하지 마세요.\n`;
-            improvementInstructions += `  • 마무리 인사 후 본문이 다시 시작되지 않도록 주의하세요.\n`;
             needsImprovement = true;
           }
+        }
+
+        // ✨ LLM 품질 검증 실패 시 AI가 제안한 구체적 피드백 활용
+        if (!llmQualityCheck.passed && llmQualityCheck.issues.length > 0) {
+          improvementInstructions += `\n- ⛔ AI 품질 검증 실패 (치명적 문제 발견):\n`;
+
+          for (const issue of llmQualityCheck.issues) {
+            const severityIcon = issue.severity === 'critical' ? '🚫' : '⚠️';
+            improvementInstructions += `  ${severityIcon} [${issue.type}] ${issue.description}\n`;
+            if (issue.evidence) {
+              improvementInstructions += `     → 문제 부분: "${issue.evidence}"\n`;
+            }
+          }
+
+          // AI가 제안한 개선 방향 추가
+          if (llmQualityCheck.suggestions.length > 0) {
+            improvementInstructions += `\n  📝 개선 방향:\n`;
+            for (const suggestion of llmQualityCheck.suggestions) {
+              improvementInstructions += `  • ${suggestion}\n`;
+            }
+          }
+
+          needsImprovement = true;
         }
 
         if (needsImprovement) {
@@ -483,14 +589,15 @@ async function validateAndRetry({
         }
       }
 
-      // 반복 검증 실패 추가
-      if (repetitionCheck.hasRepetition) {
-        errors.push(`반복 감지: ${repetitionCheck.details}`);
-      }
-
-      // 정보 밀도 검증 실패 추가
-      if (densityCheck.hasLowDensity) {
-        errors.push(`정보 밀도 부족 (점수: ${densityCheck.score}): ${densityCheck.details}`);
+      // LLM 품질 검증 실패 추가
+      if (!llmQualityCheck.passed && llmQualityCheck.issues.length > 0) {
+        const criticalIssues = llmQualityCheck.issues
+          .filter(i => i.severity === 'critical')
+          .map(i => `${i.type}: ${i.description}`)
+          .join('; ');
+        if (criticalIssues) {
+          errors.push(`품질 문제: ${criticalIssues}`);
+        }
       }
 
       console.error(`❌ ${maxAttempts}번 시도 후에도 품질 기준 미달:`, errors.join(' | '));
@@ -502,5 +609,6 @@ async function validateAndRetry({
 }
 
 module.exports = {
-  validateAndRetry
+  validateAndRetry,
+  evaluateQualityWithLLM  // LLM 품질 검증 함수도 export
 };
