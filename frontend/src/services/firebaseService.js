@@ -166,7 +166,3 @@ export const testSNS = async () => {
 export const getSNSUsage = async () => {
   return await callFunctionWithNaverAuth('getSNSUsage', {});
 };
-
-export const purchaseSNSAddon = async () => {
-  return await callFunctionWithRetry('purchaseSNSAddon');
-};

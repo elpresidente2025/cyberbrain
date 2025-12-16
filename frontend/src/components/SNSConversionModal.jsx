@@ -243,18 +243,11 @@ function SNSConversionModal({ open, onClose, post }) {
             severity={canConvert ? "success" : "warning"} 
             sx={{ mb: 2 }}
           >
-            {canConvert ? (
-              <Typography variant="body2">
-                <strong>SNS 변환 사용 가능</strong>
-                {usage.accessMethod === 'paid' && ' (애드온 구매)'}
-                {usage.accessMethod === 'gamification' && ' (조건 달성)'}
-                {usage.accessMethod === 'admin' && ' (관리자)'}
-              </Typography>
-            ) : (
-              <Typography variant="body2" color="error">
-                SNS 변환을 사용하려면 애드온을 구매하거나 게이미피케이션 조건을 달성해주세요.
-              </Typography>
-            )}
+            <Typography variant="body2">
+              <strong>SNS 변환 사용 가능</strong>
+              {usage.accessMethod === 'admin' && ' (관리자)'}
+              {' '}| 이번 달 {usage.remaining}회 남음
+            </Typography>
           </Alert>
         )}
 

@@ -224,7 +224,7 @@ export default function PostsListPage() {
       setPublishDialogOpen(false);
       setPublishPost(null);
       setPublishUrl('');
-      showNotification('발행 완료! 게이미피케이션 포인트를 획득했습니다.', 'success');
+      showNotification('발행 등록이 완료되었습니다.', 'success');
     } catch (err) {
       console.error(err);
       showNotification('발행 등록에 실패했습니다.', 'error');
@@ -454,7 +454,7 @@ export default function PostsListPage() {
           </DialogTitle>
           <DialogContent>
             <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.md}px` }}>
-              실제 발행한 블로그/SNS 주소를 입력하여 게이미피케이션 포인트를 획득하세요!
+              실제 발행한 블로그/SNS 주소를 입력해주세요.
             </Typography>
             <Typography variant="h6" sx={{ mb: `${spacing.xs}px`, fontWeight: 600 }}>
               "{publishPost?.title || '원고 제목'}"

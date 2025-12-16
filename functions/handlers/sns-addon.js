@@ -3,7 +3,6 @@ const { HttpsError } = require('firebase-functions/v2/https');
 const { wrap } = require('../common/wrap');
 const { httpWrap } = require('../common/http-wrap');
 const { ok, error } = require('../common/response');
-const { auth } = require('../common/auth');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { callGenerativeModel } = require('../services/gemini');
 const { buildSNSPrompt, SNS_LIMITS } = require('../prompts/builders/sns-conversion');
@@ -96,13 +95,6 @@ exports.convertToSNS = wrap(async (req) => {
     const isAdmin = userData.role === 'admin' || userData.isAdmin === true;
     
     if (!isAdmin) {
-      // SNS 접근 권한 확인 (오피니언 리더, 애드온 구매, 게이미피케이션)
-      const hasAddonAccess = userPlan === '오피니언 리더' || userData.snsAddon?.isActive || userData.gamification?.snsUnlocked;
-      
-      if (!hasAddonAccess) {
-        throw new HttpsError('permission-denied', 'SNS 변환 기능을 사용하려면 오피니언 리더 플랜을 이용하거나 애드온을 구매해주세요.');
-      }
-
       // 사용량 제한 확인
       const getSNSMonthlyLimit = (plan) => {
         switch (plan) {
@@ -350,8 +342,8 @@ exports.getSNSUsage = wrap(async (req) => {
       }
     };
 
-    // SNS 접근 권한 확인
-    const hasAddonAccess = isAdmin || userData.snsAddon?.isActive || userData.gamification?.snsUnlocked || userPlan === '오피니언 리더';
+    // SNS 기능은 모든 사용자에게 기본 제공
+    const hasAccess = true;
 
     // 관리자는 무제한 사용
     if (isAdmin) {
@@ -373,66 +365,16 @@ exports.getSNSUsage = wrap(async (req) => {
     const currentMonthUsage = monthlyUsage[currentMonthKey] || 0;
 
     return ok({
-      isActive: hasAddonAccess,
+      isActive: hasAccess,
       monthlyLimit: monthlyLimit,
       currentMonthUsage: currentMonthUsage,
       remaining: Math.max(0, monthlyLimit - currentMonthUsage),
-      accessMethod: userPlan === '오피니언 리더' ? 'plan_included' :
-                   userData.snsAddon?.isActive ? 'paid' :
-                   userData.gamification?.snsUnlocked ? 'gamification' : 'none'
+      accessMethod: 'basic'
     });
 
   } catch (error) {
     console.error('❌ SNS 사용량 조회 실패:', error);
     throw new HttpsError('internal', 'SNS 사용량 조회 중 오류가 발생했습니다.');
-  }
-});
-
-/**
- * SNS 애드온 구매/활성화
- */
-exports.purchaseSNSAddon = wrap(async (req) => {
-  const { uid } = await auth(req);
-
-  // auth 함수에서 이미 인증 검증이 완료됨
-
-  try {
-    // 사용자 정보 조회하여 플랜 확인
-    const userDoc = await db.collection('users').doc(uid).get();
-    const userData = userDoc.data();
-    
-    if (!userData) {
-      throw new HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
-    }
-    
-    const userPlan = userData.plan || userData.subscription;
-    
-    // 오피니언 리더 플랜은 SNS 원고가 이미 포함되어 있으므로 구매 불가
-    if (userPlan === '오피니언 리더') {
-      throw new HttpsError('failed-precondition', '오피니언 리더 플랜은 이미 SNS 원고 무료 생성이 포함되어 있습니다. 추가 구매가 불필요합니다.');
-    }
-    const now = new Date();
-    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
-
-    await db.collection('users').doc(uid).update({
-      'snsAddon.isActive': true,
-      'snsAddon.purchaseDate': admin.firestore.FieldValue.serverTimestamp(),
-      'snsAddon.expiryDate': admin.firestore.Timestamp.fromDate(nextMonth),
-      'snsAddon.monthlyUsage': {},
-      'snsAddon.totalUsed': 0
-    });
-
-    console.log('✅ SNS 애드온 구매 완료:', uid);
-
-    return ok({
-      message: 'SNS 애드온이 성공적으로 활성화되었습니다.',
-      expiryDate: nextMonth.toISOString(),
-      price: 22000
-    });
-
-  } catch (error) {
-    console.error('❌ SNS 애드온 구매 실패:', error);
-    throw new HttpsError('internal', 'SNS 애드온 구매 중 오류가 발생했습니다.');
   }
 });
 
