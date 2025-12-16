@@ -4,7 +4,7 @@
  */
 
 const { ELECTION_TYPES, ELECTION_MILESTONES, CONTENT_RESTRICTIONS, WARNING_MESSAGES, ElectionCalendarUtils } = require('../constants/election-calendar');
-const { ELECTION_EXPRESSION_RULES, getElectionStage } = require('../utils/posts/constants');
+const { ELECTION_EXPRESSION_RULES, getElectionStage } = require('../prompts/guidelines/legal');
 
 /**
  * 원고 생성 전 선거법 준수 검사

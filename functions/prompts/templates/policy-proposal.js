@@ -6,7 +6,7 @@
 
 'use strict';
 
-const { getElectionStage } = require('../../utils/posts/constants');
+const { getElectionStage } = require('../guidelines/legal');
 
 const LOGICAL_STRUCTURES = {
   STEP_BY_STEP: { id: 'step_by_step', name: '단계적 논증 구조', instruction: "글을 '문제 제시 → 근거/원인 분석 → 명료한 결론'의 3단계로 명확하게 구성하세요. 각 단계가 논리적으로 연결되어 독자가 자연스럽게 결론에 도달하도록 이끌어야 합니다." },
@@ -104,7 +104,7 @@ ${backgroundSection}${keywordsSection}${hintsSection}${newsSection}
     - 지시사항: 위 '어휘 테마'에 맞는 단어와 표현을 사용하여 글 전체의 톤앤매너를 형성하라.
 
 [📊 SEO 최적화 규칙]
-- **필수 분량**: 1800~2300자 (공백 제외, 목표: 2050자)
+- **필수 분량**: 1500~2300자 (공백 제외, 목표: 2050자)
 - **키워드 배치**: 본문 400자당 1회, 맥락에 맞게 자연스럽게 포함 (키워드 스터핑 금지)
 - **구조화**: h2 태그 2-3개, h3 태그 3-5개로 소제목 구성, 문단 6-8개 (각 150-250자)
 
