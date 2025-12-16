@@ -18,9 +18,14 @@ async function evaluateQualityWithLLM(content, modelName) {
   const truncatedContent = content.length > 3000 ? content.substring(0, 3000) + '...(이하 생략)' : content;
 
   const evaluationPrompt = `원고 품질 검사. 다음 3가지만 확인:
-1. 동일/유사 문장 2회 이상 반복?
-2. 마무리 인사 후 본문 재시작?
-3. 미완성 문장 존재?
+
+1. **문단 단위 반복** (치명적): 같은 내용의 문단이 2회 이상 반복되는가?
+   - 예: 같은 공약을 두 번 풀어 설명, 비전 제시를 연속 반복
+   - 주의: SEO 키워드가 여러 문장에 등장하는 것은 반복이 아님 (허용)
+
+2. **구조 오류** (치명적): 마무리 인사("감사합니다" 등) 후 본문이 다시 시작되는가?
+
+3. **미완성 문장** (치명적): 문장이 중간에 끊겨 완결되지 않은 곳이 있는가?
 
 <원고>
 ${truncatedContent}
