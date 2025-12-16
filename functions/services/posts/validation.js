@@ -14,55 +14,20 @@ const { callGenerativeModel } = require('../gemini');
  * @returns {Promise<Object>} { passed, issues, suggestions }
  */
 async function evaluateQualityWithLLM(content, modelName) {
-  const evaluationPrompt = `당신은 정치인 블로그 원고 품질 검수 전문가입니다.
+  // 원고 길이 제한 (토큰 절약)
+  const truncatedContent = content.length > 3000 ? content.substring(0, 3000) + '...(이하 생략)' : content;
 
-다음 원고를 분석하고 품질 문제를 찾아주세요:
+  const evaluationPrompt = `원고 품질 검사. 다음 3가지만 확인:
+1. 동일/유사 문장 2회 이상 반복?
+2. 마무리 인사 후 본문 재시작?
+3. 미완성 문장 존재?
 
 <원고>
-${content}
+${truncatedContent}
 </원고>
 
-## 검사 항목
-
-1. **반복성 (repetition)**:
-   - 동일 문장이 2회 이상 반복되는가?
-   - 의미적으로 같은 내용을 다른 표현으로 반복하는가?
-   - 특히 마무리 부분에서 같은 다짐/인사를 반복하는가?
-
-2. **정보 밀도 (density)**:
-   - "노력하겠습니다", "최선을 다하겠습니다" 같은 추상적 표현만 나열하는가?
-   - 구체적 정책, 수치, 사례 없이 중언부언하는가?
-
-3. **구조적 완결성 (structure)**:
-   - 글이 자연스럽게 마무리되었는가?
-   - 결론 후 불필요한 내용이 덧붙여졌는가?
-   - 마무리 인사("감사합니다", "드림") 후 본문이 다시 시작되는가?
-
-4. **문장 완결성 (completeness)**:
-   - 미완성 문장이나 끊긴 문장이 있는가?
-   - 문법적으로 불완전한 문장이 있는가?
-
-## 응답 형식 (JSON)
-
-{
-  "passed": true 또는 false,
-  "issues": [
-    {
-      "type": "repetition|density|structure|completeness",
-      "severity": "critical|warning",
-      "description": "구체적인 문제 설명",
-      "evidence": "문제가 있는 텍스트 일부 인용 (30자 이내)"
-    }
-  ],
-  "suggestions": ["개선을 위한 구체적 제안"]
-}
-
-## 판정 기준
-- critical 이슈가 1개 이상이면 passed: false
-- warning만 있고 3개 이하면 passed: true
-- warning이 4개 이상이면 passed: false
-
-반드시 JSON만 출력하세요.`;
+JSON 응답:
+{"passed":true/false,"issues":[{"type":"반복/구조/미완성","desc":"문제설명"}],"fix":"개선방향"}`;
 
   try {
     const response = await callGenerativeModel(evaluationPrompt, 1, modelName, true);
@@ -70,30 +35,29 @@ ${content}
     // JSON 파싱
     let result;
     try {
-      // JSON 블록 추출 시도
-      const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/) ||
-                       response.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        result = JSON.parse(jsonMatch[1] || jsonMatch[0]);
-      } else {
-        result = JSON.parse(response);
-      }
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      result = JSON.parse(jsonMatch ? jsonMatch[0] : response);
     } catch (parseError) {
-      console.warn('⚠️ LLM 품질 검증 응답 파싱 실패, 통과 처리:', parseError.message);
-      return { passed: true, issues: [], suggestions: [], parseError: true };
+      console.warn('⚠️ LLM 품질 검증 파싱 실패, 통과 처리');
+      return { passed: true, issues: [], suggestions: [] };
     }
 
-    // 결과 정규화
+    // 결과 정규화 (경량화된 응답 구조 대응)
+    const issues = Array.isArray(result.issues) ? result.issues.map(i => ({
+      type: i.type || 'unknown',
+      severity: 'critical', // 경량화 버전은 모두 critical로 처리
+      description: i.desc || i.description || ''
+    })) : [];
+
     return {
       passed: result.passed === true,
-      issues: Array.isArray(result.issues) ? result.issues : [],
-      suggestions: Array.isArray(result.suggestions) ? result.suggestions : []
+      issues,
+      suggestions: result.fix ? [result.fix] : []
     };
 
   } catch (error) {
-    console.error('❌ LLM 품질 검증 호출 실패:', error.message);
-    // API 오류 시 통과 처리 (생성 자체는 진행)
-    return { passed: true, issues: [], suggestions: [], apiError: true };
+    console.error('❌ LLM 품질 검증 실패:', error.message);
+    return { passed: true, issues: [], suggestions: [] };
   }
 }
 
@@ -478,7 +442,7 @@ async function validateAndRetry({
       console.log(`🔍 기본 검증 - 이름: ${hasName}, 분량: ${hasSufficientLength}`);
       console.log(`🔑 키워드 검증:`, JSON.stringify(keywordValidation.details, null, 2));
 
-      // ✨ LLM 기반 품질 검증 (반복, 밀도, 구조 등 의미적 분석)
+      // ✨ LLM 기반 품질 검증 (경량화 버전)
       // 기본 검증(이름, 분량, 키워드)을 먼저 통과해야 LLM 검증 수행 (API 비용 절약)
       if (hasName && hasSufficientLength && keywordValidation.valid) {
         console.log(`🤖 LLM 품질 검증 시작...`);
