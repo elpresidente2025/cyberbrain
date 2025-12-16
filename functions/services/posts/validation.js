@@ -392,6 +392,10 @@ async function validateAndRetry({
   let keywordValidation = { valid: false, details: {} };
   let llmQualityCheck = { passed: true, issues: [], suggestions: [] };
 
+  // 최선의 결과를 저장 (최대 시도 후에도 실패하면 이 결과 반환)
+  let bestResult = null;
+  let bestScore = -1;
+
   while (attempt < maxAttempts) {
     attempt++;
     console.log(`🔥 AI 호출 시도 ${attempt}/${maxAttempts}...`);
@@ -441,6 +445,19 @@ async function validateAndRetry({
 
       console.log(`🔍 기본 검증 - 이름: ${hasName}, 분량: ${hasSufficientLength}`);
       console.log(`🔑 키워드 검증:`, JSON.stringify(keywordValidation.details, null, 2));
+
+      // 결과 점수 계산 및 최선의 결과 저장
+      const { keywords: kwResults } = keywordValidation.details;
+      const userKeywordScore = Object.entries(kwResults)
+        .filter(([_, result]) => result.type === 'user')
+        .reduce((sum, [_, result]) => sum + result.count, 0);
+      const currentScore = (hasName ? 100 : 0) + (hasSufficientLength ? 50 : 0) + userKeywordScore * 10;
+
+      if (currentScore > bestScore) {
+        bestScore = currentScore;
+        bestResult = apiResponse;
+        console.log(`📈 최선의 결과 업데이트 (점수: ${currentScore})`);
+      }
 
       // ✨ LLM 기반 품질 검증 (경량화 버전)
       // 기본 검증(이름, 분량, 키워드)을 먼저 통과해야 LLM 검증 수행 (API 비용 절약)
@@ -529,27 +546,27 @@ async function validateAndRetry({
       }
     }
 
-    // 최대 시도 횟수 초과 시 상세 에러 메시지와 함께 실패 처리
+    // 최대 시도 횟수 초과 시 최선의 결과 반환 (에러 대신)
     if (attempt >= maxAttempts) {
-      const errors = [];
+      const warnings = [];
 
       if (!hasName && fullName) {
-        errors.push(`작성자 이름 '${fullName}' 미포함`);
+        warnings.push(`작성자 이름 '${fullName}' 미포함`);
       }
 
       if (!hasSufficientLength) {
-        errors.push(`분량 부족 (실제: ${actualWordCount}자, 최소: ${Math.floor(targetWordCount * 0.9)}자)`);
+        warnings.push(`분량 부족 (실제: ${actualWordCount}자, 최소: ${Math.floor(targetWordCount * 0.9)}자)`);
       }
 
       if (!keywordValidation.valid) {
         const { keywords: kwResults } = keywordValidation.details;
-        // 사용자 입력 키워드만 에러에 포함
+        // 사용자 입력 키워드만 경고에 포함
         const missingUserKeywords = Object.entries(kwResults)
           .filter(([_, result]) => !result.valid && result.type === 'user')
           .map(([kw, result]) => `'${kw}' (${result.count}/${result.expected}회)`)
           .join(', ');
         if (missingUserKeywords) {
-          errors.push(`검색어 부족: ${missingUserKeywords}`);
+          warnings.push(`검색어 부족: ${missingUserKeywords}`);
         }
       }
 
@@ -560,12 +577,19 @@ async function validateAndRetry({
           .map(i => `${i.type}: ${i.description}`)
           .join('; ');
         if (criticalIssues) {
-          errors.push(`품질 문제: ${criticalIssues}`);
+          warnings.push(`품질 문제: ${criticalIssues}`);
         }
       }
 
-      console.error(`❌ ${maxAttempts}번 시도 후에도 품질 기준 미달:`, errors.join(' | '));
-      throw new Error(`AI 원고 생성 품질 기준 미달: ${errors.join(', ')}`);
+      // 최선의 결과가 있으면 경고와 함께 반환
+      if (bestResult) {
+        console.warn(`⚠️ ${maxAttempts}번 시도 후 최선의 결과 반환 (완벽하지 않음):`, warnings.join(' | '));
+        return bestResult;
+      }
+
+      // 최선의 결과도 없으면 에러 (극히 드문 경우)
+      console.error(`❌ ${maxAttempts}번 시도 후에도 유효한 결과 없음:`, warnings.join(' | '));
+      throw new Error(`AI 원고 생성 실패: ${warnings.join(', ')}`);
     }
   }
 
