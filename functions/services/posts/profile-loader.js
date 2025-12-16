@@ -332,7 +332,7 @@ async function getOrCreateSession(uid, isAdmin, category, topic) {
             subscriptionStatus: subscriptionStatus
           };
 
-          sessionInfo = { sessionId, attempts: 0, maxAttempts: 10, isNewSession: true, subscriptionStatus };
+          sessionInfo = { sessionId, attempts: 0, maxAttempts: 3, isNewSession: true, subscriptionStatus };
 
           const currentRemaining = userData.generationsRemaining || userData.trialPostsRemaining || 0;
           const currentMonthGenerations = userData.monthlyUsage?.[currentMonthKey]?.generations || 0;
@@ -355,7 +355,7 @@ async function getOrCreateSession(uid, isAdmin, category, topic) {
           sessionInfo = {
             sessionId: activeSession.id,
             attempts: activeSession.attempts || 0,
-            maxAttempts: 10,
+            maxAttempts: 3,
             isNewSession: false
           };
 
