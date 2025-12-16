@@ -94,33 +94,7 @@ exports.convertToSNS = wrap(async (req) => {
     // 관리자는 모든 제한 무시
     const isAdmin = userData.role === 'admin' || userData.isAdmin === true;
     
-    if (!isAdmin) {
-      // 사용량 제한 확인
-      const getSNSMonthlyLimit = (plan) => {
-        switch (plan) {
-          case '오피니언 리더':
-            return 60; // 기본 플랜 원고 생성량과 동일
-          case '리전 인플루언서':
-            return 20; // 기본 플랜 원고 생성량과 동일  
-          case '로컬 블로거':
-            return 8; // 기본 플랜 원고 생성량과 동일
-          default:
-            return 30; // SNS 애드온 기본값
-        }
-      };
-
-      const monthlyLimit = getSNSMonthlyLimit(userPlan);
-      const now = new Date();
-      const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      const monthlyUsage = userData.snsAddon?.monthlyUsage || {};
-      const currentMonthUsage = monthlyUsage[currentMonthKey] || 0;
-
-      if (currentMonthUsage >= monthlyLimit) {
-        throw new HttpsError('resource-exhausted', `이번 달 SNS 변환 한도(${monthlyLimit}회)를 모두 사용했습니다.`);
-      }
-    }
-
-    // 2. 원고 조회
+    // 2. 원고 조회 (사용량 제한 없음)
     const postDoc = await db.collection('posts').doc(postIdStr).get();
     if (!postDoc.exists) {
       throw new HttpsError('not-found', '원고를 찾을 수 없습니다.');
@@ -324,51 +298,12 @@ exports.getSNSUsage = wrap(async (req) => {
       throw new HttpsError('not-found', '사용자를 찾을 수 없습니다.');
     }
 
-    const userData = userDoc.data();
-    const isAdmin = userData.role === 'admin' || userData.isAdmin === true;
-    const userPlan = userData.plan || userData.subscription;
-    
-    // 플랜별 SNS 월 제한량 결정
-    const getSNSMonthlyLimit = (plan) => {
-      switch (plan) {
-        case '오피니언 리더':
-          return 60; // 기본 플랜 원고 생성량과 동일
-        case '리전 인플루언서':
-          return 20; // 기본 플랜 원고 생성량과 동일  
-        case '로컬 블로거':
-          return 8; // 기본 플랜 원고 생성량과 동일
-        default:
-          return 30; // SNS 애드온 기본값 (애드온 구매 시)
-      }
-    };
-
-    // SNS 기능은 모든 사용자에게 기본 제공
-    const hasAccess = true;
-
-    // 관리자는 무제한 사용
-    if (isAdmin) {
-      return ok({
-        isActive: true,
-        monthlyLimit: 999999, // 관리자 무제한
-        currentMonthUsage: 0,
-        remaining: 999999,
-        accessMethod: 'admin'
-      });
-    }
-
-    const monthlyLimit = getSNSMonthlyLimit(userPlan);
-
-    // 현재 월 사용량 계산
-    const now = new Date();
-    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const monthlyUsage = userData.snsAddon?.monthlyUsage || {};
-    const currentMonthUsage = monthlyUsage[currentMonthKey] || 0;
-
+    // SNS 기능은 모든 사용자에게 무제한 제공
     return ok({
-      isActive: hasAccess,
-      monthlyLimit: monthlyLimit,
-      currentMonthUsage: currentMonthUsage,
-      remaining: Math.max(0, monthlyLimit - currentMonthUsage),
+      isActive: true,
+      monthlyLimit: 999999,
+      currentMonthUsage: 0,
+      remaining: 999999,
       accessMethod: 'basic'
     });
 

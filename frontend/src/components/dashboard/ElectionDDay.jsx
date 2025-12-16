@@ -638,11 +638,16 @@ function ElectionDDay({ position, status }) {
             alertProps = { severity: 'warning' };
             title = '사전 선거활동 주의 기간';
             message = '과도한 조기 홍보와 지지 호청 표현을 피해주세요';
+          } else if (dDay >= 120 && dDay <= 130) {
+            phase = 'PRELIMINARY_REGISTRATION';
+            alertProps = { severity: 'warning' };
+            title = '예비후보 등록 기간';
+            message = '등록 후에는 프로필 상태를 \'예비\'로 변경해 주세요.';
           } else if (dDay > 30 && dDay <= 180) {
             phase = 'NORMAL_PERIOD';
             alertProps = { severity: 'info' };
             title = status === '예비' ? '예비홍보 활동 기간' : '정치활동 홍보 기간';
-            message = status === '예비' 
+            message = status === '예비'
               ? 'SNS 활동과 지역 의안 발굴에 집중하세요'
               : '정치활동 성과를 중심으로 지지기반을 강화하세요';
           }

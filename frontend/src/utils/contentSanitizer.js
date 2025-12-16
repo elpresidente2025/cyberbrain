@@ -91,9 +91,9 @@ export const getTextLength = (content) => {
 /**
  * SEO 최적화 여부 판단
  * @param {string} content - 판단할 콘텐츠
- * @param {number} threshold - 최소 글자 수 기준 (기본 1800자)
+ * @param {number} threshold - 최소 글자 수 기준 (기본 1500자)
  * @returns {boolean} SEO 최적화 여부
  */
-export const isSeoOptimized = (content, threshold = 1800) => {
+export const isSeoOptimized = (content, threshold = 1500) => {
   return getTextLength(content) >= threshold;
 };

@@ -11,7 +11,7 @@ export const CONFIG = {
   DEFAULT_AI_MODEL: 'gemini-2.0-flash-exp',
 
   // 콘텐츠 품질 기준
-  SEO_WORD_THRESHOLD: 1800,
+  SEO_WORD_THRESHOLD: 1500,
   MIN_CONTENT_LENGTH: 100,
 
   // UI 설정

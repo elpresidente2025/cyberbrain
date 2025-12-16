@@ -1,10 +1,15 @@
 'use strict';
 
 const { setGlobalOptions } = require('firebase-functions/v2');
-const { onRequest } = require('firebase-functions/v2/https');
+require('firebase-functions/v2/https');
 
-// Set region for all functions
-setGlobalOptions({ region: 'asia-northeast3' });
+// ✅ [수정됨] 리전 설정 + 타임아웃 540초(9분)로 증가
+// AI 생성 작업은 오래 걸릴 수 있으므로 넉넉하게 잡아줍니다.
+setGlobalOptions({ 
+  region: 'asia-northeast3',
+  timeoutSeconds: 540, 
+  memory: '1GiB'
+});
 
 // 환경 변수 검증 (보안 강화)
 const REQUIRED_ENV_VARS = [

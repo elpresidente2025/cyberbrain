@@ -15,12 +15,12 @@ const { generateNonLawmakerWarning, generateFamilyStatusWarning } = require('./u
 // [신규] 작법별 프롬프트 빌더 모듈 import
 const { buildDailyCommunicationPrompt } = require('./templates/daily-communication');
 const { buildLogicalWritingPrompt } = require('./templates/policy-proposal');
-const { buildActivityReportPrompt } = require('./templates/activity-report'); // direct-writing -> activity-report
+const { buildActivityReportPrompt } = require('./templates/activity-report');
 const { buildCriticalWritingPrompt } = require('./templates/current-affairs');
-const { buildLocalIssuesPrompt } = require('./templates/local-issues'); // analytical-writing -> local-issues
+const { buildLocalIssuesPrompt } = require('./templates/local-issues');
 
 // ============================================================================
-// 지능적 프레이밍 에이전트
+// 지능적 프레이밍 에이전트 (누락되었던 부분 복구)
 // ============================================================================
 
 function analyzeAndSelectFrame(topic) {
@@ -38,7 +38,7 @@ function applyFramingToPrompt(basePrompt, frame) {
 }
 
 // ============================================================================
-// 공통 품질 규칙 주입기
+// 공통 품질 규칙 주입기 (강화됨)
 // ============================================================================
 
 /**
@@ -50,52 +50,41 @@ function injectUniversalQualityRules(basePrompt) {
   const qualityRules = `
 
 ╔═══════════════════════════════════════════════════════════════╗
-║  ⛔ 필수 품질 규칙 - 모든 원고에 공통 적용  ⛔                  ║
+║  ⛔ [치명적 오류 방지 가이드] - 위반 시 생성 실패로 간주됨  ⛔  ║
 ╚═══════════════════════════════════════════════════════════════╝
 
-** 이 규칙을 위반하면 원고가 자동으로 폐기되고 재생성됩니다 **
+다음 3가지 오류는 절대 발생해서는 안 됩니다. 출력 전 반드시 스스로 검증하세요.
+
+1. **구조 오류 (Endless Loop Prohibition)**
+   - 마무리 인사("감사합니다", "사랑합니다" 등) 이후에 본문 내용이 다시 시작되면 안 됩니다.
+   - 글의 맺음말이 나오면 거기서 즉시 종료하세요.
+   - JSON의 content 필드 내에서 글을 완벽히 끝맺으세요.
+
+2. **문단 반복 (No Repetition)**
+   - 같은 내용, 같은 공약, 같은 비전 제시를 '표현만 바꾸어' 반복하는 것을 금지합니다.
+   - 1문단 1메시지 원칙: 새로운 문단은 반드시 새로운 정보를 담아야 합니다.
+   - 할 말이 없다고 해서 앞의 내용을 요약하며 분량을 늘리지 마세요. 차라리 짧게 끝내세요.
+
+3. **문장 완결성 (Completeness)**
+   - 문장이 중간에 끊기지 않도록 하세요. (예: "주민 여러분과 함께")
+   - 모든 문장은 "~입니다", "~하겠습니다" 등으로 명확히 종결되어야 합니다.
+
+---
+
+╔═══════════════════════════════════════════════════════════════╗
+║  ✅ 필수 품질 규칙 - 모든 원고에 공통 적용                   ║
+╚═══════════════════════════════════════════════════════════════╝
 
 0. **내용 우선 원칙 (최우선)**
-   - 분량보다 내용의 충실도가 우선입니다
-   - 할 말이 없으면 분량을 채우지 말 것
-   - 중언부언하거나 같은 내용을 다른 표현으로 반복하지 말 것
-   - 1문단 1메시지 원칙: 각 문단은 하나의 명확한 메시지만 전달
+   - 분량보다 내용의 충실도가 우선입니다.
+   - 추상적 표현("노력", "최선", "중요") 대신 구체적 정보(숫자, 날짜, 사례)를 포함하세요.
 
-   예시:
-   ❌ "중요합니다. 매우 중요한 사안입니다. 이것은 정말로 중요한 문제입니다." (중언부언)
-   ❌ "노력하겠습니다. 최선을 다하겠습니다. 열심히 하겠습니다." (동어반복)
-   ❌ "이 문제는 중요한 문제입니다. 왜냐하면 이 문제가 중요하기 때문입니다." (순환논리)
-   ✅ "이 문제 해결을 위해 ○○○ 방안을 추진하겠습니다." (구체적, 간결)
+1. **구조 일관성**
+   - JSON 형식으로 출력할 때, content 필드는 단 하나만 존재해야 합니다.
 
-   구체성 확보:
-   - 추상적 표현("노력", "최선", "중요") 최소화
-   - 구체적 정보(숫자, 날짜, 사례, 방법) 포함
-   - "~하겠습니다"보다 "○○을 통해 ~하겠습니다" 형태로 작성
-
-1. **반복 절대 금지**
-   - 동일하거나 유사한 문장을 반복하지 말 것
-   - 동일하거나 유사한 문단을 반복하지 말 것
-   - 이미 작성한 내용을 다시 작성하지 마세요
-   - 각 문장과 문단은 새로운 정보나 관점을 제공해야 함
-
-   예시:
-   ❌ "A 정책이 필요합니다. ...중략... A 정책이 필요합니다." (같은 문장 반복)
-   ❌ "<p>첫 번째 문단</p> ...중략... <p>첫 번째 문단</p>" (같은 문단 반복)
-   ✅ 각 문단이 서로 다른 내용을 담고 있어야 함
-
-2. **구조 일관성**
-   - JSON 형식으로 출력할 때, content 필드는 단 하나만 존재해야 함
-   - 마무리 표현 후 본문이 다시 시작되지 않도록 할 것
-   - 글의 끝은 명확하게 한 번만 맺을 것
-
-3. **문장 완결성**
-   - 모든 문장이 완전한 구조를 갖출 것 (주어-서술어 완비)
-   - 조사나 어미가 누락되지 않도록 할 것
-   - 문장 중간에 끊기지 않도록 할 것
-
-   예시:
-   ❌ "이러한 사실을 알리는 것이 지역 의원으" (문장 미완성)
-   ✅ "이러한 사실을 알리는 것이 지역 의원으로서의 책임입니다" (완성)
+2. **JSON 출력 형식 준수**
+   - 응답은 반드시 유효한 JSON 포맷이어야 합니다.
+   - 마크다운 코드 블록(\`\`\`json ... \`\`\`) 안에 감싸서 출력하세요.
 
 ---
 
@@ -121,7 +110,7 @@ async function buildSmartPrompt(options) {
       case 'logical_writing':
         generatedPrompt = buildLogicalWritingPrompt(options);
         break;
-      case 'direct_writing': // formConstants에서 activity-report, policy-proposal 등이 direct_writing을 사용할 수 있음
+      case 'direct_writing': 
         generatedPrompt = buildActivityReportPrompt(options);
         break;
       case 'critical_writing':

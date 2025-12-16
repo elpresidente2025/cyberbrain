@@ -245,8 +245,6 @@ function SNSConversionModal({ open, onClose, post }) {
           >
             <Typography variant="body2">
               <strong>SNS 변환 사용 가능</strong>
-              {usage.accessMethod === 'admin' && ' (관리자)'}
-              {' '}| 이번 달 {usage.remaining}회 남음
             </Typography>
           </Alert>
         )}
