@@ -38,6 +38,7 @@ const { generateTitleFromContent } = require('../services/posts/title-generator'
 const { buildSmartPrompt } = require('../prompts/prompts');
 const { fetchNaverNews, compressNewsWithAI, formatNewsForPrompt, shouldFetchNews } = require('../services/news-fetcher');
 const { ProgressTracker } = require('../utils/progress-tracker');
+const { sanitizeElectionContent } = require('../services/election-compliance');
 // 세션 관리는 이제 profile-loader에서 통합 관리 (users 문서의 activeGenerationSession 필드)
 // const { createGenerationSession, incrementSessionAttempt } = require('../services/generation-session');
 
@@ -147,6 +148,15 @@ exports.generatePosts = httpWrap(async (req) => {
     const politicalExperience = userProfile.politicalExperience || '정치 신인';
     const config = STATUS_CONFIG[currentStatus] || STATUS_CONFIG['현역'];
 
+    // 🛡️ 입력값 선거법 준수 치환 (사용자 상태에 따라)
+    // 예: "준비" 상태에서 "청년 일자리 공약" → "청년 일자리 정책 방향"
+    let sanitizedTopic = topic;
+    const topicSanitizeResult = sanitizeElectionContent(topic, currentStatus);
+    if (topicSanitizeResult.replacementsMade > 0) {
+      sanitizedTopic = topicSanitizeResult.sanitizedContent;
+      console.log(`🛡️ 입력 주제 선거법 준수 치환: "${topic}" → "${sanitizedTopic}"`);
+    }
+
     // 사용자 정보
     const fullName = userProfile.name || '사용자';
     const fullRegion = generateNaturalRegionTitle(userProfile.regionLocal, userProfile.regionMetro);
@@ -181,7 +191,7 @@ exports.generatePosts = httpWrap(async (req) => {
     let newsContext = '';
     if (shouldFetchNews(category)) {
       try {
-        const news = await fetchNaverNews(topic, 3);
+        const news = await fetchNaverNews(sanitizedTopic, 3);
         if (news && news.length > 0) {
           const compressedNews = await compressNewsWithAI(news);
           newsContext = formatNewsForPrompt(compressedNews);
@@ -215,7 +225,7 @@ exports.generatePosts = httpWrap(async (req) => {
     // 프롬프트 생성
     const prompt = await buildSmartPrompt({
       writingMethod,
-      topic,
+      topic: sanitizedTopic,
       authorBio: `${fullName} (${displayTitle}, ${fullRegion || ''})`,
       targetWordCount,
       instructions: data.instructions,
@@ -227,6 +237,8 @@ exports.generatePosts = httpWrap(async (req) => {
       isCurrentLawmaker,
       politicalExperience,
       currentStatus,
+      // 선거법 준수를 위한 사용자 상태 (준비/현역/예비/후보)
+      status: currentStatus,
       // 가족 상황 (자녀 환각 방지)
       familyStatus
     });
@@ -343,8 +355,8 @@ exports.generatePosts = httpWrap(async (req) => {
       console.error('❌ JSON 파싱 실패:', parseError.message);
       console.error('❌ 원본 응답 (첫 500자):', apiResponse.substring(0, 500));
       parsedResponse = {
-        title: `${topic} 관련 원고`,
-        content: `<p>${topic}에 대한 의견을 나누고자 합니다.</p>`,
+        title: `${sanitizedTopic} 관련 원고`,
+        content: `<p>${sanitizedTopic}에 대한 의견을 나누고자 합니다.</p>`,
         wordCount: 100
       };
     }
@@ -367,24 +379,25 @@ exports.generatePosts = httpWrap(async (req) => {
       });
     }
 
-    // 제목 생성
+    // 제목 생성 (선거법 준수를 위해 status 전달)
     const generatedTitle = await generateTitleFromContent({
       content: parsedResponse.content || '',
       backgroundInfo: data.instructions,
       keywords: backgroundKeywords,
       userKeywords: userKeywords,  // 사용자가 직접 입력한 노출 희망 검색어
-      topic,
+      topic: sanitizedTopic,
       fullName,
       modelName,
-      category: data.category,  // 추가
-      subCategory: data.subCategory  // 추가
+      category: data.category,
+      subCategory: data.subCategory,
+      status: currentStatus  // 선거법 준수 (준비/현역/예비/후보)
     });
 
     // 응답 데이터 구성
     const draftData = {
       id: `draft_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       title: generatedTitle,
-      content: parsedResponse.content || `<p>${topic}에 대한 내용입니다.</p>`,
+      content: parsedResponse.content || `<p>${sanitizedTopic}에 대한 내용입니다.</p>`,
       wordCount: parsedResponse.wordCount || parsedResponse.content?.replace(/<[^>]*>/g, '').length || 0,
       category,
       subCategory: data.subCategory || '',

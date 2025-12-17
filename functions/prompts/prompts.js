@@ -11,6 +11,8 @@
 const { SEO_RULES, FORMAT_RULES } = require('./guidelines/editorial');
 const { OVERRIDE_KEYWORDS, HIGH_RISK_KEYWORDS, POLITICAL_FRAMES } = require('./guidelines/framingRules');
 const { generateNonLawmakerWarning, generateFamilyStatusWarning } = require('./utils/non-lawmaker-warning');
+const { getElectionStage } = require('./guidelines/legal');
+const { buildSEOInstruction } = require('./guidelines/seo');
 
 // [신규] 작법별 프롬프트 빌더 모듈 import
 const { buildDailyCommunicationPrompt } = require('./templates/daily-communication');
@@ -35,6 +37,57 @@ function analyzeAndSelectFrame(topic) {
 function applyFramingToPrompt(basePrompt, frame) {
   if (!frame) return basePrompt;
   return `${frame.promptInjection}\n\n---\n\n${basePrompt}`;
+}
+
+// ============================================================================
+// 선거법 준수 지침 주입기
+// ============================================================================
+
+/**
+ * 사용자 상태에 따른 선거법 준수 지침을 프롬프트에 주입
+ * @param {string} basePrompt - 기본 프롬프트
+ * @param {string} status - 사용자 상태 (준비/현역/예비/후보)
+ * @returns {string} 선거법 준수 지침이 추가된 프롬프트
+ */
+function injectElectionLawCompliance(basePrompt, status) {
+  if (!status) return basePrompt;
+
+  const electionStage = getElectionStage(status);
+  if (!electionStage || !electionStage.promptInstruction) {
+    return basePrompt;
+  }
+
+  // 준비/현역 단계에서는 공약성 표현 금지 강화
+  if (electionStage.name === 'STAGE_1') {
+    const enhancedInstruction = `
+╔═══════════════════════════════════════════════════════════════╗
+║  ⚖️ [선거법 준수 - 최우선 원칙] ⚖️                            ║
+╚═══════════════════════════════════════════════════════════════╝
+
+**현재 상태: ${status} (예비후보 등록 이전)**
+
+${electionStage.promptInstruction}
+
+** 추가 주의사항 - 공약성 어미 금지 **
+다음과 같은 "~하겠습니다" 형태의 공약성 어미는 사용 금지:
+❌ 추진하겠습니다, 실현하겠습니다, 만들겠습니다, 해내겠습니다
+❌ 전개하겠습니다, 제공하겠습니다, 활성화하겠습니다
+❌ 개선하겠습니다, 확대하겠습니다, 강화하겠습니다
+❌ 설립하겠습니다, 구축하겠습니다, 마련하겠습니다
+❌ 지원하겠습니다, 해결하겠습니다, 바꾸겠습니다
+
+✅ 대신 사용할 표현:
+"~이 필요합니다", "~을 제안합니다", "~을 연구하고 있습니다"
+"~을 위해 노력 중입니다", "~에 대해 논의하고 있습니다"
+
+---
+
+`;
+    return enhancedInstruction + basePrompt;
+  }
+
+  // 다른 단계는 기본 지침만 주입
+  return `${electionStage.promptInstruction}\n\n---\n\n${basePrompt}`;
 }
 
 // ============================================================================
@@ -99,7 +152,7 @@ function injectUniversalQualityRules(basePrompt) {
 
 async function buildSmartPrompt(options) {
   try {
-    const { writingMethod, topic } = options;
+    const { writingMethod, topic, status } = options;
     let generatedPrompt;
 
     // 1. [라우팅] 사용자가 선택한 작법(writingMethod)에 따라 적절한 빌더 호출
@@ -110,7 +163,7 @@ async function buildSmartPrompt(options) {
       case 'logical_writing':
         generatedPrompt = buildLogicalWritingPrompt(options);
         break;
-      case 'direct_writing': 
+      case 'direct_writing':
         generatedPrompt = buildActivityReportPrompt(options);
         break;
       case 'critical_writing':
@@ -145,20 +198,33 @@ async function buildSmartPrompt(options) {
       generatedPrompt = familyWarning + '\n\n' + generatedPrompt;
     }
 
-    // 3. [공통 품질 규칙] 모든 템플릿에 적용
-    const qualityEnhancedPrompt = injectUniversalQualityRules(generatedPrompt);
+    // 3. [선거법 준수] 사용자 상태에 따른 선거법 준수 지침 적용
+    const electionCompliantPrompt = injectElectionLawCompliance(generatedPrompt, status);
 
-    // 4. [프레이밍] 지능적 프레이밍 적용
+    // 4. [공통 품질 규칙] 모든 템플릿에 적용
+    const qualityEnhancedPrompt = injectUniversalQualityRules(electionCompliantPrompt);
+
+    // 5. [프레이밍] 지능적 프레이밍 적용
     const selectedFrame = analyzeAndSelectFrame(topic);
     const framedPrompt = applyFramingToPrompt(qualityEnhancedPrompt, selectedFrame);
 
-    // 5. [Editorial] SEO 규칙 적용 (필요시)
-    const finalPrompt = options.applyEditorialRules
+    // 6. [Editorial] 기존 SEO 규칙 적용 (필요시)
+    const editorialPrompt = options.applyEditorialRules
       ? injectEditorialRules(framedPrompt, options)
       : framedPrompt;
 
+    // 7. [SEO 최적화] 최상단에 SEO 지침 주입 (최우선 규칙)
+    const seoInstruction = buildSEOInstruction({
+      keywords: options.keywords,
+      targetWordCount: options.targetWordCount
+    });
+    const finalPrompt = seoInstruction + editorialPrompt;
+
     console.log('✅ buildSmartPrompt 완료:', {
       writingMethod,
+      status,
+      keywordCount: options.keywords?.length || 0,
+      electionLawApplied: status ? `STAGE for ${status}` : 'None',
       framingApplied: selectedFrame ? selectedFrame.id : 'None',
     });
 

@@ -15,9 +15,10 @@ const { callGenerativeModel } = require('../gemini');
  * @param {string} params.modelName - 사용할 AI 모델명
  * @param {string} params.category - 카테고리
  * @param {string} params.subCategory - 하위 카테고리
+ * @param {string} params.status - 사용자 상태 (준비/현역/예비/후보)
  * @returns {Promise<string>} - 생성된 제목
  */
-async function generateTitleFromContent({ content, backgroundInfo, keywords, userKeywords, topic, fullName, modelName, category, subCategory }) {
+async function generateTitleFromContent({ content, backgroundInfo, keywords, userKeywords, topic, fullName, modelName, category, subCategory, status }) {
   console.log('📝 2단계: 본문 기반 제목 생성 시작');
 
   // 본문에서 HTML 태그 제거하고 미리보기 추출
@@ -28,7 +29,7 @@ async function generateTitleFromContent({ content, backgroundInfo, keywords, use
     ? backgroundInfo.filter(item => item && item.trim()).join('\n')
     : backgroundInfo || '';
 
-  // 분리된 프롬프트 빌더 사용
+  // 분리된 프롬프트 빌더 사용 (선거법 준수를 위해 status 전달)
   const titlePrompt = buildTitlePrompt({
     contentPreview,
     backgroundText,
@@ -37,7 +38,8 @@ async function generateTitleFromContent({ content, backgroundInfo, keywords, use
     keywords,
     userKeywords,
     category,
-    subCategory
+    subCategory,
+    status
   });
 
   try {
