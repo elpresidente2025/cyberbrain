@@ -1564,11 +1564,12 @@ export default function ProfilePage() {
         />
 
         {/* 회원탈퇴 확인 다이얼로그 */}
-        <Dialog 
-          open={deleteDialogOpen} 
+        <Dialog
+          open={deleteDialogOpen}
           onClose={handleCloseDeleteDialog}
-          maxWidth="sm" 
+          maxWidth="sm"
           fullWidth
+          slotProps={{ backdrop: { 'aria-hidden': false } }}
         >
           <DialogTitle>
             <Box display="flex" alignItems="center" gap={`${spacing.xs}px`}>

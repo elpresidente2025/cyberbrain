@@ -46,6 +46,7 @@ const CongratulationsModal = ({ open, onClose, userName, bioContent }) => {
       open={open}
       maxWidth="sm"
       fullWidth
+      slotProps={{ backdrop: { 'aria-hidden': false } }}
       sx={{
         '& .MuiDialog-paper': {
           borderRadius: 1,

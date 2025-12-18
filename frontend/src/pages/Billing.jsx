@@ -645,7 +645,7 @@ const Billing = () => {
 
 
         {/* 당원 인증 다이얼로그 */}
-        <Dialog open={authDialogOpen} onClose={() => setAuthDialogOpen(false)} maxWidth="sm" fullWidth>
+        <Dialog open={authDialogOpen} onClose={() => setAuthDialogOpen(false)} maxWidth="sm" fullWidth slotProps={{ backdrop: { 'aria-hidden': false } }}>
           <DialogTitle>당원 인증서 제출</DialogTitle>
           <DialogContent>
             <Box sx={{ mt: `${spacing.md}px` }}>
@@ -730,7 +730,7 @@ const Billing = () => {
         </Dialog>
 
         {/* 구독 해지 확인 다이얼로그 */}
-        <Dialog open={cancelDialogOpen} onClose={() => setCancelDialogOpen(false)} maxWidth="sm" fullWidth>
+        <Dialog open={cancelDialogOpen} onClose={() => setCancelDialogOpen(false)} maxWidth="sm" fullWidth slotProps={{ backdrop: { 'aria-hidden': false } }}>
           <DialogTitle>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Warning sx={{ color: '#ff9800' }} />

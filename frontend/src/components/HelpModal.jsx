@@ -17,6 +17,12 @@ const HelpModal = ({ open, onClose, title, children }) => {
       onClose={onClose}
       maxWidth="md"
       fullWidth
+      // 포커스 관리 문제 방지 - aria-hidden 충돌 해결
+      slotProps={{
+        backdrop: {
+          'aria-hidden': false
+        }
+      }}
       PaperProps={{
         sx: {
           borderRadius: 1,

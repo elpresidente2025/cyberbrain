@@ -47,6 +47,12 @@ const StandardDialog = ({
       onClose={onClose}
       maxWidth={maxWidth}
       fullWidth={fullWidth}
+      // 포커스 관리 문제 방지 - aria-hidden 충돌 해결
+      slotProps={{
+        backdrop: {
+          'aria-hidden': false
+        }
+      }}
       PaperProps={{
         sx: {
           ...(minHeight ? { minHeight } : {}),

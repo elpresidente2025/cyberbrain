@@ -14,9 +14,15 @@ const LoadingOverlay = ({
   const theme = useTheme();
   if (backdrop) {
     return (
-      <Backdrop 
-        open={open} 
-        sx={{ 
+      <Backdrop
+        open={open}
+        // 포커스 관리 문제 방지 - aria-hidden 충돌 해결
+        slotProps={{
+          root: {
+            'aria-hidden': false
+          }
+        }}
+        sx={{
           zIndex,
           color: '#fff',
           backgroundColor: 'background.default',

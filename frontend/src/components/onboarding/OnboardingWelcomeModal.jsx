@@ -41,6 +41,7 @@ const OnboardingWelcomeModal = ({ open, onClose, userName }) => {
       maxWidth="sm"
       fullWidth
       disableEscapeKeyDown
+      slotProps={{ backdrop: { 'aria-hidden': false } }}
       sx={{
         '& .MuiDialog-paper': {
           borderRadius: 1,

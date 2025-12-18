@@ -217,11 +217,12 @@ function SNSConversionModal({ open, onClose, post }) {
   const hasResults = Object.keys(results).length > 0;
 
   return (
-    <Dialog 
-      open={open} 
+    <Dialog
+      open={open}
       onClose={handleClose}
       maxWidth="md"
       fullWidth
+      slotProps={{ backdrop: { 'aria-hidden': false } }}
       PaperProps={{
         sx: { minHeight: '600px' }
       }}

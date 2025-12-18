@@ -392,7 +392,7 @@ function RegisterPage() {
       </Container>
 
       {/* 네이버 정보 제공 동의 다이얼로그 */}
-      <Dialog open={naverConsentOpen} maxWidth="sm" fullWidth>
+      <Dialog open={naverConsentOpen} maxWidth="sm" fullWidth slotProps={{ backdrop: { 'aria-hidden': false } }}>
         <DialogTitle>네이버 정보 제공 동의</DialogTitle>
         <DialogContent>
           <Alert severity="info" sx={{ mb: 2 }}>

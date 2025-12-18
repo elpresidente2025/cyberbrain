@@ -447,7 +447,7 @@ export default function PostsListPage() {
         />
 
         {/* 발행 URL 입력 다이얼로그 */}
-        <Dialog open={publishDialogOpen} onClose={closePublishDialog} maxWidth="sm" fullWidth>
+        <Dialog open={publishDialogOpen} onClose={closePublishDialog} maxWidth="sm" fullWidth slotProps={{ backdrop: { 'aria-hidden': false } }}>
           <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.xs}px` }}>
             <Publish sx={{ color: theme.palette.ui?.header || colors.brand.primary }} />
             원고 발행 등록

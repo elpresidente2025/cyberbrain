@@ -198,7 +198,7 @@ function LoginPage() {
 
 
         {/* 네이버 로그인 실패 다이얼로그 */}
-        <Dialog open={naverDialogOpen} onClose={handleNaverDialogClose} maxWidth="sm" fullWidth>
+        <Dialog open={naverDialogOpen} onClose={handleNaverDialogClose} maxWidth="sm" fullWidth slotProps={{ backdrop: { 'aria-hidden': false } }}>
           <DialogTitle>가입 정보 없음</DialogTitle>
           <DialogContent>
             <Alert severity="info" sx={{ mb: 2 }}>

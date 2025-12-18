@@ -189,7 +189,7 @@ const KeywordExplorerDialog = ({ open, onClose, onSelectKeyword, topic, instruct
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
+    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth slotProps={{ backdrop: { 'aria-hidden': false } }}>
       <DialogTitle>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

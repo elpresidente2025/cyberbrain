@@ -77,6 +77,7 @@ const ProfileBioGuideModal = ({ open, onClose, onStartWriting, userName }) => {
       maxWidth="md"
       fullWidth
       disableEscapeKeyDown
+      slotProps={{ backdrop: { 'aria-hidden': false } }}
       sx={{
         '& .MuiDialog-paper': {
           borderRadius: 1,

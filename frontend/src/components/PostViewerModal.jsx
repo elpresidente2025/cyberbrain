@@ -106,6 +106,7 @@ export default function PostViewerModal({
         onClose={onClose}
         fullWidth
         maxWidth="md"
+        slotProps={{ backdrop: { 'aria-hidden': false } }}
         PaperProps={{
           sx: {
             transition: `transform ${transitions.normal} ${transitions.easing.easeOut}, opacity ${transitions.normal} ${transitions.easing.easeOut}`
