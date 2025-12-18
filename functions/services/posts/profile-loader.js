@@ -99,6 +99,31 @@ async function loadUserProfile(uid, category, topic) {
       console.log('✅ 향상된 메타데이터 힌트 추가:', enhancedHints);
     }
 
+    // 🔍 RAG 컨텍스트 조회 (주제 기반 관련 정보 검색)
+    let ragContext = '';
+    if (topic) {
+      try {
+        const { generateRagContext } = require('../rag/retriever');
+        const { indexOnDemand } = require('../rag/indexer');
+
+        // 하이브리드 인덱싱: 필요시 주문형 인덱싱 실행
+        const bioDoc = await db.collection('bios').doc(uid).get();
+        if (bioDoc.exists) {
+          await indexOnDemand(uid, bioDoc.data());
+        }
+
+        // RAG 검색 실행
+        ragContext = await generateRagContext(uid, topic, category, { topK: 7 });
+
+        if (ragContext) {
+          console.log(`✅ RAG 컨텍스트 로드 완료: ${ragContext.length}자`);
+        }
+      } catch (ragError) {
+        console.warn('⚠️ RAG 컨텍스트 로드 실패 (무시하고 계속):', ragError.message);
+        // RAG 실패해도 원고 생성은 계속 진행
+      }
+    }
+
   } catch (profileError) {
     // HttpsError는 그대로 다시 throw (사용 제한, 세션 제한 등)
     if (profileError.code && profileError.code !== 'internal') {

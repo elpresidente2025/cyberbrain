@@ -429,6 +429,20 @@ async function extractEntriesMetadataAsync(uid, entries) {
       typesFound: Object.keys(typeGroupedEntries).length
     });
 
+    // 🔍 RAG 인덱싱 트리거 (비동기 - 실패해도 메타데이터 추출은 완료)
+    try {
+      const { indexBioEntries } = require('../services/rag/indexer');
+      const bioDoc = await db.collection('bios').doc(uid).get();
+      const bioVersion = bioDoc.exists ? (bioDoc.data().version || 1) : 1;
+
+      console.log(`🔄 RAG 인덱싱 시작: ${uid}`);
+      await indexBioEntries(uid, entries, { bioVersion });
+      console.log(`✅ RAG 인덱싱 완료: ${uid}`);
+    } catch (ragError) {
+      console.warn(`⚠️ RAG 인덱싱 실패 (무시): ${uid}`, ragError.message);
+      // RAG 인덱싱 실패는 무시하고 계속 진행
+    }
+
   } catch (error) {
     console.error(`❌ 다중 엔트리 메타데이터 추출 실패: ${uid}`, error);
     

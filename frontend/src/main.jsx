@@ -33,6 +33,7 @@ import PaymentFail from './pages/PaymentFail.jsx';
 import NaverCallback from './pages/auth/NaverCallback.jsx';
 import AboutPage from './pages/AboutPage.jsx';
 import RestoreAdminPage from './pages/RestoreAdminPage.jsx';
+import TermsPage from './pages/TermsPage.jsx';
 
 // ?�� ?�리로드 ?�수??(?�용???�도 감�? ???�용)
 export const preloadGenerate = () => import('./pages/GeneratePage.jsx');
@@ -88,6 +89,10 @@ const router = createBrowserRouter([
       {
         path: 'about',
         element: <AboutPage />,
+      },
+      {
+        path: 'terms',
+        element: <TermsPage />,
       },
       {
         path: 'payment/success',
