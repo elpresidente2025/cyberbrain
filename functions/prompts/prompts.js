@@ -12,7 +12,7 @@ const { SEO_RULES, FORMAT_RULES } = require('./guidelines/editorial');
 const { OVERRIDE_KEYWORDS, HIGH_RISK_KEYWORDS, POLITICAL_FRAMES } = require('./guidelines/framingRules');
 const { generateNonLawmakerWarning, generateFamilyStatusWarning } = require('./utils/non-lawmaker-warning');
 const { getElectionStage } = require('./guidelines/legal');
-const { buildSEOInstruction } = require('./guidelines/seo');
+const { buildSEOInstruction, buildAntiRepetitionInstruction } = require('./guidelines/seo');
 
 // [신규] 작법별 프롬프트 빌더 모듈 import
 const { buildDailyCommunicationPrompt } = require('./templates/daily-communication');
@@ -213,12 +213,13 @@ async function buildSmartPrompt(options) {
       ? injectEditorialRules(framedPrompt, options)
       : framedPrompt;
 
-    // 7. [SEO 최적화] 최상단에 SEO 지침 주입 (최우선 규칙)
+    // 7. [SEO 최적화 + 반복 금지] 최상단에 핵심 규칙 주입 (최우선)
     const seoInstruction = buildSEOInstruction({
       keywords: options.keywords,
       targetWordCount: options.targetWordCount
     });
-    const finalPrompt = seoInstruction + editorialPrompt;
+    const antiRepetitionInstruction = buildAntiRepetitionInstruction();
+    const finalPrompt = seoInstruction + antiRepetitionInstruction + editorialPrompt;
 
     console.log('✅ buildSmartPrompt 완료:', {
       writingMethod,

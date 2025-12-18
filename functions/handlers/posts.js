@@ -250,7 +250,7 @@ exports.generatePosts = httpWrap(async (req) => {
     // 3단계: AI 원고 작성 중
     await progress.stepGenerating();
 
-    // AI 호출 및 검증
+    // AI 호출 및 휴리스틱 검증 (반복/선거법 위반 검출)
     const apiResponse = await validateAndRetry({
       prompt,
       modelName,
@@ -259,7 +259,8 @@ exports.generatePosts = httpWrap(async (req) => {
       targetWordCount,
       userKeywords,        // 사용자 입력 키워드 (엄격 검증)
       autoKeywords: extractedKeywords,  // 자동 추출 키워드 (완화 검증)
-      maxAttempts: 10
+      status: currentStatus,  // 선거법 검증용 (준비/현역/예비/후보)
+      maxAttempts: 3  // 휴리스틱 검증 실패 시 재시도 (빠름)
     });
 
     // 🎉 검증 성공! 이제 attempts 증가 및 생성 횟수 차감

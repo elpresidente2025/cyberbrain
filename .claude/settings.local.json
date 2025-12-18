@@ -91,7 +91,8 @@
       "Bash(firebase login:list:*)",
       "Bash(git commit -m \"$(cat <<''EOF''\nfeat: add LLM-based quality validation for content generation\n\nReplace heuristic repetition/density checks with LLM-powered semantic\nanalysis. The new evaluateQualityWithLLM function:\n\n- Detects semantic repetition (same meaning, different words)\n- Identifies low information density (abstract phrases, filler)\n- Checks structural completeness (proper ending, no trailing content)\n- Validates sentence completeness (no truncated sentences)\n\nThe LLM evaluation only runs after basic validations pass (name, length,\nkeywords) to minimize API costs. Failed validations now include AI-generated\nsuggestions for improvement in the retry prompt.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(git commit -m \"$(cat <<''EOF''\nperf: optimize LLM quality validation for faster response\n\n- Reduce evaluation prompt from 40+ lines to 8 lines\n- Truncate content to 3000 chars max for validation\n- Simplify JSON response structure\n- Focus on 3 critical checks only:\n  1. Sentence repetition\n  2. Content after closing greeting\n  3. Incomplete sentences\n\nThis prevents 504 timeout errors while maintaining quality checks.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(node -e:*)"
     ]
   },
   "mcpServers": {
