@@ -386,16 +386,29 @@ async function getOrCreateSession(uid, isAdmin, isTester, category, topic) {
           }
         } else {
           // === 기존 세션 조회: attempts는 현재 값 유지 (검증 성공 후 증가) ===
+          const currentAttempts = activeSession.attempts || 0;
+          const maxAttempts = 3;
+
+          // 🚫 최대 시도 횟수 초과 검사
+          if (currentAttempts >= maxAttempts) {
+            console.warn(`⚠️ 최대 재생성 횟수 초과: ${currentAttempts}/${maxAttempts}`);
+            throw new HttpsError(
+              'resource-exhausted',
+              `최대 ${maxAttempts}회까지만 재생성할 수 있습니다. 새로운 원고를 생성해주세요.`
+            );
+          }
+
           sessionInfo = {
             sessionId: activeSession.id,
-            attempts: activeSession.attempts || 0,
-            maxAttempts: 3,
+            attempts: currentAttempts,
+            maxAttempts,
             isNewSession: false
           };
 
           console.log('✅ 기존 세션 조회', {
             sessionId: activeSession.id,
-            currentAttempts: activeSession.attempts || 0
+            currentAttempts,
+            remainingAttempts: maxAttempts - currentAttempts
           });
         }
 

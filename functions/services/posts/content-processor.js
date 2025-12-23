@@ -1,6 +1,6 @@
 'use strict';
 
-const { sanitizeElectionContent } = require('../election-compliance');
+const { sanitizeElectionContent, validateElectionCompliance } = require('../election-compliance');
 
 /**
  * AI가 생성한 원고에 대한 후처리 및 보정
@@ -131,16 +131,38 @@ function processGeneratedContent({ content, fullName, fullRegion, currentStatus,
   // 최종 중복 이름 패턴 제거
   fixedContent = removeDuplicateNames(fixedContent, fullName);
 
-  // 🛡️ 선거법 준수 자동 치환 (3차 방어)
+  // 🛡️ 선거법 준수 검증 및 치환 (3차 방어)
   if (currentStatus) {
     console.log(`🛡️ 선거법 준수 검사 시작 (상태: ${currentStatus})`);
+
+    // 1. 먼저 검증하여 금지 표현 감지
+    const validationResult = validateElectionCompliance(fixedContent, currentStatus);
+
+    if (!validationResult.valid) {
+      console.warn(`⚠️ 선거법 위반 표현 감지됨 (${validationResult.violationCount}개):`);
+      for (const v of validationResult.violations) {
+        console.warn(`   - [${v.category}] "${v.matches.join('", "')}" (${v.count}회)`);
+      }
+    }
+
+    // 2. 치환 가능한 표현 자동 수정
     const electionResult = sanitizeElectionContent(fixedContent, currentStatus);
 
     if (electionResult.replacementsMade > 0) {
-      console.log(`⚠️ 선거법 위반 표현 ${electionResult.replacementsMade}개 자동 수정됨`);
+      console.log(`🔧 선거법 위반 표현 ${electionResult.replacementsMade}개 자동 수정됨`);
       fixedContent = electionResult.sanitizedContent;
+    }
+
+    // 3. 수정 후에도 남은 위반 표현 재검증
+    const remainingResult = validateElectionCompliance(fixedContent, currentStatus);
+
+    if (!remainingResult.valid) {
+      console.warn(`⚠️ 자동 수정 불가한 위반 표현 ${remainingResult.violationCount}개 남음 - AI 프롬프트 개선 필요:`);
+      for (const v of remainingResult.violations) {
+        console.warn(`   - [${v.category}] "${v.matches.join('", "')}"`);
+      }
     } else {
-      console.log('✅ 선거법 준수 검사 통과 - 수정 필요 없음');
+      console.log('✅ 선거법 준수 검사 통과');
     }
   }
 
