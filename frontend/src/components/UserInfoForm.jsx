@@ -14,6 +14,8 @@ import {
   Box,
   Button,
   Stack,
+  FormControlLabel,
+  Checkbox,
 } from '@mui/material';
 import { Add } from '@mui/icons-material';
 import { httpsCallable } from 'firebase/functions';
@@ -442,14 +444,14 @@ export default function UserInfoForm({
 
       {/* 기초자치단체 */}
       <Grid item xs={12} sm={6}>
-        <FormControl fullWidth required>
+        <FormControl fullWidth required={position !== '광역자치단체장'}>
           <InputLabel>기초자치단체</InputLabel>
           <Select
             name="regionLocal"
             value={regionLocal}
             label="기초자치단체"
             onChange={handleSelectChange}
-            disabled={disabled || !regionMetro || position === '광역자치단체장'}
+            disabled={disabled || !regionMetro}
             MenuProps={{
               keepMounted: false,
               PaperProps: {
@@ -465,19 +467,24 @@ export default function UserInfoForm({
               </MenuItem>
             ))}
           </Select>
+          {position === '광역자치단체장' && (
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+              지역위원회 소속 기준으로 선택하세요
+            </Typography>
+          )}
         </FormControl>
       </Grid>
 
       {/* 선거구 */}
       <Grid item xs={12} sm={6}>
-        <FormControl fullWidth required>
+        <FormControl fullWidth required={['국회의원', '광역의원', '기초의원'].includes(position)}>
           <InputLabel>선거구</InputLabel>
           <Select
             name="electoralDistrict"
             value={electoralDistrict}
             label="선거구"
             onChange={handleSelectChange}
-            disabled={disabled || !regionLocal || !position || position === '광역자치단체장' || position === '기초자치단체장'}
+            disabled={disabled || !regionLocal || !position}
             MenuProps={{
               keepMounted: false,
               PaperProps: {
@@ -493,6 +500,11 @@ export default function UserInfoForm({
               </MenuItem>
             ))}
           </Select>
+          {(position === '광역자치단체장' || position === '기초자치단체장') && (
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+              지역위원회 소속 기준으로 선택하세요
+            </Typography>
+          )}
         </FormControl>
       </Grid>
 
@@ -501,108 +513,146 @@ export default function UserInfoForm({
         <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
           목표 선거
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           다음 선거에서 도전할 직책과 지역을 선택하세요. 원고 작성 시 이 정보를 기준으로 지역 관점이 설정됩니다.
         </Typography>
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={targetElection?.sameAsCurrentDistrict || false}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                if (checked) {
+                  // 체크 시: 현재 지역구 정보와 동일하게 설정
+                  onChange('targetElection', {
+                    sameAsCurrentDistrict: true,
+                    position: position,
+                    regionMetro: regionMetro,
+                    regionLocal: regionLocal,
+                    electoralDistrict: electoralDistrict,
+                  });
+                } else {
+                  // 체크 해제 시: 플래그만 해제하고 값은 유지
+                  onChange('targetElection', {
+                    ...targetElection,
+                    sameAsCurrentDistrict: false,
+                  });
+                }
+              }}
+              disabled={disabled || !position}
+            />
+          }
+          label="지역구 정보와 같음"
+          sx={{ mb: 1 }}
+        />
       </Grid>
 
-      {/* 목표 직책 */}
-      <Grid item xs={12} sm={6}>
-        <FormControl fullWidth required>
-          <InputLabel>목표 직책</InputLabel>
-          <Select
-            value={targetElection?.position || ''}
-            label="목표 직책"
-            onChange={(e) => handleTargetElectionChange('position', e.target.value)}
-            disabled={disabled}
-            MenuProps={{
-              keepMounted: false,
-              PaperProps: { style: { zIndex: 1400 } },
-            }}
-          >
-            <MenuItem value="국회의원">국회의원</MenuItem>
-            <MenuItem value="광역의원">광역의원(시/도의원)</MenuItem>
-            <MenuItem value="기초의원">기초의원(시/군/구의원)</MenuItem>
-            <MenuItem value="광역자치단체장">광역자치단체장(특별/광역시장, 도지사)</MenuItem>
-            <MenuItem value="기초자치단체장">기초자치단체장(시장, 구청장, 군수 등)</MenuItem>
-          </Select>
-        </FormControl>
-      </Grid>
+      {/* 목표 선거 드롭다운 - "지역구 정보와 같음" 체크 시 숨김 */}
+      {!targetElection?.sameAsCurrentDistrict && (
+        <>
+          {/* 목표 직책 */}
+          <Grid item xs={12} sm={6}>
+            <FormControl fullWidth required>
+              <InputLabel>목표 직책</InputLabel>
+              <Select
+                value={targetElection?.position || ''}
+                label="목표 직책"
+                onChange={(e) => handleTargetElectionChange('position', e.target.value)}
+                disabled={disabled}
+                MenuProps={{
+                  keepMounted: false,
+                  PaperProps: { style: { zIndex: 1400 } },
+                }}
+              >
+                <MenuItem value="국회의원">국회의원</MenuItem>
+                <MenuItem value="광역의원">광역의원(시/도의원)</MenuItem>
+                <MenuItem value="기초의원">기초의원(시/군/구의원)</MenuItem>
+                <MenuItem value="광역자치단체장">광역자치단체장(특별/광역시장, 도지사)</MenuItem>
+                <MenuItem value="기초자치단체장">기초자치단체장(시장, 구청장, 군수 등)</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
 
-      {/* 목표 광역자치단체 */}
-      <Grid item xs={12} sm={6}>
-        <FormControl fullWidth required>
-          <InputLabel>목표 광역자치단체</InputLabel>
-          <Select
-            value={targetElection?.regionMetro || ''}
-            label="목표 광역자치단체"
-            onChange={(e) => handleTargetElectionChange('regionMetro', e.target.value)}
-            disabled={disabled || !targetElection?.position}
-            MenuProps={{
-              keepMounted: false,
-              PaperProps: { style: { zIndex: 1400 } },
-            }}
-          >
-            {metroList.map((metro) => (
-              <MenuItem key={metro} value={metro}>
-                {metro}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Grid>
+          {/* 목표 광역자치단체 */}
+          <Grid item xs={12} sm={6}>
+            <FormControl fullWidth required>
+              <InputLabel>목표 광역자치단체</InputLabel>
+              <Select
+                value={targetElection?.regionMetro || ''}
+                label="목표 광역자치단체"
+                onChange={(e) => handleTargetElectionChange('regionMetro', e.target.value)}
+                disabled={disabled || !targetElection?.position}
+                MenuProps={{
+                  keepMounted: false,
+                  PaperProps: { style: { zIndex: 1400 } },
+                }}
+              >
+                {metroList.map((metro) => (
+                  <MenuItem key={metro} value={metro}>
+                    {metro}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
 
-      {/* 목표 기초자치단체 */}
-      <Grid item xs={12} sm={6}>
-        <FormControl fullWidth required={targetElection?.position !== '광역자치단체장'}>
-          <InputLabel>목표 기초자치단체</InputLabel>
-          <Select
-            value={targetElection?.regionLocal || ''}
-            label="목표 기초자치단체"
-            onChange={(e) => handleTargetElectionChange('regionLocal', e.target.value)}
-            disabled={disabled || !targetElection?.regionMetro || targetElection?.position === '광역자치단체장'}
-            MenuProps={{
-              keepMounted: false,
-              PaperProps: { style: { zIndex: 1400 } },
-            }}
-          >
-            {targetLocalList.map((local) => (
-              <MenuItem key={local} value={local}>
-                {local}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Grid>
+          {/* 목표 기초자치단체 */}
+          <Grid item xs={12} sm={6}>
+            <FormControl fullWidth required={targetElection?.position !== '광역자치단체장'}>
+              <InputLabel>목표 기초자치단체</InputLabel>
+              <Select
+                value={targetElection?.regionLocal || ''}
+                label="목표 기초자치단체"
+                onChange={(e) => handleTargetElectionChange('regionLocal', e.target.value)}
+                disabled={disabled || !targetElection?.regionMetro}
+                MenuProps={{
+                  keepMounted: false,
+                  PaperProps: { style: { zIndex: 1400 } },
+                }}
+              >
+                {targetLocalList.map((local) => (
+                  <MenuItem key={local} value={local}>
+                    {local}
+                  </MenuItem>
+                ))}
+              </Select>
+              {targetElection?.position === '광역자치단체장' && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                  지역위원회 소속 기준으로 선택하세요
+                </Typography>
+              )}
+            </FormControl>
+          </Grid>
 
-      {/* 목표 선거구 */}
-      <Grid item xs={12} sm={6}>
-        <FormControl fullWidth required={['국회의원', '광역의원', '기초의원'].includes(targetElection?.position)}>
-          <InputLabel>목표 선거구</InputLabel>
-          <Select
-            value={targetElection?.electoralDistrict || ''}
-            label="목표 선거구"
-            onChange={(e) => handleTargetElectionChange('electoralDistrict', e.target.value)}
-            disabled={
-              disabled ||
-              !targetElection?.regionLocal ||
-              !targetElection?.position ||
-              targetElection?.position === '광역자치단체장' ||
-              targetElection?.position === '기초자치단체장'
-            }
-            MenuProps={{
-              keepMounted: false,
-              PaperProps: { style: { zIndex: 1400 } },
-            }}
-          >
-            {targetElectoralList.map((district) => (
-              <MenuItem key={district} value={district}>
-                {district}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Grid>
+          {/* 목표 선거구 */}
+          <Grid item xs={12} sm={6}>
+            <FormControl fullWidth required={['국회의원', '광역의원', '기초의원'].includes(targetElection?.position)}>
+              <InputLabel>목표 선거구</InputLabel>
+              <Select
+                value={targetElection?.electoralDistrict || ''}
+                label="목표 선거구"
+                onChange={(e) => handleTargetElectionChange('electoralDistrict', e.target.value)}
+                disabled={disabled || !targetElection?.regionLocal || !targetElection?.position}
+                MenuProps={{
+                  keepMounted: false,
+                  PaperProps: { style: { zIndex: 1400 } },
+                }}
+              >
+                {targetElectoralList.map((district) => (
+                  <MenuItem key={district} value={district}>
+                    {district}
+                  </MenuItem>
+                ))}
+              </Select>
+              {(targetElection?.position === '광역자치단체장' || targetElection?.position === '기초자치단체장') && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                  지역위원회 소속 기준으로 선택하세요
+                </Typography>
+              )}
+            </FormControl>
+          </Grid>
+        </>
+      )}
 
     </>
   );
