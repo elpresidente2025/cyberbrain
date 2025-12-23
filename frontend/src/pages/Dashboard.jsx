@@ -90,8 +90,9 @@ const Dashboard = () => {
   const userIcon = getUserStatusIcon(user);
   const regionInfo = getUserRegionInfo(user);
   
-  // 관리자 확인
-  const isAdmin = user?.role === 'admin';
+  // 관리자/테스터 확인
+  const isAdmin = user?.role === 'admin' || user?.isAdmin === true;
+  const isTester = user?.isTester === true;
 
   // 데이터 로딩 함수 (재사용 가능하도록 분리)
   const fetchDashboardData = async () => {
@@ -385,8 +386,8 @@ const Dashboard = () => {
   const hasBio = user?.bio && user.bio.trim().length > 0;
   const showBioAlert = !hasBio && !isAdmin;
   
-  // 버튼 비활성화 조건 계산
-  const canGeneratePost = isAdmin || (hasBio && usage.postsGenerated < usage.monthlyLimit);
+  // 버튼 비활성화 조건 계산 (관리자/테스터는 무제한)
+  const canGeneratePost = isAdmin || isTester || (hasBio && usage.postsGenerated < usage.monthlyLimit);
 
   return (
     <DashboardLayout>

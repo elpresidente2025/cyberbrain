@@ -18,6 +18,7 @@ async function loadUserProfile(uid, category, topic) {
   let personalizedHints = '';
   let dailyLimitWarning = false;
   let userMetadata = null;
+  let ragContext = '';  // RAG 컨텍스트 (try 블록 외부에서도 접근 가능하도록)
 
   try {
     // 사용자 기본 정보 조회
@@ -33,17 +34,18 @@ async function loadUserProfile(uid, category, topic) {
       userProfile = userDoc.data();
       console.log('✅ 사용자 프로필 조회 완료:', userProfile.name || 'Unknown');
 
-      // 권한 및 사용량 체크 (isAdmin 필드 또는 role 필드 체크)
+      // 권한 및 사용량 체크 (isAdmin, isTester 필드 체크)
       const isAdmin = userProfile.isAdmin === true || userProfile.role === 'admin';
+      const isTester = userProfile.isTester === true;
 
-      if (!isAdmin) {
+      if (!isAdmin && !isTester) {
         // 하루 생성량 체크
         dailyLimitWarning = checkDailyLimit(userProfile);
 
         // 월간 사용량 체크 (세션 자동 만료 포함)
         await checkUsageLimit(uid, userProfile);
       } else {
-        console.log('✅ 관리자 계정 - 제한 무시');
+        console.log(`✅ ${isAdmin ? '관리자' : '테스터'} 계정 - 제한 무시`);
       }
     }
 
@@ -100,7 +102,6 @@ async function loadUserProfile(uid, category, topic) {
     }
 
     // 🔍 RAG 컨텍스트 조회 (주제 기반 관련 정보 검색)
-    let ragContext = '';
     if (topic) {
       try {
         const { generateRagContext } = require('../rag/retriever');
@@ -148,7 +149,9 @@ async function loadUserProfile(uid, category, topic) {
     personalizedHints,
     dailyLimitWarning,
     userMetadata,
-    isAdmin: userProfile.isAdmin === true
+    ragContext,
+    isAdmin: userProfile.isAdmin === true || userProfile.role === 'admin',
+    isTester: userProfile.isTester === true
   };
 }
 
@@ -314,10 +317,16 @@ async function checkUsageLimit(uid, userProfile) {
  * 세션 조회 또는 생성 (attempts는 변경하지 않음)
  * - 새 세션: 세션 생성, attempts = 0
  * - 기존 세션: 기존 세션 정보 반환
+ * @param {string} uid - 사용자 ID
+ * @param {boolean} isAdmin - 관리자 여부 (maxAttempts 999)
+ * @param {boolean} isTester - 테스터 여부 (사용량 제한 면제, maxAttempts는 3)
  * @returns {Object} 세션 정보 { sessionId, attempts, maxAttempts, isNewSession }
  */
-async function getOrCreateSession(uid, isAdmin, category, topic) {
+async function getOrCreateSession(uid, isAdmin, isTester, category, topic) {
   if (!uid) return { sessionId: null, attempts: 0, maxAttempts: 3, isNewSession: false };
+
+  // 사용량 제한 면제 여부 (관리자 또는 테스터)
+  const hasUnlimitedUsage = isAdmin || isTester;
 
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -330,7 +339,7 @@ async function getOrCreateSession(uid, isAdmin, category, topic) {
   let sessionInfo = { sessionId: null, attempts: 0, maxAttempts: 3, isNewSession: false };
 
   try {
-    if (!isAdmin) {
+    if (!hasUnlimitedUsage) {
         // 현재 사용자 데이터 조회
         const userDoc = await db.collection('users').doc(uid).get();
         const userData = userDoc.data() || {};
@@ -393,12 +402,14 @@ async function getOrCreateSession(uid, isAdmin, category, topic) {
       await db.collection('users').doc(uid).update(updateData);
       console.log('✅ 세션 정보 업데이트 완료 (attempts 변경 없음)');
     } else {
-      // 관리자는 세션 관리 없이 기록만
+      // 관리자/테스터는 세션 관리 없이 기록만
       await db.collection('users').doc(uid).update({
         lastGenerated: admin.firestore.FieldValue.serverTimestamp()
       });
-      console.log('✅ 관리자 계정 - 사용량 카운트 없이 기록만 업데이트');
-      sessionInfo = { sessionId: 'admin', attempts: 0, maxAttempts: 999, isNewSession: false };
+      // 관리자: maxAttempts 999 (무제한), 테스터: maxAttempts 3 (일반 사용자와 동일)
+      const maxAttempts = isAdmin ? 999 : 3;
+      console.log(`✅ ${isAdmin ? '관리자' : '테스터'} 계정 - 사용량 카운트 없이 기록만 업데이트 (maxAttempts: ${maxAttempts})`);
+      sessionInfo = { sessionId: isAdmin ? 'admin' : 'tester', attempts: 0, maxAttempts, isNewSession: false };
     }
 
     return sessionInfo;

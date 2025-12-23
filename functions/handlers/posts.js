@@ -107,6 +107,22 @@ exports.generatePosts = httpWrap(async (req) => {
   const sessionId = requestData?.sessionId || null; // 세션 ID (재생성 시)
   const data = requestData;
 
+  // 🆕 새 생성 요청 시 기존 세션 삭제 (3회 제한 우회 방지가 아닌, 정상적인 새 시작 허용)
+  if (!sessionId) {
+    try {
+      const userDoc = await db.collection('users').doc(uid).get();
+      const userData = userDoc.data() || {};
+      if (userData.activeGenerationSession) {
+        console.log('🗑️ 새 생성 요청 - 기존 세션 삭제:', userData.activeGenerationSession.id);
+        await db.collection('users').doc(uid).update({
+          activeGenerationSession: admin.firestore.FieldValue.delete()
+        });
+      }
+    } catch (clearError) {
+      console.warn('⚠️ 기존 세션 삭제 실패 (무시하고 계속):', clearError.message);
+    }
+  }
+
   // 데이터 검증
   const topic = data.prompt || data.topic || '';
   const category = data.category || '';
@@ -134,14 +150,18 @@ exports.generatePosts = httpWrap(async (req) => {
       userProfile,
       personalizedHints,
       dailyLimitWarning,
-      isAdmin
+      ragContext,
+      isAdmin,
+      isTester
     } = await loadUserProfile(uid, category, topic);
 
     // 🔥 세션 조회 또는 생성 (attempts는 아직 증가하지 않음)
     // - 새 세션: attempts = 0으로 시작, 검증 성공 후 증가
     // - 기존 세션: 기존 attempts 유지, 검증 성공 후 증가
+    // - 관리자: maxAttempts 999 (무제한)
+    // - 테스터: 사용량 제한 면제, 하지만 maxAttempts는 3회 (일반 사용자와 동일)
     console.log('🔄 세션 관리:', sessionId ? '기존 세션 계속' : '새 세션 시작');
-    let session = await getOrCreateSession(uid, isAdmin, category, topic);
+    let session = await getOrCreateSession(uid, isAdmin, isTester, category, topic);
 
     // 사용자 상태 설정
     const currentStatus = userProfile.status || '현역';
@@ -250,7 +270,7 @@ exports.generatePosts = httpWrap(async (req) => {
     // 3단계: AI 원고 작성 중
     await progress.stepGenerating();
 
-    // AI 호출 및 휴리스틱 검증 (반복/선거법 위반 검출)
+    // AI 호출 및 휴리스틱 검증 + Critic Agent 검토
     const apiResponse = await validateAndRetry({
       prompt,
       modelName,
@@ -260,12 +280,16 @@ exports.generatePosts = httpWrap(async (req) => {
       userKeywords,        // 사용자 입력 키워드 (엄격 검증)
       autoKeywords: extractedKeywords,  // 자동 추출 키워드 (완화 검증)
       status: currentStatus,  // 선거법 검증용 (준비/현역/예비/후보)
-      maxAttempts: 3  // 휴리스틱 검증 실패 시 재시도 (빠름)
+      ragContext,          // Critic Agent 팩트 검증용
+      authorName: fullName,  // Corrector Agent 톤 유지용
+      topic: sanitizedTopic,  // Critic Agent 문맥 이해용
+      maxAttempts: 3,      // 휴리스틱 검증 실패 시 재시도 (빠름)
+      maxCriticAttempts: 2   // Critic Agent 루프 최대 반복
     });
 
     // 🎉 검증 성공! 이제 attempts 증가 및 생성 횟수 차감
-    // 1단계: attempts 증가
-    session = await incrementSessionAttempts(uid, session, isAdmin);
+    // 1단계: attempts 증가 (관리자/테스터는 DB에 기록하지 않음)
+    session = await incrementSessionAttempts(uid, session, isAdmin || isTester);
     console.log('✅ 검증 성공 - attempts 증가 완료:', {
       sessionId: session.sessionId,
       attempts: session.attempts

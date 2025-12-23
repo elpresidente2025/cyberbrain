@@ -95,14 +95,14 @@ export default function DraftGrid({
             onClick={() => onSelect?.(draft)}
           >
             <CardContent sx={{ flexGrow: 1 }}>
-              <Typography 
-                variant="h6" 
-                component="div" 
-                gutterBottom 
-                sx={{ 
-                  color: 'white', 
-                  textAlign: 'center', 
-                  fontWeight: 'bold' 
+              <Typography
+                variant="h6"
+                component="div"
+                gutterBottom
+                sx={{
+                  color: '#ffffff !important',
+                  textAlign: 'center',
+                  fontWeight: 'bold'
                 }}
               >
                 초안 {index + 1}
@@ -148,7 +148,7 @@ export default function DraftGrid({
             </CardContent>
             
             <CardActions sx={{ justifyContent: 'space-between', px: 2, pb: 2, flexWrap: 'wrap' }}>
-              <Typography variant="caption" sx={{ color: 'white' }}>
+              <Typography variant="caption" sx={{ color: '#ffffff !important' }}>
                 {draft.generatedAt ?
                   new Date(draft.generatedAt).toLocaleString() :
                   new Date().toLocaleString()

@@ -27,7 +27,8 @@ import {
   Delete,
   Edit,
   Refresh,
-  Search
+  Search,
+  Science
 } from '@mui/icons-material';
 import HongKongNeonCard from '../HongKongNeonCard';
 import { callFunction } from '../../services/firebaseService';
@@ -160,6 +161,27 @@ const UserManagement = () => {
     }
   };
 
+  const handleToggleTester = async (user) => {
+    const action = user.isTester ? '해제' : '부여';
+    if (!confirm(`${user.name || '사용자'}님에게 테스터 권한을 ${action}하시겠습니까?\n\n테스터는 관리자와 동일하게 90회 생성이 가능합니다.`)) {
+      return;
+    }
+
+    try {
+      const response = await callFunction('toggleTester', {
+        targetUserId: user.uid
+      });
+
+      if (response.success) {
+        showNotification(response.message, 'success');
+        loadUsers(); // 목록 새로고침
+      }
+    } catch (error) {
+      console.error('테스터 권한 변경 실패:', error);
+      showNotification('테스터 권한 변경 중 오류가 발생했습니다.', 'error');
+    }
+  };
+
   const filteredUsers = users.filter(user => 
     user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.electoralDistrict?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -261,15 +283,41 @@ const UserManagement = () => {
                   <TableCell sx={{ color: 'text.primary' }}>{user.position || '-'}</TableCell>
                   <TableCell sx={{ color: 'text.primary' }}>{user.electoralDistrict || '-'}</TableCell>
                   <TableCell>
-                    <Chip
-                      label={user.isActive ? '활성' : '비활성'}
-                      color={user.isActive ? 'success' : 'error'}
-                      size="small"
-                    />
+                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                      <Chip
+                        label={user.isActive ? '활성' : '비활성'}
+                        color={user.isActive ? 'success' : 'error'}
+                        size="small"
+                      />
+                      {user.isTester && (
+                        <Chip
+                          label="테스터"
+                          color="secondary"
+                          size="small"
+                          icon={<Science sx={{ fontSize: 14 }} />}
+                        />
+                      )}
+                      {user.isAdmin && (
+                        <Chip
+                          label="관리자"
+                          color="primary"
+                          size="small"
+                        />
+                      )}
+                    </Box>
                   </TableCell>
                   <TableCell sx={{ color: 'text.secondary' }}>{formatDate(user.createdAt)}</TableCell>
                   <TableCell align="center">
                     <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Tooltip title={user.isTester ? '테스터 권한 해제' : '테스터 권한 부여'}>
+                        <IconButton
+                          size="small"
+                          color={user.isTester ? 'secondary' : 'default'}
+                          onClick={() => handleToggleTester(user)}
+                        >
+                          <Science />
+                        </IconButton>
+                      </Tooltip>
                       <Tooltip title="사용량 초기화">
                         <IconButton
                           size="small"

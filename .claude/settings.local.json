@@ -93,7 +93,9 @@
       "Bash(git commit -m \"$(cat <<''EOF''\nperf: optimize LLM quality validation for faster response\n\n- Reduce evaluation prompt from 40+ lines to 8 lines\n- Truncate content to 3000 chars max for validation\n- Simplify JSON response structure\n- Focus on 3 critical checks only:\n  1. Sentence repetition\n  2. Content after closing greeting\n  3. Incomplete sentences\n\nThis prevents 504 timeout errors while maintaining quality checks.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(cd:*)",
       "Bash(node -e:*)",
-      "Bash(gcloud firestore indexes composite create:*)"
+      "Bash(gcloud firestore indexes composite create:*)",
+      "Bash(firebase functions:secrets:set:*)",
+      "WebFetch(domain:firebase.google.com)"
     ]
   },
   "mcpServers": {

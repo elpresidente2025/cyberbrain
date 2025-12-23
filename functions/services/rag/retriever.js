@@ -11,6 +11,7 @@
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { generateQueryEmbedding, cosineSimilarity } = require('./embedding');
 const { getRelevantBioTypesForCategory } = require('./chunker');
+const { rerankDocuments, isRerankerAvailable } = require('./reranker');
 const { logError } = require('../../common/log');
 
 const db = getFirestore();
@@ -19,7 +20,8 @@ const db = getFirestore();
 const DEFAULT_RETRIEVAL_OPTIONS = {
   topK: 7,           // 반환할 최대 청크 수
   minScore: 0.55,    // 최소 유사도 점수
-  distanceThreshold: 0.8  // findNearest 거리 임계값
+  distanceThreshold: 0.8,  // findNearest 거리 임계값
+  useReranker: true  // BGE Reranker 사용 여부
 };
 
 // 컬렉션 경로
@@ -40,7 +42,7 @@ async function retrieveRelevantChunks(uid, query, options = {}) {
     return [];
   }
 
-  const { topK, minScore, distanceThreshold } = { ...DEFAULT_RETRIEVAL_OPTIONS, ...options };
+  const { topK, minScore, distanceThreshold, useReranker } = { ...DEFAULT_RETRIEVAL_OPTIONS, ...options };
 
   console.log(`🔍 RAG 검색 시작: uid=${uid}, query="${query.substring(0, 50)}..."`);
 
@@ -105,15 +107,24 @@ async function retrieveRelevantChunks(uid, query, options = {}) {
       });
     }
 
-    // 5. 점수 기반 정렬 (가중치 적용)
-    results.sort((a, b) => {
-      const scoreA = a.score * (1 + a.weight * 0.3);
-      const scoreB = b.score * (1 + b.weight * 0.3);
-      return scoreB - scoreA;
-    });
+    // 5. Reranker 또는 기존 점수 기반 정렬
+    let rankedResults;
+
+    if (useReranker && isRerankerAvailable() && results.length > 1) {
+      console.log('🔄 BGE Reranker로 재순위 중...');
+      rankedResults = await rerankDocuments(query, results);
+    } else {
+      // Reranker 미사용 시 기존 방식 (가중치 적용 점수 정렬)
+      results.sort((a, b) => {
+        const scoreA = a.score * (1 + a.weight * 0.3);
+        const scoreB = b.score * (1 + b.weight * 0.3);
+        return scoreB - scoreA;
+      });
+      rankedResults = results;
+    }
 
     // 6. Top-K 선택
-    const topResults = results.slice(0, topK);
+    const topResults = rankedResults.slice(0, topK);
 
     console.log(`✅ RAG 검색 완료: ${topResults.length}개 청크 (총 ${results.length}개 중)`);
 

@@ -102,7 +102,10 @@ const getPublishingStats = wrap(async (request) => {
     const userDoc = await db.collection('users').doc(uid).get();
     const userData = userDoc.exists ? userDoc.data() : {};
     const userRole = userData.role || 'local_blogger';
-    const monthlyTarget = getMonthlyTarget(userRole);
+    const isAdmin = userData.isAdmin === true || userData.role === 'admin';
+    const isTester = userData.isTester === true;
+    // 관리자/테스터는 90회, 그 외는 monthlyLimit 필드 또는 role 기반
+    const monthlyTarget = (isAdmin || isTester) ? 90 : (userData.monthlyLimit || getMonthlyTarget(userRole));
 
     // 현재 월 정보
     const now = new Date();
@@ -393,11 +396,73 @@ const resetUserUsage = wrap(async (request) => {
   }
 });
 
+// 관리자: 테스터 권한 토글 (관리자와 동일한 90회 생성 권한 부여)
+const toggleTester = wrap(async (request) => {
+  const { uid: adminUid } = await auth(request);
+  const { targetUserId } = request.data;
+
+  if (!targetUserId) {
+    throw new HttpsError('invalid-argument', '대상 사용자 ID가 필요합니다.');
+  }
+
+  try {
+    const db = admin.firestore();
+
+    // 관리자 권한 확인
+    const adminDoc = await db.collection('users').doc(adminUid).get();
+    const isAdmin = adminDoc.exists && (adminDoc.data().role === 'admin' || adminDoc.data().isAdmin === true);
+
+    if (!isAdmin) {
+      throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
+    }
+
+    // 대상 사용자 정보 조회
+    const userDoc = await db.collection('users').doc(targetUserId).get();
+    if (!userDoc.exists) {
+      throw new HttpsError('not-found', '사용자를 찾을 수 없습니다.');
+    }
+
+    const userData = userDoc.data();
+    const currentTesterStatus = userData.isTester === true;
+    const newTesterStatus = !currentTesterStatus;
+
+    // 테스터 상태 토글 + monthlyLimit 연동
+    await db.collection('users').doc(targetUserId).update({
+      isTester: newTesterStatus,
+      monthlyLimit: newTesterStatus ? 90 : 8,  // 테스터는 90회, 해제 시 8회
+      testerUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      testerUpdatedBy: adminUid
+    });
+
+    console.log(`✅ 테스터 권한 ${newTesterStatus ? '부여' : '해제'}:`, {
+      targetUserId,
+      by: adminUid,
+      newStatus: newTesterStatus
+    });
+
+    return {
+      success: true,
+      message: newTesterStatus
+        ? `${userData.name || '사용자'}님에게 테스터 권한이 부여되었습니다. (90회 생성 가능)`
+        : `${userData.name || '사용자'}님의 테스터 권한이 해제되었습니다.`,
+      isTester: newTesterStatus
+    };
+
+  } catch (error) {
+    console.error('테스터 권한 토글 실패:', error);
+    if (error.code) {
+      throw error;
+    }
+    throw new HttpsError('internal', '테스터 권한 변경 중 오류가 발생했습니다.');
+  }
+});
+
 module.exports = {
   publishPost,
   getPublishingStats,
   checkBonusEligibility,
   useBonusGeneration,
   getMonthlyTarget,
-  resetUserUsage
+  resetUserUsage,
+  toggleTester
 };

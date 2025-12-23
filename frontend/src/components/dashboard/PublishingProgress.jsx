@@ -195,30 +195,33 @@ const PublishingProgress = () => {
   };
 
   const getMonthlyTarget = (user) => {
-    // 관리자는 무제한 사용 가능
+    // 관리자/테스터는 90회
     const isAdmin = user?.isAdmin || user?.role === 'admin';
-
-    // 사용자의 플랜 정보만 기반으로 목표 결정
+    const isTester = user?.isTester === true;
     const plan = user?.plan || user?.subscription;
 
     console.log('📊 PublishingProgress - getMonthlyTarget:', {
-      user: user,
-      isAdmin: isAdmin,
-      userPlan: user?.plan,
-      userSubscription: user?.subscription,
-      finalPlan: plan
+      isAdmin,
+      isTester,
+      plan,
+      monthlyLimit: user?.monthlyLimit
     });
 
-    // 관리자는 목표 없음 (무제한)
-    if (isAdmin) {
-      return 90; // 관리자도 목표는 90으로 표시 (실제로는 무제한)
+    // 관리자 또는 테스터
+    if (isAdmin || isTester) {
+      return 90;
+    }
+
+    // monthlyLimit 필드가 있으면 사용 (DB 값 우선)
+    if (user?.monthlyLimit) {
+      return user.monthlyLimit;
     }
 
     if (plan) {
       return 90; // 공식 파트너십: 월 90회
     }
 
-    // 플랜 정보가 없으면 무료 티어 (월 8회)
+    // 기본값: 무료 티어 (월 8회)
     return 8;
   };
 
@@ -264,16 +267,16 @@ const PublishingProgress = () => {
   
   const published = currentMonth?.published || 0;
   
-  // 플랜 검증을 먼저 수행 (관리자는 예외)
+  // 플랜 검증을 먼저 수행 (관리자/테스터는 예외)
   const plan = user?.plan || user?.subscription;
   const isAdmin = user?.isAdmin || user?.role === 'admin';
-  
+  const isTester = user?.isTester === true;
+
   console.log('📊 PublishingProgress - 최종 렌더링 전 확인:', {
     userUid: user?.uid,
-    userPlan: user?.plan,
-    userSubscription: user?.subscription,
-    finalPlan: plan,
-    isAdmin
+    isAdmin,
+    isTester,
+    plan
   });
 
   // 모든 사용자에게 정상 게이지 표시 (무료: 8회, 유료: 90회)
@@ -425,8 +428,8 @@ const PublishingProgress = () => {
           </Box>
         </Box>
 
-        {/* 무료 티어 업그레이드 안내 */}
-        {!plan && !isAdmin && (
+        {/* 무료 티어 업그레이드 안내 (관리자/테스터 제외) */}
+        {!plan && !isAdmin && !isTester && (
           <Box sx={{ mt: 2 }}>
             <Alert severity="info" sx={{ mb: 0 }}>
               <Typography variant="body2" sx={{ mb: 1 }}>
