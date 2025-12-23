@@ -40,6 +40,9 @@ function getElectoralList(metro, local, position) {
     return districtData['광역의원'] || [];
   } else if (position === '기초의원') {
     return districtData['기초의원'] || [];
+  } else if (position === '광역자치단체장' || position === '기초자치단체장') {
+    // 지자체장은 국회의원 선거구를 따라감 (지역위원회 소속 기준)
+    return districtData['국회의원'] || [];
   }
 
   return [];
