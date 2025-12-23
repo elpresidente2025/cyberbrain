@@ -240,10 +240,10 @@ export default function PromptForm({
                   disabled={disabled}
                   multiline
                   rows={index === 0 ? 4 : 3}
-                  inputProps={{ maxLength: 1500 }}
+                  inputProps={{ maxLength: 3000 }}
                   helperText={index === 0
-                    ? `사용법: 언론사 기사/보도자료, 당 공지사항, 입장문, 논문 등 원고 작성에 필요한 배경지식 입력 (최대 1500자/초과 시 우측 상단 + 버튼으로 분할 입력) | ${instruction?.length || 0}/1500자`
-                    : `${instruction?.length || 0}/1500자`
+                    ? `사용법: 언론사 기사/보도자료, 당 공지사항, 입장문, 논문 등 원고 작성에 필요한 배경지식 입력 (최대 3000자/초과 시 우측 상단 + 버튼으로 분할 입력) | ${instruction?.length || 0}/3000자`
+                    : `${instruction?.length || 0}/3000자`
                   }
                   FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
                 />

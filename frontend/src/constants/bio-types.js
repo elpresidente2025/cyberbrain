@@ -13,7 +13,7 @@ export const BIO_ENTRY_TYPES = {
     description: '개인 철학, 가치관, 정치적 신념 등',
     icon: 'person',
     color: '#152484',
-    maxLength: 2000,
+    maxLength: 3000,
     placeholder: '본인의 정치 철학, 가치관, 지역에 대한 애정 등을 자유롭게 작성해주세요.',
     rows: 4
   },
@@ -24,7 +24,7 @@ export const BIO_ENTRY_TYPES = {
     description: '추진하고자 하는 정책이나 공약 내용',
     icon: 'assignment',
     color: '#003A87',
-    maxLength: 2500,
+    maxLength: 3000,
     placeholder: '중점적으로 추진하고자 하는 정책이나 공약을 구체적으로 작성해주세요.',
     rows: 5
   },
@@ -35,7 +35,7 @@ export const BIO_ENTRY_TYPES = {
     description: '발의하거나 지지하는 법안, 조례안',
     icon: 'gavel',
     color: '#006261',
-    maxLength: 2000,
+    maxLength: 3000,
     placeholder: '발의했거나 발의하고자 하는 법안, 조례안의 내용과 취지를 설명해주세요.',
     rows: 4
   },
@@ -46,7 +46,7 @@ export const BIO_ENTRY_TYPES = {
     description: '정치 활동, 지역 활동, 사회 경험 등',
     icon: 'timeline',
     color: '#006261',
-    maxLength: 1800,
+    maxLength: 3000,
     placeholder: '정치 활동, 지역 사회 활동, 직업 경험 등을 통해 쌓은 경험과 노하우를 작성해주세요.',
     rows: 4
   },
@@ -57,7 +57,7 @@ export const BIO_ENTRY_TYPES = {
     description: '이룬 성과, 해결한 문제, 추진한 사업 등',
     icon: 'emoji_events',
     color: '#55207D',
-    maxLength: 1500,
+    maxLength: 3000,
     placeholder: '그동안 이룬 구체적인 성과나 해결한 지역 현안 등을 사례 중심으로 작성해주세요.',
     rows: 3
   },
@@ -68,7 +68,7 @@ export const BIO_ENTRY_TYPES = {
     description: '미래 비전, 장기적 목표, 지역 발전 계획',
     icon: 'visibility',
     color: '#55207D',
-    maxLength: 1800,
+    maxLength: 3000,
     placeholder: '지역과 국가의 미래에 대한 비전과 장기적인 목표를 제시해주세요.',
     rows: 4
   },
@@ -79,7 +79,7 @@ export const BIO_ENTRY_TYPES = {
     description: '언론 인터뷰, 칼럼, 연설문 등',
     icon: 'library_books',
     color: '#006261',
-    maxLength: 2500,
+    maxLength: 3000,
     placeholder: '언론 인터뷰, 기고문, 연설문 등 본인을 더 잘 알 수 있는 자료를 추가해주세요.',
     rows: 5
   }
