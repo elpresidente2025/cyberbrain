@@ -406,8 +406,8 @@ async function getOrCreateSession(uid, isAdmin, isTester, category, topic) {
       await db.collection('users').doc(uid).update({
         lastGenerated: admin.firestore.FieldValue.serverTimestamp()
       });
-      // 관리자: maxAttempts 999 (무제한), 테스터: maxAttempts 3 (일반 사용자와 동일)
-      const maxAttempts = isAdmin ? 999 : 3;
+      // 관리자/테스터 모두 maxAttempts 3회
+      const maxAttempts = 3;
       console.log(`✅ ${isAdmin ? '관리자' : '테스터'} 계정 - 사용량 카운트 없이 기록만 업데이트 (maxAttempts: ${maxAttempts})`);
       sessionInfo = { sessionId: isAdmin ? 'admin' : 'tester', attempts: 0, maxAttempts, isNewSession: false };
     }
