@@ -43,6 +43,7 @@ exports.getUserProfile = wrap(async (req) => {
     electoralDistrict: '',
     status: '현역',
     bio: '', // 호환성을 위해 유지하지만 bios 컬렉션에서 조회
+    targetElection: null, // 목표 선거 정보 (현직과 별개로 출마 예정 선거)
   };
 
   if (userDoc.exists) profile = { ...profile, ...(userDoc.data() || {}) };
@@ -123,6 +124,7 @@ exports.updateProfile = wrap(async (req) => {
   const allowed = [
     'name', 'position', 'regionMetro', 'regionLocal',
     'electoralDistrict', 'status', 'bio', 'customTitle', 'bioEntries', // bio는 별도 처리, customTitle 추가, bioEntries 추가
+    'targetElection', // 목표 선거 정보 (현직과 별개로 출마 예정 선거)
     // 개인화 정보 필드들
     'ageDecade', 'ageDetail', 'familyStatus', 'backgroundCareer',
     'localConnection', 'politicalExperience', 'committees', 'customCommittees',

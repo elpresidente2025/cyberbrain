@@ -190,18 +190,70 @@ async function compareRegions(userRegion, topicText) {
  * @param {string} userRegionLocal - 사용자 기초자치단체 (예: "사하구")
  * @param {string} userRegionMetro - 사용자 광역자치단체 (예: "부산광역시")
  * @param {string} topic - 글 주제
+ * @param {Object} targetElection - 목표 선거 정보 (선택) { position, regionMetro, regionLocal, electoralDistrict }
+ * @param {string} position - 현재 직책 (예: "국회의원", "광역자치단체장", "기초자치단체장")
  * @returns {Promise<Object>} 검증 결과 및 프롬프트 힌트
  */
-async function validateTopicRegion(userRegionLocal, userRegionMetro, topic) {
+async function validateTopicRegion(userRegionLocal, userRegionMetro, topic, targetElection = null, position = '') {
   try {
-    // 사용자 지역구 정보
-    const userRegion = userRegionLocal || '';
+    // 목표 선거가 있으면 해당 직책/지역 기준, 없으면 현재 직책/지역 기준
+    const effectivePosition = targetElection?.position || position;
+    let effectiveRegionLocal = targetElection?.regionLocal || userRegionLocal;
+    let effectiveRegionMetro = targetElection?.regionMetro || userRegionMetro;
 
-    // 지역 비교
-    const comparison = await compareRegions(userRegion, topic);
+    console.log('🎯 지역 검증 기준:', {
+      effectivePosition,
+      effectiveRegionLocal,
+      effectiveRegionMetro,
+      hasTargetElection: !!targetElection
+    });
 
-    console.log('🗺️ 지역 검증 결과:', {
-      userRegion,
+    // 직책별 관할 범위 결정
+    // - 광역자치단체장: 광역시/도 전체 (시군구 비교 불필요)
+    // - 기초자치단체장: 해당 시군구 전체 (선거구와 무관하게 regionLocal 기준)
+    // - 의원류: 선거구 기준 (현재 로직 유지)
+
+    if (effectivePosition === '광역자치단체장') {
+      // 광역자치단체장: 같은 시도 내 모든 지역이 "우리 지역"
+      const comparison = await compareRegionsForMetro(effectiveRegionMetro, topic);
+
+      console.log('🗺️ 광역단체장 지역 검증:', {
+        regionMetro: effectiveRegionMetro,
+        isSameRegion: comparison.isSameRegion
+      });
+
+      return {
+        valid: true,
+        isSameRegion: comparison.isSameRegion,
+        promptHint: comparison.promptHint,
+        details: comparison
+      };
+    }
+
+    if (effectivePosition === '기초자치단체장') {
+      // 기초자치단체장: 해당 시군구 전체가 "우리 지역"
+      // 선거구(electoralDistrict)와 무관하게 regionLocal 기준
+      const comparison = await compareRegions(effectiveRegionLocal, topic);
+
+      console.log('🗺️ 기초단체장 지역 검증:', {
+        regionLocal: effectiveRegionLocal,
+        isSameRegion: comparison.isSameRegion
+      });
+
+      return {
+        valid: true,
+        isSameRegion: comparison.isSameRegion,
+        promptHint: comparison.promptHint,
+        details: comparison
+      };
+    }
+
+    // 의원류 (국회의원, 광역의원, 기초의원): 기존 로직 유지 (regionLocal 비교)
+    const comparison = await compareRegions(effectiveRegionLocal, topic);
+
+    console.log('🗺️ 의원 지역 검증:', {
+      position: effectivePosition,
+      regionLocal: effectiveRegionLocal,
       isSameRegion: comparison.isSameRegion,
       topicRegions: comparison.topicRegions.map(r => r.name),
       mismatchedCount: comparison.mismatchedRegions.length
@@ -226,9 +278,82 @@ async function validateTopicRegion(userRegionLocal, userRegionMetro, topic) {
   }
 }
 
+/**
+ * 광역단체장용 지역 비교 (시도 단위)
+ * @param {string} userRegionMetro - 사용자 광역자치단체 (예: "부산광역시")
+ * @param {string} topicText - 글 주제 텍스트
+ * @returns {Promise<Object>} 비교 결과
+ */
+async function compareRegionsForMetro(userRegionMetro, topicText) {
+  const result = {
+    isSameRegion: true,
+    userRegion: userRegionMetro || '',
+    topicRegions: [],
+    mismatchedRegions: [],
+    promptHint: ''
+  };
+
+  if (!userRegionMetro || !topicText) {
+    return result;
+  }
+
+  // 주제에서 지역명 추출
+  const extractedRegions = extractRegionNames(topicText);
+
+  if (extractedRegions.length === 0) {
+    return result;
+  }
+
+  console.log('🔍 광역단체장 - 추출된 지역명:', extractedRegions);
+
+  // 각 지역의 상세 정보 조회
+  for (const regionName of extractedRegions) {
+    const info = await getRegionInfo(regionName);
+
+    if (info && info.sido) {
+      result.topicRegions.push({
+        name: regionName,
+        ...info
+      });
+
+      // 광역단체 비교 (시도 단위)
+      // "부산광역시" vs "부산광역시" 비교
+      const userSido = userRegionMetro.replace(/\s/g, '');
+      const topicSido = info.sido.replace(/\s/g, '');
+
+      if (!topicSido.includes(userSido) && !userSido.includes(topicSido)) {
+        result.isSameRegion = false;
+        result.mismatchedRegions.push({
+          name: regionName,
+          sigungu: info.sigungu,
+          sido: info.sido
+        });
+      }
+    }
+  }
+
+  // 불일치 시 프롬프트 힌트 생성
+  if (!result.isSameRegion && result.mismatchedRegions.length > 0) {
+    const regions = result.mismatchedRegions.map(r => `${r.sido} ${r.sigungu} ${r.name}`).join(', ');
+    result.promptHint = `
+[⚠️ 타 지역 주제 안내]
+이 글의 주제는 "${regions}"에 관한 것입니다.
+작성자의 관할은 "${userRegionMetro}"이므로, 다음 사항에 유의하세요:
+
+1. "우리 지역", "우리 시/도" 표현 사용 금지
+2. 대신 "${result.mismatchedRegions[0].sido}" 등 구체적 지역명 사용
+3. 타 지역 사례를 참고하는 관점으로 작성
+4. 해당 지역 발전을 축하/격려하는 톤 유지
+`;
+  }
+
+  return result;
+}
+
 module.exports = {
   extractRegionNames,
   getRegionInfo,
   compareRegions,
+  compareRegionsForMetro,
   validateTopicRegion
 };

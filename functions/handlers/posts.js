@@ -222,13 +222,16 @@ exports.generatePosts = httpWrap(async (req) => {
       }
     }
 
-    // 🗺️ 지역 검증: 주제 지역과 사용자 지역구 비교
+    // 🗺️ 지역 검증: 주제 지역과 사용자 지역구 (또는 목표 선거 지역) 비교
+    // 직책별 관할 범위: 광역단체장(시도 전체), 기초단체장(시군구 전체), 의원(선거구 기준)
     let regionHint = '';
     try {
       const regionResult = await validateTopicRegion(
-        userProfile.regionLocal,  // 예: "사하구"
-        userProfile.regionMetro,  // 예: "부산광역시"
-        sanitizedTopic
+        userProfile.regionLocal,    // 현재 지역구 (예: "사하구")
+        userProfile.regionMetro,    // 현재 광역단체 (예: "부산광역시")
+        sanitizedTopic,
+        userProfile.targetElection, // 목표 선거 정보 (있으면 이 지역/직책 기준으로 비교)
+        userProfile.position        // 현재 직책 (예: "국회의원", "기초자치단체장")
       );
       if (!regionResult.isSameRegion && regionResult.promptHint) {
         regionHint = regionResult.promptHint;

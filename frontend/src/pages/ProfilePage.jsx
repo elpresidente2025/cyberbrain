@@ -82,6 +82,13 @@ export default function ProfilePage() {
     electoralDistrict: '',
     bio: '',
     customTitle: '', // 준비 상태일 때 사용할 직위
+    // 목표 선거 정보
+    targetElection: {
+      position: '',
+      regionMetro: '',
+      regionLocal: '',
+      electoralDistrict: '',
+    },
     // 개인화 정보 (선택사항)
     ageDecade: '',
     ageDetail: '',
@@ -183,6 +190,13 @@ export default function ProfilePage() {
         electoralDistrict: profileData.electoralDistrict || '',
         bio: profileData.bio || '',
         customTitle: profileData.customTitle || '',
+        // 목표 선거 정보
+        targetElection: profileData.targetElection || {
+          position: '',
+          regionMetro: '',
+          regionLocal: '',
+          electoralDistrict: '',
+        },
         // 개인화 정보 (선택사항)
         ageDecade: profileData.ageDecade || '',
         ageDetail: profileData.ageDetail || '',
@@ -571,6 +585,8 @@ export default function ProfilePage() {
         regionMetro: profile.regionMetro,
         regionLocal: profile.regionLocal,
         electoralDistrict: profile.electoralDistrict,
+        // 목표 선거 정보
+        targetElection: profile.targetElection,
       };
 
       console.log('전송할 프로필 데이터:', JSON.stringify(payload, null, 2));
@@ -721,6 +737,8 @@ export default function ProfilePage() {
         electoralDistrict: profile.electoralDistrict,
         bio: profile.bio,
         customTitle: profile.customTitle,
+        // 목표 선거 정보
+        targetElection: profile.targetElection,
         // 개인화 정보 필드들 추가
         ageDecade: profile.ageDecade,
         ageDetail: profile.ageDetail,
@@ -734,7 +752,7 @@ export default function ProfilePage() {
         customCommittees: profile.customCommittees,
         constituencyType: profile.constituencyType,
       };
-      
+
       console.log('전송할 데이터 (전체):', JSON.stringify(payload, null, 2));
       console.log('🔍 [저장] customTitle 값:', payload.customTitle);
 
@@ -912,6 +930,7 @@ export default function ProfilePage() {
                 regionMetro={profile.regionMetro}
                 regionLocal={profile.regionLocal}
                 electoralDistrict={profile.electoralDistrict}
+                targetElection={profile.targetElection}
                 onChange={handleUserInfoChange}
                 onCustomTitleSave={handleCustomTitleSave}
                 nameDisabled={true}
