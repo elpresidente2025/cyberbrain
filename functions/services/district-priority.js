@@ -37,7 +37,7 @@ async function addUserToDistrict({ uid, districtKey }) {
 
     const newMember = {
       userId: uid,
-      registeredAt: admin.firestore.FieldValue.serverTimestamp(),
+      registeredAt: new Date(),  // 배열 내에서는 serverTimestamp() 사용 불가
       paidAt: null,
       subscriptionStatus: 'trial',
       priority: null,
@@ -283,7 +283,7 @@ async function handleSubscriptionCancellation({ uid, districtKey }) {
     if (wasPrimary && newPrimaryUserId) {
       updateData.priorityHistory = admin.firestore.FieldValue.arrayUnion({
         userId: newPrimaryUserId,
-        becamePrimaryAt: admin.firestore.FieldValue.serverTimestamp(),
+        becamePrimaryAt: new Date(),  // 배열 내에서는 serverTimestamp() 사용 불가
         reason: 'previous_cancelled',
         previousUserId: uid
       });
