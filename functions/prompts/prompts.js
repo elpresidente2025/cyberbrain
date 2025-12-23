@@ -116,6 +116,12 @@ async function buildSmartPrompt(options) {
       templatePrompt = familyWarning + '\n\n' + templatePrompt;
     }
 
+    // 3.5. [타 지역 주제 경고] 공통 적용 ("우리 지역" 표현 오용 방지)
+    if (options.regionHint) {
+      templatePrompt = options.regionHint + '\n\n' + templatePrompt;
+      console.log('🗺️ 타 지역 관점 지시 주입됨');
+    }
+
     // 4. [Guideline Grounding] 상황에 맞는 지침 선택 및 배치
     const category = getWritingMethodFromCategory(options.category) || writingMethod;
     const { prefix, suffix, reminder, stats } = buildGroundedGuidelines({

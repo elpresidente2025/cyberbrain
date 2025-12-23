@@ -39,6 +39,7 @@ const { buildSmartPrompt } = require('../prompts/prompts');
 const { fetchNaverNews, compressNewsWithAI, formatNewsForPrompt, shouldFetchNews } = require('../services/news-fetcher');
 const { ProgressTracker } = require('../utils/progress-tracker');
 const { sanitizeElectionContent } = require('../services/election-compliance');
+const { validateTopicRegion } = require('../services/region-detector');
 // 세션 관리는 이제 profile-loader에서 통합 관리 (users 문서의 activeGenerationSession 필드)
 // const { createGenerationSession, incrementSessionAttempt } = require('../services/generation-session');
 
@@ -221,6 +222,22 @@ exports.generatePosts = httpWrap(async (req) => {
       }
     }
 
+    // 🗺️ 지역 검증: 주제 지역과 사용자 지역구 비교
+    let regionHint = '';
+    try {
+      const regionResult = await validateTopicRegion(
+        userProfile.regionLocal,  // 예: "사하구"
+        userProfile.regionMetro,  // 예: "부산광역시"
+        sanitizedTopic
+      );
+      if (!regionResult.isSameRegion && regionResult.promptHint) {
+        regionHint = regionResult.promptHint;
+        console.log('🗺️ 타 지역 주제 감지 - 프롬프트 힌트 추가');
+      }
+    } catch (regionError) {
+      console.warn('⚠️ 지역 검증 실패 (무시하고 계속):', regionError.message);
+    }
+
     // 노출 희망 검색어 및 자동 추출 키워드 병합
     const extractedKeywords = extractKeywordsFromInstructions(data.instructions);
 
@@ -260,7 +277,9 @@ exports.generatePosts = httpWrap(async (req) => {
       // 선거법 준수를 위한 사용자 상태 (준비/현역/예비/후보)
       status: currentStatus,
       // 가족 상황 (자녀 환각 방지)
-      familyStatus
+      familyStatus,
+      // 🗺️ 타 지역 주제 시 관점 안내
+      regionHint
     });
 
     // 🔍 디버깅: 프롬프트 로깅 (처음 1000자만)
