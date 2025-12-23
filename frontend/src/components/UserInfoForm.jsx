@@ -516,9 +516,6 @@ export default function UserInfoForm({
         <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
           목표 선거
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          다음 선거에서 도전할 직책과 지역을 선택하세요. 원고 작성 시 이 정보를 기준으로 지역 관점이 설정됩니다.
-        </Typography>
         <FormControlLabel
           control={
             <Checkbox
