@@ -1,5 +1,49 @@
 {
   "enabledPlugins": {
     "claude-mem@thedotmack": true
+  },
+  "customCommands": {
+    "deploy": {
+      "description": "커밋 및 배포 자동화",
+      "file": "commands/deploy.md"
+    },
+    "clarify": {
+      "description": "요구사항 명확화 (소크라테스식 질문)",
+      "file": "commands/clarify.md"
+    },
+    "test-agent": {
+      "description": "Multi-Agent 시스템 테스트",
+      "file": "commands/test-agent.md"
+    },
+    "check-compliance": {
+      "description": "선거법 검수",
+      "file": "commands/check-compliance.md"
+    }
+  },
+  "skills": {
+    "generate-draft": {
+      "description": "원고 생성 E2E 테스트",
+      "file": "skills/generate-draft.md"
+    },
+    "seo-audit": {
+      "description": "SEO 점검",
+      "file": "skills/seo-audit.md"
+    },
+    "code-review": {
+      "description": "코드 리뷰",
+      "file": "skills/code-review.md"
+    }
+  },
+  "hooks": {
+    "pre-commit": {
+      "description": "커밋 전 검증",
+      "file": "hooks/pre-commit.md",
+      "enabled": true
+    },
+    "pre-deploy": {
+      "description": "배포 전 검증",
+      "file": "hooks/pre-deploy.md",
+      "enabled": true
+    }
   }
 }
