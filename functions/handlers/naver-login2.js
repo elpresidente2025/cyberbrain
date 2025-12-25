@@ -282,6 +282,10 @@ const naverCompleteRegistration = onRequest({ region: 'asia-northeast3', cors: t
       });
     }
 
+    // 월말 계산 (무료 체험 만료일)
+    const now = new Date();
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
     const doc = {
       naverUserId: naverUserData.id,
       name: String(profileData.name).trim(),
@@ -297,6 +301,19 @@ const naverCompleteRegistration = onRequest({ region: 'asia-northeast3', cors: t
       isNaverUser: true,
       role: isAdmin ? 'admin' : null,
       profileComplete: true,
+      // 우선권 시스템 필드
+      districtPriority: null,
+      isPrimaryInDistrict: false,
+      districtStatus: 'trial',
+      // 구독/무료 체험 관련 필드
+      subscriptionStatus: 'trial',
+      paidAt: null,
+      trialPostsRemaining: 8,
+      generationsRemaining: 8,
+      trialExpiresAt: admin.firestore.Timestamp.fromDate(endOfMonth),
+      monthlyLimit: 8,
+      monthlyUsage: {},
+      activeGenerationSession: null,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };

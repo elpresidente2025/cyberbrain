@@ -310,15 +310,15 @@ exports.generatePosts = httpWrap(async (req) => {
     });
 
     // 🎉 검증 성공! 이제 attempts 증가 및 생성 횟수 차감
-    // 1단계: attempts 증가 (관리자/테스터는 DB에 기록하지 않음)
-    session = await incrementSessionAttempts(uid, session, isAdmin || isTester);
+    // 1단계: attempts 증가 (관리자만 DB에 기록 안 함, 테스터는 유료 사용자처럼 추적)
+    session = await incrementSessionAttempts(uid, session, isAdmin, isTester);
     console.log('✅ 검증 성공 - attempts 증가 완료:', {
       sessionId: session.sessionId,
       attempts: session.attempts
     });
 
-    // 2단계: 생성 횟수 차감 (새 세션인 경우)
-    if (session.isNewSession) {
+    // 2단계: 생성 횟수 차감 (새 세션인 경우, 관리자 제외)
+    if (session.isNewSession && !isAdmin) {
       const userDoc = await db.collection('users').doc(uid).get();
       const userData = userDoc.data() || {};
       const subscriptionStatus = userData.subscriptionStatus || 'trial';
@@ -329,7 +329,24 @@ exports.generatePosts = httpWrap(async (req) => {
 
       const updateData = {};
 
-      if (testMode || subscriptionStatus === 'trial') {
+      // 테스터 또는 유료 구독: 월별 사용량 추적
+      if (isTester || subscriptionStatus === 'active') {
+        const currentMonthKey = (() => {
+          const now = new Date();
+          return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        })();
+
+        const currentMonthGenerations = userData.monthlyUsage?.[currentMonthKey]?.generations || 0;
+        updateData[`monthlyUsage.${currentMonthKey}.generations`] = admin.firestore.FieldValue.increment(1);
+        const label = isTester ? '🧪 테스터' : '✅ 유료 구독';
+        console.log(`${label} - 검증 성공, 월별 생성 횟수 증가`, {
+          sessionId: session.sessionId,
+          monthKey: currentMonthKey,
+          generationsBefore: currentMonthGenerations,
+          generationsAfter: currentMonthGenerations + 1,
+          monthlyLimit: 90
+        });
+      } else if (testMode || subscriptionStatus === 'trial') {
         // 데모/무료 체험: generationsRemaining 차감
         const currentRemaining = userData.generationsRemaining || userData.trialPostsRemaining || 0;
 
@@ -342,27 +359,12 @@ exports.generatePosts = httpWrap(async (req) => {
             generationsAfter: currentRemaining - 1
           });
         }
-      } else if (subscriptionStatus === 'active') {
-        // 유료 구독: monthlyUsage 증가
-        const currentMonthKey = (() => {
-          const now = new Date();
-          return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        })();
-
-        const currentMonthGenerations = userData.monthlyUsage?.[currentMonthKey]?.generations || 0;
-        updateData[`monthlyUsage.${currentMonthKey}.generations`] = admin.firestore.FieldValue.increment(1);
-        console.log('✅ 유료 구독 - 검증 성공, 월별 생성 횟수 증가', {
-          sessionId: session.sessionId,
-          monthKey: currentMonthKey,
-          generationsBefore: currentMonthGenerations,
-          generationsAfter: currentMonthGenerations + 1
-        });
       }
 
       // 업데이트 실행
       if (Object.keys(updateData).length > 0) {
         await db.collection('users').doc(uid).update(updateData);
-        console.log('✅ 생성 횟수 차감 완료');
+        console.log('✅ 생성 횟수 업데이트 완료');
       }
     }
 

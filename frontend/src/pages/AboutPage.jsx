@@ -22,7 +22,6 @@ import {
   ExpandMore,
   EditNote,
   TrendingUp,
-  AccountBalance,
   Speed,
   Share,
   Psychology
@@ -52,11 +51,6 @@ const AboutPage = () => {
       description: '네이버 상위노출'
     },
     {
-      icon: <AccountBalance />,
-      title: '선거구 독점',
-      description: '경쟁자 차단'
-    },
-    {
       icon: <Speed />,
       title: '2~3분 빠른 생성',
       description: '바쁜 의원님께 딱'
@@ -79,17 +73,12 @@ const AboutPage = () => {
     {
       id: 'faq-0',
       question: 'AI도 많은데 굳이 이걸 써야 하나요?',
-      answer: '일반 AI와 달리 정치 콘텐츠에 특화되어 있으며, 네이버 검색 최적화가 적용됩니다. 또한 선거구 독점으로 같은 지역의 경쟁자는 사용할 수 없습니다.'
+      answer: '일반 AI와 달리 정치 콘텐츠에 특화되어 있으며, 네이버 검색 최적화가 적용됩니다.'
     },
     {
       id: 'faq-1',
       question: '더불어민주당 당원만 사용 가능한가요?',
       answer: '네, 당원 인증이 필요합니다. 당적증명서 또는 당비납부 영수증을 제출해주세요.'
-    },
-    {
-      id: 'faq-3',
-      question: '선거구 독점은 어떻게 확인하나요?',
-      answer: '가입 시 선거구를 선택하시면 실시간으로 사용 가능 여부를 확인할 수 있습니다.'
     },
     // More 4
     {

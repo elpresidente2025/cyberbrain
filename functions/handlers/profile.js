@@ -14,12 +14,8 @@ const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
 const { logInfo } = require('../common/log');
 const { admin, db } = require('../utils/firebaseAdmin');
-const {
-  districtKey,
-  claimDistrict,
-  scrubDuplicateHolders,
-  checkDistrictAvailability: checkDistrictAvailabilityService,
-} = require('../services/district');
+const { districtKey } = require('../services/district');
+const { getDistrictStatus, addUserToDistrict } = require('../services/district-priority');
 const { analyzeBioForStyle } = require('../services/style-analysis');
 
 // ============================================================================
@@ -319,7 +315,7 @@ exports.updateUserPlan = wrap(async (req) => {
 });
 
 /**
- * 가입 전 선거구 중복 확인
+ * 선거구 상태 확인 (1인 제한 폐지됨 - 항상 사용 가능)
  */
 exports.checkDistrictAvailability = wrap(async (req) => {
   const { regionMetro, regionLocal, electoralDistrict, position } = req.data || {};
@@ -327,10 +323,15 @@ exports.checkDistrictAvailability = wrap(async (req) => {
     throw new HttpsError('invalid-argument', '지역/선거구/직책을 모두 입력해주세요.');
   }
   const newKey = districtKey({ position, regionMetro, regionLocal, electoralDistrict });
-  const excludeUid = req.auth?.uid;
-  const result = await checkDistrictAvailabilityService({ newKey, excludeUid });
-  logInfo('선거구 중복 확인 성공', { newKey, available: result.available });
-  return ok(result);
+
+  // 1인 제한 폐지: 항상 사용 가능, 기존 사용자 정보만 제공
+  const status = await getDistrictStatus({ districtKey: newKey });
+  logInfo('선거구 상태 확인', { newKey, hasPrimary: status.hasPrimary });
+  return ok({
+    available: true,  // 항상 사용 가능
+    hasPrimary: status.hasPrimary,
+    message: status.message
+  });
 });
 
 /**
@@ -351,7 +352,6 @@ exports.registerWithDistrictCheck = wrap(async (req) => {
   const newKey = districtKey({ position, regionMetro, regionLocal, electoralDistrict });
 
   // ✅ 우선권 시스템: 중복 허용, 경고만 표시
-  const { addUserToDistrict, getDistrictStatus } = require('../services/district-priority');
   const districtStatus = await getDistrictStatus({ districtKey: newKey });
 
   console.log('📍 [registerWithDistrictCheck] 선거구 상태:', districtStatus);

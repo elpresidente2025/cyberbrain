@@ -198,25 +198,45 @@ const naverLoginHTTP = onRequest({
         const newUserRef = db.collection('users').doc();
         console.log('?�� ?�성???�용??ID:', newUserRef.id);
         
+        // 월말 계산 (무료 체험 만료일)
+        const now = new Date();
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
         const newUserData = {
-          // ?�이�?계정 ?�보 (ID�??�용)
+          // 네이버 계정 정보
           naverUserId: naverUserData.id,
           name: naverUserData.name || naverUserData.nickname || '네이버사용자',
           gender: mapGender(naverUserData.gender) || null,
           age: naverUserData.age || null,
 
-          // 기본 ?�용???�보 (?�중???�로?�에???�정 가??
-          status: '?�역', // 기본�?          position: '', // ?�로?�에???�중???�정
-          regionMetro: '', // ?�로?�에???�중???�정
-          regionLocal: '', // ?�로?�에???�중???�정
-          electoralDistrict: '', // ?�로?�에???�중???�정
+          // 기본 사용자 정보 (추후 프로필에서 설정)
+          status: '현역',
+          position: '',
+          regionMetro: '',
+          regionLocal: '',
+          electoralDistrict: '',
 
-          // 가???�보
+          // 가입 정보
           provider: 'naver',
           isNaverUser: true,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           lastLoginAt: admin.firestore.FieldValue.serverTimestamp(),
-          profileComplete: false // ?�로???�성 ?�요
+          profileComplete: false,
+
+          // 우선권 시스템 필드
+          districtPriority: null,
+          isPrimaryInDistrict: false,
+          districtStatus: 'trial',
+
+          // 구독/무료 체험 관련 필드
+          subscriptionStatus: 'trial',
+          paidAt: null,
+          trialPostsRemaining: 8,
+          generationsRemaining: 8,
+          trialExpiresAt: admin.firestore.Timestamp.fromDate(endOfMonth),
+          monthlyLimit: 8,
+          monthlyUsage: {},
+          activeGenerationSession: null
         };
         
         // 사용자 문서 저장

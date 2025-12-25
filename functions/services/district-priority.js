@@ -440,9 +440,39 @@ async function checkGenerationPermission({ uid }) {
 
   const userData = userDoc.data();
 
+  // 0. 관리자는 모든 제한 스킵 (무제한)
+  if (userData.role === 'admin') {
+    console.log('✅ 관리자 권한 - 사용량 무제한:', uid);
+    return { allowed: true, reason: 'admin', remaining: 999 };
+  }
+
+  // 0-1. 테스터는 무료 체험 제한 스킵, 유료 사용자와 동일한 90회/월 제한 적용
+  if (userData.role === 'tester') {
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const monthlyUsage = userData.monthlyUsage || {};
+    const used = monthlyUsage[currentMonth] || 0;
+    const limit = 90;  // 유료 사용자와 동일
+
+    if (used >= limit) {
+      return {
+        allowed: false,
+        reason: 'monthly_limit_exceeded',
+        message: `이번 달 생성 한도(${limit}회)를 모두 사용했습니다.`
+      };
+    }
+
+    console.log('✅ 테스터 권한 - 유료 사용자 기준 적용:', { uid, used, limit, remaining: limit - used });
+    return { allowed: true, reason: 'tester', remaining: limit - used };
+  }
+
   // 1. 무료 체험 사용자 (우선권 체크 없이 통과)
   if (userData.subscriptionStatus === 'trial' || !userData.subscriptionStatus) {
-    const remaining = userData.generationsRemaining || 0;
+    // generationsRemaining이 undefined인 경우 = 레거시 사용자, 8회로 초기화
+    const remaining = userData.generationsRemaining !== undefined
+      ? userData.generationsRemaining
+      : (userData.trialPostsRemaining !== undefined ? userData.trialPostsRemaining : 8);
+
     if (remaining <= 0) {
       return {
         allowed: false,

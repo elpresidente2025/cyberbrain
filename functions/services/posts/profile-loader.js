@@ -325,8 +325,8 @@ async function checkUsageLimit(uid, userProfile) {
 async function getOrCreateSession(uid, isAdmin, isTester, category, topic) {
   if (!uid) return { sessionId: null, attempts: 0, maxAttempts: 3, isNewSession: false };
 
-  // 사용량 제한 면제 여부 (관리자 또는 테스터)
-  const hasUnlimitedUsage = isAdmin || isTester;
+  // 관리자만 사용량 제한 완전 면제 (테스터는 유료 사용자처럼 추적)
+  const hasUnlimitedUsage = isAdmin;
 
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -371,7 +371,15 @@ async function getOrCreateSession(uid, isAdmin, isTester, category, topic) {
           const currentRemaining = userData.generationsRemaining || userData.trialPostsRemaining || 0;
           const currentMonthGenerations = userData.monthlyUsage?.[currentMonthKey]?.generations || 0;
 
-          if (testMode || subscriptionStatus === 'trial') {
+          // 테스터는 유료 사용자처럼 월별 사용량 추적
+          if (isTester) {
+            console.log('🧪 테스터 - 새 세션 생성 (유료 사용자 기준 추적)', {
+              sessionId,
+              monthKey: currentMonthKey,
+              currentMonthGenerations,
+              monthlyLimit: 90
+            });
+          } else if (testMode || subscriptionStatus === 'trial') {
             const modeLabel = testMode ? '🧪 데모 모드' : '✅무료 체험';
             console.log(`${modeLabel} - 새 세션 생성 (attempts=0, 검증 성공 후 증가)`, {
               sessionId,
@@ -437,9 +445,10 @@ async function getOrCreateSession(uid, isAdmin, isTester, category, topic) {
  * @param {string} uid - 사용자 ID
  * @param {Object} session - 세션 정보
  * @param {boolean} isAdmin - 관리자 여부
+ * @param {boolean} isTester - 테스터 여부
  * @returns {Object} 업데이트된 세션 정보
  */
-async function incrementSessionAttempts(uid, session, isAdmin) {
+async function incrementSessionAttempts(uid, session, isAdmin, isTester = false) {
   if (!uid || isAdmin) {
     // 관리자는 attempts 관리 안 함
     return { ...session, attempts: session.attempts + 1 };
@@ -453,12 +462,12 @@ async function incrementSessionAttempts(uid, session, isAdmin) {
       'activeGenerationSession.attempts': admin.firestore.FieldValue.increment(1)
     };
 
-    // 유료 구독: 시도 횟수도 기록
+    // 유료 구독 또는 테스터: 월별 시도 횟수 기록
     const userDoc = await db.collection('users').doc(uid).get();
     const userData = userDoc.data() || {};
     const subscriptionStatus = userData.subscriptionStatus || 'trial';
 
-    if (subscriptionStatus === 'active') {
+    if (subscriptionStatus === 'active' || isTester) {
       updateData[`monthlyUsage.${currentMonthKey}.attempts`] = admin.firestore.FieldValue.increment(1);
     }
 
@@ -468,7 +477,8 @@ async function incrementSessionAttempts(uid, session, isAdmin) {
     console.log('✅ 세션 attempts 증가 (검증 성공)', {
       sessionId: session.sessionId,
       attemptsBefore: session.attempts,
-      attemptsAfter: newAttempts
+      attemptsAfter: newAttempts,
+      isTester
     });
 
     return { ...session, attempts: newAttempts };
