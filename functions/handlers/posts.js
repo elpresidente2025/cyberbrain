@@ -40,8 +40,7 @@ const { fetchNaverNews, compressNewsWithAI, formatNewsForPrompt, shouldFetchNews
 const { ProgressTracker } = require('../utils/progress-tracker');
 const { sanitizeElectionContent } = require('../services/election-compliance');
 const { validateTopicRegion } = require('../services/region-detector');
-const { runAgentPipeline } = require('../services/agents');
-const { isMultiAgentEnabled, postProcessContent } = require('../services/agents/pipeline-helper');
+const { isMultiAgentEnabled, generateWithMultiAgent } = require('../services/agents/pipeline-helper');
 // 세션 관리는 이제 profile-loader에서 통합 관리 (users 문서의 activeGenerationSession 필드)
 // const { createGenerationSession, incrementSessionAttempt } = require('../services/generation-session');
 
@@ -262,16 +261,69 @@ exports.generatePosts = httpWrap(async (req) => {
     console.log('🔑 자동 추출 키워드:', extractedKeywords);
     console.log('🔑 최종 병합 키워드:', backgroundKeywords);
 
-    // 작법 결정
-    const writingMethod = CATEGORY_TO_WRITING_METHOD[category] || 'emotional_writing';
+    // 🤖 Multi-Agent 모드 체크
+    const useMultiAgent = await isMultiAgentEnabled();
+    let generatedContent = null;
+    let generatedTitle = null;
+    let multiAgentMetadata = null;
 
-    // 🧠 메모리 컨텍스트와 개인화 힌트 통합
-    const combinedHints = [personalizedHints, memoryContext]
-      .filter(h => h && h.trim())
-      .join(' | ');
+    if (useMultiAgent) {
+      // ═══════════════════════════════════════════════════════════════
+      // 🤖 Multi-Agent 전체 파이프라인 (통합 리팩토링 버전)
+      // KeywordAgent → WriterAgent → ComplianceAgent → SEOAgent
+      // ═══════════════════════════════════════════════════════════════
+      console.log('🤖 [Multi-Agent] 전체 파이프라인 모드 활성화');
 
-    // 프롬프트 생성
-    const prompt = await buildSmartPrompt({
+      // 3단계: AI 원고 작성 중
+      await progress.stepGenerating();
+
+      try {
+        const multiAgentResult = await generateWithMultiAgent({
+          topic: sanitizedTopic,
+          category,
+          userProfile: {
+            ...userProfile,
+            status: currentStatus,
+            isCurrentLawmaker,
+            politicalExperience,
+            familyStatus
+          },
+          memoryContext,
+          instructions: data.instructions,
+          newsContext,
+          regionHint,
+          keywords: backgroundKeywords,
+          targetWordCount
+        });
+
+        generatedContent = multiAgentResult.content;
+        generatedTitle = multiAgentResult.title;
+        multiAgentMetadata = multiAgentResult.metadata;
+
+        console.log('✅ [Multi-Agent] 생성 완료', {
+          wordCount: multiAgentResult.wordCount,
+          seoScore: multiAgentMetadata?.seo?.score,
+          compliancePassed: multiAgentMetadata?.compliance?.passed
+        });
+
+      } catch (multiAgentError) {
+        console.error('❌ [Multi-Agent] 파이프라인 실패, 기존 방식으로 폴백:', multiAgentError.message);
+        // 폴백: 기존 방식으로 계속 진행 (아래 코드 실행)
+      }
+    }
+
+    // 기존 방식 (Multi-Agent 비활성화 또는 실패 시)
+    if (!generatedContent) {
+      // 작법 결정
+      const writingMethod = CATEGORY_TO_WRITING_METHOD[category] || 'emotional_writing';
+
+      // 🧠 메모리 컨텍스트와 개인화 힌트 통합
+      const combinedHints = [personalizedHints, memoryContext]
+        .filter(h => h && h.trim())
+        .join(' | ');
+
+      // 프롬프트 생성
+      const prompt = await buildSmartPrompt({
       writingMethod,
       topic: sanitizedTopic,
       authorBio: `${fullName} (${displayTitle}, ${fullRegion || ''})`,
@@ -316,6 +368,56 @@ exports.generatePosts = httpWrap(async (req) => {
       maxAttempts: 3,      // 휴리스틱 검증 실패 시 재시도 (빠름)
       maxCriticAttempts: 2   // Critic Agent 루프 최대 반복
     });
+
+      // JSON 파싱
+      let parsedResponse;
+      try {
+        try {
+          console.log('🔍 AI 원본 응답 (첫 500자):', apiResponse.substring(0, 500));
+          parsedResponse = JSON.parse(apiResponse);
+          console.log('✅ 직접 JSON 파싱 성공');
+        } catch (directParseError) {
+          const jsonMatch = apiResponse.match(/```json\s*([\s\S]*?)\s*```/);
+          if (jsonMatch) {
+            parsedResponse = JSON.parse(jsonMatch[1]);
+          } else {
+            const cleaned = apiResponse.trim();
+            const firstBrace = cleaned.indexOf('{');
+            const lastBrace = cleaned.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1) {
+              parsedResponse = JSON.parse(cleaned.substring(firstBrace, lastBrace + 1));
+            } else {
+              throw new Error('JSON 형식 찾기 실패');
+            }
+          }
+        }
+      } catch (parseError) {
+        console.error('❌ JSON 파싱 실패:', parseError.message);
+        parsedResponse = {
+          title: `${sanitizedTopic} 관련 원고`,
+          content: `<p>${sanitizedTopic}에 대한 의견을 나누고자 합니다.</p>`,
+          wordCount: 100
+        };
+      }
+
+      // 후처리
+      if (parsedResponse && parsedResponse.content) {
+        parsedResponse.content = processGeneratedContent({
+          content: parsedResponse.content,
+          fullName,
+          fullRegion,
+          currentStatus,
+          userProfile,
+          config,
+          customTitle,
+          displayTitle,
+          isCurrentLawmaker
+        });
+      }
+
+      generatedContent = parsedResponse.content;
+      generatedTitle = parsedResponse.title;
+    } // End of legacy generation path
 
     // 🎉 검증 성공! 이제 attempts 증가 및 생성 횟수 차감
     // 1단계: attempts 증가 (관리자만 DB에 기록 안 함, 테스터는 유료 사용자처럼 추적)
@@ -376,118 +478,41 @@ exports.generatePosts = httpWrap(async (req) => {
       }
     }
 
-    // 4단계: 품질 검증 중 (validateAndRetry에서 이미 검증 완료)
+    // 4단계: 품질 검증 중
     await progress.stepValidating();
-
-    // JSON 파싱
-    let parsedResponse;
-    try {
-      // Gemini 2.0은 순수 JSON을 반환하므로 직접 파싱 시도
-      try {
-        console.log('🔍 AI 원본 응답 (첫 500자):', apiResponse.substring(0, 500));
-        parsedResponse = JSON.parse(apiResponse);
-        console.log('✅ 직접 JSON 파싱 성공');
-        console.log('🔍 파싱된 JSON:', JSON.stringify(parsedResponse).substring(0, 300));
-      } catch (directParseError) {
-        // 실패하면 코드 블록에서 추출 시도
-        const jsonMatch = apiResponse.match(/```json\s*([\s\S]*?)\s*```/);
-        if (jsonMatch) {
-          parsedResponse = JSON.parse(jsonMatch[1]);
-          console.log('✅ 코드 블록에서 JSON 파싱 성공');
-        } else {
-          // 마지막으로 전체에서 JSON 객체 찾기
-          const cleaned = apiResponse.trim();
-          const firstBrace = cleaned.indexOf('{');
-          const lastBrace = cleaned.lastIndexOf('}');
-          if (firstBrace !== -1 && lastBrace !== -1) {
-            const jsonText = cleaned.substring(firstBrace, lastBrace + 1);
-            parsedResponse = JSON.parse(jsonText);
-            console.log('✅ 추출된 JSON 파싱 성공');
-          } else {
-            throw new Error('JSON 형식 찾기 실패');
-          }
-        }
-      }
-    } catch (parseError) {
-      console.error('❌ JSON 파싱 실패:', parseError.message);
-      console.error('❌ 원본 응답 (첫 500자):', apiResponse.substring(0, 500));
-      parsedResponse = {
-        title: `${sanitizedTopic} 관련 원고`,
-        content: `<p>${sanitizedTopic}에 대한 의견을 나누고자 합니다.</p>`,
-        wordCount: 100
-      };
-    }
 
     // 5단계: 마무리 중
     await progress.stepFinalizing();
 
-    // 후처리
-    if (parsedResponse && parsedResponse.content) {
-      parsedResponse.content = processGeneratedContent({
-        content: parsedResponse.content,
-        fullName,
-        fullRegion,
-        currentStatus,
-        userProfile,
-        config,
-        customTitle,
-        displayTitle,
-        isCurrentLawmaker  // 추가
-      });
-    }
-
-    // 🤖 Multi-Agent 후처리 (선택적)
-    let multiAgentResult = null;
-    try {
-      const useMultiAgent = await isMultiAgentEnabled();
-      if (useMultiAgent && parsedResponse?.content) {
-        console.log('🤖 [Multi-Agent] 후처리 시작');
-        multiAgentResult = await postProcessContent({
-          content: parsedResponse.content,
-          topic: sanitizedTopic,
-          userProfile
-        });
-
-        // 후처리 결과 적용
-        if (multiAgentResult.content) {
-          parsedResponse.content = multiAgentResult.content;
-        }
-        console.log('🤖 [Multi-Agent] 후처리 완료', {
-          compliancePassed: multiAgentResult.compliance?.passed,
-          seoScore: multiAgentResult.seo?.score
-        });
-      }
-    } catch (multiAgentError) {
-      console.warn('⚠️ [Multi-Agent] 후처리 실패 (원본 유지):', multiAgentError.message);
-      // 실패해도 원본 콘텐츠로 계속 진행
-    }
-
-    // 제목 생성 (선거법 준수를 위해 status 전달)
-    // Multi-Agent SEO 제목이 있으면 우선 사용, 없으면 기존 방식으로 생성
-    let generatedTitle = multiAgentResult?.title;
+    // 제목 생성 (Multi-Agent에서 이미 생성된 경우 스킵)
     if (!generatedTitle) {
       generatedTitle = await generateTitleFromContent({
-        content: parsedResponse.content || '',
+        content: generatedContent || '',
         backgroundInfo: data.instructions,
         keywords: backgroundKeywords,
-        userKeywords: userKeywords,  // 사용자가 직접 입력한 노출 희망 검색어
+        userKeywords: userKeywords,
         topic: sanitizedTopic,
         fullName,
         modelName,
         category: data.category,
         subCategory: data.subCategory,
-        status: currentStatus  // 선거법 준수 (준비/현역/예비/후보)
+        status: currentStatus
       });
     } else {
       console.log('🤖 [Multi-Agent] SEO 최적화 제목 사용:', generatedTitle);
     }
 
+    // 글자수 계산
+    const wordCount = generatedContent
+      ? generatedContent.replace(/<[^>]*>/g, '').length
+      : 0;
+
     // 응답 데이터 구성
     const draftData = {
       id: `draft_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       title: generatedTitle,
-      content: parsedResponse.content || `<p>${sanitizedTopic}에 대한 내용입니다.</p>`,
-      wordCount: parsedResponse.wordCount || parsedResponse.content?.replace(/<[^>]*>/g, '').length || 0,
+      content: generatedContent || `<p>${sanitizedTopic}에 대한 내용입니다.</p>`,
+      wordCount,
       category,
       subCategory: data.subCategory || '',
       keywords: data.keywords || '',
@@ -523,12 +548,14 @@ exports.generatePosts = httpWrap(async (req) => {
         userId: uid,
         processingTime: Date.now(),
         // 🤖 Multi-Agent 메타데이터 (활성화된 경우)
-        multiAgent: multiAgentResult ? {
+        multiAgent: multiAgentMetadata ? {
           enabled: true,
-          compliancePassed: multiAgentResult.compliance?.passed,
-          complianceIssues: multiAgentResult.compliance?.issues?.length || 0,
-          seoScore: multiAgentResult.seo?.score,
-          seoKeywords: multiAgentResult.seo?.keywords
+          pipeline: multiAgentMetadata.pipeline,
+          compliancePassed: multiAgentMetadata.compliance?.passed,
+          complianceIssues: multiAgentMetadata.compliance?.issueCount || 0,
+          seoScore: multiAgentMetadata.seo?.score,
+          keywords: multiAgentMetadata.keywords,
+          duration: multiAgentMetadata.duration
         } : { enabled: false }
       }
     });

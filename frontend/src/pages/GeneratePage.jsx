@@ -336,6 +336,7 @@ const GeneratePage = () => {
             onSave={handleSave}         // 초안 저장 시 호출될 함수
             maxAttempts={maxAttempts}
             isMobile={isMobile}
+            user={user}                 // 🆕 관리자/테스터 메타데이터 표시용
           />
         </Suspense>
 

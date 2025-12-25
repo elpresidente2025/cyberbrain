@@ -9,16 +9,19 @@ import {
   Button,
   Divider,
   Paper,
+  Chip,
+  Tooltip,
   useTheme
 } from '@mui/material';
-import { AutoAwesome, Save } from '@mui/icons-material';
+import { AutoAwesome, Save, CheckCircle, Warning, Speed } from '@mui/icons-material';
 
 export default function DraftGrid({
   items = [],
   onSelect,
   onSave,
   maxAttempts = 3,
-  isMobile = false
+  isMobile = false,
+  user = null  // 🆕 사용자 정보 추가
 }) {
   const theme = useTheme();
   if (items.length === 0) {
@@ -147,6 +150,74 @@ export default function DraftGrid({
               </Box>
             </CardContent>
             
+            {/* 🤖 Multi-Agent 메타데이터 (관리자/테스터만) */}
+            {(user?.isAdmin || user?.isTester) && draft.multiAgent?.enabled && (
+              <Box sx={{
+                px: 2,
+                py: 1,
+                display: 'flex',
+                gap: 0.5,
+                flexWrap: 'wrap',
+                borderTop: '1px solid rgba(255,255,255,0.2)'
+              }}>
+                {/* SEO 점수 */}
+                {draft.multiAgent.seoScore != null && (
+                  <Tooltip title="네이버 SEO 최적화 점수">
+                    <Chip
+                      icon={<Speed sx={{ fontSize: 14 }} />}
+                      label={`SEO ${draft.multiAgent.seoScore}점`}
+                      size="small"
+                      sx={{
+                        height: 20,
+                        fontSize: '0.7rem',
+                        bgcolor: draft.multiAgent.seoScore >= 70 ? 'success.main' :
+                                 draft.multiAgent.seoScore >= 50 ? 'warning.main' : 'error.main',
+                        color: 'white',
+                        '& .MuiChip-icon': { color: 'white' }
+                      }}
+                    />
+                  </Tooltip>
+                )}
+
+                {/* 선거법 검수 */}
+                {draft.multiAgent.compliancePassed != null && (
+                  <Tooltip title={draft.multiAgent.compliancePassed ? '선거법 검수 통과' : `선거법 주의사항 ${draft.multiAgent.complianceIssues || 0}개`}>
+                    <Chip
+                      icon={draft.multiAgent.compliancePassed ?
+                        <CheckCircle sx={{ fontSize: 14 }} /> :
+                        <Warning sx={{ fontSize: 14 }} />
+                      }
+                      label={draft.multiAgent.compliancePassed ? '검수통과' : `주의 ${draft.multiAgent.complianceIssues || 0}`}
+                      size="small"
+                      sx={{
+                        height: 20,
+                        fontSize: '0.7rem',
+                        bgcolor: draft.multiAgent.compliancePassed ? 'success.main' : 'warning.main',
+                        color: 'white',
+                        '& .MuiChip-icon': { color: 'white' }
+                      }}
+                    />
+                  </Tooltip>
+                )}
+
+                {/* 생성 시간 */}
+                {draft.multiAgent.duration && (
+                  <Tooltip title="AI 생성 소요시간">
+                    <Chip
+                      label={`${Math.round(draft.multiAgent.duration / 1000)}초`}
+                      size="small"
+                      sx={{
+                        height: 20,
+                        fontSize: '0.7rem',
+                        bgcolor: 'rgba(255,255,255,0.2)',
+                        color: 'white'
+                      }}
+                    />
+                  </Tooltip>
+                )}
+              </Box>
+            )}
+
             <CardActions sx={{ justifyContent: 'space-between', px: 2, pb: 2, flexWrap: 'wrap' }}>
               <Typography variant="caption" sx={{ color: '#ffffff !important' }}>
                 {draft.generatedAt ?
@@ -154,16 +225,16 @@ export default function DraftGrid({
                   new Date().toLocaleString()
                 }
               </Typography>
-              
-              <Button 
-                size="small" 
+
+              <Button
+                size="small"
                 startIcon={<Save />}
                 onClick={(e) => {
                   e.stopPropagation();
                   onSave?.(draft);
                 }}
-                sx={{ 
-                  color: 'white', 
+                sx={{
+                  color: 'white',
                   borderColor: 'white',
                   '&:hover': {
                     borderColor: 'rgba(255,255,255,0.8)',

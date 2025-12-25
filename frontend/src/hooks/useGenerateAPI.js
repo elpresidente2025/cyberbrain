@@ -229,7 +229,10 @@ export function useGenerateAPI() {
         // 📌 개선: 설정 기반 SEO 최적화 판단
         aiGeneratedVariations: 1,
         selectedVariationIndex: 0,
-        seoOptimized: isSeoOptimized(content)
+        seoOptimized: isSeoOptimized(content),
+
+        // 🤖 Multi-Agent 메타데이터 (관리자/테스터용)
+        multiAgent: responseData.metadata?.multiAgent || null
       };
 
       // 📌 메모리 누수 방지: 제한된 개수로 추가

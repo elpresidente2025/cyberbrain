@@ -1,14 +1,15 @@
 'use strict';
 
 /**
- * Multi-Agent Pipeline Helper
+ * Multi-Agent Pipeline Helper (통합 리팩토링 버전)
  *
  * 기존 generatePosts 로직과 통합하기 위한 헬퍼 함수
+ * - 전체 파이프라인 실행 (생성 → 검수 → SEO)
  * - 기존 프롬프트 기반 생성과 병행 가능
  * - 설정으로 Multi-Agent 모드 활성화
  */
 
-const { runAgentPipeline } = require('./orchestrator');
+const { runAgentPipeline, PIPELINES } = require('./orchestrator');
 const { db } = require('../../utils/firebaseAdmin');
 
 /**
@@ -26,6 +27,71 @@ async function isMultiAgentEnabled() {
     console.warn('⚠️ [MultiAgent] 설정 조회 실패:', error.message);
     return false;
   }
+}
+
+/**
+ * 전체 Multi-Agent 파이프라인으로 원고 생성
+ *
+ * @param {Object} params
+ * @param {string} params.topic - 주제
+ * @param {string} params.category - 카테고리
+ * @param {Object} params.userProfile - 사용자 프로필
+ * @param {string} params.memoryContext - 메모리 컨텍스트
+ * @param {string} params.instructions - 배경 정보
+ * @param {string} params.newsContext - 뉴스 컨텍스트
+ * @param {string} params.regionHint - 타 지역 힌트
+ * @param {Array<string>} params.keywords - 키워드
+ * @param {number} params.targetWordCount - 목표 글자수
+ * @returns {Promise<Object>} 생성 결과
+ */
+async function generateWithMultiAgent({
+  topic,
+  category,
+  userProfile,
+  memoryContext = '',
+  instructions = '',
+  newsContext = '',
+  regionHint = '',
+  keywords = [],
+  targetWordCount = 1700
+}) {
+  console.log('🤖 [MultiAgent] 전체 파이프라인 시작');
+
+  const context = {
+    topic,
+    category,
+    userProfile,
+    memoryContext,
+    instructions,
+    newsContext,
+    regionHint,
+    keywords,
+    targetWordCount
+  };
+
+  // 표준 파이프라인 실행 (KeywordAgent → WriterAgent → ComplianceAgent → SEOAgent)
+  const result = await runAgentPipeline(context, { pipeline: 'standard' });
+
+  if (!result.success) {
+    console.error('❌ [MultiAgent] 파이프라인 실패:', result.error);
+    throw new Error(result.error || 'Multi-Agent 파이프라인 실패');
+  }
+
+  console.log('✅ [MultiAgent] 파이프라인 완료', {
+    hasContent: !!result.content,
+    hasTitle: !!result.title,
+    duration: result.metadata?.duration,
+    seoScore: result.metadata?.seo?.score,
+    compliancePassed: result.metadata?.compliance?.passed
+  });
+
+  return {
+    content: result.content,
+    title: result.title,
+    wordCount: result.metadata?.wordCount || 0,
+    metadata: result.metadata,
+    agentResults: result.agentResults
+  };
 }
 
 /**
@@ -49,7 +115,7 @@ async function runComplianceCheck({ content, userProfile }) {
   const result = await runAgentPipeline(context, { pipeline: 'complianceOnly' });
 
   return {
-    passed: result.metadata?.compliancePassed ?? true,
+    passed: result.metadata?.compliance?.passed ?? true,
     content: result.content || content,
     issues: result.agentResults?.ComplianceAgent?.data?.issues || [],
     replacements: result.agentResults?.ComplianceAgent?.data?.replacements || []
@@ -96,47 +162,6 @@ async function runSEOOptimization({ content, topic, userProfile }) {
     keywords: seoResult.data?.keywords || [],
     seoScore: seoResult.data?.seoScore || null,
     suggestions: seoResult.data?.suggestions || []
-  };
-}
-
-/**
- * 전체 Multi-Agent 파이프라인 실행
- * @param {Object} params
- * @param {string} params.prompt - 생성 프롬프트
- * @param {string} params.topic - 주제
- * @param {string} params.category - 카테고리
- * @param {Object} params.userProfile - 사용자 프로필
- * @param {string} params.memoryContext - 메모리 컨텍스트
- * @param {number} params.targetWordCount - 목표 글자 수
- * @returns {Promise<Object>} 생성 결과
- */
-async function runFullPipeline({
-  prompt,
-  topic,
-  category,
-  userProfile,
-  memoryContext,
-  targetWordCount = 1500
-}) {
-  const context = {
-    prompt,
-    topic,
-    category,
-    userProfile,
-    memoryContext,
-    targetWordCount
-  };
-
-  const result = await runAgentPipeline(context, { pipeline: 'standard' });
-
-  if (!result.success) {
-    throw new Error(result.error || 'Multi-Agent 파이프라인 실패');
-  }
-
-  return {
-    content: result.content,
-    title: result.title,
-    metadata: result.metadata
   };
 }
 
@@ -190,8 +215,8 @@ async function postProcessContent({ content, topic, userProfile }) {
 
 module.exports = {
   isMultiAgentEnabled,
+  generateWithMultiAgent,
   runComplianceCheck,
   runSEOOptimization,
-  runFullPipeline,
   postProcessContent
 };
