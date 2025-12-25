@@ -250,7 +250,8 @@ exports.updateProfile = wrap(async (req) => {
   } else {
     // users 컬렉션에서 기존 bio 컬렉션 확인
     const bioDoc = await db.collection('bios').doc(uid).get();
-    isActive = bioDoc.exists && (bioDoc.data().content || bioDoc.data().entries);
+    // 반드시 boolean으로 변환 (&&는 마지막 truthy 값을 반환하므로 !! 필요)
+    isActive = !!(bioDoc.exists && (bioDoc.data().content || bioDoc.data().entries));
   }
 
   delete sanitized.isAdmin;
