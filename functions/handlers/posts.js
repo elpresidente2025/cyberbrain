@@ -182,8 +182,40 @@ exports.generatePosts = httpWrap(async (req) => {
 
     // 사용자 정보
     const fullName = userProfile.name || '사용자';
-    const fullRegion = generateNaturalRegionTitle(userProfile.regionLocal, userProfile.regionMetro);
     const customTitle = userProfile.customTitle || '';
+
+    // 🎯 목표 선거가 있으면 해당 직책/지역 기준으로 원고 작성
+    const targetElection = userProfile.targetElection;
+    let fullRegion = '';
+    let effectivePosition = userProfile.position || '';
+
+    if (targetElection && targetElection.position) {
+      // 목표 선거 기준
+      effectivePosition = targetElection.position;
+      const targetPosition = targetElection.position;
+
+      if (targetPosition === '광역자치단체장' || targetPosition.includes('시장') || targetPosition.includes('도지사')) {
+        // 광역단체장: 시/도 전체가 관할 (예: "부산광역시")
+        fullRegion = targetElection.regionMetro || userProfile.regionMetro || '';
+        console.log('🎯 [목표선거] 광역단체장 - 시도 전체 기준:', fullRegion);
+      } else if (targetPosition === '기초자치단체장' || targetPosition.includes('구청장') || targetPosition.includes('군수')) {
+        // 기초단체장: 시/군/구 전체가 관할 (예: "부산광역시 사하구")
+        const metro = targetElection.regionMetro || userProfile.regionMetro || '';
+        const local = targetElection.regionLocal || userProfile.regionLocal || '';
+        fullRegion = generateNaturalRegionTitle(local, metro);
+        console.log('🎯 [목표선거] 기초단체장 - 시군구 기준:', fullRegion);
+      } else {
+        // 국회의원/지방의원: 선거구 기준
+        const metro = targetElection.regionMetro || userProfile.regionMetro || '';
+        const local = targetElection.regionLocal || userProfile.regionLocal || '';
+        const electoral = targetElection.electoralDistrict || userProfile.electoralDistrict || '';
+        fullRegion = electoral ? `${metro} ${electoral}` : generateNaturalRegionTitle(local, metro);
+        console.log('🎯 [목표선거] 의원 - 선거구 기준:', fullRegion);
+      }
+    } else {
+      // 현재 직책 기준 (기존 로직)
+      fullRegion = generateNaturalRegionTitle(userProfile.regionLocal, userProfile.regionMetro);
+    }
 
     // 🔥 현역 의원 여부 판단 (politicalExperience 활용)
     const isCurrentLawmaker = ['초선', '재선', '3선이상'].includes(politicalExperience);
@@ -191,7 +223,7 @@ exports.generatePosts = httpWrap(async (req) => {
     // 가족 상황 (자녀 없는 사용자의 환각 방지용)
     const familyStatus = userProfile.familyStatus || '';
 
-    // 호칭 결정
+    // 호칭 결정 (목표 선거 직책 기준)
     let displayTitle = '';
     if (isCurrentLawmaker && currentStatus !== '은퇴') {
       // 의원 경험 있음 → "의원" 사용

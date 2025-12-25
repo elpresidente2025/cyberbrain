@@ -14,8 +14,8 @@
 
 const { BaseAgent } = require('./base');
 
-// ✅ 기존 guidelines import
-const { getElectionStage, getPolicySafe } = require('../../prompts/guidelines/legal');
+// ✅ 기존 guidelines import (구조적 통합 강화)
+const { getElectionStage, getPolicySafe, ELECTION_EXPRESSION_RULES } = require('../../prompts/guidelines/legal');
 const { OVERRIDE_KEYWORDS, HIGH_RISK_KEYWORDS, POLITICAL_FRAMES } = require('../../prompts/guidelines/framingRules');
 
 // 선거법 위반 패턴 (단계별)
@@ -123,18 +123,15 @@ class ComplianceAgent extends BaseAgent {
       }
     }
 
-    // 5. 선거 단계별 검수
-    if (electionStage?.name === 'STAGE_1' || ['준비', '예비후보'].includes(status)) {
-      for (const rule of ELECTION_LAW_PATTERNS.pre_registration) {
-        const result = this.checkAndReplace(content, rule);
-        if (result.found) {
-          content = result.content;
-          issues.push(...result.issues);
-          replacements.push(...result.replacements);
-        }
-      }
+    // 5. 🗳️ 선거 단계별 검수 (legal.js 구조적 통합)
+    if (electionStage) {
+      const legalCheckResult = this.applyLegalJsRules(content, electionStage);
+      content = legalCheckResult.content;
+      issues.push(...legalCheckResult.issues);
+      replacements.push(...legalCheckResult.replacements);
     }
 
+    // 6. 기존 패턴 보조 검수 (universal이 아닌 추가 패턴)
     if (['후보', '예비후보'].includes(status)) {
       for (const rule of ELECTION_LAW_PATTERNS.candidate) {
         const result = this.checkAndReplace(content, rule);
@@ -146,7 +143,7 @@ class ComplianceAgent extends BaseAgent {
       }
     }
 
-    // 6. 정치적 리스크 검수
+    // 7. 정치적 리스크 검수
     for (const rule of RISK_PATTERNS) {
       const matches = content.match(rule.pattern);
       if (matches) {
@@ -159,7 +156,7 @@ class ComplianceAgent extends BaseAgent {
       }
     }
 
-    // 7. 자당 비판 위험 검수 (프레이밍 필요 여부 체크)
+    // 8. 자당 비판 위험 검수 (프레이밍 필요 여부 체크)
     const isOverridden = this.checkOverrideKeywords(content);
     if (!isOverridden) {
       for (const rule of SELF_CRITICISM_PATTERNS) {
@@ -176,7 +173,7 @@ class ComplianceAgent extends BaseAgent {
       }
     }
 
-    // 8. 가족 환각 검수
+    // 9. 가족 환각 검수
     if (userProfile.familyStatus === '미혼' || userProfile.familyStatus === '기혼(자녀 없음)') {
       const familyPatterns = [
         { pattern: /우리\s*아이|제\s*아이|자녀를\s*키우/gi, reason: '자녀 언급 (프로필: 자녀 없음)' },
@@ -200,11 +197,11 @@ class ComplianceAgent extends BaseAgent {
       }
     }
 
-    // 9. 구조 검증 (무한 루프 방지)
+    // 10. 구조 검증 (무한 루프 방지)
     const structureIssues = this.checkStructure(content);
     issues.push(...structureIssues);
 
-    // 10. 종합 판단
+    // 11. 종합 판단
     const criticalCount = issues.filter(i => i.severity === 'critical').length;
     const highCount = issues.filter(i => i.severity === 'high').length;
     const passed = criticalCount === 0 && highCount === 0;
@@ -263,6 +260,75 @@ class ComplianceAgent extends BaseAgent {
     }
 
     return { found: true, content: newContent, issues, replacements };
+  }
+
+  /**
+   * 🗳️ legal.js 선거법 규칙 적용 (구조적 통합)
+   * electionStage의 forbidden 패턴과 replacements를 직접 사용
+   */
+  applyLegalJsRules(content, electionStage) {
+    const issues = [];
+    const replacements = [];
+    let modifiedContent = content;
+
+    if (!electionStage || !electionStage.forbidden) {
+      return { content: modifiedContent, issues, replacements };
+    }
+
+    console.log(`🗳️ [ComplianceAgent] legal.js 규칙 적용: ${electionStage.name}`);
+
+    // 1. forbidden 패턴 검사
+    const stageReplacements = electionStage.replacements || {};
+
+    for (const [category, patterns] of Object.entries(electionStage.forbidden)) {
+      for (const pattern of patterns) {
+        const matches = modifiedContent.match(pattern);
+        if (matches) {
+          // 각 매치에 대해 치환 시도
+          for (const match of matches) {
+            const replacement = stageReplacements[match] || stageReplacements[match.replace(/\s+/g, ' ')];
+
+            if (replacement !== undefined) {
+              // 치환 가능한 경우
+              modifiedContent = modifiedContent.replace(match, replacement);
+              replacements.push({
+                original: match,
+                replaced: replacement || '(삭제됨)',
+                category
+              });
+            }
+
+            issues.push({
+              type: 'election_law_legal_js',
+              severity: category === 'status' || category === 'pledge' ? 'high' : 'medium',
+              match,
+              category,
+              reason: `선거법 위반 (${electionStage.name}/${category})`,
+              autoFixed: replacement !== undefined
+            });
+          }
+        }
+      }
+    }
+
+    // 2. 리터럴 치환 (정규식 매칭 안 된 단순 문자열도 치환)
+    for (const [original, replacement] of Object.entries(stageReplacements)) {
+      if (modifiedContent.includes(original)) {
+        const before = modifiedContent;
+        modifiedContent = modifiedContent.split(original).join(replacement);
+        if (before !== modifiedContent) {
+          replacements.push({
+            original,
+            replaced: replacement || '(삭제됨)',
+            category: 'literal_replacement'
+          });
+        }
+      }
+    }
+
+    console.log(`🗳️ [ComplianceAgent] legal.js 규칙 적용 완료: ${issues.length}개 이슈, ${replacements.length}개 치환`);
+
+    return { content: modifiedContent, issues, replacements };
   }
 
   /**
