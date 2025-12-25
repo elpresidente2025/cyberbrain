@@ -99,14 +99,12 @@ export const getNotices = async () => {
 };
 
 export const getUsers = async (params = {}) => {
+  // getAllUsers는 onCall 함수이므로 callFunction 사용
   try {
-    const response = await fetch('https://asia-northeast3-ai-secretary-6e9c8.cloudfunctions.net/getUsers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    return await response.json();
+    const result = await callFunction('getAllUsers', params);
+    return result;
   } catch (error) {
+    console.error('getUsers 오류:', error);
     return { success: false, users: [], total: 0 };
   }
 };

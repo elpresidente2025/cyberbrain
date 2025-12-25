@@ -42,7 +42,7 @@ export default function SystemSettings() {
     }
   };
 
-  const handleToggleChange = async (field) => async (event) => {
+  const handleToggleChange = (field) => async (event) => {
     const newValue = event.target.checked;
 
     try {

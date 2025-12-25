@@ -160,7 +160,8 @@ exports.getAdminStats = wrap(async (request) => {
     let todayFail = 0;
     postsSnapshot.forEach(doc => {
       const data = doc.data();
-      if (data.status === 'completed') {
+      // scheduled, completed, published 모두 성공으로 카운트
+      if (['scheduled', 'completed', 'published'].includes(data.status)) {
         todaySuccess++;
       } else if (data.status === 'failed') {
         todayFail++;

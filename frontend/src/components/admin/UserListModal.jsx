@@ -56,9 +56,12 @@ function UserListModal({ open, onClose }) {
     if (!searchTerm.trim()) {
       setFilteredUsers(users);
     } else {
-      const filtered = users.filter(user => 
+      const filtered = users.filter(user =>
         user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.position?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.regionMetro?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.regionLocal?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.electoralDistrict?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.status?.toLowerCase().includes(searchTerm.toLowerCase())
       );
@@ -102,12 +105,14 @@ function UserListModal({ open, onClose }) {
       return;
     }
 
-    const headers = ['이름', '이메일', '선거구', '상태', '가입일'];
+    const headers = ['이름', '이메일', '직책', '지역', '선거구', '상태', '가입일'];
     const csvContent = [
       headers.join(','),
       ...filteredUsers.map(user => [
         user.name || '',
         user.email || '',
+        user.position || '',
+        [user.regionMetro, user.regionLocal].filter(Boolean).join(' ') || '',
         user.electoralDistrict || '',
         user.status || '',
         user.createdAt ? new Date(user.createdAt).toLocaleDateString('ko-KR') : ''
@@ -181,7 +186,7 @@ function UserListModal({ open, onClose }) {
         <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0', bgcolor: '#fafafa' }}>
           <Box display="flex" gap={2} alignItems="center" justifyContent="space-between">
             <TextField
-              placeholder="이름, 이메일, 선거구, 상태로 검색..."
+              placeholder="이름, 이메일, 직책, 지역, 선거구로 검색..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               size="small"
@@ -244,7 +249,8 @@ function UserListModal({ open, onClose }) {
                     <TableRow sx={{ bgcolor: '#f5f5f5' }}>
                       <TableCell><strong>이름</strong></TableCell>
                       <TableCell><strong>이메일</strong></TableCell>
-                      <TableCell><strong>선거구</strong></TableCell>
+                      <TableCell><strong>직책</strong></TableCell>
+                      <TableCell><strong>지역/선거구</strong></TableCell>
                       <TableCell><strong>상태</strong></TableCell>
                       <TableCell><strong>가입일</strong></TableCell>
                       <TableCell align="center"><strong>작업</strong></TableCell>
@@ -266,9 +272,12 @@ function UserListModal({ open, onClose }) {
                           </Box>
                         </TableCell>
                         <TableCell>
+                          {user.position || '미설정'}
+                        </TableCell>
+                        <TableCell>
                           <Box display="flex" alignItems="center" gap={1}>
                             <LocationOn fontSize="small" color="action" />
-                            {user.electoralDistrict || '선거구 미설정'}
+                            {[user.regionMetro, user.regionLocal, user.electoralDistrict].filter(Boolean).join(' ') || '미설정'}
                           </Box>
                         </TableCell>
                         <TableCell>
