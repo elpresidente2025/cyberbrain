@@ -4,6 +4,7 @@ const { admin, db } = require('../../utils/firebaseAdmin');
 const { HttpsError } = require('firebase-functions/v2/https');
 const { generatePersonalizedHints, generatePersonaHints } = require('./personalization');
 const { generateEnhancedMetadataHints } = require('../../utils/enhanced-metadata-hints');
+const { generateMemoryContext } = require('../memory');
 
 /**
  * 사용자 프로필 및 Bio 메타데이터 로딩
@@ -19,6 +20,7 @@ async function loadUserProfile(uid, category, topic) {
   let dailyLimitWarning = false;
   let userMetadata = null;
   let ragContext = '';  // RAG 컨텍스트 (try 블록 외부에서도 접근 가능하도록)
+  let memoryContext = '';  // 메모리 컨텍스트 (장기 메모리 기반)
 
   try {
     // 사용자 기본 정보 조회
@@ -125,6 +127,16 @@ async function loadUserProfile(uid, category, topic) {
       }
     }
 
+    // 🧠 메모리 컨텍스트 로드 (장기 메모리 기반 개인화)
+    try {
+      memoryContext = await generateMemoryContext(uid, category);
+      if (memoryContext) {
+        console.log(`✅ 메모리 컨텍스트 로드 완료: ${memoryContext.length}자`);
+      }
+    } catch (memoryError) {
+      console.warn('⚠️ 메모리 컨텍스트 로드 실패 (무시하고 계속):', memoryError.message);
+    }
+
   } catch (profileError) {
     // HttpsError는 그대로 다시 throw (사용 제한, 세션 제한 등)
     if (profileError.code && profileError.code !== 'internal') {
@@ -150,6 +162,7 @@ async function loadUserProfile(uid, category, topic) {
     dailyLimitWarning,
     userMetadata,
     ragContext,
+    memoryContext,  // 🧠 메모리 컨텍스트 추가
     isAdmin: userProfile.isAdmin === true || userProfile.role === 'admin',
     isTester: userProfile.isTester === true
   };

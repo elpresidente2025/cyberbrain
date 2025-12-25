@@ -40,6 +40,8 @@ const { fetchNaverNews, compressNewsWithAI, formatNewsForPrompt, shouldFetchNews
 const { ProgressTracker } = require('../utils/progress-tracker');
 const { sanitizeElectionContent } = require('../services/election-compliance');
 const { validateTopicRegion } = require('../services/region-detector');
+const { runAgentPipeline } = require('../services/agents');
+const { isMultiAgentEnabled, postProcessContent } = require('../services/agents/pipeline-helper');
 // 세션 관리는 이제 profile-loader에서 통합 관리 (users 문서의 activeGenerationSession 필드)
 // const { createGenerationSession, incrementSessionAttempt } = require('../services/generation-session');
 
@@ -152,6 +154,7 @@ exports.generatePosts = httpWrap(async (req) => {
       personalizedHints,
       dailyLimitWarning,
       ragContext,
+      memoryContext,  // 🧠 메모리 컨텍스트 추가
       isAdmin,
       isTester
     } = await loadUserProfile(uid, category, topic);
@@ -262,6 +265,11 @@ exports.generatePosts = httpWrap(async (req) => {
     // 작법 결정
     const writingMethod = CATEGORY_TO_WRITING_METHOD[category] || 'emotional_writing';
 
+    // 🧠 메모리 컨텍스트와 개인화 힌트 통합
+    const combinedHints = [personalizedHints, memoryContext]
+      .filter(h => h && h.trim())
+      .join(' | ');
+
     // 프롬프트 생성
     const prompt = await buildSmartPrompt({
       writingMethod,
@@ -271,7 +279,7 @@ exports.generatePosts = httpWrap(async (req) => {
       instructions: data.instructions,
       keywords: backgroundKeywords,
       newsContext,
-      personalizedHints,
+      personalizedHints: combinedHints,  // 🧠 통합된 힌트 사용
       applyEditorialRules: true,
       // 원외 인사 판단 정보 추가
       isCurrentLawmaker,
@@ -428,19 +436,51 @@ exports.generatePosts = httpWrap(async (req) => {
       });
     }
 
+    // 🤖 Multi-Agent 후처리 (선택적)
+    let multiAgentResult = null;
+    try {
+      const useMultiAgent = await isMultiAgentEnabled();
+      if (useMultiAgent && parsedResponse?.content) {
+        console.log('🤖 [Multi-Agent] 후처리 시작');
+        multiAgentResult = await postProcessContent({
+          content: parsedResponse.content,
+          topic: sanitizedTopic,
+          userProfile
+        });
+
+        // 후처리 결과 적용
+        if (multiAgentResult.content) {
+          parsedResponse.content = multiAgentResult.content;
+        }
+        console.log('🤖 [Multi-Agent] 후처리 완료', {
+          compliancePassed: multiAgentResult.compliance?.passed,
+          seoScore: multiAgentResult.seo?.score
+        });
+      }
+    } catch (multiAgentError) {
+      console.warn('⚠️ [Multi-Agent] 후처리 실패 (원본 유지):', multiAgentError.message);
+      // 실패해도 원본 콘텐츠로 계속 진행
+    }
+
     // 제목 생성 (선거법 준수를 위해 status 전달)
-    const generatedTitle = await generateTitleFromContent({
-      content: parsedResponse.content || '',
-      backgroundInfo: data.instructions,
-      keywords: backgroundKeywords,
-      userKeywords: userKeywords,  // 사용자가 직접 입력한 노출 희망 검색어
-      topic: sanitizedTopic,
-      fullName,
-      modelName,
-      category: data.category,
-      subCategory: data.subCategory,
-      status: currentStatus  // 선거법 준수 (준비/현역/예비/후보)
-    });
+    // Multi-Agent SEO 제목이 있으면 우선 사용, 없으면 기존 방식으로 생성
+    let generatedTitle = multiAgentResult?.title;
+    if (!generatedTitle) {
+      generatedTitle = await generateTitleFromContent({
+        content: parsedResponse.content || '',
+        backgroundInfo: data.instructions,
+        keywords: backgroundKeywords,
+        userKeywords: userKeywords,  // 사용자가 직접 입력한 노출 희망 검색어
+        topic: sanitizedTopic,
+        fullName,
+        modelName,
+        category: data.category,
+        subCategory: data.subCategory,
+        status: currentStatus  // 선거법 준수 (준비/현역/예비/후보)
+      });
+    } else {
+      console.log('🤖 [Multi-Agent] SEO 최적화 제목 사용:', generatedTitle);
+    }
 
     // 응답 데이터 구성
     const draftData = {
@@ -481,7 +521,15 @@ exports.generatePosts = httpWrap(async (req) => {
       metadata: {
         generatedAt: new Date().toISOString(),
         userId: uid,
-        processingTime: Date.now()
+        processingTime: Date.now(),
+        // 🤖 Multi-Agent 메타데이터 (활성화된 경우)
+        multiAgent: multiAgentResult ? {
+          enabled: true,
+          compliancePassed: multiAgentResult.compliance?.passed,
+          complianceIssues: multiAgentResult.compliance?.issues?.length || 0,
+          seoScore: multiAgentResult.seo?.score,
+          seoKeywords: multiAgentResult.seo?.keywords
+        } : { enabled: false }
       }
     });
 

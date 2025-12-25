@@ -5,6 +5,8 @@ const { httpWrap } = require('../../common/http-wrap');
 const { admin, db } = require('../../utils/firebaseAdmin');
 const { ok } = require('../../utils/posts/helpers');
 const { endSession } = require('../../services/posts/profile-loader');
+const { updateMemoryOnSelection } = require('../../services/memory');
+const { evaluateContent, meetsQualityThreshold } = require('../../services/evaluation');
 
 /**
  * 선택된 원고 저장
@@ -69,6 +71,70 @@ exports.saveSelectedPost = httpWrap(async (req) => {
 
     // 원고 저장
     const docRef = await db.collection('posts').add(postData);
+    const postId = docRef.id;
+
+    // 📊 품질 평가 (비동기 - 응답 대기 없이 진행)
+    const evaluationPromise = (async () => {
+      try {
+        const evaluation = await evaluateContent({
+          content: data.content,
+          category: data.category,
+          topic: data.topic || data.title,
+          author: data.authorName || '작성자'
+        });
+
+        // 평가 결과를 posts 문서에 업데이트
+        await docRef.update({
+          evaluation: {
+            overallScore: evaluation.overallScore,
+            scores: evaluation.scores,
+            summary: evaluation.summary,
+            evaluatedAt: admin.firestore.FieldValue.serverTimestamp()
+          }
+        });
+
+        console.log('📊 [Evaluation] 평가 완료:', {
+          postId,
+          score: evaluation.overallScore,
+          meetsThreshold: meetsQualityThreshold(evaluation)
+        });
+
+        return evaluation;
+      } catch (evalError) {
+        console.warn('⚠️ [Evaluation] 평가 실패 (무시):', evalError.message);
+        return null;
+      }
+    })();
+
+    // 🧠 메모리 업데이트 (선택된 글 학습) - 평가 결과 포함
+    try {
+      const keywords = Array.isArray(data.keywords)
+        ? data.keywords
+        : (data.keywords || '').split(',').map(k => k.trim()).filter(k => k);
+
+      // 평가 완료 대기 (최대 5초)
+      let evaluation = null;
+      try {
+        evaluation = await Promise.race([
+          evaluationPromise,
+          new Promise(resolve => setTimeout(() => resolve(null), 5000))
+        ]);
+      } catch (e) {
+        // 평가 타임아웃 - 무시
+      }
+
+      await updateMemoryOnSelection(uid, {
+        category: data.category,
+        content: data.content,
+        title: data.title,
+        topic: data.topic || '',
+        keywords,
+        qualityScore: evaluation?.overallScore || null
+      });
+      console.log('✅ 메모리 업데이트 완료 (선택된 글 학습)');
+    } catch (memoryError) {
+      console.warn('⚠️ 메모리 업데이트 실패 (무시):', memoryError.message);
+    }
 
     // 세션 종료 처리 (activeGenerationSession 삭제)
     await endSession(uid);
