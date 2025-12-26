@@ -63,7 +63,7 @@ function detectSentenceRepetition(content) {
  * @param {string} status - 사용자 상태 (준비/현역/예비/후보)
  * @returns {Object} { passed: boolean, violations: string[] }
  */
-function detectElectionLawViolation(content, status) {
+function detectElectionLawViolation(content, status, title = '') {
   // 상태가 없거나 예비/후보 단계면 검사 스킵
   if (!status) {
     return { passed: true, violations: [], skipped: true };
@@ -75,11 +75,13 @@ function detectElectionLawViolation(content, status) {
     return { passed: true, violations: [], skipped: true };
   }
 
-  // HTML 태그 제거
-  const plainText = content.replace(/<[^>]*>/g, ' ');
+  // HTML 태그 제거 + 제목도 포함하여 검사
+  const plainText = (title + ' ' + content).replace(/<[^>]*>/g, ' ');
 
   // 공약성 표현 패턴 (준비/현역 단계에서 금지)
+  // "~겠습니다" 형태 + "~ㅂ니다" 형태 모두 포함
   const pledgePatterns = [
+    // ~겠습니다 형태
     /추진하겠습니다/g,
     /실현하겠습니다/g,
     /만들겠습니다/g,
@@ -100,6 +102,18 @@ function detectElectionLawViolation(content, status) {
     /이루겠습니다/g,
     /열겠습니다/g,
     /세우겠습니다/g,
+    /이뤄내겠습니다/g,
+    /해드리겠습니다/g,
+    /드리겠습니다/g,
+    /약속드리겠습니다/g,
+    // ~ㅂ니다 형태 (공약 단정 표현)
+    /바꿉니다/g,
+    /만듭니다/g,
+    /이룹니다/g,
+    /해결합니다/g,
+    /약속합니다/g,
+    /실현합니다/g,
+    /책임집니다/g,
   ];
 
   const violations = [];
@@ -123,9 +137,10 @@ function detectElectionLawViolation(content, status) {
  * 통합 휴리스틱 검증
  * @param {string} content - 검증할 콘텐츠
  * @param {string} status - 사용자 상태
+ * @param {string} title - 제목 (선거법 검증 포함)
  * @returns {Object} { passed: boolean, issues: string[] }
  */
-function runHeuristicValidation(content, status) {
+function runHeuristicValidation(content, status, title = '') {
   const issues = [];
 
   // 1. 문장 반복 검출
@@ -134,8 +149,8 @@ function runHeuristicValidation(content, status) {
     issues.push(`⚠️ 문장 반복 감지: ${repetitionResult.repeatedSentences.join(', ')}`);
   }
 
-  // 2. 선거법 위반 검출
-  const electionResult = detectElectionLawViolation(content, status);
+  // 2. 선거법 위반 검출 (제목 + 본문 모두 검사)
+  const electionResult = detectElectionLawViolation(content, status, title);
   if (!electionResult.passed) {
     issues.push(`⚠️ 선거법 위반 표현: ${electionResult.violations.join(', ')}`);
   }

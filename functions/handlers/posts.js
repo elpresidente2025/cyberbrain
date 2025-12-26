@@ -596,8 +596,8 @@ exports.generatePosts = httpWrap(async (req) => {
 
     // 🔧 EditorAgent: 검증 결과 기반 LLM 수정
     try {
-      // 휴리스틱 검증 실행
-      const heuristicResult = runHeuristicValidation(generatedContent, currentStatus);
+      // 휴리스틱 검증 실행 (제목 + 본문 모두 검사)
+      const heuristicResult = runHeuristicValidation(generatedContent, currentStatus, generatedTitle);
 
       // 키워드 검증 실행
       const extractedKeywords = backgroundKeywords.filter(k => !userKeywords.includes(k));
