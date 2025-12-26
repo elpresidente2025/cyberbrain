@@ -385,14 +385,20 @@ exports.generatePosts = httpWrap(async (req) => {
         .filter(h => h && h.trim())
         .join(' | ');
 
+      // authorBio 구성: "정당 직위 이름" 형태 (준비 중 표현 금지)
+      // 예: "더불어민주당 사하구 을 지역위원장 이재성"
+      const partyName = userProfile.partyName || '';
+      const authorBioParts = [];
+      if (partyName) authorBioParts.push(partyName);
+      if (displayTitle) authorBioParts.push(displayTitle);
+      authorBioParts.push(fullName);
+      const authorBio = authorBioParts.join(' ');
+
       // 프롬프트 생성
       let prompt = await buildSmartPrompt({
       writingMethod,
       topic: sanitizedTopic,
-      // 신분 상태 반영: 준비/예비인 경우 "OO 준비 중" 형태로 (선거법 준수용)
-      authorBio: currentStatus === '현역'
-        ? `${fullName} (${displayTitle}, ${fullRegion || ''})`
-        : `${fullName} (${effectivePosition} 준비 중, ${fullRegion || ''})`,
+      authorBio,
       targetWordCount,
       instructions: data.instructions,
       keywords: backgroundKeywords,

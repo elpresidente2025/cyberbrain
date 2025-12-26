@@ -199,66 +199,27 @@ ${searchTermList}
   }
 
   /**
-   * 저자 Bio 구성 (목표 선거 기준 지역 적용)
+   * 저자 Bio 구성
+   * - 현재 직위(customTitle)만 사용
+   * - "OO 준비 중" 같은 표현 금지
+   * - 예: "더불어민주당 사하구 을 지역위원장 이재성"
    */
   buildAuthorBio(userProfile) {
     const name = userProfile.name || '사용자';
-    const targetElection = userProfile.targetElection;
+    const partyName = userProfile.partyName || '';
 
-    // 🎯 목표 선거가 있으면 해당 직책/지역 기준
-    let effectivePosition = userProfile.position || '';
-    let region = '';
+    // 현재 직위 사용 (customTitle 우선, 없으면 position)
+    // ❌ targetElection.position 사용 금지 (광역자치단체장 준비 중 같은 표현 방지)
+    const currentTitle = userProfile.customTitle || userProfile.position || '';
 
-    if (targetElection && targetElection.position) {
-      effectivePosition = targetElection.position;
-      const targetPosition = targetElection.position;
+    // 정당 + 직위 + 이름 조합
+    const parts = [];
+    if (partyName) parts.push(partyName);
+    if (currentTitle) parts.push(currentTitle);
+    parts.push(name);
 
-      if (targetPosition === '광역자치단체장' || targetPosition.includes('시장') || targetPosition.includes('도지사')) {
-        // 광역단체장: 시/도 전체가 관할
-        region = targetElection.regionMetro || userProfile.regionMetro || '';
-      } else if (targetPosition === '기초자치단체장' || targetPosition.includes('구청장') || targetPosition.includes('군수')) {
-        // 기초단체장: 시/군/구 전체가 관할
-        const metro = targetElection.regionMetro || userProfile.regionMetro || '';
-        const local = targetElection.regionLocal || userProfile.regionLocal || '';
-        region = local && metro ? `${metro} ${local}` : metro || local;
-      } else {
-        // 의원: 선거구 기준
-        const metro = targetElection.regionMetro || userProfile.regionMetro || '';
-        const electoral = targetElection.electoralDistrict || userProfile.electoralDistrict || '';
-        const local = targetElection.regionLocal || userProfile.regionLocal || '';
-        region = electoral ? `${metro} ${electoral}` : (local && metro ? `${metro} ${local}` : metro || local);
-      }
-    } else {
-      // 현재 직책 기준 (기존 로직)
-      const regionLocal = userProfile.regionLocal || '';
-      const regionMetro = userProfile.regionMetro || '';
-      if (regionLocal && regionMetro) {
-        region = `${regionMetro} ${regionLocal}`;
-      } else if (regionMetro) {
-        region = regionMetro;
-      } else if (regionLocal) {
-        region = regionLocal;
-      }
-    }
-
-    // 신분 상태 확인 (현역/예비)
-    const status = userProfile.status || '예비';
-    const isIncumbent = status === '현역';
-
-    const parts = [name];
-
-    // 예비/준비 중인 경우 "OO 준비 중" 형태로
-    if (effectivePosition) {
-      if (isIncumbent) {
-        parts.push(effectivePosition);
-      } else {
-        parts.push(`${effectivePosition} 준비 중`);
-      }
-    }
-
-    if (region) parts.push(region);
-
-    return parts.join(', ');
+    // "더불어민주당 사하구 을 지역위원장 이재성" 형태
+    return parts.join(' ');
   }
 
   /**
