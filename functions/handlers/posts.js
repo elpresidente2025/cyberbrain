@@ -41,6 +41,7 @@ const { ProgressTracker } = require('../utils/progress-tracker');
 const { sanitizeElectionContent } = require('../services/election-compliance');
 const { validateTopicRegion } = require('../services/region-detector');
 const { isMultiAgentEnabled, generateWithMultiAgent } = require('../services/agents/pipeline-helper');
+const { transferStyle } = require('../services/stylometry');
 // 세션 관리는 이제 profile-loader에서 통합 관리 (users 문서의 activeGenerationSession 필드)
 // const { createGenerationSession, incrementSessionAttempt } = require('../services/generation-session');
 
@@ -129,7 +130,25 @@ exports.generatePosts = httpWrap(async (req) => {
   const topic = data.prompt || data.topic || '';
   const category = data.category || '';
   const modelName = data.modelName || 'gemini-2.0-flash-exp';
-  const targetWordCount = data.wordCount || 1700;
+
+  // 카테고리별 최소 분량 설정 (블로그 원고 기준)
+  // 키는 CATEGORY_TO_WRITING_METHOD와 일치해야 함
+  const CATEGORY_MIN_WORD_COUNT = {
+    // 지역 현안: 깊이 있는 분석 필요 (analytical_writing)
+    'local-issues': 2500,
+    // 정책 제안: 논거와 근거 제시 필요 (logical_writing)
+    'policy-proposal': 2500,
+    // 의정활동: 상세 보고 필요 (direct_writing)
+    'activity-report': 2200,
+    // 시사: 분석과 견해 필요 (critical_writing)
+    'current-affairs': 2200,
+    // 일상 소통: 상대적으로 짧아도 됨 (emotional_writing)
+    'daily-communication': 1700,
+  };
+
+  const userWordCount = data.wordCount || 2500; // 기본값 상향
+  const minWordCount = CATEGORY_MIN_WORD_COUNT[category] || 2000;
+  const targetWordCount = Math.max(userWordCount, minWordCount);
 
   if (!topic || typeof topic !== 'string' || topic.trim().length === 0) {
     throw new HttpsError('invalid-argument', '주제를 입력해주세요.');
@@ -153,7 +172,9 @@ exports.generatePosts = httpWrap(async (req) => {
       personalizedHints,
       dailyLimitWarning,
       ragContext,
-      memoryContext,  // 🧠 메모리 컨텍스트 추가
+      memoryContext,      // 🧠 메모리 컨텍스트 추가
+      styleGuide,         // 🎨 문체 가이드 (Style Fingerprint 기반)
+      styleFingerprint,   // 🎨 Style Fingerprint 원본 (2단계 생성용)
       isAdmin,
       isTester
     } = await loadUserProfile(uid, category, topic);
@@ -295,9 +316,17 @@ exports.generatePosts = httpWrap(async (req) => {
 
     // 🤖 Multi-Agent 모드 체크
     const useMultiAgent = await isMultiAgentEnabled();
+
+    // 🎨 고품질 모드 체크 (2단계 생성: 중립적 초안 → 문체 변환)
+    const systemConfigDoc = await db.collection('system').doc('config').get();
+    const useHighQualityMode = systemConfigDoc.exists
+      ? (systemConfigDoc.data().useHighQualityMode || false)
+      : false;
+
     let generatedContent = null;
     let generatedTitle = null;
     let multiAgentMetadata = null;
+    let highQualityMetadata = null;
 
     if (useMultiAgent) {
       // ═══════════════════════════════════════════════════════════════
@@ -355,10 +384,11 @@ exports.generatePosts = httpWrap(async (req) => {
         .join(' | ');
 
       // 프롬프트 생성
-      const prompt = await buildSmartPrompt({
+      let prompt = await buildSmartPrompt({
       writingMethod,
       topic: sanitizedTopic,
-      authorBio: `${fullName} (${displayTitle}, ${fullRegion || ''})`,
+      // 🔧 신분 상태는 프롬프트 내부에서만 참고용, 원고에 직접 노출되지 않도록 이름+지역만 전달
+      authorBio: `${fullName}${fullRegion ? ` (${fullRegion})` : ''}`,
       targetWordCount,
       instructions: data.instructions,
       keywords: backgroundKeywords,
@@ -376,6 +406,12 @@ exports.generatePosts = httpWrap(async (req) => {
       // 🗺️ 타 지역 주제 시 관점 안내
       regionHint
     });
+
+    // 🎨 문체 가이드 주입 (Style Fingerprint 기반)
+    if (styleGuide && styleGuide.trim()) {
+      prompt = styleGuide + prompt;
+      console.log('🎨 문체 가이드 주입 완료 (', styleGuide.length, '자)');
+    }
 
     // 🔍 디버깅: 프롬프트 로깅 (처음 1000자만)
     console.log('📋 생성된 프롬프트 (처음 1000자):', prompt.substring(0, 1000));
@@ -445,6 +481,46 @@ exports.generatePosts = httpWrap(async (req) => {
           displayTitle,
           isCurrentLawmaker
         });
+      }
+
+      // 🎨 고품질 모드: 2단계 Style Transfer (styleFingerprint 필요)
+      if (useHighQualityMode && styleFingerprint && styleFingerprint.analysisMetadata?.confidence >= 0.6) {
+        console.log('🎨 [HighQuality] 2단계 Style Transfer 시작...');
+        try {
+          const styleTransferStart = Date.now();
+          const transformedContent = await transferStyle(
+            parsedResponse.content,
+            styleFingerprint,
+            {
+              userName: fullName,
+              category
+            }
+          );
+
+          if (transformedContent && transformedContent !== parsedResponse.content) {
+            parsedResponse.content = transformedContent;
+            const duration = Date.now() - styleTransferStart;
+            console.log(`✅ [HighQuality] Style Transfer 완료 (${duration}ms)`);
+
+            highQualityMetadata = {
+              enabled: true,
+              mode: 'two-stage',
+              styleConfidence: styleFingerprint.analysisMetadata.confidence,
+              dominantStyle: styleFingerprint.analysisMetadata.dominantStyle,
+              duration
+            };
+          } else {
+            console.log('⚠️ [HighQuality] Style Transfer 결과 동일 - 원본 유지');
+            highQualityMetadata = { enabled: true, mode: 'fallback', reason: 'no-change' };
+          }
+        } catch (styleError) {
+          console.error('❌ [HighQuality] Style Transfer 실패:', styleError.message);
+          highQualityMetadata = { enabled: true, mode: 'fallback', reason: styleError.message };
+          // 실패해도 원본 content 사용 (graceful degradation)
+        }
+      } else if (useHighQualityMode) {
+        console.log('⚠️ [HighQuality] Style Fingerprint 없음 또는 신뢰도 부족 - 1단계만 사용');
+        highQualityMetadata = { enabled: false, reason: 'no-style-fingerprint' };
       }
 
       generatedContent = parsedResponse.content;
@@ -517,7 +593,15 @@ exports.generatePosts = httpWrap(async (req) => {
     await progress.stepFinalizing();
 
     // 제목 생성 (Multi-Agent에서 이미 생성된 경우 스킵)
-    if (!generatedTitle) {
+    // 🔧 제목이 없거나, 주제와 동일하거나, "관련 원고"로 끝나면 재생성
+    const needsTitleRegeneration = !generatedTitle ||
+      generatedTitle === sanitizedTopic ||
+      generatedTitle === topic ||
+      generatedTitle.endsWith('관련 원고') ||
+      generatedTitle.includes(sanitizedTopic + ' 관련');
+
+    if (needsTitleRegeneration) {
+      console.log('📝 제목 재생성 필요:', { generatedTitle, topic: sanitizedTopic });
       generatedTitle = await generateTitleFromContent({
         content: generatedContent || '',
         backgroundInfo: data.instructions,
@@ -588,7 +672,9 @@ exports.generatePosts = httpWrap(async (req) => {
           seoScore: multiAgentMetadata.seo?.score,
           keywords: multiAgentMetadata.keywords,
           duration: multiAgentMetadata.duration
-        } : { enabled: false }
+        } : { enabled: false },
+        // 🎨 고품질 모드 메타데이터 (2단계 생성)
+        highQuality: highQualityMetadata || { enabled: false }
       }
     });
 
