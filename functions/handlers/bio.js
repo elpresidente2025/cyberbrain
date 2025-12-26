@@ -12,7 +12,8 @@ const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
 const { logInfo, logError } = require('../common/log');
 const { admin, db } = require('../utils/firebaseAdmin');
-const { extractBioMetadata, generateOptimizationHints } = require('../services/bio-analysis');
+const { extractBioMetadata, generateOptimizationHints, extractStyleFingerprint } = require('../services/bio-analysis');
+const { buildStyleGuidePrompt } = require('../services/stylometry');
 const { BIO_ENTRY_TYPES, VALIDATION_RULES, TYPE_ANALYSIS_WEIGHTS } = require('../constants/bio-types');
 
 // ============================================================================
@@ -406,13 +407,28 @@ async function extractEntriesMetadataAsync(uid, entries) {
 
     const hints = generateOptimizationHints(consolidatedMetadata);
 
+    // 🎨 Stylometry 분석 (Style Fingerprint 추출)
+    let styleFingerprint = null;
+    try {
+      console.log(`🎨 [Stylometry] 분석 시작: ${uid}`);
+      styleFingerprint = await extractStyleFingerprint(consolidatedContent, {
+        userName: '',
+        region: ''
+      });
+      console.log(`✅ [Stylometry] 분석 완료: ${uid} (신뢰도: ${styleFingerprint?.analysisMetadata?.confidence || 0})`);
+    } catch (styleError) {
+      console.warn(`⚠️ [Stylometry] 분석 실패 (무시): ${uid}`, styleError.message);
+    }
+
     await db.collection('bios').doc(uid).update({
       extractedMetadata: consolidatedMetadata,
       typeMetadata: typeMetadata,
       optimizationHints: hints,
+      // 🎨 Style Fingerprint 저장
+      styleFingerprint: styleFingerprint || null,
       metadataStatus: 'completed',
       lastAnalyzed: admin.firestore.FieldValue.serverTimestamp(),
-      
+
       // 엔트리 정보도 함께 저장
       entryStats: {
         totalEntries: entries.length,

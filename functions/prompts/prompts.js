@@ -69,8 +69,26 @@ async function buildSmartPrompt(options) {
       topic,
       status,
       keywords = [],
+      userKeywords = [],  // 🔑 사용자 직접 입력 키워드 (최우선)
       targetWordCount = 2050
     } = options;
+
+    // 0. [사용자 입력 키워드 CRITICAL 섹션] - 최우선 반영
+    let userKeywordsCritical = '';
+    if (userKeywords && userKeywords.length > 0) {
+      userKeywordsCritical = `
+╔═══════════════════════════════════════════════════════════════╗
+║  🔑 [CRITICAL] 노출 희망 검색어 - 반드시 원고에 포함!          ║
+╚═══════════════════════════════════════════════════════════════╝
+
+사용자가 직접 입력한 검색어: ${userKeywords.join(', ')}
+
+⚠️ 이 키워드는 네이버 검색 노출을 위해 사용자가 직접 입력한 것입니다.
+✅ 위 키워드를 원고 본문에 **반드시 최소 1회 이상** 자연스럽게 포함하세요.
+✅ 가능하면 도입부(첫 문단)에 포함하면 SEO에 효과적입니다.
+
+`;
+    }
 
     // 1. [라우팅] 작법별 템플릿 프롬프트 생성
     let templatePrompt;
@@ -134,8 +152,13 @@ async function buildSmartPrompt(options) {
     });
 
     // 5. [프롬프트 조립] Primacy/Recency Effect 적용
-    // 구조: prefix(CRITICAL) → 템플릿 → suffix(HIGH/SEO) → reminder(체크리스트)
+    // 구조: userKeywords(CRITICAL) → prefix(CRITICAL) → 템플릿 → suffix(HIGH/SEO) → reminder(체크리스트)
     let assembledPrompt = '';
+
+    // 5.0 최우선: 사용자 입력 키워드 (Primacy Effect - 가장 앞에)
+    if (userKeywordsCritical) {
+      assembledPrompt += userKeywordsCritical;
+    }
 
     // 5.1 시작: CRITICAL 지침 (Primacy Effect)
     assembledPrompt += prefix;

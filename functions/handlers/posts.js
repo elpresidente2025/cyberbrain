@@ -394,6 +394,7 @@ exports.generatePosts = httpWrap(async (req) => {
       targetWordCount,
       instructions: data.instructions,
       keywords: backgroundKeywords,
+      userKeywords,  // 🔑 사용자 직접 입력 키워드 (최우선 반영)
       newsContext,
       personalizedHints: combinedHints,  // 🧠 통합된 힌트 사용
       applyEditorialRules: true,

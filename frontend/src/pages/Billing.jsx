@@ -90,6 +90,15 @@ const Billing = () => {
 
   // 당원 인증 상태 판단 함수
   const getAuthStatus = () => {
+    // 대면 인증 사용자는 영구 인증 완료
+    if (user?.faceVerified === true) {
+      return {
+        status: 'active',
+        image: '/buttons/AuthPass.png',
+        title: '대면 인증 완료',
+        message: '관리자에 의해 대면 인증이 완료되었습니다'
+      };
+    }
     if (user?.verificationStatus === 'verified' && user?.lastVerification) {
       return {
         status: 'active',
@@ -156,6 +165,14 @@ const Billing = () => {
   };
 
   const handleAuthClick = () => {
+    // 대면 인증 사용자는 추가 인증 불필요
+    if (user?.faceVerified === true) {
+      showNotification(
+        '대면 인증이 완료된 계정입니다. 분기별 인증이 영구적으로 면제됩니다.',
+        'success'
+      );
+      return;
+    }
     // 인증 완료 상태 체크 (verificationStatus가 'verified'인 경우)
     if (user?.verificationStatus === 'verified') {
       showNotification(

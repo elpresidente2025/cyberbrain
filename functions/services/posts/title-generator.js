@@ -58,6 +58,17 @@ async function generateTitleFromContent({ content, backgroundInfo, keywords, use
     // 따옴표 제거
     cleanTitle = cleanTitle.replace(/^["']|["']$/g, '');
 
+    // 🔧 제목 길이 초과 시 자르기 (30자 제한)
+    if (cleanTitle.length > 35) {
+      console.warn(`⚠️ 제목 길이 초과 (${cleanTitle.length}자): "${cleanTitle}"`);
+      // 30자 근처에서 자연스럽게 자르기
+      const cutPoint = cleanTitle.lastIndexOf(' ', 30) || 30;
+      cleanTitle = cleanTitle.substring(0, cutPoint > 20 ? cutPoint : 30).trim();
+      // 끝이 어색하면 정리
+      cleanTitle = cleanTitle.replace(/[,.:;]$/, '');
+      console.log(`📝 제목 축약: "${cleanTitle}" (${cleanTitle.length}자)`);
+    }
+
     console.log('✅ 제목 생성 완료:', cleanTitle);
     return cleanTitle;
   } catch (error) {

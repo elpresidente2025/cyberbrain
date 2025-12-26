@@ -208,8 +208,21 @@ class WriterAgent extends BaseAgent {
       }
     }
 
+    // 신분 상태 확인 (현역/예비)
+    const status = userProfile.status || '예비';
+    const isIncumbent = status === '현역';
+
     const parts = [name];
-    if (effectivePosition) parts.push(effectivePosition);
+
+    // 예비/준비 중인 경우 "OO 준비 중" 형태로
+    if (effectivePosition) {
+      if (isIncumbent) {
+        parts.push(effectivePosition);
+      } else {
+        parts.push(`${effectivePosition} 준비 중`);
+      }
+    }
+
     if (region) parts.push(region);
 
     return parts.join(', ');

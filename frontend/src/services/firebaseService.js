@@ -100,13 +100,10 @@ export const getNotices = async () => {
 
 export const getUsers = async (params = {}) => {
   // getAllUsers는 onCall 함수이므로 callFunction 사용
-  try {
-    const result = await callFunction('getAllUsers', params);
-    return result;
-  } catch (error) {
-    console.error('getUsers 오류:', error);
-    return { success: false, users: [], total: 0 };
-  }
+  console.log('📋 getUsers 호출 시작...');
+  const result = await callFunction('getAllUsers', params);
+  console.log('📋 getUsers 결과:', result);
+  return result;
 };
 
 export const searchUsers = async (query, limit = 20) => {

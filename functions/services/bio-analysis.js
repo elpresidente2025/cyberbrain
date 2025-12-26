@@ -6,6 +6,7 @@
 'use strict';
 
 const { callGenerativeModel } = require('./gemini');
+const { extractStyleFingerprint } = require('./stylometry');
 
 /**
  * 자기소개 텍스트에서 종합 메타데이터를 추출합니다
@@ -183,7 +184,52 @@ function generateOptimizationHints(metadata) {
   return hints;
 }
 
+/**
+ * Bio 텍스트에서 메타데이터와 Style Fingerprint를 동시에 추출합니다
+ * (Phase 1+2 통합 분석)
+ * @param {string} bioContent - 사용자 자기소개 내용
+ * @param {Object} options - 추가 옵션
+ * @param {string} options.userName - 사용자 이름
+ * @param {string} options.region - 지역
+ * @returns {Promise<Object>} { metadata, styleFingerprint, hints }
+ */
+async function extractBioWithStyle(bioContent, options = {}) {
+  if (!bioContent || bioContent.trim().length < 50) {
+    throw new Error('자기소개가 너무 짧아서 분석할 수 없습니다.');
+  }
+
+  console.log(`🧠 [Bio 분석] 통합 분석 시작 (${bioContent.length}자)`);
+
+  // 병렬로 두 분석 실행 (효율성)
+  const [metadata, styleFingerprint] = await Promise.all([
+    extractBioMetadata(bioContent).catch(err => {
+      console.warn('⚠️ 메타데이터 추출 실패:', err.message);
+      return null;
+    }),
+    extractStyleFingerprint(bioContent, options).catch(err => {
+      console.warn('⚠️ 스타일 추출 실패:', err.message);
+      return null;
+    })
+  ]);
+
+  const hints = metadata ? generateOptimizationHints(metadata) : null;
+
+  console.log(`✅ [Bio 분석] 통합 분석 완료`, {
+    hasMetadata: !!metadata,
+    hasStyleFingerprint: !!styleFingerprint,
+    styleConfidence: styleFingerprint?.analysisMetadata?.confidence || 0
+  });
+
+  return {
+    metadata,
+    styleFingerprint,
+    hints
+  };
+}
+
 module.exports = {
   extractBioMetadata,
-  generateOptimizationHints
+  generateOptimizationHints,
+  extractBioWithStyle,
+  extractStyleFingerprint
 };

@@ -28,7 +28,8 @@ import {
   Edit,
   Refresh,
   Search,
-  Science
+  Science,
+  VerifiedUser
 } from '@mui/icons-material';
 import HongKongNeonCard from '../HongKongNeonCard';
 import { callFunction } from '../../services/firebaseService';
@@ -182,6 +183,27 @@ const UserManagement = () => {
     }
   };
 
+  const handleToggleFaceVerified = async (user) => {
+    const action = user.faceVerified ? '해제' : '부여';
+    if (!confirm(`${user.name || '사용자'}님에게 대면 인증을 ${action}하시겠습니까?\n\n대면 인증이 부여되면 당적 인증(당적증명서/당비납부내역서 업로드)을 영구적으로 건너뛸 수 있습니다.`)) {
+      return;
+    }
+
+    try {
+      const response = await callFunction('toggleFaceVerified', {
+        targetUserId: user.uid
+      });
+
+      if (response.success) {
+        showNotification(response.message, 'success');
+        loadUsers(); // 목록 새로고침
+      }
+    } catch (error) {
+      console.error('대면 인증 변경 실패:', error);
+      showNotification('대면 인증 변경 중 오류가 발생했습니다.', 'error');
+    }
+  };
+
   const filteredUsers = users.filter(user => 
     user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.electoralDistrict?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -297,6 +319,14 @@ const UserManagement = () => {
                           icon={<Science sx={{ fontSize: 14 }} />}
                         />
                       )}
+                      {user.faceVerified && (
+                        <Chip
+                          label="대면인증"
+                          color="info"
+                          size="small"
+                          icon={<VerifiedUser sx={{ fontSize: 14 }} />}
+                        />
+                      )}
                       {user.isAdmin && (
                         <Chip
                           label="관리자"
@@ -316,6 +346,15 @@ const UserManagement = () => {
                           onClick={() => handleToggleTester(user)}
                         >
                           <Science />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title={user.faceVerified ? '대면 인증 해제' : '대면 인증 부여'}>
+                        <IconButton
+                          size="small"
+                          color={user.faceVerified ? 'info' : 'default'}
+                          onClick={() => handleToggleFaceVerified(user)}
+                        >
+                          <VerifiedUser />
                         </IconButton>
                       </Tooltip>
                       <Tooltip title="사용량 초기화">

@@ -396,6 +396,92 @@ const resetUserUsage = wrap(async (request) => {
   }
 });
 
+// 관리자: 대면 인증 토글 (당적 인증 건너뛰기)
+const toggleFaceVerified = wrap(async (request) => {
+  const { uid: adminUid } = await auth(request);
+  const { targetUserId } = request.data;
+
+  if (!targetUserId) {
+    throw new HttpsError('invalid-argument', '대상 사용자 ID가 필요합니다.');
+  }
+
+  try {
+    const db = admin.firestore();
+
+    // 관리자 권한 확인
+    const adminDoc = await db.collection('users').doc(adminUid).get();
+    const isAdmin = adminDoc.exists && (adminDoc.data().role === 'admin' || adminDoc.data().isAdmin === true);
+
+    if (!isAdmin) {
+      throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
+    }
+
+    // 대상 사용자 정보 조회
+    const userDoc = await db.collection('users').doc(targetUserId).get();
+    if (!userDoc.exists) {
+      throw new HttpsError('not-found', '사용자를 찾을 수 없습니다.');
+    }
+
+    const userData = userDoc.data();
+    const currentStatus = userData.faceVerified === true;
+    const newStatus = !currentStatus;
+
+    // 대면 인증 상태 토글
+    const updateData = {
+      faceVerified: newStatus,
+      faceVerifiedUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      faceVerifiedUpdatedBy: adminUid
+    };
+
+    // 대면 인증 부여 시 verificationStatus도 'verified'로 설정
+    if (newStatus) {
+      updateData.verificationStatus = 'verified';
+      updateData.lastVerification = {
+        quarter: getCurrentQuarterForFaceVerified(),
+        status: 'verified',
+        method: 'face_verified',
+        verifiedAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+    }
+
+    await db.collection('users').doc(targetUserId).update(updateData);
+
+    console.log(`✅ 대면 인증 ${newStatus ? '부여' : '해제'}:`, {
+      targetUserId,
+      by: adminUid,
+      newStatus: newStatus
+    });
+
+    return {
+      success: true,
+      message: newStatus
+        ? `${userData.name || '사용자'}님에게 대면 인증이 부여되었습니다. (당적 인증 영구 면제)`
+        : `${userData.name || '사용자'}님의 대면 인증이 해제되었습니다.`,
+      faceVerified: newStatus
+    };
+
+  } catch (error) {
+    console.error('대면 인증 토글 실패:', error);
+    if (error.code) {
+      throw error;
+    }
+    throw new HttpsError('internal', '대면 인증 변경 중 오류가 발생했습니다.');
+  }
+});
+
+// 대면 인증용 현재 분기 반환
+function getCurrentQuarterForFaceVerified() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  let quarter;
+  if (month <= 3) quarter = 1;
+  else if (month <= 6) quarter = 2;
+  else if (month <= 9) quarter = 3;
+  else quarter = 4;
+  return `${year}년 ${quarter}분기`;
+}
+
 // 관리자: 테스터 권한 토글 (관리자와 동일한 90회 생성 권한 부여)
 const toggleTester = wrap(async (request) => {
   const { uid: adminUid } = await auth(request);
@@ -464,5 +550,6 @@ module.exports = {
   useBonusGeneration,
   getMonthlyTarget,
   resetUserUsage,
-  toggleTester
+  toggleTester,
+  toggleFaceVerified
 };
