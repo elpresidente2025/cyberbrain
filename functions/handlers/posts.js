@@ -355,6 +355,7 @@ exports.generatePosts = httpWrap(async (req) => {
           newsContext,
           regionHint,
           keywords: backgroundKeywords,
+          userKeywords,  // 🔑 사용자 직접 입력 키워드 (최우선)
           targetWordCount
         });
 

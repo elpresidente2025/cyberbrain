@@ -73,6 +73,7 @@ class WriterAgent extends BaseAgent {
       instructions = '',
       newsContext = '',
       targetWordCount = 1700,
+      userKeywords = [],  // 🔑 사용자 직접 입력 키워드 (최우선)
       previousResults = {}
     } = context;
 
@@ -81,10 +82,13 @@ class WriterAgent extends BaseAgent {
       throw new Error('Gemini API 키가 설정되지 않았습니다');
     }
 
-    // 1. KeywordAgent 결과 활용
+    // 1. KeywordAgent 결과 활용 + 사용자 입력 키워드 병합
     const keywordResult = previousResults.KeywordAgent;
-    const keywords = keywordResult?.data?.keywords || [];
-    const keywordStrings = keywords.slice(0, 5).map(k => k.keyword || k);
+    const agentKeywords = keywordResult?.data?.keywords || [];
+    const agentKeywordStrings = agentKeywords.slice(0, 5).map(k => k.keyword || k);
+
+    // 🔑 사용자 입력 키워드를 최우선으로, 그 다음 KeywordAgent 결과
+    const keywordStrings = [...new Set([...userKeywords, ...agentKeywordStrings])];
 
     // 2. 작법 결정
     const writingMethod = CATEGORY_TO_WRITING_METHOD[category] || 'emotional_writing';
@@ -122,6 +126,24 @@ class WriterAgent extends BaseAgent {
     // 8. 타 지역 주제 힌트
     if (context.regionHint) {
       prompt = context.regionHint + '\n\n' + prompt;
+    }
+
+    // 🔑 9. 사용자 입력 키워드 CRITICAL 섹션 (프롬프트 맨 앞에 추가)
+    if (userKeywords && userKeywords.length > 0) {
+      const userKeywordsCritical = `
+╔═══════════════════════════════════════════════════════════════╗
+║  🔑 [CRITICAL] 노출 희망 검색어 - 반드시 원고에 포함!          ║
+╚═══════════════════════════════════════════════════════════════╝
+
+사용자가 직접 입력한 검색어: ${userKeywords.join(', ')}
+
+⚠️ 이 키워드는 네이버 검색 노출을 위해 사용자가 직접 입력한 것입니다.
+✅ 위 키워드를 원고 본문에 **반드시 최소 2회 이상** 자연스럽게 포함하세요.
+✅ 도입부(첫 문단)에 반드시 1회 포함하세요. (SEO 필수)
+✅ 키워드를 그대로 사용하세요. 유사어로 대체하지 마세요.
+
+`;
+      prompt = userKeywordsCritical + prompt;
     }
 
     console.log(`📝 [WriterAgent] 프롬프트 생성 완료 (${prompt.length}자, 작법: ${writingMethod})`);

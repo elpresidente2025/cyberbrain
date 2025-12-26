@@ -53,6 +53,7 @@ async function generateWithMultiAgent({
   newsContext = '',
   regionHint = '',
   keywords = [],
+  userKeywords = [],  // 🔑 사용자 직접 입력 키워드 (최우선)
   targetWordCount = 1700
 }) {
   console.log('🤖 [MultiAgent] 전체 파이프라인 시작');
@@ -66,6 +67,7 @@ async function generateWithMultiAgent({
     newsContext,
     regionHint,
     keywords,
+    userKeywords,  // 🔑 사용자 직접 입력 키워드 전달
     targetWordCount
   };
 
