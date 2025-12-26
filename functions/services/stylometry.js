@@ -14,6 +14,101 @@
 const { callGenerativeModel } = require('./gemini');
 
 /**
+ * 텍스트에서 통계적 문체 정보를 추출합니다 (LLM 없이 직접 계산)
+ * @param {string} text - 분석할 텍스트
+ * @returns {Object} 통계적 문체 정보
+ */
+function analyzeTextStatistics(text) {
+  if (!text || text.trim().length < 50) {
+    return null;
+  }
+
+  const cleanText = text.trim();
+
+  // 1. 문장 분리 (마침표, 물음표, 느낌표 기준)
+  const sentences = cleanText
+    .split(/[.!?]+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 5); // 너무 짧은 문장 제외
+
+  if (sentences.length < 3) {
+    return null; // 문장이 너무 적으면 통계 의미 없음
+  }
+
+  // 2. 문장 길이 통계
+  const lengths = sentences.map(s => s.length);
+  const avgLength = Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length);
+  const minLength = Math.min(...lengths);
+  const maxLength = Math.max(...lengths);
+
+  // 표준편차 계산
+  const variance = lengths.reduce((sum, len) => sum + Math.pow(len - avgLength, 2), 0) / lengths.length;
+  const stdDev = Math.round(Math.sqrt(variance));
+
+  // 3. 구두점 빈도 분석
+  const totalChars = cleanText.length;
+  const punctuationStats = {
+    comma: (cleanText.match(/,/g) || []).length,           // 콤마
+    period: (cleanText.match(/\./g) || []).length,         // 마침표
+    question: (cleanText.match(/\?/g) || []).length,       // 물음표
+    exclamation: (cleanText.match(/!/g) || []).length,     // 느낌표
+    colon: (cleanText.match(/:/g) || []).length,           // 콜론
+    semicolon: (cleanText.match(/;/g) || []).length,       // 세미콜론
+    ellipsis: (cleanText.match(/\.{3}|…/g) || []).length,  // 말줄임표
+  };
+
+  // 문장당 콤마 수 (콤마 과다 사용 지표)
+  const commasPerSentence = sentences.length > 0
+    ? Math.round((punctuationStats.comma / sentences.length) * 10) / 10
+    : 0;
+
+  // 4. 문장 복잡도 추정 (콤마, 접속사 기반)
+  const conjunctions = (cleanText.match(/그리고|그러나|하지만|또한|그래서|따라서|그러므로|왜냐하면/g) || []).length;
+  const complexityScore = (punctuationStats.comma + conjunctions) / sentences.length;
+
+  let clauseComplexity;
+  if (complexityScore < 1) clauseComplexity = 'simple';
+  else if (complexityScore < 2.5) clauseComplexity = 'medium';
+  else clauseComplexity = 'complex';
+
+  // 5. 문장 길이 분포 (짧은/중간/긴 비율)
+  const shortSentences = lengths.filter(l => l < 30).length;
+  const mediumSentences = lengths.filter(l => l >= 30 && l <= 60).length;
+  const longSentences = lengths.filter(l => l > 60).length;
+
+  const distribution = {
+    short: Math.round((shortSentences / sentences.length) * 100),   // 30자 미만
+    medium: Math.round((mediumSentences / sentences.length) * 100), // 30-60자
+    long: Math.round((longSentences / sentences.length) * 100)      // 60자 초과
+  };
+
+  console.log(`📊 [TextStats] 분석 완료: 문장 ${sentences.length}개, 평균 ${avgLength}자, 콤마/문장 ${commasPerSentence}`);
+
+  return {
+    sentenceCount: sentences.length,
+    sentenceLength: {
+      avg: avgLength,
+      min: minLength,
+      max: maxLength,
+      stdDev,
+      distribution
+    },
+    punctuation: {
+      ...punctuationStats,
+      commasPerSentence,
+      totalPunctuation: Object.values(punctuationStats).reduce((a, b) => a + b, 0)
+    },
+    complexity: {
+      score: Math.round(complexityScore * 10) / 10,
+      level: clauseComplexity,
+      conjunctionsCount: conjunctions
+    },
+    // 프롬프트 주입용 요약
+    summary: `문장 평균 ${avgLength}자(${minLength}~${maxLength}자), 콤마 ${commasPerSentence}회/문장, 복잡도 ${clauseComplexity}`
+  };
+}
+
+/**
  * Bio 텍스트에서 Style Fingerprint를 추출합니다
  * @param {string} bioContent - 사용자 자기소개 텍스트
  * @param {Object} options - 추가 옵션
@@ -28,6 +123,12 @@ async function extractStyleFingerprint(bioContent, options = {}) {
   }
 
   const { userName = '', region = '' } = options;
+
+  // 📊 1단계: 통계적 분석 (LLM 없이 직접 계산)
+  const textStats = analyzeTextStatistics(bioContent);
+  if (textStats) {
+    console.log(`📊 [Stylometry] 통계 분석 결과: ${textStats.summary}`);
+  }
 
   const prompt = `당신은 정치 텍스트 전문 언어학자입니다. 다음 정치인의 자기소개 텍스트를 stylometry(문체 분석) 관점에서 분석하여 고유한 "Style Fingerprint"를 추출하세요.
 
@@ -109,8 +210,8 @@ ${region ? `[참고] 지역: ${region}` : ''}
     const response = await callGenerativeModel(prompt);
     const fingerprint = JSON.parse(response);
 
-    // 검증 및 정규화
-    const validated = validateStyleFingerprint(fingerprint, bioContent.length);
+    // 검증 및 정규화 (통계값으로 보정)
+    const validated = validateStyleFingerprint(fingerprint, bioContent.length, textStats);
 
     console.log(`✅ [Stylometry] 분석 완료 (신뢰도: ${validated.analysisMetadata.confidence})`);
 
@@ -124,8 +225,20 @@ ${region ? `[참고] 지역: ${region}` : ''}
 
 /**
  * Style Fingerprint 유효성 검사 및 정규화
+ * @param {Object} fingerprint - LLM이 반환한 fingerprint
+ * @param {number} sourceLength - 원본 텍스트 길이
+ * @param {Object} textStats - 통계적 분석 결과 (선택)
  */
-function validateStyleFingerprint(fingerprint, sourceLength) {
+function validateStyleFingerprint(fingerprint, sourceLength, textStats = null) {
+  // 📊 통계값이 있으면 실제 계산값 사용, 없으면 LLM 추측값 또는 기본값
+  const actualAvgLength = textStats?.sentenceLength?.avg
+    || fingerprint.sentencePatterns?.avgLength
+    || 45;
+
+  const actualComplexity = textStats?.complexity?.level
+    || fingerprint.sentencePatterns?.clauseComplexity
+    || 'medium';
+
   // 기본 구조 보장
   const validated = {
     characteristicPhrases: {
@@ -137,13 +250,14 @@ function validateStyleFingerprint(fingerprint, sourceLength) {
     },
 
     sentencePatterns: {
-      avgLength: clamp(fingerprint.sentencePatterns?.avgLength || 45, 15, 100),
+      // 📊 실제 통계값으로 오버라이드
+      avgLength: clamp(actualAvgLength, 15, 100),
+      minLength: textStats?.sentenceLength?.min || 10,
+      maxLength: textStats?.sentenceLength?.max || 100,
+      lengthRange: textStats ? `${textStats.sentenceLength.min}~${textStats.sentenceLength.max}자` : null,
+      distribution: textStats?.sentenceLength?.distribution || null,
       preferredStarters: ensureArray(fingerprint.sentencePatterns?.preferredStarters, 5),
-      clauseComplexity: ensureEnum(
-        fingerprint.sentencePatterns?.clauseComplexity,
-        ['simple', 'medium', 'complex'],
-        'medium'
-      ),
+      clauseComplexity: ensureEnum(actualComplexity, ['simple', 'medium', 'complex'], 'medium'),
       listingStyle: ensureEnum(
         fingerprint.sentencePatterns?.listingStyle,
         ['numbered', 'bullet', 'prose'],
@@ -151,6 +265,20 @@ function validateStyleFingerprint(fingerprint, sourceLength) {
       ),
       endingPatterns: ensureArray(fingerprint.sentencePatterns?.endingPatterns, 4)
     },
+
+    // 📊 구두점 통계 (신규)
+    punctuationProfile: textStats ? {
+      commasPerSentence: textStats.punctuation.commasPerSentence,
+      totalCommas: textStats.punctuation.comma,
+      questionMarks: textStats.punctuation.question,
+      exclamationMarks: textStats.punctuation.exclamation,
+      // 콤마 사용 권장 수준 결정
+      commaGuidance: textStats.punctuation.commasPerSentence < 1
+        ? '콤마 적게 사용 (문장당 1회 미만)'
+        : textStats.punctuation.commasPerSentence < 2
+          ? '콤마 보통 사용 (문장당 1-2회)'
+          : '콤마 자주 사용 (문장당 2회 이상)'
+    } : null,
 
     vocabularyProfile: {
       frequentWords: ensureArray(fingerprint.vocabularyProfile?.frequentWords, 10),
@@ -193,8 +321,13 @@ function validateStyleFingerprint(fingerprint, sourceLength) {
       uniqueFeatures: ensureArray(fingerprint.analysisMetadata?.uniqueFeatures, 3),
       sourceLength,
       analyzedAt: new Date().toISOString(),
-      version: '1.0'
-    }
+      version: '2.0',  // 📊 통계 분석 추가 버전
+      // 📊 통계 분석 포함 여부
+      hasStatistics: !!textStats
+    },
+
+    // 📊 원본 통계 데이터 (디버깅/분석용)
+    textStatistics: textStats || null
   };
 
   // 신뢰도 보정: 텍스트 길이에 따라 조정
@@ -202,6 +335,14 @@ function validateStyleFingerprint(fingerprint, sourceLength) {
     validated.analysisMetadata.confidence = Math.min(validated.analysisMetadata.confidence, 0.6);
   } else if (sourceLength < 500) {
     validated.analysisMetadata.confidence = Math.min(validated.analysisMetadata.confidence, 0.75);
+  }
+
+  // 📊 통계 데이터가 있으면 신뢰도 상향
+  if (textStats) {
+    validated.analysisMetadata.confidence = Math.min(
+      validated.analysisMetadata.confidence + 0.1,
+      1.0
+    );
   }
 
   return validated;
@@ -241,12 +382,31 @@ function buildStyleGuidePrompt(fingerprint, options = {}) {
     sections.push(`1. 특징적 표현 사용:\n   ${allPhrases.map(p => `"${p}"`).join(', ')}`);
   }
 
-  // 2. 문장 구조
+  // 2. 문장 구조 (📊 통계 기반)
   const patterns = fingerprint.sentencePatterns;
   const starters = patterns.preferredStarters.slice(0, 3);
+
+  // 문장 길이 정보 구성
+  const lengthInfo = patterns.lengthRange
+    ? `${patterns.avgLength}자 내외 (${patterns.lengthRange})`
+    : `${patterns.avgLength}자 내외`;
+
+  const structureLines = [
+    `- 문장 길이: ${lengthInfo}`
+  ];
+
   if (starters.length > 0) {
-    sections.push(`2. 문장 구조:\n   - 평균 ${patterns.avgLength}자 내외\n   - 시작: ${starters.map(s => `"${s}"`).join(', ')}\n   - 복잡도: ${patterns.clauseComplexity}`);
+    structureLines.push(`- 시작 표현: ${starters.map(s => `"${s}"`).join(', ')}`);
   }
+  structureLines.push(`- 복잡도: ${patterns.clauseComplexity}`);
+
+  // 📊 구두점 가이드 추가
+  const punctuation = fingerprint.punctuationProfile;
+  if (punctuation) {
+    structureLines.push(`- 콤마: ${punctuation.commaGuidance}`);
+  }
+
+  sections.push(`2. 문장 구조:\n   ${structureLines.join('\n   ')}`);
 
   // 3. 어휘 선택
   const vocab = fingerprint.vocabularyProfile;
@@ -304,6 +464,7 @@ ${sections.join('\n\n')}
 function buildCompactStyleGuide(fingerprint) {
   const phrases = fingerprint.characteristicPhrases.signatures.slice(0, 3);
   const tone = fingerprint.toneProfile;
+  const patterns = fingerprint.sentencePatterns;
 
   let guide = `[문체] `;
 
@@ -320,7 +481,17 @@ function buildCompactStyleGuide(fingerprint) {
     guide += `어조: ${toneWords.join('/')}. `;
   }
 
-  guide += `문장 ${fingerprint.sentencePatterns.avgLength}자 내외.`;
+  // 📊 문장 길이 (범위 포함)
+  const lengthInfo = patterns.lengthRange
+    ? `${patterns.avgLength}자(${patterns.lengthRange})`
+    : `${patterns.avgLength}자`;
+  guide += `문장 ${lengthInfo}.`;
+
+  // 📊 콤마 가이드 (있으면)
+  const punctuation = fingerprint.punctuationProfile;
+  if (punctuation && punctuation.commasPerSentence < 1.5) {
+    guide += ` 콤마 절제.`;
+  }
 
   return guide + '\n';
 }
@@ -390,10 +561,11 @@ ${neutralDraft}
    - 시그니처: ${phrases.signatures?.slice(0, 3).join(', ') || '없음'}
 
 2. 문장 패턴:
-   - 평균 문장 길이: ${patterns.avgLength || 45}자 내외
+   - 문장 길이: ${patterns.avgLength || 45}자 내외${patterns.lengthRange ? ` (${patterns.lengthRange})` : ''}
    - 선호 시작어: ${patterns.preferredStarters?.slice(0, 3).join(', ') || '없음'}
    - 복잡도: ${patterns.clauseComplexity || 'medium'}
-   - 종결 패턴: ${patterns.endingPatterns?.slice(0, 2).join(', ') || '습니다/합니다'}
+   - 종결 패턴: ${patterns.endingPatterns?.slice(0, 2).join(', ') || '습니다/합니다'}${styleFingerprint.punctuationProfile ? `
+   - 콤마 사용: ${styleFingerprint.punctuationProfile.commaGuidance}` : ''}
 
 3. 어휘:
    - 선호 단어: ${vocab.frequentWords?.slice(0, 5).join(', ') || '없음'}
@@ -520,5 +692,7 @@ module.exports = {
   buildStyleGuidePrompt,
   validateStyleFingerprint,
   transferStyle,
-  generateWithStyleTransfer
+  generateWithStyleTransfer,
+  // 📊 통계 분석 함수 (독립 사용 가능)
+  analyzeTextStatistics
 };
