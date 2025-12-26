@@ -9,6 +9,8 @@ const {
   LOCAL_CONNECTION_MAP
 } = require('../../utils/posts/constants');
 
+const { buildStyleGuidePrompt } = require('../stylometry');
+
 /**
  * Bio 메타데이터를 기반으로 개인화된 원고 작성 힌트를 생성합니다
  * @param {Object} bioMetadata - 추출된 바이오그래피 메타데이터
@@ -220,8 +222,76 @@ function getAgeSensitiveFamilyExpression(familyStatus, ageDecade) {
   return '';
 }
 
+/**
+ * Style Fingerprint를 기반으로 문체 가이드 힌트를 생성합니다
+ * @param {Object} styleFingerprint - 추출된 Style Fingerprint
+ * @param {Object} options - 옵션
+ * @param {boolean} options.compact - 간소화 버전 여부
+ * @returns {string} 문체 가이드 문자열 (프롬프트 주입용)
+ */
+function generateStyleHints(styleFingerprint, options = {}) {
+  if (!styleFingerprint) return '';
+
+  // 신뢰도가 낮으면 스타일 가이드 생략
+  const confidence = styleFingerprint.analysisMetadata?.confidence || 0;
+  if (confidence < 0.5) {
+    console.log(`⚠️ [Style] 신뢰도 낮음 (${confidence}) - 스타일 가이드 생략`);
+    return '';
+  }
+
+  // buildStyleGuidePrompt 활용
+  const styleGuide = buildStyleGuidePrompt(styleFingerprint, options);
+
+  if (styleGuide) {
+    console.log(`✅ [Style] 문체 가이드 생성 완료 (${styleGuide.length}자)`);
+  }
+
+  return styleGuide;
+}
+
+/**
+ * 모든 개인화 힌트를 통합하여 생성합니다
+ * @param {Object} params
+ * @param {Object} params.bioMetadata - Bio 메타데이터
+ * @param {Object} params.styleFingerprint - Style Fingerprint
+ * @param {Object} params.userProfile - 사용자 프로필
+ * @param {string} params.category - 글 카테고리
+ * @param {string} params.topic - 글 주제
+ * @returns {Object} { personalizedHints, styleGuide }
+ */
+function generateAllPersonalizationHints(params) {
+  const {
+    bioMetadata,
+    styleFingerprint,
+    userProfile,
+    category,
+    topic
+  } = params;
+
+  // 1. Bio 메타데이터 기반 힌트
+  const bioHints = generatePersonalizedHints(bioMetadata);
+
+  // 2. 프로필 기반 페르소나 힌트
+  const personaHints = generatePersonaHints(userProfile, category, topic);
+
+  // 3. Style Fingerprint 기반 문체 가이드
+  const styleGuide = generateStyleHints(styleFingerprint, { compact: false });
+
+  // 통합
+  const personalizedHints = [bioHints, personaHints]
+    .filter(h => h && h.trim())
+    .join(' | ');
+
+  return {
+    personalizedHints,
+    styleGuide
+  };
+}
+
 module.exports = {
   generatePersonalizedHints,
   generatePersonaHints,
-  getRelevantPersonalInfo
+  getRelevantPersonalInfo,
+  generateStyleHints,
+  generateAllPersonalizationHints
 };

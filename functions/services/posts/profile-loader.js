@@ -2,7 +2,7 @@
 
 const { admin, db } = require('../../utils/firebaseAdmin');
 const { HttpsError } = require('firebase-functions/v2/https');
-const { generatePersonalizedHints, generatePersonaHints } = require('./personalization');
+const { generatePersonalizedHints, generatePersonaHints, generateStyleHints } = require('./personalization');
 const { generateEnhancedMetadataHints } = require('../../utils/enhanced-metadata-hints');
 const { generateMemoryContext } = require('../memory');
 
@@ -21,6 +21,8 @@ async function loadUserProfile(uid, category, topic) {
   let userMetadata = null;
   let ragContext = '';  // RAG 컨텍스트 (try 블록 외부에서도 접근 가능하도록)
   let memoryContext = '';  // 메모리 컨텍스트 (장기 메모리 기반)
+  let styleFingerprint = null;  // 🎨 Style Fingerprint (try 블록 외부에서도 접근 가능하도록)
+  let styleGuide = '';  // 🎨 문체 가이드 (try 블록 외부에서도 접근 가능하도록)
 
   try {
     // 사용자 기본 정보 조회
@@ -62,6 +64,13 @@ async function loadUserProfile(uid, category, topic) {
       // 메타데이터 기반 개인화 힌트 생성
       personalizedHints = generatePersonalizedHints(bioMetadata);
       console.log('✅ Bio 메타데이터 사용:', Object.keys(bioMetadata));
+
+      // 🎨 Style Fingerprint 로드 및 스타일 가이드 생성
+      styleFingerprint = bioDoc.data().styleFingerprint || null;
+      if (styleFingerprint) {
+        styleGuide = generateStyleHints(styleFingerprint, { compact: false });
+        console.log(`✅ Style Fingerprint 로드 (신뢰도: ${styleFingerprint.analysisMetadata?.confidence || 0})`);
+      }
 
       // Bio 사용 통계 업데이트
       await db.collection('bios').doc(uid).update({
@@ -162,7 +171,9 @@ async function loadUserProfile(uid, category, topic) {
     dailyLimitWarning,
     userMetadata,
     ragContext,
-    memoryContext,  // 🧠 메모리 컨텍스트 추가
+    memoryContext,      // 🧠 메모리 컨텍스트 추가
+    styleGuide,         // 🎨 문체 가이드 (Style Fingerprint 기반)
+    styleFingerprint,   // 🎨 Style Fingerprint 원본 (2단계 생성용)
     isAdmin: userProfile.isAdmin === true || userProfile.role === 'admin',
     isTester: userProfile.isTester === true
   };
@@ -234,8 +245,8 @@ async function checkUsageLimit(uid, userProfile) {
 
   if (testMode) {
     // === 데모 모드: 당원 인증 필수, 말일 제한 해제, 8회 생성 가능 ===
-    // 1. 당원 인증 체크
-    if (userProfile.verificationStatus !== 'verified') {
+    // 1. 당원 인증 체크 (대면 인증 사용자는 면제)
+    if (userProfile.verificationStatus !== 'verified' && userProfile.faceVerified !== true) {
       throw new HttpsError('failed-precondition',
         '당원 인증이 필요합니다. 결제 페이지에서 당원 인증을 완료해주세요.');
     }
