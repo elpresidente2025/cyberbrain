@@ -35,6 +35,7 @@ import { callFunctionWithNaverAuth } from '../services/firebaseService';
 import DashboardLayout from '../components/DashboardLayout';
 import UserInfoForm from '../components/UserInfoForm';
 import ProfileBioGuideModal from '../components/onboarding/ProfileBioGuideModal';
+import ProfileIncompleteModal from '../components/onboarding/ProfileIncompleteModal';
 import CongratulationsModal from '../components/onboarding/CongratulationsModal';
 import { LoadingSpinner, LoadingButton } from '../components/loading';
 import { useAuth } from '../hooks/useAuth';
@@ -72,6 +73,10 @@ export default function ProfilePage() {
   const [bioGuideOpen, setBioGuideOpen] = useState(false);
   const [congratulationsOpen, setCongratulationsOpen] = useState(false);
   const [isFirstTimeBioSave, setIsFirstTimeBioSave] = useState(false);
+
+  // 프로필 미완성 모달 상태
+  const [profileIncompleteOpen, setProfileIncompleteOpen] = useState(false);
+  const [missingFields, setMissingFields] = useState([]);
 
   const [profile, setProfile] = useState({
     name: '',
@@ -308,24 +313,45 @@ export default function ProfilePage() {
 
         // bioEntries는 reloadProfile에서 이미 초기화됨 (중복 제거)
 
-        // bio가 없는 경우 가이드 모달 표시 (온보딩에서 넘어온 경우)
-        const hasSufficientBio = newProfile.bio && newProfile.bio.trim().length >= 200;
-        if (!hasSufficientBio) {
-          console.log('🎯 Profile 페이지 - Bio 가이드 모달 표시', {
-            bio: newProfile.bio,
-            length: newProfile.bio?.length || 0,
-            hasSufficientBio
-          });
-          // 페이지 로딩 완료 후 잠시 뒤에 글로우 효과와 함께 모달 표시 (자연스러운 UX)
+        // 프로필 필수 정보 확인
+        const missing = [];
+        if (!newProfile.position) missing.push('position');
+        if (!newProfile.regionMetro) missing.push('regionMetro');
+        // 직책에 따라 추가 필수 필드 확인
+        if (newProfile.position === '기초자치단체장' && !newProfile.regionLocal) {
+          missing.push('regionLocal');
+        } else if (newProfile.position && newProfile.position !== '광역자치단체장' && newProfile.position !== '기초자치단체장') {
+          if (!newProfile.regionLocal) missing.push('regionLocal');
+          if (!newProfile.electoralDistrict) missing.push('electoralDistrict');
+        }
+
+        // 필수 정보가 누락된 경우 모달 표시
+        if (missing.length > 0) {
+          console.log('⚠️ 프로필 필수 정보 누락:', missing);
+          setMissingFields(missing);
           setTimeout(() => {
-            console.log('🎯 Bio 가이드 - 글로우 효과 시작');
-            focusBioTextarea();
-          }, 800);
+            setProfileIncompleteOpen(true);
+          }, 500);
         } else {
-          console.log('🎯 충분한 Bio가 있어서 가이드 모달 표시하지 않음', {
-            bio: newProfile.bio?.substring(0, 50) + '...',
-            length: newProfile.bio?.length || 0
-          });
+          // bio가 없는 경우 가이드 모달 표시 (온보딩에서 넘어온 경우)
+          const hasSufficientBio = newProfile.bio && newProfile.bio.trim().length >= 200;
+          if (!hasSufficientBio) {
+            console.log('🎯 Profile 페이지 - Bio 가이드 모달 표시', {
+              bio: newProfile.bio,
+              length: newProfile.bio?.length || 0,
+              hasSufficientBio
+            });
+            // 페이지 로딩 완료 후 잠시 뒤에 글로우 효과와 함께 모달 표시 (자연스러운 UX)
+            setTimeout(() => {
+              console.log('🎯 Bio 가이드 - 글로우 효과 시작');
+              focusBioTextarea();
+            }, 800);
+          } else {
+            console.log('🎯 충분한 Bio가 있어서 가이드 모달 표시하지 않음', {
+              bio: newProfile.bio?.substring(0, 50) + '...',
+              length: newProfile.bio?.length || 0
+            });
+          }
         }
         
       } catch (e) {
@@ -706,9 +732,9 @@ export default function ProfilePage() {
     }
   };
 
-  // 전체 정보 저장 (기존 함수 유지)
+  // 전체 정보 저장 (통합 저장 버튼)
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e?.preventDefault) e.preventDefault();
     setError('');
 
     console.log('폼 제출 시작...');
@@ -739,6 +765,8 @@ export default function ProfilePage() {
         customTitle: profile.customTitle,
         // 목표 선거 정보
         targetElection: profile.targetElection,
+        // 자기소개 및 추가 정보 엔트리
+        bioEntries: bioEntries,
         // 개인화 정보 필드들 추가
         ageDecade: profile.ageDecade,
         ageDetail: profile.ageDetail,
@@ -754,7 +782,7 @@ export default function ProfilePage() {
       };
 
       console.log('전송할 데이터 (전체):', JSON.stringify(payload, null, 2));
-      console.log('🔍 [저장] customTitle 값:', payload.customTitle);
+      console.log('🔍 [저장] bioEntries:', bioEntries.length, '개');
 
       const res = await callFunctionWithNaverAuth('updateProfile', payload);
       console.log('updateProfile 응답:', res);
@@ -917,7 +945,7 @@ export default function ProfilePage() {
               p: `${spacing.lg}px`,
               height: 'fit-content'
             }}>
-              <Box component="form" onSubmit={handleProfileSubmit}>
+              <Box>
                 <Grid container spacing={3}>
               
               {/* 🔧 UserInfoForm 컴포넌트 사용 */}
@@ -1235,29 +1263,6 @@ export default function ProfilePage() {
                 </Box>
               </Grid>
 
-              {/* 저장 버튼 */}
-              <Grid item xs={12}>
-                <LoadingButton
-                  type="submit"
-                  fullWidth
-                  variant="contained"
-                  loading={saving}
-                  loadingText="저장 중..."
-                  sx={{
-                    mt: `${spacing.md}px`,
-                    py: 1.5,
-                    bgcolor: colors.brand.primary,
-                    color: '#fff',
-                    fontWeight: 600,
-                    '&:hover': {
-                      bgcolor: colors.brand.primaryHover
-                    }
-                  }}
-                >
-                  프로필 저장
-                </LoadingButton>
-              </Grid>
-
               {/* 에러 메시지 */}
               {error && (
                 <Grid item xs={12}>
@@ -1522,26 +1527,27 @@ export default function ProfilePage() {
                 </Alert>
               )}
 
-              {/* 프로필 저장 버튼 */}
+              {/* 전체 프로필 저장 버튼 (통합) */}
               <LoadingButton
                 fullWidth
                 variant="contained"
-                onClick={handleBioSubmit}
+                onClick={handleSubmit}
                 loading={saving}
                 disabled={saving}
                 startIcon={<Save />}
                 sx={{
-                  mt: `${spacing.md}px`,
-                  py: 1.5,
+                  mt: `${spacing.lg}px`,
+                  py: 2,
                   bgcolor: colors.brand.primary,
                   color: '#fff',
-                  fontWeight: 600,
+                  fontWeight: 700,
+                  fontSize: '1.1rem',
                   '&:hover': {
                     bgcolor: colors.brand.primaryHover
                   }
                 }}
               >
-                자기소개 및 추가 정보 저장
+                전체 프로필 저장
               </LoadingButton>
             </Paper>
           </Grid>
@@ -1725,6 +1731,22 @@ export default function ProfilePage() {
           onClose={() => setCongratulationsOpen(false)}
           userName={user?.displayName || user?.name}
           bioContent={profile.bio}
+        />
+
+        {/* 프로필 미완성 모달 */}
+        <ProfileIncompleteModal
+          open={profileIncompleteOpen}
+          onClose={() => setProfileIncompleteOpen(false)}
+          onFillProfile={() => {
+            setProfileIncompleteOpen(false);
+            // 직책 필드로 스크롤
+            const positionField = document.querySelector('[name="position"]');
+            if (positionField) {
+              positionField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              setTimeout(() => positionField.focus(), 500);
+            }
+          }}
+          missingFields={missingFields}
         />
 
       </Container>
