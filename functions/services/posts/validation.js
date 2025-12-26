@@ -7,7 +7,245 @@ const { applyCorrections, summarizeViolations } = require('./corrector');
 const { GENERATION_STAGES, createProgressState, createRetryMessage } = require('./generation-stages');
 
 // ============================================================================
-// 휴리스틱 품질 검증 (v2 - LLM 없이 빠른 검증)
+// 선거법 검증 v3 - 화이트리스트 + LLM 하이브리드
+// ============================================================================
+
+/**
+ * 허용되는 문장 종결 패턴 (준비/현역 단계)
+ * 이 패턴으로 끝나는 문장은 공약이 아닌 것으로 간주
+ */
+const ALLOWED_ENDINGS = [
+  // 현황 설명 (서술)
+  /입니다\.?$/,
+  /습니다\.?$/,          // ~하고 있습니다, ~되고 있습니다
+  /됩니다\.?$/,          // ~가 됩니다 (수동)
+
+  // 과거형
+  /했습니다\.?$/,
+  /되었습니다\.?$/,
+  /였습니다\.?$/,
+  /었습니다\.?$/,
+
+  // 당위/필요성 (본인 약속 아님)
+  /해야\s*합니다\.?$/,
+  /되어야\s*합니다\.?$/,
+  /필요합니다\.?$/,
+  /바랍니다\.?$/,
+
+  // 의견/관점
+  /생각합니다\.?$/,
+  /봅니다\.?$/,
+  /압니다\.?$/,
+  /느낍니다\.?$/,
+
+  // 질문
+  /[까요까]\?$/,
+  /[습읍]니까\?$/,
+
+  // 인용/전달
+  /라고\s*합니다\.?$/,
+  /답니다\.?$/,
+];
+
+/**
+ * 명시적 금지 패턴 (빠른 차단)
+ * 이 패턴은 LLM 확인 없이 즉시 위반 처리
+ */
+const EXPLICIT_PLEDGE_PATTERNS = [
+  /약속드립니다/,
+  /약속합니다/,
+  /공약합니다/,
+  /반드시.*하겠습니다/,
+  /꼭.*하겠습니다/,
+  /제가.*하겠습니다/,
+  /저는.*하겠습니다/,
+  /당선되면/,
+  /당선\s*후/,
+];
+
+/**
+ * 문장 추출 (마침표, 물음표, 느낌표 기준)
+ */
+function extractSentences(text) {
+  const plainText = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  return plainText
+    .split(/(?<=[.?!])\s+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 10);
+}
+
+/**
+ * 화이트리스트 검사 - 허용 패턴이면 true
+ */
+function isAllowedEnding(sentence) {
+  return ALLOWED_ENDINGS.some(pattern => pattern.test(sentence));
+}
+
+/**
+ * 명시적 금지 패턴 검사 - 금지면 true
+ */
+function isExplicitPledge(sentence) {
+  return EXPLICIT_PLEDGE_PATTERNS.some(pattern => pattern.test(sentence));
+}
+
+/**
+ * ~겠 포함 여부 (LLM 검증 대상)
+ */
+function containsPledgeCandidate(sentence) {
+  // "겠습니다", "겠어요" 등 미래 의지 표현
+  return /겠[습어]/.test(sentence);
+}
+
+/**
+ * LLM 시맨틱 검증 - 공약 여부 판단
+ * @param {string[]} sentences - 검증할 문장 배열
+ * @returns {Promise<Object[]>} - { sentence, isPledge, reason }[]
+ */
+async function checkPledgesWithLLM(sentences) {
+  if (sentences.length === 0) return [];
+
+  const prompt = `당신은 대한민국 선거법 전문가입니다.
+아래 문장들이 "정치인 본인의 선거 공약/약속"인지 판단하세요.
+
+[판단 기준]
+- 공약 O: 정치인 본인이 주어로, 미래에 ~하겠다는 약속
+  예: "일자리를 만들겠습니다", "교통 문제를 해결하겠습니다"
+
+- 공약 X: 다음은 공약이 아님
+  예: "비가 오겠습니다" (날씨 예측)
+  예: "좋은 결과가 있겠습니다" (희망/기대)
+  예: "정부가 해야겠습니다" (제3자 당위)
+  예: "함께 만들어가겠습니다" (시민 참여 호소, 맥락에 따라)
+
+[검증 대상 문장]
+${sentences.map((s, i) => `${i + 1}. "${s}"`).join('\n')}
+
+[출력 형식 - JSON]
+{
+  "results": [
+    { "index": 1, "isPledge": true/false, "reason": "판단 근거" },
+    ...
+  ]
+}`;
+
+  try {
+    const response = await callGenerativeModel(prompt, 1, 'gemini-2.0-flash-exp', true);
+    const parsed = JSON.parse(response);
+
+    return parsed.results.map((r, i) => ({
+      sentence: sentences[r.index - 1] || sentences[i],
+      isPledge: r.isPledge,
+      reason: r.reason
+    }));
+  } catch (error) {
+    console.warn('⚠️ LLM 공약 검증 실패, 보수적 처리:', error.message);
+    // LLM 실패 시 보수적으로 모두 공약으로 처리
+    return sentences.map(s => ({
+      sentence: s,
+      isPledge: true,
+      reason: 'LLM 검증 실패 - 보수적 처리'
+    }));
+  }
+}
+
+/**
+ * 하이브리드 선거법 검증 (v3)
+ * 1차: 화이트리스트로 빠른 통과
+ * 2차: 명시적 금지 패턴 즉시 차단
+ * 3차: ~겠 포함 문장 LLM 검증
+ */
+async function detectElectionLawViolationHybrid(content, status, title = '') {
+  // 상태가 없거나 예비후보/후보 단계면 검사 스킵
+  if (!status) {
+    return { passed: true, violations: [], skipped: true };
+  }
+
+  const electionStage = getElectionStage(status);
+  if (!electionStage || electionStage.name !== 'STAGE_1') {
+    return { passed: true, violations: [], skipped: true };
+  }
+
+  const fullText = (title + ' ' + content);
+  const sentences = extractSentences(fullText);
+
+  const violations = [];
+  const llmCandidates = [];
+
+  // 1차: 문장별 분류
+  for (const sentence of sentences) {
+    // 명시적 금지 패턴 → 즉시 위반
+    if (isExplicitPledge(sentence)) {
+      violations.push({
+        sentence: sentence.substring(0, 60) + (sentence.length > 60 ? '...' : ''),
+        type: 'EXPLICIT_PLEDGE',
+        reason: '명시적 공약 표현'
+      });
+      continue;
+    }
+
+    // 화이트리스트 통과 → OK
+    if (isAllowedEnding(sentence)) {
+      continue;
+    }
+
+    // ~겠 포함 → LLM 검증 대상
+    if (containsPledgeCandidate(sentence)) {
+      llmCandidates.push(sentence);
+    }
+  }
+
+  // 2차: LLM 시맨틱 검증 (후보가 있을 때만)
+  if (llmCandidates.length > 0) {
+    console.log(`🔍 LLM 공약 검증: ${llmCandidates.length}개 문장`);
+    const llmResults = await checkPledgesWithLLM(llmCandidates);
+
+    for (const result of llmResults) {
+      if (result.isPledge) {
+        violations.push({
+          sentence: result.sentence.substring(0, 60) + (result.sentence.length > 60 ? '...' : ''),
+          type: 'LLM_DETECTED',
+          reason: result.reason
+        });
+      }
+    }
+  }
+
+  // 3차: 기존 VIOLATION_DETECTOR 검사 (기부행위, 허위사실)
+  const plainText = fullText.replace(/<[^>]*>/g, ' ');
+
+  const briberyViolations = VIOLATION_DETECTOR.checkBriberyRisk(plainText);
+  briberyViolations.forEach(v => {
+    violations.push({
+      sentence: v.match || '',
+      type: 'BRIBERY',
+      reason: v.reason
+    });
+  });
+
+  const factViolations = VIOLATION_DETECTOR.checkFactClaims(plainText);
+  factViolations.forEach(v => {
+    violations.push({
+      sentence: v.match || '',
+      type: v.severity === 'CRITICAL' ? 'FACT_CRITICAL' : 'FACT_WARNING',
+      reason: v.reason
+    });
+  });
+
+  return {
+    passed: violations.length === 0,
+    violations,
+    status,
+    stage: electionStage.name,
+    stats: {
+      totalSentences: sentences.length,
+      llmChecked: llmCandidates.length,
+      violationCount: violations.length
+    }
+  };
+}
+
+// ============================================================================
+// 휴리스틱 품질 검증 (v2 - LLM 없이 빠른 검증) - 레거시 유지
 // ============================================================================
 
 /**
@@ -152,13 +390,10 @@ function detectElectionLawViolation(content, status, title = '') {
 }
 
 /**
- * 통합 휴리스틱 검증
- * @param {string} content - 검증할 콘텐츠
- * @param {string} status - 사용자 상태
- * @param {string} title - 제목 (선거법 검증 포함)
- * @returns {Object} { passed: boolean, issues: string[] }
+ * 통합 휴리스틱 검증 (동기 버전 - 빠른 검증)
+ * 화이트리스트 + 명시적 금지 패턴만 검사 (LLM 없음)
  */
-function runHeuristicValidation(content, status, title = '') {
+function runHeuristicValidationSync(content, status, title = '') {
   const issues = [];
 
   // 1. 문장 반복 검출
@@ -167,10 +402,59 @@ function runHeuristicValidation(content, status, title = '') {
     issues.push(`⚠️ 문장 반복 감지: ${repetitionResult.repeatedSentences.join(', ')}`);
   }
 
-  // 2. 선거법 위반 검출 (제목 + 본문 모두 검사)
+  // 2. 선거법 위반 검출 (레거시 블랙리스트)
   const electionResult = detectElectionLawViolation(content, status, title);
   if (!electionResult.passed) {
     issues.push(`⚠️ 선거법 위반 표현: ${electionResult.violations.join(', ')}`);
+  }
+
+  return {
+    passed: issues.length === 0,
+    issues,
+    details: {
+      repetition: repetitionResult,
+      electionLaw: electionResult
+    }
+  };
+}
+
+/**
+ * 통합 휴리스틱 검증 (비동기 버전 - 하이브리드)
+ * 화이트리스트 + 명시적 금지 + LLM 시맨틱 검증
+ *
+ * @param {string} content - 검증할 콘텐츠
+ * @param {string} status - 사용자 상태
+ * @param {string} title - 제목 (선거법 검증 포함)
+ * @param {Object} options - { useLLM: boolean } LLM 사용 여부 (기본: true)
+ * @returns {Promise<Object>} { passed: boolean, issues: string[] }
+ */
+async function runHeuristicValidation(content, status, title = '', options = {}) {
+  const { useLLM = true } = options;
+  const issues = [];
+
+  // 1. 문장 반복 검출 (동기)
+  const repetitionResult = detectSentenceRepetition(content);
+  if (!repetitionResult.passed) {
+    issues.push(`⚠️ 문장 반복 감지: ${repetitionResult.repeatedSentences.join(', ')}`);
+  }
+
+  // 2. 선거법 위반 검출
+  let electionResult;
+  if (useLLM) {
+    // 하이브리드: 화이트리스트 + LLM
+    electionResult = await detectElectionLawViolationHybrid(content, status, title);
+    if (!electionResult.passed) {
+      const violationSummary = electionResult.violations
+        .map(v => `"${v.sentence}" (${v.reason})`)
+        .join(', ');
+      issues.push(`⚠️ 선거법 위반: ${violationSummary}`);
+    }
+  } else {
+    // 빠른 검증: 블랙리스트만
+    electionResult = detectElectionLawViolation(content, status, title);
+    if (!electionResult.passed) {
+      issues.push(`⚠️ 선거법 위반 표현: ${electionResult.violations.join(', ')}`);
+    }
   }
 
   return {
@@ -350,9 +634,9 @@ async function validateAndRetry({
 
     draft = apiResponse;
 
-    // 휴리스틱 검증
+    // 휴리스틱 검증 (Phase 1에서는 빠른 검증 - LLM 없이)
     notifyProgress('BASIC_CHECK');
-    const heuristicResult = runHeuristicValidation(draft, status);
+    const heuristicResult = await runHeuristicValidation(draft, status, '', { useLLM: false });
 
     if (heuristicResult.passed) {
       console.log(`✅ 휴리스틱 검증 통과 (${attempt}회차, ${draft.length}자)`);
@@ -419,7 +703,7 @@ async function validateAndRetry({
       status,
       topic,
       authorName,
-      modelName: 'gemini-1.5-flash'  // Critic은 빠른 모델 사용
+      modelName: 'gemini-2.0-flash-exp'
     });
 
     // 점수 추적
@@ -433,10 +717,32 @@ async function validateAndRetry({
       console.log(`✅ Critic 검토 통과 (점수: ${criticReport.score})`);
       notifyProgress('FINALIZING');
 
-      // 최종 휴리스틱 재검증
-      const finalCheck = runHeuristicValidation(currentDraft, status);
+      // 최종 선거법 검증 (LLM 하이브리드)
+      const finalCheck = await runHeuristicValidation(currentDraft, status, '', { useLLM: true });
       if (!finalCheck.passed) {
-        console.warn(`⚠️ 최종 휴리스틱 실패 (무시하고 반환):`, finalCheck.issues);
+        console.warn(`⚠️ 최종 선거법 검증 실패:`, finalCheck.issues);
+        // 위반 발견 시 Corrector로 수정 시도
+        if (finalCheck.details.electionLaw?.violations?.length > 0) {
+          console.log(`🔧 선거법 위반 자동 수정 시도...`);
+          const correctionResult = await applyCorrections({
+            draft: currentDraft,
+            violations: finalCheck.details.electionLaw.violations.map(v => ({
+              type: 'HARD',
+              field: 'content',
+              issue: v.reason,
+              suggestion: `"${v.sentence}" 표현을 수정하세요`
+            })),
+            ragContext,
+            authorName,
+            status,
+            modelName: 'gemini-2.0-flash-exp'
+          });
+
+          if (correctionResult.success && !correctionResult.unchanged) {
+            console.log(`✅ 선거법 위반 수정 완료`);
+            currentDraft = correctionResult.corrected;
+          }
+        }
       }
 
       notifyProgress('COMPLETED', { score: criticReport.score });
@@ -457,7 +763,7 @@ async function validateAndRetry({
         ragContext,
         authorName,
         status,
-        modelName: 'gemini-1.5-flash'
+        modelName: 'gemini-2.0-flash-exp'
       });
 
       if (correctionResult.success && !correctionResult.unchanged) {
@@ -512,9 +818,14 @@ module.exports = {
   // 개별 검증 함수도 export (테스트용)
   detectSentenceRepetition,
   detectElectionLawViolation,
-  runHeuristicValidation,
+  detectElectionLawViolationHybrid,  // v3 하이브리드
+  runHeuristicValidation,            // async (기본 LLM 사용)
+  runHeuristicValidationSync,        // sync (LLM 없이 빠른 검증)
   validateKeywordInsertion,
   countKeywordOccurrences,
+  // 화이트리스트/블랙리스트 (테스트용)
+  ALLOWED_ENDINGS,
+  EXPLICIT_PLEDGE_PATTERNS,
   // Progress 관련
   GENERATION_STAGES
 };

@@ -152,7 +152,7 @@ async function applyCorrections({
   ragContext,
   authorName,
   status,
-  modelName = 'gemini-1.5-flash'
+  modelName = 'gemini-2.0-flash-exp'
 }) {
   console.log(`✨ Corrector Agent 시작: ${violations.length}건 수정 예정`);
 

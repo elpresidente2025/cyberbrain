@@ -58,12 +58,13 @@ async function generateTitleFromContent({ content, backgroundInfo, keywords, use
     // 따옴표 제거
     cleanTitle = cleanTitle.replace(/^["']|["']$/g, '');
 
-    // 🔧 제목 길이 초과 시 자르기 (30자 제한)
-    if (cleanTitle.length > 35) {
+    // 🔧 제목 길이 초과 시 자르기 (25자 제한 - 네이버 최적화)
+    const NAVER_CHAR_LIMIT = 25;
+    if (cleanTitle.length > NAVER_CHAR_LIMIT) {
       console.warn(`⚠️ 제목 길이 초과 (${cleanTitle.length}자): "${cleanTitle}"`);
-      // 30자 근처에서 자연스럽게 자르기
-      const cutPoint = cleanTitle.lastIndexOf(' ', 30) || 30;
-      cleanTitle = cleanTitle.substring(0, cutPoint > 20 ? cutPoint : 30).trim();
+      // 25자 근처에서 자연스럽게 자르기
+      const cutPoint = cleanTitle.lastIndexOf(' ', NAVER_CHAR_LIMIT) || cleanTitle.lastIndexOf(',', NAVER_CHAR_LIMIT);
+      cleanTitle = cleanTitle.substring(0, cutPoint > 15 ? cutPoint : NAVER_CHAR_LIMIT).trim();
       // 끝이 어색하면 정리
       cleanTitle = cleanTitle.replace(/[,.:;]$/, '');
       console.log(`📝 제목 축약: "${cleanTitle}" (${cleanTitle.length}자)`);
