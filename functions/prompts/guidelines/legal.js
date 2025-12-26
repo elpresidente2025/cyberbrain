@@ -199,22 +199,118 @@ const VIOLATION_DETECTOR = {
     return violations;
   },
 
+  // 🔴 허위사실공표 위험 감지 (제250조)
+  checkFactClaims: (text) => {
+    const violations = [];
+
+    // 1. 수치 주장 패턴 (출처 없으면 위험)
+    const numberClaims = text.match(/[0-9]+%|[0-9]+명|[0-9]+건|[0-9]+억|[0-9]+조/g);
+    if (numberClaims && numberClaims.length > 0) {
+      const hasSource = /\[출처:|출처:|자료:/gi.test(text);
+      if (!hasSource) {
+        violations.push({
+          type: 'false_info_risk',
+          severity: 'HIGH',
+          reason: `수치 주장 발견 (${numberClaims.slice(0, 3).join(', ')}) - 출처 필수 (제250조 대비)`,
+          claims: numberClaims
+        });
+      }
+    }
+
+    // 2. 상대 후보/경쟁자 관련 사실 주장 (비방 위험)
+    const opponentPatterns = [
+      /(상대|경쟁|타)\s*후보.*?(했습니다|했다|받았|의혹)/g,
+      /(상대|경쟁)\s*진영.*?(했습니다|했다|받았)/g,
+      /○○\s*(후보|의원).*?(했습니다|했다)/g,
+    ];
+    opponentPatterns.forEach(pattern => {
+      const matches = text.match(pattern);
+      if (matches) {
+        violations.push({
+          type: 'defamation_risk',
+          severity: 'CRITICAL',
+          reason: '상대 후보 관련 사실 주장 - 출처·증거 필수 (제250조, 제251조)',
+          matches: matches.slice(0, 3)
+        });
+      }
+    });
+
+    // 3. 간접사실 적시 (소문 형태 비방)
+    const indirectPatterns = [
+      /~?(라는|라고)\s*소문/g,
+      /~?(라는|라고)\s*말이?\s*(있|나)/g,
+      /~?(라고|라는)\s*알려져/g,
+      /들었습니다|들은\s*바/g,
+    ];
+    indirectPatterns.forEach(pattern => {
+      const matches = text.match(pattern);
+      if (matches) {
+        violations.push({
+          type: 'indirect_defamation',
+          severity: 'HIGH',
+          reason: '간접사실 적시 - 후보자비방죄 해당 가능 (제251조)',
+          matches: matches.slice(0, 3)
+        });
+      }
+    });
+
+    return violations;
+  },
+
+  // 🔴 기부행위 금지 위반 감지 (제85조 6항)
+  checkBriberyRisk: (text) => {
+    const violations = [];
+    const briberyPatterns = [
+      /상품권.*?(지급|제공|드리)/g,
+      /선물.*?(지급|제공|드리)/g,
+      /[0-9]+만\s*원\s*(지급|드리|제공)/g,
+      /무상\s*지급/g,
+      /경품|사은품/g,
+    ];
+
+    briberyPatterns.forEach(pattern => {
+      const matches = text.match(pattern);
+      if (matches) {
+        violations.push({
+          type: 'bribery_risk',
+          severity: 'CRITICAL',
+          reason: '기부행위 금지 위반 (제85조 6항)',
+          matches: matches.slice(0, 3)
+        });
+      }
+    });
+
+    return violations;
+  },
+
   // 종합 위험도 평가
   assessRisk: (text) => {
     const keywordViolations = VIOLATION_DETECTOR.checkBannedKeywords(text);
     const patternViolations = VIOLATION_DETECTOR.checkDangerousPatterns(text);
-    
-    const totalViolations = keywordViolations.length + patternViolations.length;
+    const factViolations = VIOLATION_DETECTOR.checkFactClaims(text);
+    const briberyViolations = VIOLATION_DETECTOR.checkBriberyRisk(text);
+
+    const allViolations = [
+      ...keywordViolations,
+      ...patternViolations,
+      ...factViolations,
+      ...briberyViolations
+    ];
+
+    // CRITICAL 위반이 있으면 무조건 HIGH
+    const hasCritical = allViolations.some(v => v.severity === 'CRITICAL');
+
     let riskLevel = 'LOW';
-    
-    if (totalViolations >= 3) riskLevel = 'HIGH';
-    else if (totalViolations >= 1) riskLevel = 'MEDIUM';
-    
+    if (hasCritical || allViolations.length >= 3) riskLevel = 'HIGH';
+    else if (allViolations.length >= 1) riskLevel = 'MEDIUM';
+
     return {
       level: riskLevel,
       keywordViolations,
       patternViolations,
-      totalViolations
+      factViolations,
+      briberyViolations,
+      totalViolations: allViolations.length
     };
   }
 };
@@ -344,6 +440,21 @@ const ELECTION_EXPRESSION_RULES = {
         /재선을?\s*위해/g,
         /선거\s*준비/g,
         /출마\s*준비/g,
+      ],
+      // 🔴 기부행위 금지 (제85조 6항) - 금품/향응 제공 약속
+      bribery: [
+        /상품권.*?(지급|제공|드리)/g,
+        /선물.*?(지급|제공|드리)/g,
+        /물품.*?(지급|제공|드리)/g,
+        /금품.*?(지급|제공|드리)/g,
+        /현금.*?(지급|제공|드리)/g,
+        /[0-9]+만\s*원\s*(지급|드리|제공)/g,
+        /지지.*?선물/g,
+        /투표.*?선물/g,
+        /무상\s*지급/g,
+        /경품/g,
+        /사은품/g,
+        /혜택\s*제공/g,
       ]
     },
     // 자동 치환 규칙 (forbidden → replacement)
@@ -400,6 +511,11 @@ const ELECTION_EXPRESSION_RULES = {
 [⚠️ 선거법 준수 - 예비후보 등록 이전 단계]
 현재 상태에서는 선거법상 다음 표현을 사용할 수 없습니다.
 
+** 🔴 CRITICAL - 형사처벌 대상 **
+❌ 기부행위 금지 (제85조 6항): "상품권 지급", "선물 제공", "00만원 드리겠습니다"
+❌ 허위사실공표 (제250조): 출처 없는 통계/수치 주장, 확인 안 된 사실
+❌ 후보자비방 (제251조): "~라는 소문", "~라고 들었습니다" 형태의 간접사실 적시
+
 ** 절대 금지 표현 **
 ❌ "공약", "공약을 발표합니다", "○번째 공약"
 ❌ "약속드립니다", "약속하겠습니다", "반드시 실현하겠습니다"
@@ -408,11 +524,13 @@ const ELECTION_EXPRESSION_RULES = {
 ❌ "투표해 주십시오", "지지를 부탁드립니다"
 ❌ "다음 선거에서", "2026년 지방선거에서", "재선을 위해"
 ❌ "예비후보", "후보", "출마 예정자"
+❌ "바꿉니다", "만듭니다", "해결합니다" (단정적 공약 표현)
 
 ** 대체 표현 가이드 **
 ✅ "공약" → "정책 방향", "비전", "정책 제안"
 ✅ "당선되면" → "이 정책이 실현된다면"
 ✅ "지지 부탁" → "관심 부탁드립니다"
+✅ "바꾸겠습니다" → "변화가 필요합니다", "개선을 제안합니다"
 
 ** "약속" 표현 대체 가이드 (중요!) **
 "약속드립니다", "약속하겠습니다" 등의 표현은 사용하지 마세요.
@@ -420,6 +538,10 @@ const ELECTION_EXPRESSION_RULES = {
 - "~을 약속드립니다" → "~하겠습니다", "~하도록 노력하겠습니다"
 - "~할 것을 약속드립니다" → "~하겠습니다"
 - "반드시 ~하겠다고 약속드립니다" → "~할 수 있도록 최선을 다하겠습니다"
+
+** 수치/통계 사용 시 필수 **
+✅ 반드시 출처 명시: "[출처: 통계청 2024]", "[출처: 부산시 자료]"
+❌ 출처 없는 수치 사용 금지
 
 ** 사용 가능한 표현 예시 **
 "정책 방향을 제안합니다"

@@ -1,7 +1,7 @@
 'use strict';
 
 const { callGenerativeModel } = require('../gemini');
-const { getElectionStage } = require('../../prompts/guidelines/legal');
+const { getElectionStage, VIOLATION_DETECTOR } = require('../../prompts/guidelines/legal');
 const { runCriticReview, hasHardViolations, summarizeGuidelines } = require('./critic');
 const { applyCorrections, summarizeViolations } = require('./corrector');
 const { GENERATION_STAGES, createProgressState, createRetryMessage } = require('./generation-stages');
@@ -118,10 +118,27 @@ function detectElectionLawViolation(content, status, title = '') {
 
   const violations = [];
 
+  // 1. 공약성 표현 검사
   pledgePatterns.forEach(pattern => {
     const matches = plainText.match(pattern);
     if (matches) {
-      violations.push(`"${matches[0]}" (${matches.length}회)`);
+      violations.push(`"${matches[0]}" (${matches.length}회) - 공약성 표현`);
+    }
+  });
+
+  // 2. 기부행위 금지 검사 (제85조 6항) - VIOLATION_DETECTOR 활용
+  const briberyViolations = VIOLATION_DETECTOR.checkBriberyRisk(plainText);
+  briberyViolations.forEach(v => {
+    violations.push(`🔴 ${v.reason}`);
+  });
+
+  // 3. 허위사실/비방 위험 검사 (제250조, 제251조)
+  const factViolations = VIOLATION_DETECTOR.checkFactClaims(plainText);
+  factViolations.forEach(v => {
+    if (v.severity === 'CRITICAL') {
+      violations.push(`🔴 ${v.reason}`);
+    } else {
+      violations.push(`⚠️ ${v.reason}`);
     }
   });
 
@@ -129,7 +146,8 @@ function detectElectionLawViolation(content, status, title = '') {
     passed: violations.length === 0,
     violations,
     status,
-    stage: electionStage.name
+    stage: electionStage.name,
+    hasCritical: briberyViolations.length > 0 || factViolations.some(v => v.severity === 'CRITICAL')
   };
 }
 
