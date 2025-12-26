@@ -137,7 +137,7 @@ function validateStyleFingerprint(fingerprint, sourceLength) {
     },
 
     sentencePatterns: {
-      avgLength: clamp(fingerprint.sentencePatterns?.avgLength || 30, 10, 100),
+      avgLength: clamp(fingerprint.sentencePatterns?.avgLength || 45, 15, 100),
       preferredStarters: ensureArray(fingerprint.sentencePatterns?.preferredStarters, 5),
       clauseComplexity: ensureEnum(
         fingerprint.sentencePatterns?.clauseComplexity,
@@ -390,7 +390,7 @@ ${neutralDraft}
    - 시그니처: ${phrases.signatures?.slice(0, 3).join(', ') || '없음'}
 
 2. 문장 패턴:
-   - 평균 문장 길이: ${patterns.avgLength || 30}자 내외
+   - 평균 문장 길이: ${patterns.avgLength || 45}자 내외
    - 선호 시작어: ${patterns.preferredStarters?.slice(0, 3).join(', ') || '없음'}
    - 복잡도: ${patterns.clauseComplexity || 'medium'}
    - 종결 패턴: ${patterns.endingPatterns?.slice(0, 2).join(', ') || '습니다/합니다'}
