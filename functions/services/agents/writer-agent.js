@@ -17,6 +17,9 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 // ✅ 선거법 규칙 import (구조적 통합)
 const { getElectionStage } = require('../../prompts/guidelines/legal');
 
+// ✅ 제목 가이드라인 import
+const { getTitleGuidelineForTemplate } = require('../../prompts/builders/title-generation');
+
 // ✅ 기존 templates 100% 보존하여 import
 const { buildDailyCommunicationPrompt } = require('../../prompts/templates/daily-communication');
 const { buildLogicalWritingPrompt } = require('../../prompts/templates/policy-proposal');
@@ -155,6 +158,10 @@ ${searchTermList}
 `;
       prompt = searchTermsCritical + prompt;
     }
+
+    // 🏷️ 10. 제목 가이드라인 주입 (title-generation.js 활용)
+    const titleGuideline = getTitleGuidelineForTemplate(userKeywords);
+    prompt = titleGuideline + prompt;
 
     console.log(`📝 [WriterAgent] 프롬프트 생성 완료 (${prompt.length}자, 작법: ${writingMethod})`);
 

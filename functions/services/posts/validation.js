@@ -446,8 +446,9 @@ function validateTitleQuality(title, userKeywords = []) {
     }
   }
 
-  // 3. 추상적 표현 감지
+  // 3. 추상적 표현 감지 (구체성 없는 뻔한 표현들)
   const abstractPatterns = [
+    // 기존 추상어
     { pattern: /비전/, word: '비전' },
     { pattern: /혁신/, word: '혁신' },
     { pattern: /발전/, word: '발전' },
@@ -455,7 +456,20 @@ function validateTitleQuality(title, userKeywords = []) {
     { pattern: /최선/, word: '최선' },
     { pattern: /약속/, word: '약속' },
     { pattern: /다짐/, word: '다짐' },
-    { pattern: /함께/, word: '함께' }
+    { pattern: /함께/, word: '함께' },
+    // 추가: 정책 상투어
+    { pattern: /확충/, word: '확충' },
+    { pattern: /개선/, word: '개선' },
+    { pattern: /추진/, word: '추진' },
+    { pattern: /시급/, word: '시급' },
+    { pattern: /강화/, word: '강화' },
+    { pattern: /증진/, word: '증진' },
+    { pattern: /도모/, word: '도모' },
+    { pattern: /향상/, word: '향상' },
+    { pattern: /활성화/, word: '활성화' },
+    { pattern: /선도/, word: '선도' },
+    { pattern: /선진/, word: '선진' },
+    { pattern: /미래/, word: '미래' }
   ];
 
   const foundAbstract = abstractPatterns.filter(p => p.pattern.test(title));
