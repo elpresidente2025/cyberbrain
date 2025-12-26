@@ -32,7 +32,8 @@ const { ok, generateNaturalRegionTitle } = require('../utils/posts/helpers');
 const { STATUS_CONFIG, CATEGORY_TO_WRITING_METHOD } = require('../utils/posts/constants');
 const { loadUserProfile, getOrCreateSession, incrementSessionAttempts } = require('../services/posts/profile-loader');
 const { extractKeywordsFromInstructions } = require('../services/posts/keyword-extractor');
-const { validateAndRetry } = require('../services/posts/validation');
+const { validateAndRetry, runHeuristicValidation, validateKeywordInsertion } = require('../services/posts/validation');
+const { refineWithLLM } = require('../services/posts/editor-agent');
 const { processGeneratedContent } = require('../services/posts/content-processor');
 const { generateTitleFromContent } = require('../services/posts/title-generator');
 const { buildSmartPrompt } = require('../prompts/prompts');
@@ -591,6 +592,51 @@ exports.generatePosts = httpWrap(async (req) => {
 
     // 4단계: 품질 검증 중
     await progress.stepValidating();
+
+    // 🔧 EditorAgent: 검증 결과 기반 LLM 수정
+    try {
+      // 휴리스틱 검증 실행
+      const heuristicResult = runHeuristicValidation(generatedContent, currentStatus);
+
+      // 키워드 검증 실행
+      const extractedKeywords = backgroundKeywords.filter(k => !userKeywords.includes(k));
+      const keywordResult = validateKeywordInsertion(
+        generatedContent,
+        userKeywords,
+        extractedKeywords,
+        targetWordCount
+      );
+
+      // 문제가 발견되면 EditorAgent로 수정
+      if (!heuristicResult.passed || !keywordResult.valid) {
+        console.log('📝 [EditorAgent] 검증 실패, LLM 수정 시작:', {
+          heuristicPassed: heuristicResult.passed,
+          keywordValid: keywordResult.valid,
+          issues: heuristicResult.issues
+        });
+
+        const editorResult = await refineWithLLM({
+          content: generatedContent,
+          title: generatedTitle,
+          validationResult: heuristicResult,
+          keywordResult,
+          userKeywords,
+          status: currentStatus,
+          modelName
+        });
+
+        if (editorResult.edited) {
+          generatedContent = editorResult.content;
+          generatedTitle = editorResult.title;
+          console.log('✅ [EditorAgent] 수정 완료:', editorResult.editSummary);
+        }
+      } else {
+        console.log('✅ [EditorAgent] 검증 통과 - 수정 불필요');
+      }
+    } catch (editorError) {
+      console.warn('⚠️ [EditorAgent] 실패 (원본 유지):', editorError.message);
+      // 실패해도 원본 유지하고 계속 진행
+    }
 
     // 5단계: 마무리 중
     await progress.stepFinalizing();
