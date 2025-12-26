@@ -175,7 +175,10 @@ async function loadUserProfile(uid, category, topic) {
     styleGuide,         // 🎨 문체 가이드 (Style Fingerprint 기반)
     styleFingerprint,   // 🎨 Style Fingerprint 원본 (2단계 생성용)
     isAdmin: userProfile.isAdmin === true || userProfile.role === 'admin',
-    isTester: userProfile.isTester === true
+    isTester: userProfile.isTester === true,
+    // 🎯 슬로건 정보
+    slogan: userProfile.slogan || '',
+    sloganEnabled: userProfile.sloganEnabled || false
   };
 }
 

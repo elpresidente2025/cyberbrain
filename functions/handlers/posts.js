@@ -56,6 +56,49 @@ exports.checkUsageLimit = checkUsageLimit;
 // Save 엔드포인트 export
 exports.saveSelectedPost = saveSelectedPost;
 
+// ============================================================================
+// 🎯 슬로건 삽입 헬퍼 함수
+// ============================================================================
+
+/**
+ * 원고 마지막에 슬로건을 삽입
+ * - "감사합니다" 앞에 삽입
+ * - 줄바꿈을 <br> 또는 <p> 태그로 변환
+ * @param {string} content - 원고 내용 (HTML)
+ * @param {string} slogan - 슬로건 텍스트
+ * @returns {string} - 슬로건이 삽입된 원고
+ */
+function insertSlogan(content, slogan) {
+  if (!content || !slogan) return content;
+
+  // 슬로건을 HTML 형식으로 변환 (줄바꿈 → <br>)
+  const sloganHtml = `<p style="text-align: center; font-weight: bold; margin: 1.5em 0;">${slogan.trim().replace(/\n/g, '<br>')}</p>`;
+
+  // "감사합니다" 패턴 찾기 (다양한 형태)
+  const thankYouPatterns = [
+    /<p[^>]*>\s*감사합니다\.?\s*<\/p>/gi,
+    /감사합니다\.?\s*<\/p>/gi,
+    /<p[^>]*>[^<]*감사합니다[^<]*<\/p>/gi
+  ];
+
+  for (const pattern of thankYouPatterns) {
+    if (pattern.test(content)) {
+      // "감사합니다" 앞에 슬로건 삽입
+      return content.replace(pattern, (match) => `${sloganHtml}\n${match}`);
+    }
+  }
+
+  // "감사합니다"가 없으면 마지막에 슬로건만 추가
+  // 마지막 </p> 태그 뒤에 추가
+  const lastPTagIndex = content.lastIndexOf('</p>');
+  if (lastPTagIndex !== -1) {
+    return content.substring(0, lastPTagIndex + 4) + '\n' + sloganHtml + content.substring(lastPTagIndex + 4);
+  }
+
+  // </p> 태그도 없으면 그냥 끝에 추가
+  return content + '\n' + sloganHtml;
+}
+
 // Generation 엔드포인트 (아직 분리하지 않음)
 exports.generatePosts = httpWrap(async (req) => {
   console.log('🔥 generatePosts HTTP 시작');
@@ -177,7 +220,9 @@ exports.generatePosts = httpWrap(async (req) => {
       styleGuide,         // 🎨 문체 가이드 (Style Fingerprint 기반)
       styleFingerprint,   // 🎨 Style Fingerprint 원본 (2단계 생성용)
       isAdmin,
-      isTester
+      isTester,
+      slogan,             // 🎯 슬로건
+      sloganEnabled       // 🎯 슬로건 활성화 여부
     } = await loadUserProfile(uid, category, topic);
 
     // 🔥 세션 조회 또는 생성 (attempts는 아직 증가하지 않음)
@@ -602,8 +647,8 @@ exports.generatePosts = httpWrap(async (req) => {
 
     // 🔧 EditorAgent: 검증 결과 기반 LLM 수정
     try {
-      // 휴리스틱 검증 실행 (제목 + 본문 모두 검사, LLM 하이브리드)
-      const heuristicResult = await runHeuristicValidation(generatedContent, currentStatus, generatedTitle, { useLLM: true });
+      // 휴리스틱 검증 실행 (제목 + 본문 모두 검사, LLM 하이브리드, 제목 품질 검증 포함)
+      const heuristicResult = await runHeuristicValidation(generatedContent, currentStatus, generatedTitle, { useLLM: true, userKeywords });
 
       // 키워드 검증 실행
       const extractedKeywords = backgroundKeywords.filter(k => !userKeywords.includes(k));
@@ -672,6 +717,19 @@ exports.generatePosts = httpWrap(async (req) => {
       });
     } else {
       console.log('🤖 [Multi-Agent] SEO 최적화 제목 사용:', generatedTitle);
+    }
+
+    // 🎯 슬로건 삽입 (활성화된 경우)
+    if (sloganEnabled && slogan && slogan.trim()) {
+      // 슬로건 선거법 검증 (경고만 - 사용자 입력이므로 자동 수정 안 함)
+      if (currentStatus === '준비' || currentStatus === '예비') {
+        const sloganSanitizeResult = sanitizeElectionContent(slogan, currentStatus);
+        if (sloganSanitizeResult.replacementsMade > 0) {
+          console.warn(`⚠️ [슬로건] 선거법 위반 가능 표현 감지: "${slogan}"`);
+        }
+      }
+      generatedContent = insertSlogan(generatedContent, slogan);
+      console.log('🎯 슬로건 삽입 완료');
     }
 
     // 글자수 계산

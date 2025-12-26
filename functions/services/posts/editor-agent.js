@@ -78,15 +78,31 @@ async function refineWithLLM({
     }
   }
 
-  // 3. 사용자 키워드가 제목에 없는 경우
-  if (userKeywords.length > 0 && title) {
+  // 3. 제목 품질 문제 (validation.js에서 검증한 결과)
+  if (validationResult?.details?.titleQuality && !validationResult.details.titleQuality.passed) {
+    const titleIssues = validationResult.details.titleQuality.issues || [];
+    for (const issue of titleIssues) {
+      // 이미 있는 이슈와 중복 방지
+      if (!issues.some(i => i.type === issue.type)) {
+        issues.push({
+          type: issue.type,
+          severity: issue.severity,
+          description: issue.description,
+          instruction: issue.instruction
+        });
+      }
+    }
+  }
+
+  // 4. 사용자 키워드가 제목에 없는 경우 (titleQuality에서 이미 체크하지만 폴백)
+  if (userKeywords.length > 0 && title && !issues.some(i => i.type === 'keyword_missing')) {
     const keywordsInTitle = userKeywords.filter(kw => title.includes(kw));
     if (keywordsInTitle.length === 0) {
       issues.push({
         type: 'title_keyword',
         severity: 'medium',
         description: `제목에 노출 희망 검색어 없음: ${userKeywords.join(', ')}`,
-        instruction: '제목에 위 키워드 중 하나를 자연스럽게 포함하세요. 제목은 30자 이내로 유지하세요.'
+        instruction: '제목에 위 키워드 중 하나를 자연스럽게 포함하세요. 제목은 25자 이내로 유지하세요.'
       });
     }
   }
@@ -162,12 +178,44 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status }) {
     ? `\n⚠️ 작성자 상태: ${status} (예비후보 등록 전) - "~하겠습니다" 같은 공약성 표현 금지`
     : '';
 
+  // 제목 관련 이슈가 있으면 상세 가이드라인 추가
+  const hasTitleIssues = issues.some(i =>
+    ['title_length', 'keyword_missing', 'keyword_position', 'abstract_expression', 'title_keyword'].includes(i.type)
+  );
+
+  const titleGuideline = hasTitleIssues ? `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 제목 수정 가이드라인 (네이버 SEO 최적화)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ 필수 규칙:
+• 25자 이내 (네이버 검색결과에서 잘리지 않도록)
+• 핵심 키워드는 제목 앞 8자 이내에 배치 (앞쪽 1/3 법칙)
+• 부제목(-, :) 사용 금지, 콤마(,) 사용 권장
+
+❌ 금지 표현 (추상적):
+비전, 혁신, 발전, 노력, 최선, 함께, 다짐, 약속
+
+✅ 권장 표현 (구체적):
+• 숫자 사용: "3대 정책", "120억 확보", "40% 개선"
+• 구체적 사실: "국비 120억 확보", "대형병원 3곳 유치"
+
+📊 좋은 제목 예시:
+• "부산 대형병원 3곳 확충, 120억 투입" (22자)
+• "청년 일자리 274명 창출, 지원금 85억" (20자)
+• "민원 처리 14일→3일, 5배 빨라졌어요" (19자)
+
+❌ 나쁜 제목 예시:
+• "부산 의료 혁신: 더 나은 미래를 위한 비전" (추상적, 길이 초과)
+• "청년을 위한 노력, 최선을 다하겠습니다" (공약성, 추상적)
+` : '';
+
   return `당신은 정치 원고 편집 전문가입니다. 아래 원고에서 발견된 문제들을 수정해주세요.
 
 [수정이 필요한 문제들]
 ${issuesList}
 ${statusNote}
-
+${titleGuideline}
 [원본 제목]
 ${title}
 
@@ -181,7 +229,7 @@ ${userKeywords.join(', ') || '(없음)'}
 1. 지적된 문제들만 최소한으로 수정하세요. 원고의 전체적인 톤과 맥락은 유지하세요.
 2. 선거법 위반 표현은 동일한 의미를 전달하면서 완곡하게 수정하세요.
 3. 키워드는 자연스럽게 문맥에 맞게 삽입하세요. 억지로 끼워넣지 마세요.
-4. 제목은 30자 이내로 유지하세요.
+4. 제목은 25자 이내로 유지하고, 키워드를 앞쪽에 배치하세요.
 5. HTML 구조(<p>, <strong> 등)는 유지하세요.
 
 다음 JSON 형식으로만 응답하세요:

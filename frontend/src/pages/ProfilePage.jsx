@@ -106,6 +106,9 @@ export default function ProfilePage() {
     committees: [''],
     customCommittees: [],
     constituencyType: '',
+    // 슬로건
+    slogan: '',
+    sloganEnabled: false,
   });
 
   // DB에 실제 저장된 직위 값 (배지 표시용)
@@ -214,6 +217,9 @@ export default function ProfilePage() {
         committees: profileData.committees || [''],
         customCommittees: profileData.customCommittees || [],
         constituencyType: profileData.constituencyType || '',
+        // 슬로건
+        slogan: profileData.slogan || '',
+        sloganEnabled: profileData.sloganEnabled || false,
       };
 
       setProfile(newProfile);
@@ -695,6 +701,9 @@ export default function ProfilePage() {
         committees: profile.committees,
         customCommittees: profile.customCommittees,
         constituencyType: profile.constituencyType,
+        // 슬로건
+        slogan: profile.slogan,
+        sloganEnabled: profile.sloganEnabled,
       };
 
       console.log('전송할 자기소개 데이터:', JSON.stringify(payload, null, 2));
@@ -779,6 +788,9 @@ export default function ProfilePage() {
         committees: profile.committees,
         customCommittees: profile.customCommittees,
         constituencyType: profile.constituencyType,
+        // 슬로건
+        slogan: profile.slogan,
+        sloganEnabled: profile.sloganEnabled,
       };
 
       console.log('전송할 데이터 (전체):', JSON.stringify(payload, null, 2));
@@ -1390,12 +1402,60 @@ export default function ProfilePage() {
                 </Stack>
               </Box>
 
-              {/* 2. 추가 정보 섹션 (카드형 배치) */}
+              {/* 2. 슬로건 섹션 */}
+              <Box sx={{ mb: `${spacing.xl}px` }}>
+                <Typography variant="h6" sx={{
+                  color: theme.palette.mode === 'dark' ? '#ffcc80' : '#e65100',
+                  fontWeight: 600,
+                  mb: `${spacing.md}px`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: `${spacing.xs}px`
+                }}>
+                  🎯 슬로건 (선택)
+                </Typography>
+
+                <Paper elevation={0} sx={{ p: `${spacing.md}px` }}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={profile.sloganEnabled}
+                        onChange={(e) => handleUserInfoChange('sloganEnabled', e.target.checked)}
+                        disabled={saving}
+                        sx={{
+                          color: 'colors.brand.primary',
+                          '&.Mui-checked': {
+                            color: 'colors.brand.primary'
+                          }
+                        }}
+                      />
+                    }
+                    label="원고 끝에 슬로건 자동 삽입"
+                    sx={{ mb: `${spacing.md}px` }}
+                  />
+
+                  <TextField
+                    fullWidth
+                    multiline
+                    rows={3}
+                    label="슬로건"
+                    value={profile.slogan}
+                    onChange={(e) => handleUserInfoChange('slogan', e.target.value)}
+                    disabled={saving || !profile.sloganEnabled}
+                    placeholder={`예시:\n부산의 준비된 신상품\n부산경제는 홍길동`}
+                    inputProps={{ maxLength: 200 }}
+                    helperText={`${profile.slogan?.length || 0}/200자 · 원고 마지막에 "감사합니다" 앞에 삽입됩니다`}
+                    FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
+                  />
+                </Paper>
+              </Box>
+
+              {/* 3. 추가 정보 섹션 (카드형 배치) */}
               <Box sx={{ mb: `${spacing.xl}px` }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.md}px` }}>
-                  <Typography variant="h6" sx={{ 
-                    color: theme.palette.mode === 'dark' ? '#e1bee7' : 'colors.brand.primary', 
-                    fontWeight: 600 
+                  <Typography variant="h6" sx={{
+                    color: theme.palette.mode === 'dark' ? '#e1bee7' : 'colors.brand.primary',
+                    fontWeight: 600
                   }}>
                     📋 추가 정보
                   </Typography>

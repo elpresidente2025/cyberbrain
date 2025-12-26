@@ -389,6 +389,105 @@ function detectElectionLawViolation(content, status, title = '') {
   };
 }
 
+// ============================================================================
+// 제목 품질 검증 (title-generation.js 기준)
+// ============================================================================
+
+/**
+ * 제목 품질 검증
+ * @param {string} title - 검증할 제목
+ * @param {Array} userKeywords - 사용자 입력 키워드 (SEO용)
+ * @returns {Object} { passed, issues, details }
+ */
+function validateTitleQuality(title, userKeywords = []) {
+  if (!title) {
+    return { passed: true, issues: [], details: {} };
+  }
+
+  const issues = [];
+  const details = {
+    length: title.length,
+    maxLength: 25,
+    keywordPosition: null,
+    abstractExpressions: [],
+    hasNumbers: false
+  };
+
+  // 1. 길이 검증 (25자 초과 = 네이버에서 잘림)
+  if (title.length > 25) {
+    issues.push({
+      type: 'title_length',
+      severity: 'critical',
+      description: `제목 ${title.length}자 → 25자 초과 (네이버에서 잘림)`,
+      instruction: '25자 이내로 줄이세요. 불필요한 조사, 부제목(:, -) 제거.'
+    });
+  }
+
+  // 2. 키워드 위치 검증 (핵심 키워드가 앞쪽 8자 내에 없으면)
+  if (userKeywords && userKeywords.length > 0) {
+    const primaryKw = userKeywords[0];
+    const kwIndex = title.indexOf(primaryKw);
+    details.keywordPosition = kwIndex;
+
+    if (kwIndex === -1) {
+      issues.push({
+        type: 'keyword_missing',
+        severity: 'high',
+        description: `핵심 키워드 "${primaryKw}" 제목에 없음`,
+        instruction: `"${primaryKw}"를 제목 앞부분에 포함하세요.`
+      });
+    } else if (kwIndex > 10) {
+      issues.push({
+        type: 'keyword_position',
+        severity: 'medium',
+        description: `키워드 "${primaryKw}" 위치 ${kwIndex}자 → 너무 뒤쪽`,
+        instruction: '핵심 키워드는 제목 앞쪽 8자 이내에 배치하세요 (앞쪽 1/3 법칙).'
+      });
+    }
+  }
+
+  // 3. 추상적 표현 감지
+  const abstractPatterns = [
+    { pattern: /비전/, word: '비전' },
+    { pattern: /혁신/, word: '혁신' },
+    { pattern: /발전/, word: '발전' },
+    { pattern: /노력/, word: '노력' },
+    { pattern: /최선/, word: '최선' },
+    { pattern: /약속/, word: '약속' },
+    { pattern: /다짐/, word: '다짐' },
+    { pattern: /함께/, word: '함께' }
+  ];
+
+  const foundAbstract = abstractPatterns.filter(p => p.pattern.test(title));
+  if (foundAbstract.length > 0) {
+    details.abstractExpressions = foundAbstract.map(p => p.word);
+    issues.push({
+      type: 'abstract_expression',
+      severity: 'medium',
+      description: `추상적 표현 사용: ${details.abstractExpressions.join(', ')}`,
+      instruction: '구체적 수치나 사실로 대체하세요. 예: "발전" → "40% 증가", "비전" → "3대 핵심 정책"'
+    });
+  }
+
+  // 4. 숫자/구체성 체크 (권장 사항)
+  details.hasNumbers = /\d/.test(title);
+  if (!details.hasNumbers && issues.length > 0) {
+    // 다른 문제가 있을 때만 숫자 부재 언급 (너무 많은 피드백 방지)
+    issues.push({
+      type: 'no_numbers',
+      severity: 'low',
+      description: '숫자/구체적 데이터 없음',
+      instruction: '가능하면 숫자를 포함하세요. 예: "3대 정책", "120억 확보", "40% 개선"'
+    });
+  }
+
+  return {
+    passed: issues.filter(i => i.severity === 'critical' || i.severity === 'high').length === 0,
+    issues,
+    details
+  };
+}
+
 /**
  * 통합 휴리스틱 검증 (동기 버전 - 빠른 검증)
  * 화이트리스트 + 명시적 금지 패턴만 검사 (LLM 없음)
@@ -420,16 +519,16 @@ function runHeuristicValidationSync(content, status, title = '') {
 
 /**
  * 통합 휴리스틱 검증 (비동기 버전 - 하이브리드)
- * 화이트리스트 + 명시적 금지 + LLM 시맨틱 검증
+ * 화이트리스트 + 명시적 금지 + LLM 시맨틱 검증 + 제목 품질 검증
  *
  * @param {string} content - 검증할 콘텐츠
  * @param {string} status - 사용자 상태
- * @param {string} title - 제목 (선거법 검증 포함)
- * @param {Object} options - { useLLM: boolean } LLM 사용 여부 (기본: true)
- * @returns {Promise<Object>} { passed: boolean, issues: string[] }
+ * @param {string} title - 제목 (선거법 검증 + 품질 검증)
+ * @param {Object} options - { useLLM: boolean, userKeywords: Array }
+ * @returns {Promise<Object>} { passed: boolean, issues: string[], details: Object }
  */
 async function runHeuristicValidation(content, status, title = '', options = {}) {
-  const { useLLM = true } = options;
+  const { useLLM = true, userKeywords = [] } = options;
   const issues = [];
 
   // 1. 문장 반복 검출 (동기)
@@ -457,12 +556,24 @@ async function runHeuristicValidation(content, status, title = '', options = {})
     }
   }
 
+  // 3. 제목 품질 검증 (title-generation.js 기준)
+  const titleResult = validateTitleQuality(title, userKeywords);
+  if (!titleResult.passed) {
+    const titleIssues = titleResult.issues
+      .filter(i => i.severity === 'critical' || i.severity === 'high')
+      .map(i => i.description);
+    if (titleIssues.length > 0) {
+      issues.push(`⚠️ 제목 품질 문제: ${titleIssues.join(', ')}`);
+    }
+  }
+
   return {
     passed: issues.length === 0,
     issues,
     details: {
       repetition: repetitionResult,
-      electionLaw: electionResult
+      electionLaw: electionResult,
+      titleQuality: titleResult  // 🔑 EditorAgent가 참조할 수 있도록 추가
     }
   };
 }
@@ -822,6 +933,7 @@ module.exports = {
   runHeuristicValidation,            // async (기본 LLM 사용)
   runHeuristicValidationSync,        // sync (LLM 없이 빠른 검증)
   validateKeywordInsertion,
+  validateTitleQuality,              // 제목 품질 검증
   countKeywordOccurrences,
   // 화이트리스트/블랙리스트 (테스트용)
   ALLOWED_ENDINGS,
