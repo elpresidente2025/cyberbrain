@@ -387,8 +387,10 @@ exports.generatePosts = httpWrap(async (req) => {
       let prompt = await buildSmartPrompt({
       writingMethod,
       topic: sanitizedTopic,
-      // 🔧 신분 상태는 프롬프트 내부에서만 참고용, 원고에 직접 노출되지 않도록 이름+지역만 전달
-      authorBio: `${fullName}${fullRegion ? ` (${fullRegion})` : ''}`,
+      // 신분 상태 반영: 준비/예비인 경우 "OO 준비 중" 형태로 (선거법 준수용)
+      authorBio: currentStatus === '현역'
+        ? `${fullName} (${displayTitle}, ${fullRegion || ''})`
+        : `${fullName} (${effectivePosition} 준비 중, ${fullRegion || ''})`,
       targetWordCount,
       instructions: data.instructions,
       keywords: backgroundKeywords,
