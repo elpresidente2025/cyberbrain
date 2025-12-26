@@ -73,19 +73,30 @@ async function buildSmartPrompt(options) {
       targetWordCount = 2050
     } = options;
 
-    // 0. [사용자 입력 키워드 CRITICAL 섹션] - 최우선 반영
-    let userKeywordsCritical = '';
+    // 0. [검색어(userKeywords) CRITICAL 섹션] - SEO 필수 삽입
+    // ※ 검색어 ≠ 키워드. 검색어는 반드시 삽입, 키워드는 맥락 참고용
+    let searchTermsCritical = '';
     if (userKeywords && userKeywords.length > 0) {
-      userKeywordsCritical = `
+      const searchTermList = userKeywords.map((kw, i) => `  ${i + 1}. "${kw}"`).join('\n');
+      searchTermsCritical = `
 ╔═══════════════════════════════════════════════════════════════╗
-║  🔑 [CRITICAL] 노출 희망 검색어 - 반드시 원고에 포함!          ║
+║  🔍 [CRITICAL] 노출 희망 검색어 - SEO 필수 삽입!               ║
 ╚═══════════════════════════════════════════════════════════════╝
 
-사용자가 직접 입력한 검색어: ${userKeywords.join(', ')}
+사용자가 입력한 검색어 (네이버 검색 노출용):
+${searchTermList}
 
-⚠️ 이 키워드는 네이버 검색 노출을 위해 사용자가 직접 입력한 것입니다.
-✅ 위 키워드를 원고 본문에 **반드시 최소 1회 이상** 자연스럽게 포함하세요.
-✅ 가능하면 도입부(첫 문단)에 포함하면 SEO에 효과적입니다.
+[삽입 규칙]
+✅ 각 검색어를 본문에 **최소 2회 이상** 자연스럽게 포함하세요.
+✅ 도입부(첫 문단)에 반드시 1회 포함하세요.
+✅ 검색어는 문맥에 녹여서 자연스럽게 사용하세요.
+
+❌ 절대 금지:
+- 검색어를 콤마로 나열 금지. 예: "부산, 대형병원, 순위에 대해" (X)
+- 한 문장에 여러 검색어 몰아넣기 금지.
+
+✅ 좋은 예: "부산 대형병원 순위가 해마다 하락하고 있습니다."
+❌ 나쁜 예: "부산, 대형병원, 순위에 대한 이야기입니다."
 
 `;
     }
@@ -152,12 +163,12 @@ async function buildSmartPrompt(options) {
     });
 
     // 5. [프롬프트 조립] Primacy/Recency Effect 적용
-    // 구조: userKeywords(CRITICAL) → prefix(CRITICAL) → 템플릿 → suffix(HIGH/SEO) → reminder(체크리스트)
+    // 구조: 검색어(CRITICAL) → prefix(CRITICAL) → 템플릿 → suffix(HIGH/SEO) → reminder(체크리스트)
     let assembledPrompt = '';
 
-    // 5.0 최우선: 사용자 입력 키워드 (Primacy Effect - 가장 앞에)
-    if (userKeywordsCritical) {
-      assembledPrompt += userKeywordsCritical;
+    // 5.0 최우선: 검색어 (Primacy Effect - 가장 앞에)
+    if (searchTermsCritical) {
+      assembledPrompt += searchTermsCritical;
     }
 
     // 5.1 시작: CRITICAL 지침 (Primacy Effect)

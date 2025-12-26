@@ -67,8 +67,9 @@ ${Array.isArray(instructions) ? instructions.join('\n') : instructions}
 ` : '';
 
   const keywordsSection = keywords && keywords.length > 0 ? `
-[필수 키워드 (반드시 원고에 포함할 것)]
+[맥락 키워드 (참고용 - 삽입 강제 아님)]
 ${keywords.join(', ')}
+→ 이 키워드들을 참고하여 글의 방향과 맥락을 잡으세요. 억지로 삽입할 필요 없습니다.
 ` : '';
 
   const hintsSection = personalizedHints ? `

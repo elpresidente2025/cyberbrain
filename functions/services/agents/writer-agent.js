@@ -82,13 +82,14 @@ class WriterAgent extends BaseAgent {
       throw new Error('Gemini API 키가 설정되지 않았습니다');
     }
 
-    // 1. KeywordAgent 결과 활용 + 사용자 입력 키워드 병합
+    // 1. KeywordAgent 결과 = 맥락 파악용 키워드 (삽입 강제 X)
     const keywordResult = previousResults.KeywordAgent;
-    const agentKeywords = keywordResult?.data?.keywords || [];
-    const agentKeywordStrings = agentKeywords.slice(0, 5).map(k => k.keyword || k);
+    const contextKeywords = keywordResult?.data?.keywords || [];
+    const contextKeywordStrings = contextKeywords.slice(0, 5).map(k => k.keyword || k);
 
-    // 🔑 사용자 입력 키워드를 최우선으로, 그 다음 KeywordAgent 결과
-    const keywordStrings = [...new Set([...userKeywords, ...agentKeywordStrings])];
+    // 🔑 검색어(userKeywords)와 키워드(contextKeywords)는 완전히 다른 용도
+    // - 키워드: 글의 맥락을 잡기 위한 참고 도구 (템플릿에 전달)
+    // - 검색어: SEO를 위해 반드시 삽입해야 하는 필수 요소 (CRITICAL 섹션으로 별도 주입)
 
     // 2. 작법 결정
     const writingMethod = CATEGORY_TO_WRITING_METHOD[category] || 'emotional_writing';
@@ -106,7 +107,7 @@ class WriterAgent extends BaseAgent {
       topic,
       authorBio,
       instructions,
-      keywords: keywordStrings,
+      keywords: contextKeywordStrings,  // 맥락 파악용 (삽입 강제 X)
       targetWordCount,
       personalizedHints,
       newsContext,
@@ -128,22 +129,31 @@ class WriterAgent extends BaseAgent {
       prompt = context.regionHint + '\n\n' + prompt;
     }
 
-    // 🔑 9. 사용자 입력 키워드 CRITICAL 섹션 (프롬프트 맨 앞에 추가)
+    // 🔍 9. 검색어(userKeywords) CRITICAL 섹션 - SEO 필수 삽입 (프롬프트 맨 앞)
     if (userKeywords && userKeywords.length > 0) {
-      const userKeywordsCritical = `
+      const searchTermList = userKeywords.map((kw, i) => `  ${i + 1}. "${kw}"`).join('\n');
+      const searchTermsCritical = `
 ╔═══════════════════════════════════════════════════════════════╗
-║  🔑 [CRITICAL] 노출 희망 검색어 - 반드시 원고에 포함!          ║
+║  🔍 [CRITICAL] 노출 희망 검색어 - SEO 필수 삽입!               ║
 ╚═══════════════════════════════════════════════════════════════╝
 
-사용자가 직접 입력한 검색어: ${userKeywords.join(', ')}
+사용자가 입력한 검색어 (네이버 검색 노출용):
+${searchTermList}
 
-⚠️ 이 키워드는 네이버 검색 노출을 위해 사용자가 직접 입력한 것입니다.
-✅ 위 키워드를 원고 본문에 **반드시 최소 2회 이상** 자연스럽게 포함하세요.
-✅ 도입부(첫 문단)에 반드시 1회 포함하세요. (SEO 필수)
-✅ 키워드를 그대로 사용하세요. 유사어로 대체하지 마세요.
+[삽입 규칙]
+✅ 각 검색어를 본문에 **최소 2회 이상** 자연스럽게 포함하세요.
+✅ 도입부(첫 문단)에 반드시 1회 포함하세요.
+✅ 검색어는 문맥에 녹여서 자연스럽게 사용하세요.
+
+❌ 절대 금지:
+- 검색어를 콤마로 나열 금지. 예: "부산, 대형병원, 순위에 대해" (X)
+- 한 문장에 여러 검색어 몰아넣기 금지.
+
+✅ 좋은 예: "부산 대형병원 순위가 해마다 하락하고 있습니다."
+❌ 나쁜 예: "부산, 대형병원, 순위에 대한 이야기입니다."
 
 `;
-      prompt = userKeywordsCritical + prompt;
+      prompt = searchTermsCritical + prompt;
     }
 
     console.log(`📝 [WriterAgent] 프롬프트 생성 완료 (${prompt.length}자, 작법: ${writingMethod})`);
@@ -183,7 +193,8 @@ class WriterAgent extends BaseAgent {
       title,
       wordCount: content.replace(/<[^>]*>/g, '').length,
       writingMethod,
-      keywordsUsed: keywordStrings
+      contextKeywords: contextKeywordStrings,  // 맥락용 키워드
+      searchTerms: userKeywords                 // SEO용 검색어
     };
   }
 
