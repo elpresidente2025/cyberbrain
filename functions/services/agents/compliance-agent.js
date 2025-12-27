@@ -50,6 +50,12 @@ const RISK_PATTERNS = [
   { pattern: /망했|망조|파탄/gi, severity: 'medium', reason: '과격한 표현' }
 ];
 
+// 🏷️ 제목 금지 표현 (추상적, SEO 비효율)
+const TITLE_FORBIDDEN_WORDS = [
+  '확충', '개선', '추진', '시급', '강화', '발전', '혁신', '비전', '노력', '미래',
+  '최선', '함께', '다짐', '약속', '활성화', '도모', '증진', '제고'
+];
+
 // 자당 비판 위험 패턴 (framingRules.js의 HIGH_RISK_KEYWORDS 활용)
 const SELF_CRITICISM_PATTERNS = HIGH_RISK_KEYWORDS.SELF_CRITICISM.map(keyword => ({
   pattern: new RegExp(keyword, 'gi'),
@@ -77,10 +83,12 @@ class ComplianceAgent extends BaseAgent {
     }
 
     let content = writerResult.data.content;
+    let title = writerResult.data.title || '';
     const status = userProfile.status || '현역';
     const issues = [];
     const replacements = [];
     const warnings = [];
+    const titleIssues = [];
 
     // 1. Firestore에서 동적 정책 로드 (옵션)
     let dynamicPolicy = null;
@@ -197,7 +205,14 @@ class ComplianceAgent extends BaseAgent {
       }
     }
 
-    // 10. 구조 검증 (무한 루프 방지)
+    // 🏷️ 10. 제목 검증 (금지 표현, 길이)
+    if (title) {
+      const titleValidation = this.checkTitle(title);
+      titleIssues.push(...titleValidation.issues);
+      issues.push(...titleValidation.issues);
+    }
+
+    // 11. 구조 검증 (무한 루프 방지)
     const structureIssues = this.checkStructure(content);
     issues.push(...structureIssues);
 
@@ -219,12 +234,14 @@ class ComplianceAgent extends BaseAgent {
     return {
       passed,
       content,
+      title,  // 🏷️ 제목도 반환
       issues,
+      titleIssues,  // 🏷️ 제목 관련 이슈 별도 반환
       replacements,
       warnings,
       summary: passed
         ? '검수 통과'
-        : `${criticalCount + highCount}개의 심각한 문제 발견`,
+        : `${criticalCount + highCount}개의 심각한 문제 발견${titleIssues.length > 0 ? ` (제목 문제 ${titleIssues.length}개)` : ''}`,
       score,
       electionStage: electionStage?.name || null,
       policyVersion: dynamicPolicy?.version || null
@@ -378,6 +395,68 @@ class ComplianceAgent extends BaseAgent {
     }
 
     return issues;
+  }
+
+  /**
+   * 🏷️ 제목 검증
+   * - 25자 초과 체크
+   * - 금지 표현 체크 (추상적 표현)
+   * - 부제목 패턴 체크
+   */
+  checkTitle(title) {
+    const issues = [];
+
+    // 1. 길이 체크 (25자 초과)
+    if (title.length > 25) {
+      issues.push({
+        type: 'title_length',
+        severity: 'high',
+        reason: `제목 길이 초과: ${title.length}자 (최대 25자)`,
+        current: title,
+        suggestion: '제목을 25자 이내로 줄이세요'
+      });
+    }
+
+    // 2. 금지 표현 체크
+    const foundForbidden = TITLE_FORBIDDEN_WORDS.filter(word => title.includes(word));
+    if (foundForbidden.length > 0) {
+      issues.push({
+        type: 'title_forbidden_words',
+        severity: 'high',
+        reason: `제목에 금지 표현 사용: ${foundForbidden.join(', ')}`,
+        matches: foundForbidden,
+        current: title,
+        suggestion: '구체적인 숫자나 사실로 대체하세요. 예: "혁신" → "3대 정책", "개선" → "40% 단축"'
+      });
+    }
+
+    // 3. 부제목 패턴 체크 (-, : 사용 금지)
+    if (title.includes(' - ') || title.includes(': ')) {
+      issues.push({
+        type: 'title_subtitle_pattern',
+        severity: 'medium',
+        reason: '부제목 패턴 사용 금지 (-, :)',
+        current: title,
+        suggestion: '콤마(,)로 연결하거나 단일 문장으로 작성하세요'
+      });
+    }
+
+    // 4. 추상적 마무리 체크 ("~로!", "~에!", "~을!")
+    if (/[으로|에|을|를]!$/.test(title)) {
+      issues.push({
+        type: 'title_abstract_ending',
+        severity: 'medium',
+        reason: '추상적 마무리 ("~로!", "~에!") 사용',
+        current: title,
+        suggestion: '구체적인 결과나 숫자로 마무리하세요'
+      });
+    }
+
+    if (issues.length > 0) {
+      console.log(`🏷️ [ComplianceAgent] 제목 검증 실패:`, issues.map(i => i.reason).join(', '));
+    }
+
+    return { issues };
   }
 }
 
