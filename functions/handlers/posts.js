@@ -203,7 +203,8 @@ exports.generatePosts = httpWrap(async (req) => {
   }
 
   // 🔔 진행 상황 추적 시작
-  const progressSessionId = `${uid}_${Date.now()}`;
+  // 🔧 프론트엔드에서 전달받은 progressSessionId 사용 (실시간 동기화)
+  const progressSessionId = data.progressSessionId || `${uid}_${Date.now()}`;
   const progress = new ProgressTracker(progressSessionId);
 
   try {

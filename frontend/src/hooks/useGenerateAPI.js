@@ -142,6 +142,9 @@ export function useGenerateAPI() {
         localStorage.setItem('gemini_model', modelName);
       }
 
+      // 🔧 진행 상황 추적용 세션 ID (프론트엔드에서 생성하여 백엔드로 전달)
+      const progressSessionId = `${user.uid}_${Date.now()}`;
+
       const requestData = {
         ...formData,
         prompt: formData.topic || formData.prompt,
@@ -149,21 +152,17 @@ export function useGenerateAPI() {
         useBonus: useBonus,
         modelName: modelName,
         applyEditorialRules: true,
-        sessionId: sessionId // 🆕 재생성 시 세션 ID 전달
+        sessionId: sessionId, // 🆕 재생성 시 세션 ID 전달
+        progressSessionId: progressSessionId // 🔧 진행 상황 추적용 세션 ID
       };
 
       delete requestData.topic;
 
       console.log('📝 요청 데이터:', requestData);
 
-      // HTTP 함수 호출 (비동기)
-      const resultPromise = callFunctionWithNaverAuth(CONFIG.FUNCTIONS.GENERATE_POSTS, requestData);
-
-      // sessionId를 예측하여 즉시 Firestore 리스너 등록
-      const tempSessionId = `${user.uid}_${Date.now()}`;
-
-      // Firestore 진행 상황 리스너 등록 (Firebase v9+ 모듈러 API)
-      const progressDocRef = doc(db, 'generation_progress', tempSessionId);
+      // Firestore 진행 상황 리스너 먼저 등록 (백엔드 응답 전에 업데이트 수신)
+      // 🔧 progressSessionId를 사용하여 백엔드와 동일한 문서 참조
+      const progressDocRef = doc(db, 'generation_progress', progressSessionId);
       unsubscribe = onSnapshot(
         progressDocRef,
         (docSnapshot) => {
@@ -182,8 +181,8 @@ export function useGenerateAPI() {
         }
       );
 
-      // 실제 결과 대기
-      const result = await resultPromise;
+      // HTTP 함수 호출 및 결과 대기
+      const result = await callFunctionWithNaverAuth(CONFIG.FUNCTIONS.GENERATE_POSTS, requestData);
       console.log('✅ generatePosts 응답 수신:', result);
 
       // HTTP 응답 구조 확인 및 처리
