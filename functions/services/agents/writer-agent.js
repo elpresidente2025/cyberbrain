@@ -20,8 +20,8 @@ const { getElectionStage } = require('../../prompts/guidelines/legal');
 // ✅ 제목 가이드라인 import
 const { getTitleGuidelineForTemplate } = require('../../prompts/builders/title-generation');
 
-// ✅ 수사학 전략 import (시도별 변형 생성용)
-const { selectStrategyForAttempt } = require('../../prompts/guidelines/editorial');
+// ✅ 수사학 전략 및 모범 문장 import
+const { selectStrategyForAttempt, getWritingExamples } = require('../../prompts/guidelines/editorial');
 
 // ✅ 기존 templates 100% 보존하여 import
 const { buildDailyCommunicationPrompt } = require('../../prompts/templates/daily-communication');
@@ -149,6 +149,11 @@ ${selectedStrategy.promptInjection}
       prompt = rhetoricalSection + prompt;
       console.log(`🎯 [WriterAgent] 수사학 전략 적용: ${selectedStrategy.strategyName} (시도 ${attemptNumber})`);
     }
+
+    // 🎨 7.6 모범 문장 예시 주입 (Few-shot learning)
+    const writingExamples = getWritingExamples(category);
+    prompt = writingExamples + prompt;
+    console.log(`🎨 [WriterAgent] 모범 문장 예시 주입 (카테고리: ${category})`);
 
     // 8. 타 지역 주제 힌트
     if (context.regionHint) {
