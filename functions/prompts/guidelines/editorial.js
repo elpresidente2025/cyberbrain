@@ -1108,12 +1108,22 @@ function getWritingExamples(category) {
 
   const relevantCategories = categoryMapping[category] || [];
 
+  // 공감묘사 필터링 (카테고리 관련 예시 우선, 없으면 전체에서 선택)
+  let filteredEmpathy = [];
+  if (relevantCategories.length > 0) {
+    filteredEmpathy = WRITING_EXAMPLES.공감묘사
+      .filter(e => relevantCategories.some(c => e.category && e.category.includes(c)))
+      .slice(0, 3);
+  }
+  // fallback: 필터 결과가 없으면 전체에서 3개 선택
+  if (filteredEmpathy.length === 0) {
+    filteredEmpathy = WRITING_EXAMPLES.공감묘사.slice(0, 3);
+  }
+
   // 각 기능별로 2~3개씩 선택
   const selected = {
     도입부: WRITING_EXAMPLES.도입부.slice(0, 2),
-    공감묘사: relevantCategories.length > 0
-      ? WRITING_EXAMPLES.공감묘사.filter(e => relevantCategories.some(c => e.category.includes(c))).slice(0, 3)
-      : WRITING_EXAMPLES.공감묘사.slice(0, 3),
+    공감묘사: filteredEmpathy,
     전환: WRITING_EXAMPLES.전환.slice(0, 2),
     약속다짐: WRITING_EXAMPLES.약속다짐.slice(0, 3),
     마무리: WRITING_EXAMPLES.마무리.slice(0, 2)

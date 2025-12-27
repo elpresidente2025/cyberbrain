@@ -33,13 +33,13 @@ const { buildLocalIssuesPrompt } = require('../../prompts/templates/local-issues
 // ✅ 기존 utils 보존하여 import
 const { generateNonLawmakerWarning, generateFamilyStatusWarning } = require('../../prompts/utils/non-lawmaker-warning');
 
-// 카테고리 → 작법 매핑
+// 카테고리 → 작법 매핑 (constants.js와 동일한 하이픈형 키 사용)
 const CATEGORY_TO_WRITING_METHOD = {
-  'daily': 'emotional_writing',
-  'activity': 'direct_writing',
-  'policy': 'logical_writing',
-  'current': 'critical_writing',
-  'local': 'analytical_writing'
+  'daily-communication': 'emotional_writing',
+  'activity-report': 'direct_writing',
+  'policy-proposal': 'logical_writing',
+  'current-affairs': 'critical_writing',
+  'local-issues': 'analytical_writing'
 };
 
 // 작법 → 템플릿 빌더 매핑
@@ -126,13 +126,13 @@ class WriterAgent extends BaseAgent {
       familyStatus: userProfile.familyStatus || ''
     });
 
-    // 6. 경고문 주입
-    prompt = this.injectWarnings(prompt, userProfile, authorBio);
+    // ═══════════════════════════════════════════════════════════════
+    // 6. 프롬프트 섹션 조립 (배열 방식으로 순서 명확화)
+    // 최종 순서: 수사학 → 모범문장 → 지역힌트 → 검색어 → 제목 → 경고문 → 선거법 → 본문
+    // ═══════════════════════════════════════════════════════════════
+    const promptSections = [];
 
-    // 🗳️ 7. 선거법 준수 지시문 자동 주입 (legal.js 구조적 통합)
-    prompt = this.injectElectionLawInstruction(prompt, userProfile);
-
-    // 🎯 7.5 수사학 전략 선택 및 주입 (시도별 변형 생성)
+    // 6.1 수사학 전략 (톤 설정)
     const selectedStrategy = selectStrategyForAttempt(
       attemptNumber,
       topic,
@@ -142,29 +142,26 @@ class WriterAgent extends BaseAgent {
     );
 
     if (selectedStrategy.promptInjection) {
-      const rhetoricalSection = `
-[🔥 수사학 전략 - ${selectedStrategy.strategyName}]
-${selectedStrategy.promptInjection}
-`;
-      prompt = rhetoricalSection + prompt;
+      promptSections.push(`[🔥 수사학 전략 - ${selectedStrategy.strategyName}]\n${selectedStrategy.promptInjection}`);
       console.log(`🎯 [WriterAgent] 수사학 전략 적용: ${selectedStrategy.strategyName} (시도 ${attemptNumber})`);
     }
 
-    // 🎨 7.6 모범 문장 예시 주입 (Few-shot learning)
+    // 6.2 모범 문장 예시 (Few-shot learning)
     const writingExamples = getWritingExamples(category);
-    prompt = writingExamples + prompt;
-    console.log(`🎨 [WriterAgent] 모범 문장 예시 주입 (카테고리: ${category})`);
-
-    // 8. 타 지역 주제 힌트
-    if (context.regionHint) {
-      prompt = context.regionHint + '\n\n' + prompt;
+    if (writingExamples) {
+      promptSections.push(writingExamples);
+      console.log(`🎨 [WriterAgent] 모범 문장 예시 주입 (카테고리: ${category})`);
     }
 
-    // 🔍 9. 검색어(userKeywords) CRITICAL 섹션 - SEO 필수 삽입 (프롬프트 맨 앞)
+    // 6.3 타 지역 주제 힌트
+    if (context.regionHint) {
+      promptSections.push(context.regionHint);
+    }
+
+    // 6.4 검색어 CRITICAL 섹션 (SEO 필수 삽입)
     if (userKeywords && userKeywords.length > 0) {
       const searchTermList = userKeywords.map((kw, i) => `  ${i + 1}. "${kw}"`).join('\n');
-      const searchTermsCritical = `
-╔═══════════════════════════════════════════════════════════════╗
+      promptSections.push(`╔═══════════════════════════════════════════════════════════════╗
 ║  🔍 [CRITICAL] 노출 희망 검색어 - SEO 필수 삽입!               ║
 ╚═══════════════════════════════════════════════════════════════╝
 
@@ -181,17 +178,34 @@ ${searchTermList}
 - 한 문장에 여러 검색어 몰아넣기 금지.
 
 ✅ 좋은 예: "부산 대형병원 순위가 해마다 하락하고 있습니다."
-❌ 나쁜 예: "부산, 대형병원, 순위에 대한 이야기입니다."
-
-`;
-      prompt = searchTermsCritical + prompt;
+❌ 나쁜 예: "부산, 대형병원, 순위에 대한 이야기입니다."`);
     }
 
-    // 🏷️ 10. 제목 가이드라인 주입 (title-generation.js 활용)
+    // 6.5 제목 가이드라인
     const titleGuideline = getTitleGuidelineForTemplate(userKeywords);
-    prompt = titleGuideline + prompt;
+    if (titleGuideline) {
+      promptSections.push(titleGuideline);
+    }
 
-    console.log(`📝 [WriterAgent] 프롬프트 생성 완료 (${prompt.length}자, 작법: ${writingMethod})`);
+    // 6.6 경고문 (원외 인사, 가족 상황)
+    const warnings = this.buildWarnings(userProfile, authorBio);
+    if (warnings) {
+      promptSections.push(warnings);
+    }
+
+    // 6.7 선거법 준수 지시문
+    const electionLawInstruction = this.getElectionLawInstruction(userProfile);
+    if (electionLawInstruction) {
+      promptSections.push(electionLawInstruction);
+    }
+
+    // 6.8 본문 템플릿 (맨 마지막)
+    promptSections.push(prompt);
+
+    // 최종 프롬프트 조립
+    prompt = promptSections.join('\n\n');
+
+    console.log(`📝 [WriterAgent] 프롬프트 생성 완료 (${prompt.length}자, 작법: ${writingMethod}, 섹션: ${promptSections.length}개)`);
 
     // 9. Gemini 호출
     const model = ai.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
@@ -271,9 +285,11 @@ ${searchTermList}
   }
 
   /**
-   * 경고문 주입 (원외 인사, 가족 상황)
+   * 경고문 빌드 (원외 인사, 가족 상황) - 문자열 반환
    */
-  injectWarnings(prompt, userProfile, authorBio) {
+  buildWarnings(userProfile, authorBio) {
+    const warnings = [];
+
     // 원외 인사 경고
     const nonLawmakerWarning = generateNonLawmakerWarning({
       isCurrentLawmaker: this.isCurrentLawmaker(userProfile),
@@ -282,7 +298,7 @@ ${searchTermList}
     });
 
     if (nonLawmakerWarning) {
-      prompt = nonLawmakerWarning + '\n\n' + prompt;
+      warnings.push(nonLawmakerWarning.trim());
     }
 
     // 가족 상황 경고 (자녀 환각 방지)
@@ -291,26 +307,26 @@ ${searchTermList}
     });
 
     if (familyWarning) {
-      prompt = familyWarning + '\n\n' + prompt;
+      warnings.push(familyWarning.trim());
     }
 
-    return prompt;
+    return warnings.length > 0 ? warnings.join('\n\n') : '';
   }
 
   /**
-   * 🗳️ 선거법 준수 지시문 자동 주입 (legal.js 구조적 통합)
-   * userProfile.status에 따라 해당 단계의 promptInstruction을 주입
+   * 🗳️ 선거법 준수 지시문 가져오기 (legal.js 구조적 통합) - 문자열 반환
+   * userProfile.status에 따라 해당 단계의 promptInstruction을 반환
    */
-  injectElectionLawInstruction(prompt, userProfile) {
+  getElectionLawInstruction(userProfile) {
     const status = userProfile.status || '준비';
     const electionStage = getElectionStage(status);
 
     if (electionStage && electionStage.promptInstruction) {
       console.log(`🗳️ [WriterAgent] 선거법 지시문 주입: ${electionStage.name} (상태: ${status})`);
-      return electionStage.promptInstruction + '\n\n' + prompt;
+      return electionStage.promptInstruction.trim();
     }
 
-    return prompt;
+    return '';
   }
 }
 
