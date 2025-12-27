@@ -50,11 +50,12 @@ const RISK_PATTERNS = [
   { pattern: /망했|망조|파탄/gi, severity: 'medium', reason: '과격한 표현' }
 ];
 
-// 🏷️ 제목 금지 표현 (추상적, SEO 비효율)
-const TITLE_FORBIDDEN_WORDS = [
-  '확충', '개선', '추진', '시급', '강화', '발전', '혁신', '비전', '노력', '미래',
-  '최선', '함께', '다짐', '약속', '활성화', '도모', '증진', '제고'
-];
+// 🏷️ 제목 필수 조건 (화이트리스트 방식)
+const TITLE_REQUIREMENTS = {
+  maxLength: 25,
+  mustHaveNumber: true,
+  noSubtitle: true  // 콤마, 슬래시, 하이픈으로 나눈 부제목 금지
+};
 
 // 자당 비판 위험 패턴 (framingRules.js의 HIGH_RISK_KEYWORDS 활용)
 const SELF_CRITICISM_PATTERNS = HIGH_RISK_KEYWORDS.SELF_CRITICISM.map(keyword => ({
@@ -206,10 +207,21 @@ class ComplianceAgent extends BaseAgent {
     }
 
     // 🏷️ 10. 제목 검증 (금지 표현, 길이)
-    if (title) {
+    if (title && title.trim()) {
       const titleValidation = this.checkTitle(title);
       titleIssues.push(...titleValidation.issues);
       issues.push(...titleValidation.issues);
+    } else {
+      // 제목 미존재도 high 이슈로 처리 → passed: false → 재검증 루프 트리거
+      const noTitleIssue = {
+        type: 'title_missing',
+        severity: 'high',
+        reason: '제목이 없거나 비어있음',
+        current: title || '(없음)',
+        suggestion: '25자 이내, 숫자 포함, 키워드 앞배치 제목 필요'
+      };
+      titleIssues.push(noTitleIssue);
+      issues.push(noTitleIssue);
     }
 
     // 11. 구조 검증 (무한 루프 방지)
@@ -398,62 +410,60 @@ class ComplianceAgent extends BaseAgent {
   }
 
   /**
-   * 🏷️ 제목 검증
-   * - 25자 초과 체크
-   * - 금지 표현 체크 (추상적 표현)
-   * - 부제목 패턴 체크
+   * 🏷️ 제목 검증 (화이트리스트 방식 - 필수 조건 체크)
+   *
+   * 필수 조건 4가지:
+   * 1. 25자 이내
+   * 2. 숫자 1개 이상 포함
+   * 3. 단일 문장 (부제목 구분자 없음)
+   * 4. 키워드가 앞에 위치 (선택)
    */
   checkTitle(title) {
     const issues = [];
 
-    // 1. 길이 체크 (25자 초과)
-    if (title.length > 25) {
+    // 【조건 1】 25자 이내
+    if (title.length > TITLE_REQUIREMENTS.maxLength) {
       issues.push({
         type: 'title_length',
         severity: 'high',
-        reason: `제목 길이 초과: ${title.length}자 (최대 25자)`,
+        reason: `제목 ${title.length}자 → 25자 이내로`,
         current: title,
-        suggestion: '제목을 25자 이내로 줄이세요'
+        suggestion: '불필요한 단어 제거. 예: "부산 대형병원 5곳 응급실 확대"'
       });
     }
 
-    // 2. 금지 표현 체크
-    const foundForbidden = TITLE_FORBIDDEN_WORDS.filter(word => title.includes(word));
-    if (foundForbidden.length > 0) {
+    // 【조건 2】 숫자 1개 이상 포함
+    if (TITLE_REQUIREMENTS.mustHaveNumber && !/\d/.test(title)) {
       issues.push({
-        type: 'title_forbidden_words',
+        type: 'title_no_number',
         severity: 'high',
-        reason: `제목에 금지 표현 사용: ${foundForbidden.join(', ')}`,
-        matches: foundForbidden,
+        reason: '제목에 숫자 없음 → 숫자 필수',
         current: title,
-        suggestion: '구체적인 숫자나 사실로 대체하세요. 예: "혁신" → "3대 정책", "개선" → "40% 단축"'
+        suggestion: '구체적 숫자 추가. 예: "5곳", "27위", "30%", "3년"'
       });
     }
 
-    // 3. 부제목 패턴 체크 (-, : 사용 금지)
-    if (title.includes(' - ') || title.includes(': ')) {
-      issues.push({
-        type: 'title_subtitle_pattern',
-        severity: 'medium',
-        reason: '부제목 패턴 사용 금지 (-, :)',
-        current: title,
-        suggestion: '콤마(,)로 연결하거나 단일 문장으로 작성하세요'
-      });
-    }
+    // 【조건 3】 단일 문장 (부제목 구분자 없음)
+    if (TITLE_REQUIREMENTS.noSubtitle) {
+      const hasSubtitle =
+        title.includes(' - ') ||  // 하이픈
+        title.includes(': ') ||   // 콜론
+        title.includes('/') ||    // 슬래시
+        /,\s*.{4,}$/.test(title); // 콤마 부제목 (콤마 뒤 4자 이상)
 
-    // 4. 추상적 마무리 체크 ("~로!", "~에!", "~을!")
-    if (/[으로|에|을|를]!$/.test(title)) {
-      issues.push({
-        type: 'title_abstract_ending',
-        severity: 'medium',
-        reason: '추상적 마무리 ("~로!", "~에!") 사용',
-        current: title,
-        suggestion: '구체적인 결과나 숫자로 마무리하세요'
-      });
+      if (hasSubtitle) {
+        issues.push({
+          type: 'title_has_subtitle',
+          severity: 'high',
+          reason: '부제목 패턴 금지 (-, :, /, 콤마+문장)',
+          current: title,
+          suggestion: '단일 문장으로. 예: "부산 대형병원 5곳 응급실 24시간 운영"'
+        });
+      }
     }
 
     if (issues.length > 0) {
-      console.log(`🏷️ [ComplianceAgent] 제목 검증 실패:`, issues.map(i => i.reason).join(', '));
+      console.log(`🏷️ [ComplianceAgent] 제목 필수조건 미충족:`, issues.map(i => i.reason).join(' | '));
     }
 
     return { issues };

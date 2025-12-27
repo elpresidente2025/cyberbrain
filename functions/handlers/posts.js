@@ -646,48 +646,58 @@ exports.generatePosts = httpWrap(async (req) => {
     await progress.stepValidating();
 
     // 🔧 EditorAgent: 검증 결과 기반 LLM 수정
-    try {
-      // 휴리스틱 검증 실행 (제목 + 본문 모두 검사, LLM 하이브리드, 제목 품질 검증 포함)
-      const heuristicResult = await runHeuristicValidation(generatedContent, currentStatus, generatedTitle, { useLLM: true, userKeywords });
+    // ⚠️ Multi-Agent 모드에서는 Orchestrator가 이미 재검증 루프를 실행했으므로 스킵
+    if (multiAgentMetadata) {
+      console.log('✅ [Multi-Agent] Orchestrator 재검증 루프 완료 - 레거시 EditorAgent 스킵', {
+        qualityThresholdMet: multiAgentMetadata.quality?.thresholdMet,
+        refinementAttempts: multiAgentMetadata.quality?.refinementAttempts,
+        seoScore: multiAgentMetadata.seo?.score
+      });
+    } else {
+      // 레거시 모드에서만 EditorAgent 실행
+      try {
+        // 휴리스틱 검증 실행 (제목 + 본문 모두 검사, LLM 하이브리드, 제목 품질 검증 포함)
+        const heuristicResult = await runHeuristicValidation(generatedContent, currentStatus, generatedTitle, { useLLM: true, userKeywords });
 
-      // 키워드 검증 실행
-      const extractedKeywords = backgroundKeywords.filter(k => !userKeywords.includes(k));
-      const keywordResult = validateKeywordInsertion(
-        generatedContent,
-        userKeywords,
-        extractedKeywords,
-        targetWordCount
-      );
-
-      // 문제가 발견되면 EditorAgent로 수정
-      if (!heuristicResult.passed || !keywordResult.valid) {
-        console.log('📝 [EditorAgent] 검증 실패, LLM 수정 시작:', {
-          heuristicPassed: heuristicResult.passed,
-          keywordValid: keywordResult.valid,
-          issues: heuristicResult.issues
-        });
-
-        const editorResult = await refineWithLLM({
-          content: generatedContent,
-          title: generatedTitle,
-          validationResult: heuristicResult,
-          keywordResult,
+        // 키워드 검증 실행
+        const extractedKeywords = backgroundKeywords.filter(k => !userKeywords.includes(k));
+        const keywordResult = validateKeywordInsertion(
+          generatedContent,
           userKeywords,
-          status: currentStatus,
-          modelName
-        });
+          extractedKeywords,
+          targetWordCount
+        );
 
-        if (editorResult.edited) {
-          generatedContent = editorResult.content;
-          generatedTitle = editorResult.title;
-          console.log('✅ [EditorAgent] 수정 완료:', editorResult.editSummary);
+        // 문제가 발견되면 EditorAgent로 수정
+        if (!heuristicResult.passed || !keywordResult.valid) {
+          console.log('📝 [EditorAgent] 검증 실패, LLM 수정 시작:', {
+            heuristicPassed: heuristicResult.passed,
+            keywordValid: keywordResult.valid,
+            issues: heuristicResult.issues
+          });
+
+          const editorResult = await refineWithLLM({
+            content: generatedContent,
+            title: generatedTitle,
+            validationResult: heuristicResult,
+            keywordResult,
+            userKeywords,
+            status: currentStatus,
+            modelName
+          });
+
+          if (editorResult.edited) {
+            generatedContent = editorResult.content;
+            generatedTitle = editorResult.title;
+            console.log('✅ [EditorAgent] 수정 완료:', editorResult.editSummary);
+          }
+        } else {
+          console.log('✅ [EditorAgent] 검증 통과 - 수정 불필요');
         }
-      } else {
-        console.log('✅ [EditorAgent] 검증 통과 - 수정 불필요');
+      } catch (editorError) {
+        console.warn('⚠️ [EditorAgent] 실패 (원본 유지):', editorError.message);
+        // 실패해도 원본 유지하고 계속 진행
       }
-    } catch (editorError) {
-      console.warn('⚠️ [EditorAgent] 실패 (원본 유지):', editorError.message);
-      // 실패해도 원본 유지하고 계속 진행
     }
 
     // 5단계: 마무리 중

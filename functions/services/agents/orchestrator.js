@@ -144,7 +144,146 @@ class Orchestrator {
       }
     }
 
+    // 🎯 파이프라인 종료 전 최종 품질 검사
+    await this.ensureQualityThreshold(currentContext);
+
     return this.buildFinalResult(true);
+  }
+
+  /**
+   * 🎯 최종 품질 기준 검사 - SEO 점수 및 이슈 체크
+   * ComplianceAgent가 통과해도 SEO 점수가 낮으면 EditorAgent로 개선
+   */
+  async ensureQualityThreshold(context) {
+    let seoResult = this.results.SEOAgent?.data;
+    let complianceResult = this.results.ComplianceAgent?.data;
+
+    if (!seoResult || !complianceResult) return;
+
+    let currentSeoScore = seoResult.seoScore || 0;
+    let criticalIssues = (complianceResult.issues || [])
+      .filter(i => i.severity === 'critical' || i.severity === 'high').length;
+
+    // 이미 기준 충족이면 종료
+    if (currentSeoScore >= QUALITY_THRESHOLDS.SEO_MIN_SCORE && criticalIssues === 0) {
+      complianceResult.qualityThresholdMet = true;
+      return;
+    }
+
+    console.log(`🎯 [Orchestrator] 최종 품질 검사 시작: SEO=${currentSeoScore}, 심각 이슈=${criticalIssues}`);
+
+    // SEO 기준 미달 시 EditorAgent로 개선 시도
+    let currentContent = complianceResult.content;
+    let currentTitle = complianceResult.title || this.results.WriterAgent?.data?.title || '';
+    let attempt = 0;
+    const maxAttempts = 2;
+
+    // 🔧 refinementAttempts 보존 (SEO 루프에서 complianceResult 덮어쓰기 전에 저장)
+    const previousRefinementAttempts = complianceResult.refinementAttempts || 0;
+
+    while (attempt < maxAttempts && currentSeoScore < QUALITY_THRESHOLDS.SEO_MIN_SCORE) {
+      attempt++;
+      console.log(`🔧 [Orchestrator] SEO 개선 시도 ${attempt}/${maxAttempts}`);
+
+      try {
+        const currentSuggestions = this.results.SEOAgent?.data?.suggestions || [];
+        if (currentSuggestions.length === 0) break;
+
+        const editorResult = await refineWithLLM({
+          content: currentContent,
+          title: currentTitle,
+          validationResult: {
+            passed: true,
+            details: {
+              electionLaw: { violations: [] },
+              repetition: { repeatedSentences: [] },
+              seo: {
+                score: currentSeoScore,
+                suggestions: currentSuggestions.map(s => s.suggestion || s)
+              }
+            }
+          },
+          keywordResult: null,
+          userKeywords: context.userKeywords || [],
+          status: context.userProfile?.status || '준비',
+          modelName: 'gemini-2.0-flash-exp'
+        });
+
+        if (editorResult.edited) {
+          currentContent = editorResult.content;
+          currentTitle = editorResult.title || currentTitle;
+          console.log(`✅ [Orchestrator] SEO 개선 완료:`, editorResult.editSummary);
+
+          // 🔧 SEO 개선 후 Compliance 재검증 (제목 변경 시 필수)
+          const complianceAgent = new ComplianceAgent();
+          const complianceRecheck = await complianceAgent.run({
+            ...context,
+            previousResults: {
+              ...this.results,
+              WriterAgent: { success: true, data: { content: currentContent, title: currentTitle } }
+            }
+          });
+
+          if (complianceRecheck.success) {
+            this.results.ComplianceAgent = complianceRecheck;
+            complianceResult = complianceRecheck.data;
+
+            // 🔧 Compliance auto-fix 동기화 (빈 문자열도 유효한 값이므로 !== undefined 체크)
+            if (complianceResult.content !== undefined) {
+              currentContent = complianceResult.content;
+            }
+            if (complianceResult.title !== undefined) {
+              currentTitle = complianceResult.title;
+            }
+
+            criticalIssues = (complianceResult.issues || [])
+              .filter(i => i.severity === 'critical' || i.severity === 'high').length;
+
+            if (criticalIssues > 0) {
+              console.warn(`⚠️ [Orchestrator] SEO 개선 후 Compliance 실패: ${criticalIssues}개 이슈`);
+              // Compliance 실패 시 루프 중단 - 이전 상태로 롤백하지 않고 경고만
+            }
+          }
+
+          // SEO 재검증
+          const seoAgent = new SEOAgent();
+          const newSeoResult = await seoAgent.run({
+            ...context,
+            previousResults: {
+              ...this.results,
+              WriterAgent: { success: true, data: { content: currentContent, title: currentTitle } }
+            }
+          });
+
+          if (newSeoResult.success) {
+            this.results.SEOAgent = newSeoResult;
+            currentSeoScore = newSeoResult.data.seoScore || 0;  // 🔧 점수 갱신
+            if (currentSeoScore >= QUALITY_THRESHOLDS.SEO_MIN_SCORE) {
+              console.log(`✅ [Orchestrator] SEO 기준 충족: ${currentSeoScore}점`);
+              break;
+            }
+          }
+        } else {
+          break;
+        }
+      } catch (error) {
+        console.warn(`⚠️ [Orchestrator] SEO 개선 실패:`, error.message);
+        break;
+      }
+    }
+
+    // 최종 결과 업데이트
+    this.results.ComplianceAgent.data.content = currentContent;
+    this.results.ComplianceAgent.data.title = currentTitle;
+
+    const finalSeoScore = this.results.SEOAgent?.data?.seoScore || 0;
+    const finalCriticalIssues = (this.results.ComplianceAgent?.data?.issues || [])
+      .filter(i => i.severity === 'critical' || i.severity === 'high').length;
+    const finalQualityMet = finalSeoScore >= QUALITY_THRESHOLDS.SEO_MIN_SCORE && finalCriticalIssues === 0;
+    this.results.ComplianceAgent.data.qualityThresholdMet = finalQualityMet;
+    this.results.ComplianceAgent.data.refinementAttempts = previousRefinementAttempts + attempt;
+
+    console.log(`🎯 [Orchestrator] 최종 품질 결과: SEO=${finalSeoScore}, 이슈=${finalCriticalIssues}, 기준충족=${finalQualityMet}`);
   }
 
   /**
@@ -242,6 +381,16 @@ class Orchestrator {
 
         if (revalidationResult.success) {
           complianceResult = revalidationResult;
+          // 🔧 this.results에도 반영 (buildFinalResult, ensureQualityThreshold가 최신 상태 참조)
+          this.results.ComplianceAgent = revalidationResult;
+
+          // 🔧 Compliance auto-fix 동기화 (빈 문자열도 유효한 값이므로 !== undefined 체크)
+          if (revalidationResult.data.content !== undefined) {
+            currentContent = revalidationResult.data.content;
+          }
+          if (revalidationResult.data.title !== undefined) {
+            currentTitle = revalidationResult.data.title;
+          }
 
           // critical/high 이슈 체크
           const newCriticalIssues = (revalidationResult.data.issues || [])

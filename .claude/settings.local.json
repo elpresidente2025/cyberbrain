@@ -135,7 +135,14 @@
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: 제목 생성 및 ''준비 중'' 표현 원고 노출 문제 수정\n\n1. 제목 로직 수정\n   - AI 응답 title이 topic과 동일하거나 \"관련 원고\"로 끝나면 재생성\n   - generateTitleFromContent 강제 호출로 SEO 최적화된 제목 보장\n\n2. ''준비 중'' 표현 원고 노출 방지\n   - authorBio에서 \"OO 준비 중\" 형태 제거, 이름+지역만 전달\n   - non-lawmaker-warning에 \"준비 중\" 표현 사용 금지 지시 추가\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: authorBio 롤백 및 메타 정보 노출 금지 지시 개선\n\n- authorBio에 신분 정보 복원 \\(선거법 준수에 필요\\)\n- 프롬프트에 \"메타 정보를 원고에 노출하지 말 것\" 지시 추가\n- 직위+준비 조합 표현 금지 명시\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: 노출 희망 검색어 반영 강화 및 제목 길이 제한\n\n1. 본문 생성\n   - userKeywords를 CRITICAL 섹션으로 프롬프트 맨 앞에 주입\n   - 사용자 입력 키워드 최우선 반영 지시 강화\n\n2. 제목 생성\n   - 30자 제한 강력 강조 \\(부제목 금지, 불필요 표현 제거\\)\n   - 35자 초과 시 자동 축약 후처리 추가\n   - 필수 키워드 포함 우선순위 명시\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(npm run lint:*)"
+      "Bash(npm run lint:*)",
+      "Skill(test-agent)",
+      "Bash(claude mcp add codex-cli -- npx -y codex-mcp-server)",
+      "mcp__codex-cli__ping",
+      "mcp__codex-cli__codex",
+      "mcp__codex-cli__help",
+      "mcp__codex-cli__listSessions",
+      "mcp__codex-cli__review"
     ]
   },
   "mcpServers": {
