@@ -136,6 +136,19 @@ exports.saveSelectedPost = httpWrap(async (req) => {
       console.warn('⚠️ 메모리 업데이트 실패 (무시):', memoryError.message);
     }
 
+    // 🎯 수사학 전략 선호도 업데이트 (선택된 전략 학습)
+    if (data.appliedStrategy && data.appliedStrategy.id) {
+      try {
+        const strategyId = data.appliedStrategy.id;
+        await db.collection('users').doc(uid).update({
+          [`rhetoricalPreferences.${strategyId}`]: admin.firestore.FieldValue.increment(1)
+        });
+        console.log(`✅ 수사학 전략 선호도 업데이트: ${strategyId} +1`);
+      } catch (prefError) {
+        console.warn('⚠️ 수사학 전략 선호도 업데이트 실패 (무시):', prefError.message);
+      }
+    }
+
     // 세션 종료 처리 (activeGenerationSession 삭제)
     await endSession(uid);
     console.log('✅ 생성 세션 종료 (원고 저장 완료)');

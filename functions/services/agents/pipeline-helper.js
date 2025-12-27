@@ -42,6 +42,8 @@ async function isMultiAgentEnabled() {
  * @param {string} params.regionHint - 타 지역 힌트
  * @param {Array<string>} params.keywords - 키워드
  * @param {number} params.targetWordCount - 목표 글자수
+ * @param {number} params.attemptNumber - 시도 번호 (0, 1, 2) - 수사학 전략 변형용
+ * @param {Object} params.rhetoricalPreferences - 사용자 수사학 전략 선호도
  * @returns {Promise<Object>} 생성 결과
  */
 async function generateWithMultiAgent({
@@ -54,9 +56,11 @@ async function generateWithMultiAgent({
   regionHint = '',
   keywords = [],
   userKeywords = [],  // 🔑 사용자 직접 입력 키워드 (최우선)
-  targetWordCount = 1700
+  targetWordCount = 1700,
+  attemptNumber = 0,  // 🎯 시도 번호 (수사학 전략 변형용)
+  rhetoricalPreferences = {}  // 🎯 사용자 수사학 전략 선호도
 }) {
-  console.log('🤖 [MultiAgent] 전체 파이프라인 시작');
+  console.log('🤖 [MultiAgent] 전체 파이프라인 시작', { attemptNumber });
 
   const context = {
     topic,
@@ -68,7 +72,9 @@ async function generateWithMultiAgent({
     regionHint,
     keywords,
     userKeywords,  // 🔑 사용자 직접 입력 키워드 전달
-    targetWordCount
+    targetWordCount,
+    attemptNumber,  // 🎯 시도 번호 전달
+    rhetoricalPreferences  // 🎯 수사학 전략 선호도 전달
   };
 
   // 표준 파이프라인 실행 (KeywordAgent → WriterAgent → ComplianceAgent → SEOAgent)
@@ -79,12 +85,16 @@ async function generateWithMultiAgent({
     throw new Error(result.error || 'Multi-Agent 파이프라인 실패');
   }
 
+  // 🎯 WriterAgent에서 적용된 수사학 전략 추출
+  const appliedStrategy = result.agentResults?.WriterAgent?.data?.appliedStrategy || null;
+
   console.log('✅ [MultiAgent] 파이프라인 완료', {
     hasContent: !!result.content,
     hasTitle: !!result.title,
     duration: result.metadata?.duration,
     seoScore: result.metadata?.seo?.score,
-    compliancePassed: result.metadata?.compliance?.passed
+    compliancePassed: result.metadata?.compliance?.passed,
+    appliedStrategy: appliedStrategy?.id
   });
 
   return {
@@ -92,7 +102,8 @@ async function generateWithMultiAgent({
     title: result.title,
     wordCount: result.metadata?.wordCount || 0,
     metadata: result.metadata,
-    agentResults: result.agentResults
+    agentResults: result.agentResults,
+    appliedStrategy  // 🎯 적용된 수사학 전략 반환
   };
 }
 

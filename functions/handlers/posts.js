@@ -402,12 +402,16 @@ exports.generatePosts = httpWrap(async (req) => {
           regionHint,
           keywords: backgroundKeywords,
           userKeywords,  // 🔑 사용자 직접 입력 키워드 (최우선)
-          targetWordCount
+          targetWordCount,
+          attemptNumber: session.attempts,  // 🎯 현재 시도 번호 (수사학 전략 변형용)
+          rhetoricalPreferences: userProfile.rhetoricalPreferences || {}  // 🎯 수사학 전략 선호도
         });
 
         generatedContent = multiAgentResult.content;
         generatedTitle = multiAgentResult.title;
         multiAgentMetadata = multiAgentResult.metadata;
+        // 🎯 적용된 수사학 전략 저장
+        multiAgentMetadata.appliedStrategy = multiAgentResult.appliedStrategy;
 
         console.log('✅ [Multi-Agent] 생성 완료', {
           wordCount: multiAgentResult.wordCount,
@@ -796,7 +800,8 @@ exports.generatePosts = httpWrap(async (req) => {
           complianceIssues: multiAgentMetadata.compliance?.issueCount || 0,
           seoScore: multiAgentMetadata.seo?.score,
           keywords: multiAgentMetadata.keywords,
-          duration: multiAgentMetadata.duration
+          duration: multiAgentMetadata.duration,
+          appliedStrategy: multiAgentMetadata.appliedStrategy || null  // 🎯 적용된 수사학 전략
         } : { enabled: false },
         // 🎨 고품질 모드 메타데이터 (2단계 생성)
         highQuality: highQualityMetadata || { enabled: false }

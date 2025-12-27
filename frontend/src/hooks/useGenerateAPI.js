@@ -341,7 +341,8 @@ export function useGenerateAPI() {
         style: draft.style,
         type: draft.type,
         meta: draft.meta,
-        sessionId: sessionId // 🆕 세션 ID 전달 (세션 완료 처리용)
+        sessionId: sessionId, // 🆕 세션 ID 전달 (세션 완료 처리용)
+        appliedStrategy: draft.multiAgent?.appliedStrategy || null  // 🎯 적용된 수사학 전략 (선호도 학습용)
       });
 
       console.log('✅ savePost 응답 수신:', result);

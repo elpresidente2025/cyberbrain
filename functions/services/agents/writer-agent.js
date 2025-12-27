@@ -20,6 +20,9 @@ const { getElectionStage } = require('../../prompts/guidelines/legal');
 // ✅ 제목 가이드라인 import
 const { getTitleGuidelineForTemplate } = require('../../prompts/builders/title-generation');
 
+// ✅ 수사학 전략 import (시도별 변형 생성용)
+const { selectStrategyForAttempt } = require('../../prompts/guidelines/editorial');
+
 // ✅ 기존 templates 100% 보존하여 import
 const { buildDailyCommunicationPrompt } = require('../../prompts/templates/daily-communication');
 const { buildLogicalWritingPrompt } = require('../../prompts/templates/policy-proposal');
@@ -77,7 +80,9 @@ class WriterAgent extends BaseAgent {
       newsContext = '',
       targetWordCount = 1700,
       userKeywords = [],  // 🔑 사용자 직접 입력 키워드 (최우선)
-      previousResults = {}
+      previousResults = {},
+      attemptNumber = 0,  // 🎯 시도 번호 (0, 1, 2) - 수사학 전략 변형용
+      rhetoricalPreferences = {}  // 🎯 사용자 수사학 전략 선호도
     } = context;
 
     const ai = getGenAI();
@@ -126,6 +131,24 @@ class WriterAgent extends BaseAgent {
 
     // 🗳️ 7. 선거법 준수 지시문 자동 주입 (legal.js 구조적 통합)
     prompt = this.injectElectionLawInstruction(prompt, userProfile);
+
+    // 🎯 7.5 수사학 전략 선택 및 주입 (시도별 변형 생성)
+    const selectedStrategy = selectStrategyForAttempt(
+      attemptNumber,
+      topic,
+      instructions,
+      userProfile,
+      rhetoricalPreferences
+    );
+
+    if (selectedStrategy.promptInjection) {
+      const rhetoricalSection = `
+[🔥 수사학 전략 - ${selectedStrategy.strategyName}]
+${selectedStrategy.promptInjection}
+`;
+      prompt = rhetoricalSection + prompt;
+      console.log(`🎯 [WriterAgent] 수사학 전략 적용: ${selectedStrategy.strategyName} (시도 ${attemptNumber})`);
+    }
 
     // 8. 타 지역 주제 힌트
     if (context.regionHint) {
@@ -201,7 +224,12 @@ ${searchTermList}
       wordCount: content.replace(/<[^>]*>/g, '').length,
       writingMethod,
       contextKeywords: contextKeywordStrings,  // 맥락용 키워드
-      searchTerms: userKeywords                 // SEO용 검색어
+      searchTerms: userKeywords,               // SEO용 검색어
+      // 🎯 수사학 전략 메타데이터 (선호도 학습용)
+      appliedStrategy: {
+        id: selectedStrategy.strategyId,
+        name: selectedStrategy.strategyName
+      }
     };
   }
 

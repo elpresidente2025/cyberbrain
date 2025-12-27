@@ -6,6 +6,9 @@
 
 'use strict';
 
+// 수사학 전략 모듈 import
+const { getActiveStrategies } = require('../guidelines/editorial');
+
 const ANALYTICAL_STRUCTURES = {
   ISSUE_ANALYSIS: { id: 'issue_analysis', name: '현안별 이슈 분석 구조', instruction: "글을 '현안 문제 정의 및 현황 파악 → 근본 원인 분석(정부 정책, 지역 여건 등) → 구체적인 해결 방안 제시 → 기대 효과 및 향후 계획'의 순서로 체계적으로 구성하세요." },
   BUDGET_PERFORMANCE_ANALYSIS: { id: 'budget_performance_analysis', name: '예산 확보 성과 분석 구조', instruction: "확보한 예산을 '총액 및 건수 명시 → 분야별/지역별 배분 현황 분석 → 과거 데이터와 비교 분석 → 집행 계획 및 기대 효과' 순으로 구성하여 성과를 구체적인 수치로 증명하세요." },
@@ -43,11 +46,15 @@ function buildLocalIssuesPrompt(options) {
     analyticalStructureId,
     explanatoryTacticId,
     vocabularyModuleId,
+    userProfile = {},  // 수사학 전략용 프로필
   } = options;
 
   const analyticalStructure = Object.values(ANALYTICAL_STRUCTURES).find(s => s.id === analyticalStructureId) || ANALYTICAL_STRUCTURES.ISSUE_ANALYSIS;
   const explanatoryTactic = Object.values(EXPLANATORY_TACTICS).find(t => t.id === explanatoryTacticId) || EXPLANATORY_TACTICS.FACTS_AND_FIGURES;
   const vocabularyModule = Object.values(VOCABULARY_MODULES).find(m => m.id === vocabularyModuleId) || VOCABULARY_MODULES.DATA_DRIVEN_OBJECTIVE;
+
+  // 🎯 수사학 전략 동적 적용
+  const rhetoricalStrategy = getActiveStrategies(topic, instructions || '', userProfile);
 
   const backgroundSection = instructions ? `
 [배경 정보 및 필수 포함 내용]
@@ -70,6 +77,12 @@ ${personalizedHints}
 ${newsContext}
 ` : '';
 
+  // 🎯 수사학 전략 섹션
+  const rhetoricalSection = rhetoricalStrategy.promptInjection ? `
+[🔥 수사학 전략 - 설득력 강화]
+${rhetoricalStrategy.promptInjection}
+` : '';
+
   const prompt = `
 # 전자두뇌비서관 - 분석적 글쓰기 원고 생성 (지역 현안)
 
@@ -77,7 +90,7 @@ ${newsContext}
 - 작성자: ${authorBio}
 - 글의 주제: "${topic}"
 - 목표 분량: ${targetWordCount || 1700}자 (공백 제외)
-${backgroundSection}${keywordsSection}${hintsSection}${newsSection}
+${backgroundSection}${keywordsSection}${hintsSection}${newsSection}${rhetoricalSection}
 [글쓰기 설계도]
 너는 아래 3가지 부품을 조립하여, 매우 구체적이고 전문적인 글을 만들어야 한다.
 

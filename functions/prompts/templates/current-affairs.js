@@ -5,6 +5,9 @@
 
 'use strict';
 
+// 수사학 전략 모듈 import
+const { getActiveStrategies } = require('../guidelines/editorial');
+
 // ============================================================================
 // 작성 예시 (사용자가 실제 내용을 채워넣을 템플릿)
 // ============================================================================
@@ -120,6 +123,7 @@ function buildCriticalWritingPrompt(options) {
     criticalStructureId,
     offensiveTacticId,
     vocabularyModuleId,
+    userProfile = {},  // 수사학 전략용 프로필
   } = options;
 
   const criticalStructure = Object.values(CRITICAL_STRUCTURES).find(s => s.id === criticalStructureId) || CRITICAL_STRUCTURES.SOLUTION_FIRST_CRITICISM;
@@ -128,6 +132,9 @@ function buildCriticalWritingPrompt(options) {
 
   // 🆕 관련 예시 가져오기
   const relevantExample = getRelevantExample(criticalStructure.id);
+
+  // 🎯 수사학 전략 동적 적용
+  const rhetoricalStrategy = getActiveStrategies(topic, instructions || '', userProfile);
 
   const backgroundSection = instructions ? `
 [배경 정보 및 필수 포함 내용]
@@ -150,6 +157,12 @@ ${personalizedHints}
 ${newsContext}
 ` : '';
 
+  // 🎯 수사학 전략 섹션
+  const rhetoricalSection = rhetoricalStrategy.promptInjection ? `
+[🔥 수사학 전략 - 설득력 강화]
+${rhetoricalStrategy.promptInjection}
+` : '';
+
   const prompt = `
 # 전자두뇌비서관 - 비판적 글쓰기 원고 생성
 
@@ -157,7 +170,7 @@ ${newsContext}
 - 작성자: ${authorBio}
 - 글의 주제: "${topic}"
 - 목표 분량: ${targetWordCount || 1700}자 (공백 제외)
-${backgroundSection}${keywordsSection}${hintsSection}${newsSection}
+${backgroundSection}${keywordsSection}${hintsSection}${newsSection}${rhetoricalSection}
 
 [📖 참고: 올바른 작성 예시]
 ${relevantExample}

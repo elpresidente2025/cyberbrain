@@ -781,19 +781,263 @@ const EDITORIAL_WORKFLOW = {
 };
 
 // ============================================================================
+// 수사학 전략 (Rhetoric Strategies) - 유권자 감정 자극 및 설득 강화
+// ============================================================================
+
+/**
+ * 수사학 전략 정의
+ *
+ * 목적: 단순한 정보 전달을 넘어, 유권자의 감정을 자극하고 행동을 유도하는 글쓰기 전략
+ * 적용: 주제/키워드 매칭 및 사용자 프로필 조건에 따라 동적 적용
+ */
+const RHETORIC_STRATEGIES = {
+  // 1. 고통의 시각화 (Pain Point Visualization)
+  // 유권자가 일상에서 겪는 불편함을 생생하게 묘사하여 공감대 형성
+  PAIN_TRIGGER: {
+    id: 'pain_trigger',
+    name: '고통 시각화 전략',
+    keywords: ['교통', '의료', '주차', '쓰레기', '소음', '지연', '대기', '불편', '민원', '고통', '어려움'],
+    instruction: `
+[수사학 전략: 고통의 시각화]
+- 서두를 "존경하는 구민 여러분" 같은 형식적 인사로 시작하지 마라.
+- 유권자가 실제로 겪는 '불편한 순간'을 구체적으로 묘사하며 시작하라.
+- 시간, 장소, 상황을 특정하여 생생함을 더하라.
+- 예시: "퇴근길 꽉 막힌 도로에서 30분을 허비해본 적 있으십니까?"
+- 예시: "아픈 아이를 안고 응급실에서 2시간을 기다려본 적 있으십니까?"
+- 예시: "새벽 5시, 서울행 KTX에 몸을 싣는 환자들의 뒷모습을 보셨습니까?"
+`
+  },
+
+  // 2. 위기와 굴욕 프레이밍 (Crisis & Humiliation Framing)
+  // 객관적 수치를 '지역의 자존심 문제'로 전환하여 변화의 당위성 부여
+  CRISIS_AMPLIFIER: {
+    id: 'crisis_amplifier',
+    name: '위기 증폭 전략',
+    keywords: ['순위', '하락', '유출', '격차', '소외', '박탈', '뒤처', '낙후', '감소', '이탈', '유출'],
+    instruction: `
+[수사학 전략: 위기와 굴욕 프레이밍]
+- 이 문제를 단순한 '불편'이 아닌 '우리 지역의 위기'로 규정하라.
+- "왜 우리는 서울보다, 다른 구보다 뒤처지는가?"라는 박탈감을 자극하라.
+- 수치는 건조하게 나열하지 말고, 자존심을 건드리는 도구로 활용하라.
+- 예시: "27위, 이것이 우리 부산 의료의 현주소입니다. 굴욕입니다."
+- 예시: "서울은 10개, 우리 구는 고작 1개. 이게 공정한 겁니까?"
+- 프레이밍 키워드: '굴욕', '위기', '추락', '참담', '수치', '방치'
+`
+  },
+
+  // 3. 게임체인저 비전 (Game Changer Vision)
+  // '따라잡기'가 아닌 '판을 뒤집는' 차별화된 비전 제시
+  GAME_CHANGER: {
+    id: 'game_changer',
+    name: '게임체인저 비전 전략',
+    keywords: ['혁신', '미래', '선도', '최초', '유일', 'AI', '스마트', '플랫폼', '클러스터', '허브'],
+    instruction: `
+[수사학 전략: 게임체인저 비전]
+- '예산 따오겠다', '시설 유치하겠다'는 식의 뻔한 해법은 피하라.
+- 경쟁자들이 따라올 수 없는 '새로운 판'을 제시하라.
+- 서울/수도권을 '따라잡는' 것이 아니라, '추월하는' 비전을 그려라.
+- 예시: "서울이 '현재의 1등'이라면, 우리는 '미래의 세계 1등'이 되겠습니다."
+- 예시: "서울에도 없는 기술, 부산에서 세계 최초로 실현하겠습니다."
+- 차별화 키워드: '초격차', '세계 최초', '아시아 유일', '미래 선도'
+`
+  },
+
+  // 4. 전문가 권위 (Technocratic Authority)
+  // IT/기업/전문직 출신의 경우, 전문성을 무기로 활용
+  TECH_SAVIOR: {
+    id: 'tech_savior',
+    name: '전문가 권위 전략',
+    // 키워드가 아닌 프로필 조건으로 발동
+    profileCondition: (profile) => {
+      if (!profile || !profile.career) return false;
+      const career = profile.career.toLowerCase();
+      return career.includes('it') ||
+             career.includes('기업') ||
+             career.includes('대표') ||
+             career.includes('ceo') ||
+             career.includes('개발') ||
+             career.includes('엔지니어') ||
+             career.includes('박사') ||
+             career.includes('연구');
+    },
+    instruction: `
+[수사학 전략: 전문가 권위]
+- 후보자의 전문 경력을 '시스템적 해법'의 근거로 활용하라.
+- 기존 정치인들이 제시하지 못하는 '기술적/경영적 관점'을 부각하라.
+- 단순 시설 확충이 아닌 '데이터 기반', 'AI 활용', '플랫폼 구축' 등의 해법을 제시하라.
+- 예시: "제가 IT 기업을 경영하며 배운 것은, 문제는 시스템으로 풀어야 한다는 것입니다."
+- 예시: "데이터가 없으면 정책도 없습니다. 저는 데이터로 말하겠습니다."
+`
+  },
+
+  // 5. 서민 연대 (Grassroots Solidarity)
+  // 엘리트 이미지를 탈피하고 서민과의 공감대 형성
+  GRASSROOTS: {
+    id: 'grassroots',
+    name: '서민 연대 전략',
+    keywords: ['서민', '소상공인', '자영업', '임대료', '월세', '생계', '일자리', '실업', '폐업'],
+    instruction: `
+[수사학 전략: 서민 연대]
+- 정책 용어보다 '삶의 언어'로 말하라.
+- 숫자보다 사람의 이야기를 앞세워라.
+- 예시: "통계로는 경기가 회복됐다고 합니다. 하지만 시장 골목 상인들 표정은 여전히 어둡습니다."
+- 예시: "월세 올려달라는 말에 밤잠을 설치는 분들, 저는 압니다."
+`
+  }
+};
+
+/**
+ * 주제와 프로필을 분석하여 적용할 수사학 전략들을 반환
+ * @param {string} topic - 글의 주제
+ * @param {string} instructions - 추가 지시사항
+ * @param {Object} userProfile - 사용자 프로필
+ * @returns {Object} { strategies: Array, promptInjection: string }
+ */
+function getActiveStrategies(topic, instructions = '', userProfile = {}) {
+  const text = `${topic} ${instructions}`.toLowerCase();
+  const activeStrategies = [];
+  const injections = [];
+
+  // 키워드 기반 전략 매칭
+  for (const [key, strategy] of Object.entries(RHETORIC_STRATEGIES)) {
+    // 프로필 조건 체크 (TECH_SAVIOR 등)
+    if (strategy.profileCondition) {
+      if (strategy.profileCondition(userProfile)) {
+        activeStrategies.push(strategy.id);
+        injections.push(strategy.instruction);
+      }
+      continue;
+    }
+
+    // 키워드 매칭
+    if (strategy.keywords && strategy.keywords.some(kw => text.includes(kw))) {
+      activeStrategies.push(strategy.id);
+      injections.push(strategy.instruction);
+    }
+  }
+
+  // 기본 전략 (아무것도 매칭되지 않을 경우)
+  if (injections.length === 0) {
+    injections.push(`
+[수사학 전략: 기본]
+- 유권자의 감정에 호소하는 진정성 있는 어조를 유지하라.
+- 구체적인 수치와 사례를 활용하여 신뢰성을 확보하라.
+- 희망적이고 건설적인 비전으로 마무리하라.
+`);
+  }
+
+  return {
+    strategies: activeStrategies,
+    promptInjection: injections.join('\n\n')
+  };
+}
+
+/**
+ * 시도 번호(attemptNumber)에 따라 다른 수사학 전략을 선택
+ * 사용자 선호도 가중치를 반영하여 전략 풀에서 선택
+ *
+ * @param {number} attemptNumber - 현재 시도 번호 (0, 1, 2)
+ * @param {string} topic - 글의 주제
+ * @param {string} instructions - 추가 지시사항
+ * @param {Object} userProfile - 사용자 프로필
+ * @param {Object} preferences - 사용자 전략 선호도 { strategyId: count }
+ * @returns {Object} { strategyId: string, strategyName: string, promptInjection: string }
+ */
+function selectStrategyForAttempt(attemptNumber, topic, instructions = '', userProfile = {}, preferences = {}) {
+  const text = `${topic} ${instructions}`.toLowerCase();
+
+  // 1. 매칭 가능한 전략 수집
+  const matchedStrategies = [];
+
+  for (const [key, strategy] of Object.entries(RHETORIC_STRATEGIES)) {
+    let matched = false;
+
+    // 프로필 조건 체크
+    if (strategy.profileCondition) {
+      if (strategy.profileCondition(userProfile)) {
+        matched = true;
+      }
+    } else if (strategy.keywords && strategy.keywords.some(kw => text.includes(kw))) {
+      // 키워드 매칭
+      matched = true;
+    }
+
+    if (matched) {
+      matchedStrategies.push({
+        id: strategy.id,
+        name: strategy.name,
+        instruction: strategy.instruction,
+        weight: (preferences[strategy.id] || 0) + 1  // 기본 가중치 1 + 선호도
+      });
+    }
+  }
+
+  // 2. 매칭된 전략이 없으면 기본 전략 풀 사용
+  if (matchedStrategies.length === 0) {
+    // 모든 전략을 후보로 (프로필 조건 전략 제외)
+    for (const [key, strategy] of Object.entries(RHETORIC_STRATEGIES)) {
+      if (!strategy.profileCondition) {
+        matchedStrategies.push({
+          id: strategy.id,
+          name: strategy.name,
+          instruction: strategy.instruction,
+          weight: (preferences[strategy.id] || 0) + 1
+        });
+      }
+    }
+  }
+
+  // 3. attemptNumber에 따라 다른 전략 선택
+  // - 가중치 정렬 후 attemptNumber 인덱스로 선택
+  // - 선호도 높은 전략이 앞쪽에 오도록
+  matchedStrategies.sort((a, b) => b.weight - a.weight);
+
+  // 순환 선택 (전략 수보다 attempt가 많을 경우)
+  const selectedIndex = attemptNumber % matchedStrategies.length;
+  const selected = matchedStrategies[selectedIndex];
+
+  // 선택된 전략이 없으면 기본 반환
+  if (!selected) {
+    return {
+      strategyId: 'default',
+      strategyName: '기본 전략',
+      promptInjection: `
+[수사학 전략: 기본]
+- 유권자의 감정에 호소하는 진정성 있는 어조를 유지하라.
+- 구체적인 수치와 사례를 활용하여 신뢰성을 확보하라.
+- 희망적이고 건설적인 비전으로 마무리하라.
+`
+    };
+  }
+
+  console.log(`🎯 [RhetoricStrategy] 시도 ${attemptNumber}: ${selected.name} 선택 (가중치: ${selected.weight})`);
+
+  return {
+    strategyId: selected.id,
+    strategyName: selected.name,
+    promptInjection: selected.instruction
+  };
+}
+
+// ============================================================================
 // 내보내기
 // ============================================================================
 
 module.exports = {
   // SEO 최적화
   SEO_RULES,
-  
+
   // 콘텐츠 작성
   CONTENT_RULES,
-  
+
   // 형식 및 출력
   FORMAT_RULES,
-  
+
   // 편집 워크플로우
   EDITORIAL_WORKFLOW,
+
+  // 수사학 전략
+  RHETORIC_STRATEGIES,
+  getActiveStrategies,
+  selectStrategyForAttempt,  // 시도별 전략 선택 (변형 생성용)
 };

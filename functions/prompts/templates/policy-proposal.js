@@ -7,6 +7,7 @@
 'use strict';
 
 const { getElectionStage } = require('../guidelines/legal');
+const { getActiveStrategies } = require('../guidelines/editorial');
 
 const LOGICAL_STRUCTURES = {
   STEP_BY_STEP: { id: 'step_by_step', name: '단계적 논증 구조', instruction: "글을 '문제 제시 → 근거/원인 분석 → 명료한 결론'의 3단계로 명확하게 구성하세요. 각 단계가 논리적으로 연결되어 독자가 자연스럽게 결론에 도달하도록 이끌어야 합니다." },
@@ -43,7 +44,11 @@ function buildLogicalWritingPrompt(options) {
     argumentationTacticId,
     vocabularyModuleId,
     currentStatus,  // 사용자 상태 (준비/현역/예비/후보)
+    userProfile = {},  // 수사학 전략용 프로필
   } = options;
+
+  // 🎯 수사학 전략 동적 적용
+  const rhetoricalStrategy = getActiveStrategies(topic, instructions || '', userProfile);
 
   // 선거법 준수 지시문 생성
   const electionStage = getElectionStage(currentStatus);
@@ -82,6 +87,12 @@ ${personalizedHints}
 ${newsContext}
 ` : '';
 
+  // 🎯 수사학 전략 섹션
+  const rhetoricalSection = rhetoricalStrategy.promptInjection ? `
+[🔥 수사학 전략 - 설득력 강화]
+${rhetoricalStrategy.promptInjection}
+` : '';
+
   const prompt = `
 # 전자두뇌비서관 - 논리적 글쓰기 원고 생성 (정책/비전)
 
@@ -90,7 +101,7 @@ ${electionComplianceSection}
 - 작성자: ${authorBio}
 - 글의 주제: "${topic}"
 - 목표 분량: ${targetWordCount || 1700}자 (공백 제외)
-${backgroundSection}${keywordsSection}${hintsSection}${newsSection}
+${backgroundSection}${keywordsSection}${hintsSection}${newsSection}${rhetoricalSection}
 [글쓰기 설계도]
 너는 아래 3가지 부품을 조립하여, 매우 체계적이고 설득력 있는 글을 만들어야 한다.
 
