@@ -155,6 +155,11 @@ export default function PostViewerModal({
             <Box dangerouslySetInnerHTML={{ __html: post?.content || '<p>내용이 없습니다.</p>' }} />
           </Box>
         </DialogContent>
+        <Box sx={{ px: 3, py: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'left' }}>
+            포스팅 시 이미지는 최소 15장 이상 삽입해 주세요
+          </Typography>
+        </Box>
         <DialogActions>
           <Button 
             onClick={handleCopy} 

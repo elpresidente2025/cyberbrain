@@ -59,6 +59,7 @@ import { getUserFullTitle, getUserDisplayTitle, getUserRegionInfo, getUserStatus
 import { functions } from '../services/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { callFunctionWithNaverAuth } from '../services/firebaseService';
+import { CATEGORIES } from '../constants/formConstants';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -302,6 +303,13 @@ const Dashboard = () => {
     } catch {
       return html || '';
     }
+  };
+
+  // 카테고리 영어 -> 한국어 변환
+  const getCategoryLabel = (categoryValue) => {
+    if (!categoryValue) return '일반';
+    const category = CATEGORIES.find(cat => cat.value === categoryValue);
+    return category?.label || categoryValue;
   };
 
   const handlePostClick = (postId) => {
@@ -741,7 +749,7 @@ const Dashboard = () => {
                         >
                           <ListItemText
                             primary={`${index + 1}) ${new Date(post.createdAt).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })} ${post.title || '제목 없음'}`}
-                            secondary={post.category || '일반'}
+                            secondary={getCategoryLabel(post.category)}
                           />
                           <ListItemSecondaryAction>
                             <IconButton edge="end" onClick={() => handlePostClick(post.id)}>
@@ -800,7 +808,7 @@ const Dashboard = () => {
                         >
                           <ListItemText
                             primary={`${new Date(post.createdAt).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })} ${post.title || '제목 없음'}`}
-                            secondary={post.category || '일반'}
+                            secondary={getCategoryLabel(post.category)}
                           />
                           <ListItemSecondaryAction>
                             <IconButton edge="end" onClick={(e) => {
