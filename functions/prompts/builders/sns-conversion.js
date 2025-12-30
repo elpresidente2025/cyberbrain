@@ -1,29 +1,37 @@
 /**
  * functions/prompts/builders/sns-conversion.js
  * SNS 플랫폼별 변환 프롬프트 생성
+ *
+ * v2.0 - 타래(Thread) 기반 구조로 개편
+ * - X/Threads: 5-7개 타래로 분할
+ * - Facebook/Instagram: 단일 게시물 (구조 최적화)
  */
 
 'use strict';
 
-// SNS 플랫폼별 제한사항 (공백 제외 글자수 기준)
+// SNS 플랫폼별 제한사항
 const SNS_LIMITS = {
   'facebook-instagram': {
-    maxLength: 1800,
-    recommendedLength: 1800,
+    maxLength: 1500,
     hashtagLimit: 7,
-    name: 'Facebook/Instagram'
+    name: 'Facebook/Instagram',
+    isThread: false
   },
   x: {
-    maxLength: 230,
-    recommendedLength: 230,
+    maxLengthPerPost: 150,  // 게시물당 권장 최대 (공백 제외)
     hashtagLimit: 2,
-    name: 'X(Twitter)'
+    name: 'X(Twitter)',
+    isThread: true,
+    minPosts: 5,
+    maxPosts: 7
   },
   threads: {
-    maxLength: 400,
-    recommendedLength: 400,
+    maxLengthPerPost: 150,  // X와 동일하게 통일
     hashtagLimit: 3,
-    name: 'Threads'
+    name: 'Threads',
+    isThread: true,
+    minPosts: 5,
+    maxPosts: 7
   }
 };
 
@@ -31,7 +39,6 @@ const SNS_LIMITS = {
  * 원본 콘텐츠의 주제 유형 분석
  */
 function analyzeContentType(content) {
-  // 자기어필 중심 콘텐츠 키워드들
   const personalAppealKeywords = [
     '안녕하세요', '인사드립니다', '근황', '일상', '소통', '대화', '이야기',
     '지역', '현장', '방문', '만남', '간담회', '토론회', '설명회', '보고회',
@@ -43,7 +50,6 @@ function analyzeContentType(content) {
     '감사합니다', '부탁드립니다', '응원', '관심', '성원'
   ];
 
-  // 정책/이슈 중심 콘텐츠 키워드들
   const policyIssueKeywords = [
     '정책', '제도', '법안', '예산', '계획', '방안', '대책',
     '경제', '교육', '복지', '보건', '환경', '교통', '안전',
@@ -67,41 +73,10 @@ function analyzeContentType(content) {
 }
 
 /**
- * 주제 유형과 플랫폼에 따른 콘텐츠 가공 가이드라인 생성
+ * HTML 태그 제거 및 평문 변환
  */
-function getContentFocusGuideline(isPersonalAppealContent, platform, userInfo) {
-  if (isPersonalAppealContent) {
-    if (platform === 'x') {
-      return `- 자기어필이 글의 목적이므로 "${userInfo.name} ${userInfo.position}" 정체성 유지
-- 하지만 230자 제약으로 핵심 활동/메시지만 압축하여 표현`;
-    } else if (platform === 'threads') {
-      return `- 자기어필 중심 글이므로 개인적 소통 톤 적절히 유지
-- 400자 제약으로 핵심 활동과 소통 의지를 간결하게 표현`;
-    }
-  } else {
-    if (platform === 'x') {
-      return `- 정책/이슈 중심 글이므로 자기소개는 최소화하고 핵심 내용에 집중
-- "${userInfo.name}"은 간단히 언급하되 대부분 분량을 주제 내용에 할당`;
-    } else if (platform === 'threads') {
-      return `- 정책/이슈 중심 글이므로 개인 어필보다 내용 전달에 집중
-- 자기소개는 간략히, 대부분을 주제와 관련된 핵심 내용으로 구성`;
-    }
-  }
-  return '';
-}
-
-/**
- * SNS 변환 프롬프트 생성
- * @param {string} originalContent - 원본 원고 내용
- * @param {string} platform - SNS 플랫폼 ('facebook-instagram', 'x', 'threads')
- * @param {Object} platformConfig - 플랫폼 설정
- * @param {string} postKeywords - 원고 키워드
- * @param {Object} userInfo - 사용자 정보 (name, position, region 등)
- * @returns {string} 완성된 SNS 변환 프롬프트
- */
-function buildSNSPrompt(originalContent, platform, platformConfig, postKeywords = '', userInfo = {}) {
-  // HTML 태그를 제거하고 평문으로 변환
-  const cleanContent = originalContent
+function cleanHTMLContent(originalContent) {
+  return originalContent
     .replace(/<\/?(h[1-6]|p|div|br|li)[^>]*>/gi, '\n')
     .replace(/<\/?(ul|ol)[^>]*>/gi, '\n\n')
     .replace(/<[^>]*>/g, '')
@@ -112,76 +87,143 @@ function buildSNSPrompt(originalContent, platform, platformConfig, postKeywords 
     .replace(/&quot;/g, '"')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
 
-  // 플랫폼별 목표 글자수 설정 (공백 제외)
-  const targetLength = Math.floor(platformConfig.maxLength * 0.85);
+/**
+ * Facebook/Instagram 단일 게시물용 프롬프트 생성
+ */
+function buildFacebookInstagramPrompt(cleanContent, platformConfig, userInfo) {
+  return `아래는 ${userInfo.name} ${userInfo.position}이 작성한 블로그 원고입니다. 이를 Facebook/Instagram 게시물로 변환해주세요.
 
-  // 원본 글의 주제 유형 분석
-  const isPersonalAppealContent = analyzeContentType(cleanContent);
-
-  // 플랫폼별 가공 방식 정의
-  const platformInstructions = {
-    'facebook-instagram': `원본 원고를 Facebook/Instagram 연동 게시에 맞게 가공:
-- 원본의 핵심 내용과 논리 구조를 적절히 보존
-- ${userInfo.name} ${userInfo.position}의 격식 있는 어조와 문체 유지
-- 중요한 정책, 수치, 사례는 반드시 포함
-- 분량이 충분하므로 적절한 자기 소개와 마무리 포함 가능
-- Facebook 게시 + Instagram 연동을 고려한 완성도 있는 구성
-- ${platformConfig.maxLength}자 이내로 품격 있게 가공`,
-
-    x: `원본 원고를 X(Twitter)에 맞게 핵심 압축:
-${getContentFocusGuideline(isPersonalAppealContent, 'x', userInfo)}
-- 230자 극한 제약으로 핵심 메시지만 선별
-- 원본의 가장 중요한 한 가지 포인트에만 집중
-- 완전한 문장으로 마무리하되 불필요한 수식어 제거
-- 원본의 논조와 입장을 정확히 표현`,
-
-    threads: `원본 원고를 Threads에 맞게 대화형 가공:
-${getContentFocusGuideline(isPersonalAppealContent, 'threads', userInfo)}
-- 400자 제약으로 핵심 내용 위주 구성
-- 대화하듯 자연스러운 톤으로 가공
-- 원본의 주요 메시지를 압축하여 전달
-- 간결하면서도 완성도 있는 스토리로 구성`
-  };
-
-  return `아래는 ${userInfo.name} ${userInfo.position}이 작성한 원본 정치인 원고입니다. 이를 ${platformConfig.name} 플랫폼에 맞게 가공해주세요.
-
-**원본 원고 (가공 대상):**
+**원본 블로그 원고:**
 ${cleanContent}
 
-**가공 지침:**
-${platformInstructions[platform]}
+**변환 구조:**
+1. 도입부 (1-2문장): 핵심 메시지 또는 현안 배경
+2. 본론 (3-4문단): 주요 내용, 정책/활동 상세, 근거/수치 포함
+3. 의미/전망 (1-2문장): 기대효과 또는 향후 계획
+4. 마무리 (1문장): 다짐 또는 소통 의지
 
-**원본 문체 분석 및 보존 요구사항:**
-- 어조: ${cleanContent.substring(0, 200)}... 이 문체 그대로 유지
-- 표현법: 원본에서 사용한 존댓말, 문장 구조, 어미 패턴 보존
-- 어휘: 원본에서 사용한 정치적 표현, 전문 용어 그대로 사용
-- 논조: 원본의 정치적 입장과 태도 완전 보존
+**변환 원칙:**
+- 문단 구분으로 가독성 확보 (빈 줄로 구분)
+- 원문의 논리 흐름과 핵심 정보 보존
+- ${userInfo.name} ${userInfo.position}의 격식 있는 어조 유지
+- 이모지 사용 금지
+- 글자수를 억지로 채우지 말고, 내용에 맞게 자연스럽게
 
-**가공 결과물 요구사항:**
-- 목표 길이: ${targetLength}자 (공백 제외, ±50자 허용)
-- 최대 한도: ${platformConfig.maxLength}자 절대 초과 금지
+**문체 보존:**
+- 원본의 존댓말, 문장 구조, 어미 패턴 유지
+- 원본의 정치적 입장과 논조 완전 보존
+- 원본에 없는 내용 추가 금지
+
+**결과물 요구사항:**
+- 분량: 1,200-1,500자 (공백 제외)
 - 해시태그: ${platformConfig.hashtagLimit}개
-- 완결성: 모든 문장이 완전히 끝나야 함 ("다/니다/습니다" 등)
-
-**가공 시 절대 준수사항:**
-1. 원본을 "요약"하지 말고 "가공"하세요 - 새로 쓰는 것이 아닙니다
-2. ${userInfo.name}의 실제 어조, 문체, 표현 방식을 정확히 모방하세요
-3. 원본의 핵심 메시지와 정보는 빠뜨리지 말고 모두 포함하세요
-4. 원본의 정치적 입장과 논조를 절대 바꾸지 마세요
-5. 원본에 없는 내용이나 의견을 추가하지 마세요
+- 모든 문장은 완전히 끝나야 함
 
 **JSON 출력 형식:**
 {
-  "content": "원본 원고를 ${platformConfig.name}에 맞게 가공한 완전한 텍스트",
-  "hashtags": ["#관련태그1", "#관련태그2", "#관련태그3"],
+  "content": "변환된 Facebook/Instagram 게시물 전체 텍스트",
+  "hashtags": ["#태그1", "#태그2", ...],
   "wordCount": 실제글자수
+}`;
 }
 
-원본의 품격과 내용을 손상시키지 않으면서 ${platformConfig.name}에 최적화된 가공 결과물을 만들어주세요.`;
+/**
+ * X/Threads 타래용 프롬프트 생성 (통일 구조)
+ */
+function buildThreadPrompt(cleanContent, platform, platformConfig, userInfo) {
+  const platformName = platformConfig.name;
+  const hashtagLimit = platformConfig.hashtagLimit;
+
+  return `아래는 ${userInfo.name} ${userInfo.position}이 작성한 블로그 원고입니다. 이를 ${platformName} 타래(thread)로 변환해주세요.
+
+**원본 블로그 원고:**
+${cleanContent}
+
+**타래 구조 (5-7개 게시물):**
+
+[1번] 훅 (50-80자)
+- 가장 강력한 핵심 메시지 한 문장
+- 인사나 서론 없이 핵심부터 시작
+- 이 게시물만 봐도 전체 맥락 파악 가능
+- 타임라인에서 스크롤을 멈추게 하는 역할
+
+[2번] 배경/맥락 (100-150자)
+- 왜 이 이슈가 중요한지
+- 현황, 배경 설명
+
+[3번] 핵심 내용 (100-150자)
+- 정책/활동/입장의 구체적 내용
+- 가장 중요한 포인트
+
+[4번] 근거/사례 (100-150자)
+- 수치, 팩트, 구체적 사례
+- 신뢰성을 높이는 근거
+
+[5번] 추가 내용 또는 전망 (80-120자, 필요시)
+- 기대효과, 향후 계획
+- 원고 분량에 따라 생략 가능
+
+[6번] 마무리 (80-100자)
+- 입장 정리 또는 다짐
+- 해시태그 ${hashtagLimit}개 포함
+
+**변환 원칙:**
+- 리듬 변화: 짧은 훅 → 중간 본문 → 짧은 마무리
+- 각 게시물은 독립적으로도 의미 전달 가능해야 함
+- 글자수를 억지로 채우지 말고, 할 말이 끝나면 짧아도 OK
+- 이모지 사용 금지
+- 수식어 최소화, 핵심 정보만
+
+**문체 보존:**
+- ${userInfo.name}의 어조와 문체 유지
+- 원본의 정치적 입장과 논조 완전 보존
+- 원본에 없는 내용 추가 금지
+
+**훅 작성 예시:**
+좋은 예: "민생경제 3법, 오늘 국회 발의했습니다."
+나쁜 예: "안녕하세요, 오늘 국회에서 중요한 법안을..."
+
+**JSON 출력 형식:**
+{
+  "posts": [
+    { "order": 1, "content": "첫 번째 게시물 (훅)", "wordCount": 65 },
+    { "order": 2, "content": "두 번째 게시물", "wordCount": 120 },
+    { "order": 3, "content": "세 번째 게시물", "wordCount": 130 },
+    { "order": 4, "content": "네 번째 게시물", "wordCount": 110 },
+    { "order": 5, "content": "다섯 번째 게시물 (마무리) #태그1 #태그2", "wordCount": 85 }
+  ],
+  "hashtags": ["#태그1", "#태그2"],
+  "totalWordCount": 510,
+  "postCount": 5
+}`;
+}
+
+/**
+ * SNS 변환 프롬프트 생성 (메인 함수)
+ * @param {string} originalContent - 원본 원고 내용 (블로그 원고)
+ * @param {string} platform - SNS 플랫폼 ('facebook-instagram', 'x', 'threads')
+ * @param {Object} platformConfig - 플랫폼 설정
+ * @param {string} postKeywords - 원고 키워드 (미사용, 호환성 유지)
+ * @param {Object} userInfo - 사용자 정보 (name, position, region 등)
+ * @returns {string} 완성된 SNS 변환 프롬프트
+ */
+function buildSNSPrompt(originalContent, platform, platformConfig, postKeywords = '', userInfo = {}) {
+  const cleanContent = cleanHTMLContent(originalContent);
+
+  // Facebook/Instagram은 단일 게시물
+  if (platform === 'facebook-instagram') {
+    return buildFacebookInstagramPrompt(cleanContent, platformConfig, userInfo);
+  }
+
+  // X와 Threads는 타래 구조 (통일)
+  return buildThreadPrompt(cleanContent, platform, platformConfig, userInfo);
 }
 
 module.exports = {
   buildSNSPrompt,
-  SNS_LIMITS
+  SNS_LIMITS,
+  analyzeContentType,
+  cleanHTMLContent
 };

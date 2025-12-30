@@ -93,26 +93,114 @@ function countWithoutSpace(str) {
 const PLATFORMS = {
   'facebook-instagram': {
     name: 'Facebook + Instagram',
-    iconSrc: '/icons/icon-facebook.png', // Facebook 아이콘 (대표)
+    iconSrc: '/icons/icon-facebook.png',
     instagramIconSrc: '/icons/icon-instagram.png',
     color: '#1877f2',
-    maxLength: 1800,
-    recommendedLength: 1800
+    maxLength: 1500,
+    recommendedLength: 1500,
+    isThread: false
   },
   x: {
     name: 'X',
     iconSrc: '/icons/icon-X.png',
     color: '#000000',
-    maxLength: 230,
-    recommendedLength: 230
+    maxLengthPerPost: 150,
+    recommendedLength: 150,
+    isThread: true
   },
   threads: {
     name: 'Threads',
     iconSrc: '/icons/icon-threads.png',
     color: '#000000',
-    maxLength: 400,
-    recommendedLength: 350
+    maxLengthPerPost: 150,
+    recommendedLength: 150,
+    isThread: true
   }
+};
+
+// 타래 게시물 렌더링 컴포넌트
+const ThreadPostsDisplay = ({ posts, hashtags, onCopy }) => {
+  // 전체 타래 복사용 텍스트 생성
+  const getFullThreadText = () => {
+    const postsText = posts.map((post, idx) => `[${idx + 1}/${posts.length}]\n${post.content}`).join('\n\n');
+    const hashtagText = hashtags?.length > 0 ? '\n\n' + hashtags.join(' ') : '';
+    return postsText + hashtagText;
+  };
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      {posts.map((post, index) => (
+        <Box
+          key={index}
+          sx={{
+            p: 1.5,
+            border: '1px solid',
+            borderColor: index === 0 ? 'primary.main' : 'divider',
+            borderRadius: 1,
+            backgroundColor: index === 0 ? 'primary.50' : 'white',
+            position: 'relative'
+          }}
+        >
+          {/* 게시물 번호 뱃지 */}
+          <Box
+            sx={{
+              position: 'absolute',
+              top: -8,
+              left: 8,
+              backgroundColor: index === 0 ? 'primary.main' : 'grey.500',
+              color: 'white',
+              px: 1,
+              py: 0.25,
+              borderRadius: 1,
+              fontSize: '0.7rem',
+              fontWeight: 'bold'
+            }}
+          >
+            {index === 0 ? '훅' : `${index + 1}번`}
+          </Box>
+
+          {/* 게시물 내용 */}
+          <Typography
+            variant="body2"
+            sx={{
+              mt: 1,
+              whiteSpace: 'pre-wrap',
+              lineHeight: 1.6,
+              fontSize: '0.85rem',
+              color: '#000000'
+            }}
+          >
+            {post.content}
+          </Typography>
+
+          {/* 글자수 */}
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', textAlign: 'right', mt: 0.5 }}
+          >
+            {countWithoutSpace(post.content)}자
+          </Typography>
+        </Box>
+      ))}
+
+      {/* 해시태그 */}
+      {hashtags && hashtags.length > 0 && (
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
+          {hashtags.map((hashtag, index) => (
+            <Chip
+              key={index}
+              label={hashtag}
+              size="small"
+              color="primary"
+              variant="outlined"
+              sx={{ fontSize: '0.7rem', height: 24 }}
+            />
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
 };
 
 
@@ -279,149 +367,146 @@ function SNSConversionModal({ open, onClose, post }) {
         {/* SNS 변환 결과 */}
         {hasResults && (
           <Box>
-            {/* 1x3 그리드로 플랫폼별 결과 표시 */}
-            <Box sx={{ 
-              display: 'grid', 
-              gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' },
-              gap: 2,
-              mb: 2
-            }}>
-              {Object.entries(results).map(([platform, result]) => {
-                const platformConfig = PLATFORMS[platform];
-                
-                // 디버깅을 위한 로그
-                console.log(`🔍 ${platform} result:`, result);
-                
-                const { content = '', hashtags = [] } = result || {};
-                
-                // hashtags가 배열인지 확인하고 문자열이면 파싱
-                let validHashtags = [];
-                if (Array.isArray(hashtags)) {
-                  validHashtags = hashtags;
-                } else if (typeof hashtags === 'string' && hashtags.trim()) {
-                  // 문자열을 콤마로 분리하여 배열로 변환
-                  validHashtags = hashtags.split(',')
-                    .map(tag => tag.trim())
-                    .filter(tag => tag.length > 0)
-                    .map(tag => tag.startsWith('#') ? tag : `#${tag}`);
-                } else {
-                  validHashtags = [];
-                }
-                
-                console.log(`✅ ${platform} parsed:`, { content: content?.substring(0, 50), hashtags: validHashtags });
-                
-                return (
-                  <Paper key={platform} sx={{ 
-                    p: 2, 
-                    border: '1px solid', 
-                    borderColor: 'divider',
-                    height: '320px', // 고정 높이 설정
-                    display: 'flex',
-                    flexDirection: 'column'
-                  }}>
-                    {/* 플랫폼 헤더 */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexShrink: 0 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        {platform === 'facebook-instagram' ? (
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            <SNSIcon src={platformConfig.iconSrc} alt="Facebook" size={18} />
-                            <SNSIcon src={platformConfig.instagramIconSrc} alt="Instagram" size={18} />
-                          </Box>
-                        ) : (
-                          <SNSIcon src={platformConfig.iconSrc} alt={platformConfig.name} size={20} />
-                        )}
-                        <Typography variant="subtitle1" fontWeight="bold">
-                          {platformConfig.name}
-                        </Typography>
-                      </Box>
-                      <Tooltip title="전체 복사하기">
-                        <IconButton 
-                          size="small" 
-                          onClick={() => handleCopy(content + (hashtags?.length > 0 ? '\n\n' + hashtags.join(' ') : ''))}
-                        >
-                          <ContentCopy fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
+            {/* Facebook/Instagram 단일 게시물 */}
+            {results['facebook-instagram'] && (
+              <Paper sx={{ p: 2, mb: 3, border: '1px solid', borderColor: 'divider' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <SNSIcon src={PLATFORMS['facebook-instagram'].iconSrc} alt="Facebook" size={18} />
+                    <SNSIcon src={PLATFORMS['facebook-instagram'].instagramIconSrc} alt="Instagram" size={18} />
+                    <Typography variant="subtitle1" fontWeight="bold">
+                      Facebook + Instagram
+                    </Typography>
+                  </Box>
+                  <Tooltip title="전체 복사하기">
+                    <IconButton
+                      size="small"
+                      onClick={() => {
+                        const r = results['facebook-instagram'];
+                        const text = r.content + (r.hashtags?.length > 0 ? '\n\n' + r.hashtags.join(' ') : '');
+                        handleCopy(text);
+                      }}
+                    >
+                      <ContentCopy fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+                <Box sx={{
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                  p: 1.5,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                  backgroundColor: 'white',
+                  mb: 1
+                }}>
+                  <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, color: '#000000' }}>
+                    {results['facebook-instagram'].content}
+                  </Typography>
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'right', mb: 1 }}>
+                  {countWithoutSpace(results['facebook-instagram'].content)}자 (공백 제외)
+                </Typography>
+                {results['facebook-instagram'].hashtags?.length > 0 && (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {results['facebook-instagram'].hashtags.map((tag, idx) => (
+                      <Chip key={idx} label={tag} size="small" color="primary" variant="outlined" sx={{ fontSize: '0.7rem' }} />
+                    ))}
+                  </Box>
+                )}
+              </Paper>
+            )}
 
-                    {/* 스크롤 가능한 변환된 내용 영역 */}
-                    <Box sx={{ 
-                      flexGrow: 1,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      overflow: 'hidden'
-                    }}>
-                      <Box
-                        sx={{
-                          flexGrow: 1,
-                          overflowY: 'auto',
-                          p: 1.5,
-                          border: '1px solid',
-                          borderColor: 'divider',
-                          borderRadius: 1,
-                          backgroundColor: 'white',
-                          mb: 1,
-                          '&::-webkit-scrollbar': {
-                            width: '6px',
-                          },
-                          '&::-webkit-scrollbar-track': {
-                            backgroundColor: 'transparent',
-                          },
-                          '&::-webkit-scrollbar-thumb': {
-                            backgroundColor: 'grey.400',
-                            borderRadius: '2px',
-                          },
-                          '&::-webkit-scrollbar-thumb:hover': {
-                            backgroundColor: 'grey.600',
+            {/* X와 Threads 타래 - 2열 그리드 */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2, mb: 2 }}>
+              {/* X 타래 */}
+              {results.x && (
+                <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <SNSIcon src={PLATFORMS.x.iconSrc} alt="X" size={20} />
+                      <Typography variant="subtitle1" fontWeight="bold">X 타래</Typography>
+                      {results.x.postCount && (
+                        <Chip label={`${results.x.postCount}개`} size="small" color="primary" sx={{ fontSize: '0.7rem' }} />
+                      )}
+                    </Box>
+                    <Tooltip title="전체 타래 복사">
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          const r = results.x;
+                          if (r.posts) {
+                            const text = r.posts.map((p, i) => `[${i + 1}/${r.posts.length}]\n${p.content}`).join('\n\n');
+                            const hashtagText = r.hashtags?.length > 0 ? '\n\n' + r.hashtags.join(' ') : '';
+                            handleCopy(text + hashtagText);
                           }
                         }}
                       >
-                        <Typography
-                          variant="body2"
-                          style={{ color: '#000000' }}
-                          sx={{
-                            whiteSpace: 'pre-wrap',
-                            lineHeight: 1.6,
-                            fontSize: '0.875rem'
-                          }}
-                        >
-                          {content}
-                        </Typography>
-                      </Box>
-
-                      {/* 글자수 표시 (고정 위치) */}
-                      <Typography variant="caption" color="text.secondary" sx={{ 
-                        display: 'block', 
-                        mb: 1, 
-                        flexShrink: 0,
-                        textAlign: 'right'
-                      }}>
-                        {countWithoutSpace(content)}자 / {platformConfig.recommendedLength}자 한도 (공백 제외)
+                        <ContentCopy fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                  <Box sx={{ maxHeight: '400px', overflowY: 'auto' }}>
+                    {results.x.posts ? (
+                      <ThreadPostsDisplay posts={results.x.posts} hashtags={results.x.hashtags} onCopy={handleCopy} />
+                    ) : (
+                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', color: '#000000' }}>
+                        {results.x.content}
                       </Typography>
-                    </Box>
+                    )}
+                  </Box>
+                  {results.x.totalWordCount && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'right', mt: 1 }}>
+                      총 {results.x.totalWordCount}자 (공백 제외)
+                    </Typography>
+                  )}
+                </Paper>
+              )}
 
-                    {/* 해시태그 (하단 고정) */}
-                    <Box sx={{ flexShrink: 0, minHeight: '32px', display: 'flex', alignItems: 'flex-start' }}>
-                      {validHashtags && validHashtags.length > 0 ? (
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5, width: '100%' }}>
-                          {validHashtags.map((hashtag, index) => (
-                            <Chip 
-                              key={index} 
-                              label={hashtag} 
-                              size="small" 
-                              color="primary" 
-                              variant="outlined"
-                              sx={{ fontSize: '0.7rem', height: 24 }}
-                            />
-                          ))}
-                        </Box>
-                      ) : (
-                        <Box sx={{ height: '24px' }} /> // 해시태그 없을 때 공간 확보
+              {/* Threads 타래 */}
+              {results.threads && (
+                <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <SNSIcon src={PLATFORMS.threads.iconSrc} alt="Threads" size={20} />
+                      <Typography variant="subtitle1" fontWeight="bold">Threads 타래</Typography>
+                      {results.threads.postCount && (
+                        <Chip label={`${results.threads.postCount}개`} size="small" color="primary" sx={{ fontSize: '0.7rem' }} />
                       )}
                     </Box>
-                  </Paper>
-                );
-              })}
+                    <Tooltip title="전체 타래 복사">
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          const r = results.threads;
+                          if (r.posts) {
+                            const text = r.posts.map((p, i) => `[${i + 1}/${r.posts.length}]\n${p.content}`).join('\n\n');
+                            const hashtagText = r.hashtags?.length > 0 ? '\n\n' + r.hashtags.join(' ') : '';
+                            handleCopy(text + hashtagText);
+                          }
+                        }}
+                      >
+                        <ContentCopy fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                  <Box sx={{ maxHeight: '400px', overflowY: 'auto' }}>
+                    {results.threads.posts ? (
+                      <ThreadPostsDisplay posts={results.threads.posts} hashtags={results.threads.hashtags} onCopy={handleCopy} />
+                    ) : (
+                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', color: '#000000' }}>
+                        {results.threads.content}
+                      </Typography>
+                    )}
+                  </Box>
+                  {results.threads.totalWordCount && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'right', mt: 1 }}>
+                      총 {results.threads.totalWordCount}자 (공백 제외)
+                    </Typography>
+                  )}
+                </Paper>
+              )}
             </Box>
 
             {copySuccess && (

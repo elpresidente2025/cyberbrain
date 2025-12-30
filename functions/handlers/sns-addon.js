@@ -173,28 +173,70 @@ exports.convertToSNS = wrap(async (req) => {
           // 결과 파싱
           const parsedResult = parseConvertedContent(convertedText, platform, platformConfig);
           
-          // 간소화된 검증 (속도 우선)
-          const hasContent = parsedResult.content && parsedResult.content.trim().length > 20;
-          const hasHashtags = Array.isArray(parsedResult.hashtags) && parsedResult.hashtags.length > 0;
-          
-          if (hasContent) {
-            // 기본 검증만 통과하면 사용
-            convertedResult = {
-              content: parsedResult.content.trim(),
-              hashtags: hasHashtags ? parsedResult.hashtags : generateDefaultHashtags(platform)
-            };
-            
-            console.log(`✅ ${platform} 시도 ${attempt} 성공:`, {
-              contentLength: countWithoutSpace(convertedResult.content),
-              hashtagCount: convertedResult.hashtags.length
-            });
-          } else {
-            console.warn(`⚠️ ${platform} 시도 ${attempt}: 콘텐츠가 너무 짧음`);
-            if (attempt === maxAttempts) {
-              // 최종 시도에서도 실패하면 기본 콘텐츠 생성
+          // 타래 형식 검증 (X, Threads)
+          if (parsedResult.isThread) {
+            const hasValidPosts = Array.isArray(parsedResult.posts) && parsedResult.posts.length >= 3;
+            const hasHashtags = Array.isArray(parsedResult.hashtags) && parsedResult.hashtags.length > 0;
+
+            if (hasValidPosts) {
               convertedResult = {
+                isThread: true,
+                posts: parsedResult.posts,
+                hashtags: hasHashtags ? parsedResult.hashtags : generateDefaultHashtags(platform),
+                totalWordCount: parsedResult.totalWordCount,
+                postCount: parsedResult.postCount
+              };
+
+              console.log(`✅ ${platform} 타래 시도 ${attempt} 성공:`, {
+                postCount: convertedResult.postCount,
+                totalWordCount: convertedResult.totalWordCount,
+                hashtagCount: convertedResult.hashtags.length
+              });
+            } else {
+              console.warn(`⚠️ ${platform} 시도 ${attempt}: 타래 게시물 수 부족`);
+            }
+          }
+          // 단일 게시물 형식 검증 (Facebook/Instagram)
+          else {
+            const hasContent = parsedResult.content && parsedResult.content.trim().length > 20;
+            const hasHashtags = Array.isArray(parsedResult.hashtags) && parsedResult.hashtags.length > 0;
+
+            if (hasContent) {
+              convertedResult = {
+                isThread: false,
+                content: parsedResult.content.trim(),
+                hashtags: hasHashtags ? parsedResult.hashtags : generateDefaultHashtags(platform)
+              };
+
+              console.log(`✅ ${platform} 단일 시도 ${attempt} 성공:`, {
+                contentLength: countWithoutSpace(convertedResult.content),
+                hashtagCount: convertedResult.hashtags.length
+              });
+            } else {
+              console.warn(`⚠️ ${platform} 시도 ${attempt}: 콘텐츠가 너무 짧음`);
+            }
+          }
+
+          // 최종 시도에서도 실패하면 기본 콘텐츠 생성
+          if (!convertedResult && attempt === maxAttempts) {
+            if (platform === 'facebook-instagram') {
+              convertedResult = {
+                isThread: false,
                 content: `${userInfo.name}입니다. ${originalContent.substring(0, Math.min(200, platformConfig.maxLength))}`,
                 hashtags: generateDefaultHashtags(platform)
+              };
+            } else {
+              // X, Threads는 기본 타래 생성
+              convertedResult = {
+                isThread: true,
+                posts: [
+                  { order: 1, content: `${userInfo.name}입니다.`, wordCount: 10 },
+                  { order: 2, content: originalContent.substring(0, 100), wordCount: 50 },
+                  { order: 3, content: '앞으로도 소통하겠습니다.', wordCount: 12 }
+                ],
+                hashtags: generateDefaultHashtags(platform),
+                totalWordCount: 72,
+                postCount: 3
               };
             }
           }
@@ -203,10 +245,25 @@ exports.convertToSNS = wrap(async (req) => {
           console.error(`❌ ${platform} 시도 ${attempt} 오류:`, error.message);
           if (attempt === maxAttempts) {
             // 최종적으로 실패하면 기본 콘텐츠 반환
-            convertedResult = {
-              content: `${userInfo.name}입니다. 원고 내용을 공유드립니다.`,
-              hashtags: generateDefaultHashtags(platform)
-            };
+            if (platform === 'facebook-instagram') {
+              convertedResult = {
+                isThread: false,
+                content: `${userInfo.name}입니다. 원고 내용을 공유드립니다.`,
+                hashtags: generateDefaultHashtags(platform)
+              };
+            } else {
+              convertedResult = {
+                isThread: true,
+                posts: [
+                  { order: 1, content: `${userInfo.name}입니다.`, wordCount: 10 },
+                  { order: 2, content: '원고 내용을 공유드립니다.', wordCount: 12 },
+                  { order: 3, content: '앞으로도 소통하겠습니다.', wordCount: 12 }
+                ],
+                hashtags: generateDefaultHashtags(platform),
+                totalWordCount: 34,
+                postCount: 3
+              };
+            }
           }
         }
       }
@@ -422,7 +479,7 @@ function calculateQualityScore(content, actualLength, targetLength, hashtagCount
 }
 
 /**
- * 변환된 내용 파싱 (완전히 새로 작성)
+ * 변환된 내용 파싱 (타래 형식 지원)
  */
 function parseConvertedContent(rawContent, platform, platformConfig = null) {
   try {
@@ -431,11 +488,36 @@ function parseConvertedContent(rawContent, platform, platformConfig = null) {
       rawContentPreview: rawContent?.substring(0, 200) + '...'
     });
 
+    // 1차 시도: JSON 형식 파싱
+    const jsonResult = tryParseJSON(rawContent, platform);
+
+    // 타래 형식인 경우 (X, Threads)
+    if (jsonResult.success && jsonResult.isThread) {
+      const posts = jsonResult.posts.map(post => ({
+        ...post,
+        content: cleanContent(post.content)
+      }));
+      const hashtags = validateHashtags(jsonResult.hashtags, platform);
+
+      console.log(`✅ ${platform} 타래 파싱 완료:`, {
+        postCount: posts.length,
+        totalWordCount: posts.reduce((sum, p) => sum + countWithoutSpace(p.content), 0),
+        hashtagCount: hashtags.length
+      });
+
+      return {
+        isThread: true,
+        posts,
+        hashtags,
+        totalWordCount: posts.reduce((sum, p) => sum + countWithoutSpace(p.content), 0),
+        postCount: posts.length
+      };
+    }
+
+    // 단일 게시물 형식인 경우 (Facebook/Instagram)
     let content = '';
     let hashtags = [];
 
-    // 1차 시도: JSON 형식 파싱
-    const jsonResult = tryParseJSON(rawContent, platform);
     if (jsonResult.success) {
       content = jsonResult.content;
       hashtags = jsonResult.hashtags;
@@ -459,17 +541,18 @@ function parseConvertedContent(rawContent, platform, platformConfig = null) {
     // 길이 제한 적용
     content = enforceLength(content, platform, platformConfig);
 
-    console.log(`✅ ${platform} 파싱 완료:`, {
+    console.log(`✅ ${platform} 단일 파싱 완료:`, {
       contentLength: countWithoutSpace(content),
       hashtagCount: hashtags.length,
       contentPreview: content.substring(0, 100) + '...'
     });
 
-    return { content, hashtags };
+    return { isThread: false, content, hashtags };
 
   } catch (error) {
     console.error(`❌ ${platform} 파싱 실패:`, error);
     return {
+      isThread: false,
       content: rawContent.substring(0, 200) || '',
       hashtags: generateDefaultHashtags(platform)
     };
@@ -477,7 +560,7 @@ function parseConvertedContent(rawContent, platform, platformConfig = null) {
 }
 
 /**
- * JSON 파싱 시도
+ * JSON 파싱 시도 (타래 형식 지원)
  */
 function tryParseJSON(rawContent, platform) {
   try {
@@ -489,8 +572,32 @@ function tryParseJSON(rawContent, platform) {
 
     let content = '';
     let hashtags = [];
+    let posts = null;
 
-    // 표준 형식: {"content": "...", "hashtags": [...]}
+    // 타래 형식: {"posts": [...], "hashtags": [...]}
+    if (Array.isArray(parsed.posts) && parsed.posts.length > 0) {
+      posts = parsed.posts.map((post, idx) => ({
+        order: post.order || idx + 1,
+        content: (post.content || '').trim(),
+        wordCount: post.wordCount || countWithoutSpace(post.content || '')
+      })).filter(p => p.content.length > 0);
+
+      hashtags = Array.isArray(parsed.hashtags) ? parsed.hashtags : [];
+
+      if (posts.length > 0) {
+        console.log(`✅ ${platform} 타래 JSON 파싱 성공: ${posts.length}개 게시물`);
+        return {
+          success: true,
+          isThread: true,
+          posts,
+          hashtags,
+          totalWordCount: parsed.totalWordCount || posts.reduce((sum, p) => sum + p.wordCount, 0),
+          postCount: posts.length
+        };
+      }
+    }
+
+    // 단일 게시물 형식: {"content": "...", "hashtags": [...]}
     if (parsed.content) {
       content = parsed.content.trim();
       hashtags = Array.isArray(parsed.hashtags) ? parsed.hashtags : [];
@@ -511,8 +618,8 @@ function tryParseJSON(rawContent, platform) {
     }
 
     if (content && content.length > 10) {
-      console.log(`✅ ${platform} JSON 파싱 성공: ${content.length}자`);
-      return { success: true, content, hashtags };
+      console.log(`✅ ${platform} 단일 JSON 파싱 성공: ${content.length}자`);
+      return { success: true, isThread: false, content, hashtags };
     }
 
     return { success: false };
