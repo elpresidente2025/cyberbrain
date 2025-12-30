@@ -20,8 +20,8 @@ const { getElectionStage } = require('../../prompts/guidelines/legal');
 // ✅ 제목 가이드라인 import
 const { getTitleGuidelineForTemplate } = require('../../prompts/builders/title-generation');
 
-// ✅ 수사학 전략 및 모범 문장 import
-const { selectStrategyForAttempt, getWritingExamples } = require('../../prompts/guidelines/editorial');
+// ✅ 수사학 전략, 모범 문장, 소제목 전략 import
+const { selectStrategyForAttempt, getWritingExamples, getSubheadingGuideline } = require('../../prompts/guidelines/editorial');
 
 // ✅ 기존 templates 100% 보존하여 import
 const { buildDailyCommunicationPrompt } = require('../../prompts/templates/daily-communication');
@@ -33,14 +33,8 @@ const { buildLocalIssuesPrompt } = require('../../prompts/templates/local-issues
 // ✅ 기존 utils 보존하여 import
 const { generateNonLawmakerWarning, generateFamilyStatusWarning } = require('../../prompts/utils/non-lawmaker-warning');
 
-// 카테고리 → 작법 매핑 (constants.js와 동일한 하이픈형 키 사용)
-const CATEGORY_TO_WRITING_METHOD = {
-  'daily-communication': 'emotional_writing',
-  'activity-report': 'direct_writing',
-  'policy-proposal': 'logical_writing',
-  'current-affairs': 'critical_writing',
-  'local-issues': 'analytical_writing'
-};
+// ✅ 카테고리 매핑은 constants.js에서 import (단일 소스)
+const { CATEGORY_TO_WRITING_METHOD } = require('../../utils/posts/constants');
 
 // 작법 → 템플릿 빌더 매핑
 const TEMPLATE_BUILDERS = {
@@ -128,7 +122,7 @@ class WriterAgent extends BaseAgent {
 
     // ═══════════════════════════════════════════════════════════════
     // 6. 프롬프트 섹션 조립 (배열 방식으로 순서 명확화)
-    // 최종 순서: 수사학 → 모범문장 → 지역힌트 → 검색어 → 제목 → 경고문 → 선거법 → 본문
+    // 최종 순서: 수사학 → 모범문장 → 지역힌트 → 검색어 → 제목 → 선거법 → 경고문 → 본문
     // ═══════════════════════════════════════════════════════════════
     const promptSections = [];
 
@@ -153,7 +147,14 @@ class WriterAgent extends BaseAgent {
       console.log(`🎨 [WriterAgent] 모범 문장 예시 주입 (카테고리: ${category})`);
     }
 
-    // 6.3 타 지역 주제 힌트
+    // 6.3 소제목 전략 (질문형 소제목)
+    const subheadingGuideline = getSubheadingGuideline();
+    if (subheadingGuideline) {
+      promptSections.push(subheadingGuideline);
+      console.log(`📝 [WriterAgent] 소제목 전략 주입`);
+    }
+
+    // 6.4 타 지역 주제 힌트
     if (context.regionHint) {
       promptSections.push(context.regionHint);
     }
@@ -187,16 +188,16 @@ ${searchTermList}
       promptSections.push(titleGuideline);
     }
 
-    // 6.6 경고문 (원외 인사, 가족 상황)
-    const warnings = this.buildWarnings(userProfile, authorBio);
-    if (warnings) {
-      promptSections.push(warnings);
-    }
-
-    // 6.7 선거법 준수 지시문
+    // 6.6 선거법 준수 지시문
     const electionLawInstruction = this.getElectionLawInstruction(userProfile);
     if (electionLawInstruction) {
       promptSections.push(electionLawInstruction);
+    }
+
+    // 6.7 경고문 (원외 인사, 가족 상황)
+    const warnings = this.buildWarnings(userProfile, authorBio);
+    if (warnings) {
+      promptSections.push(warnings);
     }
 
     // 6.8 본문 템플릿 (맨 마지막)
