@@ -104,16 +104,16 @@ const PLATFORMS = {
     name: 'X',
     iconSrc: '/icons/icon-X.png',
     color: '#000000',
-    maxLengthPerPost: 150,
-    recommendedLength: 150,
+    maxLengthPerPost: 250,
+    recommendedLength: 250,
     isThread: true
   },
   threads: {
     name: 'Threads',
     iconSrc: '/icons/icon-threads.png',
     color: '#000000',
-    maxLengthPerPost: 150,
-    recommendedLength: 150,
+    maxLengthPerPost: 250,
+    recommendedLength: 250,
     isThread: true
   }
 };

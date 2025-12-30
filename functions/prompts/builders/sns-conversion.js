@@ -18,7 +18,7 @@ const SNS_LIMITS = {
     isThread: false
   },
   x: {
-    maxLengthPerPost: 150,  // 게시물당 권장 최대 (공백 제외)
+    maxLengthPerPost: 250,  // 게시물당 권장 최대 (공백 제외)
     hashtagLimit: 2,
     name: 'X(Twitter)',
     isThread: true,
@@ -26,7 +26,7 @@ const SNS_LIMITS = {
     maxPosts: 7
   },
   threads: {
-    maxLengthPerPost: 150,  // X와 동일하게 통일
+    maxLengthPerPost: 250,  // X와 동일하게 통일
     hashtagLimit: 3,
     name: 'Threads',
     isThread: true,
@@ -143,29 +143,29 @@ ${cleanContent}
 
 **타래 구조 (5-7개 게시물):**
 
-[1번] 훅 (50-80자)
+[1번] 훅 (150-250자)
 - 가장 강력한 핵심 메시지 한 문장
 - 인사나 서론 없이 핵심부터 시작
 - 이 게시물만 봐도 전체 맥락 파악 가능
 - 타임라인에서 스크롤을 멈추게 하는 역할
 
-[2번] 배경/맥락 (100-150자)
+[2번] 배경/맥락 (150-250자)
 - 왜 이 이슈가 중요한지
 - 현황, 배경 설명
 
-[3번] 핵심 내용 (100-150자)
+[3번] 핵심 내용 (150-250자)
 - 정책/활동/입장의 구체적 내용
 - 가장 중요한 포인트
 
-[4번] 근거/사례 (100-150자)
+[4번] 근거/사례 (150-250자)
 - 수치, 팩트, 구체적 사례
 - 신뢰성을 높이는 근거
 
-[5번] 추가 내용 또는 전망 (80-120자, 필요시)
+[5번] 추가 내용 또는 전망 (150-250자, 필요시)
 - 기대효과, 향후 계획
 - 원고 분량에 따라 생략 가능
 
-[6번] 마무리 (80-100자)
+[6번] 마무리 (150-250자)
 - 입장 정리 또는 다짐
 - 해시태그 ${hashtagLimit}개 포함
 
@@ -188,11 +188,11 @@ ${cleanContent}
 **JSON 출력 형식:**
 {
   "posts": [
-    { "order": 1, "content": "첫 번째 게시물 (훅)", "wordCount": 65 },
-    { "order": 2, "content": "두 번째 게시물", "wordCount": 120 },
-    { "order": 3, "content": "세 번째 게시물", "wordCount": 130 },
-    { "order": 4, "content": "네 번째 게시물", "wordCount": 110 },
-    { "order": 5, "content": "다섯 번째 게시물 (마무리) #태그1 #태그2", "wordCount": 85 }
+    { "order": 1, "content": "첫 번째 게시물 (훅)", "wordCount": 180 },
+    { "order": 2, "content": "두 번째 게시물", "wordCount": 200 },
+    { "order": 3, "content": "세 번째 게시물", "wordCount": 210 },
+    { "order": 4, "content": "네 번째 게시물", "wordCount": 190 },
+    { "order": 5, "content": "다섯 번째 게시물 (마무리) #태그1 #태그2", "wordCount": 170 }
   ],
   "hashtags": ["#태그1", "#태그2"],
   "totalWordCount": 510,

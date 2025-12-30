@@ -23,6 +23,44 @@ function countWithoutSpace(str) {
   return count;
 }
 
+function normalizeBlogUrl(url) {
+  if (!url) return '';
+  const trimmed = String(url).trim();
+  if (!trimmed || trimmed === 'undefined' || trimmed === 'null') return '';
+  return trimmed;
+}
+
+function buildThreadCtaText(blogUrl) {
+  if (!blogUrl) return '';
+  return `더 자세한 내용은 블로그에서 확인해주세요: ${blogUrl}`;
+}
+
+function applyThreadCtaToLastPost(posts, blogUrl, platform, platformConfig) {
+  const normalizedUrl = normalizeBlogUrl(blogUrl);
+  if (!normalizedUrl || !Array.isArray(posts) || posts.length === 0) return posts;
+
+  const ctaText = buildThreadCtaText(normalizedUrl);
+  if (!ctaText) return posts;
+
+  const lastIndex = posts.length - 1;
+  const lastPost = posts[lastIndex] || {};
+  const lastContent = (lastPost.content || '').trim();
+
+  if (lastContent.includes(normalizedUrl)) return posts;
+
+  const separator = lastContent ? '\n' : '';
+  let nextContent = `${lastContent}${separator}${ctaText}`.trim();
+
+  return posts.map((post, index) => {
+    if (index !== lastIndex) return post;
+    return {
+      ...post,
+      content: nextContent,
+      wordCount: countWithoutSpace(nextContent)
+    };
+  });
+}
+
 // SNS 플랫폼별 제한사항은 prompts/builders/sns-conversion.js에서 import
 
 /**
@@ -33,7 +71,7 @@ function countWithoutSpace(str) {
  */
 function getXLimits(userProfile, originalLength = 0) {
   const isPremium = userProfile.twitterPremium === '구독';
-  const premiumLimit = isPremium ? Math.min(originalLength, 25000) : 230; // 원본 글자수를 넘지 않음
+  const premiumLimit = isPremium ? Math.min(originalLength, 25000) : 250; // 원본 글자수를 넘지 않음
   return {
     maxLength: premiumLimit,
     recommendedLength: premiumLimit,
@@ -101,6 +139,7 @@ exports.convertToSNS = wrap(async (req) => {
     }
 
     const postData = postDoc.data();
+    const blogUrl = normalizeBlogUrl(postData.publishUrl);
     
     // 원고 소유권 확인
     if (postData.userId !== uid) {
@@ -269,6 +308,18 @@ exports.convertToSNS = wrap(async (req) => {
       }
 
       console.log(`✅ ${platform} 변환 완료`);
+      if (convertedResult?.isThread) {
+        const basePosts = Array.isArray(convertedResult.posts) ? convertedResult.posts : [];
+        const threadPosts = applyThreadCtaToLastPost(basePosts, blogUrl, platform, platformConfig);
+        const totalWordCount = threadPosts.reduce((sum, post) => sum + countWithoutSpace(post.content), 0);
+        convertedResult = {
+          ...convertedResult,
+          posts: threadPosts,
+          totalWordCount,
+          postCount: threadPosts.length
+        };
+      }
+
       return { platform, result: convertedResult };
     });
 

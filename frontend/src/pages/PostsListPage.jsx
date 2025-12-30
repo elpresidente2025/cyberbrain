@@ -80,6 +80,19 @@ function countWithoutSpace(str) {
   return count;
 }
 
+function isNaverBlogUrl(value = '') {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = new URL(trimmed);
+    const hostname = parsed.hostname.toLowerCase();
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    return hostname === 'blog.naver.com' || hostname.endsWith('.blog.naver.com');
+  } catch {
+    return false;
+  }
+}
+
 export default function PostsListPage() {
   const { user, loading: authLoading } = useAuth();
   const theme = useTheme();
@@ -203,21 +216,27 @@ export default function PostsListPage() {
   };
 
   const handlePublishSubmit = async () => {
-    if (!publishPost || !publishUrl.trim()) {
+    const normalizedUrl = publishUrl.trim();
+    if (!publishPost || !normalizedUrl) {
       showNotification('발행 URL을 입력해주세요.', 'error');
+      return;
+    }
+
+    if (!isNaverBlogUrl(normalizedUrl)) {
+      showNotification('네이버 블로그 URL만 입력할 수 있습니다.', 'error');
       return;
     }
 
     try {
       await callFunctionWithNaverAuth('publishPost', { 
         postId: publishPost.id, 
-        publishUrl: publishUrl.trim() 
+        publishUrl: normalizedUrl
       });
       
       // 로컬 상태 업데이트
       setPosts(prev => prev.map(p =>
         p.id === publishPost.id
-          ? { ...p, publishUrl: publishUrl.trim(), publishedAt: new Date().toISOString(), status: 'published' }
+          ? { ...p, publishUrl: normalizedUrl, publishedAt: new Date().toISOString(), status: 'published' }
           : p
       ));
       
@@ -454,7 +473,7 @@ export default function PostsListPage() {
           </DialogTitle>
           <DialogContent>
             <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.md}px` }}>
-              실제 발행한 블로그/SNS 주소를 입력해주세요.
+              실제 발행한 네이버 블로그 주소를 입력해주세요.
             </Typography>
             <Typography variant="h6" sx={{ mb: `${spacing.xs}px`, fontWeight: 600 }}>
               "{publishPost?.title || '원고 제목'}"
@@ -463,7 +482,7 @@ export default function PostsListPage() {
               autoFocus
               margin="dense"
               label="발행 URL"
-              placeholder="https://blog.example.com/my-post"
+              placeholder="https://blog.naver.com/아이디/게시글"
               fullWidth
               variant="outlined"
               value={publishUrl}
@@ -471,7 +490,7 @@ export default function PostsListPage() {
               InputProps={{
                 startAdornment: <Link sx={{ color: 'text.secondary', mr: `${spacing.xs}px` }} />,
               }}
-              helperText="네이버 블로그, 티스토리, 브런치, 인스타그램 등 실제 발행한 주소를 입력하세요."
+              helperText="네이버 블로그 URL만 입력할 수 있습니다."
               FormHelperTextProps={{ sx: { color: 'black' } }}
             />
           </DialogContent>

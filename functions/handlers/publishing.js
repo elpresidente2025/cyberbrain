@@ -3,13 +3,31 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { wrap } = require('../common/wrap');
 const { auth } = require('../common/auth');
 
+function isNaverBlogUrl(value) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = new URL(trimmed);
+    const hostname = parsed.hostname.toLowerCase();
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    return hostname === 'blog.naver.com' || hostname.endsWith('.blog.naver.com');
+  } catch {
+    return false;
+  }
+}
+
 // 원고 발행 등록
 const publishPost = wrap(async (request) => {
   const { uid } = await auth(request);
   const { postId, publishUrl } = request.data;
+  const normalizedPublishUrl = String(publishUrl || '').trim();
 
-  if (!postId || !publishUrl) {
+  if (!postId || !normalizedPublishUrl) {
     throw new HttpsError('invalid-argument', '원고 ID와 발행 URL이 필요합니다.');
+  }
+
+  if (!isNaverBlogUrl(normalizedPublishUrl)) {
+    throw new HttpsError('invalid-argument', '네이버 블로그 URL만 등록할 수 있습니다.');
   }
 
   try {
@@ -57,7 +75,7 @@ const publishPost = wrap(async (request) => {
       publishingData.months[monthKey].published += 1;
       publishingData.months[monthKey].posts.push({
         postId: postId,
-        publishUrl: publishUrl,
+        publishUrl: normalizedPublishUrl,
         publishedAt: publishedAt,
         title: postDoc.data().title || '제목 없음'
       });
@@ -67,7 +85,7 @@ const publishPost = wrap(async (request) => {
 
       // 모든 쓰기 작업 수행
       transaction.update(postRef, {
-        publishUrl: publishUrl,
+        publishUrl: normalizedPublishUrl,
         publishedAt: publishedAt,
         status: 'published',
         updatedAt: now
