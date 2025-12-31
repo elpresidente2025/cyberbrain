@@ -3,7 +3,7 @@
  * SNS 플랫폼별 변환 프롬프트 생성
  *
  * v2.0 - 타래(Thread) 기반 구조로 개편
- * - X/Threads: 5-7개 타래로 분할
+ * - X/Threads: 3-7개 타래로 분할
  * - Facebook/Instagram: 단일 게시물 (구조 최적화)
  */
 
@@ -12,6 +12,7 @@
 // SNS 플랫폼별 제한사항
 const SNS_LIMITS = {
   'facebook-instagram': {
+    minLength: 800,
     maxLength: 1500,
     hashtagLimit: 7,
     name: 'Facebook/Instagram',
@@ -19,18 +20,22 @@ const SNS_LIMITS = {
   },
   x: {
     maxLengthPerPost: 250,  // 게시물당 권장 최대 (공백 제외)
+    minLengthPerPost: 130,
+    recommendedMinLength: 150,
     hashtagLimit: 2,
     name: 'X(Twitter)',
     isThread: true,
-    minPosts: 5,
+    minPosts: 3,
     maxPosts: 7
   },
   threads: {
     maxLengthPerPost: 250,  // X와 동일하게 통일
+    minLengthPerPost: 130,
+    recommendedMinLength: 150,
     hashtagLimit: 3,
     name: 'Threads',
     isThread: true,
-    minPosts: 5,
+    minPosts: 3,
     maxPosts: 7
   }
 };
@@ -117,7 +122,7 @@ ${cleanContent}
 - 원본에 없는 내용 추가 금지
 
 **결과물 요구사항:**
-- 분량: 1,200-1,500자 (공백 제외)
+- 분량: ${platformConfig.minLength}-${platformConfig.maxLength}자 (공백 제외)
 - 해시태그: ${platformConfig.hashtagLimit}개
 - 모든 문장은 완전히 끝나야 함
 
@@ -132,47 +137,60 @@ ${cleanContent}
 /**
  * X/Threads 타래용 프롬프트 생성 (통일 구조)
  */
-function buildThreadPrompt(cleanContent, platform, platformConfig, userInfo) {
+function buildThreadPrompt(cleanContent, platform, platformConfig, userInfo, options = {}) {
   const platformName = platformConfig.name;
   const hashtagLimit = platformConfig.hashtagLimit;
+  const minPosts = platformConfig.minPosts || 3;
+  const maxPosts = platformConfig.maxPosts || 7;
+  const minLengthPerPost = platformConfig.minLengthPerPost || 130;
+  const recommendedMinLength = platformConfig.recommendedMinLength || 150;
+  const maxLengthPerPost = platformConfig.maxLengthPerPost || platformConfig.maxLength || 250;
+  const targetPostCount = options.targetPostCount;
+  const postCountGuidance = targetPostCount
+    ? `**게시물 수는 ${targetPostCount}개로 맞춰주세요.**`
+    : `**게시물 수는 원문 분량에 맞게 ${minPosts}~${maxPosts}개 중에서 선택해주세요.**`;
 
   return `아래는 ${userInfo.name} ${userInfo.position}이 작성한 블로그 원고입니다. 이를 ${platformName} 타래(thread)로 변환해주세요.
 
 **원본 블로그 원고:**
 ${cleanContent}
 
-**타래 구조 (5-7개 게시물):**
+**타래 구조 (${minPosts}-${maxPosts}개 게시물):**
 
-[1번] 훅 (150-250자)
+- 내용이 적으면 게시물 수를 줄이고, 많으면 늘리세요.
+- 각 게시물은 ${recommendedMinLength}-${maxLengthPerPost}자 권장(공백 제외), ${minLengthPerPost}자 미만은 피하기.
+- 1번: 훅/핵심 메시지
+- 2~(마지막-1): 배경/핵심/근거를 분산
+- 마지막: 마무리 + 해시태그 ${hashtagLimit}개 포함
+
+${postCountGuidance}
+
+[1번] 훅
 - 가장 강력한 핵심 메시지 한 문장
 - 인사나 서론 없이 핵심부터 시작
 - 이 게시물만 봐도 전체 맥락 파악 가능
 - 타임라인에서 스크롤을 멈추게 하는 역할
 
-[2번] 배경/맥락 (150-250자)
+[2번] 배경/맥락
 - 왜 이 이슈가 중요한지
 - 현황, 배경 설명
 
-[3번] 핵심 내용 (150-250자)
+[3번] 핵심 내용
 - 정책/활동/입장의 구체적 내용
 - 가장 중요한 포인트
 
-[4번] 근거/사례 (150-250자)
+[4~5번] 근거/사례 또는 추가 내용 (필요 시)
 - 수치, 팩트, 구체적 사례
 - 신뢰성을 높이는 근거
 
-[5번] 추가 내용 또는 전망 (150-250자, 필요시)
-- 기대효과, 향후 계획
-- 원고 분량에 따라 생략 가능
-
-[6번] 마무리 (150-250자)
+[마지막] 마무리
 - 입장 정리 또는 다짐
 - 해시태그 ${hashtagLimit}개 포함
 
 **변환 원칙:**
 - 리듬 변화: 짧은 훅 → 중간 본문 → 짧은 마무리
 - 각 게시물은 독립적으로도 의미 전달 가능해야 함
-- 글자수를 억지로 채우지 말고, 할 말이 끝나면 짧아도 OK
+- 글자수를 억지로 채우지 말고, 권장 범위 안에서 자연스럽게
 - 이모지 사용 금지
 - 수식어 최소화, 핵심 정보만
 
@@ -209,7 +227,7 @@ ${cleanContent}
  * @param {Object} userInfo - 사용자 정보 (name, position, region 등)
  * @returns {string} 완성된 SNS 변환 프롬프트
  */
-function buildSNSPrompt(originalContent, platform, platformConfig, postKeywords = '', userInfo = {}) {
+function buildSNSPrompt(originalContent, platform, platformConfig, postKeywords = '', userInfo = {}, options = {}) {
   const cleanContent = cleanHTMLContent(originalContent);
 
   // Facebook/Instagram은 단일 게시물
@@ -218,7 +236,7 @@ function buildSNSPrompt(originalContent, platform, platformConfig, postKeywords 
   }
 
   // X와 Threads는 타래 구조 (통일)
-  return buildThreadPrompt(cleanContent, platform, platformConfig, userInfo);
+  return buildThreadPrompt(cleanContent, platform, platformConfig, userInfo, options);
 }
 
 module.exports = {

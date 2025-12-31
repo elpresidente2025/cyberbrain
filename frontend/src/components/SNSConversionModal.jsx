@@ -42,42 +42,6 @@ const SNSIcon = ({ src, alt, size = 20 }) => (
   />
 );
 
-// HTML을 평범한 텍스트로 변환하는 유틸리티 함수
-function convertHtmlToFormattedText(html = '') {
-  try {
-    if (!html) return '';
-    
-    // 임시 div 엘리먼트 생성
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = html;
-    
-    // HTML 태그를 텍스트로 변환하면서 formatting 보존
-    let text = tempDiv.innerHTML;
-    
-    // 블록 요소들을 줄바꿈으로 변환
-    text = text.replace(/<\/?(h[1-6]|p|div|br|li)[^>]*>/gi, '\n');
-    text = text.replace(/<\/?(ul|ol)[^>]*>/gi, '\n\n');
-    
-    // 나머지 HTML 태그 제거
-    text = text.replace(/<[^>]*>/g, '');
-    
-    // HTML 엔티티 변환
-    text = text.replace(/&nbsp;/g, ' ');
-    text = text.replace(/&amp;/g, '&');
-    text = text.replace(/&lt;/g, '<');
-    text = text.replace(/&gt;/g, '>');
-    text = text.replace(/&quot;/g, '"');
-    
-    // 연속된 줄바꿈을 정리 (3개 이상을 2개로)
-    text = text.replace(/\n{3,}/g, '\n\n');
-    
-    // 앞뒤 공백 제거
-    return text.trim();
-  } catch {
-    return html || '';
-  }
-}
-
 // 공백 제외 글자수 계산 (Java 코드와 동일한 로직)
 function countWithoutSpace(str) {
   if (!str) return 0;
@@ -337,26 +301,6 @@ function SNSConversionModal({ open, onClose, post }) {
             </Typography>
           </Alert>
         )}
-
-        {/* 원본 원고 미리보기 */}
-        <Typography variant="h6" sx={{ mb: 1 }}>원본 원고</Typography>
-        <Paper sx={{ p: 2, mb: 3, maxHeight: '150px', overflow: 'auto', bgcolor: 'white' }}>
-          <Typography variant="body2" style={{ color: '#000000' }}>
-            {post?.title && <><strong>제목: {post.title}</strong><br /><br /></>}
-          </Typography>
-          <Typography
-            variant="body2"
-            style={{ color: '#000000' }}
-            sx={{
-              mt: 1,
-              whiteSpace: 'pre-wrap',
-              lineHeight: 1.6
-            }}
-          >
-            {convertHtmlToFormattedText(post?.content)?.substring(0, 300)}
-            {convertHtmlToFormattedText(post?.content)?.length > 300 && '...'}
-          </Typography>
-        </Paper>
 
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>

@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 /**
  * Orchestrator - Multi-Agent 시스템 조율 (통합 리팩토링 버전)
@@ -20,7 +20,7 @@ const { refineWithLLM } = require('../posts/editor-agent');
 // 품질 기준 상수
 const QUALITY_THRESHOLDS = {
   SEO_MIN_SCORE: 70,           // SEO 최소 점수
-  MAX_REFINEMENT_ATTEMPTS: 3,  // 최대 재검증 시도 횟수
+  MAX_REFINEMENT_ATTEMPTS: 5,  // 최대 재검증 시도 횟수
   ALLOWED_ISSUE_SEVERITIES: ['low', 'info']  // 허용되는 이슈 심각도 (critical, high는 불허)
 };
 
@@ -150,6 +150,11 @@ class Orchestrator {
     return this.buildFinalResult(true);
   }
 
+  isTimedOut() {
+    if (!this.startTime) return false;
+    return (Date.now() - this.startTime) > this.options.timeout;
+  }
+
   /**
    * 🎯 최종 품질 기준 검사 - SEO 점수 및 이슈 체크
    * ComplianceAgent가 통과해도 SEO 점수가 낮으면 EditorAgent로 개선
@@ -176,12 +181,17 @@ class Orchestrator {
     let currentContent = complianceResult.content;
     let currentTitle = complianceResult.title || this.results.WriterAgent?.data?.title || '';
     let attempt = 0;
-    const maxAttempts = 2;
+    const maxAttempts = QUALITY_THRESHOLDS.MAX_REFINEMENT_ATTEMPTS;
 
     // 🔧 refinementAttempts 보존 (SEO 루프에서 complianceResult 덮어쓰기 전에 저장)
     const previousRefinementAttempts = complianceResult.refinementAttempts || 0;
 
     while (attempt < maxAttempts && currentSeoScore < QUALITY_THRESHOLDS.SEO_MIN_SCORE) {
+      if (this.isTimedOut()) {
+        console.warn('[Orchestrator] Timeout reached during SEO refinement loop.');
+        break;
+      }
+
       attempt++;
       console.log(`🔧 [Orchestrator] SEO 개선 시도 ${attempt}/${maxAttempts}`);
 
@@ -301,6 +311,11 @@ class Orchestrator {
     console.log(`🔄 [Orchestrator] 재검증 루프 시작 (최대 ${maxAttempts}회)`);
 
     while (attempt < maxAttempts && !qualityMet) {
+      if (this.isTimedOut()) {
+        console.warn('[Orchestrator] Timeout reached during compliance refinement loop.');
+        break;
+      }
+
       attempt++;
       console.log(`🔄 [Orchestrator] 재검증 시도 ${attempt}/${maxAttempts}`);
 
@@ -416,6 +431,11 @@ class Orchestrator {
       const maxSeoAttempts = 2;  // SEO 개선 최대 2회 시도
 
       while (seoAttempt < maxSeoAttempts) {
+        if (this.isTimedOut()) {
+          console.warn('[Orchestrator] Timeout reached during post-compliance SEO loop.');
+          break;
+        }
+
         seoAttempt++;
 
         try {
@@ -646,3 +666,4 @@ module.exports = {
   runAgentPipeline,
   PIPELINES
 };
+

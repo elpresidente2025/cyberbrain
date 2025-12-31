@@ -12,5 +12,11 @@
       }
     }
   },
-  "etags": {}
+  "etags": {
+    "ai-secretary-6e9c8": {
+      "extensionInstances": {
+        "firestore-send-email": "1dd2f5e33448f116b5db66bfacc782a9a72c52f37f73f5b7a1f948e3e8dedc86"
+      }
+    }
+  }
 }

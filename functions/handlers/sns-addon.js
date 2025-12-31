@@ -23,6 +23,29 @@ function countWithoutSpace(str) {
   return count;
 }
 
+function getThreadLengthStats(posts, minLength) {
+  const lengths = posts.map(post => countWithoutSpace((post.content || '').trim()));
+  const total = lengths.reduce((sum, length) => sum + length, 0);
+  const averageLength = lengths.length ? Math.round(total / lengths.length) : 0;
+  const shortCount = lengths.filter(length => length < minLength).length;
+  return { lengths, averageLength, shortCount };
+}
+
+function getThreadLengthAdjustment(posts, minLength, minPosts) {
+  if (!Array.isArray(posts) || posts.length === 0) return null;
+  if (posts.length <= minPosts) return null;
+
+  const stats = getThreadLengthStats(posts, minLength);
+  const tooShort = stats.averageLength < minLength || stats.shortCount >= Math.ceil(posts.length / 2);
+
+  if (!tooShort) return null;
+
+  return {
+    targetPostCount: Math.max(minPosts, posts.length - 1),
+    stats
+  };
+}
+
 function normalizeBlogUrl(url) {
   if (!url) return '';
   const trimmed = String(url).trim();
@@ -172,23 +195,44 @@ exports.convertToSNS = wrap(async (req) => {
     
     // 원본 글자수 계산 (공백 제외)
     const originalLength = countWithoutSpace(originalContent);
+    const cleanedOriginalContent = cleanContent(originalContent || '');
+    const cleanedOriginalLength = countWithoutSpace(cleanedOriginalContent);
     
     const platformPromises = platforms.map(async (platform) => {
       // X(트위터)는 사용자 프리미엄 구독 여부에 따라 동적 제한 적용
-      const platformConfig = platform === 'x' ? getXLimits(userData, originalLength) : SNS_LIMITS[platform];
-      const targetLength = Math.floor(platformConfig.maxLength * 0.8);
+      const baseConfig = SNS_LIMITS[platform];
+      const platformConfig = platform === 'x'
+        ? { ...baseConfig, ...getXLimits(userData, originalLength) }
+        : baseConfig;
+      const threadConstraints = platformConfig.isThread ? {
+        minPosts: baseConfig.minPosts || 3,
+        maxPosts: baseConfig.maxPosts || 7,
+        minLengthPerPost: baseConfig.minLengthPerPost || 130
+      } : null;
+      const minimumContentLength = platformConfig.minLength
+        ? Math.min(platformConfig.minLength, cleanedOriginalLength)
+        : 0;
       
       console.log(`🔄 ${platform} 변환 시작 - 모델: ${selectedModel}`);
       
       // 최대 2번 시도 (병렬 처리에서는 속도 우선)
       let convertedResult = null;
+      let fallbackThreadResult = null;
+      let threadTargetPostCount = null;
       const maxAttempts = 2; // 병렬 처리에서는 2번으로 줄여서 전체 시간 단축
       
       for (let attempt = 1; attempt <= maxAttempts && !convertedResult; attempt++) {
         console.log(`🔄 ${platform} 시도 ${attempt}/${maxAttempts}...`);
         
         try {
-          const snsPrompt = buildSNSPrompt(originalContent, platform, platformConfig, postKeywords, userInfo);
+          const snsPrompt = buildSNSPrompt(
+            originalContent,
+            platform,
+            platformConfig,
+            postKeywords,
+            userInfo,
+            { targetPostCount: threadTargetPostCount }
+          );
           
           // Gemini API로 변환 실행 (타임아웃 추가)
           const convertedText = await Promise.race([
@@ -214,17 +258,44 @@ exports.convertToSNS = wrap(async (req) => {
           
           // 타래 형식 검증 (X, Threads)
           if (parsedResult.isThread) {
-            const hasValidPosts = Array.isArray(parsedResult.posts) && parsedResult.posts.length >= 3;
+            const minPosts = threadConstraints?.minPosts || 3;
+            const hasValidPosts = Array.isArray(parsedResult.posts) && parsedResult.posts.length >= minPosts;
             const hasHashtags = Array.isArray(parsedResult.hashtags) && parsedResult.hashtags.length > 0;
 
             if (hasValidPosts) {
-              convertedResult = {
+              const threadResult = {
                 isThread: true,
                 posts: parsedResult.posts,
                 hashtags: hasHashtags ? parsedResult.hashtags : generateDefaultHashtags(platform),
                 totalWordCount: parsedResult.totalWordCount,
                 postCount: parsedResult.postCount
               };
+              const lengthAdjustment = threadConstraints
+                ? getThreadLengthAdjustment(
+                  threadResult.posts,
+                  threadConstraints.minLengthPerPost,
+                  threadConstraints.minPosts
+                )
+                : null;
+
+              if (lengthAdjustment && attempt < maxAttempts) {
+                if (!fallbackThreadResult) {
+                  fallbackThreadResult = threadResult;
+                }
+                threadTargetPostCount = lengthAdjustment.targetPostCount;
+                console.log(`🔄 ${platform} 게시물 길이 부족, ${threadTargetPostCount}개로 재요청`, {
+                  averageLength: lengthAdjustment.stats.averageLength,
+                  shortCount: lengthAdjustment.stats.shortCount,
+                  postCount: threadResult.posts.length
+                });
+                continue;
+              }
+
+              if (lengthAdjustment && fallbackThreadResult) {
+                convertedResult = fallbackThreadResult;
+              } else {
+                convertedResult = threadResult;
+              }
 
               console.log(`✅ ${platform} 타래 시도 ${attempt} 성공:`, {
                 postCount: convertedResult.postCount,
@@ -237,13 +308,16 @@ exports.convertToSNS = wrap(async (req) => {
           }
           // 단일 게시물 형식 검증 (Facebook/Instagram)
           else {
-            const hasContent = parsedResult.content && parsedResult.content.trim().length > 20;
+            const content = (parsedResult.content || '').trim();
+            const hasContent = content.length > 20;
             const hasHashtags = Array.isArray(parsedResult.hashtags) && parsedResult.hashtags.length > 0;
+            const contentLength = countWithoutSpace(content);
+            const meetsMinLength = minimumContentLength === 0 || contentLength >= minimumContentLength;
 
-            if (hasContent) {
+            if (hasContent && meetsMinLength) {
               convertedResult = {
                 isThread: false,
-                content: parsedResult.content.trim(),
+                content: content,
                 hashtags: hasHashtags ? parsedResult.hashtags : generateDefaultHashtags(platform)
               };
 
@@ -252,6 +326,10 @@ exports.convertToSNS = wrap(async (req) => {
                 hashtagCount: convertedResult.hashtags.length
               });
             } else {
+              if (hasContent && !meetsMinLength && attempt < maxAttempts) {
+                console.warn(`⚠️ ${platform} 시도 ${attempt}: 콘텐츠 길이 부족 (${contentLength}자 < ${minimumContentLength}자), 재시도`);
+                continue;
+              }
               console.warn(`⚠️ ${platform} 시도 ${attempt}: 콘텐츠가 너무 짧음`);
             }
           }
@@ -259,9 +337,11 @@ exports.convertToSNS = wrap(async (req) => {
           // 최종 시도에서도 실패하면 기본 콘텐츠 생성
           if (!convertedResult && attempt === maxAttempts) {
             if (platform === 'facebook-instagram') {
+              const fallbackBase = cleanedOriginalContent || `${userInfo.name}입니다. 원고 내용을 공유드립니다.`;
+              const fallbackContent = enforceLength(fallbackBase, platform, platformConfig);
               convertedResult = {
                 isThread: false,
-                content: `${userInfo.name}입니다. ${originalContent.substring(0, Math.min(200, platformConfig.maxLength))}`,
+                content: fallbackContent,
                 hashtags: generateDefaultHashtags(platform)
               };
             } else {
@@ -285,9 +365,11 @@ exports.convertToSNS = wrap(async (req) => {
           if (attempt === maxAttempts) {
             // 최종적으로 실패하면 기본 콘텐츠 반환
             if (platform === 'facebook-instagram') {
+              const fallbackBase = cleanedOriginalContent || `${userInfo.name}입니다. 원고 내용을 공유드립니다.`;
+              const fallbackContent = enforceLength(fallbackBase, platform, platformConfig);
               convertedResult = {
                 isThread: false,
-                content: `${userInfo.name}입니다. 원고 내용을 공유드립니다.`,
+                content: fallbackContent,
                 hashtags: generateDefaultHashtags(platform)
               };
             } else {
