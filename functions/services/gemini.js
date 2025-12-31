@@ -9,9 +9,9 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { logError } = require('../common/log');
 const { HttpsError } = require('firebase-functions/v2/https');
+const { getGeminiApiKey } = require('../common/secrets');
 
-// Gemini API 키는 환경변수를 통해 관리됩니다.
-const API_KEY = process.env.GEMINI_API_KEY;
+// Gemini API 키는 시크릿/환경변수로 관리됩니다.
 
 /**
  * API 오류를 사용자 친화적인 메시지로 변환
@@ -67,12 +67,13 @@ function getUserFriendlyErrorMessage(error) {
  * @returns {Promise<string>} - AI가 생성한 텍스트
  */
 async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.0-flash-exp', useJsonMode = true) {
-  if (!API_KEY) {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
     logError('callGenerativeModel', 'Gemini API 키가 설정되지 않았습니다.');
     throw new HttpsError('internal', 'AI 서비스 설정에 오류가 발생했습니다.');
   }
 
-  const genAI = new GoogleGenerativeAI(API_KEY);
+  const genAI = new GoogleGenerativeAI(apiKey);
   
   // 모델별 설정
   const isGemini2 = modelName.includes('gemini-2.0');

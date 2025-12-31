@@ -13,6 +13,7 @@
 
 const { BaseAgent } = require('./base');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { getGeminiApiKey } = require('../../common/secrets');
 
 // ✅ 선거법 규칙 import (구조적 통합)
 const { getElectionStage } = require('../../prompts/guidelines/legal');
@@ -48,7 +49,7 @@ const TEMPLATE_BUILDERS = {
 let genAI = null;
 function getGenAI() {
   if (!genAI) {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = getGeminiApiKey();
     if (!apiKey) return null;
     genAI = new GoogleGenerativeAI(apiKey);
   }

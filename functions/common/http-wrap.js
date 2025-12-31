@@ -2,6 +2,7 @@
 
 const { onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
+const { GEMINI_API_KEY } = require('./secrets');
 
 // 시크릿 정의
 const HF_API_TOKEN = defineSecret('HF_API_TOKEN');
@@ -25,7 +26,7 @@ const httpFunctionOptions = {
   maxInstances: 5,
   timeoutSeconds: 60,
   memory: '512MiB',
-  secrets: [HF_API_TOKEN, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN]
+  secrets: [HF_API_TOKEN, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, GEMINI_API_KEY]
 };
 
 /**

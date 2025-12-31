@@ -2,14 +2,14 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions, auth } from './firebase';
 
-// onCall �Լ� ȣ�� (�⺻)
+// onCall 함수 호출 (기본)
 export const callFunction = async (functionName, data = {}) => {
   const callable = httpsCallable(functions, functionName);
   const result = await callable(data);
   return result.data;
 };
 
-// onCall + ��õ� (401/403 �� �������� ���)
+// onCall + 재시도 (401/403 등 인증 관련 오류 처리)
 export const callFunctionWithRetry = async (functionName, data = {}, retries = 2) => {
   let lastError;
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -72,7 +72,7 @@ export const callFunctionWithNaverAuth = async (functionName, data = {}) => {
 };
 
 // ----------------------------------------------------------------------------
-// ������ ���� HTTP ��ƿ/������/SNS �Լ��� �ʿ� �� Bearer ��ū ������� ����
+// 관리자 전용 HTTP 엔드포인트/백오피스/SNS 함수는 Bearer 토큰 사용
 // ----------------------------------------------------------------------------
 
 export const getSystemStatus = async () => {

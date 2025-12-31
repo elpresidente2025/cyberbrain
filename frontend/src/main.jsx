@@ -15,7 +15,7 @@ import AdminRoute from './components/AdminRoute.jsx';
 import ProfileRequiredRoute from './components/ProfileRequiredRoute.jsx';
 import './index.css';
 
-// ?�� ?�시: lazy loading ?�거?�고 직접 import
+// 임시 조치: lazy loading 제거하고 직접 import
 import HomePage from './pages/HomePage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx';
@@ -35,7 +35,7 @@ import AboutPage from './pages/AboutPage.jsx';
 import RestoreAdminPage from './pages/RestoreAdminPage.jsx';
 import TermsPage from './pages/TermsPage.jsx';
 
-// ?�� ?�리로드 ?�수??(?�용???�도 감�? ???�용)
+// 사전 로드 함수(사용자 경험 개선 목적)
 export const preloadGenerate = () => import('./pages/GeneratePage.jsx');
 export const preloadPosts = () => import('./pages/PostsListPage.jsx');
 export const preloadBilling = () => import('./pages/Billing.jsx');
@@ -114,7 +114,7 @@ const router = createBrowserRouter([
   },
 ]);
 
-// ?�마�??�용?�는 ??컴포?�트
+// 테마용 상위 컴포넌트
 const ThemedApp = () => {
   const { isDarkMode } = useThemeMode();
   const theme = createCustomTheme(isDarkMode);
@@ -129,7 +129,7 @@ const ThemedApp = () => {
   );
 };
 
-// React ???�더�?
+// React 렌더링
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
@@ -141,7 +141,7 @@ root.render(
   </React.StrictMode>
 );
 
-// React 마운???�료 ??즉시 로딩 ?�피???�기�?
+// React 마운트 완료 후 즉시 로딩 스피너 숨기기
 const loadingContainer = document.getElementById('loading-container');
 if (loadingContainer) {
   loadingContainer.classList.add('hidden');

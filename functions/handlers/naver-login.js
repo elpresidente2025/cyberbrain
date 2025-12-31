@@ -1,6 +1,6 @@
 /**
  * functions/handlers/naver-login.js
- * ?�이�?로그??처리 (?�원가???�도 ?�책 반영)
+ * 네이버 로그인 처리 (자동 가입 정책 반영)
  */
 
 'use strict';
@@ -8,11 +8,10 @@
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { ALLOWED_ORIGINS } = require('../common/config');
+const { NAVER_CLIENT_ID, NAVER_CLIENT_SECRET, getSecretValue } = require('../common/secrets');
 const fetch = require('node-fetch');
 
-// ?�이�?OAuth ?�정 (?�경변???�수)
-const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
-const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
+// 네이버 OAuth 설정 (환경변수/시크릿)
 
 function mapGender(g) {
   if (!g) return '';
@@ -21,10 +20,10 @@ function mapGender(g) {
   if (s === 'F' || s === 'FEMALE' || s === '여' || s === '여자') return '여성';
   return String(g).trim();
 }
-// ?�이�??�용???�보 조회
+// 네이버 사용자 정보 조회
 async function getNaverUserInfo(accessToken) {
   try {
-    console.log('?�� ?�이�?API ?�출 ?�작 - ?�큰 길이:', accessToken?.length || 0);
+    console.log('네이버 API 호출 시작 - 토큰 길이:', accessToken?.length || 0);
     
     const response = await fetch('https://openapi.naver.com/v1/nid/me', {
       method: 'GET',
@@ -33,20 +32,20 @@ async function getNaverUserInfo(accessToken) {
       }
     });
 
-    console.log('?�� ?�이�?API ?�답 ?�태:', response.status, response.statusText);
+    console.log('네이버 API 응답 상태:', response.status, response.statusText);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('???�이�?API ?�출 ?�패:', {
+      console.error('네이버 API 호출 실패:', {
         status: response.status,
         statusText: response.statusText,
         errorText: errorText
       });
-      throw new Error(`?�이�?API ?�출 ?�패: ${response.status} - ${errorText}`);
+      throw new Error(`네이버 API 호출 실패: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
-    console.log('?�� ?�이�?API ?�답 ?�이??', {
+    console.log('네이버 API 응답 데이터:', {
       resultcode: data.resultcode,
       message: data.message,
       hasResponse: !!data.response,
@@ -54,12 +53,12 @@ async function getNaverUserInfo(accessToken) {
     });
 
     if (data.resultcode !== '00') {
-      throw new Error(`?�이�??�용???�보 조회 ?�패: ${data.message}`);
+      throw new Error(`네이버 사용자 정보 조회 실패: ${data.message}`);
     }
 
     return data.response;
   } catch (error) {
-    console.error('???�이�??�용???�보 조회 ?�류:', {
+    console.error('네이버 사용자 정보 조회 오류:', {
       message: error.message,
       stack: error.stack,
       accessTokenProvided: !!accessToken
@@ -73,18 +72,20 @@ const naverLogin = onCall({
   region: 'asia-northeast3',
   cors: ALLOWED_ORIGINS,
   memory: '256MiB',
-  timeoutSeconds: 60
+  timeoutSeconds: 60,
+  secrets: [NAVER_CLIENT_ID, NAVER_CLIENT_SECRET]
 }, async (request) => {
   // 기존 onCall 로직은 더 이상 사용되지 않음
   return { success: false, message: "Use naverLoginHTTP instead" };
 });
 
-// ?�이�?로그??처리 (?�원가???�도 ?�책) - onRequest�?변경하??CORS ?�전 ?�어
+// 네이버 로그인 처리 (자동 가입 정책) - onRequest로 변경하고 CORS 전부 허용
 const naverLoginHTTP = onRequest({
   region: 'asia-northeast3',
   cors: true,
   memory: '256MiB',
-  timeoutSeconds: 60
+  timeoutSeconds: 60,
+  secrets: [NAVER_CLIENT_ID, NAVER_CLIENT_SECRET]
 }, async (request, response) => {
   // CORS 헤더 명시적 설정
   response.set('Access-Control-Allow-Origin', request.headers.origin || '*');
@@ -98,19 +99,21 @@ const naverLoginHTTP = onRequest({
   }
 
   let stage = 'init';
+  const clientId = getSecretValue(NAVER_CLIENT_ID, 'NAVER_CLIENT_ID');
+  const clientSecret = getSecretValue(NAVER_CLIENT_SECRET, 'NAVER_CLIENT_SECRET');
   try {
     console.log('✅ naverLogin v2 시작 (onRequest)');
     console.log('📋 요청 정보:', {
       method: request.method,
       hasBody: !!request.body,
       envVarsConfigured: {
-        naverClientId: !!NAVER_CLIENT_ID,
-        naverClientSecret: !!NAVER_CLIENT_SECRET
+        naverClientId: !!clientId,
+        naverClientSecret: !!clientSecret
       }
     });
     stage = 'parsing_request';
 
-    // POST ?�청 ?�이???�싱
+    // POST 요청 데이터 파싱
     const requestData = request.body?.data || request.body || {};
     const { accessToken, naverUserInfo, code, state } = requestData;
     let naverUserData;
@@ -125,20 +128,20 @@ const naverLoginHTTP = onRequest({
       naverUserData = naverUserInfo;
     } else if (accessToken) {
       stage = 'fetch_userinfo_with_token';
-      console.log('???�세???�큰?�로 ?�용???�보 조회');
+      console.log('액세스 토큰으로 사용자 정보 조회');
       naverUserData = await getNaverUserInfo(accessToken);
     } else if (code) {
-      // Authorization Code ?�로??지?? code -> access_token 교환
+      // Authorization Code 경로에서 code -> access_token 교환
       stage = 'exchange_code_for_token';
-      console.log('??Authorization Code ?�로?? ?�큰 교환 ?�도');
+      console.log('Authorization Code로 토큰 교환 시도');
       try {
-        if (!NAVER_CLIENT_ID || !NAVER_CLIENT_SECRET) {
+        if (!clientId || !clientSecret) {
           throw new Error('NAVER 환경변수(NAVER_CLIENT_ID/SECRET) 미설정');
         }
         const params = new URLSearchParams();
         params.append('grant_type', 'authorization_code');
-        params.append('client_id', NAVER_CLIENT_ID);
-        params.append('client_secret', NAVER_CLIENT_SECRET);
+        params.append('client_id', clientId);
+        params.append('client_secret', clientSecret);
         params.append('code', code);
         if (state) params.append('state', state);
 
@@ -150,53 +153,53 @@ const naverLoginHTTP = onRequest({
 
         if (!tokenResp.ok) {
           const txt = await tokenResp.text();
-          throw new Error(`?�큰 교환 ?�패: ${tokenResp.status} ${txt}`);
+          throw new Error(`토큰 교환 실패: ${tokenResp.status} ${txt}`);
         }
 
         const tokenJson = await tokenResp.json();
         if (!tokenJson.access_token) {
-          throw new Error('?�큰 교환 ?�답??access_token ?�음');
+          throw new Error('토큰 교환 응답에 access_token 없음');
         }
 
-        console.log('???�큰 교환 ?�공, ?�용???�보 조회');
+        console.log('토큰 교환 성공, 사용자 정보 조회');
         stage = 'fetch_userinfo_after_exchange';
         naverUserData = await getNaverUserInfo(tokenJson.access_token);
       } catch (ex) {
-        console.error('?�이�??�큰 교환 ?�류:', ex);
-        throw new HttpsError('unauthenticated', '?�이�??�큰 교환 ?�패', { stage, message: ex.message });
+        console.error('네이버 토큰 교환 오류:', ex);
+        throw new HttpsError('unauthenticated', '네이버 토큰 교환 실패', { stage, message: ex.message });
       }
     } else {
-      throw new HttpsError('invalid-argument', '?�이�??�용???�보 ?�는 ?�세???�큰???�요?�니??');
+      throw new HttpsError('invalid-argument', '네이버 사용자 정보 또는 액세스 토큰이 필요합니다.');
     }
 
-    // ?�이�?ID ?�인 (?�수)
+    // 네이버 ID 확인 (필수)
     if (!naverUserData.id) {
       return response.status(400).json({
         error: {
           code: 'invalid-argument',
-          message: '?�이�??�용??ID�?가?�올 ???�습?�다.',
+          message: '네이버 사용자 ID를 확인할 수 없습니다.',
           details: { stage: 'validate_naver_id' }
         }
       });
     }
 
-    // 기존 가???��? ?�인 (?�이�?ID�?조회)
+    // 기존 사용자 확인 (네이버 ID로 조회)
     stage = 'query_user';
     const userQuery = await db.collection('users')
       .where('naverUserId', '==', naverUserData.id)
       .limit(1)
       .get();
 
-    // 미�??? ?�동 ?�원가??진행
+    // 미가입 사용자 자동 가입 진행
     if (userQuery.empty) {
       stage = 'auto_registration';
-      console.log('?�� ?�이�??�용???�동 가???�작:', naverUserData.id);
+      console.log('네이버 사용자 자동 가입 시작:', naverUserData.id);
       
       try {
-        // ???�용??문서 ?�성
-        console.log('?�� ???�용??문서 ?�성 ?�작...');
+        // 사용자 문서 생성
+        console.log('사용자 문서 생성 시작...');
         const newUserRef = db.collection('users').doc();
-        console.log('?�� ?�성???�용??ID:', newUserRef.id);
+        console.log('생성된 사용자 ID:', newUserRef.id);
         
         // 월말 계산 (무료 체험 만료일)
         const now = new Date();
@@ -288,7 +291,7 @@ const naverLoginHTTP = onRequest({
       }
     }
 
-    // 기�??? 로그??처리
+    // 기존 사용자 로그인 처리
     stage = 'prepare_login_existing_user';
     const userDoc = userQuery.docs[0];
     const userData = userDoc.data();
@@ -372,8 +375,8 @@ const naverLoginHTTP = onRequest({
       errorMessage: error.message,
       errorStack: error.stack,
       envVarsConfigured: {
-        naverClientId: !!NAVER_CLIENT_ID,
-        naverClientSecret: !!NAVER_CLIENT_SECRET
+        naverClientId: !!clientId,
+        naverClientSecret: !!clientSecret
       }
     });
 
@@ -388,6 +391,6 @@ const naverLoginHTTP = onRequest({
 });
 
 module.exports = {
-  naverLogin, // 기존 onCall ?�수 ?��?
-  naverLoginHTTP // ?�로??onRequest ?�수 추�?
+  naverLogin, // 기존 onCall 함수 유지
+  naverLoginHTTP // 신규 onRequest 함수
 };

@@ -11,11 +11,12 @@
 
 const { BaseAgent } = require('./base');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { getGeminiApiKey } = require('../../common/secrets');
 
 let genAI = null;
 function getGenAI() {
   if (!genAI) {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = getGeminiApiKey();
     if (!apiKey) return null;
     genAI = new GoogleGenerativeAI(apiKey);
   }

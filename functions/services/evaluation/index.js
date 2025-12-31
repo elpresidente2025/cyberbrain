@@ -10,12 +10,13 @@
  */
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { getGeminiApiKey } = require('../../common/secrets');
 
 // Gemini 클라이언트 초기화
 let genAI = null;
 function getGenAI() {
   if (!genAI) {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = getGeminiApiKey();
     if (!apiKey) {
       console.warn('⚠️ [Evaluation] GEMINI_API_KEY 없음 - 평가 스킵');
       return null;

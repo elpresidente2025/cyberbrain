@@ -8,9 +8,9 @@
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { logError } = require('../../common/log');
+const { getGeminiApiKey } = require('../../common/secrets');
 
-// Gemini API 키
-const API_KEY = process.env.GEMINI_API_KEY;
+// Gemini API 키는 시크릿/환경변수에서 조회
 
 // 임베딩 모델 설정
 const EMBEDDING_MODEL = 'text-embedding-004';
@@ -29,7 +29,8 @@ const RETRY_DELAY_MS = 1000;
  * @returns {Promise<number[]>} - 768차원 임베딩 벡터
  */
 async function generateEmbedding(text, taskType = 'RETRIEVAL_DOCUMENT') {
-  if (!API_KEY) {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
     logError('generateEmbedding', 'Gemini API 키가 설정되지 않았습니다.');
     throw new Error('AI 서비스 설정 오류: API 키 누락');
   }
@@ -38,7 +39,7 @@ async function generateEmbedding(text, taskType = 'RETRIEVAL_DOCUMENT') {
     throw new Error('임베딩할 텍스트가 비어있습니다.');
   }
 
-  const genAI = new GoogleGenerativeAI(API_KEY);
+  const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {

@@ -14,6 +14,7 @@ const scraper = require('../services/scraper');
 const trendsAnalyzer = require('../services/trends-analyzer');
 const keywordScorer = require('../services/keyword-scorer');
 const geminiExpander = require('../services/gemini-expander');
+const { GEMINI_API_KEY } = require('../common/secrets');
 
 /**
  * Phase 1: 키워드 분석 요청 (비동기)
@@ -22,7 +23,8 @@ const geminiExpander = require('../services/gemini-expander');
 exports.requestKeywordAnalysis = onCall({
   cors: true,
   memory: '512MiB',
-  timeoutSeconds: 60
+  timeoutSeconds: 60,
+  secrets: [GEMINI_API_KEY]
 }, async (request) => {
   // 인증 확인 (Firebase Auth 또는 네이버 인증)
   let authData;
@@ -152,7 +154,8 @@ exports.keywordAnalysisWorker = onRequest({
   region: 'asia-northeast3',
   memory: '1GiB',
   timeoutSeconds: 540, // 9분
-  cors: false
+  cors: false,
+  secrets: [GEMINI_API_KEY]
 }, async (req, res) => {
   if (req.method !== 'POST') {
     res.status(405).send('Method Not Allowed');

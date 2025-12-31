@@ -7,12 +7,20 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { admin, db } = require('../utils/firebaseAdmin');
+const { NAVER_CLIENT_ID, NAVER_CLIENT_SECRET, getSecretValue } = require('../common/secrets');
 const axios = require('axios');
 
 // 네이버페이 API 설정
-const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
-const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 const NAVER_PARTNER_ID = process.env.NAVER_PARTNER_ID;
+
+function getNaverCredentials() {
+  const clientId = getSecretValue(NAVER_CLIENT_ID, 'NAVER_CLIENT_ID');
+  const clientSecret = getSecretValue(NAVER_CLIENT_SECRET, 'NAVER_CLIENT_SECRET');
+  if (!clientId || !clientSecret) {
+    throw new HttpsError('internal', '네이버페이 API 설정이 누락되었습니다.');
+  }
+  return { clientId, clientSecret };
+}
 
 /**
  * 네이버페이 결제 시작
@@ -24,7 +32,8 @@ exports.initiateNaverPayment = onCall({
     'https://ai-secretary-6e9c8.firebaseapp.com'
   ],
   memory: '512MiB',
-  timeoutSeconds: 60
+  timeoutSeconds: 60,
+  secrets: [NAVER_CLIENT_ID, NAVER_CLIENT_SECRET]
 }, async (request) => {
   const { amount, orderId, orderName, customerEmail, customerName, successUrl, failUrl } = request.data;
 
@@ -40,6 +49,8 @@ exports.initiateNaverPayment = onCall({
   }
 
   try {
+    const { clientId, clientSecret } = getNaverCredentials();
+
     // 네이버페이 결제 준비 API 호출
     // 실제 API 스펙에 맞게 수정 필요
     const response = await axios.post(
@@ -53,8 +64,8 @@ exports.initiateNaverPayment = onCall({
       },
       {
         headers: {
-          'X-Naver-Client-Id': NAVER_CLIENT_ID,
-          'X-Naver-Client-Secret': NAVER_CLIENT_SECRET,
+          'X-Naver-Client-Id': clientId,
+          'X-Naver-Client-Secret': clientSecret,
           'Content-Type': 'application/json'
         }
       }
@@ -109,7 +120,8 @@ exports.confirmNaverPayment = onCall({
     'https://ai-secretary-6e9c8.firebaseapp.com'
   ],
   memory: '512MiB',
-  timeoutSeconds: 60
+  timeoutSeconds: 60,
+  secrets: [NAVER_CLIENT_ID, NAVER_CLIENT_SECRET]
 }, async (request) => {
   const { orderId, paymentId } = request.data;
 
@@ -125,6 +137,8 @@ exports.confirmNaverPayment = onCall({
   }
 
   try {
+    const { clientId, clientSecret } = getNaverCredentials();
+
     // 네이버페이 결제 승인 API 호출
     const response = await axios.post(
       `https://dev.apis.naver.com/naverpay-partner/naverpay/payments/v2.2/apply/payment`,
@@ -134,8 +148,8 @@ exports.confirmNaverPayment = onCall({
       },
       {
         headers: {
-          'X-Naver-Client-Id': NAVER_CLIENT_ID,
-          'X-Naver-Client-Secret': NAVER_CLIENT_SECRET,
+          'X-Naver-Client-Id': clientId,
+          'X-Naver-Client-Secret': clientSecret,
           'Content-Type': 'application/json'
         }
       }

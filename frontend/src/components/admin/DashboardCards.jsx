@@ -110,7 +110,7 @@ function DashboardCards() {
       
       console.log('수동 새로고침 결과:', result);
       
-      // ?�답 구조???�라 ?�이??추출
+      // 응답 구조가 달라 데이터 추출
       let statsData = {};
       
       if (result.success && result.data) {

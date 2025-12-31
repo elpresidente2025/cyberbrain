@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+process.env.DOTENV_CONFIG_QUIET = 'true';
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const { setGlobalOptions } = require('firebase-functions/v2');
@@ -14,19 +15,21 @@ setGlobalOptions({
   memory: '1GiB'
 });
 
-// 환경 변수 검증 (보안 강화)
-const REQUIRED_ENV_VARS = [
-  'NAVER_CLIENT_ID',
-  'NAVER_CLIENT_SECRET',
-  'GEMINI_API_KEY'
-];
+// 환경 변수 검증 (로컬/에뮬레이터 전용)
+if (process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR) {
+  const REQUIRED_ENV_VARS = [
+    'NAVER_CLIENT_ID',
+    'NAVER_CLIENT_SECRET',
+    'GEMINI_API_KEY'
+  ];
 
-const missingVars = REQUIRED_ENV_VARS.filter(varName => !process.env[varName]);
-if (missingVars.length > 0) {
-  console.error('❌ 필수 환경 변수 누락:', missingVars.join(', '));
-  console.error('⚠️ 일부 기능이 정상 작동하지 않을 수 있습니다.');
-} else {
-  console.log('✅ 모든 필수 환경 변수 확인 완료');
+  const missingVars = REQUIRED_ENV_VARS.filter(varName => !process.env[varName]);
+  if (missingVars.length > 0) {
+    console.error('❌ 필수 환경 변수 누락:', missingVars.join(', '));
+    console.error('⚠️ 일부 기능이 정상 작동하지 않을 수 있습니다.');
+  } else {
+    console.log('✅ 모든 필수 환경 변수 확인 완료');
+  }
 }
 
 // Add profile handlers for getUserProfile debug

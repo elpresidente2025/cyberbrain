@@ -1,6 +1,7 @@
 'use strict';
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { GEMINI_API_KEY } = require('./secrets');
 
 // 공통 함수 옵션 - CORS 설정 강화
 const functionOptions = {
@@ -14,7 +15,8 @@ const functionOptions = {
   ],
   maxInstances: 10,
   timeoutSeconds: 300, // 5분으로 증가 (SNS 변환용)
-  memory: '1GiB' // 메모리도 증가
+  memory: '1GiB', // 메모리도 증가
+  secrets: [GEMINI_API_KEY]
 };
 
 /**
