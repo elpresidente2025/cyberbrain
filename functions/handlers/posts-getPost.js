@@ -1,5 +1,5 @@
 
-const { db } = require('../common/admin');
+const { db } = require('../utils/firebaseAdmin');
 const { https } = require('firebase-functions');
 const { getNaverAuth, naverAuthMiddleware } = require('../common/auth');
 
