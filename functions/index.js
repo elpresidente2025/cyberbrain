@@ -1,5 +1,8 @@
 'use strict';
 
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+
 const { setGlobalOptions } = require('firebase-functions/v2');
 require('firebase-functions/v2/https');
 
