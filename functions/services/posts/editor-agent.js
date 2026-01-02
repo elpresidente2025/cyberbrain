@@ -94,6 +94,59 @@ async function refineWithLLM({
     }
   }
 
+  // 3-1. 분량 문제 (contentLength)
+  if (validationResult?.details?.contentLength && validationResult.details.contentLength.passed === false) {
+    const lengthInfo = validationResult.details.contentLength;
+    const current = lengthInfo.current;
+    const min = lengthInfo.min;
+    const max = lengthInfo.max;
+    let instruction = '본문 분량을 기준 범위로 조정하세요.';
+
+    if (typeof min === 'number' && current < min) {
+      instruction = `본문 분량을 ${min}자 이상으로 확장하세요. 기존 맥락을 유지하면서 근거/사례를 보강하고 과도한 반복은 피하세요.`;
+    } else if (typeof max === 'number' && current > max) {
+      instruction = `본문 분량을 ${max}자 이하로 줄이세요. 핵심 근거는 유지하고 군더더기 표현을 정리하세요.`;
+    }
+
+    issues.push({
+      type: 'content_length',
+      severity: 'high',
+      description: `본문 분량 ${current}자 (기준: ${typeof min === 'number' ? min : '-'}~${typeof max === 'number' ? max : '-'})`,
+      instruction
+    });
+  }
+
+  // 3-2. SEO 개선 이슈 (SEOAgent 결과)
+  if (validationResult?.details?.seo) {
+    const seoDetails = validationResult.details.seo;
+    const seoIssues = Array.isArray(seoDetails.issues) ? seoDetails.issues : [];
+    const seoSuggestions = Array.isArray(seoDetails.suggestions) ? seoDetails.suggestions : [];
+
+    for (const issue of seoIssues) {
+      const description = issue.message || issue.description || issue.reason || 'SEO 기준 미달';
+      const instruction = issue.instruction || description;
+      issues.push({
+        type: issue.id || 'seo_issue',
+        severity: issue.severity || 'high',
+        description,
+        instruction
+      });
+    }
+
+    for (const suggestion of seoSuggestions) {
+      const text = typeof suggestion === 'string'
+        ? suggestion
+        : (suggestion.message || suggestion.suggestion || '');
+      if (!text) continue;
+      issues.push({
+        type: 'seo_suggestion',
+        severity: 'medium',
+        description: text,
+        instruction: text
+      });
+    }
+  }
+
   // 4. 사용자 키워드가 제목에 없는 경우 (titleQuality에서 이미 체크하지만 폴백)
   if (userKeywords.length > 0 && title && !issues.some(i => i.type === 'keyword_missing')) {
     const keywordsInTitle = userKeywords.filter(kw => title.includes(kw));

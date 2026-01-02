@@ -210,7 +210,7 @@ ${searchTermList}
     console.log(`📝 [WriterAgent] 프롬프트 생성 완료 (${prompt.length}자, 작법: ${writingMethod}, 섹션: ${promptSections.length}개)`);
 
     // 9. Gemini 호출
-    const model = ai.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+    const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
 
     const result = await model.generateContent({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],

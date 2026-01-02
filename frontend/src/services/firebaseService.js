@@ -150,7 +150,7 @@ export const clearSystemCache = async () => {
 };
 
 export const convertToSNS = async (postId) => {
-  const modelName = localStorage.getItem('gemini_model') || 'gemini-2.0-flash-exp';
+  const modelName = localStorage.getItem('gemini_model') || 'gemini-2.5-flash-lite';
   return await callFunctionWithNaverAuth('convertToSNS', { postId, modelName });
 };
 

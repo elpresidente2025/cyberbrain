@@ -217,7 +217,7 @@ class Orchestrator {
           keywordResult: null,
           userKeywords: context.userKeywords || [],
           status: context.userProfile?.status || '준비',
-          modelName: 'gemini-2.0-flash-exp'
+          modelName: 'gemini-2.5-flash-lite'
         });
 
         if (editorResult.edited) {
@@ -361,7 +361,7 @@ class Orchestrator {
           keywordResult: null,
           userKeywords: context.userKeywords || [],
           status: context.userProfile?.status || '준비',
-          modelName: 'gemini-2.0-flash-exp'
+          modelName: 'gemini-2.5-flash-lite'
         });
 
         if (editorResult.edited) {
@@ -487,7 +487,7 @@ class Orchestrator {
                   keywordResult: null,
                   userKeywords: context.userKeywords || [],
                   status: context.userProfile?.status || '준비',
-                  modelName: 'gemini-2.0-flash-exp'
+                  modelName: 'gemini-2.5-flash-lite'
                 });
 
                 if (seoEditorResult.edited) {

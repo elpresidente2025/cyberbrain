@@ -82,7 +82,7 @@ exports.generatePosts = httpWrap(async (req) => {
 원고를 작성해주세요.`;
 
     // AI 모델 호출
-    const rawResponse = await callGenerativeModel(generationPrompt, 1, 'gemini-2.0-flash-exp');
+    const rawResponse = await callGenerativeModel(generationPrompt, 1, 'gemini-2.5-flash-lite');
 
     if (!rawResponse) {
       throw new HttpsError('internal', '원고 생성에 실패했습니다.');

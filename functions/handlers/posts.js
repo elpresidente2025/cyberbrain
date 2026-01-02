@@ -42,6 +42,7 @@ const { ProgressTracker } = require('../utils/progress-tracker');
 const { sanitizeElectionContent } = require('../services/election-compliance');
 const { validateTopicRegion } = require('../services/region-detector');
 const { isMultiAgentEnabled, generateWithMultiAgent } = require('../services/agents/pipeline-helper');
+const { SEOAgent } = require('../services/agents/seo-agent');
 const { transferStyle } = require('../services/stylometry');
 // 세션 관리는 이제 profile-loader에서 통합 관리 (users 문서의 activeGenerationSession 필드)
 // const { createGenerationSession, incrementSessionAttempt } = require('../services/generation-session');
@@ -97,6 +98,193 @@ function insertSlogan(content, slogan) {
 
   // </p> 태그도 없으면 그냥 끝에 추가
   return content + '\n' + sloganHtml;
+}
+
+
+function needsTitleRegeneration(title, topic, rawTopic) {
+  if (!title || !title.trim()) return true;
+
+  const normalized = title.trim();
+  const topics = [topic, rawTopic].filter(Boolean);
+
+  if (normalized.endsWith('관련 원고')) return true;
+
+  return topics.some((t) =>
+    normalized === t ||
+    normalized.includes(`${t} 관련`)
+  );
+}
+
+async function runLegacyQualityGate({
+  content,
+  title,
+  topic,
+  rawTopic,
+  category,
+  subCategory,
+  instructions,
+  fullName,
+  modelName,
+  userProfile,
+  status,
+  userKeywords,
+  autoKeywords,
+  backgroundKeywords,
+  targetWordCount,
+  maxAttempts = 3,
+  timeoutMs = 30000
+}) {
+  let currentContent = content;
+  let currentTitle = title;
+  const startTime = Date.now();
+
+  if (needsTitleRegeneration(currentTitle, topic, rawTopic)) {
+    currentTitle = await generateTitleFromContent({
+      content: currentContent || '',
+      backgroundInfo: instructions,
+      keywords: backgroundKeywords,
+      userKeywords,
+      topic,
+      fullName,
+      modelName,
+      category,
+      subCategory,
+      status
+    });
+  }
+
+  let attempt = 0;
+
+  while (attempt < maxAttempts && Date.now() - startTime < timeoutMs) {
+    attempt += 1;
+
+    let seoResult = null;
+    let seoPassed = true;
+
+    try {
+      const seoAgent = new SEOAgent();
+      seoResult = await seoAgent.run({
+        userProfile,
+        targetWordCount,
+        category,
+        previousResults: {
+          KeywordAgent: {
+            success: true,
+            data: {
+              keywords: backgroundKeywords,
+              primary: userKeywords[0] || (backgroundKeywords[0]?.keyword || backgroundKeywords[0] || '')
+            }
+          },
+          WriterAgent: {
+            success: true,
+            data: { content: currentContent, title: currentTitle }
+          },
+          ComplianceAgent: {
+            success: true,
+            data: { content: currentContent, title: currentTitle }
+          }
+        }
+      });
+
+      if (seoResult?.success && seoResult.data) {
+        currentContent = seoResult.data.content || currentContent;
+        currentTitle = seoResult.data.title || currentTitle;
+        seoPassed = seoResult.data.seoPassed ?? seoResult.data.passed ?? false;
+      } else {
+        seoPassed = false;
+      }
+    } catch (seoError) {
+      console.warn('?? SEO ?? ?? (???? ??):', seoError.message);
+      seoPassed = false;
+    }
+
+    const heuristicResult = await runHeuristicValidation(
+      currentContent,
+      status,
+      currentTitle,
+      { useLLM: true, userKeywords }
+    );
+
+    const keywordResult = validateKeywordInsertion(
+      currentContent,
+      userKeywords,
+      autoKeywords,
+      targetWordCount
+    );
+
+    const needsEdit = !heuristicResult.passed || !keywordResult.valid || !seoPassed;
+    if (!needsEdit) {
+      return {
+        content: currentContent,
+        title: currentTitle,
+        attempts: attempt,
+        seoPassed
+      };
+    }
+
+    const validationResult = {
+      ...heuristicResult,
+      details: {
+        ...heuristicResult.details,
+        seo: seoResult?.data
+          ? {
+              passed: seoPassed,
+              issues: seoResult.data.issues || [],
+              suggestions: seoResult.data.suggestions || []
+            }
+          : {
+              passed: false,
+              issues: [
+                {
+                  id: 'seo_unavailable',
+                  severity: 'high',
+                  message: 'SEO ?? ??'
+                }
+              ],
+              suggestions: []
+            }
+      }
+    };
+
+    const editorResult = await refineWithLLM({
+      content: currentContent,
+      title: currentTitle,
+      validationResult,
+      keywordResult,
+      userKeywords,
+      status,
+      modelName
+    });
+
+    if (!editorResult.edited) {
+      break;
+    }
+
+    currentContent = editorResult.content;
+    currentTitle = editorResult.title || currentTitle;
+
+    if (needsTitleRegeneration(currentTitle, topic, rawTopic)) {
+      currentTitle = await generateTitleFromContent({
+        content: currentContent || '',
+        backgroundInfo: instructions,
+        keywords: backgroundKeywords,
+        userKeywords,
+        topic,
+        fullName,
+        modelName,
+        category,
+        subCategory,
+        status
+      });
+    }
+  }
+
+  return {
+    content: currentContent,
+    title: currentTitle,
+    attempts: attempt,
+    seoPassed: false
+  };
 }
 
 // Generation 엔드포인트 (아직 분리하지 않음)
@@ -173,7 +361,7 @@ exports.generatePosts = httpWrap(async (req) => {
   // 데이터 검증
   const topic = data.prompt || data.topic || '';
   const category = data.category || '';
-  const modelName = data.modelName || 'gemini-2.0-flash-exp';
+  const modelName = data.modelName || 'gemini-2.5-flash-lite';
 
   // 카테고리별 최소 분량 설정 (블로그 원고 기준)
   // 키는 CATEGORY_TO_WRITING_METHOD와 일치해야 함
@@ -647,77 +835,71 @@ exports.generatePosts = httpWrap(async (req) => {
       }
     }
 
-    // 4단계: 품질 검증 중
+    // Quality check
     await progress.stepValidating();
 
-    // 🔧 EditorAgent: 검증 결과 기반 LLM 수정
-    // ⚠️ Multi-Agent 모드에서는 Orchestrator가 이미 재검증 루프를 실행했으므로 스킵
-    if (multiAgentMetadata) {
-      console.log('✅ [Multi-Agent] Orchestrator 재검증 루프 완료 - 레거시 EditorAgent 스킵', {
+    const isMultiAgent = Boolean(multiAgentMetadata);
+
+    // Quality gate: Multi-Agent uses Orchestrator; legacy uses refinement loop
+    if (isMultiAgent) {
+      console.log('? [Multi-Agent] Orchestrator ??? ?? ?? - ??? ?? ??? ??', {
         qualityThresholdMet: multiAgentMetadata.quality?.thresholdMet,
         refinementAttempts: multiAgentMetadata.quality?.refinementAttempts,
         seoPassed: multiAgentMetadata.seo?.passed
       });
     } else {
-      // 레거시 모드에서만 EditorAgent 실행
-      try {
-        // 휴리스틱 검증 실행 (제목 + 본문 모두 검사, LLM 하이브리드, 제목 품질 검증 포함)
-        const heuristicResult = await runHeuristicValidation(generatedContent, currentStatus, generatedTitle, { useLLM: true, userKeywords });
+      const autoKeywords = backgroundKeywords.filter(k => !userKeywords.includes(k));
+      const qualityGateResult = await runLegacyQualityGate({
+        content: generatedContent,
+        title: generatedTitle,
+        topic: sanitizedTopic,
+        rawTopic: topic,
+        category,
+        subCategory: data.subCategory,
+        instructions: data.instructions,
+        fullName,
+        modelName,
+        userProfile,
+        status: currentStatus,
+        userKeywords,
+        autoKeywords,
+        backgroundKeywords,
+        targetWordCount
+      });
 
-        // 키워드 검증 실행
-        const extractedKeywords = backgroundKeywords.filter(k => !userKeywords.includes(k));
-        const keywordResult = validateKeywordInsertion(
-          generatedContent,
-          userKeywords,
-          extractedKeywords,
-          targetWordCount
-        );
-
-        // 문제가 발견되면 EditorAgent로 수정
-        if (!heuristicResult.passed || !keywordResult.valid) {
-          console.log('📝 [EditorAgent] 검증 실패, LLM 수정 시작:', {
-            heuristicPassed: heuristicResult.passed,
-            keywordValid: keywordResult.valid,
-            issues: heuristicResult.issues
-          });
-
-          const editorResult = await refineWithLLM({
-            content: generatedContent,
-            title: generatedTitle,
-            validationResult: heuristicResult,
-            keywordResult,
-            userKeywords,
-            status: currentStatus,
-            modelName
-          });
-
-          if (editorResult.edited) {
-            generatedContent = editorResult.content;
-            generatedTitle = editorResult.title;
-            console.log('✅ [EditorAgent] 수정 완료:', editorResult.editSummary);
-          }
-        } else {
-          console.log('✅ [EditorAgent] 검증 통과 - 수정 불필요');
-        }
-      } catch (editorError) {
-        console.warn('⚠️ [EditorAgent] 실패 (원본 유지):', editorError.message);
-        // 실패해도 원본 유지하고 계속 진행
-      }
+      generatedContent = qualityGateResult.content;
+      generatedTitle = qualityGateResult.title;
+      console.log('? [Legacy] ?? ??? ??', {
+        attempts: qualityGateResult.attempts,
+        seoPassed: qualityGateResult.seoPassed
+      });
     }
 
-    // 5단계: 마무리 중
+    // Finalizing
     await progress.stepFinalizing();
 
     // 제목 생성 (Multi-Agent에서 이미 생성된 경우 스킵)
-    // 🔧 제목이 없거나, 주제와 동일하거나, "관련 원고"로 끝나면 재생성
-    const needsTitleRegeneration = !generatedTitle ||
-      generatedTitle === sanitizedTopic ||
-      generatedTitle === topic ||
-      generatedTitle.endsWith('관련 원고') ||
-      generatedTitle.includes(sanitizedTopic + ' 관련');
-
-    if (needsTitleRegeneration) {
-      console.log('📝 제목 재생성 필요:', { generatedTitle, topic: sanitizedTopic });
+    // Quality gate: Multi-Agent uses Orchestrator; legacy uses refinement loop
+    if (isMultiAgent) {
+      if (needsTitleRegeneration(generatedTitle, sanitizedTopic, topic)) {
+        console.log('?? ?? ??? ??:', { generatedTitle, topic: sanitizedTopic });
+        generatedTitle = await generateTitleFromContent({
+          content: generatedContent || '',
+          backgroundInfo: data.instructions,
+          keywords: backgroundKeywords,
+          userKeywords: userKeywords,
+          topic: sanitizedTopic,
+          fullName,
+          modelName,
+          category: data.category,
+          subCategory: data.subCategory,
+          status: currentStatus
+        });
+      } else {
+        console.log('? [Multi-Agent] SEO ??? ?? ??:', generatedTitle);
+      }
+    } else if (!generatedTitle || !generatedTitle.trim()) {
+      console.log('?? [Legacy] ?? ??? ??:', { generatedTitle, topic: sanitizedTopic });
       generatedTitle = await generateTitleFromContent({
         content: generatedContent || '',
         backgroundInfo: data.instructions,
@@ -730,11 +912,8 @@ exports.generatePosts = httpWrap(async (req) => {
         subCategory: data.subCategory,
         status: currentStatus
       });
-    } else {
-      console.log('🤖 [Multi-Agent] SEO 최적화 제목 사용:', generatedTitle);
     }
 
-    // 🎯 슬로건 삽입 (활성화된 경우)
     if (sloganEnabled && slogan && slogan.trim()) {
       // 슬로건 선거법 검증 (경고만 - 사용자 입력이므로 자동 수정 안 함)
       if (currentStatus === '준비' || currentStatus === '예비') {

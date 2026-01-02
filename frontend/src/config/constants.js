@@ -8,7 +8,7 @@ export const CONFIG = {
   MAX_DRAFTS_STORAGE: 10,
 
   // AI 모델 설정
-  DEFAULT_AI_MODEL: 'gemini-2.0-flash-exp',
+  DEFAULT_AI_MODEL: 'gemini-2.5-flash-lite',
 
   // 콘텐츠 품질 기준
   SEO_WORD_THRESHOLD: 1500,

@@ -62,11 +62,11 @@ function getUserFriendlyErrorMessage(error) {
  * @description 주어진 프롬프트로 Gemini 모델을 호출하고, 텍스트 응답을 반환합니다.
  * @param {string} prompt - AI 모델에게 전달할 프롬프트
  * @param {number} retries - 실패 시 재시도 횟수
- * @param {string} modelName - 사용할 모델명 (기본값: gemini-2.0-flash-exp)
+ * @param {string} modelName - 사용할 모델명 (기본값: gemini-2.5-flash-lite)
  * @param {boolean} useJsonMode - JSON 형식 응답 강제 (기본값: true)
  * @returns {Promise<string>} - AI가 생성한 텍스트
  */
-async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.0-flash-exp', useJsonMode = true) {
+async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.5-flash-lite', useJsonMode = true) {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
     logError('callGenerativeModel', 'Gemini API 키가 설정되지 않았습니다.');
@@ -76,18 +76,18 @@ async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.0-
   const genAI = new GoogleGenerativeAI(apiKey);
   
   // 모델별 설정
-  const isGemini2 = modelName.includes('gemini-2.0');
+  const supportsJsonMode = modelName.startsWith('gemini-2.');
 
   const generationConfig = {
     temperature: 0.25, // 정치인 원고: 지시 준수율 최우선 (중언부언 방지)
     topK: 20,          // 선택지 축소로 더 보수적인 생성
     topP: 0.80,        // 확률 분포 축소로 규칙 준수 강화
-    maxOutputTokens: isGemini2 ? 20000 : 20000, // 한국어 장문 콘텐츠 생성을 위한 토큰 증가
+    maxOutputTokens: supportsJsonMode ? 20000 : 20000, // 한국어 장문 콘텐츠 생성을 위한 토큰 증가
     stopSequences: [], // stopSequences는 출력을 제한하지만, 프롬프트 템플릿의 구분자(---)도 차단하므로 제거
   };
 
-  // Gemini 2.0만 JSON mode 지원 (useJsonMode가 true일 때만)
-  if (isGemini2 && useJsonMode) {
+  // Gemini 2.x JSON mode 지원 (useJsonMode가 true일 때만)
+  if (supportsJsonMode && useJsonMode) {
     generationConfig.responseMimeType = 'application/json';
   }
 
@@ -104,7 +104,7 @@ async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.0-
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      console.log(`🤖 Gemini API 호출 시도 (${attempt}/${retries}) - 모델: ${modelName}${isGemini2 ? ' [실험적]' : ''}`);
+      console.log(`🤖 Gemini API 호출 시도 (${attempt}/${retries}) - 모델: ${modelName}${supportsJsonMode ? ' [실험적]' : ''}`);
       const result = await model.generateContent(prompt);
       const response = await result.response;
       const text = response.text();

@@ -544,7 +544,7 @@ exports.generatePosts = httpWrap(async (req) => {
   // prompt 필드 우선 처리
   const topic = data.prompt || data.topic || '';
   const category = data.category || '';
-  const modelName = data.modelName || 'gemini-2.0-flash-exp'; // 기본값은 2.0-flash (JSON mode 지원)
+  const modelName = data.modelName || 'gemini-2.5-flash-lite'; // 기본값은 2.5-flash-lite (JSON mode 지원)
   const targetWordCount = data.wordCount || 1700; // 사용자 요청 글자수 (기본값 1700)
 
   console.log('🔍 검증 중', {

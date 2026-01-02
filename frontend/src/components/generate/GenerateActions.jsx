@@ -1,5 +1,5 @@
 // frontend/src/components/generate/GenerateActions.jsx
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -27,10 +27,40 @@ export default function GenerateActions({
   canRegenerate = false
 }) {
   const attemptsRemaining = maxAttempts - attempts;
+  const [rotatingIndex, setRotatingIndex] = useState(0);
+
+  const generatingVariants = useMemo(() => ([
+    '원고 초안 정리 중...',
+    '핵심 메시지 다듬는 중...',
+    '문장 흐름 정리 중...',
+    '근거와 구조를 정돈 중...',
+    '표현을 자연스럽게 다듬는 중...',
+    '읽기 쉬운 문장으로 변환 중...',
+    '주요 포인트 정리 중...',
+    '문단 구성 조율 중...',
+    '맥락을 반영해 문장을 다듬는 중...',
+    '완성도를 높이는 중...'
+  ]), []);
+
+  useEffect(() => {
+    if (!loading || !progress || progress.step !== 3) {
+      setRotatingIndex(0);
+      return undefined;
+    }
+
+    const intervalId = setInterval(() => {
+      setRotatingIndex((prev) => (prev + 1) % generatingVariants.length);
+    }, 2000);
+
+    return () => clearInterval(intervalId);
+  }, [loading, progress?.step, generatingVariants.length]);
 
   // 진행 상황 메시지 결정
   const getProgressMessage = () => {
     if (!progress || !loading) return '생성 중...';
+    if (progress.step === 3) {
+      return generatingVariants[rotatingIndex] || '원고 초안 정리 중...';
+    }
     return progress.message || '처리 중...';
   };
 

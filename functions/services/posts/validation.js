@@ -129,7 +129,7 @@ ${sentences.map((s, i) => `${i + 1}. "${s}"`).join('\n')}
 }`;
 
   try {
-    const response = await callGenerativeModel(prompt, 1, 'gemini-2.0-flash-exp', true);
+    const response = await callGenerativeModel(prompt, 1, 'gemini-2.5-flash-lite', true);
     const parsed = JSON.parse(response);
 
     return parsed.results.map((r, i) => ({
@@ -867,7 +867,7 @@ async function validateAndRetry({
       status,
       topic,
       authorName,
-      modelName: 'gemini-2.0-flash-exp'
+      modelName: 'gemini-2.5-flash-lite'
     });
 
     // 점수 추적
@@ -899,7 +899,7 @@ async function validateAndRetry({
             ragContext,
             authorName,
             status,
-            modelName: 'gemini-2.0-flash-exp'
+            modelName: 'gemini-2.5-flash-lite'
           });
 
           if (correctionResult.success && !correctionResult.unchanged) {
@@ -927,7 +927,7 @@ async function validateAndRetry({
         ragContext,
         authorName,
         status,
-        modelName: 'gemini-2.0-flash-exp'
+        modelName: 'gemini-2.5-flash-lite'
       });
 
       if (correctionResult.success && !correctionResult.unchanged) {

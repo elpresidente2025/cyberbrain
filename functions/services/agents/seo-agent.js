@@ -38,7 +38,7 @@ class SEOAgent extends BaseAgent {
   }
 
   async execute(context) {
-    const { previousResults = {}, userProfile = {} } = context;
+    const { previousResults = {}, userProfile = {}, targetWordCount } = context;
 
     // Compliance Agent 결과에서 콘텐츠 가져오기
     const complianceResult = previousResults.ComplianceAgent;
@@ -67,7 +67,8 @@ class SEOAgent extends BaseAgent {
     const keywordDensity = this.analyzeKeywordDensity(optimizedContent, keywords);
 
     // 5. 구조 분석
-    const structureAnalysis = this.analyzeStructure(optimizedContent);
+    const wordCountRange = this.getWordCountRange(targetWordCount);
+    const structureAnalysis = this.analyzeStructure(optimizedContent, wordCountRange);
 
     // 6. SEO Pass/Fail 평가
     const seoEvaluation = this.evaluateSEOCompliance({
@@ -77,7 +78,8 @@ class SEOAgent extends BaseAgent {
       keywordDensity,
       contentLength: optimizedContent.replace(/<[^>]*>/g, '').length,
       structure: structureAnalysis,
-      keywordCount: keywords.length
+      keywordCount: keywords.length,
+      wordCountRange
     });
 
     // 7. 개선 제안 생성
@@ -104,6 +106,22 @@ class SEOAgent extends BaseAgent {
         structure: structureAnalysis,
         seoEvaluation
       }
+    };
+  }
+
+  getWordCountRange(targetWordCount) {
+    const baseRange = SEO_RULES.wordCount;
+    if (!targetWordCount || typeof targetWordCount !== 'number') {
+      return baseRange;
+    }
+
+    const min = Math.max(baseRange.min, targetWordCount);
+    const max = Math.max(baseRange.max, Math.round(min * 1.1));
+
+    return {
+      ...baseRange,
+      min,
+      max
     };
   }
 
@@ -263,7 +281,7 @@ class SEOAgent extends BaseAgent {
   /**
    * 구조 분석 (SEO_RULES.structure 기준)
    */
-  analyzeStructure(content) {
+  analyzeStructure(content, wordCountRange = SEO_RULES.wordCount) {
     const structureRules = SEO_RULES.structure;
 
     // 태그 카운트
@@ -287,10 +305,10 @@ class SEOAgent extends BaseAgent {
       lists: listCount,
       charCount,
       wordCountRange: {
-        min: SEO_RULES.wordCount.min,
-        max: SEO_RULES.wordCount.max,
+        min: wordCountRange.min,
+        max: wordCountRange.max,
         current: charCount,
-        inRange: charCount >= SEO_RULES.wordCount.min && charCount <= SEO_RULES.wordCount.max
+        inRange: charCount >= wordCountRange.min && charCount <= wordCountRange.max
       }
     };
   }
@@ -305,7 +323,8 @@ class SEOAgent extends BaseAgent {
     keywordDensity,
     contentLength,
     structure,
-    keywordCount
+    keywordCount,
+    wordCountRange = SEO_RULES.wordCount
   }) {
     const issues = [];
     const titleLength = title.length;
@@ -335,7 +354,7 @@ class SEOAgent extends BaseAgent {
       });
     }
 
-    const { min, max } = SEO_RULES.wordCount;
+    const { min, max } = wordCountRange;
     if (contentLength < min || contentLength > max) {
       issues.push({
         id: 'content_length',
