@@ -31,7 +31,7 @@ const httpFunctionOptions = {
     credentials: true
   },
   maxInstances: 5,
-  timeoutSeconds: 60,
+  timeoutSeconds: 540,
   memory: '512MiB',
   secrets: [HF_API_TOKEN, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, GEMINI_API_KEY]
 };
