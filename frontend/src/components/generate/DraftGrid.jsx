@@ -160,18 +160,17 @@ export default function DraftGrid({
                 flexWrap: 'wrap',
                 borderTop: '1px solid rgba(255,255,255,0.2)'
               }}>
-                {/* SEO 점수 */}
-                {draft.multiAgent.seoScore != null && (
-                  <Tooltip title="네이버 SEO 최적화 점수">
+                {/* SEO 통과 여부 */}
+                {draft.multiAgent.seoPassed != null && (
+                  <Tooltip title="네이버 SEO 통과 여부">
                     <Chip
                       icon={<Speed sx={{ fontSize: 14 }} />}
-                      label={`SEO ${draft.multiAgent.seoScore}점`}
+                      label={draft.multiAgent.seoPassed ? 'SEO 통과' : 'SEO 실패'}
                       size="small"
                       sx={{
                         height: 20,
                         fontSize: '0.7rem',
-                        bgcolor: draft.multiAgent.seoScore >= 70 ? 'success.main' :
-                                 draft.multiAgent.seoScore >= 50 ? 'warning.main' : 'error.main',
+                        bgcolor: draft.multiAgent.seoPassed ? 'success.main' : 'error.main',
                         color: 'white',
                         '& .MuiChip-icon': { color: 'white' }
                       }}

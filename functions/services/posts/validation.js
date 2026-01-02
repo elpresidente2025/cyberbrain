@@ -393,13 +393,25 @@ function detectElectionLawViolation(content, status, title = '') {
 // 제목 품질 검증 (title-generation.js 기준)
 // ============================================================================
 
+function normalizeNumericToken(token) {
+  return token.replace(/[\s,]/g, '').replace(/퍼센트/g, '%');
+}
+
+function extractNumericTokens(text) {
+  if (!text) return [];
+  const plainText = text.replace(/<[^>]*>/g, ' ');
+  const regex = /\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*(?:%|퍼센트|[가-힣]+)?/g;
+  const matches = plainText.match(regex) || [];
+  return [...new Set(matches.map(normalizeNumericToken).filter(Boolean))];
+}
+
 /**
  * 제목 품질 검증
  * @param {string} title - 검증할 제목
  * @param {Array} userKeywords - 사용자 입력 키워드 (SEO용)
  * @returns {Object} { passed, issues, details }
  */
-function validateTitleQuality(title, userKeywords = []) {
+function validateTitleQuality(title, userKeywords = [], content = '') {
   if (!title) {
     return { passed: true, issues: [], details: {} };
   }
@@ -446,7 +458,34 @@ function validateTitleQuality(title, userKeywords = []) {
     }
   }
 
-  // 3. 추상적 표현 감지 (구체성 없는 뻔한 표현들)
+  // 3. 제목 수치/단위가 본문과 불일치하는지 검증
+  if (content) {
+    const titleNumericTokens = extractNumericTokens(title);
+    const contentNumericTokens = extractNumericTokens(content);
+
+    if (titleNumericTokens.length > 0) {
+      if (contentNumericTokens.length === 0) {
+        issues.push({
+          type: 'title_number_mismatch',
+          severity: 'high',
+          description: '제목에 수치가 있으나 본문에 근거 수치 없음',
+          instruction: '본문에 실제로 있는 수치/단위를 제목에 사용하세요.'
+        });
+      } else {
+        const missingTokens = titleNumericTokens.filter(token => !contentNumericTokens.includes(token));
+        if (missingTokens.length > 0) {
+          issues.push({
+            type: 'title_number_mismatch',
+            severity: 'high',
+            description: `제목 수치/단위가 본문과 불일치: ${missingTokens.join(', ')}`,
+            instruction: '본문에 실제로 등장하는 수치/단위를 제목에 그대로 사용하세요.'
+          });
+        }
+      }
+    }
+  }
+
+  // 4. 추상적 표현 감지 (구체성 없는 뻔한 표현들)
   const abstractPatterns = [
     // 기존 추상어
     { pattern: /비전/, word: '비전' },
@@ -483,7 +522,7 @@ function validateTitleQuality(title, userKeywords = []) {
     });
   }
 
-  // 4. 숫자/구체성 체크 (권장 사항)
+  // 5. 숫자/구체성 체크 (권장 사항)
   details.hasNumbers = /\d/.test(title);
   if (!details.hasNumbers && issues.length > 0) {
     // 다른 문제가 있을 때만 숫자 부재 언급 (너무 많은 피드백 방지)
@@ -571,7 +610,7 @@ async function runHeuristicValidation(content, status, title = '', options = {})
   }
 
   // 3. 제목 품질 검증 (title-generation.js 기준)
-  const titleResult = validateTitleQuality(title, userKeywords);
+  const titleResult = validateTitleQuality(title, userKeywords, content);
   if (!titleResult.passed) {
     const titleIssues = titleResult.issues
       .filter(i => i.severity === 'critical' || i.severity === 'high')

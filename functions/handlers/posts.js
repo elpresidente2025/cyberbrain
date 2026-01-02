@@ -415,7 +415,7 @@ exports.generatePosts = httpWrap(async (req) => {
 
         console.log('✅ [Multi-Agent] 생성 완료', {
           wordCount: multiAgentResult.wordCount,
-          seoScore: multiAgentMetadata?.seo?.score,
+          seoPassed: multiAgentMetadata?.seo?.passed,
           compliancePassed: multiAgentMetadata?.compliance?.passed
         });
 
@@ -656,7 +656,7 @@ exports.generatePosts = httpWrap(async (req) => {
       console.log('✅ [Multi-Agent] Orchestrator 재검증 루프 완료 - 레거시 EditorAgent 스킵', {
         qualityThresholdMet: multiAgentMetadata.quality?.thresholdMet,
         refinementAttempts: multiAgentMetadata.quality?.refinementAttempts,
-        seoScore: multiAgentMetadata.seo?.score
+        seoPassed: multiAgentMetadata.seo?.passed
       });
     } else {
       // 레거시 모드에서만 EditorAgent 실행
@@ -798,7 +798,7 @@ exports.generatePosts = httpWrap(async (req) => {
           pipeline: multiAgentMetadata.pipeline,
           compliancePassed: multiAgentMetadata.compliance?.passed,
           complianceIssues: multiAgentMetadata.compliance?.issueCount || 0,
-          seoScore: multiAgentMetadata.seo?.score,
+          seoPassed: multiAgentMetadata.seo?.passed,
           keywords: multiAgentMetadata.keywords,
           duration: multiAgentMetadata.duration,
           appliedStrategy: multiAgentMetadata.appliedStrategy || null  // 🎯 적용된 수사학 전략

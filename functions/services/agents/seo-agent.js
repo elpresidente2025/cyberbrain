@@ -5,7 +5,7 @@
  *
  * 역할:
  * - 네이버 SEO 최적화 적용
- * - 제목 최적화 (60자 이내)
+ * - 제목 최적화 (25자 이내)
  * - 메타 설명 생성
  * - 키워드 밀도 분석 및 조정
  *
@@ -17,6 +17,16 @@ const { BaseAgent } = require('./base');
 // ✅ 기존 guidelines import
 const { SEO_RULES, FORMAT_RULES, CONTENT_RULES } = require('../../prompts/guidelines/editorial');
 const { calculateMinInsertions, calculateDistribution } = require('../../prompts/guidelines/seo');
+
+const TITLE_LIMITS = {
+  min: 18,
+  max: 25
+};
+
+const META_LIMITS = {
+  min: 100,
+  max: 160
+};
 
 class SEOAgent extends BaseAgent {
   constructor() {
@@ -44,7 +54,7 @@ class SEOAgent extends BaseAgent {
     const primaryKeyword = keywordResult?.data?.primary || (keywords[0]?.keyword || keywords[0] || '');
     const writerTitle = writerResult?.data?.title || null;
 
-    // 1. 제목 최적화 (60자 이내, 키워드 포함)
+    // 1. 제목 최적화 (25자 이내, 키워드 포함)
     const title = this.optimizeTitle(content, primaryKeyword, userProfile, writerTitle);
 
     // 2. 메타 설명 생성 (160자 이내)
@@ -59,23 +69,25 @@ class SEOAgent extends BaseAgent {
     // 5. 구조 분석
     const structureAnalysis = this.analyzeStructure(optimizedContent);
 
-    // 6. SEO 점수 계산
-    const seoScore = this.calculateSEOScore({
-      titleLength: title.length,
-      hasKeywordInTitle: primaryKeyword ? title.includes(primaryKeyword) : false,
-      metaLength: metaDescription.length,
+    // 6. SEO Pass/Fail 평가
+    const seoEvaluation = this.evaluateSEOCompliance({
+      title,
+      primaryKeyword,
+      metaDescription,
       keywordDensity,
       contentLength: optimizedContent.replace(/<[^>]*>/g, '').length,
-      structure: structureAnalysis
+      structure: structureAnalysis,
+      keywordCount: keywords.length
     });
 
     // 7. 개선 제안 생성
-    const suggestions = this.generateSuggestions(seoScore, keywordDensity, structureAnalysis);
+    const suggestions = this.generateSuggestions(seoEvaluation.issues);
 
     console.log(`🔍 [SEOAgent] 최적화 완료`, {
       titleLength: title.length,
       contentLength: optimizedContent.replace(/<[^>]*>/g, '').length,
-      seoScore,
+      seoPassed: seoEvaluation.passed,
+      issueCount: seoEvaluation.issues.length,
       keywordCount: keywords.length
     });
 
@@ -84,11 +96,13 @@ class SEOAgent extends BaseAgent {
       metaDescription,
       content: optimizedContent,
       keywords: keywords.slice(0, 5).map(k => k.keyword || k),
-      seoScore,
+      seoPassed: seoEvaluation.passed,
+      issues: seoEvaluation.issues,
       suggestions,
       analysis: {
         keywordDensity,
-        structure: structureAnalysis
+        structure: structureAnalysis,
+        seoEvaluation
       }
     };
   }
@@ -97,8 +111,11 @@ class SEOAgent extends BaseAgent {
    * 제목 최적화 (SEO_RULES 기반)
    */
   optimizeTitle(content, primaryKeyword, userProfile, existingTitle) {
+    const minLength = TITLE_LIMITS.min;
+    const maxLength = TITLE_LIMITS.max;
+
     // 이미 좋은 제목이 있으면 길이만 체크
-    if (existingTitle && existingTitle.length >= 15 && existingTitle.length <= 60) {
+    if (existingTitle && existingTitle.length >= minLength && existingTitle.length <= maxLength) {
       // 키워드 포함 여부 확인
       if (!primaryKeyword || existingTitle.includes(primaryKeyword)) {
         return existingTitle;
@@ -120,22 +137,31 @@ class SEOAgent extends BaseAgent {
       title = existingTitle;
     } else if (primaryKeyword && cleanFirstLine.includes(primaryKeyword)) {
       // 이미 키워드가 포함된 경우
-      title = cleanFirstLine.substring(0, 55);
+      title = cleanFirstLine.substring(0, maxLength);
     } else if (primaryKeyword) {
       // 키워드 + 지역 조합
       if (region) {
-        title = `${region} ${primaryKeyword} - ${cleanFirstLine.substring(0, 30)}`;
+        title = `${region} ${primaryKeyword} ${cleanFirstLine}`;
       } else {
-        title = `${primaryKeyword} - ${cleanFirstLine.substring(0, 40)}`;
+        title = `${primaryKeyword} ${cleanFirstLine}`;
       }
     } else {
-      title = cleanFirstLine.substring(0, 55);
+      title = cleanFirstLine.substring(0, maxLength);
     }
 
-    // 60자 제한 (SEO_RULES 기반)
-    const maxTitleLength = 60;
-    if (title.length > maxTitleLength) {
-      title = title.substring(0, maxTitleLength - 3) + '...';
+    title = title.replace(/\s+/g, ' ').trim();
+
+    if (primaryKeyword && !title.includes(primaryKeyword)) {
+      title = `${primaryKeyword} ${title}`.trim();
+    }
+
+    if (region && title.length < minLength && !title.includes(region)) {
+      title = `${region} ${title}`.trim();
+    }
+
+    if (title.length > maxLength) {
+      const cutPoint = title.lastIndexOf(' ', maxLength);
+      title = title.substring(0, cutPoint > minLength ? cutPoint : maxLength).trim();
     }
 
     return title;
@@ -148,13 +174,21 @@ class SEOAgent extends BaseAgent {
     // HTML 태그 제거
     const plainText = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 
-    // 첫 2-3문장 추출
+    // 첫 문장부터 100자 이상 확보
     const sentences = plainText.split(/[.!?]\s+/).filter(s => s.length > 10);
-    let description = sentences.slice(0, 2).join('. ');
+    let description = '';
 
-    // 160자 제한
-    if (description.length > 160) {
-      description = description.substring(0, 157) + '...';
+    for (const sentence of sentences) {
+      description = description ? `${description}. ${sentence}` : sentence;
+      if (description.length >= META_LIMITS.min) break;
+    }
+
+    if (!description && plainText) {
+      description = plainText.substring(0, META_LIMITS.max);
+    }
+
+    if (description.length > META_LIMITS.max) {
+      description = description.substring(0, META_LIMITS.max - 3) + '...';
     }
 
     return description;
@@ -262,126 +296,113 @@ class SEOAgent extends BaseAgent {
   }
 
   /**
-   * SEO 점수 계산 (100점 만점)
+   * SEO Pass/Fail 평가
    */
-  calculateSEOScore(factors) {
-    let score = 0;
+  evaluateSEOCompliance({
+    title,
+    primaryKeyword,
+    metaDescription,
+    keywordDensity,
+    contentLength,
+    structure,
+    keywordCount
+  }) {
+    const issues = [];
+    const titleLength = title.length;
+    const titleHasKeyword = primaryKeyword ? title.includes(primaryKeyword) : true;
 
-    // 1. 제목 점수 (25점)
-    // - 길이 30-60자: 15점
-    // - 키워드 포함: 10점
-    if (factors.titleLength >= 30 && factors.titleLength <= 60) {
-      score += 15;
-    } else if (factors.titleLength >= 20 && factors.titleLength <= 70) {
-      score += 8;
+    if (titleLength < TITLE_LIMITS.min || titleLength > TITLE_LIMITS.max) {
+      issues.push({
+        id: 'title_length',
+        severity: 'critical',
+        message: `제목 길이 ${titleLength}자: ${TITLE_LIMITS.min}-${TITLE_LIMITS.max}자 범위가 필요합니다.`
+      });
     }
 
-    if (factors.hasKeywordInTitle) {
-      score += 10;
+    if (!titleHasKeyword) {
+      issues.push({
+        id: 'title_keyword',
+        severity: 'critical',
+        message: `제목에 핵심 키워드("${primaryKeyword}")가 없습니다.`
+      });
     }
 
-    // 2. 메타 설명 점수 (15점)
-    if (factors.metaLength >= 100 && factors.metaLength <= 160) {
-      score += 15;
-    } else if (factors.metaLength >= 50) {
-      score += 8;
+    if (metaDescription.length < META_LIMITS.min || metaDescription.length > META_LIMITS.max) {
+      issues.push({
+        id: 'meta_length',
+        severity: 'high',
+        message: `메타 설명 길이 ${metaDescription.length}자: ${META_LIMITS.min}-${META_LIMITS.max}자 범위가 필요합니다.`
+      });
     }
 
-    // 3. 콘텐츠 길이 점수 (20점)
     const { min, max } = SEO_RULES.wordCount;
-    if (factors.contentLength >= min && factors.contentLength <= max) {
-      score += 20;
-    } else if (factors.contentLength >= min * 0.8 && factors.contentLength <= max * 1.2) {
-      score += 12;
-    } else if (factors.contentLength >= 500) {
-      score += 5;
+    if (contentLength < min || contentLength > max) {
+      issues.push({
+        id: 'content_length',
+        severity: 'critical',
+        message: `본문 분량 ${contentLength}자: ${min}-${max}자 범위를 충족해야 합니다.`
+      });
     }
 
-    // 4. 키워드 밀도 점수 (25점)
-    const densities = Object.values(factors.keywordDensity);
-    if (densities.length > 0) {
-      const optimalCount = densities.filter(d => d.status === 'optimal').length;
-      const acceptableCount = densities.filter(d => d.status === 'acceptable').length;
-      const tooHighCount = densities.filter(d => d.status === 'too_high').length;
-
-      score += Math.min(25, (optimalCount * 10) + (acceptableCount * 5) - (tooHighCount * 5));
+    if (!keywordCount || keywordCount === 0) {
+      issues.push({
+        id: 'keywords_missing',
+        severity: 'critical',
+        message: 'SEO 키워드가 없습니다. 키워드를 최소 1개 이상 포함해야 합니다.'
+      });
     } else {
-      score += 10; // 키워드 없으면 기본 점수
+      const primaryKey = primaryKeyword ? primaryKeyword.toLowerCase() : '';
+      for (const [keyword, data] of Object.entries(keywordDensity)) {
+        const isPrimary = primaryKey && keyword === primaryKey;
+        if (data.status === 'too_low' || data.status === 'too_high') {
+          issues.push({
+            id: 'keyword_density',
+            severity: isPrimary ? 'critical' : 'high',
+            message: `키워드 "${keyword}" 밀도가 기준을 벗어났습니다. (${data.count}회, ${data.percentage}%)`
+          });
+        } else if (isPrimary && data.status !== 'optimal') {
+          issues.push({
+            id: 'primary_keyword_density',
+            severity: 'critical',
+            message: `핵심 키워드 "${keyword}" 밀도가 최적 범위가 아닙니다. (${data.count}회, ${data.percentage}%)`
+          });
+        }
+      }
     }
 
-    // 5. 구조 점수 (15점)
-    const structure = factors.structure;
     if (structure) {
-      // 소제목 사용
-      if (structure.headings.h2.count >= 1 || structure.headings.h3.count >= 2) {
-        score += 8;
+      const hasHeadings = structure.headings.h2.count >= 1 || structure.headings.h3.count >= 2;
+      if (!hasHeadings) {
+        issues.push({
+          id: 'structure_headings',
+          severity: 'high',
+          message: '소제목(H2/H3)이 부족합니다. H2 1개 이상 또는 H3 2개 이상이 필요합니다.'
+        });
       }
-      // 적절한 문단 수
-      if (structure.paragraphs.count >= 5 && structure.paragraphs.count <= 10) {
-        score += 7;
-      } else if (structure.paragraphs.count >= 3) {
-        score += 4;
+
+      if (structure.paragraphs.count < 5 || structure.paragraphs.count > 10) {
+        issues.push({
+          id: 'structure_paragraphs',
+          severity: 'high',
+          message: `문단 수 ${structure.paragraphs.count}개: 5-10개 범위가 필요합니다.`
+        });
       }
     }
 
-    return Math.min(100, Math.max(0, score));
+    return {
+      passed: issues.length === 0,
+      issues
+    };
   }
 
   /**
    * 개선 제안 생성
    */
-  generateSuggestions(seoScore, keywordDensity, structure) {
-    const suggestions = [];
-
-    // 점수 기반 제안
-    if (seoScore < 50) {
-      suggestions.push({
-        priority: 'high',
-        message: 'SEO 점수가 낮습니다. 키워드 배치와 구조를 개선하세요.'
-      });
-    }
-
-    // 키워드 밀도 제안
-    for (const [keyword, data] of Object.entries(keywordDensity)) {
-      if (data.status === 'too_low') {
-        suggestions.push({
-          priority: 'medium',
-          message: `"${keyword}" 키워드 사용 빈도가 낮습니다. (${data.count}회)`
-        });
-      } else if (data.status === 'too_high') {
-        suggestions.push({
-          priority: 'high',
-          message: `"${keyword}" 키워드가 과도하게 사용되었습니다. (${data.percentage}%) - 스팸으로 분류될 수 있습니다.`
-        });
-      }
-    }
-
-    // 구조 제안
-    if (structure) {
-      if (!structure.wordCountRange.inRange) {
-        const { current, min, max } = structure.wordCountRange;
-        if (current < min) {
-          suggestions.push({
-            priority: 'high',
-            message: `글자수가 부족합니다. (${current}자 / 최소 ${min}자)`
-          });
-        } else if (current > max) {
-          suggestions.push({
-            priority: 'medium',
-            message: `글자수가 초과되었습니다. (${current}자 / 최대 ${max}자)`
-          });
-        }
-      }
-
-      if (structure.headings.h2.count === 0 && structure.headings.h3.count === 0) {
-        suggestions.push({
-          priority: 'medium',
-          message: '소제목(h2, h3)을 추가하여 가독성을 높이세요.'
-        });
-      }
-    }
-
-    return suggestions;
+  generateSuggestions(issues = []) {
+    return issues.map(issue => ({
+      priority: issue.severity === 'critical' ? 'high' : 'medium',
+      message: issue.message
+    }));
   }
 }
 

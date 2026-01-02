@@ -19,7 +19,7 @@ const { refineWithLLM } = require('../posts/editor-agent');
 
 // 품질 기준 상수
 const QUALITY_THRESHOLDS = {
-  SEO_MIN_SCORE: 70,           // SEO 최소 점수
+  SEO_REQUIRED: true,          // SEO Pass/Fail 기준 적용
   MAX_REFINEMENT_ATTEMPTS: 5,  // 최대 재검증 시도 횟수
   ALLOWED_ISSUE_SEVERITIES: ['low', 'info']  // 허용되는 이슈 심각도 (critical, high는 불허)
 };
@@ -156,8 +156,8 @@ class Orchestrator {
   }
 
   /**
-   * 🎯 최종 품질 기준 검사 - SEO 점수 및 이슈 체크
-   * ComplianceAgent가 통과해도 SEO 점수가 낮으면 EditorAgent로 개선
+   * 🎯 최종 품질 기준 검사 - SEO 통과 여부 및 이슈 체크
+   * ComplianceAgent가 통과해도 SEO가 실패면 EditorAgent로 개선
    */
   async ensureQualityThreshold(context) {
     let seoResult = this.results.SEOAgent?.data;
@@ -165,17 +165,17 @@ class Orchestrator {
 
     if (!seoResult || !complianceResult) return;
 
-    let currentSeoScore = seoResult.seoScore || 0;
+    let currentSeoPassed = seoResult.seoPassed ?? seoResult.passed ?? false;
     let criticalIssues = (complianceResult.issues || [])
       .filter(i => i.severity === 'critical' || i.severity === 'high').length;
 
     // 이미 기준 충족이면 종료
-    if (currentSeoScore >= QUALITY_THRESHOLDS.SEO_MIN_SCORE && criticalIssues === 0) {
+    if (currentSeoPassed && criticalIssues === 0) {
       complianceResult.qualityThresholdMet = true;
       return;
     }
 
-    console.log(`🎯 [Orchestrator] 최종 품질 검사 시작: SEO=${currentSeoScore}, 심각 이슈=${criticalIssues}`);
+    console.log(`🎯 [Orchestrator] 최종 품질 검사 시작: SEO=${currentSeoPassed ? 'PASS' : 'FAIL'}, 심각 이슈=${criticalIssues}`);
 
     // SEO 기준 미달 시 EditorAgent로 개선 시도
     let currentContent = complianceResult.content;
@@ -186,7 +186,7 @@ class Orchestrator {
     // 🔧 refinementAttempts 보존 (SEO 루프에서 complianceResult 덮어쓰기 전에 저장)
     const previousRefinementAttempts = complianceResult.refinementAttempts || 0;
 
-    while (attempt < maxAttempts && currentSeoScore < QUALITY_THRESHOLDS.SEO_MIN_SCORE) {
+    while (attempt < maxAttempts && !currentSeoPassed) {
       if (this.isTimedOut()) {
         console.warn('[Orchestrator] Timeout reached during SEO refinement loop.');
         break;
@@ -208,7 +208,8 @@ class Orchestrator {
               electionLaw: { violations: [] },
               repetition: { repeatedSentences: [] },
               seo: {
-                score: currentSeoScore,
+                passed: currentSeoPassed,
+                issues: this.results.SEOAgent?.data?.issues || [],
                 suggestions: currentSuggestions.map(s => s.suggestion || s)
               }
             }
@@ -267,9 +268,9 @@ class Orchestrator {
 
           if (newSeoResult.success) {
             this.results.SEOAgent = newSeoResult;
-            currentSeoScore = newSeoResult.data.seoScore || 0;  // 🔧 점수 갱신
-            if (currentSeoScore >= QUALITY_THRESHOLDS.SEO_MIN_SCORE) {
-              console.log(`✅ [Orchestrator] SEO 기준 충족: ${currentSeoScore}점`);
+            currentSeoPassed = newSeoResult.data.seoPassed ?? newSeoResult.data.passed ?? false;
+            if (currentSeoPassed) {
+              console.log('✅ [Orchestrator] SEO 기준 충족: PASS');
               break;
             }
           }
@@ -286,14 +287,14 @@ class Orchestrator {
     this.results.ComplianceAgent.data.content = currentContent;
     this.results.ComplianceAgent.data.title = currentTitle;
 
-    const finalSeoScore = this.results.SEOAgent?.data?.seoScore || 0;
+    const finalSeoPassed = this.results.SEOAgent?.data?.seoPassed ?? this.results.SEOAgent?.data?.passed ?? false;
     const finalCriticalIssues = (this.results.ComplianceAgent?.data?.issues || [])
       .filter(i => i.severity === 'critical' || i.severity === 'high').length;
-    const finalQualityMet = finalSeoScore >= QUALITY_THRESHOLDS.SEO_MIN_SCORE && finalCriticalIssues === 0;
+    const finalQualityMet = finalSeoPassed && finalCriticalIssues === 0;
     this.results.ComplianceAgent.data.qualityThresholdMet = finalQualityMet;
     this.results.ComplianceAgent.data.refinementAttempts = previousRefinementAttempts + attempt;
 
-    console.log(`🎯 [Orchestrator] 최종 품질 결과: SEO=${finalSeoScore}, 이슈=${finalCriticalIssues}, 기준충족=${finalQualityMet}`);
+    console.log(`🎯 [Orchestrator] 최종 품질 결과: SEO=${finalSeoPassed ? 'PASS' : 'FAIL'}, 이슈=${finalCriticalIssues}, 기준충족=${finalQualityMet}`);
   }
 
   /**
@@ -452,13 +453,13 @@ class Orchestrator {
           const seoResult = await seoAgent.run(seoContext);
 
           if (seoResult.success) {
-            const seoScore = seoResult.data.seoScore || 0;
+            const seoPassed = seoResult.data.seoPassed ?? seoResult.data.passed ?? false;
             const suggestions = seoResult.data.suggestions || [];
-            console.log(`📊 [Orchestrator] SEO 점수: ${seoScore}점 (기준: ${QUALITY_THRESHOLDS.SEO_MIN_SCORE}점, 시도 ${seoAttempt})`);
+            console.log(`📊 [Orchestrator] SEO 상태: ${seoPassed ? 'PASS' : 'FAIL'} (시도 ${seoAttempt})`);
 
             this.results.SEOAgent = seoResult;
 
-            if (seoScore >= QUALITY_THRESHOLDS.SEO_MIN_SCORE) {
+            if (seoPassed) {
               console.log(`✅ [Orchestrator] SEO 기준 충족!`);
               break;
             }
@@ -477,7 +478,8 @@ class Orchestrator {
                       electionLaw: { violations: [] },
                       repetition: { repeatedSentences: [] },
                       seo: {
-                        score: seoScore,
+                        passed: seoPassed,
+                        issues: seoResult.data.issues || [],
                         suggestions: suggestions.map(s => s.suggestion || s)
                       }
                     }
@@ -503,7 +505,7 @@ class Orchestrator {
               }
             } else {
               qualityMet = false;
-              console.warn(`⚠️ [Orchestrator] SEO 점수 미달 (${seoScore} < ${QUALITY_THRESHOLDS.SEO_MIN_SCORE})`);
+              console.warn('⚠️ [Orchestrator] SEO 기준 미달 (FAIL)');
               break;
             }
           }
@@ -628,7 +630,9 @@ class Orchestrator {
         },
         // SEO 정보
         seo: {
-          score: seoResult.seoScore || null,
+          passed: seoResult.seoPassed ?? seoResult.passed ?? null,
+          issueCount: seoResult.issues?.length || 0,
+          issues: seoResult.issues || [],
           suggestions: seoResult.suggestions || []
         },
         // 글자수
@@ -637,7 +641,7 @@ class Orchestrator {
         quality: {
           thresholdMet: qualityThresholdMet,
           refinementAttempts,
-          seoMinScore: QUALITY_THRESHOLDS.SEO_MIN_SCORE,
+          seoRequired: QUALITY_THRESHOLDS.SEO_REQUIRED,
           maxRefinementAttempts: QUALITY_THRESHOLDS.MAX_REFINEMENT_ATTEMPTS
         }
       },

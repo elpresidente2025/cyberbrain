@@ -57,6 +57,18 @@ const TITLE_REQUIREMENTS = {
   noSubtitle: true  // 콤마, 슬래시, 하이픈으로 나눈 부제목 금지
 };
 
+function normalizeNumericToken(token) {
+  return token.replace(/[\s,]/g, '').replace(/퍼센트/g, '%');
+}
+
+function extractNumericTokens(text) {
+  if (!text) return [];
+  const plainText = text.replace(/<[^>]*>/g, ' ');
+  const regex = /\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*(?:%|퍼센트|[가-힣]+)?/g;
+  const matches = plainText.match(regex) || [];
+  return [...new Set(matches.map(normalizeNumericToken).filter(Boolean))];
+}
+
 // 자당 비판 위험 패턴 (framingRules.js의 HIGH_RISK_KEYWORDS 활용)
 const SELF_CRITICISM_PATTERNS = HIGH_RISK_KEYWORDS.SELF_CRITICISM.map(keyword => ({
   pattern: new RegExp(keyword, 'gi'),
@@ -208,7 +220,7 @@ class ComplianceAgent extends BaseAgent {
 
     // 🏷️ 10. 제목 검증 (금지 표현, 길이)
     if (title && title.trim()) {
-      const titleValidation = this.checkTitle(title);
+      const titleValidation = this.checkTitle(title, content);
       titleIssues.push(...titleValidation.issues);
       issues.push(...titleValidation.issues);
     } else {
@@ -414,12 +426,15 @@ class ComplianceAgent extends BaseAgent {
    *
    * 필수 조건 4가지:
    * 1. 25자 이내
-   * 2. 숫자 1개 이상 포함
+   * 2. 본문 수치 기반 숫자 포함 (본문에 수치 없으면 예외)
    * 3. 단일 문장 (부제목 구분자 없음)
    * 4. 키워드가 앞에 위치 (선택)
    */
-  checkTitle(title) {
+  checkTitle(title, content = '') {
     const issues = [];
+    const titleNumericTokens = extractNumericTokens(title);
+    const contentNumericTokens = extractNumericTokens(content);
+    const hasContentNumbers = contentNumericTokens.length > 0;
 
     // 【조건 1】 25자 이내
     if (title.length > TITLE_REQUIREMENTS.maxLength) {
@@ -432,15 +447,39 @@ class ComplianceAgent extends BaseAgent {
       });
     }
 
-    // 【조건 2】 숫자 1개 이상 포함
-    if (TITLE_REQUIREMENTS.mustHaveNumber && !/\d/.test(title)) {
+    // 【조건 2】 숫자 1개 이상 포함 (본문에 숫자가 있을 때만)
+    if (TITLE_REQUIREMENTS.mustHaveNumber && hasContentNumbers && titleNumericTokens.length === 0) {
       issues.push({
         type: 'title_no_number',
         severity: 'high',
-        reason: '제목에 숫자 없음 → 숫자 필수',
+        reason: '본문에 수치가 있는데 제목에 숫자 없음',
         current: title,
-        suggestion: '구체적 숫자 추가. 예: "5곳", "27위", "30%", "3년"'
+        suggestion: `본문에 있는 수치를 제목에 포함. 예: "${contentNumericTokens[0] || '27위'}" 활용`
       });
+    }
+
+    // 【조건 2-1】 제목 수치가 본문과 불일치
+    if (titleNumericTokens.length > 0) {
+      if (!hasContentNumbers) {
+        issues.push({
+          type: 'title_number_mismatch',
+          severity: 'high',
+          reason: '제목 수치에 대한 본문 근거 없음',
+          current: title,
+          suggestion: '본문에 실제로 있는 수치/단위를 제목에 사용하거나 숫자를 제거'
+        });
+      } else {
+        const missingTokens = titleNumericTokens.filter(token => !contentNumericTokens.includes(token));
+        if (missingTokens.length > 0) {
+          issues.push({
+            type: 'title_number_mismatch',
+            severity: 'high',
+            reason: `제목 수치/단위가 본문과 불일치: ${missingTokens.join(', ')}`,
+            current: title,
+            suggestion: `본문에 있는 수치로 교체 (예: ${contentNumericTokens.slice(0, 2).join(', ') || '28개사'})`
+          });
+        }
+      }
     }
 
     // 【조건 3】 단일 문장 (부제목 구분자 없음)

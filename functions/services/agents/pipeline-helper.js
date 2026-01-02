@@ -92,7 +92,7 @@ async function generateWithMultiAgent({
     hasContent: !!result.content,
     hasTitle: !!result.title,
     duration: result.metadata?.duration,
-    seoScore: result.metadata?.seo?.score,
+    seoPassed: result.metadata?.seo?.passed,
     compliancePassed: result.metadata?.compliance?.passed,
     appliedStrategy: appliedStrategy?.id
   });
@@ -173,7 +173,7 @@ async function runSEOOptimization({ content, topic, userProfile }) {
     title: seoResult.data?.title || null,
     content: seoResult.data?.content || content,
     keywords: seoResult.data?.keywords || [],
-    seoScore: seoResult.data?.seoScore || null,
+    seoPassed: seoResult.data?.seoPassed ?? seoResult.data?.passed ?? null,
     suggestions: seoResult.data?.suggestions || []
   };
 }
@@ -206,7 +206,7 @@ async function postProcessContent({ content, topic, userProfile }) {
   console.log('✅ [MultiAgent] 콘텐츠 후처리 완료', {
     compliancePassed: complianceResult.passed,
     issueCount: complianceResult.issues.length,
-    seoScore: seoResult.seoScore
+    seoPassed: seoResult.seoPassed ?? seoResult.passed ?? null
   });
 
   return {
@@ -219,7 +219,7 @@ async function postProcessContent({ content, topic, userProfile }) {
       replacements: complianceResult.replacements
     },
     seo: {
-      score: seoResult.seoScore,
+      passed: seoResult.seoPassed ?? seoResult.passed ?? null,
       keywords: seoResult.keywords,
       suggestions: seoResult.suggestions
     }

@@ -199,6 +199,7 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status }) {
 • 25자 이내 (엄격히 준수)
 • 핵심 키워드는 제목 맨 앞에 배치
 • 반드시 구체적인 숫자 1개 이상 포함
+• 제목의 숫자/단위는 본문에 실제 등장한 수치만 사용
 • 단일 문장 형태 (부제목 없이)
 
 📊 올바른 제목 형식 (반드시 이 패턴 사용):
