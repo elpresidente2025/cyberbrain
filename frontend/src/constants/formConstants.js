@@ -47,10 +47,11 @@ export const CATEGORIES = [
   },
   {
     value: 'current-affairs',
-    label: '이슈 대응 및 논평',
-    description: '사회적 현안이나 특정 이슈에 대한 자신의 입장을 명확하게 밝힙니다.',
+    label: '논평, 진단 및 이슈 대응',
+    description: '사회적 현안이나 특정 이슈를 논평·진단하고 입장을 정리합니다.',
     subCategories: [
       { value: 'current_affairs_commentary', label: '시사 논평', writingMethod: 'critical_writing', needsAudienceStance: true },
+      { value: 'current_affairs_diagnosis', label: '현안 진단', writingMethod: 'diagnostic_writing', needsAudienceStance: false },
       { value: 'fake_news_rebuttal', label: '가짜뉴스 반박', writingMethod: 'critical_writing', needsAudienceStance: true },
     ],
   },

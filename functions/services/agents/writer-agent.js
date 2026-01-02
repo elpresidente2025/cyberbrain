@@ -28,14 +28,14 @@ const { selectStrategyForAttempt, getWritingExamples, getSubheadingGuideline } =
 const { buildDailyCommunicationPrompt } = require('../../prompts/templates/daily-communication');
 const { buildLogicalWritingPrompt } = require('../../prompts/templates/policy-proposal');
 const { buildActivityReportPrompt } = require('../../prompts/templates/activity-report');
-const { buildCriticalWritingPrompt } = require('../../prompts/templates/current-affairs');
+const { buildCriticalWritingPrompt, buildDiagnosisWritingPrompt } = require('../../prompts/templates/current-affairs');
 const { buildLocalIssuesPrompt } = require('../../prompts/templates/local-issues');
 
 // ✅ 기존 utils 보존하여 import
 const { generateNonLawmakerWarning, generateFamilyStatusWarning } = require('../../prompts/utils/non-lawmaker-warning');
 
 // ✅ 카테고리 매핑은 constants.js에서 import (단일 소스)
-const { CATEGORY_TO_WRITING_METHOD } = require('../../utils/posts/constants');
+const { resolveWritingMethod } = require('../../utils/posts/constants');
 
 // 작법 → 템플릿 빌더 매핑
 const TEMPLATE_BUILDERS = {
@@ -43,6 +43,7 @@ const TEMPLATE_BUILDERS = {
   'logical_writing': buildLogicalWritingPrompt,
   'direct_writing': buildActivityReportPrompt,
   'critical_writing': buildCriticalWritingPrompt,
+  'diagnostic_writing': buildDiagnosisWritingPrompt,
   'analytical_writing': buildLocalIssuesPrompt
 };
 
@@ -69,6 +70,7 @@ class WriterAgent extends BaseAgent {
     const {
       topic,
       category,
+      subCategory = '',
       userProfile = {},
       memoryContext = '',
       instructions = '',
@@ -96,7 +98,7 @@ class WriterAgent extends BaseAgent {
     // - 검색어: SEO를 위해 반드시 삽입해야 하는 필수 요소 (CRITICAL 섹션으로 별도 주입)
 
     // 2. 작법 결정
-    const writingMethod = CATEGORY_TO_WRITING_METHOD[category] || 'emotional_writing';
+    const writingMethod = resolveWritingMethod(category, subCategory);
 
     // 3. 저자 정보 구성
     const authorBio = this.buildAuthorBio(userProfile);
@@ -143,7 +145,9 @@ class WriterAgent extends BaseAgent {
     }
 
     // 6.2 모범 문장 예시 (Few-shot learning)
-    const writingExamples = getWritingExamples(category);
+    const writingExamples = writingMethod === 'diagnostic_writing'
+      ? null
+      : getWritingExamples(category);
     if (writingExamples) {
       promptSections.push(writingExamples);
       console.log(`🎨 [WriterAgent] 모범 문장 예시 주입 (카테고리: ${category})`);

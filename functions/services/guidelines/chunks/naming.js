@@ -16,7 +16,7 @@ const NAMING_CHUNKS = [
     type: 'naming',
     priority: 'HIGH',
     applies_to: {
-      writingMethod: ['emotional_writing', 'direct_writing', 'logical_writing', 'analytical_writing']
+      writingMethod: ['emotional_writing', 'direct_writing', 'logical_writing', 'analytical_writing', 'diagnostic_writing']
     },
     keywords: ['호칭', '의원', '구청장', '시장', '님'],
     instruction: '모든 공직자에 "님" 존칭 필수 (대통령/총리 제외)',

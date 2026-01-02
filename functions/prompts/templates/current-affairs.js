@@ -234,8 +234,100 @@ ${relevantExample}
   return prompt.trim();
 }
 
+function buildDiagnosisWritingPrompt(options) {
+  const {
+    topic,
+    authorBio,
+    instructions,
+    keywords,
+    targetWordCount,
+    personalizedHints,
+    newsContext,
+    userProfile = {},
+  } = options;
+
+  const rhetoricalStrategy = getActiveStrategies(topic, instructions || '', userProfile);
+
+  const backgroundSection = instructions ? `
+[배경 정보 및 필수 포함 내용]
+${Array.isArray(instructions) ? instructions.join('\n') : instructions}
+` : '';
+
+  const keywordsSection = keywords && keywords.length > 0 ? `
+[맥락 키워드(참고용 - 삽입 강제 아님)]
+${keywords.join(', ')}
+키워드는 맥락 파악과 표현 다양화에만 참고한다.
+` : '';
+
+  const hintsSection = personalizedHints ? `
+[개인화 가이드]
+${personalizedHints}
+` : '';
+
+  const newsSection = newsContext ? `
+[참고 뉴스 (최신 정보 반영)]
+${newsContext}
+` : '';
+
+  const rhetoricalSection = rhetoricalStrategy.promptInjection ? `
+[수사 전략 - 설득력 강화]
+${rhetoricalStrategy.promptInjection}
+` : '';
+
+  const prompt = `
+# 전뇌비서관 - 현안 진단 원고 생성
+
+[기본 정보]
+- 작성자: ${authorBio}
+- 글의 주제: "${topic}"
+- 목표 분량: ${targetWordCount || 1700}자(공백 제외)
+${backgroundSection}${keywordsSection}${hintsSection}${newsSection}${rhetoricalSection}
+
+[진단 전용 규칙]
+- 해법/대안/정책 제안/요구/추진 계획/약속은 절대 포함하지 않는다.
+- "해야 한다/추진하겠다/대책을 마련하겠다" 같은 처방형 문구 금지.
+- 결론은 '진단 요약'으로 마무리하고 행동 촉구를 넣지 않는다.
+- 비난보다 진단에 집중하며, 단정적 인신공격은 금지한다.
+
+[글쓰기 구조]
+1. 현안 개요: 핵심 사실과 범위를 요약
+2. 핵심 지표/사실: 제공된 자료 기반으로 정리
+3. 구조적 원인: 제도·산업·인구·시장 등 원인 분석
+4. 이해관계/책임 구조: 관련 주체와 역할/책임 정리
+5. 영향과 위험: 단기/중장기 파급
+6. 불확실성 및 추가 확인 필요: 데이터 공백, 확인해야 할 점
+
+[중요: 사실 기반 원칙 (Hallucination Guardrail)]
+- 제공된 정보에 없는 수치, 고유명사, 사건을 만들지 않는다.
+- 배경 정보에 없는 사실은 추정하지 말고 일반론 수준에서만 언급한다.
+- 인용·통계·연도·비율 등 구체 데이터는 제공된 내용에만 근거한다.
+
+[출력 형식 및 품질 기준]
+- **출력 구조**: 반드시 JSON 형식으로 출력. title, content, wordCount 포함
+- **HTML 가이드라인**: <p> 문단, <h2>/<h3> 소제목, <ul>/<ol> 목록, <strong> 강조. 마크다운 기호 금지
+- **문체**: 존댓말, 분석적·중립적 톤 유지
+- **중복 금지**: 동일·유사 문장 반복 금지
+
+[예시 JSON 구조]
+\`\`\`json
+{
+  "title": "제목",
+  "content": "<p>존댓말로 작성된 본문...</p><h2>소제목</h2><p>내용...</p>",
+  "wordCount": 2050
+}
+\`\`\`
+
+[최종 임무]
+위 규칙과 구조를 모두 준수하여, 주어진 [기본 정보]와 [배경 정보]만을 근거로 현안 진단 원고를 작성하라.
+**반드시 JSON 형식으로만 출력하고, 코드 펜스(\`\`\`)는 사용하지 말 것.**
+`;
+
+  return prompt.trim();
+}
+
 module.exports = {
   buildCriticalWritingPrompt,
+  buildDiagnosisWritingPrompt,
   CRITICAL_STRUCTURES,
   OFFENSIVE_TACTICS,
   VOCABULARY_MODULES,

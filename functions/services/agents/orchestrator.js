@@ -216,8 +216,11 @@ class Orchestrator {
           },
           keywordResult: null,
           userKeywords: context.userKeywords || [],
+          seoKeywords: context.keywords || [],
           status: context.userProfile?.status || '준비',
-          modelName: 'gemini-2.5-flash-lite'
+          modelName: 'gemini-2.5-flash-lite',
+          factAllowlist: context.factAllowlist || null,
+          targetWordCount: context.targetWordCount
         });
 
         if (editorResult.edited) {
@@ -369,8 +372,11 @@ class Orchestrator {
           },
           keywordResult: null,
           userKeywords: context.userKeywords || [],
+          seoKeywords: context.keywords || [],
           status: context.userProfile?.status || '준비',
-          modelName: 'gemini-2.5-flash-lite'
+          modelName: 'gemini-2.5-flash-lite',
+          factAllowlist: context.factAllowlist || null,
+          targetWordCount: context.targetWordCount
         });
 
         if (editorResult.edited) {
@@ -495,8 +501,11 @@ class Orchestrator {
                   },
                   keywordResult: null,
                   userKeywords: context.userKeywords || [],
+                  seoKeywords: context.keywords || [],
                   status: context.userProfile?.status || '준비',
-                  modelName: 'gemini-2.5-flash-lite'
+                  modelName: 'gemini-2.5-flash-lite',
+                  factAllowlist: context.factAllowlist || null,
+                  targetWordCount: context.targetWordCount
                 });
 
                 if (seoEditorResult.edited) {

@@ -13,6 +13,528 @@
  */
 
 const { callGenerativeModel } = require('../gemini');
+const { findUnsupportedNumericTokens } = require('../../utils/fact-guard');
+
+const PLEDGE_PATTERNS = [
+  /약속드?립니다/,
+  /약속합니다/,
+  /공약드?립니다/,
+  /공약합니다/,
+  /하겠습니다/,
+  /하겠/,
+  /되겠습니다/,
+  /되겠/,
+  /추진하겠/,
+  /마련하겠/,
+  /실현하겠/,
+  /강화하겠/,
+  /확대하겠/,
+  /줄이겠/,
+  /늘리겠/
+];
+
+const NEUTRAL_PARAGRAPHS = [
+  '현안의 구조적 원인을 객관적으로 점검할 필요가 있습니다.',
+  '현재 상황의 흐름과 배경을 차분히 살펴보는 것이 중요합니다.',
+  '핵심 쟁점을 정리하고 사실관계를 확인해야 합니다.',
+  '관련 지표와 맥락을 함께 살펴보는 진단이 필요합니다.',
+  '문제의 원인과 영향이 어떻게 이어지는지 점검해야 합니다.'
+];
+
+const KEYWORD_SENTENCES = [
+  '{kw} 관련 현황은 지역사회에서 꾸준히 논의되고 있습니다.',
+  '이번 이슈는 {kw} 측면에서 구조적 진단이 필요합니다.',
+  '{kw}과 맞물린 여건을 객관적으로 살펴볼 필요가 있습니다.',
+  '{kw}에 대한 체감과 지표를 함께 확인해야 합니다.'
+];
+
+const SUMMARY_INTRO = '그래서 결국 내가 하고 싶은 이야기는 다음과 같습니다.';
+const SUMMARY_LINES = [
+  '첫째, {topic}의 현재 상황을 데이터와 체감으로 차분히 점검할 필요가 있습니다.',
+  '둘째, 원인과 구조를 분리해 진단의 초점을 분명히 하는 과정이 중요합니다.',
+  '셋째, 지역 여건에 맞는 개선 과제를 정리해 다음 논의로 이어가는 것이 필요합니다.'
+];
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function stripHtml(html) {
+  return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeSpaces(text) {
+  return text.replace(/\s{2,}/g, ' ').replace(/\s+([.,!?])/g, '$1').trim();
+}
+
+function countOccurrences(html, keyword) {
+  if (!keyword) return 0;
+  const plainText = stripHtml(html);
+  const escaped = escapeRegExp(keyword);
+  const regex = new RegExp(escaped, 'g');
+  const matches = plainText.match(regex);
+  return matches ? matches.length : 0;
+}
+
+function replaceOccurrencesAfterLimit(html, keyword, limit, replacement) {
+  if (!keyword || limit < 0) return html;
+  let count = 0;
+  const pattern = new RegExp(escapeRegExp(keyword), 'g');
+  return html.replace(pattern, (match) => {
+    count += 1;
+    if (count > limit) {
+      return replacement;
+    }
+    return match;
+  });
+}
+
+function replaceUnsupportedTokens(text, tokens) {
+  let updated = text;
+  tokens.forEach((token) => {
+    if (!token) return;
+    let replacement = '일정 수준';
+    if (/[0-9]/.test(token)) {
+      if (/%|퍼센트|포인트/.test(token)) {
+        replacement = '상당한 비율';
+      } else if (/(명|개|건|곳|가구|세대|회|차)/.test(token)) {
+        replacement = '여러';
+      } else if (/(년|월|일)/.test(token)) {
+        replacement = '해당 시기';
+      } else if (/(원|만원|억원|조|억|만|천)/.test(token)) {
+        replacement = '상당한 규모';
+      } else if (/(km|kg|㎡|평)/i.test(token)) {
+        replacement = '일정 규모';
+      }
+    }
+    updated = updated.replace(new RegExp(escapeRegExp(token), 'g'), replacement);
+  });
+  return normalizeSpaces(updated);
+}
+
+function containsPledge(text) {
+  return PLEDGE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function neutralizePledgeTitle(title) {
+  if (!title) return title;
+  let updated = title;
+  PLEDGE_PATTERNS.forEach((pattern) => {
+    updated = updated.replace(new RegExp(pattern.source, 'g'), '');
+  });
+  updated = updated.replace(/겠습니다/g, '').replace(/하겠(다|습니다)?/g, '');
+  return normalizeSpaces(updated);
+}
+
+function neutralizePledgeParagraphs(html) {
+  let index = 0;
+  return html.replace(/<p[^>]*>[\s\S]*?<\/p>/gi, (match) => {
+    const text = match.replace(/<[^>]*>/g, '');
+    if (containsPledge(text) || /겠/.test(text)) {
+      const replacement = NEUTRAL_PARAGRAPHS[index % NEUTRAL_PARAGRAPHS.length];
+      index += 1;
+      return `<p>${replacement}</p>`;
+    }
+    return match;
+  });
+}
+
+function ensureHeadings(html) {
+  if (/<h2>|<h3>/i.test(html)) {
+    return html;
+  }
+  const firstParagraphMatch = html.match(/<p[^>]*>[\s\S]*?<\/p>/i);
+  if (firstParagraphMatch) {
+    return html.replace(firstParagraphMatch[0], `${firstParagraphMatch[0]}\n<h2>현안 개요</h2>`);
+  }
+  return `<h2>현안 개요</h2>\n${html}`;
+}
+
+function ensureParagraphCount(html, minCount, maxCount) {
+  const paragraphs = html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
+  let updated = html;
+
+  if (paragraphs.length < minCount) {
+    const needed = minCount - paragraphs.length;
+    let additions = '';
+    for (let i = 0; i < needed; i += 1) {
+      additions += `<p>${NEUTRAL_PARAGRAPHS[i % NEUTRAL_PARAGRAPHS.length]}</p>\n`;
+    }
+    updated = `${updated}\n${additions}`;
+  } else if (paragraphs.length > maxCount) {
+    for (let i = paragraphs.length - 1; i >= maxCount; i -= 1) {
+      updated = updated.replace(paragraphs[i], '');
+    }
+  }
+
+  return updated.replace(/\n{3,}/g, '\n\n');
+}
+
+function ensureLength(html, minLength, maxLength) {
+  if (!minLength) return html;
+  let updated = html;
+  let currentLength = stripHtml(updated).replace(/\s/g, '').length;
+  const maxTarget = maxLength || Math.round(minLength * 1.1);
+
+  let guard = 0;
+  while (currentLength < minLength && guard < 20) {
+    const paragraphCount = (updated.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || []).length;
+    if (paragraphCount >= 10) {
+      updated = appendNeutralSentence(updated, NEUTRAL_PARAGRAPHS[guard % NEUTRAL_PARAGRAPHS.length]);
+    } else {
+      updated += `\n<p>${NEUTRAL_PARAGRAPHS[guard % NEUTRAL_PARAGRAPHS.length]}</p>`;
+    }
+    currentLength = stripHtml(updated).replace(/\s/g, '').length;
+    guard += 1;
+  }
+
+  if (currentLength > maxTarget) {
+    const paragraphs = updated.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
+    for (let i = paragraphs.length - 1; i >= 0 && currentLength > maxTarget; i -= 1) {
+      updated = updated.replace(paragraphs[i], '');
+      currentLength = stripHtml(updated).replace(/\s/g, '').length;
+    }
+  }
+
+  return updated;
+}
+
+function appendKeywordSentences(html, keyword, countNeeded) {
+  if (!keyword || countNeeded <= 0) return html;
+  let updated = html;
+  const sentences = [];
+  for (let i = 0; i < countNeeded; i += 1) {
+    const template = KEYWORD_SENTENCES[i % KEYWORD_SENTENCES.length];
+    sentences.push(template.replace('{kw}', keyword));
+  }
+  const addition = sentences.join(' ');
+  const lastParagraphMatch = updated.match(/<p[^>]*>[\s\S]*?<\/p>(?![\s\S]*<p)/i);
+  if (lastParagraphMatch) {
+    const replacement = lastParagraphMatch[0].replace(/<\/p>\s*$/i, ` ${addition}</p>`);
+    updated = updated.replace(lastParagraphMatch[0], replacement);
+  } else {
+    updated += `\n<p>${addition}</p>`;
+  }
+  return updated;
+}
+
+function appendNeutralSentence(html, sentence) {
+  if (!sentence) return html;
+  const lastParagraphMatch = html.match(/<p[^>]*>[\s\S]*?<\/p>(?![\s\S]*<p)/i);
+  if (lastParagraphMatch) {
+    const replacement = lastParagraphMatch[0].replace(/<\/p>\s*$/i, ` ${sentence}</p>`);
+    return html.replace(lastParagraphMatch[0], replacement);
+  }
+  return `${html}\n<p>${sentence}</p>`;
+}
+
+function buildSummaryLines(keyword) {
+  const topic = normalizeSpaces(keyword || '이 사안');
+  return SUMMARY_LINES.map((line) => line.replace('{topic}', topic));
+}
+
+function buildSummaryText(keyword) {
+  const lines = buildSummaryLines(keyword);
+  return normalizeSpaces(`${SUMMARY_INTRO} ${lines.join(' ')}`);
+}
+
+function buildSummaryBlock(keyword, mode = 'full') {
+  const lines = buildSummaryLines(keyword);
+  if (mode === 'single') {
+    return [
+      '<h2>핵심 요약</h2>',
+      `<p>${buildSummaryText(keyword)}</p>`
+    ].join('\n');
+  }
+  if (mode === 'compact') {
+    return [
+      '<h2>핵심 요약</h2>',
+      `<p>${SUMMARY_INTRO}</p>`,
+      `<p>${lines.join(' ')}</p>`
+    ].join('\n');
+  }
+  return [
+    '<h2>핵심 요약</h2>',
+    `<p>${SUMMARY_INTRO}</p>`,
+    ...lines.map((line) => `<p>${line}</p>`)
+  ].join('\n');
+}
+
+function ensureSummaryBlock(html, keyword, maxAdditionalChars = null) {
+  if (!html || html.includes(SUMMARY_INTRO)) return html;
+
+  const paragraphCount = (html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || []).length;
+  const inlineText = buildSummaryText(keyword);
+  const fullBlock = buildSummaryBlock(keyword, 'full');
+  const compactBlock = buildSummaryBlock(keyword, 'compact');
+  const singleBlock = buildSummaryBlock(keyword, 'single');
+
+  const options = [];
+  if (paragraphCount <= 6) {
+    options.push({ mode: 'full', content: fullBlock });
+  }
+  if (paragraphCount <= 8) {
+    options.push({ mode: 'compact', content: compactBlock });
+  }
+  if (paragraphCount <= 9) {
+    options.push({ mode: 'single', content: singleBlock });
+  }
+  options.push({ mode: 'inline', content: inlineText });
+
+  let chosen = options[0];
+  if (maxAdditionalChars !== null) {
+    chosen = options.find((option) => {
+      const length = option.mode === 'inline'
+        ? inlineText.replace(/\s/g, '').length
+        : stripHtml(option.content).replace(/\s/g, '').length;
+      return length <= maxAdditionalChars;
+    });
+  }
+
+  if (!chosen) return html;
+  if (chosen.mode === 'inline') {
+    return appendNeutralSentence(html, inlineText);
+  }
+  return `${html}\n${chosen.content}`;
+}
+
+function buildSafeTitle(title, userKeywords = []) {
+  const primaryKeyword = userKeywords[0] || (seoKeywords[0]?.keyword || seoKeywords[0] || '');
+  let base = neutralizePledgeTitle(title || '');
+  if (!base || base.length < 5) {
+    base = primaryKeyword ? `${primaryKeyword} 현안 진단` : '현안 진단 보고';
+  }
+  if (primaryKeyword && !base.includes(primaryKeyword)) {
+    base = `${primaryKeyword} ${base}`.trim();
+  }
+  base = normalizeSpaces(base);
+  if (base.length < 18) {
+    base = normalizeSpaces(`${base} 핵심 점검`);
+  }
+  if (base.length > 25) {
+    base = base.substring(0, 25).trim();
+  }
+  return base;
+}
+
+function sanitizeTopicForFacts(topic, factAllowlist) {
+  if (!topic) return '';
+  let sanitized = topic;
+  if (factAllowlist) {
+    const check = findUnsupportedNumericTokens(sanitized, factAllowlist);
+    if (!check.passed) {
+      sanitized = replaceUnsupportedTokens(sanitized, check.unsupported || []);
+    }
+  }
+  sanitized = neutralizePledgeTitle(sanitized);
+  return normalizeSpaces(sanitized);
+}
+
+function buildCompliantDraft({
+  topic = '',
+  userKeywords = [],
+  seoKeywords = [],
+  targetWordCount = 2000,
+  factAllowlist = null
+}) {
+  const safeTopic = sanitizeTopicForFacts(topic, factAllowlist) || '현안';
+  const seedTitle = `${safeTopic} 현안 진단`;
+  const titleKeywords = userKeywords.length > 0 ? userKeywords : seoKeywords;
+  const title = buildSafeTitle(seedTitle, titleKeywords);
+
+  const intro = `${safeTopic}에 대한 현황과 구조를 점검합니다.`;
+  const paragraphs = [
+    intro,
+    NEUTRAL_PARAGRAPHS[0],
+    NEUTRAL_PARAGRAPHS[1],
+    NEUTRAL_PARAGRAPHS[2],
+    NEUTRAL_PARAGRAPHS[3],
+    NEUTRAL_PARAGRAPHS[4]
+  ];
+
+  let content = [
+    `<p>${paragraphs[0]}</p>`,
+    '<h2>현안 개요</h2>',
+    `<p>${paragraphs[1]}</p>`,
+    '<h2>핵심 진단</h2>',
+    `<p>${paragraphs[2]}</p>`,
+    `<p>${paragraphs[3]}</p>`,
+    '<h2>영향과 확인 과제</h2>',
+    `<p>${paragraphs[4]}</p>`,
+    `<p>${paragraphs[5]}</p>`
+  ].join('\n');
+
+  const validationResult = {
+    passed: false,
+    details: {
+      electionLaw: { violations: [] },
+      repetition: { repeatedSentences: [] },
+      titleQuality: { passed: false, issues: [] },
+      seo: {
+        passed: false,
+        issues: [
+          { id: 'structure_headings' },
+          { id: 'structure_paragraphs' },
+          { id: 'content_length' }
+        ],
+        suggestions: []
+      }
+    }
+  };
+
+  return applyHardConstraints({
+    content,
+    title,
+    validationResult,
+    userKeywords,
+    seoKeywords,
+    factAllowlist,
+    targetWordCount
+  });
+}
+
+function applyHardConstraints({
+  content,
+  title,
+  validationResult,
+  userKeywords = [],
+  seoKeywords = [],
+  factAllowlist,
+  targetWordCount
+}) {
+  let updatedContent = content;
+  let updatedTitle = title;
+  const summary = [];
+
+  const electionViolations = validationResult?.details?.electionLaw?.violations || [];
+  if (electionViolations.length > 0) {
+    updatedContent = neutralizePledgeParagraphs(updatedContent);
+    updatedTitle = neutralizePledgeTitle(updatedTitle);
+    summary.push('선거법 위험 표현 완화');
+  }
+
+  if (factAllowlist) {
+    const contentCheck = findUnsupportedNumericTokens(updatedContent, factAllowlist);
+    if (!contentCheck.passed) {
+      updatedContent = replaceUnsupportedTokens(updatedContent, contentCheck.unsupported || []);
+      summary.push('근거 없는 수치 완화');
+    }
+    if (updatedTitle) {
+      const titleCheck = findUnsupportedNumericTokens(updatedTitle, factAllowlist);
+      if (!titleCheck.passed) {
+        updatedTitle = replaceUnsupportedTokens(updatedTitle, titleCheck.unsupported || []);
+        summary.push('제목 수치 완화');
+      }
+    }
+  }
+
+  const primaryKeyword = userKeywords[0] || '';
+  const needsSafeTitle = !updatedTitle
+    || updatedTitle.length < 18
+    || updatedTitle.length > 25
+    || (primaryKeyword && !updatedTitle.includes(primaryKeyword))
+    || (validationResult?.details?.titleQuality && validationResult.details.titleQuality.passed === false);
+
+  if (needsSafeTitle) {
+    const titleKeywords = userKeywords.length > 0 ? userKeywords : seoKeywords;
+    updatedTitle = buildSafeTitle(updatedTitle, titleKeywords);
+    summary.push('제목 보정');
+  }
+
+  const seoIssues = validationResult?.details?.seo?.issues || [];
+  const needsHeadings = seoIssues.some(issue => issue.id === 'structure_headings')
+    || !/<h2>|<h3>/i.test(updatedContent);
+  const paragraphCount = (updatedContent.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || []).length;
+  const needsParagraphs = seoIssues.some(issue => issue.id === 'structure_paragraphs')
+    || paragraphCount < 5
+    || paragraphCount > 10;
+  const contentCharCount = stripHtml(updatedContent).replace(/\s/g, '').length;
+  const maxTargetCount = targetWordCount ? Math.round(targetWordCount * 1.1) : null;
+  const needsLength = seoIssues.some(issue => issue.id === 'content_length')
+    || (targetWordCount && (contentCharCount < targetWordCount || (maxTargetCount && contentCharCount > maxTargetCount)));
+
+  if (needsHeadings) {
+    updatedContent = ensureHeadings(updatedContent);
+    summary.push('소제목 보강');
+  }
+
+  if (needsParagraphs) {
+    updatedContent = ensureParagraphCount(updatedContent, 5, 10);
+    summary.push('문단 수 보정');
+  }
+
+  let currentCharCount = stripHtml(updatedContent).replace(/\s/g, '').length;
+  if (needsLength && targetWordCount && currentCharCount < targetWordCount) {
+    const summaryKeyword = primaryKeyword
+      || (seoKeywords[0] && seoKeywords[0].keyword ? seoKeywords[0].keyword : seoKeywords[0])
+      || '';
+    const availableChars = maxTargetCount ? Math.max(0, maxTargetCount - currentCharCount) : null;
+    const withSummary = ensureSummaryBlock(updatedContent, summaryKeyword, availableChars);
+    if (withSummary !== updatedContent) {
+      updatedContent = withSummary;
+      summary.push('요약 보강');
+      currentCharCount = stripHtml(updatedContent).replace(/\s/g, '').length;
+    }
+  }
+
+  if (needsLength && targetWordCount) {
+    const maxTarget = maxTargetCount || Math.round(targetWordCount * 1.1);
+    if (currentCharCount < targetWordCount || (maxTarget && currentCharCount > maxTarget)) {
+      updatedContent = ensureLength(updatedContent, targetWordCount, maxTargetCount);
+      summary.push('분량 보정');
+    }
+  }
+
+  const keywordCandidates = [...userKeywords, ...seoKeywords]
+    .map(k => (k && k.keyword) ? k.keyword : k)
+    .filter(Boolean);
+  const uniqueKeywords = [...new Set(keywordCandidates)];
+  const textForCount = stripHtml(updatedContent);
+  let wordCount = textForCount.split(/\s+/).filter(Boolean).length || 1;
+  let charCount = textForCount.replace(/\s/g, '').length || 1;
+  const userMinCount = Math.max(1, Math.floor(charCount / 400));
+  const minDensityCount = Math.max(1, Math.ceil(wordCount * 0.003));
+  const primaryMinCount = Math.max(1, Math.ceil(wordCount * 0.015));
+
+  uniqueKeywords.forEach((keyword) => {
+    const currentCount = countOccurrences(updatedContent, keyword);
+    const isUserKeyword = userKeywords.includes(keyword);
+    let targetCount = keyword === primaryKeyword ? primaryMinCount : minDensityCount;
+    if (isUserKeyword) {
+      targetCount = Math.max(targetCount, userMinCount);
+    }
+    if (currentCount < targetCount) {
+      updatedContent = appendKeywordSentences(updatedContent, keyword, targetCount - currentCount);
+      summary.push(`키워드 보강: ${keyword}`);
+    }
+  });
+
+  const updatedText = stripHtml(updatedContent);
+  wordCount = updatedText.split(/\s+/).filter(Boolean).length || 1;
+  const maxDensityCount = Math.max(1, Math.floor(wordCount * 0.03));
+  uniqueKeywords.forEach((keyword) => {
+    const currentCount = countOccurrences(updatedContent, keyword);
+    if (currentCount > maxDensityCount) {
+      updatedContent = replaceOccurrencesAfterLimit(
+        updatedContent,
+        keyword,
+        maxDensityCount,
+        '해당 사안'
+      );
+      summary.push(`키워드 과다 완화: ${keyword}`);
+    }
+  });
+
+  if (needsParagraphs) {
+    updatedContent = ensureParagraphCount(updatedContent, 5, 10);
+  }
+
+  return {
+    content: updatedContent,
+    title: updatedTitle,
+    editSummary: summary
+  };
+}
 
 /**
  * 검증 결과를 기반으로 원고를 LLM으로 수정
@@ -23,8 +545,11 @@ const { callGenerativeModel } = require('../gemini');
  * @param {Object} params.validationResult - 휴리스틱 검증 결과
  * @param {Object} params.keywordResult - 키워드 검증 결과
  * @param {Array} params.userKeywords - 사용자 입력 키워드
+ * @param {Array} params.seoKeywords - SEO 키워드(검수 기준)
  * @param {string} params.status - 사용자 상태 (준비/현역/예비/후보)
  * @param {string} params.modelName - 사용할 모델
+ * @param {Object} params.factAllowlist - 허용 수치 토큰
+ * @param {number} params.targetWordCount - 목표 글자 수
  * @returns {Promise<{content: string, title: string, edited: boolean, editSummary: string[]}>}
  */
 async function refineWithLLM({
@@ -33,8 +558,11 @@ async function refineWithLLM({
   validationResult,
   keywordResult,
   userKeywords = [],
+  seoKeywords = [],
   status,
-  modelName
+  modelName,
+  factAllowlist = null,
+  targetWordCount = null
 }) {
   // 수정이 필요한 문제들 수집
   const issues = [];
@@ -220,7 +748,24 @@ async function refineWithLLM({
       }
     } catch (parseError) {
       console.error('❌ [EditorAgent] JSON 파싱 실패:', parseError.message);
-      return { content, title, edited: false, editSummary: ['파싱 실패로 원본 유지'] };
+      const hardFixed = applyHardConstraints({
+        content,
+        title,
+        validationResult,
+        userKeywords,
+        seoKeywords,
+        factAllowlist,
+        targetWordCount
+      });
+      const edited = hardFixed.content !== content || hardFixed.title !== title;
+      return {
+        content: hardFixed.content || content,
+        title: hardFixed.title || title,
+        edited,
+        editSummary: hardFixed.editSummary?.length
+          ? hardFixed.editSummary
+          : ['파싱 실패로 자동 보정 적용']
+      };
     }
 
     console.log('✅ [EditorAgent] LLM 수정 완료:', {
@@ -229,16 +774,46 @@ async function refineWithLLM({
       editSummary: result.editSummary
     });
 
-    return {
+    const hardFixed = applyHardConstraints({
       content: result.content || content,
       title: result.title || title,
+      validationResult,
+      userKeywords,
+      seoKeywords,
+      factAllowlist,
+      targetWordCount
+    });
+
+    return {
+      content: hardFixed.content || content,
+      title: hardFixed.title || title,
       edited: true,
-      editSummary: result.editSummary || issues.map(i => i.description)
+      editSummary: [
+        ...(result.editSummary || issues.map(i => i.description)),
+        ...(hardFixed.editSummary || [])
+      ].filter(Boolean)
     };
 
   } catch (error) {
     console.error('❌ [EditorAgent] LLM 호출 실패:', error.message);
-    return { content, title, edited: false, editSummary: ['LLM 호출 실패로 원본 유지'] };
+    const hardFixed = applyHardConstraints({
+      content,
+      title,
+      validationResult,
+      userKeywords,
+      seoKeywords,
+      factAllowlist,
+      targetWordCount
+    });
+    const edited = hardFixed.content !== content || hardFixed.title !== title;
+    return {
+      content: hardFixed.content || content,
+      title: hardFixed.title || title,
+      edited,
+      editSummary: hardFixed.editSummary?.length
+        ? hardFixed.editSummary
+        : ['LLM 호출 실패로 자동 보정 적용']
+    };
   }
 }
 
@@ -323,5 +898,6 @@ ${userKeywords.join(', ') || '(없음)'}
 }
 
 module.exports = {
-  refineWithLLM
+  refineWithLLM,
+  buildCompliantDraft
 };

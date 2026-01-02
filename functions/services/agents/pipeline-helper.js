@@ -35,6 +35,7 @@ async function isMultiAgentEnabled() {
  * @param {Object} params
  * @param {string} params.topic - 주제
  * @param {string} params.category - 카테고리
+ * @param {string} params.subCategory - 하위 카테고리
  * @param {Object} params.userProfile - 사용자 프로필
  * @param {string} params.memoryContext - 메모리 컨텍스트
  * @param {string} params.instructions - 배경 정보
@@ -49,6 +50,7 @@ async function isMultiAgentEnabled() {
 async function generateWithMultiAgent({
   topic,
   category,
+  subCategory = '',
   userProfile,
   memoryContext = '',
   instructions = '',
@@ -66,6 +68,7 @@ async function generateWithMultiAgent({
   const context = {
     topic,
     category,
+    subCategory,
     userProfile,
     memoryContext,
     instructions,

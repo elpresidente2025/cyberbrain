@@ -34,6 +34,23 @@ const CATEGORY_TO_WRITING_METHOD = {
 };
 
 /**
+ * 하위 카테고리 → 작법(writingMethod) 매핑
+ */
+const SUBCATEGORY_TO_WRITING_METHOD = {
+  current_affairs_diagnosis: 'diagnostic_writing'
+};
+
+/**
+ * 카테고리/하위 카테고리 기반 작법 결정
+ */
+function resolveWritingMethod(category, subCategory) {
+  if (subCategory && SUBCATEGORY_TO_WRITING_METHOD[subCategory]) {
+    return SUBCATEGORY_TO_WRITING_METHOD[subCategory];
+  }
+  return CATEGORY_TO_WRITING_METHOD[category] || 'emotional_writing';
+}
+
+/**
  * 정책 이름 매핑
  */
 const POLICY_NAMES = {
@@ -100,6 +117,8 @@ const LOCAL_CONNECTION_MAP = {
 module.exports = {
   STATUS_CONFIG,
   CATEGORY_TO_WRITING_METHOD,
+  SUBCATEGORY_TO_WRITING_METHOD,
+  resolveWritingMethod,
   POLICY_NAMES,
   FAMILY_STATUS_MAP,
   CAREER_RELEVANCE,

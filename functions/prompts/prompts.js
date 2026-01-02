@@ -22,7 +22,7 @@ const { buildGroundedGuidelines } = require('../services/guidelines/grounding');
 const { buildDailyCommunicationPrompt } = require('./templates/daily-communication');
 const { buildLogicalWritingPrompt } = require('./templates/policy-proposal');
 const { buildActivityReportPrompt } = require('./templates/activity-report');
-const { buildCriticalWritingPrompt } = require('./templates/current-affairs');
+const { buildCriticalWritingPrompt, buildDiagnosisWritingPrompt } = require('./templates/current-affairs');
 const { buildLocalIssuesPrompt } = require('./templates/local-issues');
 
 // ============================================================================
@@ -136,6 +136,9 @@ ${searchTermList}
         break;
       case 'critical_writing':
         templatePrompt = buildCriticalWritingPrompt(options);
+        break;
+      case 'diagnostic_writing':
+        templatePrompt = buildDiagnosisWritingPrompt(options);
         break;
       case 'analytical_writing':
         templatePrompt = buildLocalIssuesPrompt(options);
