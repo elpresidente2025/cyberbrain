@@ -324,6 +324,14 @@ class Orchestrator {
       const issues = complianceResult.data.issues || [];
       const titleIssues = complianceResult.data.titleIssues || [];
 
+      const factIssues = issues.filter(i => i.type === 'fact_check');
+      const factTitleIssues = titleIssues.filter(i => i.type === 'title_fact_check');
+      const factCheckDetails = (factIssues.length > 0 || factTitleIssues.length > 0) ? {
+        content: { unsupported: factIssues.flatMap(i => i.matches || []) },
+        title: { unsupported: factTitleIssues.flatMap(i => i.matches || []) }
+      } : null;
+
+
       // critical, high 이슈만 필터링 (반드시 해결해야 함)
       const criticalIssues = issues.filter(i =>
         i.severity === 'critical' || i.severity === 'high'
@@ -355,7 +363,8 @@ class Orchestrator {
                   .map(i => i.match || i.matches?.join(', ') || i.reason)
               },
               repetition: { repeatedSentences: [] },
-              titleQuality: titleQualityDetails
+              titleQuality: titleQualityDetails,
+              factCheck: factCheckDetails
             }
           },
           keywordResult: null,

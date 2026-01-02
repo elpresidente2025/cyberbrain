@@ -60,6 +60,29 @@ async function refineWithLLM({
         instruction: '반복되는 문장을 다른 표현으로 바꾸거나 삭제하세요.'
       });
     }
+
+    if (validationResult.details?.factCheck) {
+      const factCheck = validationResult.details.factCheck || {};
+      const unsupportedContent = factCheck.content?.unsupported || [];
+      const unsupportedTitle = factCheck.title?.unsupported || [];
+
+      if (unsupportedContent.length > 0) {
+        issues.push({
+          type: 'fact_check',
+          severity: 'critical',
+          description: `근거 없는 수치(본문): ${unsupportedContent.join(', ')}`,
+          instruction: '원문/배경자료에 없는 수치는 삭제하거나 근거 있는 수치로 교체하세요.'
+        });
+      }
+      if (unsupportedTitle.length > 0) {
+        issues.push({
+          type: 'title_fact_check',
+          severity: 'high',
+          description: `근거 없는 수치(제목): ${unsupportedTitle.join(', ')}`,
+          instruction: '제목의 수치를 본문/자료에 있는 수치로 바꾸거나 수치를 제거하세요.'
+        });
+      }
+    }
   }
 
   // 2. 키워드 미포함 문제
@@ -288,7 +311,8 @@ ${userKeywords.join(', ') || '(없음)'}
 2. 선거법 위반 표현은 동일한 의미를 전달하면서 완곡하게 수정하세요.
 3. 키워드는 자연스럽게 문맥에 맞게 삽입하세요. 억지로 끼워넣지 마세요.
 4. 제목은 25자 이내로 유지하고, 키워드를 앞쪽에 배치하세요.
-5. HTML 구조(<p>, <strong> 등)는 유지하세요.
+5. 숫자/연도/비율은 원문·배경자료에 있는 것만 사용하세요.
+6. HTML 구조(<p>, <strong> 등)는 유지하세요.
 
 다음 JSON 형식으로만 응답하세요:
 {

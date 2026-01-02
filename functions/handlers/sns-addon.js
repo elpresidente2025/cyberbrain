@@ -5,6 +5,7 @@ const { httpWrap } = require('../common/http-wrap');
 const { ok, error } = require('../common/response');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { callGenerativeModel } = require('../services/gemini');
+const { buildFactAllowlist, findUnsupportedNumericTokens } = require('../utils/fact-guard');
 const { buildSNSPrompt, SNS_LIMITS } = require('../prompts/builders/sns-conversion');
 
 /**
@@ -21,6 +22,22 @@ function countWithoutSpace(str) {
     }
   }
   return count;
+}
+
+function collectUnsupportedNumbers(text, allowlist) {
+  if (!allowlist) return [];
+  const check = findUnsupportedNumericTokens(text, allowlist);
+  return check.unsupported || [];
+}
+
+function collectUnsupportedNumbersFromPosts(posts, allowlist) {
+  if (!allowlist || !Array.isArray(posts)) return [];
+  const unsupported = new Set();
+  posts.forEach((post) => {
+    const check = findUnsupportedNumericTokens(post.content || '', allowlist);
+    (check.unsupported || []).forEach((token) => unsupported.add(token));
+  });
+  return Array.from(unsupported);
 }
 
 function getThreadLengthStats(posts, minLength) {
@@ -197,6 +214,7 @@ exports.convertToSNS = wrap(async (req) => {
     const originalLength = countWithoutSpace(originalContent);
     const cleanedOriginalContent = cleanContent(originalContent || '');
     const cleanedOriginalLength = countWithoutSpace(cleanedOriginalContent);
+    const factAllowlist = buildFactAllowlist([originalContent]);
     
     const platformPromises = platforms.map(async (platform) => {
       // X(트위터)는 사용자 프리미엄 구독 여부에 따라 동적 제한 적용
@@ -258,11 +276,21 @@ exports.convertToSNS = wrap(async (req) => {
           
           // 타래 형식 검증 (X, Threads)
           if (parsedResult.isThread) {
+            const unsupportedNumbers = collectUnsupportedNumbersFromPosts(parsedResult.posts, factAllowlist);
+            const hasFactIssues = unsupportedNumbers.length > 0;
+
+            if (hasFactIssues) {
+              console.warn('?? ' + platform + ' ?? ?? ??: ' + unsupportedNumbers.join(', '));
+              if (attempt < maxAttempts) {
+                continue;
+              }
+            }
+
             const minPosts = threadConstraints?.minPosts || 3;
             const hasValidPosts = Array.isArray(parsedResult.posts) && parsedResult.posts.length >= minPosts;
             const hasHashtags = Array.isArray(parsedResult.hashtags) && parsedResult.hashtags.length > 0;
 
-            if (hasValidPosts) {
+            if (hasValidPosts && !hasFactIssues) {
               const threadResult = {
                 isThread: true,
                 posts: parsedResult.posts,
@@ -313,8 +341,18 @@ exports.convertToSNS = wrap(async (req) => {
             const hasHashtags = Array.isArray(parsedResult.hashtags) && parsedResult.hashtags.length > 0;
             const contentLength = countWithoutSpace(content);
             const meetsMinLength = minimumContentLength === 0 || contentLength >= minimumContentLength;
+            const unsupportedNumbers = collectUnsupportedNumbers(content, factAllowlist);
+            const hasFactIssues = unsupportedNumbers.length > 0;
 
-            if (hasContent && meetsMinLength) {
+            if (hasFactIssues) {
+              console.warn('?? ' + platform + ' ?? ?? ??: ' + unsupportedNumbers.join(', '));
+              if (attempt < maxAttempts) {
+                continue;
+              }
+            }
+
+
+            if (hasContent && meetsMinLength && !hasFactIssues) {
               convertedResult = {
                 isThread: false,
                 content: content,

@@ -70,6 +70,7 @@ async function buildSmartPrompt(options) {
       status,
       keywords = [],
       userKeywords = [],  // 🔑 사용자 직접 입력 키워드 (최우선)
+      factAllowlist = null,
       targetWordCount = 2050
     } = options;
 
@@ -102,6 +103,26 @@ ${searchTermList}
     }
 
     // 1. [라우팅] 작법별 템플릿 프롬프트 생성
+
+    let factLockSection = '';
+    if (factAllowlist) {
+      const allowedTokens = (factAllowlist.tokens || []).slice(0, 30);
+      if (allowedTokens.length > 0) {
+        factLockSection = `
+[?? ?? ??]
+- ?? ??/??/??? ????, ??? ?? ??? ?????.
+- ??? ? ?? ??? ??? ?????.
+- ?? ??: ${allowedTokens.join(', ')}
+`;
+      } else {
+        factLockSection = `
+[?? ?? ??]
+- ?? ??? ??? ????. ??(??/?? ??)? ?? ???.
+- ????? ?? ?? ???? ????.
+`;
+      }
+    }
+
     let templatePrompt;
     switch (writingMethod) {
       case 'emotional_writing':
@@ -169,6 +190,10 @@ ${searchTermList}
     // 5.0 최우선: 검색어 (Primacy Effect - 가장 앞에)
     if (searchTermsCritical) {
       assembledPrompt += searchTermsCritical;
+    }
+
+    if (factLockSection) {
+      assembledPrompt += factLockSection;
     }
 
     // 5.1 시작: CRITICAL 지침 (Primacy Effect)

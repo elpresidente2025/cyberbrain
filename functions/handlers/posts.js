@@ -30,6 +30,7 @@ const { httpWrap } = require('../common/http-wrap');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { ok, generateNaturalRegionTitle } = require('../utils/posts/helpers');
 const { STATUS_CONFIG, CATEGORY_TO_WRITING_METHOD } = require('../utils/posts/constants');
+const { buildFactAllowlist } = require('../utils/fact-guard');
 const { loadUserProfile, getOrCreateSession, incrementSessionAttempts } = require('../services/posts/profile-loader');
 const { extractKeywordsFromInstructions } = require('../services/posts/keyword-extractor');
 const { validateAndRetry, runHeuristicValidation, validateKeywordInsertion } = require('../services/posts/validation');
@@ -127,6 +128,7 @@ async function runLegacyQualityGate({
   modelName,
   userProfile,
   status,
+  factAllowlist,
   userKeywords,
   autoKeywords,
   backgroundKeywords,
@@ -137,6 +139,9 @@ async function runLegacyQualityGate({
   let currentContent = content;
   let currentTitle = title;
   const startTime = Date.now();
+  let lastSeoPassed = false;
+  let lastHeuristicResult = null;
+  let lastKeywordResult = null;
 
   if (needsTitleRegeneration(currentTitle, topic, rawTopic)) {
     currentTitle = await generateTitleFromContent({
@@ -149,7 +154,8 @@ async function runLegacyQualityGate({
       modelName,
       category,
       subCategory,
-      status
+      status,
+      factAllowlist
     });
   }
 
@@ -202,7 +208,7 @@ async function runLegacyQualityGate({
       currentContent,
       status,
       currentTitle,
-      { useLLM: true, userKeywords }
+      { useLLM: true, userKeywords, factAllowlist }
     );
 
     const keywordResult = validateKeywordInsertion(
@@ -211,6 +217,9 @@ async function runLegacyQualityGate({
       autoKeywords,
       targetWordCount
     );
+    lastHeuristicResult = heuristicResult;
+    lastKeywordResult = keywordResult;
+    lastSeoPassed = seoPassed;
 
     const needsEdit = !heuristicResult.passed || !keywordResult.valid || !seoPassed;
     if (!needsEdit) {
@@ -274,16 +283,44 @@ async function runLegacyQualityGate({
         modelName,
         category,
         subCategory,
-        status
+        status,
+        factAllowlist
       });
     }
+  }
+
+  const finalHeuristicResult = lastHeuristicResult || await runHeuristicValidation(
+    currentContent,
+    status,
+    currentTitle,
+    { useLLM: true, userKeywords, factAllowlist }
+  );
+  const finalKeywordResult = lastKeywordResult || validateKeywordInsertion(
+    currentContent,
+    userKeywords,
+    autoKeywords,
+    targetWordCount
+  );
+
+  if (!finalHeuristicResult.passed || !finalKeywordResult.valid || !lastSeoPassed) {
+    const reasons = [];
+    if (!finalHeuristicResult.passed) {
+      reasons.push(`검증 실패: ${finalHeuristicResult.issues.join(', ')}`);
+    }
+    if (!finalKeywordResult.valid) {
+      reasons.push('키워드 기준 미충족');
+    }
+    if (!lastSeoPassed) {
+      reasons.push('SEO 기준 미충족');
+    }
+    throw new HttpsError('failed-precondition', `품질 기준 미충족: ${reasons.join(' / ')}`);
   }
 
   return {
     content: currentContent,
     title: currentTitle,
     attempts: attempt,
-    seoPassed: false
+    seoPassed: lastSeoPassed
   };
 }
 
@@ -549,6 +586,13 @@ exports.generatePosts = httpWrap(async (req) => {
     console.log('🔑 자동 추출 키워드:', extractedKeywords);
     console.log('🔑 최종 병합 키워드:', backgroundKeywords);
 
+    const factAllowlist = buildFactAllowlist([
+      sanitizedTopic,
+      data.instructions,
+      newsContext,
+      ...userKeywords
+    ]);
+
     // 🤖 Multi-Agent 모드 체크
     const useMultiAgent = await isMultiAgentEnabled();
 
@@ -590,6 +634,7 @@ exports.generatePosts = httpWrap(async (req) => {
           regionHint,
           keywords: backgroundKeywords,
           userKeywords,  // 🔑 사용자 직접 입력 키워드 (최우선)
+          factAllowlist,
           targetWordCount,
           attemptNumber: session.attempts,  // 🎯 현재 시도 번호 (수사학 전략 변형용)
           rhetoricalPreferences: userProfile.rhetoricalPreferences || {}  // 🎯 수사학 전략 선호도
@@ -606,6 +651,13 @@ exports.generatePosts = httpWrap(async (req) => {
           seoPassed: multiAgentMetadata?.seo?.passed,
           compliancePassed: multiAgentMetadata?.compliance?.passed
         });
+
+        if (multiAgentMetadata?.quality?.thresholdMet === false) {
+          console.warn('⚠️ [Multi-Agent] 품질 기준 미충족 - legacy 경로로 전환');
+          generatedContent = null;
+          generatedTitle = null;
+          multiAgentMetadata = null;
+        }
 
       } catch (multiAgentError) {
         console.error('❌ [Multi-Agent] 파이프라인 실패, 기존 방식으로 폴백:', multiAgentError.message);
@@ -641,6 +693,7 @@ exports.generatePosts = httpWrap(async (req) => {
       instructions: data.instructions,
       keywords: backgroundKeywords,
       userKeywords,  // 🔑 사용자 직접 입력 키워드 (최우선 반영)
+      factAllowlist,
       newsContext,
       personalizedHints: combinedHints,  // 🧠 통합된 힌트 사용
       applyEditorialRules: true,
@@ -679,6 +732,7 @@ exports.generatePosts = httpWrap(async (req) => {
       userKeywords,        // 사용자 입력 키워드 (엄격 검증)
       autoKeywords: extractedKeywords,  // 자동 추출 키워드 (완화 검증)
       status: currentStatus,  // 선거법 검증용 (준비/현역/예비/후보)
+      factAllowlist,
       ragContext,          // Critic Agent 팩트 검증용
       authorName: fullName,  // Corrector Agent 톤 유지용
       topic: sanitizedTopic,  // Critic Agent 문맥 이해용
@@ -861,6 +915,7 @@ exports.generatePosts = httpWrap(async (req) => {
         modelName,
         userProfile,
         status: currentStatus,
+        factAllowlist,
         userKeywords,
         autoKeywords,
         backgroundKeywords,
@@ -893,7 +948,8 @@ exports.generatePosts = httpWrap(async (req) => {
           modelName,
           category: data.category,
           subCategory: data.subCategory,
-          status: currentStatus
+          status: currentStatus,
+          factAllowlist
         });
       } else {
         console.log('? [Multi-Agent] SEO ??? ?? ??:', generatedTitle);
@@ -910,7 +966,8 @@ exports.generatePosts = httpWrap(async (req) => {
         modelName,
         category: data.category,
         subCategory: data.subCategory,
-        status: currentStatus
+        status: currentStatus,
+        factAllowlist
       });
     }
 

@@ -20,7 +20,7 @@ const SNS_LIMITS = {
   },
   x: {
     maxLengthPerPost: 250,  // 게시물당 권장 최대 (공백 제외)
-    minLengthPerPost: 130,
+    minLengthPerPost: 150,
     recommendedMinLength: 150,
     hashtagLimit: 2,
     name: 'X(Twitter)',
@@ -30,7 +30,7 @@ const SNS_LIMITS = {
   },
   threads: {
     maxLengthPerPost: 250,  // X와 동일하게 통일
-    minLengthPerPost: 130,
+    minLengthPerPost: 150,
     recommendedMinLength: 150,
     hashtagLimit: 3,
     name: 'Threads',
@@ -120,6 +120,7 @@ ${cleanContent}
 - 원본의 존댓말, 문장 구조, 어미 패턴 유지
 - 원본의 정치적 입장과 논조 완전 보존
 - 원본에 없는 내용 추가 금지
+- 수치/연도/비율은 원문에 있는 것만 사용 (새 숫자 금지)
 
 **결과물 요구사항:**
 - 분량: ${platformConfig.minLength}-${platformConfig.maxLength}자 (공백 제외)
@@ -198,6 +199,7 @@ ${postCountGuidance}
 - ${userInfo.name}의 어조와 문체 유지
 - 원본의 정치적 입장과 논조 완전 보존
 - 원본에 없는 내용 추가 금지
+- 수치/연도/비율은 원문에 있는 것만 사용 (새 숫자 금지)
 
 **훅 작성 예시:**
 좋은 예: "민생경제 3법, 오늘 국회 발의했습니다."

@@ -56,6 +56,7 @@ async function generateWithMultiAgent({
   regionHint = '',
   keywords = [],
   userKeywords = [],  // 🔑 사용자 직접 입력 키워드 (최우선)
+  factAllowlist = null,
   targetWordCount = 1700,
   attemptNumber = 0,  // 🎯 시도 번호 (수사학 전략 변형용)
   rhetoricalPreferences = {}  // 🎯 사용자 수사학 전략 선호도
@@ -71,7 +72,8 @@ async function generateWithMultiAgent({
     newsContext,
     regionHint,
     keywords,
-    userKeywords,  // 🔑 사용자 직접 입력 키워드 전달
+    userKeywords,
+    factAllowlist,  // 🔑 사용자 직접 입력 키워드 전달
     targetWordCount,
     attemptNumber,  // 🎯 시도 번호 전달
     rhetoricalPreferences  // 🎯 수사학 전략 선호도 전달
@@ -114,7 +116,7 @@ async function generateWithMultiAgent({
  * @param {Object} params.userProfile - 사용자 프로필
  * @returns {Promise<Object>} 검수 결과
  */
-async function runComplianceCheck({ content, userProfile }) {
+async function runComplianceCheck({ content, userProfile, factAllowlist = null }) {
   const context = {
     previousResults: {
       WriterAgent: {
@@ -122,7 +124,8 @@ async function runComplianceCheck({ content, userProfile }) {
         data: { content }
       }
     },
-    userProfile
+    userProfile,
+    factAllowlist
   };
 
   const result = await runAgentPipeline(context, { pipeline: 'complianceOnly' });
@@ -186,11 +189,11 @@ async function runSEOOptimization({ content, topic, userProfile }) {
  * @param {Object} params.userProfile - 사용자 프로필
  * @returns {Promise<Object>} 후처리 결과
  */
-async function postProcessContent({ content, topic, userProfile }) {
+async function postProcessContent({ content, topic, userProfile, factAllowlist = null }) {
   console.log('🔄 [MultiAgent] 콘텐츠 후처리 시작');
 
   // 1. 검수
-  const complianceResult = await runComplianceCheck({ content, userProfile });
+  const complianceResult = await runComplianceCheck({ content, userProfile, factAllowlist });
 
   if (!complianceResult.passed) {
     console.warn('⚠️ [MultiAgent] 검수 경고:', complianceResult.issues.length, '개 이슈');

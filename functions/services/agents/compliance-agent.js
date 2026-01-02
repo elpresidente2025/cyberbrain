@@ -13,6 +13,7 @@
  */
 
 const { BaseAgent } = require('./base');
+const { findUnsupportedNumericTokens } = require('../../utils/fact-guard');
 
 // ✅ 기존 guidelines import (구조적 통합 강화)
 const { getElectionStage, getPolicySafe, ELECTION_EXPRESSION_RULES } = require('../../prompts/guidelines/legal');
@@ -53,7 +54,7 @@ const RISK_PATTERNS = [
 // 🏷️ 제목 필수 조건 (화이트리스트 방식)
 const TITLE_REQUIREMENTS = {
   maxLength: 25,
-  mustHaveNumber: true,
+  mustHaveNumber: false,
   noSubtitle: true  // 콤마, 슬래시, 하이픈으로 나눈 부제목 금지
 };
 
@@ -88,6 +89,7 @@ class ComplianceAgent extends BaseAgent {
 
   async execute(context) {
     const { previousResults = {}, userProfile = {} } = context;
+    const factAllowlist = context.factAllowlist || null;
 
     // Writer Agent 결과에서 콘텐츠 가져오기
     const writerResult = previousResults.WriterAgent;
@@ -237,6 +239,33 @@ class ComplianceAgent extends BaseAgent {
     }
 
     // 11. 구조 검증 (무한 루프 방지)
+    // 10-1. ?? ?? ?? (?? ??)
+    if (factAllowlist) {
+      const contentCheck = findUnsupportedNumericTokens(content, factAllowlist);
+      if (!contentCheck.passed) {
+        issues.push({
+          type: 'fact_check',
+          severity: 'critical',
+          matches: contentCheck.unsupported,
+          reason: `?? ?? ??(??): ${contentCheck.unsupported.join(', ')}`
+        });
+      }
+
+      if (title && title.trim()) {
+        const titleCheck = findUnsupportedNumericTokens(title, factAllowlist);
+        if (!titleCheck.passed) {
+          const titleIssue = {
+            type: 'title_fact_check',
+            severity: 'high',
+            matches: titleCheck.unsupported,
+            reason: `?? ?? ??(??): ${titleCheck.unsupported.join(', ')}`
+          };
+          titleIssues.push(titleIssue);
+          issues.push(titleIssue);
+        }
+      }
+    }
+
     const structureIssues = this.checkStructure(content);
     issues.push(...structureIssues);
 

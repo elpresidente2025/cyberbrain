@@ -2,6 +2,7 @@
 
 const { buildTitlePrompt } = require('../../prompts/builders/title-generation');
 const { callGenerativeModel } = require('../gemini');
+const { findUnsupportedNumericTokens } = require('../../utils/fact-guard');
 
 /**
  * 본문 내용을 기반으로 제목을 생성하는 함수
@@ -18,7 +19,7 @@ const { callGenerativeModel } = require('../gemini');
  * @param {string} params.status - 사용자 상태 (준비/현역/예비/후보)
  * @returns {Promise<string>} - 생성된 제목
  */
-async function generateTitleFromContent({ content, backgroundInfo, keywords, userKeywords, topic, fullName, modelName, category, subCategory, status }) {
+async function generateTitleFromContent({ content, backgroundInfo, keywords, userKeywords, topic, fullName, modelName, category, subCategory, status, factAllowlist = null }) {
   console.log('📝 2단계: 본문 기반 제목 생성 시작');
 
   // 본문에서 HTML 태그 제거하고 미리보기 추출
@@ -68,6 +69,21 @@ async function generateTitleFromContent({ content, backgroundInfo, keywords, use
       // 끝이 어색하면 정리
       cleanTitle = cleanTitle.replace(/[,.:;]$/, '');
       console.log(`📝 제목 축약: "${cleanTitle}" (${cleanTitle.length}자)`);
+    }
+
+    if (factAllowlist) {
+      const titleCheck = findUnsupportedNumericTokens(cleanTitle, factAllowlist);
+      if (!titleCheck.passed) {
+        let sanitizedTitle = cleanTitle;
+        titleCheck.unsupported.forEach((token) => {
+          sanitizedTitle = sanitizedTitle.split(token).join(' ');
+        });
+        sanitizedTitle = sanitizedTitle
+          .replace(/\s{2,}/g, ' ')
+          .replace(/[-–—:,]+$/g, '')
+          .trim();
+        cleanTitle = sanitizedTitle || `${topic} 관련 내용`;
+      }
     }
 
     console.log('✅ 제목 생성 완료:', cleanTitle);

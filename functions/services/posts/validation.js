@@ -5,6 +5,7 @@ const { getElectionStage, VIOLATION_DETECTOR } = require('../../prompts/guidelin
 const { runCriticReview, hasHardViolations, summarizeGuidelines } = require('./critic');
 const { applyCorrections, summarizeViolations } = require('./corrector');
 const { GENERATION_STAGES, createProgressState, createRetryMessage } = require('./generation-stages');
+const { findUnsupportedNumericTokens, extractNumericTokens } = require('../../utils/fact-guard');
 
 // ============================================================================
 // 선거법 검증 v3 - 화이트리스트 + LLM 하이브리드
@@ -393,25 +394,14 @@ function detectElectionLawViolation(content, status, title = '') {
 // 제목 품질 검증 (title-generation.js 기준)
 // ============================================================================
 
-function normalizeNumericToken(token) {
-  return token.replace(/[\s,]/g, '').replace(/퍼센트/g, '%');
-}
-
-function extractNumericTokens(text) {
-  if (!text) return [];
-  const plainText = text.replace(/<[^>]*>/g, ' ');
-  const regex = /\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*(?:%|퍼센트|[가-힣]+)?/g;
-  const matches = plainText.match(regex) || [];
-  return [...new Set(matches.map(normalizeNumericToken).filter(Boolean))];
-}
-
 /**
  * 제목 품질 검증
  * @param {string} title - 검증할 제목
  * @param {Array} userKeywords - 사용자 입력 키워드 (SEO용)
  * @returns {Object} { passed, issues, details }
  */
-function validateTitleQuality(title, userKeywords = [], content = '') {
+function validateTitleQuality(title, userKeywords = [], content = '', options = {}) {
+  const strictFacts = options.strictFacts === true;
   if (!title) {
     return { passed: true, issues: [], details: {} };
   }
@@ -524,7 +514,7 @@ function validateTitleQuality(title, userKeywords = [], content = '') {
 
   // 5. 숫자/구체성 체크 (권장 사항)
   details.hasNumbers = /\d/.test(title);
-  if (!details.hasNumbers && issues.length > 0) {
+  if (!details.hasNumbers && issues.length > 0 && !strictFacts) {
     // 다른 문제가 있을 때만 숫자 부재 언급 (너무 많은 피드백 방지)
     issues.push({
       type: 'no_numbers',
@@ -545,8 +535,9 @@ function validateTitleQuality(title, userKeywords = [], content = '') {
  * 통합 휴리스틱 검증 (동기 버전 - 빠른 검증)
  * 화이트리스트 + 명시적 금지 패턴만 검사 (LLM 없음)
  */
-function runHeuristicValidationSync(content, status, title = '') {
+function runHeuristicValidationSync(content, status, title = '', options = {}) {
   const issues = [];
+  const { factAllowlist = null } = options;
 
   // 1. 문장 반복 검출
   const repetitionResult = detectSentenceRepetition(content);
@@ -560,12 +551,29 @@ function runHeuristicValidationSync(content, status, title = '') {
     issues.push(`⚠️ 선거법 위반 표현: ${electionResult.violations.join(', ')}`);
   }
 
+  let factCheckResult = null;
+  if (factAllowlist) {
+    const contentCheck = findUnsupportedNumericTokens(content, factAllowlist);
+    const titleCheck = title
+      ? findUnsupportedNumericTokens(title, factAllowlist)
+      : { passed: true, unsupported: [] };
+    factCheckResult = { content: contentCheck, title: titleCheck };
+
+    if (!contentCheck.passed) {
+      issues.push(`⚠️ 근거 없는 수치(본문): ${contentCheck.unsupported.join(', ')}`);
+    }
+    if (!titleCheck.passed) {
+      issues.push(`⚠️ 근거 없는 수치(제목): ${titleCheck.unsupported.join(', ')}`);
+    }
+  }
+
   return {
     passed: issues.length === 0,
     issues,
     details: {
       repetition: repetitionResult,
-      electionLaw: electionResult
+      electionLaw: electionResult,
+      factCheck: factCheckResult
     }
   };
 }
@@ -581,7 +589,7 @@ function runHeuristicValidationSync(content, status, title = '') {
  * @returns {Promise<Object>} { passed: boolean, issues: string[], details: Object }
  */
 async function runHeuristicValidation(content, status, title = '', options = {}) {
-  const { useLLM = true, userKeywords = [] } = options;
+  const { useLLM = true, userKeywords = [], factAllowlist = null } = options;
   const issues = [];
 
   // 1. 문장 반복 검출 (동기)
@@ -610,7 +618,9 @@ async function runHeuristicValidation(content, status, title = '', options = {})
   }
 
   // 3. 제목 품질 검증 (title-generation.js 기준)
-  const titleResult = validateTitleQuality(title, userKeywords, content);
+  const titleResult = validateTitleQuality(title, userKeywords, content, {
+    strictFacts: !!factAllowlist
+  });
   if (!titleResult.passed) {
     const titleIssues = titleResult.issues
       .filter(i => i.severity === 'critical' || i.severity === 'high')
@@ -620,13 +630,30 @@ async function runHeuristicValidation(content, status, title = '', options = {})
     }
   }
 
+
+  let factCheckResult = null;
+  if (factAllowlist) {
+    const contentCheck = findUnsupportedNumericTokens(content, factAllowlist);
+    const titleCheck = title
+      ? findUnsupportedNumericTokens(title, factAllowlist)
+      : { passed: true, unsupported: [] };
+    factCheckResult = { content: contentCheck, title: titleCheck };
+
+    if (!contentCheck.passed) {
+      issues.push(`⚠️ 근거 없는 수치(본문): ${contentCheck.unsupported.join(', ')}`);
+    }
+    if (!titleCheck.passed) {
+      issues.push(`⚠️ 근거 없는 수치(제목): ${titleCheck.unsupported.join(', ')}`);
+    }
+  }
   return {
     passed: issues.length === 0,
     issues,
     details: {
       repetition: repetitionResult,
       electionLaw: electionResult,
-      titleQuality: titleResult  // 🔑 EditorAgent가 참조할 수 있도록 추가
+      titleQuality: titleResult,
+      factCheck: factCheckResult  // 🔑 EditorAgent가 참조할 수 있도록 추가
     }
   };
 }
@@ -755,6 +782,7 @@ async function validateAndRetry({
   userKeywords = [],
   autoKeywords = [],
   status = null,
+  factAllowlist = null,
   ragContext = null,
   authorName = null,
   topic = null,
@@ -800,7 +828,7 @@ async function validateAndRetry({
 
     // 휴리스틱 검증 (Phase 1에서는 빠른 검증 - LLM 없이)
     notifyProgress('BASIC_CHECK');
-    const heuristicResult = await runHeuristicValidation(draft, status, '', { useLLM: false });
+    const heuristicResult = await runHeuristicValidation(draft, status, '', { useLLM: false, factAllowlist });
 
     if (heuristicResult.passed) {
       console.log(`✅ 휴리스틱 검증 통과 (${attempt}회차, ${draft.length}자)`);
@@ -882,7 +910,7 @@ async function validateAndRetry({
       notifyProgress('FINALIZING');
 
       // 최종 선거법 검증 (LLM 하이브리드)
-      const finalCheck = await runHeuristicValidation(currentDraft, status, '', { useLLM: true });
+      const finalCheck = await runHeuristicValidation(currentDraft, status, '', { useLLM: true, factAllowlist });
       if (!finalCheck.passed) {
         console.warn(`⚠️ 최종 선거법 검증 실패:`, finalCheck.issues);
         // 위반 발견 시 Corrector로 수정 시도
