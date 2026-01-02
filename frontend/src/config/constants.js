@@ -6,6 +6,7 @@ export const CONFIG = {
   // 원고 생성 관련
   MAX_GENERATION_ATTEMPTS: 3,
   MAX_DRAFTS_STORAGE: 10,
+  GENERATE_TIMEOUT_MS: 540000,
 
   // AI 모델 설정
   DEFAULT_AI_MODEL: 'gemini-2.5-flash-lite',

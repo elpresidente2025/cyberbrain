@@ -182,7 +182,11 @@ export function useGenerateAPI() {
       );
 
       // HTTP 함수 호출 및 결과 대기
-      const result = await callFunctionWithNaverAuth(CONFIG.FUNCTIONS.GENERATE_POSTS, requestData);
+      const result = await callFunctionWithNaverAuth(
+        CONFIG.FUNCTIONS.GENERATE_POSTS,
+        requestData,
+        { timeoutMs: CONFIG.GENERATE_TIMEOUT_MS }
+      );
       console.log('✅ generatePosts 응답 수신:', result);
 
       // HTTP 응답 구조 확인 및 처리

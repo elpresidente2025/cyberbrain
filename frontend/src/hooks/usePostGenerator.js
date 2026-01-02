@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../services/firebase';
+import { CONFIG } from '../config/constants';
 
 // 1회당 1개 생성, 최대 3회, 새 글은 앞에 추가(최대 3개 유지)
 export function usePostGenerator() {
@@ -15,7 +16,9 @@ export function usePostGenerator() {
     setError(null);
     try {
       // generatePosts 함수 사용 (실제 AI 생성)
-      const generatePostFn = httpsCallable(functions, 'generatePosts');
+      const generatePostFn = httpsCallable(functions, 'generatePosts', {
+        timeout: CONFIG.GENERATE_TIMEOUT_MS
+      });
       const { data } = await generatePostFn(formData);
       const newDraft = data?.drafts ?? data;
       if (!newDraft) throw new Error('Invalid response from generatePosts');

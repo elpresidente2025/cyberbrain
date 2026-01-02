@@ -2,19 +2,32 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions, auth } from './firebase';
 
+const buildCallable = (functionName, options = {}) => {
+  const callableOptions = {};
+  if (options.timeoutMs) {
+    callableOptions.timeout = options.timeoutMs;
+  }
+  return Object.keys(callableOptions).length > 0
+    ? httpsCallable(functions, functionName, callableOptions)
+    : httpsCallable(functions, functionName);
+};
+
 // onCall 함수 호출 (기본)
-export const callFunction = async (functionName, data = {}) => {
-  const callable = httpsCallable(functions, functionName);
+export const callFunction = async (functionName, data = {}, options = {}) => {
+  const callable = buildCallable(functionName, options);
   const result = await callable(data);
   return result.data;
 };
 
 // onCall + 재시도 (401/403 등 인증 관련 오류 처리)
-export const callFunctionWithRetry = async (functionName, data = {}, retries = 2) => {
+export const callFunctionWithRetry = async (functionName, data = {}, options = {}) => {
+  const isRetryNumber = typeof options === 'number';
+  const retries = isRetryNumber ? options : (options.retries ?? 2);
+  const timeoutMs = isRetryNumber ? undefined : options.timeoutMs;
   let lastError;
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const callable = httpsCallable(functions, functionName);
+      const callable = buildCallable(functionName, { timeoutMs });
       const result = await callable(data);
       return result.data;
     } catch (error) {
@@ -43,7 +56,7 @@ export const callHttpFunction = async (functionName, data = {}) => {
 
 // 네이버 인증 함수 호출: 이제 일반 Firebase Auth 사용
 // ✅ 보안 강화: Firebase Auth 사용으로 __naverAuth 패턴 제거
-export const callFunctionWithNaverAuth = async (functionName, data = {}) => {
+export const callFunctionWithNaverAuth = async (functionName, data = {}, options = {}) => {
   // Firebase Auth가 설정되어 있으면 자동으로 인증 토큰 포함
   console.log('🔐 callFunctionWithNaverAuth:', {
     functionName,
@@ -68,7 +81,7 @@ export const callFunctionWithNaverAuth = async (functionName, data = {}) => {
     console.error('❌ 토큰 가져오기 실패:', e);
   }
 
-  return await callFunctionWithRetry(functionName, data);
+  return await callFunctionWithRetry(functionName, data, options);
 };
 
 // ----------------------------------------------------------------------------
