@@ -14,13 +14,20 @@ const httpFunctionOptions = {
   cors: {
     origin: [
       'https://cyberbrain.kr',
+      'https://www.cyberbrain.kr',
       'https://ai-secretary-6e9c8.web.app',
       'https://ai-secretary-6e9c8.firebaseapp.com',
       'http://localhost:5173',
       'http://localhost:5174'
     ],
     methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'X-Firebase-AppCheck',
+      'Firebase-Instance-ID-Token'
+    ],
     credentials: true
   },
   maxInstances: 5,
@@ -37,6 +44,7 @@ exports.httpWrap = (handler) => {
     // CORS 헤더 설정
     const allowedOrigins = [
       'https://cyberbrain.kr',
+      'https://www.cyberbrain.kr',
       'https://ai-secretary-6e9c8.web.app',
       'https://ai-secretary-6e9c8.firebaseapp.com',
       'http://localhost:5173',
@@ -49,7 +57,7 @@ exports.httpWrap = (handler) => {
     }
 
     res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Firebase-AppCheck, Firebase-Instance-ID-Token');
     res.set('Access-Control-Allow-Credentials', 'true');
 
     // Preflight 요청 처리
