@@ -99,6 +99,14 @@ const KEYWORD_SENTENCES = [
   '{kw}의 배경을 여러 지표와 현장 의견으로 함께 확인하는 과정이 필요합니다.'
 ];
 
+const KEYWORD_REPLACEMENTS = [
+  '관련 현안',
+  '지역 현안',
+  '이 문제',
+  '이 과제',
+  '관련 이슈'
+];
+
 const SIGNATURE_MARKERS = [
   '부산의 준비된 신상품',
   '부산경제는 이재성'
@@ -161,9 +169,9 @@ function trimTextToLength(text, maxChars) {
   );
   const cutIndex = Math.max(lastSpace, lastPunct);
   if (cutIndex > 0 && cutIndex >= Math.floor(trimmed.length * 0.6)) {
-    trimmed = trimmed.slice(0, cutIndex + 1).trim();
+    return trimmed.slice(0, cutIndex + 1).trim();
   }
-  return trimmed;
+  return '';
 }
 
 function findSignatureStartIndex(html) {
@@ -236,6 +244,78 @@ function replaceOccurrencesAfterLimit(html, keyword, limit, replacement) {
   return html.replace(pattern, (match) => {
     count += 1;
     if (count > limit) {
+      return replacement;
+    }
+    return match;
+  });
+}
+
+function buildKeywordTemplateRegexes(keyword) {
+  if (!keyword) return [];
+  const escapedKeyword = escapeRegExp(keyword);
+  const templates = [...KEYWORD_SENTENCES, ...CONTEXTUAL_TEMPLATES];
+  return templates.map((template) => {
+    let pattern = escapeRegExp(template);
+    pattern = pattern.replace(/\\\{kw\\\}/g, escapedKeyword);
+    pattern = pattern.replace(/\\\{topic\\\}/g, escapedKeyword);
+    pattern = pattern.replace(/\\\{aspect\\\}/g, '.+?');
+    return new RegExp(pattern, 'i');
+  });
+}
+
+function reduceKeywordOccurrences(html, keyword, maxCount) {
+  if (!keyword || maxCount < 0) return html;
+  const { body, tail } = splitContentBySignature(html || '');
+  let updatedBody = body || '';
+  let currentCount = countOccurrences(updatedBody, keyword);
+  if (currentCount <= maxCount) return html;
+
+  const templateRegexes = buildKeywordTemplateRegexes(keyword);
+  const paragraphs = updatedBody.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
+  const updatedParagraphs = [];
+
+  for (const paragraph of paragraphs) {
+    if (currentCount <= maxCount) {
+      updatedParagraphs.push(paragraph);
+      continue;
+    }
+
+    const text = paragraph.replace(/<[^>]*>/g, '').trim();
+    if (!text) continue;
+
+    const sentences = splitIntoSentences(text);
+    const kept = [];
+
+    for (const sentence of sentences) {
+      const sentenceCount = countOccurrences(sentence, keyword);
+      const isTemplate = templateRegexes.some((regex) => regex.test(sentence));
+
+      if (currentCount > maxCount && sentenceCount > 0 && isTemplate) {
+        currentCount -= sentenceCount;
+        continue;
+      }
+      kept.push(sentence);
+    }
+
+    if (kept.length > 0) {
+      updatedParagraphs.push(`<p>${normalizeSpaces(kept.join(' '))}</p>`);
+    }
+  }
+
+  updatedBody = updatedParagraphs.join('\n');
+  return joinContent(updatedBody, tail);
+}
+
+function replaceKeywordBeyondLimit(html, keyword, maxCount) {
+  if (!keyword || maxCount < 0) return html;
+  let count = 0;
+  let replacementIndex = 0;
+  const pattern = new RegExp(escapeRegExp(keyword), 'g');
+  return html.replace(pattern, (match) => {
+    count += 1;
+    if (count > maxCount) {
+      const replacement = KEYWORD_REPLACEMENTS[replacementIndex % KEYWORD_REPLACEMENTS.length];
+      replacementIndex += 1;
       return replacement;
     }
     return match;
@@ -368,9 +448,13 @@ function ensureLength(html, minLength, maxLength, keyword = '') {
     const deficit = minLength - currentLength;
     const { body, tail } = splitContentBySignature(updated);
     const paragraphCount = (body.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || []).length;
-    let filler = getNeutralParagraphForIndex(body, guard, keyword);
-    if (deficit > 0) {
-      filler = trimTextToLength(filler, deficit);
+    const baseFiller = getNeutralParagraphForIndex(body, guard, keyword);
+    const available = Math.max(0, maxTarget - currentLength);
+    let filler = baseFiller;
+    const baseLength = baseFiller.replace(/\s/g, '').length;
+
+    if (available > 0 && baseLength > available) {
+      filler = trimTextToLength(baseFiller, Math.min(deficit, available));
     }
     if (!filler) {
       break;
@@ -873,13 +957,13 @@ function applyHardConstraints({
 
     const adjustedCount = countOccurrences(updatedContent, keyword);
     if (isUserKeyword && adjustedCount > userMaxCount) {
-      updatedContent = replaceOccurrencesAfterLimit(
-        updatedContent,
-        keyword,
-        userMaxCount,
-        '해당 사안'
-      );
-      summary.push(`키워드 과다 완화: ${keyword}`);
+      const reduced = reduceKeywordOccurrences(updatedContent, keyword, userMaxCount);
+      updatedContent = reduced;
+      const reducedCount = countOccurrences(updatedContent, keyword);
+      if (reducedCount > userMaxCount) {
+        updatedContent = replaceKeywordBeyondLimit(updatedContent, keyword, userMaxCount);
+      }
+      summary.push(`키워드 과다 조정: ${keyword}`);
     }
   });
 
@@ -982,9 +1066,14 @@ async function refineWithLLM({
 
   // 2. 키워드 미포함 문제
   if (keywordResult && !keywordResult.valid) {
-    const missingKeywords = Object.entries(keywordResult.details?.keywords || {})
-      .filter(([_, info]) => !info.valid && info.type === 'user')
+    const keywordEntries = Object.entries(keywordResult.details?.keywords || {})
+      .filter(([_, info]) => info.type === 'user');
+    const missingKeywords = keywordEntries
+      .filter(([_, info]) => info.count < info.expected)
       .map(([keyword, info]) => `"${keyword}" (현재 ${info.count}회, 최소 ${info.expected}회 필요)`);
+    const overusedKeywords = keywordEntries
+      .filter(([_, info]) => typeof info.max === 'number' && info.count > info.max)
+      .map(([keyword, info]) => `"${keyword}" (현재 ${info.count}회, 최대 ${info.max}회 허용)`);
 
     if (missingKeywords.length > 0) {
       issues.push({
@@ -992,6 +1081,14 @@ async function refineWithLLM({
         severity: 'high',
         description: `필수 키워드 부족: ${missingKeywords.join(', ')}`,
         instruction: '이 키워드들을 본문에 자연스럽게 추가하세요. 특히 도입부에 포함하면 SEO에 효과적입니다.'
+      });
+    }
+    if (overusedKeywords.length > 0) {
+      issues.push({
+        type: 'overused_keywords',
+        severity: 'high',
+        description: `키워드 과다: ${overusedKeywords.join(', ')}`,
+        instruction: '동일 키워드 반복을 줄이고, 중복 문장을 정리하세요.'
       });
     }
   }

@@ -16,7 +16,11 @@ const DIAGNOSTIC_TAIL_MARKERS = [
 const SIGNATURE_MARKERS = [
   '부산의 준비된 신상품',
   '부산경제는 이재성',
-  '부산경제는이재성'
+  '부산경제는이재성',
+  '이재성 드림',
+  '감사합니다',
+  '감사드립니다',
+  '고맙습니다'
 ];
 
 function findLastIndexOfAny(text, markers) {
@@ -338,5 +342,6 @@ function removeDuplicateNames(content, fullName) {
 }
 
 module.exports = {
-  processGeneratedContent
+  processGeneratedContent,
+  trimTrailingDiagnostics
 };
