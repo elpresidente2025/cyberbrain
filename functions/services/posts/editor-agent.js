@@ -33,27 +33,80 @@ const PLEDGE_PATTERNS = [
   /늘리겠/
 ];
 
+const PLEDGE_REPLACEMENTS = [
+  { pattern: /약속드?립니다/g, replacement: '필요성을 말씀드립니다' },
+  { pattern: /약속합니다/g, replacement: '필요하다고 봅니다' },
+  { pattern: /공약드?립니다/g, replacement: '방향을 제시합니다' },
+  { pattern: /공약합니다/g, replacement: '방향을 제시합니다' },
+  { pattern: /추진하겠(?:습니다)?/g, replacement: '추진이 필요합니다' },
+  { pattern: /마련하겠(?:습니다)?/g, replacement: '마련이 필요합니다' },
+  { pattern: /실현하겠(?:습니다)?/g, replacement: '실현이 필요합니다' },
+  { pattern: /강화하겠(?:습니다)?/g, replacement: '강화가 필요합니다' },
+  { pattern: /확대하겠(?:습니다)?/g, replacement: '확대가 필요합니다' },
+  { pattern: /줄이겠(?:습니다)?/g, replacement: '줄이는 노력이 필요합니다' },
+  { pattern: /늘리겠(?:습니다)?/g, replacement: '늘리는 방안이 필요합니다' },
+  { pattern: /되겠(?:습니다)?/g, replacement: '되는 방향을 모색해야 합니다' },
+  { pattern: /하겠(?:습니다)?/g, replacement: '할 필요가 있습니다' }
+];
+
 const NEUTRAL_PARAGRAPHS = [
-  '현안의 구조적 원인을 객관적으로 점검할 필요가 있습니다.',
-  '현재 상황의 흐름과 배경을 차분히 살펴보는 것이 중요합니다.',
-  '핵심 쟁점을 정리하고 사실관계를 확인해야 합니다.',
-  '관련 지표와 맥락을 함께 살펴보는 진단이 필요합니다.',
-  '문제의 원인과 영향이 어떻게 이어지는지 점검해야 합니다.'
+  '현안의 구조적 원인을 객관적인 지표와 맥락에서 점검할 필요가 있습니다.',
+  '정책·산업·인구 흐름을 함께 보며 원인과 결과를 분리해 살펴봐야 합니다.',
+  '지역별·산업별 차이를 나눠 분석하면 문제의 초점이 선명해집니다.',
+  '단기 현상인지 구조적 변화인지 구분하는 진단이 필요합니다.',
+  '행정 데이터와 현장 체감의 간극을 확인하는 과정이 중요합니다.',
+  '현안의 범위와 영향을 정리하면 대응 논의가 구체화됩니다.',
+  '유사 사례와 비교해 현재 위치를 파악하는 작업이 필요합니다.',
+  '추세와 변곡점을 구분해 향후 논의의 방향을 정리해야 합니다.',
+  '핵심 쟁점을 정리하고 사실관계를 확인하는 과정이 선행되어야 합니다.',
+  '지표 해석의 기준을 세워 논의 근거를 분명히 할 필요가 있습니다.',
+  '정책 요인과 시장 요인을 분리해 진단하는 접근이 필요합니다.',
+  '현장의 목소리와 공식 지표를 함께 검토하는 절차가 중요합니다.',
+  '분석 결과를 바탕으로 후속 과제를 정리하는 흐름이 필요합니다.'
+];
+
+const CONTEXTUAL_ASPECTS = [
+  '산업 구조',
+  '인구 흐름',
+  '재정 여건',
+  '정책 환경',
+  '지역 격차',
+  '현장 체감'
+];
+
+const CONTEXTUAL_TEMPLATES = [
+  '{topic}의 배경을 {aspect} 관점에서 정리할 필요가 있습니다.',
+  '{topic} 관련 지표는 {aspect} 변화와 함께 해석해야 합니다.',
+  '{topic} 이슈를 {aspect} 흐름과 연결해 살펴볼 필요가 있습니다.',
+  '{topic}에 대한 논의는 {aspect} 점검과 병행되어야 합니다.'
 ];
 
 const KEYWORD_SENTENCES = [
-  '{kw} 관련 현황은 지역사회에서 꾸준히 논의되고 있습니다.',
-  '이번 이슈는 {kw} 측면에서 구조적 진단이 필요합니다.',
-  '{kw}과 맞물린 여건을 객관적으로 살펴볼 필요가 있습니다.',
-  '{kw}에 대한 체감과 지표를 함께 확인해야 합니다.'
+  '{kw} 현황은 지표와 체감 사이의 간극을 함께 살펴볼 필요가 있습니다.',
+  '{kw} 이슈는 지역 여건과 맞물려 구조적 배경을 점검해야 합니다.',
+  '{kw} 관련 흐름을 산업·인구 변화와 연결해 해석할 필요가 있습니다.',
+  '{kw}에 대한 논의는 원인과 결과를 분리해 진단하는 과정이 중요합니다.',
+  '{kw} 문제는 단기 현상인지 구조적 변화인지 구분해 볼 필요가 있습니다.',
+  '{kw} 관련 지표는 시기별 추세와 비교해 해석하는 것이 중요합니다.',
+  '{kw}에 대한 시민 체감과 공식 지표의 차이를 확인해야 합니다.',
+  '{kw} 이슈를 둘러싼 핵심 쟁점을 정리해 사실관계를 점검해야 합니다.',
+  '{kw} 관련 정책 논의는 효과와 한계를 동시에 점검할 필요가 있습니다.',
+  '{kw}의 배경을 여러 지표와 현장 의견으로 함께 확인하는 과정이 필요합니다.'
 ];
 
-const SUMMARY_INTRO = '그래서 결국 내가 하고 싶은 이야기는 다음과 같습니다.';
+const SUMMARY_INTROS = [
+  '정리하면 다음과 같습니다.',
+  '요약하면 다음과 같습니다.',
+  '핵심을 정리하면 다음과 같습니다.',
+  '결론적으로 다음을 확인할 수 있습니다.'
+];
 const SUMMARY_LINES = [
   '첫째, {topic}의 현재 상황을 데이터와 체감으로 차분히 점검할 필요가 있습니다.',
   '둘째, 원인과 구조를 분리해 진단의 초점을 분명히 하는 과정이 중요합니다.',
   '셋째, 지역 여건에 맞는 개선 과제를 정리해 다음 논의로 이어가는 것이 필요합니다.'
 ];
+const SUMMARY_HEADING_REGEX = /<h[23][^>]*>[^<]*(요약|정리|결론)[^<]*<\/h[23]>/i;
+const SUMMARY_TEXT_REGEX = /(정리하면|요약하면|결론적으로|핵심을 정리하면)/;
 
 function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -126,16 +179,42 @@ function neutralizePledgeTitle(title) {
   return normalizeSpaces(updated);
 }
 
+function softenPledgeSentence(sentence) {
+  if (!sentence) return sentence;
+  let updated = sentence;
+  PLEDGE_REPLACEMENTS.forEach(({ pattern, replacement }) => {
+    updated = updated.replace(pattern, replacement);
+  });
+  updated = normalizeSpaces(updated);
+  return updated;
+}
+
+
 function neutralizePledgeParagraphs(html) {
   let index = 0;
   return html.replace(/<p[^>]*>[\s\S]*?<\/p>/gi, (match) => {
-    const text = match.replace(/<[^>]*>/g, '');
-    if (containsPledge(text) || /겠/.test(text)) {
-      const replacement = NEUTRAL_PARAGRAPHS[index % NEUTRAL_PARAGRAPHS.length];
-      index += 1;
-      return `<p>${replacement}</p>`;
+    const text = match.replace(/<[^>]*>/g, '').trim();
+    if (!text) return match;
+    const sentences = splitIntoSentences(text);
+    let changed = false;
+    const updated = sentences.map((sentence) => {
+      if (containsPledge(sentence)) {
+        const softened = softenPledgeSentence(sentence);
+        if (softened && !containsPledge(softened) && softened.length >= 10) {
+          changed = true;
+          return softened;
+        }
+        const replacement = getNeutralSentenceForIndex(html, index);
+        index += 1;
+        changed = true;
+        return replacement;
+      }
+      return sentence;
+    });
+    if (!changed) {
+      return match;
     }
-    return match;
+    return `<p>${normalizeSpaces(updated.join(' '))}</p>`;
   });
 }
 
@@ -150,7 +229,7 @@ function ensureHeadings(html) {
   return `<h2>현안 개요</h2>\n${html}`;
 }
 
-function ensureParagraphCount(html, minCount, maxCount) {
+function ensureParagraphCount(html, minCount, maxCount, keyword = '') {
   const paragraphs = html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
   let updated = html;
 
@@ -158,7 +237,8 @@ function ensureParagraphCount(html, minCount, maxCount) {
     const needed = minCount - paragraphs.length;
     let additions = '';
     for (let i = 0; i < needed; i += 1) {
-      additions += `<p>${NEUTRAL_PARAGRAPHS[i % NEUTRAL_PARAGRAPHS.length]}</p>\n`;
+      const replacement = getNeutralParagraphForIndex(updated, i, keyword);
+      additions += `<p>${replacement}</p>\n`;
     }
     updated = `${updated}\n${additions}`;
   } else if (paragraphs.length > maxCount) {
@@ -170,7 +250,7 @@ function ensureParagraphCount(html, minCount, maxCount) {
   return updated.replace(/\n{3,}/g, '\n\n');
 }
 
-function ensureLength(html, minLength, maxLength) {
+function ensureLength(html, minLength, maxLength, keyword = '') {
   if (!minLength) return html;
   let updated = html;
   let currentLength = stripHtml(updated).replace(/\s/g, '').length;
@@ -180,9 +260,12 @@ function ensureLength(html, minLength, maxLength) {
   while (currentLength < minLength && guard < 20) {
     const paragraphCount = (updated.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || []).length;
     if (paragraphCount >= 10) {
-      updated = appendNeutralSentence(updated, NEUTRAL_PARAGRAPHS[guard % NEUTRAL_PARAGRAPHS.length]);
+      const filler = getNeutralParagraphForIndex(updated, guard, keyword);
+      updated = appendNeutralSentence(updated, filler);
     } else {
-      updated += `\n<p>${NEUTRAL_PARAGRAPHS[guard % NEUTRAL_PARAGRAPHS.length]}</p>`;
+      const filler = getNeutralParagraphForIndex(updated, guard, keyword);
+      updated += `
+<p>${filler}</p>`;
     }
     currentLength = stripHtml(updated).replace(/\s/g, '').length;
     guard += 1;
@@ -228,6 +311,65 @@ function appendNeutralSentence(html, sentence) {
   return `${html}\n<p>${sentence}</p>`;
 }
 
+
+function getSummaryIntro() {
+  return SUMMARY_INTROS[0];
+}
+
+function buildContextualParagraph(keyword, index) {
+  const topic = normalizeSpaces(keyword || '이 사안');
+  const aspect = CONTEXTUAL_ASPECTS[index % CONTEXTUAL_ASPECTS.length];
+  const template = CONTEXTUAL_TEMPLATES[index % CONTEXTUAL_TEMPLATES.length];
+  return template.replace('{topic}', topic).replace('{aspect}', aspect);
+}
+
+function getNeutralParagraphForIndex(html, index, keyword = '') {
+  const plain = stripHtml(html);
+  const unused = NEUTRAL_PARAGRAPHS.filter((line) => !plain.includes(line));
+  if (unused.length > 0) {
+    return unused[index % unused.length];
+  }
+  return buildContextualParagraph(keyword, index);
+}
+
+function getNeutralSentenceForIndex(html, index, keyword = '') {
+  return getNeutralParagraphForIndex(html, index, keyword);
+}
+
+function splitIntoSentences(text) {
+  if (!text) return [];
+  const matches = String(text).match(/[^.!?]+[.!?]+|[^.!?]+$/g);
+  if (!matches) return [];
+  return matches.map((s) => s.trim()).filter(Boolean);
+}
+
+function removeRepeatedSentences(html) {
+  const seen = new Set();
+  return html.replace(/<p[^>]*>[\s\S]*?<\/p>/gi, (match) => {
+    const text = match.replace(/<[^>]*>/g, '').trim();
+    if (!text) return '';
+    const sentences = splitIntoSentences(text);
+    const filtered = sentences.filter((sentence) => {
+      const normalized = sentence.replace(/\s+/g, '').toLowerCase();
+      if (seen.has(normalized)) {
+        return false;
+      }
+      seen.add(normalized);
+      return true;
+    });
+    if (filtered.length === 0) {
+      return '';
+    }
+    return `<p>${normalizeSpaces(filtered.join(' '))}</p>`;
+  });
+}
+
+function hasSummarySignal(html) {
+  if (!html) return false;
+  const plain = stripHtml(html);
+  return SUMMARY_HEADING_REGEX.test(html) || SUMMARY_TEXT_REGEX.test(plain);
+}
+
 function buildSummaryLines(keyword) {
   const topic = normalizeSpaces(keyword || '이 사안');
   return SUMMARY_LINES.map((line) => line.replace('{topic}', topic));
@@ -235,33 +377,36 @@ function buildSummaryLines(keyword) {
 
 function buildSummaryText(keyword) {
   const lines = buildSummaryLines(keyword);
-  return normalizeSpaces(`${SUMMARY_INTRO} ${lines.join(' ')}`);
+  return normalizeSpaces(`${getSummaryIntro()} ${lines.join(' ')}`);
 }
 
 function buildSummaryBlock(keyword, mode = 'full') {
   const lines = buildSummaryLines(keyword);
+  const intro = getSummaryIntro();
   if (mode === 'single') {
     return [
-      '<h2>핵심 요약</h2>',
+      '<h2>핵심 정리</h2>',
       `<p>${buildSummaryText(keyword)}</p>`
     ].join('\n');
   }
   if (mode === 'compact') {
     return [
-      '<h2>핵심 요약</h2>',
-      `<p>${SUMMARY_INTRO}</p>`,
+      '<h2>핵심 정리</h2>',
+      `<p>${intro}</p>`,
       `<p>${lines.join(' ')}</p>`
     ].join('\n');
   }
   return [
-    '<h2>핵심 요약</h2>',
-    `<p>${SUMMARY_INTRO}</p>`,
+    '<h2>핵심 정리</h2>',
+    `<p>${intro}</p>`,
     ...lines.map((line) => `<p>${line}</p>`)
   ].join('\n');
 }
 
+
 function ensureSummaryBlock(html, keyword, maxAdditionalChars = null) {
-  if (!html || html.includes(SUMMARY_INTRO)) return html;
+  if (!html) return html;
+  if (hasSummarySignal(html)) return html;
 
   const paragraphCount = (html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || []).length;
   const inlineText = buildSummaryText(keyword);
@@ -295,7 +440,8 @@ function ensureSummaryBlock(html, keyword, maxAdditionalChars = null) {
   if (chosen.mode === 'inline') {
     return appendNeutralSentence(html, inlineText);
   }
-  return `${html}\n${chosen.content}`;
+  return `${html}
+${chosen.content}`;
 }
 
 function buildSafeTitle(title, userKeywords = []) {
@@ -428,6 +574,12 @@ function applyHardConstraints({
     }
   }
 
+  const repetitionIssues = validationResult?.details?.repetition?.repeatedSentences || [];
+  if (repetitionIssues.length > 0) {
+    updatedContent = removeRepeatedSentences(updatedContent);
+    summary.push('문장 반복 완화');
+  }
+
   const primaryKeyword = userKeywords[0] || '';
   const needsSafeTitle = !updatedTitle
     || updatedTitle.length < 18
@@ -459,7 +611,7 @@ function applyHardConstraints({
   }
 
   if (needsParagraphs) {
-    updatedContent = ensureParagraphCount(updatedContent, 5, 10);
+    updatedContent = ensureParagraphCount(updatedContent, 5, 10, primaryKeyword);
     summary.push('문단 수 보정');
   }
 
@@ -480,8 +632,21 @@ function applyHardConstraints({
   if (needsLength && targetWordCount) {
     const maxTarget = maxTargetCount || Math.round(targetWordCount * 1.1);
     if (currentCharCount < targetWordCount || (maxTarget && currentCharCount > maxTarget)) {
-      updatedContent = ensureLength(updatedContent, targetWordCount, maxTargetCount);
+      updatedContent = ensureLength(updatedContent, targetWordCount, maxTargetCount, primaryKeyword);
       summary.push('분량 보정');
+    }
+  }
+
+  const dedupedContent = removeRepeatedSentences(updatedContent);
+  if (dedupedContent !== updatedContent) {
+    updatedContent = dedupedContent;
+    summary.push('중복 문장 정리');
+  }
+
+  if (needsLength && targetWordCount) {
+    const refreshedCount = stripHtml(updatedContent).replace(/\s/g, '').length;
+    if (refreshedCount < targetWordCount) {
+      updatedContent = ensureLength(updatedContent, targetWordCount, maxTargetCount, primaryKeyword);
     }
   }
 
@@ -526,7 +691,7 @@ function applyHardConstraints({
   });
 
   if (needsParagraphs) {
-    updatedContent = ensureParagraphCount(updatedContent, 5, 10);
+    updatedContent = ensureParagraphCount(updatedContent, 5, 10, primaryKeyword);
   }
 
   return {

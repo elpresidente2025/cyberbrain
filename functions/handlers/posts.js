@@ -34,7 +34,7 @@ const { buildFactAllowlist } = require('../utils/fact-guard');
 const { loadUserProfile, getOrCreateSession, incrementSessionAttempts } = require('../services/posts/profile-loader');
 const { extractKeywordsFromInstructions } = require('../services/posts/keyword-extractor');
 const { validateAndRetry, runHeuristicValidation, validateKeywordInsertion } = require('../services/posts/validation');
-const { refineWithLLM, buildCompliantDraft } = require('../services/posts/editor-agent');
+const { refineWithLLM } = require('../services/posts/editor-agent');
 const { processGeneratedContent } = require('../services/posts/content-processor');
 const { generateTitleFromContent } = require('../services/posts/title-generator');
 const { buildSmartPrompt } = require('../prompts/prompts');
@@ -339,6 +339,7 @@ async function runLegacyQualityGate({
       }
     };
 
+    let finalSeoPassed = lastSeoPassed;
     const forcedEdit = await refineWithLLM({
       content: currentContent,
       title: currentTitle,
@@ -407,110 +408,16 @@ async function runLegacyQualityGate({
           seoPassed: forcedSeoPassed
         };
       }
+      finalSeoPassed = forcedSeoPassed;
     }
 
-    console.warn('⚠️ 품질 기준 미충족 - 안전 보정 원고로 대체 시도');
-
-    let fallbackDraft = buildCompliantDraft({
-      topic,
-      userKeywords,
-      seoKeywords,
-      targetWordCount,
-      factAllowlist
-    });
-
-    currentContent = fallbackDraft.content;
-    currentTitle = fallbackDraft.title;
-
-    let fallbackSeoPassed = false;
-    for (let retry = 0; retry < 2; retry += 1) {
-      const fallbackHeuristic = await runHeuristicValidation(
-        currentContent,
-        status,
-        currentTitle,
-        { useLLM: true, userKeywords, factAllowlist }
-      );
-      const fallbackKeyword = validateKeywordInsertion(
-        currentContent,
-        userKeywords,
-        autoKeywords,
-        targetWordCount
-      );
-
-      try {
-        const seoAgent = new SEOAgent();
-        const seoResult = await seoAgent.run({
-          userProfile,
-          targetWordCount,
-          category,
-          previousResults: {
-            KeywordAgent: {
-              success: true,
-              data: {
-                keywords: seoKeywords,
-                primary: userKeywords[0] || seoKeywords[0] || ''
-              }
-            },
-            WriterAgent: {
-              success: true,
-              data: { content: currentContent, title: currentTitle }
-            },
-            ComplianceAgent: {
-              success: true,
-              data: { content: currentContent, title: currentTitle }
-            }
-          }
-        });
-        fallbackSeoPassed = seoResult?.data?.seoPassed ?? seoResult?.data?.passed ?? false;
-      } catch (error) {
-        fallbackSeoPassed = false;
-      }
-
-      if (fallbackHeuristic.passed && fallbackKeyword.valid && fallbackSeoPassed) {
-        return {
-          content: currentContent,
-          title: currentTitle,
-          attempts: attempt,
-          seoPassed: fallbackSeoPassed
-        };
-      }
-
-      const fallbackValidation = {
-        ...fallbackHeuristic,
-        details: {
-          ...fallbackHeuristic.details,
-          seo: {
-            passed: fallbackSeoPassed,
-            issues: [],
-            suggestions: []
-          }
-        }
-      };
-
-      const fallbackEdit = await refineWithLLM({
-        content: currentContent,
-        title: currentTitle,
-        validationResult: fallbackValidation,
-        keywordResult: fallbackKeyword,
-        userKeywords,
-        seoKeywords,
-        status,
-        modelName,
-        factAllowlist,
-        targetWordCount
-      });
-
-      if (fallbackEdit.edited) {
-        currentContent = fallbackEdit.content;
-        currentTitle = fallbackEdit.title || currentTitle;
-      }
-    }
+    console.warn('품질 기준 미충족 - 보정 결과로 종료');
 
     return {
       content: currentContent,
       title: currentTitle,
       attempts: attempt,
-      seoPassed: fallbackSeoPassed
+      seoPassed: finalSeoPassed
     };
   }
 
