@@ -34,7 +34,7 @@ const { buildFactAllowlist } = require('../utils/fact-guard');
 const { loadUserProfile, getOrCreateSession, incrementSessionAttempts } = require('../services/posts/profile-loader');
 const { extractKeywordsFromInstructions } = require('../services/posts/keyword-extractor');
 const { validateAndRetry, runHeuristicValidation, validateKeywordInsertion } = require('../services/posts/validation');
-const { refineWithLLM } = require('../services/posts/editor-agent');
+const { refineWithLLM, buildFollowupValidation } = require('../services/posts/editor-agent');
 const { processGeneratedContent, trimTrailingDiagnostics } = require('../services/posts/content-processor');
 const { generateTitleFromContent } = require('../services/posts/title-generator');
 const { buildSmartPrompt } = require('../prompts/prompts');
@@ -799,6 +799,22 @@ exports.generatePosts = httpWrap(async (req) => {
           multiAgentMetadata = null;
         }
 
+        if (generatedContent) {
+          const stopPostProcess = startPerf('postProcess');
+          generatedContent = processGeneratedContent({
+            content: generatedContent,
+            fullName,
+            fullRegion,
+            currentStatus,
+            userProfile,
+            config,
+            customTitle,
+            displayTitle,
+            isCurrentLawmaker
+          });
+          stopPostProcess();
+        }
+
       } catch (multiAgentError) {
         stopMultiAgentGenerate();
         console.error('❌ [Multi-Agent] 파이프라인 실패, 기존 방식으로 폴백:', multiAgentError.message);
@@ -1051,6 +1067,49 @@ exports.generatePosts = httpWrap(async (req) => {
         refinementAttempts: multiAgentMetadata.quality?.refinementAttempts,
         seoPassed: multiAgentMetadata.seo?.passed
       });
+
+      const autoKeywords = backgroundKeywords.filter(k => !userKeywords.includes(k));
+      const seoKeywordSource = userKeywords.length > 0 ? userKeywords : backgroundKeywords;
+      const seoKeywords = [...new Set(seoKeywordSource)].slice(0, 5);
+      const validationResult = buildFollowupValidation({
+        content: generatedContent,
+        title: generatedTitle,
+        status: currentStatus,
+        userKeywords,
+        seoKeywords,
+        factAllowlist,
+        targetWordCount
+      });
+      const keywordResult = validateKeywordInsertion(
+        generatedContent,
+        userKeywords,
+        autoKeywords,
+        targetWordCount
+      );
+
+      if (!validationResult.passed || !keywordResult.valid) {
+        const stopMultiAgentRefine = startPerf('multiAgentRefine');
+        const refined = await refineWithLLM({
+          content: generatedContent,
+          title: generatedTitle,
+          validationResult,
+          keywordResult,
+          userKeywords,
+          seoKeywords,
+          status: currentStatus,
+          modelName,
+          factAllowlist,
+          targetWordCount
+        });
+        stopMultiAgentRefine();
+
+        generatedContent = refined.content;
+        generatedTitle = refined.title;
+        console.log('? [Multi-Agent] 후속 보정 완료', {
+          edited: refined.edited,
+          editSummary: refined.editSummary
+        });
+      }
     } else {
       const autoKeywords = backgroundKeywords.filter(k => !userKeywords.includes(k));
       const stopQualityGate = startPerf('legacyQualityGate');

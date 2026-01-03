@@ -1408,5 +1408,6 @@ ${userKeywords.join(', ') || '(없음)'}
 
 module.exports = {
   refineWithLLM,
-  buildCompliantDraft
+  buildCompliantDraft,
+  buildFollowupValidation
 };

@@ -23,6 +23,27 @@ const SIGNATURE_MARKERS = [
   '고맙습니다'
 ];
 
+function ensureParagraphTags(content) {
+  if (!content) return content;
+  if (/<p\b/i.test(content)) return content;
+
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) return content;
+
+  const wrapped = lines.map((line) => {
+    if (/^<h[23]\b/i.test(line) || /^<ul\b/i.test(line) || /^<ol\b/i.test(line)) {
+      return line;
+    }
+    return `<p>${line}</p>`;
+  });
+
+  return wrapped.join('\n');
+}
+
 function findLastIndexOfAny(text, markers) {
   return markers.reduce((maxIndex, marker) => {
     const index = text.lastIndexOf(marker);
@@ -97,7 +118,7 @@ function processGeneratedContent({ content, fullName, fullRegion, currentStatus,
 
   if (!content) return content;
 
-  let fixedContent = content;
+  let fixedContent = ensureParagraphTags(content);
 
   // 🔥 원외 인사의 경우 강력한 "의원" 표현 제거
   if (isCurrentLawmaker === false) {
