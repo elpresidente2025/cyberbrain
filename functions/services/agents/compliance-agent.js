@@ -51,6 +51,65 @@ const RISK_PATTERNS = [
   { pattern: /망했|망조|파탄/gi, severity: 'medium', reason: '과격한 표현' }
 ];
 
+const DIAGNOSIS_ACTION_PATTERNS = [
+  /대안|해법|해결책|방안|정책\s*방향|정책\s*제안/gi,
+  /추진|실행|도입|확대|강화|지원|마련|설립|구축|개선/gi,
+  /약속|공약|하겠/gi
+];
+
+const DIAGNOSIS_NEUTRAL_SENTENCES = [
+  '현황과 원인을 분리해 살펴보는 과정이 중요합니다.',
+  '관련 지표와 배경을 객관적으로 정리할 필요가 있습니다.',
+  '문제의 구조적 요인을 점검하는 것이 우선입니다.'
+];
+
+function getDiagnosisReplacement(index) {
+  return DIAGNOSIS_NEUTRAL_SENTENCES[index % DIAGNOSIS_NEUTRAL_SENTENCES.length];
+}
+
+function neutralizeDiagnosisContent(content) {
+  if (!content || !/<p[^>]*>/i.test(content)) {
+    return { content, replaced: 0, replacements: [], issues: [] };
+  }
+
+  let replaced = 0;
+  let replacementIndex = 0;
+  const replacements = [];
+  const issues = [];
+
+  const updated = content.replace(/<p[^>]*>[\s\S]*?<\/p>/gi, (match) => {
+    const text = match.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!text) return match;
+
+    const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [];
+    const nextSentences = sentences.map((sentence) => {
+      const trimmed = sentence.trim();
+      if (!trimmed) return trimmed;
+
+      const isAction = DIAGNOSIS_ACTION_PATTERNS.some((pattern) => pattern.test(trimmed));
+      if (!isAction) return trimmed;
+
+      const replacement = getDiagnosisReplacement(replacementIndex);
+      replacementIndex += 1;
+      replaced += 1;
+      replacements.push({ original: trimmed, replaced: replacement });
+      issues.push({
+        type: 'diagnosis_action',
+        severity: 'medium',
+        match: trimmed,
+        reason: '현안 진단 원고에서 대안/해결/공약 표현을 중립화',
+        autoFixed: true
+      });
+      return replacement;
+    });
+
+    return `<p>${nextSentences.join(' ')}</p>`;
+  });
+
+  return { content: updated, replaced, replacements, issues };
+}
+
+
 // 🏷️ 제목 필수 조건 (화이트리스트 방식)
 const TITLE_REQUIREMENTS = {
   maxLength: 25,
@@ -90,6 +149,8 @@ class ComplianceAgent extends BaseAgent {
   async execute(context) {
     const { previousResults = {}, userProfile = {} } = context;
     const factAllowlist = context.factAllowlist || null;
+    const category = context.category || '';
+    const subCategory = context.subCategory || '';
 
     // Writer Agent 결과에서 콘텐츠 가져오기
     const writerResult = previousResults.WriterAgent;
@@ -166,6 +227,16 @@ class ComplianceAgent extends BaseAgent {
       }
     }
 
+    // 6-1. 현안 진단 카테고리: 해법/정책 제안 표현 중화
+    if (category === 'current-affairs' && subCategory === 'current_affairs_diagnosis') {
+      const diagnosisResult = neutralizeDiagnosisContent(content);
+      if (diagnosisResult.replaced > 0) {
+        content = diagnosisResult.content;
+        issues.push(...diagnosisResult.issues);
+        replacements.push(...diagnosisResult.replacements);
+      }
+    }
+
     // 7. 정치적 리스크 검수
     for (const rule of RISK_PATTERNS) {
       const matches = content.match(rule.pattern);
@@ -239,7 +310,7 @@ class ComplianceAgent extends BaseAgent {
     }
 
     // 11. 구조 검증 (무한 루프 방지)
-    // 10-1. ?? ?? ?? (?? ??)
+    // 10-1. 수치 근거 검증 (팩트 체크)
     if (factAllowlist) {
       const contentCheck = findUnsupportedNumericTokens(content, factAllowlist);
       if (!contentCheck.passed) {
@@ -247,7 +318,7 @@ class ComplianceAgent extends BaseAgent {
           type: 'fact_check',
           severity: 'critical',
           matches: contentCheck.unsupported,
-          reason: `?? ?? ??(??): ${contentCheck.unsupported.join(', ')}`
+          reason: `근거 없는 수치(본문): ${contentCheck.unsupported.join(', ')}`
         });
       }
 
@@ -258,7 +329,7 @@ class ComplianceAgent extends BaseAgent {
             type: 'title_fact_check',
             severity: 'high',
             matches: titleCheck.unsupported,
-            reason: `?? ?? ??(??): ${titleCheck.unsupported.join(', ')}`
+            reason: `근거 없는 수치(제목): ${titleCheck.unsupported.join(', ')}`
           };
           titleIssues.push(titleIssue);
           issues.push(titleIssue);

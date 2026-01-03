@@ -729,6 +729,68 @@ function buildFollowupValidation({
   };
 }
 
+function applyHardConstraintsOnly({
+  content,
+  title,
+  status,
+  userKeywords = [],
+  seoKeywords = [],
+  factAllowlist = null,
+  targetWordCount = null
+}) {
+  if (!content) {
+    return {
+      content,
+      title,
+      edited: false,
+      editSummary: []
+    };
+  }
+
+  const validationResult = buildFollowupValidation({
+    content,
+    title,
+    status,
+    userKeywords,
+    seoKeywords,
+    factAllowlist,
+    targetWordCount
+  });
+
+  const keywordResult = validateKeywordInsertion(
+    content,
+    userKeywords,
+    [],
+    targetWordCount
+  );
+
+  if (validationResult.passed && keywordResult.valid) {
+    return {
+      content,
+      title,
+      edited: false,
+      editSummary: []
+    };
+  }
+
+  const hardFixed = applyHardConstraints({
+    content,
+    title,
+    validationResult,
+    userKeywords,
+    seoKeywords,
+    factAllowlist,
+    targetWordCount
+  });
+
+  return {
+    content: hardFixed.content,
+    title: hardFixed.title,
+    edited: hardFixed.content !== content || hardFixed.title !== title,
+    editSummary: hardFixed.editSummary || []
+  };
+}
+
 function buildSafeTitle(title, userKeywords = []) {
   const primaryKeyword = userKeywords[0] || (seoKeywords[0]?.keyword || seoKeywords[0] || '');
   let base = neutralizePledgeTitle(title || '');
@@ -1409,5 +1471,6 @@ ${userKeywords.join(', ') || '(없음)'}
 module.exports = {
   refineWithLLM,
   buildCompliantDraft,
-  buildFollowupValidation
+  buildFollowupValidation,
+  applyHardConstraintsOnly
 };

@@ -74,8 +74,9 @@ function trimFromIndex(text, cutIndex) {
   return text.slice(0, cutIndex).trim();
 }
 
-function trimTrailingDiagnostics(content) {
+function trimTrailingDiagnostics(content, options = {}) {
   if (!content) return content;
+  const allowDiagnosticTail = options.allowDiagnosticTail === true;
   const signatureIndex = findLastIndexOfAny(content, SIGNATURE_MARKERS);
   if (signatureIndex !== -1 && signatureIndex > content.length * 0.5) {
     const tail = content.slice(signatureIndex);
@@ -90,10 +91,12 @@ function trimTrailingDiagnostics(content) {
     return content.slice(0, cutIndex).trim();
   }
 
-  const startIndex = Math.floor(content.length * 0.65);
-  const tailIndex = findFirstIndexOfAny(content, DIAGNOSTIC_TAIL_MARKERS, startIndex);
-  if (tailIndex !== -1) {
-    return trimFromIndex(content, tailIndex);
+  if (!allowDiagnosticTail) {
+    const startIndex = Math.floor(content.length * 0.65);
+    const tailIndex = findFirstIndexOfAny(content, DIAGNOSTIC_TAIL_MARKERS, startIndex);
+    if (tailIndex !== -1) {
+      return trimFromIndex(content, tailIndex);
+    }
   }
 
   return content;
@@ -113,7 +116,19 @@ function trimTrailingDiagnostics(content) {
  * @param {boolean} params.isCurrentLawmaker - 현역 의원 여부
  * @returns {string} 수정된 원고 내용
  */
-function processGeneratedContent({ content, fullName, fullRegion, currentStatus, userProfile, config, customTitle, displayTitle, isCurrentLawmaker }) {
+function processGeneratedContent({
+  content,
+  fullName,
+  fullRegion,
+  currentStatus,
+  userProfile,
+  config,
+  customTitle,
+  displayTitle,
+  isCurrentLawmaker,
+  category,
+  subCategory
+}) {
   console.log('🔩 후처리 시작 - 필수 정보 강제 삽입');
 
   if (!content) return content;
@@ -263,7 +278,9 @@ function processGeneratedContent({ content, fullName, fullRegion, currentStatus,
     }
   }
 
-  fixedContent = trimTrailingDiagnostics(fixedContent);
+  const allowDiagnosticTail = category === 'current-affairs'
+    && subCategory === 'current_affairs_diagnosis';
+  fixedContent = trimTrailingDiagnostics(fixedContent, { allowDiagnosticTail });
 
   console.log('✅ 후처리 완료 - 필수 정보 삽입됨');
   return fixedContent;

@@ -34,7 +34,7 @@ const { buildFactAllowlist } = require('../utils/fact-guard');
 const { loadUserProfile, getOrCreateSession, incrementSessionAttempts } = require('../services/posts/profile-loader');
 const { extractKeywordsFromInstructions } = require('../services/posts/keyword-extractor');
 const { validateAndRetry, runHeuristicValidation, validateKeywordInsertion } = require('../services/posts/validation');
-const { refineWithLLM, buildFollowupValidation } = require('../services/posts/editor-agent');
+const { refineWithLLM, buildFollowupValidation, applyHardConstraintsOnly } = require('../services/posts/editor-agent');
 const { processGeneratedContent, trimTrailingDiagnostics } = require('../services/posts/content-processor');
 const { generateTitleFromContent } = require('../services/posts/title-generator');
 const { buildSmartPrompt } = require('../prompts/prompts');
@@ -208,7 +208,7 @@ async function runLegacyQualityGate({
         lastSeoResult = null;
       }
     } catch (seoError) {
-      console.warn('?? SEO ?? ?? (???? ??):', seoError.message);
+      console.warn('SEO 검증 오류 (결과 없음):', seoError.message);
       seoPassed = false;
       lastSeoResult = null;
     }
@@ -256,7 +256,7 @@ async function runLegacyQualityGate({
                 {
                   id: 'seo_unavailable',
                   severity: 'high',
-                  message: 'SEO ?? ??'
+                  message: 'SEO 검증 결과 없음'
                 }
               ],
               suggestions: []
@@ -810,7 +810,9 @@ exports.generatePosts = httpWrap(async (req) => {
             config,
             customTitle,
             displayTitle,
-            isCurrentLawmaker
+            isCurrentLawmaker,
+            category,
+            subCategory: data.subCategory || ''
           });
           stopPostProcess();
         }
@@ -944,7 +946,9 @@ exports.generatePosts = httpWrap(async (req) => {
           config,
           customTitle,
           displayTitle,
-          isCurrentLawmaker
+          isCurrentLawmaker,
+          category,
+          subCategory: data.subCategory || ''
         });
         stopPostProcess();
       }
@@ -1062,7 +1066,7 @@ exports.generatePosts = httpWrap(async (req) => {
 
     // Quality gate: Multi-Agent uses Orchestrator; legacy uses refinement loop
     if (isMultiAgent) {
-      console.log('? [Multi-Agent] Orchestrator ??? ?? ?? - ??? ?? ??? ??', {
+      console.log('[Multi-Agent] Orchestrator 결과 요약', {
         qualityThresholdMet: multiAgentMetadata.quality?.thresholdMet,
         refinementAttempts: multiAgentMetadata.quality?.refinementAttempts,
         seoPassed: multiAgentMetadata.seo?.passed
@@ -1135,7 +1139,7 @@ exports.generatePosts = httpWrap(async (req) => {
 
       generatedContent = qualityGateResult.content;
       generatedTitle = qualityGateResult.title;
-      console.log('? [Legacy] ?? ??? ??', {
+      console.log('[Legacy] 품질 보정 결과', {
         attempts: qualityGateResult.attempts,
         seoPassed: qualityGateResult.seoPassed
       });
@@ -1186,6 +1190,24 @@ exports.generatePosts = httpWrap(async (req) => {
       stopTitleGeneration();
     }
 
+    const seoKeywordSource = userKeywords.length > 0 ? userKeywords : backgroundKeywords;
+    const seoKeywords = [...new Set(seoKeywordSource)].slice(0, 5);
+    const finalFix = applyHardConstraintsOnly({
+      content: generatedContent,
+      title: generatedTitle,
+      status: currentStatus,
+      userKeywords,
+      seoKeywords,
+      factAllowlist,
+      targetWordCount
+    });
+
+    if (finalFix.edited) {
+      generatedContent = finalFix.content;
+      generatedTitle = finalFix.title || generatedTitle;
+      console.log('최종 구조/분량 보정 완료', { editSummary: finalFix.editSummary });
+    }
+
     if (sloganEnabled && slogan && slogan.trim()) {
       // 슬로건 선거법 검증 (경고만 - 사용자 입력이므로 자동 수정 안 함)
       if (currentStatus === '준비' || currentStatus === '예비') {
@@ -1195,7 +1217,9 @@ exports.generatePosts = httpWrap(async (req) => {
         }
       }
       generatedContent = insertSlogan(generatedContent, slogan);
-      generatedContent = trimTrailingDiagnostics(generatedContent);
+      const allowDiagnosticTail = category === 'current-affairs'
+        && data.subCategory === 'current_affairs_diagnosis';
+      generatedContent = trimTrailingDiagnostics(generatedContent, { allowDiagnosticTail });
       console.log('🎯 슬로건 삽입 완료');
     }
 

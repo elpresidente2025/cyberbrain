@@ -674,6 +674,35 @@ function countKeywordOccurrences(content, keyword) {
   return matches ? matches.length : 0;
 }
 
+function buildFallbackDraft({ topic, fullName, userKeywords = [] }) {
+  const safeTopic = (topic || '현안').trim();
+  const safeName = (fullName || '').trim();
+  const greeting = safeName
+    ? `존경하는 시민 여러분, ${safeName}입니다.`
+    : '존경하는 시민 여러분.';
+
+  const keywordSentences = userKeywords
+    .filter(Boolean)
+    .slice(0, 5)
+    .map((keyword) => `${keyword}와 관련한 현황을 점검합니다.`);
+
+  const keywordParagraph = keywordSentences.length > 0
+    ? `<p>${keywordSentences.join(' ')}</p>`
+    : '';
+
+  return [
+    `<p>${greeting} ${safeTopic}에 대해 핵심 현황을 정리합니다.</p>`,
+    '<h2>현안 개요</h2>',
+    `<p>${safeTopic}의 구조적 배경과 최근 흐름을 객관적으로 살펴봅니다.</p>`,
+    keywordParagraph,
+    '<h2>핵심 쟁점</h2>',
+    '<p>원인과 영향을 구분해 사실관계를 정리하고, 논의가 필요한 지점을 확인합니다.</p>',
+    '<h2>확인 과제</h2>',
+    '<p>추가 확인이 필요한 데이터와 점검 과제를 중심으로 정리합니다.</p>',
+    safeName ? `<p>${safeName} 드림</p>` : ''
+  ].filter(Boolean).join('\n');
+}
+
 /**
  * 키워드 삽입 검증 (사용자 키워드는 엄격, 자동 키워드는 완화)
  */
@@ -857,13 +886,14 @@ async function validateAndRetry({
   if (!heuristicPassed) {
     console.error(`❌ ${maxAttempts}회 시도 후에도 휴리스틱 검증 실패`);
 
-    if (bestVersion && bestVersion.length >= 100) {
-      console.warn(`⚠️ 최선 버전 반환 (점수: ${bestScore})`);
-      notifyProgress('COMPLETED', { warning: '품질 검증 일부 실패' });
-      return bestVersion;
-    }
-
-    throw new Error('AI 원고 생성 실패: 모든 시도에서 품질 기준 미달');
+    const fallbackDraft = bestVersion || buildFallbackDraft({
+      topic,
+      fullName,
+      userKeywords
+    });
+    console.warn(`⚠️ 최선/대체 버전 반환 (점수: ${bestScore})`);
+    notifyProgress('COMPLETED', { warning: '품질 검증 일부 실패' });
+    return fallbackDraft;
   }
 
   // ========================================
