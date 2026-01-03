@@ -14,6 +14,11 @@
 
 const { callGenerativeModel } = require('../gemini');
 const { findUnsupportedNumericTokens } = require('../../utils/fact-guard');
+const {
+  runHeuristicValidationSync,
+  validateKeywordInsertion,
+  validateTitleQuality
+} = require('./validation');
 
 const PLEDGE_PATTERNS = [
   /약속드?립니다/,
@@ -94,6 +99,18 @@ const KEYWORD_SENTENCES = [
   '{kw}의 배경을 여러 지표와 현장 의견으로 함께 확인하는 과정이 필요합니다.'
 ];
 
+const SIGNATURE_MARKERS = [
+  '부산의 준비된 신상품',
+  '부산경제는 이재성'
+];
+
+const SIGNATURE_REGEXES = [
+  /<p[^>]*>\s*감사합니다\.?\s*<\/p>/i,
+  /<p[^>]*>\s*감사드립니다\.?\s*<\/p>/i,
+  /<p[^>]*>\s*고맙습니다\.?\s*<\/p>/i,
+  /<p[^>]*>\s*[^<]*드림\s*<\/p>/i
+];
+
 const SUMMARY_INTROS = [
   '정리하면 다음과 같습니다.',
   '요약하면 다음과 같습니다.',
@@ -118,6 +135,77 @@ function stripHtml(html) {
 
 function normalizeSpaces(text) {
   return text.replace(/\s{2,}/g, ' ').replace(/\s+([.,!?])/g, '$1').trim();
+}
+
+function trimTextToLength(text, maxChars) {
+  if (!text || !maxChars || maxChars <= 0) return '';
+  let count = 0;
+  let endIndex = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (!/\s/.test(ch)) {
+      count += 1;
+    }
+    if (count > maxChars) {
+      break;
+    }
+    endIndex = i + 1;
+  }
+  return text.slice(0, endIndex).trim();
+}
+
+function findSignatureStartIndex(html) {
+  if (!html) return -1;
+  const threshold = Math.floor(html.length * 0.5);
+  let candidate = -1;
+
+  const considerIndex = (index) => {
+    if (index >= threshold && (candidate === -1 || index < candidate)) {
+      candidate = index;
+    }
+  };
+
+  SIGNATURE_MARKERS.forEach((marker) => {
+    const index = html.lastIndexOf(marker);
+    if (index !== -1) {
+      considerIndex(index);
+    }
+  });
+
+  SIGNATURE_REGEXES.forEach((pattern) => {
+    const regex = new RegExp(pattern.source, 'gi');
+    let match;
+    while ((match = regex.exec(html)) !== null) {
+      considerIndex(match.index);
+    }
+  });
+
+  return candidate;
+}
+
+function splitContentBySignature(html) {
+  if (!html) return { body: '', tail: '' };
+  const signatureIndex = findSignatureStartIndex(html);
+  if (signatureIndex === -1) return { body: html, tail: '' };
+
+  const paragraphStart = html.lastIndexOf('<p', signatureIndex);
+  if (paragraphStart !== -1) {
+    return {
+      body: html.slice(0, paragraphStart).trim(),
+      tail: html.slice(paragraphStart).trim()
+    };
+  }
+
+  return {
+    body: html.slice(0, signatureIndex).trim(),
+    tail: html.slice(signatureIndex).trim()
+  };
+}
+
+function joinContent(body, tail) {
+  if (!tail) return body;
+  if (!body) return tail;
+  return `${body}\n${tail}`.replace(/\n{3,}/g, '\n\n');
 }
 
 function countOccurrences(html, keyword) {
@@ -230,24 +318,31 @@ function ensureHeadings(html) {
 }
 
 function ensureParagraphCount(html, minCount, maxCount, keyword = '') {
-  const paragraphs = html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
-  let updated = html;
+  const { body, tail } = splitContentBySignature(html);
+  const bodyParagraphs = body.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
+  const tailParagraphs = tail.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
+  const totalCount = bodyParagraphs.length + tailParagraphs.length;
+  let updated = body;
 
-  if (paragraphs.length < minCount) {
-    const needed = minCount - paragraphs.length;
+  if (totalCount < minCount) {
+    const needed = minCount - totalCount;
     let additions = '';
     for (let i = 0; i < needed; i += 1) {
       const replacement = getNeutralParagraphForIndex(updated, i, keyword);
       additions += `<p>${replacement}</p>\n`;
     }
     updated = `${updated}\n${additions}`;
-  } else if (paragraphs.length > maxCount) {
-    for (let i = paragraphs.length - 1; i >= maxCount; i -= 1) {
-      updated = updated.replace(paragraphs[i], '');
+  } else if (totalCount > maxCount) {
+    const removeCount = totalCount - maxCount;
+    for (let i = 0; i < removeCount; i += 1) {
+      const index = bodyParagraphs.length - 1 - i;
+      if (index < 0) break;
+      updated = updated.replace(bodyParagraphs[index], '');
     }
   }
 
-  return updated.replace(/\n{3,}/g, '\n\n');
+  const normalized = updated.replace(/\n{3,}/g, '\n\n');
+  return joinContent(normalized, tail);
 }
 
 function ensureLength(html, minLength, maxLength, keyword = '') {
@@ -258,25 +353,37 @@ function ensureLength(html, minLength, maxLength, keyword = '') {
 
   let guard = 0;
   while (currentLength < minLength && guard < 20) {
-    const paragraphCount = (updated.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || []).length;
+    const deficit = minLength - currentLength;
+    const { body, tail } = splitContentBySignature(updated);
+    const paragraphCount = (body.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || []).length;
+    let filler = getNeutralParagraphForIndex(body, guard, keyword);
+    if (deficit > 0) {
+      filler = trimTextToLength(filler, deficit);
+    }
+    if (!filler) {
+      break;
+    }
     if (paragraphCount >= 10) {
-      const filler = getNeutralParagraphForIndex(updated, guard, keyword);
-      updated = appendNeutralSentence(updated, filler);
+      const updatedBody = appendNeutralSentence(body, filler);
+      updated = joinContent(updatedBody, tail);
     } else {
-      const filler = getNeutralParagraphForIndex(updated, guard, keyword);
-      updated += `
-<p>${filler}</p>`;
+      const updatedBody = `${body}\n<p>${filler}</p>`;
+      updated = joinContent(updatedBody, tail);
     }
     currentLength = stripHtml(updated).replace(/\s/g, '').length;
     guard += 1;
   }
 
   if (currentLength > maxTarget) {
-    const paragraphs = updated.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
+    const { body, tail } = splitContentBySignature(updated);
+    const paragraphs = body.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
+    let trimmedBody = body;
     for (let i = paragraphs.length - 1; i >= 0 && currentLength > maxTarget; i -= 1) {
-      updated = updated.replace(paragraphs[i], '');
-      currentLength = stripHtml(updated).replace(/\s/g, '').length;
+      trimmedBody = trimmedBody.replace(paragraphs[i], '');
+      const merged = joinContent(trimmedBody, tail);
+      currentLength = stripHtml(merged).replace(/\s/g, '').length;
     }
+    updated = joinContent(trimmedBody, tail);
   }
 
   return updated;
@@ -284,7 +391,8 @@ function ensureLength(html, minLength, maxLength, keyword = '') {
 
 function appendKeywordSentences(html, keyword, countNeeded) {
   if (!keyword || countNeeded <= 0) return html;
-  let updated = html;
+  const { body, tail } = splitContentBySignature(html || '');
+  let updated = body || '';
   const sentences = [];
   for (let i = 0; i < countNeeded; i += 1) {
     const template = KEYWORD_SENTENCES[i % KEYWORD_SENTENCES.length];
@@ -298,17 +406,20 @@ function appendKeywordSentences(html, keyword, countNeeded) {
   } else {
     updated += `\n<p>${addition}</p>`;
   }
-  return updated;
+  return joinContent(updated, tail);
 }
 
 function appendNeutralSentence(html, sentence) {
   if (!sentence) return html;
-  const lastParagraphMatch = html.match(/<p[^>]*>[\s\S]*?<\/p>(?![\s\S]*<p)/i);
+  const { body, tail } = splitContentBySignature(html || '');
+  const base = body || '';
+  const lastParagraphMatch = base.match(/<p[^>]*>[\s\S]*?<\/p>(?![\s\S]*<p)/i);
   if (lastParagraphMatch) {
     const replacement = lastParagraphMatch[0].replace(/<\/p>\s*$/i, ` ${sentence}</p>`);
-    return html.replace(lastParagraphMatch[0], replacement);
+    const updated = base.replace(lastParagraphMatch[0], replacement);
+    return joinContent(updated, tail);
   }
-  return `${html}\n<p>${sentence}</p>`;
+  return joinContent(`${base}\n<p>${sentence}</p>`, tail);
 }
 
 
@@ -403,45 +514,123 @@ function buildSummaryBlock(keyword, mode = 'full') {
   ].join('\n');
 }
 
+function buildSummaryBlockToFit(keyword, maxChars, preferHeading = true) {
+  if (!maxChars || maxChars <= 0) return '';
+  const heading = '<h2>핵심 정리</h2>';
+  const headingChars = stripHtml(heading).replace(/\s/g, '').length;
+  const includeHeading = preferHeading && maxChars > headingChars + 8;
+  const available = maxChars - (includeHeading ? headingChars : 0);
+  if (available <= 0) return '';
+
+  const baseText = buildSummaryText(keyword);
+  const trimmedText = trimTextToLength(baseText, available);
+  if (!trimmedText) return '';
+
+  if (includeHeading) {
+    return `${heading}\n<p>${trimmedText}</p>`;
+  }
+  return `<p>${trimmedText}</p>`;
+}
+
 
 function ensureSummaryBlock(html, keyword, maxAdditionalChars = null) {
   if (!html) return html;
   if (hasSummarySignal(html)) return html;
+  if (maxAdditionalChars !== null && maxAdditionalChars <= 0) return html;
 
-  const paragraphCount = (html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || []).length;
-  const inlineText = buildSummaryText(keyword);
-  const fullBlock = buildSummaryBlock(keyword, 'full');
-  const compactBlock = buildSummaryBlock(keyword, 'compact');
-  const singleBlock = buildSummaryBlock(keyword, 'single');
+  const { body, tail } = splitContentBySignature(html);
+  const block = buildSummaryBlockToFit(keyword, maxAdditionalChars || 0, true);
+  if (!block) return html;
 
-  const options = [];
-  if (paragraphCount <= 6) {
-    options.push({ mode: 'full', content: fullBlock });
-  }
-  if (paragraphCount <= 8) {
-    options.push({ mode: 'compact', content: compactBlock });
-  }
-  if (paragraphCount <= 9) {
-    options.push({ mode: 'single', content: singleBlock });
-  }
-  options.push({ mode: 'inline', content: inlineText });
+  const updatedBody = `${body}\n${block}`;
+  return joinContent(updatedBody, tail);
+}
 
-  let chosen = options[0];
-  if (maxAdditionalChars !== null) {
-    chosen = options.find((option) => {
-      const length = option.mode === 'inline'
-        ? inlineText.replace(/\s/g, '').length
-        : stripHtml(option.content).replace(/\s/g, '').length;
-      return length <= maxAdditionalChars;
+function buildSeoIssues(content, primaryKeyword, targetWordCount) {
+  const issues = [];
+
+  const h2Count = (content.match(/<h2>/gi) || []).length;
+  const h3Count = (content.match(/<h3>/gi) || []).length;
+  const pCount = (content.match(/<p>/gi) || []).length;
+  const hasHeadings = h2Count >= 1 || h3Count >= 2;
+
+  if (!hasHeadings) {
+    issues.push({
+      id: 'structure_headings',
+      severity: 'high',
+      message: '제목 구조가 부족합니다.'
     });
   }
 
-  if (!chosen) return html;
-  if (chosen.mode === 'inline') {
-    return appendNeutralSentence(html, inlineText);
+  if (pCount < 5 || pCount > 10) {
+    issues.push({
+      id: 'structure_paragraphs',
+      severity: 'high',
+      message: '문단 수가 기준을 벗어났습니다.'
+    });
   }
-  return `${html}
-${chosen.content}`;
+
+  if (typeof targetWordCount === 'number') {
+    const charCount = stripHtml(content).replace(/\s/g, '').length;
+    const min = targetWordCount;
+    const max = Math.round(min * 1.1);
+    if (charCount < min || charCount > max) {
+      issues.push({
+        id: 'content_length',
+        severity: 'critical',
+        message: '본문 분량이 기준을 벗어났습니다.'
+      });
+    }
+  }
+
+  if (!primaryKeyword) {
+    issues.push({
+      id: 'keywords_missing',
+      severity: 'critical',
+      message: 'SEO 키워드가 없습니다.'
+    });
+  }
+
+  return {
+    passed: issues.length === 0,
+    issues,
+    suggestions: [],
+    revalidated: true
+  };
+}
+
+function buildFollowupValidation({
+  content,
+  title,
+  status,
+  userKeywords,
+  seoKeywords = [],
+  factAllowlist,
+  targetWordCount
+}) {
+  const heuristic = runHeuristicValidationSync(content, status, title, { factAllowlist });
+  const titleQuality = validateTitleQuality(title, userKeywords, content, {
+    strictFacts: !!factAllowlist
+  });
+  const primaryKeyword = userKeywords[0]
+    || (seoKeywords[0] && seoKeywords[0].keyword ? seoKeywords[0].keyword : seoKeywords[0])
+    || '';
+  const seo = buildSeoIssues(content, primaryKeyword, targetWordCount);
+
+  const passed = heuristic.passed && titleQuality.passed && seo.passed;
+  return {
+    passed,
+    issues: [
+      ...(heuristic.issues || []),
+      ...(titleQuality.issues || []),
+      ...(seo.issues || [])
+    ],
+    details: {
+      ...heuristic.details,
+      titleQuality,
+      seo
+    }
+  };
 }
 
 function buildSafeTitle(title, userKeywords = []) {
@@ -620,8 +809,8 @@ function applyHardConstraints({
     const summaryKeyword = primaryKeyword
       || (seoKeywords[0] && seoKeywords[0].keyword ? seoKeywords[0].keyword : seoKeywords[0])
       || '';
-    const availableChars = maxTargetCount ? Math.max(0, maxTargetCount - currentCharCount) : null;
-    const withSummary = ensureSummaryBlock(updatedContent, summaryKeyword, availableChars);
+    const deficit = targetWordCount - currentCharCount;
+    const withSummary = ensureSummaryBlock(updatedContent, summaryKeyword, deficit);
     if (withSummary !== updatedContent) {
       updatedContent = withSummary;
       summary.push('요약 보강');
@@ -913,10 +1102,19 @@ async function refineWithLLM({
       }
     } catch (parseError) {
       console.error('❌ [EditorAgent] JSON 파싱 실패:', parseError.message);
+      const refreshedValidation = buildFollowupValidation({
+        content,
+        title,
+        status,
+        userKeywords,
+        seoKeywords,
+        factAllowlist,
+        targetWordCount
+      });
       const hardFixed = applyHardConstraints({
         content,
         title,
-        validationResult,
+        validationResult: refreshedValidation,
         userKeywords,
         seoKeywords,
         factAllowlist,
@@ -939,10 +1137,37 @@ async function refineWithLLM({
       editSummary: result.editSummary
     });
 
+    const nextContent = result.content || content;
+    const nextTitle = result.title || title;
+    const refreshedValidation = buildFollowupValidation({
+      content: nextContent,
+      title: nextTitle,
+      status,
+      userKeywords,
+      seoKeywords,
+      factAllowlist,
+      targetWordCount
+    });
+    const refreshedKeyword = validateKeywordInsertion(
+      nextContent,
+      userKeywords,
+      [],
+      targetWordCount
+    );
+
+    if (refreshedValidation.passed && refreshedKeyword.valid) {
+      return {
+        content: nextContent,
+        title: nextTitle,
+        edited: true,
+        editSummary: result.editSummary || []
+      };
+    }
+
     const hardFixed = applyHardConstraints({
-      content: result.content || content,
-      title: result.title || title,
-      validationResult,
+      content: nextContent,
+      title: nextTitle,
+      validationResult: refreshedValidation,
       userKeywords,
       seoKeywords,
       factAllowlist,
@@ -961,10 +1186,19 @@ async function refineWithLLM({
 
   } catch (error) {
     console.error('❌ [EditorAgent] LLM 호출 실패:', error.message);
+    const refreshedValidation = buildFollowupValidation({
+      content,
+      title,
+      status,
+      userKeywords,
+      seoKeywords,
+      factAllowlist,
+      targetWordCount
+    });
     const hardFixed = applyHardConstraints({
       content,
       title,
-      validationResult,
+      validationResult: refreshedValidation,
       userKeywords,
       seoKeywords,
       factAllowlist,

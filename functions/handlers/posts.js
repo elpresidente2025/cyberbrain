@@ -536,12 +536,31 @@ exports.generatePosts = httpWrap(async (req) => {
   // 🔧 프론트엔드에서 전달받은 progressSessionId 사용 (실시간 동기화)
   const progressSessionId = data.progressSessionId || `${uid}_${Date.now()}`;
   const progress = new ProgressTracker(progressSessionId);
+  const perfStartTime = Date.now();
+  const perfMarks = [];
+  const startPerf = (label) => {
+    const started = Date.now();
+    return () => {
+      perfMarks.push({ label, ms: Date.now() - started });
+    };
+  };
+  const logPerf = (context) => {
+    const totalMs = Date.now() - perfStartTime;
+    console.log('⏱️ 생성 성능 요약', {
+      context,
+      uid,
+      sessionId: progressSessionId,
+      totalMs,
+      steps: perfMarks
+    });
+  };
 
   try {
     // 1단계: 준비 중
     await progress.stepPreparing();
 
     // 사용자 프로필 및 Bio 로딩
+    const stopProfile = startPerf('loadUserProfile');
     const {
       userProfile,
       personalizedHints,
@@ -555,6 +574,7 @@ exports.generatePosts = httpWrap(async (req) => {
       slogan,             // 🎯 슬로건
       sloganEnabled       // 🎯 슬로건 활성화 여부
     } = await loadUserProfile(uid, category, topic);
+    stopProfile();
 
     // 🔥 세션 조회 또는 생성 (attempts는 아직 증가하지 않음)
     // - 새 세션: attempts = 0으로 시작, 검증 성공 후 증가
@@ -562,7 +582,9 @@ exports.generatePosts = httpWrap(async (req) => {
     // - 관리자: maxAttempts 999 (무제한)
     // - 테스터: 사용량 제한 면제, 하지만 maxAttempts는 3회 (일반 사용자와 동일)
     console.log('🔄 세션 관리:', sessionId ? '기존 세션 계속' : '새 세션 시작');
+    const stopSession = startPerf('getOrCreateSession');
     let session = await getOrCreateSession(uid, isAdmin, isTester, category, topic);
+    stopSession();
 
     // 사용자 상태 설정
     const currentStatus = userProfile.status || '현역';
@@ -644,9 +666,13 @@ exports.generatePosts = httpWrap(async (req) => {
     let newsContext = '';
     if (shouldFetchNews(category)) {
       try {
+        const stopNewsFetch = startPerf('fetchNaverNews');
         const news = await fetchNaverNews(sanitizedTopic, 3);
+        stopNewsFetch();
         if (news && news.length > 0) {
+          const stopNewsCompress = startPerf('compressNewsWithAI');
           const compressedNews = await compressNewsWithAI(news);
+          stopNewsCompress();
           newsContext = formatNewsForPrompt(compressedNews);
         }
       } catch (newsError) {
@@ -658,6 +684,7 @@ exports.generatePosts = httpWrap(async (req) => {
     // 직책별 관할 범위: 광역단체장(시도 전체), 기초단체장(시군구 전체), 의원(선거구 기준)
     let regionHint = '';
     try {
+      const stopRegionValidation = startPerf('validateTopicRegion');
       const regionResult = await validateTopicRegion(
         userProfile.regionLocal,    // 현재 지역구 (예: "사하구")
         userProfile.regionMetro,    // 현재 광역단체 (예: "부산광역시")
@@ -665,6 +692,7 @@ exports.generatePosts = httpWrap(async (req) => {
         userProfile.targetElection, // 목표 선거 정보 (있으면 이 지역/직책 기준으로 비교)
         userProfile.position        // 현재 직책 (예: "국회의원", "기초자치단체장")
       );
+      stopRegionValidation();
       if (!regionResult.isSameRegion && regionResult.promptHint) {
         regionHint = regionResult.promptHint;
         console.log('🗺️ 타 지역 주제 감지 - 프롬프트 힌트 추가');
@@ -699,10 +727,14 @@ exports.generatePosts = httpWrap(async (req) => {
     ]);
 
     // 🤖 Multi-Agent 모드 체크
+    const stopMultiAgentCheck = startPerf('isMultiAgentEnabled');
     const useMultiAgent = await isMultiAgentEnabled();
+    stopMultiAgentCheck();
 
     // 🎨 고품질 모드 체크 (2단계 생성: 중립적 초안 → 문체 변환)
+    const stopSystemConfig = startPerf('loadSystemConfig');
     const systemConfigDoc = await db.collection('system').doc('config').get();
+    stopSystemConfig();
     const useHighQualityMode = systemConfigDoc.exists
       ? (systemConfigDoc.data().useHighQualityMode || false)
       : false;
@@ -722,6 +754,7 @@ exports.generatePosts = httpWrap(async (req) => {
       // 3단계: AI 원고 작성 중
       await progress.stepGenerating();
 
+      const stopMultiAgentGenerate = startPerf('multiAgentGenerate');
       try {
         const multiAgentResult = await generateWithMultiAgent({
           topic: sanitizedTopic,
@@ -745,6 +778,7 @@ exports.generatePosts = httpWrap(async (req) => {
           attemptNumber: session.attempts,  // 🎯 현재 시도 번호 (수사학 전략 변형용)
           rhetoricalPreferences: userProfile.rhetoricalPreferences || {}  // 🎯 수사학 전략 선호도
         });
+        stopMultiAgentGenerate();
 
         generatedContent = multiAgentResult.content;
         generatedTitle = multiAgentResult.title;
@@ -766,6 +800,7 @@ exports.generatePosts = httpWrap(async (req) => {
         }
 
       } catch (multiAgentError) {
+        stopMultiAgentGenerate();
         console.error('❌ [Multi-Agent] 파이프라인 실패, 기존 방식으로 폴백:', multiAgentError.message);
         // 폴백: 기존 방식으로 계속 진행 (아래 코드 실행)
       }
@@ -791,29 +826,31 @@ exports.generatePosts = httpWrap(async (req) => {
       const authorBio = authorBioParts.join(' ');
 
       // 프롬프트 생성
+      const stopBuildPrompt = startPerf('buildPrompt');
       let prompt = await buildSmartPrompt({
-      writingMethod,
-      topic: sanitizedTopic,
-      authorBio,
-      targetWordCount,
-      instructions: data.instructions,
-      keywords: backgroundKeywords,
-      userKeywords,  // 🔑 사용자 직접 입력 키워드 (최우선 반영)
-      factAllowlist,
-      newsContext,
-      personalizedHints: combinedHints,  // 🧠 통합된 힌트 사용
-      applyEditorialRules: true,
-      // 원외 인사 판단 정보 추가
-      isCurrentLawmaker,
-      politicalExperience,
-      currentStatus,
-      // 선거법 준수를 위한 사용자 상태 (준비/현역/예비/후보)
-      status: currentStatus,
-      // 가족 상황 (자녀 환각 방지)
-      familyStatus,
-      // 🗺️ 타 지역 주제 시 관점 안내
-      regionHint
-    });
+        writingMethod,
+        topic: sanitizedTopic,
+        authorBio,
+        targetWordCount,
+        instructions: data.instructions,
+        keywords: backgroundKeywords,
+        userKeywords,  // 🔑 사용자 직접 입력 키워드 (최우선 반영)
+        factAllowlist,
+        newsContext,
+        personalizedHints: combinedHints,  // 🧠 통합된 힌트 사용
+        applyEditorialRules: true,
+        // 원외 인사 판단 정보 추가
+        isCurrentLawmaker,
+        politicalExperience,
+        currentStatus,
+        // 선거법 준수를 위한 사용자 상태 (준비/현역/예비/후보)
+        status: currentStatus,
+        // 가족 상황 (자녀 환각 방지)
+        familyStatus,
+        // 🗺️ 타 지역 주제 시 관점 안내
+        regionHint
+      });
+      stopBuildPrompt();
 
     // 🎨 문체 가이드 주입 (Style Fingerprint 기반)
     if (styleGuide && styleGuide.trim()) {
@@ -829,6 +866,7 @@ exports.generatePosts = httpWrap(async (req) => {
     await progress.stepGenerating();
 
     // AI 호출 및 휴리스틱 검증 + Critic Agent 검토
+    const stopValidateAndRetry = startPerf('validateAndRetry');
     const apiResponse = await validateAndRetry({
       prompt,
       modelName,
@@ -845,6 +883,7 @@ exports.generatePosts = httpWrap(async (req) => {
       maxAttempts: 3,      // 휴리스틱 검증 실패 시 재시도 (빠름)
       maxCriticAttempts: 2   // Critic Agent 루프 최대 반복
     });
+    stopValidateAndRetry();
 
       // JSON 파싱
       let parsedResponse;
@@ -879,6 +918,7 @@ exports.generatePosts = httpWrap(async (req) => {
 
       // 후처리
       if (parsedResponse && parsedResponse.content) {
+        const stopPostProcess = startPerf('postProcess');
         parsedResponse.content = processGeneratedContent({
           content: parsedResponse.content,
           fullName,
@@ -890,11 +930,13 @@ exports.generatePosts = httpWrap(async (req) => {
           displayTitle,
           isCurrentLawmaker
         });
+        stopPostProcess();
       }
 
       // 🎨 고품질 모드: 2단계 Style Transfer (styleFingerprint 필요)
       if (useHighQualityMode && styleFingerprint && styleFingerprint.analysisMetadata?.confidence >= 0.6) {
         console.log('🎨 [HighQuality] 2단계 Style Transfer 시작...');
+        const stopStyleTransfer = startPerf('styleTransfer');
         try {
           const styleTransferStart = Date.now();
           const transformedContent = await transferStyle(
@@ -922,7 +964,9 @@ exports.generatePosts = httpWrap(async (req) => {
             console.log('⚠️ [HighQuality] Style Transfer 결과 동일 - 원본 유지');
             highQualityMetadata = { enabled: true, mode: 'fallback', reason: 'no-change' };
           }
+          stopStyleTransfer();
         } catch (styleError) {
+          stopStyleTransfer();
           console.error('❌ [HighQuality] Style Transfer 실패:', styleError.message);
           highQualityMetadata = { enabled: true, mode: 'fallback', reason: styleError.message };
           // 실패해도 원본 content 사용 (graceful degradation)
@@ -1009,6 +1053,7 @@ exports.generatePosts = httpWrap(async (req) => {
       });
     } else {
       const autoKeywords = backgroundKeywords.filter(k => !userKeywords.includes(k));
+      const stopQualityGate = startPerf('legacyQualityGate');
       const qualityGateResult = await runLegacyQualityGate({
         content: generatedContent,
         title: generatedTitle,
@@ -1027,6 +1072,7 @@ exports.generatePosts = httpWrap(async (req) => {
         backgroundKeywords,
         targetWordCount
       });
+      stopQualityGate();
 
       generatedContent = qualityGateResult.content;
       generatedTitle = qualityGateResult.title;
@@ -1043,7 +1089,8 @@ exports.generatePosts = httpWrap(async (req) => {
     // Quality gate: Multi-Agent uses Orchestrator; legacy uses refinement loop
     if (isMultiAgent) {
       if (needsTitleRegeneration(generatedTitle, sanitizedTopic, topic)) {
-        console.log('?? ?? ??? ??:', { generatedTitle, topic: sanitizedTopic });
+        console.log('🚨 제목 재생성 필요:', { generatedTitle, topic: sanitizedTopic });
+        const stopTitleGeneration = startPerf('generateTitle');
         generatedTitle = await generateTitleFromContent({
           content: generatedContent || '',
           backgroundInfo: data.instructions,
@@ -1057,11 +1104,13 @@ exports.generatePosts = httpWrap(async (req) => {
           status: currentStatus,
           factAllowlist
         });
+        stopTitleGeneration();
       } else {
-        console.log('? [Multi-Agent] SEO ??? ?? ??:', generatedTitle);
+        console.log('✅ [Multi-Agent] SEO 제목 유지:', generatedTitle);
       }
     } else if (!generatedTitle || !generatedTitle.trim()) {
-      console.log('?? [Legacy] ?? ??? ??:', { generatedTitle, topic: sanitizedTopic });
+      console.log('🚨 [Legacy] 제목 재생성 필요:', { generatedTitle, topic: sanitizedTopic });
+      const stopTitleGeneration = startPerf('generateTitle');
       generatedTitle = await generateTitleFromContent({
         content: generatedContent || '',
         backgroundInfo: data.instructions,
@@ -1075,6 +1124,7 @@ exports.generatePosts = httpWrap(async (req) => {
         status: currentStatus,
         factAllowlist
       });
+      stopTitleGeneration();
     }
 
     if (sloganEnabled && slogan && slogan.trim()) {
@@ -1120,6 +1170,8 @@ exports.generatePosts = httpWrap(async (req) => {
       message += `\n\n💡 마음에 들지 않으시면 재생성을 ${session.maxAttempts - session.attempts}회 더 하실 수 있습니다.`;
     }
 
+    logPerf('success');
+
     return ok({
       success: true,
       message: message,
@@ -1152,6 +1204,7 @@ exports.generatePosts = httpWrap(async (req) => {
 
   } catch (error) {
     console.error('❌ generatePosts 오류:', error.message);
+    logPerf('error');
 
     // 에러 발생 시 진행 상황 업데이트
     if (progress) {
