@@ -681,9 +681,9 @@ function validateKeywordInsertion(content, userKeywords = [], autoKeywords = [],
   const plainText = content.replace(/<[^>]*>/g, '').replace(/\s/g, '');
   const actualWordCount = plainText.length;
 
-  // 사용자 입력 키워드: 400자당 1회 (엄격)
-  const userExpectedCount = Math.floor(actualWordCount / 400);
-  const userMinCount = Math.max(1, userExpectedCount);
+  // 사용자 입력 키워드: 400자당 1회 (상한 엄격)
+  const userMaxCount = Math.max(1, Math.floor(actualWordCount / 400));
+  const userMinCount = 1;
 
   // 자동 추출 키워드: 최소 1회만 (완화)
   const autoMinCount = 1;
@@ -692,15 +692,16 @@ function validateKeywordInsertion(content, userKeywords = [], autoKeywords = [],
   let totalOccurrences = 0;
   let allValid = true;
 
-  // 1. 사용자 입력 키워드 검증 (엄격)
+  // 1. 사용자 입력 키워드 검증 (상한 엄격)
   for (const keyword of userKeywords) {
     const count = countKeywordOccurrences(content, keyword);
     totalOccurrences += count;
-    const isValid = count >= userMinCount;
+    const isValid = count >= userMinCount && count <= userMaxCount;
 
     results[keyword] = {
       count,
       expected: userMinCount,
+      max: userMaxCount,
       valid: isValid,
       type: 'user'
     };

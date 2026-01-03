@@ -151,7 +151,19 @@ function trimTextToLength(text, maxChars) {
     }
     endIndex = i + 1;
   }
-  return text.slice(0, endIndex).trim();
+  let trimmed = text.slice(0, endIndex).trim();
+  if (!trimmed) return '';
+  const lastSpace = trimmed.lastIndexOf(' ');
+  const lastPunct = Math.max(
+    trimmed.lastIndexOf('.'),
+    trimmed.lastIndexOf('!'),
+    trimmed.lastIndexOf('?')
+  );
+  const cutIndex = Math.max(lastSpace, lastPunct);
+  if (cutIndex > 0 && cutIndex >= Math.floor(trimmed.length * 0.6)) {
+    trimmed = trimmed.slice(0, cutIndex + 1).trim();
+  }
+  return trimmed;
 }
 
 function findSignatureStartIndex(html) {
@@ -844,40 +856,41 @@ function applyHardConstraints({
     .filter(Boolean);
   const uniqueKeywords = [...new Set(keywordCandidates)];
   const textForCount = stripHtml(updatedContent);
-  let wordCount = textForCount.split(/\s+/).filter(Boolean).length || 1;
-  let charCount = textForCount.replace(/\s/g, '').length || 1;
-  const userMinCount = Math.max(1, Math.floor(charCount / 400));
-  const minDensityCount = Math.max(1, Math.ceil(wordCount * 0.003));
-  const primaryMinCount = Math.max(1, Math.ceil(wordCount * 0.015));
+  const charCount = textForCount.replace(/\s/g, '').length || 1;
+  const userMaxCount = Math.max(1, Math.floor(charCount / 400));
+  const userMinCount = 1;
+  const userKeywordSet = new Set(userKeywords);
 
   uniqueKeywords.forEach((keyword) => {
     const currentCount = countOccurrences(updatedContent, keyword);
-    const isUserKeyword = userKeywords.includes(keyword);
-    let targetCount = keyword === primaryKeyword ? primaryMinCount : minDensityCount;
-    if (isUserKeyword) {
-      targetCount = Math.max(targetCount, userMinCount);
-    }
-    if (currentCount < targetCount) {
-      updatedContent = appendKeywordSentences(updatedContent, keyword, targetCount - currentCount);
+    const isUserKeyword = userKeywordSet.has(keyword);
+    const ensureOnce = isUserKeyword || (!userKeywords.length && keyword === primaryKeyword);
+
+    if (ensureOnce && currentCount < userMinCount) {
+      updatedContent = appendKeywordSentences(updatedContent, keyword, userMinCount - currentCount);
       summary.push(`키워드 보강: ${keyword}`);
     }
-  });
 
-  const updatedText = stripHtml(updatedContent);
-  wordCount = updatedText.split(/\s+/).filter(Boolean).length || 1;
-  const maxDensityCount = Math.max(1, Math.floor(wordCount * 0.03));
-  uniqueKeywords.forEach((keyword) => {
-    const currentCount = countOccurrences(updatedContent, keyword);
-    if (currentCount > maxDensityCount) {
+    const adjustedCount = countOccurrences(updatedContent, keyword);
+    if (isUserKeyword && adjustedCount > userMaxCount) {
       updatedContent = replaceOccurrencesAfterLimit(
         updatedContent,
         keyword,
-        maxDensityCount,
+        userMaxCount,
         '해당 사안'
       );
       summary.push(`키워드 과다 완화: ${keyword}`);
     }
   });
+
+  if (needsLength && targetWordCount) {
+    const maxTarget = maxTargetCount || Math.round(targetWordCount * 1.1);
+    const finalCharCount = stripHtml(updatedContent).replace(/\s/g, '').length;
+    if (maxTarget && finalCharCount > maxTarget) {
+      updatedContent = ensureLength(updatedContent, targetWordCount, maxTargetCount, primaryKeyword);
+      summary.push('분량 상한 조정');
+    }
+  }
 
   if (needsParagraphs) {
     updatedContent = ensureParagraphCount(updatedContent, 5, 10, primaryKeyword);
