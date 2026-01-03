@@ -2,6 +2,78 @@
 
 const { sanitizeElectionContent, validateElectionCompliance } = require('../election-compliance');
 
+const DIAGNOSTIC_TAIL_MARKERS = [
+  '불확실성과 추가 확인 필요 사항',
+  '불확실성과 추가 확인 필요',
+  '불확실성 및 추가 확인 필요',
+  '불확실성',
+  '추가 확인 필요 사항',
+  '추가 확인 필요',
+  '추가 확인',
+  '진단 요약'
+];
+
+const SIGNATURE_MARKERS = [
+  '부산의 준비된 신상품',
+  '부산경제는 이재성',
+  '부산경제는이재성'
+];
+
+function findLastIndexOfAny(text, markers) {
+  return markers.reduce((maxIndex, marker) => {
+    const index = text.lastIndexOf(marker);
+    return index > maxIndex ? index : maxIndex;
+  }, -1);
+}
+
+function findFirstIndexOfAny(text, markers, startIndex = 0) {
+  let foundIndex = -1;
+  markers.forEach((marker) => {
+    const index = text.indexOf(marker, startIndex);
+    if (index !== -1 && (foundIndex === -1 || index < foundIndex)) {
+      foundIndex = index;
+    }
+  });
+  return foundIndex;
+}
+
+function trimFromIndex(text, cutIndex) {
+  if (cutIndex < 0) return text;
+  const paragraphStart = text.lastIndexOf('<p', cutIndex);
+  if (paragraphStart !== -1) {
+    const tagEnd = text.indexOf('>', paragraphStart);
+    if (tagEnd !== -1 && tagEnd < cutIndex) {
+      return text.slice(0, paragraphStart).trim();
+    }
+  }
+  return text.slice(0, cutIndex).trim();
+}
+
+function trimTrailingDiagnostics(content) {
+  if (!content) return content;
+  const signatureIndex = findLastIndexOfAny(content, SIGNATURE_MARKERS);
+  if (signatureIndex !== -1 && signatureIndex > content.length * 0.5) {
+    const tail = content.slice(signatureIndex);
+    const closeTagMatch = tail.match(/<\/p>|<\/div>|<\/section>|<\/article>/i);
+    let cutIndex = signatureIndex;
+    if (closeTagMatch) {
+      cutIndex += closeTagMatch.index + closeTagMatch[0].length;
+    } else {
+      const lineBreakIndex = tail.search(/[\r\n]/);
+      cutIndex = lineBreakIndex === -1 ? content.length : signatureIndex + lineBreakIndex;
+    }
+    return content.slice(0, cutIndex).trim();
+  }
+
+  const startIndex = Math.floor(content.length * 0.65);
+  const tailIndex = findFirstIndexOfAny(content, DIAGNOSTIC_TAIL_MARKERS, startIndex);
+  if (tailIndex !== -1) {
+    return trimFromIndex(content, tailIndex);
+  }
+
+  return content;
+}
+
 /**
  * AI가 생성한 원고에 대한 후처리 및 보정
  * @param {Object} params
@@ -165,6 +237,8 @@ function processGeneratedContent({ content, fullName, fullRegion, currentStatus,
       console.log('✅ 선거법 준수 검사 통과');
     }
   }
+
+  fixedContent = trimTrailingDiagnostics(fixedContent);
 
   console.log('✅ 후처리 완료 - 필수 정보 삽입됨');
   return fixedContent;
