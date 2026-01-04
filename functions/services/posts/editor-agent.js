@@ -325,15 +325,15 @@ function replaceKeywordBeyondLimit(html, keyword, maxCount) {
 function collapseNumericPlaceholders(text) {
   if (!text) return text;
   const placeholders = [
-    '?? ??',
-    '?? ??',
-    '?? ??',
-    '?? ??',
-    '??'
+    '일정 수준',
+    '일정 비율',
+    '해당 시기',
+    '일정 규모',
+    '여러'
   ];
   const group = placeholders.map(escapeRegExp).join('|');
   let updated = text;
-  const duplicatePattern = new RegExp(`(${group})\s*[.,]\s*(${group})`, 'g');
+  const duplicatePattern = new RegExp(`(${group})\\s*[.,]\\s*(${group})`, 'g');
   updated = updated.replace(duplicatePattern, '$1');
   return updated;
 }
@@ -342,18 +342,18 @@ function replaceUnsupportedTokens(text, tokens) {
   let updated = text;
   tokens.forEach((token) => {
     if (!token) return;
-    let replacement = '?? ??';
+    let replacement = '일정 수준';
     if (/[0-9]/.test(token)) {
-      if (/%|???|??|%p|p|pt|???/i.test(token)) {
-        replacement = '?? ??';
-      } else if (/(?|?|?|?|?|??|??|?|?|?|?|?)/.test(token)) {
-        replacement = '??';
-      } else if (/(?|?|?|?|?|?|?)/.test(token)) {
-        replacement = '?? ??';
-      } else if (/(?|??|??|??|?|?|?|?)/.test(token)) {
-        replacement = '?? ??';
-      } else if (/(km|kg|?|?|m|cm|mm)/i.test(token)) {
-        replacement = '?? ??';
+      if (/%|퍼센트|프로|%p|p|pt|포인트/i.test(token)) {
+        replacement = '일정 비율';
+      } else if (/(명|인|개|곳|건|가구|세대|회|차|위|대|호)/.test(token)) {
+        replacement = '여러';
+      } else if (/(년|월|일|주|시|분|초)/.test(token)) {
+        replacement = '해당 시기';
+      } else if (/(원|만원|억원|조원|조|억|만|천)/.test(token)) {
+        replacement = '일정 규모';
+      } else if (/(km|kg|㎡|평|m|cm|mm)/i.test(token)) {
+        replacement = '일정 규모';
       }
     }
     updated = updated.replace(new RegExp(escapeRegExp(token), 'g'), replacement);
