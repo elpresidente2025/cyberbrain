@@ -59,7 +59,7 @@ const UNIT_PATTERN = NUMBER_UNIT_TOKENS
   .join('|');
 
 const NUMBER_TOKEN_REGEX = new RegExp(
-  `\\d{1,3}(?:,\\d{3})*(?:\\.\\d+)?\\s*(?:${UNIT_PATTERN})?`,
+  `\\d+(?:,\\d{3})*(?:\\.\\d+)?\\s*(?:${UNIT_PATTERN})?`,
   'gi'
 );
 

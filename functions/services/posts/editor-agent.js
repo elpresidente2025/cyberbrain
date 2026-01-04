@@ -322,27 +322,44 @@ function replaceKeywordBeyondLimit(html, keyword, maxCount) {
   });
 }
 
+function collapseNumericPlaceholders(text) {
+  if (!text) return text;
+  const placeholders = [
+    '일정 수준',
+    '상당한 비율',
+    '해당 시기',
+    '상당한 규모',
+    '일정 규모',
+    '여러'
+  ];
+  const group = placeholders.map(escapeRegExp).join('|');
+  let updated = text;
+  const duplicatePattern = new RegExp(`(${group})\\s*[.,]\\s*(${group})`, 'g');
+  updated = updated.replace(duplicatePattern, '$1');
+  return updated;
+}
+
 function replaceUnsupportedTokens(text, tokens) {
   let updated = text;
   tokens.forEach((token) => {
     if (!token) return;
     let replacement = '일정 수준';
     if (/[0-9]/.test(token)) {
-      if (/%|퍼센트|포인트/.test(token)) {
+      if (/%|퍼센트|포인트|%p|p|pt/i.test(token)) {
         replacement = '상당한 비율';
-      } else if (/(명|개|건|곳|가구|세대|회|차)/.test(token)) {
+      } else if (/(명|개|건|곳|가구|세대|회|차|위|대|호)/.test(token)) {
         replacement = '여러';
-      } else if (/(년|월|일)/.test(token)) {
+      } else if (/(년|월|일|개월|주|시|분|초)/.test(token)) {
         replacement = '해당 시기';
       } else if (/(원|만원|억원|조|억|만|천)/.test(token)) {
         replacement = '상당한 규모';
-      } else if (/(km|kg|㎡|평)/i.test(token)) {
+      } else if (/(km|kg|㎡|평|m|cm|mm)/i.test(token)) {
         replacement = '일정 규모';
       }
     }
     updated = updated.replace(new RegExp(escapeRegExp(token), 'g'), replacement);
   });
-  return normalizeSpaces(updated);
+  return normalizeSpaces(collapseNumericPlaceholders(updated));
 }
 
 function containsPledge(text) {

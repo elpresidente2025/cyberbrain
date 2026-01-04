@@ -44,6 +44,18 @@ function ensureParagraphTags(content) {
   return wrapped.join('\n');
 }
 
+function ensureDefaultHeading(content) {
+  if (!content) return content;
+  if (/<h2>|<h3>/i.test(content)) return content;
+
+  const firstParagraphMatch = content.match(/<p[^>]*>[\s\S]*?<\/p>/i);
+  if (firstParagraphMatch) {
+    return content.replace(firstParagraphMatch[0], `${firstParagraphMatch[0]}\n<h2>현안 개요</h2>`);
+  }
+
+  return `<h2>현안 개요</h2>\n${content}`;
+}
+
 function findLastIndexOfAny(text, markers) {
   return markers.reduce((maxIndex, marker) => {
     const index = text.lastIndexOf(marker);
@@ -134,6 +146,7 @@ function processGeneratedContent({
   if (!content) return content;
 
   let fixedContent = ensureParagraphTags(content);
+  fixedContent = ensureDefaultHeading(fixedContent);
 
   // 🔥 원외 인사의 경우 강력한 "의원" 표현 제거
   if (isCurrentLawmaker === false) {
