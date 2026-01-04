@@ -670,21 +670,18 @@ function buildSummaryBlock(keyword, mode = 'full') {
   if (mode === 'single') {
     return [
       `<p data-summary="true">${buildSummaryText(keyword)}</p>`
-    ].join('
-');
+    ].join('\n');
   }
   if (mode === 'compact') {
     return [
       `<p data-summary="true">${intro}</p>`,
       `<p data-summary="true">${lines.join(' ')}</p>`
-    ].join('
-');
+    ].join('\n');
   }
   return [
     `<p data-summary="true">${intro}</p>`,
     ...lines.map((line) => `<p data-summary="true">${line}</p>`)
-  ].join('
-');
+  ].join('\n');
 }
 
 
