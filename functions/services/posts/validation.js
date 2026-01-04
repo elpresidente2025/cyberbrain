@@ -710,9 +710,10 @@ function validateKeywordInsertion(content, userKeywords = [], autoKeywords = [],
   const plainText = content.replace(/<[^>]*>/g, '').replace(/\s/g, '');
   const actualWordCount = plainText.length;
 
-  // 사용자 입력 키워드: 400자당 1회 (상한 엄격)
-  const userMaxCount = Math.max(1, Math.floor(actualWordCount / 400));
-  const userMinCount = 1;
+  // 사용자 입력 키워드: 400자당 1회 (목표 개수 고정)
+  const userTargetCount = Math.max(1, Math.floor(actualWordCount / 400));
+  const userMaxCount = userTargetCount;
+  const userMinCount = userTargetCount;
 
   // 자동 추출 키워드: 최소 1회만 (완화)
   const autoMinCount = 1;

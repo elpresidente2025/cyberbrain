@@ -107,6 +107,22 @@ const KEYWORD_REPLACEMENTS = [
   '관련 이슈'
 ];
 
+const TITLE_SUFFIXES = [
+  '시장',
+  '군수',
+  '구청장',
+  '도지사',
+  '지사',
+  '위원장',
+  '의원',
+  '후보',
+  '대표',
+  '의장',
+  '총장',
+  '총재',
+  '장관'
+];
+
 const SIGNATURE_MARKERS = [
   '부산의 준비된 신상품',
   '부산경제는 이재성',
@@ -324,12 +340,47 @@ function replaceKeywordBeyondLimit(html, keyword, maxCount) {
   return html.replace(pattern, (match) => {
     count += 1;
     if (count > maxCount) {
-      const replacement = KEYWORD_REPLACEMENTS[replacementIndex % KEYWORD_REPLACEMENTS.length];
+      const replacements = getKeywordReductionReplacements(keyword);
+      const replacement = replacements[replacementIndex % replacements.length];
       replacementIndex += 1;
       return replacement;
     }
     return match;
   });
+}
+
+function isTitleToken(token) {
+  if (!token) return false;
+  return TITLE_SUFFIXES.some((suffix) => token.endsWith(suffix));
+}
+
+function buildKeywordVariants(keyword) {
+  const trimmed = String(keyword || '').trim();
+  if (!trimmed) return [];
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  const variants = [];
+
+  if (parts.length >= 2) {
+    const first = parts[0];
+    const rest = parts.slice(1).join(' ');
+
+    if (isTitleToken(parts[parts.length - 1])) {
+      const title = parts[parts.length - 1];
+      const name = parts.slice(0, parts.length - 1).join(' ');
+      variants.push(`${title} ${name}`);
+    }
+
+    variants.push(`${first}의 ${rest}`);
+  }
+
+  return [...new Set(variants)]
+    .filter((variant) => variant && variant !== trimmed && !variant.includes(trimmed));
+}
+
+function getKeywordReductionReplacements(keyword) {
+  const variants = buildKeywordVariants(keyword);
+  if (variants.length > 0) return variants;
+  return KEYWORD_REPLACEMENTS;
 }
 
 function collapseNumericPlaceholders(text) {
@@ -1029,8 +1080,9 @@ function applyHardConstraints({
   const uniqueKeywords = [...new Set(keywordCandidates)];
   const textForCount = stripHtml(updatedContent);
   const charCount = textForCount.replace(/\s/g, '').length || 1;
-  const userMaxCount = Math.max(1, Math.floor(charCount / 400));
-  const userMinCount = 1;
+  const userTargetCount = Math.max(1, Math.floor(charCount / 400));
+  const userMaxCount = userTargetCount;
+  const userMinCount = userTargetCount;
   const userKeywordSet = new Set(userKeywords);
 
   uniqueKeywords.forEach((keyword) => {
