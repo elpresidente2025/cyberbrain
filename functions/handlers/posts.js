@@ -35,7 +35,8 @@ const { loadUserProfile, getOrCreateSession, incrementSessionAttempts } = requir
 const { extractKeywordsFromInstructions } = require('../services/posts/keyword-extractor');
 const { validateAndRetry, runHeuristicValidation, validateKeywordInsertion } = require('../services/posts/validation');
 const { refineWithLLM, buildFollowupValidation, applyHardConstraintsOnly } = require('../services/posts/editor-agent');
-const { processGeneratedContent, trimTrailingDiagnostics, ensureParagraphTags, ensureSectionHeadings } = require('../services/posts/content-processor');
+const { processGeneratedContent, trimTrailingDiagnostics, trimAfterClosing, ensureParagraphTags, ensureSectionHeadings, getIntroBlockCount } = require('../services/posts/content-processor');
+const { callGenerativeModel } = require('../services/gemini');
 const { generateTitleFromContent } = require('../services/posts/title-generator');
 const { buildSmartPrompt } = require('../prompts/prompts');
 const { fetchNaverNews, compressNewsWithAI, formatNewsForPrompt, shouldFetchNews } = require('../services/news-fetcher');
@@ -99,6 +100,64 @@ function insertSlogan(content, slogan) {
 
   // </p> 태그도 없으면 그냥 끝에 추가
   return content + '\n' + sloganHtml;
+}
+
+const CONTENT_BLOCK_REGEX = /<p[^>]*>[\s\S]*?<\/p>|<ul[^>]*>[\s\S]*?<\/ul>|<ol[^>]*>[\s\S]*?<\/ol>/gi;
+
+function stripHtmlTags(text) {
+  return String(text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function extractContentBlocks(content) {
+  if (!content) return [];
+  const matches = content.match(CONTENT_BLOCK_REGEX);
+  return matches || [];
+}
+
+async function inferIntroBlockCountWithLLM({ blocks, fullName, modelName }) {
+  if (!blocks || blocks.length < 2) return null;
+  const samples = blocks.slice(0, 3)
+    .map(stripHtmlTags)
+    .filter(Boolean)
+    .map((text) => text.length > 240 ? `${text.slice(0, 240)}…` : text);
+  if (samples.length < 2) return null;
+
+  const nameHint = fullName ? `작성자 이름: ${fullName}` : '작성자 이름: 없음';
+  const prompt = [
+    '다음은 블로그 글의 앞부분 문단입니다.',
+    '도입부(소제목 없는 구간)에 포함될 문단 수를 1 또는 2로 판정하세요.',
+    '규칙:',
+    '- 1문단에 인사와 자기소개가 함께 있으면 1',
+    '- 인사 다음 문단이 자기소개면 2',
+    '- 그 외는 1',
+    '반드시 JSON 형식으로만 답하세요.',
+    nameHint,
+    '',
+    `1) ${samples[0]}`,
+    `2) ${samples[1] || ''}`,
+    `3) ${samples[2] || ''}`,
+    '',
+    'JSON: {"introBlockCount":1,"reason":"..."}'
+  ].join('\n');
+
+  try {
+    const response = await callGenerativeModel(prompt, 1, modelName, true);
+    let parsed;
+    try {
+      parsed = JSON.parse(response);
+    } catch (parseError) {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0]);
+      }
+    }
+    const count = Number(parsed?.introBlockCount);
+    if (!Number.isFinite(count)) return null;
+    return count;
+  } catch (error) {
+    console.warn('⚠️ 도입부 문단 수 LLM 판단 실패:', error.message);
+    return null;
+  }
 }
 
 
@@ -1236,18 +1295,35 @@ exports.generatePosts = httpWrap(async (req) => {
           console.warn(`⚠️ [슬로건] 선거법 위반 가능 표현 감지: "${slogan}"`);
         }
       }
-      generatedContent = insertSlogan(generatedContent, slogan);
-      const allowDiagnosticTail = category === 'current-affairs'
-        && data.subCategory === 'current_affairs_diagnosis';
-      generatedContent = trimTrailingDiagnostics(generatedContent, { allowDiagnosticTail });
-      console.log('🎯 슬로건 삽입 완료');
     }
 
     if (generatedContent) {
+      const normalizedContent = ensureParagraphTags(generatedContent);
+      const blocks = extractContentBlocks(normalizedContent);
+      let introBlockCount = await inferIntroBlockCountWithLLM({
+        blocks,
+        fullName,
+        modelName
+      });
+      if (!introBlockCount) {
+        introBlockCount = getIntroBlockCount(blocks, { fullName });
+      }
       generatedContent = ensureSectionHeadings(
-        ensureParagraphTags(generatedContent),
-        { category, subCategory: data.subCategory || '' }
+        normalizedContent,
+        {
+          category,
+          subCategory: data.subCategory || '',
+          fullName,
+          introBlockCount
+        }
       );
+      if (sloganEnabled && slogan && slogan.trim()) {
+        generatedContent = insertSlogan(generatedContent, slogan);
+      }
+      const allowDiagnosticTail = category === 'current-affairs'
+        && data.subCategory === 'current_affairs_diagnosis';
+      generatedContent = trimTrailingDiagnostics(generatedContent, { allowDiagnosticTail });
+      generatedContent = trimAfterClosing(generatedContent);
     }
 
     // 글자수 계산

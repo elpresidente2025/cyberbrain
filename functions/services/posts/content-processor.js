@@ -14,13 +14,23 @@ const DIAGNOSTIC_TAIL_MARKERS = [
 ];
 
 const SIGNATURE_MARKERS = [
-  '??? ??? ???',
-  '????? ???',
-  '??? ??',
-  '??? ??',
-  '?????',
-  '??????',
-  '?????'
+  '부산의 준비된 신상품',
+  '부산경제는 이재성',
+  '감사합니다',
+  '감사드립니다',
+  '고맙습니다',
+  '사랑합니다',
+  '드림'
+];
+
+const CLOSING_PARAGRAPH_REGEX = /<p[^>]*>[^<]*(감사합니다|감사드립니다|고맙습니다|사랑합니다|드림)[^<]*<\/p>/gi;
+
+const CLOSING_MARKERS = [
+  '감사합니다',
+  '감사드립니다',
+  '고맙습니다',
+  '사랑합니다',
+  '드림'
 ];
 
 function ensureParagraphTags(content) {
@@ -96,6 +106,38 @@ function isConclusionHeadingText(text) {
 
 function looksLikeQuestion(text) {
   return /(무엇|어떤|어떻게|왜|언제|누가|인가|인가요|까요|할까|해야할까|어떤가)\s*\??$/.test(text || '');
+}
+
+function isGreetingBlock(text) {
+  if (!text) return false;
+  const normalized = String(text).replace(/\s+/g, ' ').trim();
+  if (!normalized) return false;
+  return /^(존경하는|사랑하는|안녕하세요|안녕하십니까)/.test(normalized)
+    || normalized.includes('시민 여러분')
+    || normalized.includes('주민 여러분')
+    || normalized.includes('인사드립니다')
+    || normalized.includes('뼛속까지');
+}
+
+function isIdentityBlock(text, options = {}) {
+  if (!text) return false;
+  const normalized = String(text).replace(/\s+/g, ' ').trim();
+  if (!normalized) return false;
+  const fullName = (options.fullName || '').trim();
+  if (fullName && normalized.includes(fullName)) return true;
+  if (/(지역위원장|위원장|국회의원|시의원|구의원|구청장|시장|도지사|의원)/.test(normalized)) return true;
+  return normalized.startsWith('저는 ') || normalized.includes('입니다');
+}
+
+function getIntroBlockCount(blocks, options = {}) {
+  if (!blocks || blocks.length === 0) return 0;
+  if (blocks.length === 1) return 1;
+  const firstPlain = stripHtml(blocks[0]);
+  const secondPlain = stripHtml(blocks[1]);
+  if (isGreetingBlock(firstPlain) && isIdentityBlock(secondPlain, options)) {
+    return 2;
+  }
+  return 1;
 }
 
 function pickTopicParticle(text) {
@@ -192,7 +234,8 @@ function ensureSectionHeadings(content, options = {}) {
   const normalizedBody = normalizeExistingHeadings(body);
   const headingCount = (normalizedBody.match(/<h[23][^>]*>/gi) || []).length;
   const hasConclusionHeading = /<h[23][^>]*>[^<]*(정리|결론|마무리|요약)[^<]*<\/h[23]>/i.test(normalizedBody);
-  if (headingCount >= 3 && hasConclusionHeading) {
+  const forceRebuild = Number.isInteger(options.introBlockCount) && options.introBlockCount > 0;
+  if (headingCount >= 3 && hasConclusionHeading && !forceRebuild) {
     return joinContent(normalizedBody, tail);
   }
 
@@ -202,10 +245,17 @@ function ensureSectionHeadings(content, options = {}) {
     return joinContent(bodyWithoutHeadings.trim() || body, tail);
   }
 
-  const intro = blocks[0];
+  const providedIntroCount = Number.isInteger(options.introBlockCount)
+    && options.introBlockCount > 0
+    ? options.introBlockCount
+    : null;
+  const rawIntroCount = providedIntroCount || getIntroBlockCount(blocks, options) || 1;
+  const maxIntroCount = Math.max(1, blocks.length - 2);
+  const introCount = Math.min(rawIntroCount, maxIntroCount);
+  const introBlocks = blocks.slice(0, introCount);
   const conclusionBlockCount = 1;
   const conclusionBlocks = blocks.slice(blocks.length - conclusionBlockCount);
-  const bodyBlocks = blocks.slice(1, blocks.length - conclusionBlockCount);
+  const bodyBlocks = blocks.slice(introCount, blocks.length - conclusionBlockCount);
 
   let desiredBodyHeadings = bodyBlocks.length >= 6 ? 3 : 2;
   if (bodyBlocks.length < desiredBodyHeadings) {
@@ -215,7 +265,7 @@ function ensureSectionHeadings(content, options = {}) {
   const bodyHeadings = getBodyHeadingTexts(options.category, options.subCategory, desiredBodyHeadings);
   const sections = splitBlocksIntoSections(bodyBlocks, desiredBodyHeadings);
 
-  let rebuilt = intro;
+  let rebuilt = introBlocks.join('\n');
   sections.forEach((sectionBlocks, index) => {
     if (!sectionBlocks || sectionBlocks.length === 0) return;
     rebuilt += `
@@ -286,6 +336,40 @@ function trimTrailingDiagnostics(content, options = {}) {
     if (tailIndex !== -1) {
       return trimFromIndex(content, tailIndex);
     }
+  }
+
+  return content;
+}
+
+function trimAfterClosing(content) {
+  if (!content) return content;
+  CLOSING_PARAGRAPH_REGEX.lastIndex = 0;
+  let lastMatch = null;
+  let match;
+  while ((match = CLOSING_PARAGRAPH_REGEX.exec(content)) !== null) {
+    lastMatch = match;
+  }
+  if (lastMatch && typeof lastMatch.index === 'number') {
+    if (lastMatch.index >= content.length * 0.5) {
+      return content.slice(0, lastMatch.index + lastMatch[0].length).trim();
+    }
+  }
+
+  let lastIndex = -1;
+  let lastMarker = '';
+  CLOSING_MARKERS.forEach((marker) => {
+    const index = content.lastIndexOf(marker);
+    if (index > lastIndex) {
+      lastIndex = index;
+      lastMarker = marker;
+    }
+  });
+
+  if (lastIndex !== -1 && lastIndex >= content.length * 0.5) {
+    const endIndex = lastIndex + lastMarker.length;
+    const lineEnd = content.indexOf('\n', endIndex);
+    const cutIndex = lineEnd === -1 ? endIndex : lineEnd;
+    return content.slice(0, cutIndex).trim();
   }
 
   return content;
@@ -471,6 +555,7 @@ function processGeneratedContent({
   const allowDiagnosticTail = category === 'current-affairs'
     && subCategory === 'current_affairs_diagnosis';
   fixedContent = trimTrailingDiagnostics(fixedContent, { allowDiagnosticTail });
+  fixedContent = trimAfterClosing(fixedContent);
 
   console.log('✅ 후처리 완료 - 필수 정보 삽입됨');
   return fixedContent;
@@ -572,8 +657,10 @@ function removeDuplicateNames(content, fullName) {
 module.exports = {
   processGeneratedContent,
   trimTrailingDiagnostics,
+  trimAfterClosing,
   ensureParagraphTags,
   ensureSectionHeadings,
+  getIntroBlockCount,
   getBodyHeadingTexts,
   getConclusionHeadingText
 };
