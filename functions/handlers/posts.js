@@ -509,18 +509,18 @@ exports.generatePosts = httpWrap(async (req) => {
   // 키는 CATEGORY_TO_WRITING_METHOD와 일치해야 함
   const CATEGORY_MIN_WORD_COUNT = {
     // 지역 현안: 깊이 있는 분석 필요 (analytical_writing)
-    'local-issues': 2500,
+    'local-issues': 2000,
     // 정책 제안: 논거와 근거 제시 필요 (logical_writing)
-    'policy-proposal': 2500,
+    'policy-proposal': 2000,
     // 의정활동: 상세 보고 필요 (direct_writing)
-    'activity-report': 2200,
+    'activity-report': 2000,
     // 시사: 분석과 견해 필요 (critical_writing)
-    'current-affairs': 2200,
+    'current-affairs': 2000,
     // 일상 소통: 상대적으로 짧아도 됨 (emotional_writing)
-    'daily-communication': 1700,
+    'daily-communication': 2000,
   };
 
-  const userWordCount = data.wordCount || 2500; // 기본값 상향
+  const userWordCount = data.wordCount || 2000; // 기본값 상향
   const minWordCount = CATEGORY_MIN_WORD_COUNT[category] || 2000;
   const targetWordCount = Math.max(userWordCount, minWordCount);
 
