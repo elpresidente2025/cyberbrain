@@ -11,45 +11,42 @@ const NUMBER_UNIT_TOKENS = [
   'p',
   'pt',
   '포인트',
-  '개사',
-  '개소',
-  '개',
-  '곳',
-  '건',
   '명',
   '인',
-  '가구',
-  '세대',
-  '년',
-  '월',
-  '일',
-  '시',
-  '분',
-  '초',
-  '주',
-  '개월',
-  '차',
+  '개',
+  '개사',
+  '개소',
+  '곳',
+  '건',
   '위',
   '대',
   '호',
-  '번',
+  '가구',
+  '세대',
+  '회',
+  '차',
+  '년',
+  '월',
+  '일',
+  '주',
+  '시',
+  '분',
+  '초',
   'km',
   'kg',
+  '㎡',
+  '평',
   'm',
   'cm',
   'mm',
-  '㎞',
-  '㎏',
-  '㎡',
-  '평',
   '원',
   '만원',
   '억원',
+  '조원',
   '조',
   '억',
   '만',
-  '천',
-  '배'
+  '천'
 ];
 
 const UNIT_PATTERN = NUMBER_UNIT_TOKENS
@@ -69,10 +66,10 @@ function normalizeNumericToken(token) {
   if (!normalized) return '';
   normalized = normalized.replace(/\s+/g, '');
   normalized = normalized.replace(/,/g, '');
-  normalized = normalized.replace(/[％]/g, '%');
+  normalized = normalized.replace(/％/g, '%');
   normalized = normalized.replace(/퍼센트|프로/gi, '%');
-  normalized = normalized.replace(/%pt|%p/gi, '%p');
   normalized = normalized.replace(/포인트/gi, 'p');
+  normalized = normalized.replace(/%p/gi, 'p');
   normalized = normalized.replace(/pt$/i, 'p');
   return normalized;
 }

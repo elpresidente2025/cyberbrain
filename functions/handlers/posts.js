@@ -35,7 +35,7 @@ const { loadUserProfile, getOrCreateSession, incrementSessionAttempts } = requir
 const { extractKeywordsFromInstructions } = require('../services/posts/keyword-extractor');
 const { validateAndRetry, runHeuristicValidation, validateKeywordInsertion } = require('../services/posts/validation');
 const { refineWithLLM, buildFollowupValidation, applyHardConstraintsOnly } = require('../services/posts/editor-agent');
-const { processGeneratedContent, trimTrailingDiagnostics, ensureParagraphTags, ensureDefaultHeading, getDefaultHeadingText } = require('../services/posts/content-processor');
+const { processGeneratedContent, trimTrailingDiagnostics, ensureParagraphTags, ensureSectionHeadings } = require('../services/posts/content-processor');
 const { generateTitleFromContent } = require('../services/posts/title-generator');
 const { buildSmartPrompt } = require('../prompts/prompts');
 const { fetchNaverNews, compressNewsWithAI, formatNewsForPrompt, shouldFetchNews } = require('../services/news-fetcher');
@@ -719,10 +719,30 @@ exports.generatePosts = httpWrap(async (req) => {
     console.log('🔑 자동 추출 키워드:', extractedKeywords);
     console.log('🔑 최종 병합 키워드:', backgroundKeywords);
 
+    const referenceTexts = [];
+    if (Array.isArray(data.instructions)) {
+      referenceTexts.push(...data.instructions.filter(Boolean));
+    } else if (data.instructions) {
+      referenceTexts.push(data.instructions);
+    }
+    if (Array.isArray(data.references)) {
+      referenceTexts.push(...data.references.filter(Boolean));
+    } else if (data.references) {
+      referenceTexts.push(data.references);
+    }
+    if (Array.isArray(data.referenceMaterials)) {
+      referenceTexts.push(...data.referenceMaterials.filter(Boolean));
+    }
+    if (data.reference) {
+      referenceTexts.push(data.reference);
+    }
+    if (data.sourceText) {
+      referenceTexts.push(data.sourceText);
+    }
+
     const factAllowlist = buildFactAllowlist([
       sanitizedTopic,
-      data.instructions,
-      newsContext,
+      ...referenceTexts,
       ...userKeywords
     ]);
 
@@ -1224,10 +1244,9 @@ exports.generatePosts = httpWrap(async (req) => {
     }
 
     if (generatedContent) {
-      const defaultHeadingText = getDefaultHeadingText(category, data.subCategory || '');
-      generatedContent = ensureDefaultHeading(
+      generatedContent = ensureSectionHeadings(
         ensureParagraphTags(generatedContent),
-        defaultHeadingText
+        { category, subCategory: data.subCategory || '' }
       );
     }
 

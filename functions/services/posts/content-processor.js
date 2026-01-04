@@ -14,13 +14,13 @@ const DIAGNOSTIC_TAIL_MARKERS = [
 ];
 
 const SIGNATURE_MARKERS = [
-  '부산의 준비된 신상품',
-  '부산경제는 이재성',
-  '부산경제는이재성',
-  '이재성 드림',
-  '감사합니다',
-  '감사드립니다',
-  '고맙습니다'
+  '??? ??? ???',
+  '????? ???',
+  '??? ??',
+  '??? ??',
+  '?????',
+  '??????',
+  '?????'
 ];
 
 function ensureParagraphTags(content) {
@@ -44,32 +44,193 @@ function ensureParagraphTags(content) {
   return wrapped.join('\n');
 }
 
-function getDefaultHeadingText(category, subCategory) {
-  if (category === 'current-affairs') {
-    return subCategory === 'current_affairs_diagnosis' ? '현안 개요' : '현안 개요';
+const HEADING_TAG_REGEX = /<h[23][^>]*>[\s\S]*?<\/h[23]>/gi;
+const CONTENT_BLOCK_REGEX = /<p[^>]*>[\s\S]*?<\/p>|<ul[^>]*>[\s\S]*?<\/ul>|<ol[^>]*>[\s\S]*?<\/ol>/gi;
+
+function getBodyHeadingTexts(category, subCategory, count) {
+  const presets = {
+    'current-affairs': [
+      '현안은 무엇인가?',
+      '핵심 쟁점은 무엇인가?',
+      '영향과 과제는 무엇인가?'
+    ],
+    'policy-proposal': [
+      '왜 필요한가?',
+      '핵심 방향은 무엇인가?',
+      '기대 효과는 무엇인가?'
+    ],
+    'activity-report': [
+      '무엇을 했나?',
+      '현장의 핵심은 무엇인가?',
+      '의미와 과제는 무엇인가?'
+    ],
+    'daily-communication': [
+      '무엇을 나누고 싶은가?',
+      '생각의 핵심은 무엇인가?',
+      '함께 생각할 점은 무엇인가?'
+    ]
+  };
+  const base = presets[category] || [
+    '핵심은 무엇인가?',
+    '왜 중요한가?',
+    '어떤 과제가 남는가?'
+  ];
+  const safeCount = Math.max(1, count || 1);
+  const result = [];
+  for (let i = 0; i < safeCount; i += 1) {
+    result.push(base[i % base.length]);
   }
-  if (category === 'policy-proposal') {
-    return '정책 개요';
-  }
-  if (category === 'activity-report') {
-    return '활동 개요';
-  }
-  if (category === 'daily-communication') {
-    return '소통 요약';
-  }
-  return '주요 내용';
+  return result;
 }
 
-function ensureDefaultHeading(content, headingText = '주요 내용') {
-  if (!content) return content;
-  if (/<h2>|<h3>/i.test(content)) return content;
+function getConclusionHeadingText(category, subCategory) {
+  if (category === 'activity-report' || category === 'daily-communication') {
+    return '마무리';
+  }
+  return '정리';
+}
 
-  const firstParagraphMatch = content.match(/<p[^>]*>[\s\S]*?<\/p>/i);
-  if (firstParagraphMatch) {
-    return content.replace(firstParagraphMatch[0], `${firstParagraphMatch[0]}\n<h2>${headingText}</h2>`);
+function isConclusionHeadingText(text) {
+  return /(정리|결론|마무리|요약)/.test(text || '');
+}
+
+function looksLikeQuestion(text) {
+  return /(무엇|어떤|어떻게|왜|언제|누가|인가|인가요|까요|할까|해야할까|어떤가)\s*\??$/.test(text || '');
+}
+
+function pickTopicParticle(text) {
+  if (!text) return '은';
+  const trimmed = String(text).trim();
+  if (!trimmed) return '은';
+  for (let i = trimmed.length - 1; i >= 0; i -= 1) {
+    const code = trimmed.charCodeAt(i);
+    if (code >= 0xac00 && code <= 0xd7a3) {
+      const jong = (code - 0xac00) % 28;
+      return jong === 0 ? '는' : '은';
+    }
+    if (/[A-Za-z0-9]/.test(trimmed[i])) {
+      return '은';
+    }
+  }
+  return '은';
+}
+
+function toQuestionHeading(text) {
+  if (!text) return text;
+  const cleaned = String(text).replace(/\s+/g, ' ').trim();
+  if (!cleaned) return cleaned;
+  if (isConclusionHeadingText(cleaned)) return cleaned;
+  if (cleaned.endsWith('?')) return cleaned;
+
+  if (/현안|이슈|사안/.test(cleaned)) return '현안은 무엇인가?';
+  if (/핵심|쟁점/.test(cleaned)) return '핵심 쟁점은 무엇인가?';
+  if (/영향|과제/.test(cleaned)) return '영향과 과제는 무엇인가?';
+  if (/진단/.test(cleaned)) return '핵심 진단은 무엇인가?';
+  if (/배경/.test(cleaned)) return '배경은 무엇인가?';
+  if (/방향|전략/.test(cleaned)) return '핵심 방향은 무엇인가?';
+  if (/효과|기대/.test(cleaned)) return '기대 효과는 무엇인가?';
+  if (/활동|실적/.test(cleaned)) return '무엇을 했나?';
+  if (/의미/.test(cleaned)) return '의미와 과제는 무엇인가?';
+
+  if (looksLikeQuestion(cleaned)) return `${cleaned}?`;
+  const particle = pickTopicParticle(cleaned);
+  return `${cleaned}${particle} 무엇인가?`;
+}
+
+function normalizeExistingHeadings(body) {
+  if (!body) return body;
+  return body.replace(/<h([23])([^>]*)>([\s\S]*?)<\/h\1>/gi, (match, level, attrs, inner) => {
+    const plain = String(inner).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!plain) return match;
+    const normalized = toQuestionHeading(plain);
+    return `<h${level}${attrs}>${normalized}</h${level}>`;
+  });
+}
+
+function splitBlocksIntoSections(blocks, sectionCount) {
+  const safeCount = Math.max(1, Math.min(sectionCount, blocks.length));
+  const sections = [];
+  let start = 0;
+  for (let i = 0; i < safeCount; i += 1) {
+    const remaining = blocks.length - start;
+    const remainingSections = safeCount - i;
+    const size = Math.ceil(remaining / remainingSections);
+    sections.push(blocks.slice(start, start + size));
+    start += size;
+  }
+  return sections;
+}
+
+function splitContentBySignature(content) {
+  if (!content) return { body: '', tail: '' };
+  const signatureIndex = findLastIndexOfAny(content, SIGNATURE_MARKERS);
+  if (signatureIndex === -1) return { body: content, tail: '' };
+
+  const paragraphStart = content.lastIndexOf('<p', signatureIndex);
+  if (paragraphStart !== -1) {
+    return {
+      body: content.slice(0, paragraphStart).trim(),
+      tail: content.slice(paragraphStart).trim()
+    };
   }
 
-  return `<h2>${headingText}</h2>\n${content}`;
+  return {
+    body: content.slice(0, signatureIndex).trim(),
+    tail: content.slice(signatureIndex).trim()
+  };
+}
+
+function joinContent(body, tail) {
+  if (!tail) return body;
+  if (!body) return tail;
+  return `${body}\n${tail}`.replace(/\n{3,}/g, '\n\n');
+}
+
+function ensureSectionHeadings(content, options = {}) {
+  if (!content) return content;
+  const { body, tail } = splitContentBySignature(content);
+  const normalizedBody = normalizeExistingHeadings(body);
+  const headingCount = (normalizedBody.match(/<h[23][^>]*>/gi) || []).length;
+  const hasConclusionHeading = /<h[23][^>]*>[^<]*(정리|결론|마무리|요약)[^<]*<\/h[23]>/i.test(normalizedBody);
+  if (headingCount >= 3 && hasConclusionHeading) {
+    return joinContent(normalizedBody, tail);
+  }
+
+  const bodyWithoutHeadings = normalizedBody.replace(HEADING_TAG_REGEX, '');
+  const blocks = bodyWithoutHeadings.match(CONTENT_BLOCK_REGEX) || [];
+  if (blocks.length < 2) {
+    return joinContent(bodyWithoutHeadings.trim() || body, tail);
+  }
+
+  const intro = blocks[0];
+  const conclusionBlockCount = 1;
+  const conclusionBlocks = blocks.slice(blocks.length - conclusionBlockCount);
+  const bodyBlocks = blocks.slice(1, blocks.length - conclusionBlockCount);
+
+  let desiredBodyHeadings = bodyBlocks.length >= 6 ? 3 : 2;
+  if (bodyBlocks.length < desiredBodyHeadings) {
+    desiredBodyHeadings = Math.max(1, bodyBlocks.length);
+  }
+
+  const bodyHeadings = getBodyHeadingTexts(options.category, options.subCategory, desiredBodyHeadings);
+  const sections = splitBlocksIntoSections(bodyBlocks, desiredBodyHeadings);
+
+  let rebuilt = intro;
+  sections.forEach((sectionBlocks, index) => {
+    if (!sectionBlocks || sectionBlocks.length === 0) return;
+    rebuilt += `
+<h2>${bodyHeadings[index]}</h2>
+${sectionBlocks.join('\n')}`;
+  });
+
+  if (conclusionBlocks.length > 0) {
+    const conclusionHeading = getConclusionHeadingText(options.category, options.subCategory);
+    rebuilt += `
+<h2>${conclusionHeading}</h2>
+${conclusionBlocks.join('\n')}`;
+  }
+
+  return joinContent(rebuilt, tail);
 }
 
 function findLastIndexOfAny(text, markers) {
@@ -162,8 +323,7 @@ function processGeneratedContent({
   if (!content) return content;
 
   let fixedContent = ensureParagraphTags(content);
-  const defaultHeadingText = getDefaultHeadingText(category, subCategory);
-  fixedContent = ensureDefaultHeading(fixedContent, defaultHeadingText);
+  fixedContent = ensureSectionHeadings(fixedContent, { category, subCategory });
 
   // 🔥 원외 인사의 경우 강력한 "의원" 표현 제거
   if (isCurrentLawmaker === false) {
@@ -413,6 +573,7 @@ module.exports = {
   processGeneratedContent,
   trimTrailingDiagnostics,
   ensureParagraphTags,
-  ensureDefaultHeading,
-  getDefaultHeadingText
+  ensureSectionHeadings,
+  getBodyHeadingTexts,
+  getConclusionHeadingText
 };
