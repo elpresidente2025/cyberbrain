@@ -44,16 +44,32 @@ function ensureParagraphTags(content) {
   return wrapped.join('\n');
 }
 
-function ensureDefaultHeading(content) {
+function getDefaultHeadingText(category, subCategory) {
+  if (category === 'current-affairs') {
+    return subCategory === 'current_affairs_diagnosis' ? '현안 개요' : '현안 개요';
+  }
+  if (category === 'policy-proposal') {
+    return '정책 개요';
+  }
+  if (category === 'activity-report') {
+    return '활동 개요';
+  }
+  if (category === 'daily-communication') {
+    return '소통 요약';
+  }
+  return '주요 내용';
+}
+
+function ensureDefaultHeading(content, headingText = '주요 내용') {
   if (!content) return content;
   if (/<h2>|<h3>/i.test(content)) return content;
 
   const firstParagraphMatch = content.match(/<p[^>]*>[\s\S]*?<\/p>/i);
   if (firstParagraphMatch) {
-    return content.replace(firstParagraphMatch[0], `${firstParagraphMatch[0]}\n<h2>현안 개요</h2>`);
+    return content.replace(firstParagraphMatch[0], `${firstParagraphMatch[0]}\n<h2>${headingText}</h2>`);
   }
 
-  return `<h2>현안 개요</h2>\n${content}`;
+  return `<h2>${headingText}</h2>\n${content}`;
 }
 
 function findLastIndexOfAny(text, markers) {
@@ -146,7 +162,8 @@ function processGeneratedContent({
   if (!content) return content;
 
   let fixedContent = ensureParagraphTags(content);
-  fixedContent = ensureDefaultHeading(fixedContent);
+  const defaultHeadingText = getDefaultHeadingText(category, subCategory);
+  fixedContent = ensureDefaultHeading(fixedContent, defaultHeadingText);
 
   // 🔥 원외 인사의 경우 강력한 "의원" 표현 제거
   if (isCurrentLawmaker === false) {
@@ -394,5 +411,8 @@ function removeDuplicateNames(content, fullName) {
 
 module.exports = {
   processGeneratedContent,
-  trimTrailingDiagnostics
+  trimTrailingDiagnostics,
+  ensureParagraphTags,
+  ensureDefaultHeading,
+  getDefaultHeadingText
 };

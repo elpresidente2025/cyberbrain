@@ -35,7 +35,7 @@ const { loadUserProfile, getOrCreateSession, incrementSessionAttempts } = requir
 const { extractKeywordsFromInstructions } = require('../services/posts/keyword-extractor');
 const { validateAndRetry, runHeuristicValidation, validateKeywordInsertion } = require('../services/posts/validation');
 const { refineWithLLM, buildFollowupValidation, applyHardConstraintsOnly } = require('../services/posts/editor-agent');
-const { processGeneratedContent, trimTrailingDiagnostics } = require('../services/posts/content-processor');
+const { processGeneratedContent, trimTrailingDiagnostics, ensureParagraphTags, ensureDefaultHeading, getDefaultHeadingText } = require('../services/posts/content-processor');
 const { generateTitleFromContent } = require('../services/posts/title-generator');
 const { buildSmartPrompt } = require('../prompts/prompts');
 const { fetchNaverNews, compressNewsWithAI, formatNewsForPrompt, shouldFetchNews } = require('../services/news-fetcher');
@@ -1221,6 +1221,14 @@ exports.generatePosts = httpWrap(async (req) => {
         && data.subCategory === 'current_affairs_diagnosis';
       generatedContent = trimTrailingDiagnostics(generatedContent, { allowDiagnosticTail });
       console.log('🎯 슬로건 삽입 완료');
+    }
+
+    if (generatedContent) {
+      const defaultHeadingText = getDefaultHeadingText(category, data.subCategory || '');
+      generatedContent = ensureDefaultHeading(
+        ensureParagraphTags(generatedContent),
+        defaultHeadingText
+      );
     }
 
     // 글자수 계산
