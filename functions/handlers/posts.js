@@ -35,7 +35,7 @@ const { loadUserProfile, getOrCreateSession, incrementSessionAttempts } = requir
 const { extractKeywordsFromInstructions } = require('../services/posts/keyword-extractor');
 const { validateAndRetry, runHeuristicValidation, validateKeywordInsertion } = require('../services/posts/validation');
 const { refineWithLLM, buildFollowupValidation, applyHardConstraintsOnly } = require('../services/posts/editor-agent');
-const { processGeneratedContent, trimTrailingDiagnostics, trimAfterClosing, ensureParagraphTags, ensureSectionHeadings, getIntroBlockCount } = require('../services/posts/content-processor');
+const { processGeneratedContent, trimTrailingDiagnostics, trimAfterClosing, ensureParagraphTags, ensureSectionHeadings, moveSummaryToConclusionStart, getIntroBlockCount } = require('../services/posts/content-processor');
 const { callGenerativeModel } = require('../services/gemini');
 const { generateTitleFromContent } = require('../services/posts/title-generator');
 const { buildSmartPrompt } = require('../prompts/prompts');
@@ -977,8 +977,8 @@ exports.generatePosts = httpWrap(async (req) => {
       ragContext,          // Critic Agent 팩트 검증용
       authorName: fullName,  // Corrector Agent 톤 유지용
       topic: sanitizedTopic,  // Critic Agent 문맥 이해용
-      maxAttempts: 3,      // 휴리스틱 검증 실패 시 재시도 (빠름)
-      maxCriticAttempts: 2   // Critic Agent 루프 최대 반복
+      maxAttempts: 1,      // 휴리스틱 검증 실패 시 재시도 (빠름)
+      maxCriticAttempts: 1   // Critic Agent 루프 최대 반복
     });
     stopValidateAndRetry();
 
@@ -1161,7 +1161,8 @@ exports.generatePosts = httpWrap(async (req) => {
         userKeywords,
         seoKeywords,
         factAllowlist,
-        targetWordCount
+        targetWordCount,
+        maxAttempts: 1
       });
       const keywordResult = validateKeywordInsertion(
         generatedContent,
@@ -1317,6 +1318,7 @@ exports.generatePosts = httpWrap(async (req) => {
           introBlockCount
         }
       );
+      generatedContent = moveSummaryToConclusionStart(generatedContent);
       if (sloganEnabled && slogan && slogan.trim()) {
         generatedContent = insertSlogan(generatedContent, slogan);
       }

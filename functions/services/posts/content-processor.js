@@ -33,21 +33,8 @@ const CLOSING_MARKERS = [
   '드림'
 ];
 
-const REGIONAL_IDENTITY_REGEX = /뼛속까지\s*부산\s*사람|뼛속까지\s*부산사람/gi;
-const REGIONAL_IDENTITY_REPLACEMENTS = [
-  '부산에서 나고 자란 사람',
-  '부산에서 성장한 사람',
-  '부산에서 살아온 사람',
-  '부산에서 오랫동안 살아온 사람',
-  '부산에서 자란 사람',
-  '부산에서 나고 자란 주민'
-];
-const REGIONAL_IDENTITY_CONTEXTUAL = [
-  '부산에서 나고 자란 사람으로서',
-  '부산에서 성장한 한 사람으로서',
-  '부산에서 살아온 한 사람으로서',
-  '부산에서 자란 사람으로서'
-];
+const SUMMARY_PARAGRAPH_REGEX = /<p[^>]*data-summary=["']true["'][^>]*>[\s\S]*?<\/p>/gi;
+const CONCLUSION_HEADING_REGEX = /<h[23][^>]*>[^<]*(??|??|??|???)[^<]*<\/h[23]>/i;
 
 function ensureParagraphTags(content) {
   if (!content) return content;
@@ -395,6 +382,30 @@ function trimAfterClosing(content) {
   return content;
 }
 
+function moveSummaryToConclusionStart(content) {
+  if (!content) return content;
+  const { body, tail } = splitContentBySignature(content);
+  const summaryMatches = body.match(SUMMARY_PARAGRAPH_REGEX);
+  if (!summaryMatches || summaryMatches.length === 0) {
+    return content;
+  }
+
+  let cleanedBody = body.replace(SUMMARY_PARAGRAPH_REGEX, '').replace(/\n{3,}/g, '\n\n').trim();
+  const headingMatch = cleanedBody.match(CONCLUSION_HEADING_REGEX);
+  if (headingMatch) {
+    const insertIndex = cleanedBody.indexOf(headingMatch[0]) + headingMatch[0].length;
+    cleanedBody = `${cleanedBody.slice(0, insertIndex)}\n${summaryMatches.join('\n')}\n${cleanedBody.slice(insertIndex)}`
+      .replace(/\n{3,}/g, '\n\n');
+  } else {
+    cleanedBody = `${cleanedBody}\n${summaryMatches.join('\n')}`.trim();
+  }
+
+  return joinContent(cleanedBody, tail);
+}
+
+
+
+
 function hashString(text) {
   let hash = 0;
   for (let i = 0; i < text.length; i += 1) {
@@ -416,31 +427,7 @@ function pickReplacement(list, seed, index) {
   return list[position];
 }
 
-function softenRegionalIdentityPhrase(content, options = {}) {
-  if (!content) return content;
-  const probability = Number.isFinite(options.replaceProbability)
-    ? Math.max(0, Math.min(1, options.replaceProbability))
-    : 0.6;
-  const seed = hashString(content);
-  let occurrence = 0;
 
-  return content.replace(REGIONAL_IDENTITY_REGEX, (match, offset) => {
-    const index = occurrence;
-    occurrence += 1;
-
-    if (!shouldReplaceByProbability(seed, index, probability)) {
-      return match;
-    }
-
-    const rest = content.slice(offset + match.length);
-    const allowContextual = !/^\s*(입니다|이다|이에요|입니다[.!?]|이다[.!?])/.test(rest);
-    const pool = allowContextual
-      ? [...REGIONAL_IDENTITY_REPLACEMENTS, ...REGIONAL_IDENTITY_CONTEXTUAL]
-      : REGIONAL_IDENTITY_REPLACEMENTS;
-    const replacement = pickReplacement(pool, seed, index);
-    return replacement || match;
-  });
-}
 
 /**
  * AI가 생성한 원고에 대한 후처리 및 보정
@@ -621,7 +608,6 @@ function processGeneratedContent({
 
   const allowDiagnosticTail = category === 'current-affairs'
     && subCategory === 'current_affairs_diagnosis';
-  fixedContent = softenRegionalIdentityPhrase(fixedContent);
   fixedContent = trimTrailingDiagnostics(fixedContent, { allowDiagnosticTail });
   fixedContent = trimAfterClosing(fixedContent);
 
@@ -726,6 +712,7 @@ module.exports = {
   processGeneratedContent,
   trimTrailingDiagnostics,
   trimAfterClosing,
+  moveSummaryToConclusionStart,
   ensureParagraphTags,
   ensureSectionHeadings,
   getIntroBlockCount,

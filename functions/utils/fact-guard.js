@@ -84,7 +84,7 @@ function splitNumericToken(token) {
 
 function extractNumericTokens(text) {
   if (!text) return [];
-  const plainText = String(text)
+  const plainText = normalizeNumericSpacing(String(text))
     .replace(URL_PATTERN, ' ')
     .replace(/<[^>]*>/g, ' ');
   const matches = plainText.match(NUMBER_TOKEN_REGEX) || [];
@@ -92,6 +92,16 @@ function extractNumericTokens(text) {
     .map(normalizeNumericToken)
     .filter(Boolean);
   return [...new Set(tokens)];
+}
+
+function normalizeNumericSpacing(text) {
+  if (!text) return '';
+  let normalized = String(text);
+  normalized = normalized.replace(/(\d)\s*\.\s*(\d)/g, '$1.$2');
+  normalized = normalized.replace(/(\d)\s*,\s*(\d)/g, '$1,$2');
+  normalized = normalized.replace(/(\d)\s*(%|퍼센트|포인트|%p|p|pt)/gi, '$1$2');
+  normalized = normalized.replace(/(\d)\s*(명|개|곳|가구|억|조|원|만원|억원|조원|km|kg|m|cm|mm)/gi, '$1$2');
+  return normalized;
 }
 
 function buildFactAllowlist(sourceTexts = []) {
@@ -149,6 +159,7 @@ module.exports = {
   buildFactAllowlist,
   extractNumericTokens,
   findUnsupportedNumericTokens,
+  normalizeNumericSpacing,
   normalizeNumericToken,
   splitNumericToken
 };

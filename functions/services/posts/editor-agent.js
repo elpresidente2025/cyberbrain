@@ -669,41 +669,37 @@ function buildSummaryBlock(keyword, mode = 'full') {
   const intro = getSummaryIntro();
   if (mode === 'single') {
     return [
-      '<h2>핵심 정리</h2>',
-      `<p>${buildSummaryText(keyword)}</p>`
-    ].join('\n');
+      `<p data-summary="true">${buildSummaryText(keyword)}</p>`
+    ].join('
+');
   }
   if (mode === 'compact') {
     return [
-      '<h2>핵심 정리</h2>',
-      `<p>${intro}</p>`,
-      `<p>${lines.join(' ')}</p>`
-    ].join('\n');
+      `<p data-summary="true">${intro}</p>`,
+      `<p data-summary="true">${lines.join(' ')}</p>`
+    ].join('
+');
   }
   return [
-    '<h2>핵심 정리</h2>',
-    `<p>${intro}</p>`,
-    ...lines.map((line) => `<p>${line}</p>`)
-  ].join('\n');
+    `<p data-summary="true">${intro}</p>`,
+    ...lines.map((line) => `<p data-summary="true">${line}</p>`)
+  ].join('
+');
 }
+
 
 function buildSummaryBlockToFit(keyword, maxChars, preferHeading = true) {
   if (!maxChars || maxChars <= 0) return '';
-  const heading = '<h2>핵심 정리</h2>';
-  const headingChars = stripHtml(heading).replace(/\s/g, '').length;
-  const includeHeading = preferHeading && maxChars > headingChars + 8;
-  const available = maxChars - (includeHeading ? headingChars : 0);
+  const available = maxChars;
   if (available <= 0) return '';
 
   const baseText = buildSummaryText(keyword);
   const trimmedText = trimTextToLength(baseText, available);
   if (!trimmedText) return '';
 
-  if (includeHeading) {
-    return `${heading}\n<p>${trimmedText}</p>`;
-  }
-  return `<p>${trimmedText}</p>`;
+  return `<p data-summary="true">${trimmedText}</p>`;
 }
+
 
 
 function ensureSummaryBlock(html, keyword, maxAdditionalChars = null) {
