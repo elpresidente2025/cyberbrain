@@ -35,7 +35,7 @@ const { loadUserProfile, getOrCreateSession, incrementSessionAttempts } = requir
 const { extractKeywordsFromInstructions } = require('../services/posts/keyword-extractor');
 const { validateAndRetry, runHeuristicValidation, validateKeywordInsertion } = require('../services/posts/validation');
 const { refineWithLLM, buildFollowupValidation, applyHardConstraintsOnly } = require('../services/posts/editor-agent');
-const { processGeneratedContent, trimTrailingDiagnostics, trimAfterClosing, ensureParagraphTags, ensureSectionHeadings, moveSummaryToConclusionStart, getIntroBlockCount } = require('../services/posts/content-processor');
+const { processGeneratedContent, trimTrailingDiagnostics, trimAfterClosing, ensureParagraphTags, ensureSectionHeadings, moveSummaryToConclusionStart, cleanupPostContent, getIntroBlockCount } = require('../services/posts/content-processor');
 const { callGenerativeModel } = require('../services/gemini');
 const { generateTitleFromContent } = require('../services/posts/title-generator');
 const { buildSmartPrompt } = require('../prompts/prompts');
@@ -1319,6 +1319,7 @@ exports.generatePosts = httpWrap(async (req) => {
         }
       );
       generatedContent = moveSummaryToConclusionStart(generatedContent);
+      generatedContent = cleanupPostContent(generatedContent);
       if (sloganEnabled && slogan && slogan.trim()) {
         generatedContent = insertSlogan(generatedContent, slogan);
       }

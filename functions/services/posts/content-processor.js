@@ -62,6 +62,119 @@ function stripHtml(text) {
 }
 
 const HEADING_TAG_REGEX = /<h[23][^>]*>[\s\S]*?<\/h[23]>/gi;
+
+const REPEATED_ENDINGS = [
+  { ending: '합니다', replacements: ['하고 있습니다', '한다고 봅니다'] },
+  { ending: '됩니다', replacements: ['되는 상황입니다', '된다고 봅니다'] },
+  { ending: '입니다', replacements: ['이라는 점입니다', '이라고 볼 수 있습니다'] },
+  { ending: '있습니다', replacements: ['있는 상황입니다', '있다고 봅니다'] },
+  { ending: '없습니다', replacements: ['없는 상황입니다', '없다고 봅니다'] }
+];
+
+const SORTED_REPEATED_ENDINGS = [...REPEATED_ENDINGS].sort(
+  (a, b) => b.ending.length - a.ending.length
+);
+const TRAILING_PUNCTUATION_REGEX = /([.!?]+)?(["'”’)\]]*)$/;
+
+function stripMarkdownEmphasis(content) {
+  if (!content) return content;
+  return content.replace(/\*\*/g, '');
+}
+
+function splitPlainSentences(text) {
+  if (!text) return [];
+  const matches = String(text).match(/[^.!?]+[.!?]+|[^.!?]+$/g);
+  if (!matches) return [];
+  return matches.map((s) => s.trim()).filter(Boolean);
+}
+
+function findEndingRule(text) {
+  if (!text) return null;
+  const trimmed = String(text).replace(/\s+$/g, '');
+  if (!trimmed) return null;
+  for (const rule of SORTED_REPEATED_ENDINGS) {
+    if (trimmed.endsWith(rule.ending)) {
+      return rule;
+    }
+  }
+  return null;
+}
+
+function parseSentenceEnding(sentence) {
+  const normalized = String(sentence || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return null;
+  const match = normalized.match(TRAILING_PUNCTUATION_REGEX);
+  const punctuation = match ? (match[1] || '') : '';
+  const trailing = match ? (match[2] || '') : '';
+  const trimLength = punctuation.length + trailing.length;
+  const base = trimLength > 0 ? normalized.slice(0, -trimLength) : normalized;
+  const trimmedBase = base.replace(/\s+$/g, '');
+  const rule = findEndingRule(trimmedBase);
+  if (!rule) return null;
+  const prefix = trimmedBase.slice(0, trimmedBase.length - rule.ending.length);
+  return {
+    prefix,
+    rule,
+    punctuation,
+    trailing
+  };
+}
+
+function applyEndingReplacement(parsed, replacement) {
+  if (!parsed || !replacement) return null;
+  const { prefix, punctuation, trailing } = parsed;
+  return `${prefix}${replacement}${punctuation}${trailing}`.replace(/\s+/g, ' ').trim();
+}
+
+function dedupeRepeatedEndings(sentences) {
+  let lastEnding = null;
+  const replacementIndex = new Map();
+  return sentences.map((sentence) => {
+    const parsed = parseSentenceEnding(sentence);
+    if (!parsed) {
+      lastEnding = null;
+      return String(sentence).replace(/\s+/g, ' ').trim();
+    }
+
+    const { rule } = parsed;
+    if (lastEnding === rule.ending && rule.replacements && rule.replacements.length > 0) {
+      const index = replacementIndex.get(rule.ending) || 0;
+      const replacement = rule.replacements[index % rule.replacements.length];
+      replacementIndex.set(rule.ending, index + 1);
+      const updated = applyEndingReplacement(parsed, replacement);
+      lastEnding = null;
+      return updated || String(sentence).replace(/\s+/g, ' ').trim();
+    }
+
+    lastEnding = rule.ending;
+    return String(sentence).replace(/\s+/g, ' ').trim();
+  });
+}
+
+function normalizeParagraphEndings(content) {
+  if (!content) return content;
+  return content.replace(/<p[^>]*>[\s\S]*?<\/p>/gi, (match) => {
+    const openTagMatch = match.match(/^<p[^>]*>/i);
+    const openTag = openTagMatch ? openTagMatch[0] : '<p>';
+    const inner = match.replace(/^<p[^>]*>/i, '').replace(/<\/p>$/i, '');
+    if (/<[^>]+>/.test(inner)) {
+      return match;
+    }
+    const plain = inner.replace(/\s+/g, ' ').trim();
+    if (!plain) return match;
+    const sentences = splitPlainSentences(plain);
+    const updated = dedupeRepeatedEndings(sentences).join(' ');
+    if (!updated || updated == plain) return match;
+    return `${openTag}${updated}</p>`;
+  });
+}
+
+function cleanupPostContent(content) {
+  if (!content) return content;
+  let updated = stripMarkdownEmphasis(content);
+  updated = normalizeParagraphEndings(updated);
+  return updated;
+}
 const CONTENT_BLOCK_REGEX = /<p[^>]*>[\s\S]*?<\/p>|<ul[^>]*>[\s\S]*?<\/ul>|<ol[^>]*>[\s\S]*?<\/ol>/gi;
 
 function getBodyHeadingTexts(category, subCategory, count) {
@@ -712,6 +825,7 @@ module.exports = {
   processGeneratedContent,
   trimTrailingDiagnostics,
   trimAfterClosing,
+  cleanupPostContent,
   moveSummaryToConclusionStart,
   ensureParagraphTags,
   ensureSectionHeadings,
