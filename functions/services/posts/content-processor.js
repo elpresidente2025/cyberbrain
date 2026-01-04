@@ -34,7 +34,7 @@ const CLOSING_MARKERS = [
 ];
 
 const SUMMARY_PARAGRAPH_REGEX = /<p[^>]*data-summary=["']true["'][^>]*>[\s\S]*?<\/p>/gi;
-const CONCLUSION_HEADING_REGEX = /<h[23][^>]*>[^<]*(??|??|??|???)[^<]*<\/h[23]>/i;
+const CONCLUSION_HEADING_REGEX = /<h[23][^>]*>[^<]*(\uC815\uB9AC|\uACB0\uB860|\uC694\uC57D|\uB9C8\uBB34\uB9AC)[^<]*<\/h[23]>/i;
 
 function ensureParagraphTags(content) {
   if (!content) return content;
