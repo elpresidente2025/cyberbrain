@@ -33,6 +33,22 @@ const CLOSING_MARKERS = [
   '드림'
 ];
 
+const REGIONAL_IDENTITY_REGEX = /뼛속까지\s*부산\s*사람|뼛속까지\s*부산사람/gi;
+const REGIONAL_IDENTITY_REPLACEMENTS = [
+  '부산에서 나고 자란 사람',
+  '부산에서 성장한 사람',
+  '부산에서 살아온 사람',
+  '부산에서 오랫동안 살아온 사람',
+  '부산에서 자란 사람',
+  '부산에서 나고 자란 주민'
+];
+const REGIONAL_IDENTITY_CONTEXTUAL = [
+  '부산에서 나고 자란 사람으로서',
+  '부산에서 성장한 한 사람으로서',
+  '부산에서 살아온 한 사람으로서',
+  '부산에서 자란 사람으로서'
+];
+
 function ensureParagraphTags(content) {
   if (!content) return content;
   if (/<p\b/i.test(content)) return content;
@@ -375,6 +391,53 @@ function trimAfterClosing(content) {
   return content;
 }
 
+function hashString(text) {
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) | 0;
+  }
+  return hash;
+}
+
+function shouldReplaceByProbability(seed, index, probability) {
+  if (probability <= 0) return false;
+  if (probability >= 1) return true;
+  const value = Math.abs(seed + index * 101) % 100;
+  return value < Math.round(probability * 100);
+}
+
+function pickReplacement(list, seed, index) {
+  if (!list || list.length === 0) return '';
+  const position = Math.abs(seed + index * 31) % list.length;
+  return list[position];
+}
+
+function softenRegionalIdentityPhrase(content, options = {}) {
+  if (!content) return content;
+  const probability = Number.isFinite(options.replaceProbability)
+    ? Math.max(0, Math.min(1, options.replaceProbability))
+    : 0.6;
+  const seed = hashString(content);
+  let occurrence = 0;
+
+  return content.replace(REGIONAL_IDENTITY_REGEX, (match, offset) => {
+    const index = occurrence;
+    occurrence += 1;
+
+    if (!shouldReplaceByProbability(seed, index, probability)) {
+      return match;
+    }
+
+    const rest = content.slice(offset + match.length);
+    const allowContextual = !/^\s*(입니다|이다|이에요|입니다[.!?]|이다[.!?])/.test(rest);
+    const pool = allowContextual
+      ? [...REGIONAL_IDENTITY_REPLACEMENTS, ...REGIONAL_IDENTITY_CONTEXTUAL]
+      : REGIONAL_IDENTITY_REPLACEMENTS;
+    const replacement = pickReplacement(pool, seed, index);
+    return replacement || match;
+  });
+}
+
 /**
  * AI가 생성한 원고에 대한 후처리 및 보정
  * @param {Object} params
@@ -554,6 +617,7 @@ function processGeneratedContent({
 
   const allowDiagnosticTail = category === 'current-affairs'
     && subCategory === 'current_affairs_diagnosis';
+  fixedContent = softenRegionalIdentityPhrase(fixedContent);
   fixedContent = trimTrailingDiagnostics(fixedContent, { allowDiagnosticTail });
   fixedContent = trimAfterClosing(fixedContent);
 
