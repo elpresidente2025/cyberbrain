@@ -4,6 +4,85 @@ const { buildTitlePrompt } = require('../../prompts/builders/title-generation');
 const { callGenerativeModel } = require('../gemini');
 const { findUnsupportedNumericTokens } = require('../../utils/fact-guard');
 
+const NAVER_CHAR_LIMIT = 25;
+
+function normalizeSpaces(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+function cleanTitleResponse(text) {
+  return String(text || '')
+    .replace(/```json/g, '')
+    .replace(/```/g, '')
+    .split('\n')[0]
+    .trim()
+    .replace(/^["']|["']$/g, '');
+}
+
+function pickShortFallback(primaryKeyword, limit = NAVER_CHAR_LIMIT) {
+  const candidates = [];
+  if (primaryKeyword) {
+    candidates.push(`${primaryKeyword} 현안 진단`);
+    candidates.push(`${primaryKeyword} 현안`);
+    candidates.push(`${primaryKeyword} 진단`);
+    candidates.push(primaryKeyword);
+  }
+  candidates.push('현안 진단');
+  candidates.push('현안 점검');
+  return candidates.find((candidate) => candidate && candidate.length <= limit) || '현안 진단';
+}
+
+function shrinkTitleByRules(title, { primaryKeyword, limit = NAVER_CHAR_LIMIT } = {}) {
+  let normalized = normalizeSpaces(title);
+  if (normalized.length <= limit) return normalized;
+
+  normalized = normalized.replace(/[-–—:|·,]+$/g, '').trim();
+  if (normalized.length <= limit) return normalized;
+
+  const separatorRegex = /\s*[-–—:|·,]\s*/;
+  if (separatorRegex.test(normalized)) {
+    const parts = normalized.split(separatorRegex).map((part) => part.trim()).filter(Boolean);
+    if (parts.length > 0) {
+      const head = parts[0];
+      if (head.length <= limit) return head;
+      normalized = head;
+    }
+  }
+
+  const words = normalized.split(' ').filter(Boolean);
+  while (words.length > 1 && words.join(' ').length > limit) {
+    words.pop();
+  }
+  const compact = normalizeSpaces(words.join(' '));
+  if (compact.length <= limit) return compact;
+
+  return pickShortFallback(primaryKeyword, limit);
+}
+
+async function rewriteTitleToLimit({ title, modelName, userKeywords, topic, limit = NAVER_CHAR_LIMIT }) {
+  const primaryKeyword = userKeywords?.[0] || '';
+  const prompt = `다음 제목을 ${limit}자 이내로 다시 작성하세요.
+- 의미 유지, 과장 금지
+- 기존 숫자/고유명사만 사용 (새 숫자 금지)
+- 키워드는 가능하면 제목 앞쪽에 배치
+- 부제목(:,-) 금지, 문장 중간 끊기 금지
+- 출력은 제목 한 줄만
+
+원본 제목: ${title}
+주제: ${topic || ''}
+키워드: ${primaryKeyword || ''}`;
+
+  try {
+    const response = await callGenerativeModel(prompt, 1, modelName, false);
+    const rewritten = normalizeSpaces(cleanTitleResponse(response));
+    if (rewritten && rewritten.length <= limit) return rewritten;
+    return '';
+  } catch (error) {
+    console.warn('⚠️ 제목 재작성 실패:', error.message);
+    return '';
+  }
+}
+
 /**
  * 본문 내용을 기반으로 제목을 생성하는 함수
  * @param {Object} params - 제목 생성에 필요한 파라미터
@@ -44,31 +123,24 @@ async function generateTitleFromContent({ content, backgroundInfo, keywords, use
   });
 
   try {
-    // 제목 생성은 순수 텍스트 모드 (JSON mode 비활성화)
     const titleResponse = await callGenerativeModel(titlePrompt, 1, modelName, false);
+    let cleanTitle = normalizeSpaces(cleanTitleResponse(titleResponse));
+    const primaryKeyword = userKeywords?.[0] || '';
 
-    // JSON이나 코드 블록 제거
-    let cleanTitle = titleResponse
-      .replace(/```json/g, '')
-      .replace(/```/g, '')
-      .trim();
-
-    // 첫 번째 줄만 추출 (여러 줄인 경우)
-    cleanTitle = cleanTitle.split('\n')[0].trim();
-
-    // 따옴표 제거
-    cleanTitle = cleanTitle.replace(/^["']|["']$/g, '');
-
-    // 🔧 제목 길이 초과 시 자르기 (25자 제한 - 네이버 최적화)
-    const NAVER_CHAR_LIMIT = 25;
     if (cleanTitle.length > NAVER_CHAR_LIMIT) {
       console.warn(`⚠️ 제목 길이 초과 (${cleanTitle.length}자): "${cleanTitle}"`);
-      // 25자 근처에서 자연스럽게 자르기
-      const cutPoint = cleanTitle.lastIndexOf(' ', NAVER_CHAR_LIMIT) || cleanTitle.lastIndexOf(',', NAVER_CHAR_LIMIT);
-      cleanTitle = cleanTitle.substring(0, cutPoint > 15 ? cutPoint : NAVER_CHAR_LIMIT).trim();
-      // 끝이 어색하면 정리
-      cleanTitle = cleanTitle.replace(/[,.:;]$/, '');
-      console.log(`📝 제목 축약: "${cleanTitle}" (${cleanTitle.length}자)`);
+      const rewritten = await rewriteTitleToLimit({
+        title: cleanTitle,
+        modelName,
+        userKeywords,
+        topic,
+        limit: NAVER_CHAR_LIMIT
+      });
+      if (rewritten) {
+        cleanTitle = rewritten;
+      } else {
+        cleanTitle = shrinkTitleByRules(cleanTitle, { primaryKeyword, limit: NAVER_CHAR_LIMIT });
+      }
     }
 
     if (factAllowlist) {
@@ -78,12 +150,13 @@ async function generateTitleFromContent({ content, backgroundInfo, keywords, use
         titleCheck.unsupported.forEach((token) => {
           sanitizedTitle = sanitizedTitle.split(token).join(' ');
         });
-        sanitizedTitle = sanitizedTitle
-          .replace(/\s{2,}/g, ' ')
-          .replace(/[-–—:,]+$/g, '')
-          .trim();
-        cleanTitle = sanitizedTitle || `${topic} 관련 내용`;
+        sanitizedTitle = normalizeSpaces(sanitizedTitle).replace(/[-–—:,]+$/g, '').trim();
+        cleanTitle = sanitizedTitle || pickShortFallback(primaryKeyword, NAVER_CHAR_LIMIT);
       }
+    }
+
+    if (cleanTitle.length > NAVER_CHAR_LIMIT) {
+      cleanTitle = shrinkTitleByRules(cleanTitle, { primaryKeyword, limit: NAVER_CHAR_LIMIT });
     }
 
     console.log('✅ 제목 생성 완료:', cleanTitle);

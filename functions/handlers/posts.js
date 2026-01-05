@@ -35,7 +35,8 @@ const { loadUserProfile, getOrCreateSession, incrementSessionAttempts } = requir
 const { extractKeywordsFromInstructions } = require('../services/posts/keyword-extractor');
 const { validateAndRetry, runHeuristicValidation, validateKeywordInsertion } = require('../services/posts/validation');
 const { refineWithLLM, buildFollowupValidation, applyHardConstraintsOnly } = require('../services/posts/editor-agent');
-const { processGeneratedContent, trimTrailingDiagnostics, trimAfterClosing, ensureParagraphTags, ensureSectionHeadings, moveSummaryToConclusionStart, cleanupPostContent, getIntroBlockCount } = require('../services/posts/content-processor');
+const { processGeneratedContent, trimTrailingDiagnostics, trimAfterClosing, ensureParagraphTags, ensureSectionHeadings, moveSummaryToConclusionStart, cleanupPostContent, getIntroBlockCount, splitBlocksIntoSections } = require('../services/posts/content-processor');
+const { generateAeoSubheadings } = require('../services/posts/subheading-agent');
 const { callGenerativeModel } = require('../services/gemini');
 const { generateTitleFromContent } = require('../services/posts/title-generator');
 const { buildSmartPrompt } = require('../prompts/prompts');
@@ -1301,13 +1302,30 @@ exports.generatePosts = httpWrap(async (req) => {
     if (generatedContent) {
       const normalizedContent = ensureParagraphTags(generatedContent);
       const blocks = extractContentBlocks(normalizedContent);
-      let introBlockCount = await inferIntroBlockCountWithLLM({
-        blocks,
-        fullName,
-        modelName
-      });
-      if (!introBlockCount) {
-        introBlockCount = getIntroBlockCount(blocks, { fullName });
+      const introBlockCount = getIntroBlockCount(blocks, { fullName });
+      let bodyHeadings = null;
+      const conclusionBlockCount = 1;
+      const bodyBlocks = blocks.slice(introBlockCount, blocks.length - conclusionBlockCount);
+      let desiredBodyHeadings = bodyBlocks.length >= 6 ? 3 : 2;
+      if (bodyBlocks.length < desiredBodyHeadings) {
+        desiredBodyHeadings = Math.max(1, bodyBlocks.length);
+      }
+      if (desiredBodyHeadings > 0 && bodyBlocks.length > 0) {
+        const sections = splitBlocksIntoSections(bodyBlocks, desiredBodyHeadings);
+        const sectionTexts = sections.map((section) => section.join('\n'));
+        try {
+          const generatedHeadings = await generateAeoSubheadings({
+            sections: sectionTexts,
+            modelName,
+            fullName,
+            fullRegion
+          });
+          if (generatedHeadings && generatedHeadings.length === desiredBodyHeadings) {
+            bodyHeadings = generatedHeadings;
+          }
+        } catch (headingError) {
+          console.warn('⚠️ AEO 소제목 생성 실패:', headingError.message);
+        }
       }
       generatedContent = ensureSectionHeadings(
         normalizedContent,
@@ -1315,7 +1333,8 @@ exports.generatePosts = httpWrap(async (req) => {
           category,
           subCategory: data.subCategory || '',
           fullName,
-          introBlockCount
+          introBlockCount,
+          bodyHeadings
         }
       );
       generatedContent = moveSummaryToConclusionStart(generatedContent);

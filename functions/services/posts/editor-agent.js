@@ -874,10 +874,39 @@ function buildSafeTitle(title, userKeywords = []) {
   if (base.length < 18) {
     base = normalizeSpaces(`${base} 핵심 점검`);
   }
-  if (base.length > 25) {
-    base = base.substring(0, 25).trim();
+  return trimTitleToLimit(base, primaryKeyword);
+}
+
+function trimTitleToLimit(title, primaryKeyword, limit = 25) {
+  const normalized = normalizeSpaces(title);
+  if (normalized.length <= limit) return normalized;
+
+  const separatorRegex = /\s*[-–—:|·,]\s*/;
+  if (separatorRegex.test(normalized)) {
+    const parts = normalized.split(separatorRegex).map((part) => part.trim()).filter(Boolean);
+    if (parts.length > 0 && parts[0].length <= limit) {
+      return parts[0];
+    }
   }
-  return base;
+
+  const words = normalized.split(' ').filter(Boolean);
+  while (words.length > 1 && words.join(' ').length > limit) {
+    words.pop();
+  }
+  const compact = normalizeSpaces(words.join(' '));
+  if (compact.length <= limit) return compact;
+
+  const candidates = [];
+  if (primaryKeyword) {
+    candidates.push(`${primaryKeyword} 현안 진단`);
+    candidates.push(`${primaryKeyword} 현안`);
+    candidates.push(`${primaryKeyword} 진단`);
+    candidates.push(primaryKeyword);
+  }
+  candidates.push('현안 진단');
+  candidates.push('현안 점검');
+  const fallback = candidates.find((candidate) => candidate && candidate.length <= limit);
+  return fallback || '현안 진단';
 }
 
 function sanitizeTopicForFacts(topic, factAllowlist) {

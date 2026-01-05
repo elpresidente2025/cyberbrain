@@ -382,7 +382,12 @@ function ensureSectionHeadings(content, options = {}) {
     desiredBodyHeadings = Math.max(1, bodyBlocks.length);
   }
 
-  const bodyHeadings = getBodyHeadingTexts(options.category, options.subCategory, desiredBodyHeadings);
+  const providedHeadings = Array.isArray(options.bodyHeadings)
+    ? options.bodyHeadings.map((heading) => toQuestionHeading(heading)).filter(Boolean)
+    : [];
+  const bodyHeadings = providedHeadings.length === desiredBodyHeadings
+    ? providedHeadings
+    : getBodyHeadingTexts(options.category, options.subCategory, desiredBodyHeadings);
   const sections = splitBlocksIntoSections(bodyBlocks, desiredBodyHeadings);
 
   let rebuilt = introBlocks.join('\n');
@@ -831,5 +836,6 @@ module.exports = {
   ensureSectionHeadings,
   getIntroBlockCount,
   getBodyHeadingTexts,
-  getConclusionHeadingText
+  getConclusionHeadingText,
+  splitBlocksIntoSections
 };
