@@ -18,14 +18,14 @@ const RHETORICAL_TACTICS = {
   FACTS_AND_EVIDENCE: { id: 'facts_and_evidence', name: '사실과 근거 제시', instruction: "당신의 활동 성과를 뒷받침하기 위해 구체적인 데이터, 확보된 예산 액수, 조례 통과 현황 등 객관적인 사실과 수치를 명확하게 제시하여 주장의 신뢰도를 높이세요." },
   RELATING_TO_RESIDENTS: { id: 'relating_to_residents', name: '주민 생활 연결', instruction: "보고하는 성과가 '우리 아이들의 등하굣길이 안전해집니다', '어르신들이 더 편안하게 병원을 이용하실 수 있습니다'와 같이 주민들의 실생활에 어떤 긍정적인 변화를 가져오는지 구체적인 예시를 들어 설명하여 공감대를 형성하세요." },
   CREDIT_TAKING: { id: 'credit_taking', name: '성과 귀속 및 강조', instruction: "'제가 해냈습니다', '마침내 결실을 맺었습니다'와 같이 성과가 자신의 노력과 능력 덕분임을 명확히 하여 리더십을 부각시키세요. 경쟁 상대나 과거의 실패와 대비하여 성과의 의미를 극대화합니다." },
-  PLEDGE_EMPHASIS: { id: 'pledge_emphasis', name: '주민 약속 강조', instruction: "'주민 여러분께 약속드립니다', '반드시 실천하겠습니다'와 같은 표현을 사용하여, 당신의 다짐이 단순한 계획이 아닌, 주민과의 굳은 약속임을 강조하여 진정성을 전달하세요." },
+  PLEDGE_EMPHASIS: { id: 'pledge_emphasis', name: '주민 신뢰 강조', instruction: "'정책 방향을 분명히 제시합니다', '필요성을 강조합니다'처럼 공약성 표현 없이 책임감을 드러내어 진정성을 전달하세요." },
 };
 
 const VOCABULARY_MODULES = {
-  FORMAL_AND_REPORTING: { id: 'formal_and_reporting', name: '공식/보고 어휘', thematic_guidance: "의정활동을 주민들께 보고하는 공식적인 톤을 유지하세요. '보고드립니다', '~를 확보했습니다', '성과를 거두었습니다', '노력하겠습니다' 등 신뢰감 있고 격식 있는 표현을 사용해야 합니다." },
+  FORMAL_AND_REPORTING: { id: 'formal_and_reporting', name: '공식/보고 어휘', thematic_guidance: "의정활동을 주민들께 보고하는 공식적인 톤을 유지하세요. '보고드립니다', '~를 확보했습니다', '성과를 거두었습니다', '노력해 보겠습니다' 등 신뢰감 있고 격식 있는 표현을 사용해야 합니다." },
   RELIABLE_AND_COMPETENT: { id: 'reliable_and_competent', name: '신뢰/유능함 어휘', thematic_guidance: "성과, 해결, 추진, 확보, 성공, 개선, 결실, 마침내, 드디어, 이뤄냈습니다 등 유능함과 신뢰를 보여주는 긍정적이고 힘있는 어휘를 사용하여 '일 잘하는 정치인' 이미지를 부각하세요." },
   LOCAL_AND_COMMUNITY: { id: 'local_and_community', name: '지역/공동체 어휘', thematic_guidance: "우리 동네, 주민 여러분, 골목상권, 아이들의 미래 등 지역 공동체에 대한 애정과 소속감이 드러나는 따뜻하고 구체적인 단어를 사용하세요." },
-  RESOLUTE_AND_FIRM: { id: 'resolute_and_firm', name: '단호하고 확고한 어휘', thematic_guidance: "반드시, 원칙, 책임, 결단, 약속 등 흔들림 없는 의지와 신념을 보여주는 단호한 어휘를 사용하여 메시지에 대한 강한 신뢰감을 주어야 합니다." },
+  RESOLUTE_AND_FIRM: { id: 'resolute_and_firm', name: '단호하고 확고한 어휘', thematic_guidance: "반드시, 원칙, 책임, 결단, 의지 등 흔들림 없는 신념을 보여주는 단호한 어휘를 사용하여 메시지에 대한 강한 신뢰감을 주어야 합니다." },
 };
 
 function buildActivityReportPrompt(options) {

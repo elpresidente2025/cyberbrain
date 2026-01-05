@@ -21,7 +21,7 @@ const ANALYTICAL_STRUCTURES = {
 
 const EXPLANATORY_TACTICS = {
   FACTS_AND_FIGURES: { id: 'facts_and_figures', name: '데이터 및 수치 제시', instruction: "주장의 신뢰도를 높이기 위해, 예산 규모, 사업 기간, 통계 자료, 집행률 등 구체적인 숫자와 데이터를 적극적으로 활용하여 설명하세요." },
-  DETAILED_ENUMERATION: { id: 'detailed_enumeration', name: '구체적 항목 나열', instruction: "제시하는 공약이나 정책, 성과를 '첫째, 둘째...' 또는 글머리 기호를 사용하여 명확하게 구분하고 상세하게 나열하세요. 정보의 체계성을 높여 독자의 이해를 돕습니다." },
+  DETAILED_ENUMERATION: { id: 'detailed_enumeration', name: '구체적 항목 나열', instruction: "제시하는 정책 제안이나 성과를 '첫째, 둘째...' 또는 글머리 기호를 사용하여 명확하게 구분하고 상세하게 나열하세요. 정보의 체계성을 높여 독자의 이해를 돕습니다." },
   ROOT_CAUSE_ANALYSIS: { id: 'root_cause_analysis', name: '근본 원인 분석', instruction: "표면적인 현상 너머에 있는 구조적, 제도적, 정책적 문제 등 근본적인 원인을 깊이 있게 파고들어 분석의 깊이를 더하고, 문제 해결의 정당성을 확보하세요." },
   TRANSPARENCY_EMPHASIS: { id: 'transparency_emphasis', name: '투명성 강조', instruction: "분석에 사용된 데이터의 출처를 명확히 밝히거나, 활동 내역을 상세히 공개하여 의정활동의 투명성을 강조하고 독자의 신뢰를 얻으세요." },
 };
@@ -31,7 +31,7 @@ const VOCABULARY_MODULES = {
   LEGISLATIVE_AND_FORMAL: { id: 'legislative_and_formal', name: '입법/공식적 어휘', thematic_guidance: "보도자료나 공식 보고서의 톤을 유지하세요. '법안 발의 취지는', '기대효과는', '~할 것을 제안합니다' 등 격식 있고 신뢰감 있는 표현을 사용하여 전문성을 부각합니다." },
   LOCAL_AND_CONCRETE: { id: 'local_and_concrete', name: '지역 밀착형/구체적 어휘', thematic_guidance: "지역 주민들이 일상에서 접하는 구체적인 지명, 시설 이름, 도로명 등을 사용하여 분석이 피부에 와 닿도록 하세요. '주민 여러분의 숙원 사업인', '체감할 수 있는 변화' 등 현장감 있는 표현을 사용합니다." },
   PROBLEM_SOLVING_ORIENTED: { id: 'problem_solving_oriented', name: '문제 해결 지향 어휘', thematic_guidance: "문제점을 지적하는 데 그치지 않고, 해결을 위한 긍정적이고 적극적인 톤을 유지하세요. '개선 방안', '해결책', '지속 가능한 발전', '새로운 대안' 등 대안을 제시하는 표현을 사용합니다." },
-  COMMUNICATIVE_AND_FRIENDLY: { id: 'communicative_and_friendly', name: '소통/친화적 어휘', thematic_guidance: "SNS를 통해 소통하는 상황을 가정하여, 다소 부드럽고 친근한 어조를 사용하세요. '#핵심공약', '쉽게 설명해드림' 등 해시태그나 구어체 표현을 활용하여 대중과의 거리감을 좁힙니다." },
+  COMMUNICATIVE_AND_FRIENDLY: { id: 'communicative_and_friendly', name: '소통/친화적 어휘', thematic_guidance: "SNS를 통해 소통하는 상황을 가정하여, 다소 부드럽고 친근한 어조를 사용하세요. '#핵심정책', '쉽게 설명해드림' 등 해시태그나 구어체 표현을 활용하여 대중과의 거리감을 좁힙니다." },
 };
 
 function buildLocalIssuesPrompt(options) {
