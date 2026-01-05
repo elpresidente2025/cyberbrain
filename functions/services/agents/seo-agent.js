@@ -28,6 +28,60 @@ const META_LIMITS = {
   max: 160
 };
 
+function normalizeSpaces(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+function pickShortFallback(primaryKeyword, limit) {
+  const candidates = [];
+  if (primaryKeyword) {
+    candidates.push(`${primaryKeyword} 현황`);
+    candidates.push(`${primaryKeyword} 진단`);
+    candidates.push(primaryKeyword);
+  }
+  candidates.push('현황 진단');
+  candidates.push('현안 점검');
+
+  for (const candidate of candidates) {
+    if (candidate && candidate.length <= limit) return candidate;
+  }
+
+  const keywordTokens = primaryKeyword ? primaryKeyword.split(/\s+/).filter(Boolean) : [];
+  for (let i = keywordTokens.length; i > 0; i -= 1) {
+    const candidate = keywordTokens.slice(0, i).join(' ');
+    if (candidate.length <= limit) return candidate;
+  }
+
+  return '현황 진단';
+}
+
+function shrinkTitleByRules(title, { primaryKeyword, limit }) {
+  let normalized = normalizeSpaces(title);
+  if (normalized.length <= limit) return normalized;
+
+  normalized = normalized.replace(/[-–—|,]+$/g, '').trim();
+  if (normalized.length <= limit) return normalized;
+
+  const separatorRegex = /\s*[-–—|,]\s*/;
+  if (separatorRegex.test(normalized)) {
+    const parts = normalized.split(separatorRegex).map((part) => part.trim()).filter(Boolean);
+    if (parts.length > 0) {
+      const head = parts[0];
+      if (head.length <= limit) return head;
+      normalized = head;
+    }
+  }
+
+  const words = normalized.split(' ').filter(Boolean);
+  while (words.length > 1 && words.join(' ').length > limit) {
+    words.pop();
+  }
+  const compact = normalizeSpaces(words.join(' '));
+  if (compact.length <= limit) return compact;
+
+  return pickShortFallback(primaryKeyword, limit);
+}
+
 class SEOAgent extends BaseAgent {
   constructor() {
     super('SEOAgent');
@@ -155,7 +209,7 @@ class SEOAgent extends BaseAgent {
       title = existingTitle;
     } else if (primaryKeyword && cleanFirstLine.includes(primaryKeyword)) {
       // 이미 키워드가 포함된 경우
-      title = cleanFirstLine.substring(0, maxLength);
+      title = cleanFirstLine;
     } else if (primaryKeyword) {
       // 키워드 + 지역 조합
       if (region) {
@@ -164,10 +218,10 @@ class SEOAgent extends BaseAgent {
         title = `${primaryKeyword} ${cleanFirstLine}`;
       }
     } else {
-      title = cleanFirstLine.substring(0, maxLength);
+      title = cleanFirstLine;
     }
 
-    title = title.replace(/\s+/g, ' ').trim();
+    title = normalizeSpaces(title);
 
     if (primaryKeyword && !title.includes(primaryKeyword)) {
       title = `${primaryKeyword} ${title}`.trim();
@@ -178,8 +232,7 @@ class SEOAgent extends BaseAgent {
     }
 
     if (title.length > maxLength) {
-      const cutPoint = title.lastIndexOf(' ', maxLength);
-      title = title.substring(0, cutPoint > minLength ? cutPoint : maxLength).trim();
+      title = shrinkTitleByRules(title, { primaryKeyword, limit: maxLength });
     }
 
     return title;
