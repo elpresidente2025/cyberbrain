@@ -17,6 +17,7 @@ const { generateNonLawmakerWarning, generateFamilyStatusWarning } = require('./u
 
 // [신규] Guideline Grounding
 const { buildGroundedGuidelines } = require('../services/guidelines/grounding');
+const { generateCompactReminder } = require('../services/guidelines/reminder');
 
 // 작법별 프롬프트 빌더 모듈 import
 const { buildDailyCommunicationPrompt } = require('./templates/daily-communication');
@@ -81,23 +82,18 @@ async function buildSmartPrompt(options) {
       const searchTermList = userKeywords.map((kw, i) => `  ${i + 1}. "${kw}"`).join('\n');
       searchTermsCritical = `
 ╔═══════════════════════════════════════════════════════════════╗
-║  🔍 [CRITICAL] 노출 희망 검색어 - SEO 필수 삽입!               ║
+║  🔍 [CRITICAL] 노출 희망 검색어 - SEO 필수 삽입                ║
 ╚═══════════════════════════════════════════════════════════════╝
 
-사용자가 입력한 검색어 (네이버 검색 노출용):
+검색어:
 ${searchTermList}
 
-[삽입 규칙]
-✅ 각 검색어를 본문에 **최소 2회 이상** 자연스럽게 포함하세요.
-✅ 도입부(첫 문단)에 반드시 1회 포함하세요.
-✅ 검색어는 문맥에 녹여서 자연스럽게 사용하세요.
-
-❌ 절대 금지:
-- 검색어를 콤마로 나열 금지. 예: "부산, 대형병원, 순위에 대해" (X)
-- 한 문장에 여러 검색어 몰아넣기 금지.
-
-✅ 좋은 예: "부산 대형병원 순위가 해마다 하락하고 있습니다."
-❌ 나쁜 예: "부산, 대형병원, 순위에 대한 이야기입니다."
+[필수 규칙]
+✅ 각 검색어 최소 2회 포함
+✅ 도입부(첫 문단)에 1회 포함
+✅ 문맥에 자연스럽게 녹일 것
+❌ 검색어 나열 금지
+❌ 한 문장에 여러 검색어 몰아넣기 금지
 
 `;
     }
@@ -177,7 +173,7 @@ ${searchTermList}
 
     // 4. [Guideline Grounding] 상황에 맞는 지침 선택 및 배치
     const category = getWritingMethodFromCategory(options.category) || writingMethod;
-    const { prefix, suffix, reminder, stats } = buildGroundedGuidelines({
+    const { prefix, suffix, stats } = buildGroundedGuidelines({
       status,
       category,
       writingMethod,
@@ -218,7 +214,8 @@ ${searchTermList}
     const framedPrompt = applyFramingToPrompt(assembledPrompt, selectedFrame);
 
     // 7. [끝] 리마인더 (Recency Effect)
-    const finalPrompt = framedPrompt + reminder;
+    const compactReminder = generateCompactReminder([], status);
+    const finalPrompt = framedPrompt + '\n' + compactReminder;
 
     console.log('✅ buildSmartPrompt v4 완료:', {
       writingMethod,
@@ -288,28 +285,14 @@ function injectUniversalQualityRules(basePrompt) {
   const qualityRules = `
 
 ╔═══════════════════════════════════════════════════════════════╗
-║  ⛔ [치명적 오류 방지 가이드] - 위반 시 생성 실패로 간주됨  ⛔  ║
+║  ⛔ [치명적 오류 방지] 위반 시 생성 실패                       ║
 ╚═══════════════════════════════════════════════════════════════╝
 
-다음 4가지 오류는 절대 발생해서는 안 됩니다. 출력 전 반드시 스스로 검증하세요.
-
-1. **구조 오류 (Endless Loop Prohibition)**
-   - 마무리 인사("감사합니다", "사랑합니다" 등) 이후에 본문 내용이 다시 시작되면 안 됩니다.
-   - 글의 맺음말이 나오면 거기서 즉시 종료하세요.
-
-2. **문단 반복 (No Repetition)**
-   - 같은 내용, 같은 공약, 같은 비전 제시를 '표현만 바꾸어' 반복하는 것을 금지합니다.
-   - 1문단 1메시지 원칙: 새로운 문단은 반드시 새로운 정보를 담아야 합니다.
-
-3. **문장 완결성 (Completeness)**
-   - 문장이 중간에 끊기지 않도록 하세요.
-   - 모든 문장은 "~입니다", "~하겠습니다" 등으로 명확히 종결되어야 합니다.
-
-4. **어미 반복 (Ending Repetition)**
-   - 같은 문단에서 동일한 어미를 연속으로 반복하지 마세요.
-   - 합쇼체(합니다체)는 유지하되, 유사 표현으로 자연스럽게 분산하세요.
-
----
+[필수 체크]
+1) 마무리 인사 이후 본문 금지
+2) 같은 내용/문장 반복 금지 (1문단 1메시지)
+3) 문장 미완결 금지
+4) 합쇼체 유지, 동일 어미 연속 반복은 피하고 유사 표현으로 분산(권장)
 
 `;
 
@@ -386,20 +369,15 @@ async function buildSmartPromptLegacy(options) {
 
 function injectEditorialRules(basePrompt, options) {
   const seoSection = `
-[🎯 SEO 최적화 규칙 (editorial.js 적용)]
-- **필수 분량**: ${SEO_RULES.wordCount.min}~${SEO_RULES.wordCount.max}자 (목표: ${SEO_RULES.wordCount.target}자)`;
+[🎯 SEO 기본 규칙]
+- 분량: ${SEO_RULES.wordCount.min}~${SEO_RULES.wordCount.max}자 (목표: ${SEO_RULES.wordCount.target}자)`;
 
   const formatSection = `
-[📝 출력 형식 (editorial.js 적용)]
-- **출력 구조**: 제목(title), 본문(content)을 포함한 JSON 형식으로 출력
-- **HTML 가이드라인**: ${FORMAT_RULES.htmlGuidelines.structure.join(', ')}
-
-[🔍 품질 검증 필수사항]
-- 문장 완결성: 모든 문장이 완전한 구조를 갖추고 있는지 확인
-- 조사/어미 검증: "주민여하여", "주민소리에" 같은 조사 누락 절대 금지
-- 구체성 확보: 괄호 안 예시가 아닌 실제 구체적 내용으로 작성
-- 논리적 연결: 도입-전개-결론의 자연스러운 흐름 구성
-- 문체 일관성: 합쇼체(합니다체) 유지, 문단 내 어미 반복 금지, 유사 표현으로 분산`;
+[📝 출력 형식]
+- JSON 형식으로 제목(title)·본문(content) 출력
+- HTML 구조: ${FORMAT_RULES.htmlGuidelines.structure.join(', ')}
+- 문체: 합쇼체 유지, 같은 문단의 어미 반복은 피하고 유사 표현으로 분산하도록 권장
+- 조사 누락·문장 미완결 금지`;
 
   return basePrompt
     .replace(/(\[📊 SEO 최적화 규칙\])/g, seoSection)
