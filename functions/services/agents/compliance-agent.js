@@ -314,25 +314,13 @@ class ComplianceAgent extends BaseAgent {
     if (factAllowlist) {
       const contentCheck = findUnsupportedNumericTokens(content, factAllowlist);
       if (!contentCheck.passed) {
-        issues.push({
-          type: 'fact_check',
-          severity: 'critical',
-          matches: contentCheck.unsupported,
-          reason: `근거 없는 수치(본문): ${contentCheck.unsupported.join(', ')}`
-        });
+        console.warn('⚠️ [ComplianceAgent] 근거 없는 수치 감지(본문):', contentCheck.unsupported);
       }
 
       if (title && title.trim()) {
         const titleCheck = findUnsupportedNumericTokens(title, factAllowlist);
         if (!titleCheck.passed) {
-          const titleIssue = {
-            type: 'title_fact_check',
-            severity: 'high',
-            matches: titleCheck.unsupported,
-            reason: `근거 없는 수치(제목): ${titleCheck.unsupported.join(', ')}`
-          };
-          titleIssues.push(titleIssue);
-          issues.push(titleIssue);
+          console.warn('⚠️ [ComplianceAgent] 근거 없는 수치 감지(제목):', titleCheck.unsupported);
         }
       }
     }

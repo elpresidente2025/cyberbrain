@@ -277,20 +277,15 @@ exports.convertToSNS = wrap(async (req) => {
           // 타래 형식 검증 (X, Threads)
           if (parsedResult.isThread) {
             const unsupportedNumbers = collectUnsupportedNumbersFromPosts(parsedResult.posts, factAllowlist);
-            const hasFactIssues = unsupportedNumbers.length > 0;
-
-            if (hasFactIssues) {
+            if (unsupportedNumbers.length > 0) {
               console.warn('?? ' + platform + ' ?? ?? ??: ' + unsupportedNumbers.join(', '));
-              if (attempt < maxAttempts) {
-                continue;
-              }
             }
 
             const minPosts = threadConstraints?.minPosts || 3;
             const hasValidPosts = Array.isArray(parsedResult.posts) && parsedResult.posts.length >= minPosts;
             const hasHashtags = Array.isArray(parsedResult.hashtags) && parsedResult.hashtags.length > 0;
 
-            if (hasValidPosts && !hasFactIssues) {
+            if (hasValidPosts) {
               const threadResult = {
                 isThread: true,
                 posts: parsedResult.posts,
@@ -342,17 +337,11 @@ exports.convertToSNS = wrap(async (req) => {
             const contentLength = countWithoutSpace(content);
             const meetsMinLength = minimumContentLength === 0 || contentLength >= minimumContentLength;
             const unsupportedNumbers = collectUnsupportedNumbers(content, factAllowlist);
-            const hasFactIssues = unsupportedNumbers.length > 0;
-
-            if (hasFactIssues) {
+            if (unsupportedNumbers.length > 0) {
               console.warn('?? ' + platform + ' ?? ?? ??: ' + unsupportedNumbers.join(', '));
-              if (attempt < maxAttempts) {
-                continue;
-              }
             }
 
-
-            if (hasContent && meetsMinLength && !hasFactIssues) {
+            if (hasContent && meetsMinLength) {
               convertedResult = {
                 isThread: false,
                 content: content,

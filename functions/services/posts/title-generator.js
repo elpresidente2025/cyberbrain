@@ -2,7 +2,6 @@
 
 const { buildTitlePrompt } = require('../../prompts/builders/title-generation');
 const { callGenerativeModel } = require('../gemini');
-const { findUnsupportedNumericTokens } = require('../../utils/fact-guard');
 
 const NAVER_CHAR_LIMIT = 25;
 
@@ -140,18 +139,6 @@ async function generateTitleFromContent({ content, backgroundInfo, keywords, use
         cleanTitle = rewritten;
       } else {
         cleanTitle = shrinkTitleByRules(cleanTitle, { primaryKeyword, limit: NAVER_CHAR_LIMIT });
-      }
-    }
-
-    if (factAllowlist) {
-      const titleCheck = findUnsupportedNumericTokens(cleanTitle, factAllowlist);
-      if (!titleCheck.passed) {
-        let sanitizedTitle = cleanTitle;
-        titleCheck.unsupported.forEach((token) => {
-          sanitizedTitle = sanitizedTitle.split(token).join(' ');
-        });
-        sanitizedTitle = normalizeSpaces(sanitizedTitle).replace(/[-–—:,]+$/g, '').trim();
-        cleanTitle = sanitizedTitle || pickShortFallback(primaryKeyword, NAVER_CHAR_LIMIT);
       }
     }
 

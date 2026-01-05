@@ -103,6 +103,31 @@ function insertSlogan(content, slogan) {
   return content + '\n' + sloganHtml;
 }
 
+function escapeRegExp(text) {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function stripGeneratedSlogan(content, slogan) {
+  if (!content) return content;
+  const defaultMarkers = [
+    '부산의 준비된 신상품',
+    '부산경제는 이재성'
+  ];
+  const sloganLines = String(slogan || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const markers = [...new Set([...defaultMarkers, ...sloganLines])];
+  if (markers.length === 0) return content;
+
+  const escaped = markers.map(escapeRegExp).join('|');
+  const paragraphRegex = new RegExp(`<p[^>]*>[^<]*(?:${escaped})[^<]*<\\/p>\\s*`, 'gi');
+  let updated = content.replace(paragraphRegex, '');
+  const lineRegex = new RegExp(`(?:^|\\n)\\s*(?:${escaped})\\s*(?=\\n|$)`, 'gi');
+  updated = updated.replace(lineRegex, '\n');
+  return updated.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 const CONTENT_BLOCK_REGEX = /<p[^>]*>[\s\S]*?<\/p>|<ul[^>]*>[\s\S]*?<\/ul>|<ol[^>]*>[\s\S]*?<\/ol>/gi;
 
 function stripHtmlTags(text) {
@@ -1300,7 +1325,8 @@ exports.generatePosts = httpWrap(async (req) => {
     }
 
     if (generatedContent) {
-      const normalizedContent = ensureParagraphTags(generatedContent);
+      let normalizedContent = ensureParagraphTags(generatedContent);
+      normalizedContent = stripGeneratedSlogan(normalizedContent, slogan);
       const blocks = extractContentBlocks(normalizedContent);
       const introBlockCount = getIntroBlockCount(blocks, { fullName });
       let bodyHeadings = null;
@@ -1339,6 +1365,7 @@ exports.generatePosts = httpWrap(async (req) => {
       );
       generatedContent = moveSummaryToConclusionStart(generatedContent);
       generatedContent = cleanupPostContent(generatedContent);
+      generatedContent = stripGeneratedSlogan(generatedContent, slogan);
       if (sloganEnabled && slogan && slogan.trim()) {
         generatedContent = insertSlogan(generatedContent, slogan);
       }

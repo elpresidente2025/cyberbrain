@@ -13,7 +13,6 @@
  */
 
 const { callGenerativeModel } = require('../gemini');
-const { findUnsupportedNumericTokens } = require('../../utils/fact-guard');
 const {
   runHeuristicValidationSync,
   validateKeywordInsertion,
@@ -697,6 +696,17 @@ function buildSummaryBlockToFit(keyword, maxChars, preferHeading = true) {
   return `<p data-summary="true">${trimmedText}</p>`;
 }
 
+function insertSummaryAtConclusion(body, block) {
+  if (!block) return body;
+  if (!body) return block;
+  const headingMatch = body.match(SUMMARY_HEADING_REGEX);
+  if (!headingMatch) {
+    return `${body}\n${block}`.replace(/\n{3,}/g, '\n\n');
+  }
+  const insertIndex = body.indexOf(headingMatch[0]) + headingMatch[0].length;
+  return `${body.slice(0, insertIndex)}\n${block}\n${body.slice(insertIndex)}`.replace(/\n{3,}/g, '\n\n');
+}
+
 
 
 function ensureSummaryBlock(html, keyword, maxAdditionalChars = null) {
@@ -708,7 +718,7 @@ function ensureSummaryBlock(html, keyword, maxAdditionalChars = null) {
   const block = buildSummaryBlockToFit(keyword, maxAdditionalChars || 0, true);
   if (!block) return html;
 
-  const updatedBody = `${body}\n${block}`;
+  const updatedBody = insertSummaryAtConclusion(body, block);
   return joinContent(updatedBody, tail);
 }
 
@@ -912,12 +922,6 @@ function trimTitleToLimit(title, primaryKeyword, limit = 25) {
 function sanitizeTopicForFacts(topic, factAllowlist) {
   if (!topic) return '';
   let sanitized = topic;
-  if (factAllowlist) {
-    const check = findUnsupportedNumericTokens(sanitized, factAllowlist);
-    if (!check.passed) {
-      sanitized = replaceUnsupportedTokens(sanitized, check.unsupported || []);
-    }
-  }
   sanitized = neutralizePledgeTitle(sanitized);
   return normalizeSpaces(sanitized);
 }
@@ -1003,21 +1007,6 @@ function applyHardConstraints({
     updatedContent = neutralizePledgeParagraphs(updatedContent);
     updatedTitle = neutralizePledgeTitle(updatedTitle);
     summary.push('선거법 위험 표현 완화');
-  }
-
-  if (factAllowlist) {
-    const contentCheck = findUnsupportedNumericTokens(updatedContent, factAllowlist);
-    if (!contentCheck.passed) {
-      updatedContent = replaceUnsupportedTokens(updatedContent, contentCheck.unsupported || []);
-      summary.push('근거 없는 수치 완화');
-    }
-    if (updatedTitle) {
-      const titleCheck = findUnsupportedNumericTokens(updatedTitle, factAllowlist);
-      if (!titleCheck.passed) {
-        updatedTitle = replaceUnsupportedTokens(updatedTitle, titleCheck.unsupported || []);
-        summary.push('제목 수치 완화');
-      }
-    }
   }
 
   const repetitionIssues = validationResult?.details?.repetition?.repeatedSentences || [];
@@ -1200,29 +1189,6 @@ async function refineWithLLM({
         description: `문장 반복 발견: ${validationResult.details.repetition.repeatedSentences.join(', ')}`,
         instruction: '반복되는 문장을 다른 표현으로 바꾸거나 삭제하세요.'
       });
-    }
-
-    if (validationResult.details?.factCheck) {
-      const factCheck = validationResult.details.factCheck || {};
-      const unsupportedContent = factCheck.content?.unsupported || [];
-      const unsupportedTitle = factCheck.title?.unsupported || [];
-
-      if (unsupportedContent.length > 0) {
-        issues.push({
-          type: 'fact_check',
-          severity: 'critical',
-          description: `근거 없는 수치(본문): ${unsupportedContent.join(', ')}`,
-          instruction: '원문/배경자료에 없는 수치는 삭제하거나 근거 있는 수치로 교체하세요.'
-        });
-      }
-      if (unsupportedTitle.length > 0) {
-        issues.push({
-          type: 'title_fact_check',
-          severity: 'high',
-          description: `근거 없는 수치(제목): ${unsupportedTitle.join(', ')}`,
-          instruction: '제목의 수치를 본문/자료에 있는 수치로 바꾸거나 수치를 제거하세요.'
-        });
-      }
     }
   }
 

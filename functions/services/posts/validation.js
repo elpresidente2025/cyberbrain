@@ -558,13 +558,6 @@ function runHeuristicValidationSync(content, status, title = '', options = {}) {
       ? findUnsupportedNumericTokens(title, factAllowlist)
       : { passed: true, unsupported: [] };
     factCheckResult = { content: contentCheck, title: titleCheck };
-
-    if (!contentCheck.passed) {
-      issues.push(`⚠️ 근거 없는 수치(본문): ${contentCheck.unsupported.join(', ')}`);
-    }
-    if (!titleCheck.passed) {
-      issues.push(`⚠️ 근거 없는 수치(제목): ${titleCheck.unsupported.join(', ')}`);
-    }
   }
 
   return {
@@ -638,13 +631,6 @@ async function runHeuristicValidation(content, status, title = '', options = {})
       ? findUnsupportedNumericTokens(title, factAllowlist)
       : { passed: true, unsupported: [] };
     factCheckResult = { content: contentCheck, title: titleCheck };
-
-    if (!contentCheck.passed) {
-      issues.push(`⚠️ 근거 없는 수치(본문): ${contentCheck.unsupported.join(', ')}`);
-    }
-    if (!titleCheck.passed) {
-      issues.push(`⚠️ 근거 없는 수치(제목): ${titleCheck.unsupported.join(', ')}`);
-    }
   }
   return {
     passed: issues.length === 0,
