@@ -168,7 +168,7 @@ export default function ProfilePage() {
     {
       id: 'entry_initial',
       type: 'self_introduction',
-      title: '자기소개',
+      title: '자기소개 및 출마선언문',
       content: '',
       tags: [],
       weight: 1.0
@@ -236,7 +236,7 @@ export default function ProfilePage() {
             {
               id: 'entry_initial',
               type: 'self_introduction',
-              title: '자기소개',
+              title: '자기소개 및 출마선언문',
               content: newProfile.bio.trim(),
               tags: [],
               weight: 1.0
@@ -255,7 +255,7 @@ export default function ProfilePage() {
             {
               id: 'entry_initial',
               type: 'self_introduction',
-              title: '자기소개',
+              title: '자기소개 및 출마선언문',
               content: '',
               tags: [],
               weight: 1.0
@@ -536,7 +536,7 @@ export default function ProfilePage() {
   // Bio 엔트리 삭제
   const removeBioEntry = (index) => {
     if (index === 0) {
-      setError('자기소개는 삭제할 수 없습니다.');
+      setError('자기소개 및 출마선언문은 삭제할 수 없습니다.');
       return;
     }
     
@@ -547,11 +547,11 @@ export default function ProfilePage() {
   const validate = () => {
     const bioTrim = (profile.bio || '').trim();
     if (!bioTrim) {
-      setError('자기소개는 필수입니다. 간단히라도 본인을 설명해 주세요.');
+      setError('자기소개 및 출마선언문은 필수입니다. 간단히라도 본인을 설명해 주세요.');
       return false;
     }
     if (bioTrim.length < 10) {
-      setError('자기소개가 너무 짧습니다. 최소 10자 이상 입력해 주세요. (권장: 100~300자)');
+      setError('자기소개 및 출마선언문이 너무 짧습니다. 최소 10자 이상 입력해 주세요. (권장: 100~300자)');
       return false;
     }
 
@@ -669,7 +669,7 @@ export default function ProfilePage() {
     // bio 최소 길이 체크
     const bioTrim = (profile.bio || '').trim();
     if (bioTrim.length > 0 && bioTrim.length < 10) {
-      setError('자기소개가 너무 짧습니다. 최소 10자 이상 입력해 주세요.');
+      setError('자기소개 및 출마선언문이 너무 짧습니다. 최소 10자 이상 입력해 주세요.');
       return;
     }
 
@@ -1295,22 +1295,22 @@ export default function ProfilePage() {
             }}>
               <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', mb: `${spacing.md}px` }}>
                 <AutoAwesome sx={{ mr: `${spacing.xs}px`, color: 'colors.brand.primary' }} />
-                자기소개 및 추가 정보
+                자기소개 및 출마선언문 · 추가 정보
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.lg}px` }}>
                 다양한 유형의 정보를 추가하여 더 정확한 개인화 원고를 생성하세요.
               </Typography>
 
-              {/* 1. 자기소개 섹션 */}
+              {/* 1. 자기소개/출마선언문 섹션 */}
               <Box sx={{ mb: `${spacing.xl}px` }} data-bio-section="personal">
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.md}px` }}>
                   <Typography variant="h6" sx={{
                     color: theme.palette.mode === 'dark' ? '#81d4fa' : 'colors.brand.primaryHover',
                     fontWeight: 600
                   }}>
-                    👤 자기소개
+                    👤 자기소개 및 출마선언문
                   </Typography>
-                  <Tooltip title="자기소개 항목 추가">
+                  <Tooltip title="자기소개 및 출마선언문 항목 추가">
                     <IconButton 
                       size="small" 
                       onClick={() => addBioEntry('PERSONAL')}
@@ -1355,7 +1355,7 @@ export default function ProfilePage() {
                               fullWidth
                               multiline
                               rows={isRequired ? 4 : 5}
-                              label={isRequired ? '자기소개 *필수' : '내용'}
+                              label={isRequired ? '자기소개 및 출마선언문 *필수' : '내용'}
                               value={entry.content}
                               onChange={(e) => handleBioEntryChange(index, 'content', e.target.value)}
                               disabled={saving}

@@ -10,6 +10,7 @@ const DIAGNOSTIC_TAIL_MARKERS = [
   '추가 확인 필요 사항',
   '추가 확인 필요',
   '추가 확인',
+  '추신',
   '진단 요약'
 ];
 
@@ -442,7 +443,7 @@ function trimTrailingDiagnostics(content, options = {}) {
   if (!content) return content;
   const allowDiagnosticTail = options.allowDiagnosticTail === true;
   const signatureIndex = findLastIndexOfAny(content, SIGNATURE_MARKERS);
-  if (signatureIndex !== -1 && signatureIndex > content.length * 0.5) {
+  if (signatureIndex !== -1) {
     const tail = content.slice(signatureIndex);
     const closeTagMatch = tail.match(/<\/p>|<\/div>|<\/section>|<\/article>/i);
     let cutIndex = signatureIndex;
@@ -475,9 +476,7 @@ function trimAfterClosing(content) {
     lastMatch = match;
   }
   if (lastMatch && typeof lastMatch.index === 'number') {
-    if (lastMatch.index >= content.length * 0.5) {
-      return content.slice(0, lastMatch.index + lastMatch[0].length).trim();
-    }
+    return content.slice(0, lastMatch.index + lastMatch[0].length).trim();
   }
 
   let lastIndex = -1;
@@ -490,7 +489,7 @@ function trimAfterClosing(content) {
     }
   });
 
-  if (lastIndex !== -1 && lastIndex >= content.length * 0.5) {
+  if (lastIndex !== -1) {
     const endIndex = lastIndex + lastMarker.length;
     const lineEnd = content.indexOf('\n', endIndex);
     const cutIndex = lineEnd === -1 ? endIndex : lineEnd;

@@ -53,51 +53,6 @@ const PLEDGE_REPLACEMENTS = [
   { pattern: /하겠(?:습니다)?/g, replacement: '할 필요가 있습니다' }
 ];
 
-const NEUTRAL_PARAGRAPHS = [
-  '현안의 구조적 원인을 객관적인 지표와 맥락에서 점검할 필요가 있습니다.',
-  '정책·산업·인구 흐름을 함께 보며 원인과 결과를 분리해 살펴봐야 합니다.',
-  '지역별·산업별 차이를 나눠 분석하면 문제의 초점이 선명해집니다.',
-  '단기 현상인지 구조적 변화인지 구분하는 진단이 필요합니다.',
-  '행정 데이터와 현장 체감의 간극을 확인하는 과정이 중요합니다.',
-  '현안의 범위와 영향을 정리하면 대응 논의가 구체화됩니다.',
-  '유사 사례와 비교해 현재 위치를 파악하는 작업이 필요합니다.',
-  '추세와 변곡점을 구분해 향후 논의의 방향을 정리해야 합니다.',
-  '핵심 쟁점을 정리하고 사실관계를 확인하는 과정이 선행되어야 합니다.',
-  '지표 해석의 기준을 세워 논의 근거를 분명히 할 필요가 있습니다.',
-  '정책 요인과 시장 요인을 분리해 진단하는 접근이 필요합니다.',
-  '현장의 목소리와 공식 지표를 함께 검토하는 절차가 중요합니다.',
-  '분석 결과를 바탕으로 후속 과제를 정리하는 흐름이 필요합니다.'
-];
-
-const CONTEXTUAL_ASPECTS = [
-  '산업 구조',
-  '인구 흐름',
-  '재정 여건',
-  '정책 환경',
-  '지역 격차',
-  '현장 체감'
-];
-
-const CONTEXTUAL_TEMPLATES = [
-  '{topic}의 배경을 {aspect} 관점에서 정리할 필요가 있습니다.',
-  '{topic} 관련 지표는 {aspect} 변화와 함께 해석해야 합니다.',
-  '{topic} 이슈를 {aspect} 흐름과 연결해 살펴볼 필요가 있습니다.',
-  '{topic}에 대한 논의는 {aspect} 점검과 병행되어야 합니다.'
-];
-
-const KEYWORD_SENTENCES = [
-  '{kw} 현황은 지표와 체감 사이의 간극을 함께 살펴볼 필요가 있습니다.',
-  '{kw} 이슈는 지역 여건과 맞물려 구조적 배경을 점검해야 합니다.',
-  '{kw} 관련 흐름을 산업·인구 변화와 연결해 해석할 필요가 있습니다.',
-  '{kw}에 대한 논의는 원인과 결과를 분리해 진단하는 과정이 중요합니다.',
-  '{kw} 문제는 단기 현상인지 구조적 변화인지 구분해 볼 필요가 있습니다.',
-  '{kw} 관련 지표는 시기별 추세와 비교해 해석하는 것이 중요합니다.',
-  '{kw}에 대한 시민 체감과 공식 지표의 차이를 확인해야 합니다.',
-  '{kw} 이슈를 둘러싼 핵심 쟁점을 정리해 사실관계를 점검해야 합니다.',
-  '{kw} 관련 정책 논의는 효과와 한계를 동시에 점검할 필요가 있습니다.',
-  '{kw}의 배경을 여러 지표와 현장 의견으로 함께 확인하는 과정이 필요합니다.'
-];
-
 const KEYWORD_REPLACEMENTS = [
   '관련 현안',
   '지역 현안',
@@ -144,17 +99,6 @@ const SIGNATURE_REGEXES = [
   /드림/
 ];
 
-const SUMMARY_INTROS = [
-  '정리하면 다음과 같습니다.',
-  '요약하면 다음과 같습니다.',
-  '핵심을 정리하면 다음과 같습니다.',
-  '결론적으로 다음을 확인할 수 있습니다.'
-];
-const SUMMARY_LINES = [
-  '첫째, {topic}의 현재 상황을 데이터와 체감으로 차분히 점검할 필요가 있습니다.',
-  '둘째, 원인과 구조를 분리해 진단의 초점을 분명히 하는 과정이 중요합니다.',
-  '셋째, 지역 여건에 맞는 개선 과제를 정리해 다음 논의로 이어가는 것이 필요합니다.'
-];
 const SUMMARY_HEADING_REGEX = /<h[23][^>]*>[^<]*(요약|정리|결론)[^<]*<\/h[23]>/i;
 const SUMMARY_TEXT_REGEX = /(정리하면|요약하면|결론적으로|핵심을 정리하면)/;
 
@@ -276,26 +220,20 @@ function replaceOccurrencesAfterLimit(html, keyword, limit, replacement) {
 }
 
 function buildKeywordTemplateRegexes(keyword) {
-  if (!keyword) return [];
-  const escapedKeyword = escapeRegExp(keyword);
-  const templates = [...KEYWORD_SENTENCES, ...CONTEXTUAL_TEMPLATES];
-  return templates.map((template) => {
-    let pattern = escapeRegExp(template);
-    pattern = pattern.replace(/\\\{kw\\\}/g, escapedKeyword);
-    pattern = pattern.replace(/\\\{topic\\\}/g, escapedKeyword);
-    pattern = pattern.replace(/\\\{aspect\\\}/g, '.+?');
-    return new RegExp(pattern, 'i');
-  });
+  return [];
 }
 
 function reduceKeywordOccurrences(html, keyword, maxCount) {
   if (!keyword || maxCount < 0) return html;
+  const templateRegexes = buildKeywordTemplateRegexes(keyword);
+  if (templateRegexes.length === 0) {
+    return replaceKeywordBeyondLimit(html, keyword, maxCount);
+  }
   const { body, tail } = splitContentBySignature(html || '');
   let updatedBody = body || '';
   let currentCount = countOccurrences(updatedBody, keyword);
   if (currentCount <= maxCount) return html;
 
-  const templateRegexes = buildKeywordTemplateRegexes(keyword);
   const paragraphs = updatedBody.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
   const updatedParagraphs = [];
 
@@ -447,7 +385,6 @@ function softenPledgeSentence(sentence) {
 
 
 function neutralizePledgeParagraphs(html) {
-  let index = 0;
   return html.replace(/<p[^>]*>[\s\S]*?<\/p>/gi, (match) => {
     const text = match.replace(/<[^>]*>/g, '').trim();
     if (!text) return match;
@@ -460,17 +397,19 @@ function neutralizePledgeParagraphs(html) {
           changed = true;
           return softened;
         }
-        const replacement = getNeutralSentenceForIndex(html, index);
-        index += 1;
         changed = true;
-        return replacement;
+        return '';
       }
       return sentence;
     });
     if (!changed) {
       return match;
     }
-    return `<p>${normalizeSpaces(updated.join(' '))}</p>`;
+    const filtered = updated.filter(Boolean);
+    if (filtered.length === 0) {
+      return '';
+    }
+    return `<p>${normalizeSpaces(filtered.join(' '))}</p>`;
   });
 }
 
@@ -493,13 +432,20 @@ function ensureParagraphCount(html, minCount, maxCount, keyword = '') {
   let updated = body;
 
   if (totalCount < minCount) {
-    const needed = minCount - totalCount;
-    let additions = '';
-    for (let i = 0; i < needed; i += 1) {
-      const replacement = getNeutralParagraphForIndex(updated, i, keyword);
-      additions += `<p>${replacement}</p>\n`;
+    const updatedParagraphs = [...bodyParagraphs];
+    let count = totalCount;
+    for (let i = 0; i < updatedParagraphs.length && count < minCount; i += 1) {
+      const text = stripHtml(updatedParagraphs[i]).trim();
+      const sentences = splitIntoSentences(text);
+      if (sentences.length < 2) continue;
+      const mid = Math.ceil(sentences.length / 2);
+      const first = normalizeSpaces(sentences.slice(0, mid).join(' '));
+      const second = normalizeSpaces(sentences.slice(mid).join(' '));
+      if (!first || !second) continue;
+      updatedParagraphs.splice(i, 1, `<p>${first}</p>`, `<p>${second}</p>`);
+      count += 1;
     }
-    updated = `${updated}\n${additions}`;
+    updated = updatedParagraphs.join('\n');
   } else if (totalCount > maxCount) {
     const removeCount = totalCount - maxCount;
     for (let i = 0; i < removeCount; i += 1) {
@@ -519,31 +465,8 @@ function ensureLength(html, minLength, maxLength, keyword = '') {
   let currentLength = stripHtml(updated).replace(/\s/g, '').length;
   const maxTarget = maxLength || Math.round(minLength * 1.1);
 
-  let guard = 0;
-  while (currentLength < minLength && guard < 20) {
-    const deficit = minLength - currentLength;
-    const { body, tail } = splitContentBySignature(updated);
-    const paragraphCount = (body.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || []).length;
-    const baseFiller = getNeutralParagraphForIndex(body, guard, keyword);
-    const available = Math.max(0, maxTarget - currentLength);
-    let filler = baseFiller;
-    const baseLength = baseFiller.replace(/\s/g, '').length;
-
-    if (available > 0 && baseLength > available) {
-      filler = trimTextToLength(baseFiller, Math.min(deficit, available));
-    }
-    if (!filler) {
-      break;
-    }
-    if (paragraphCount >= 10) {
-      const updatedBody = appendNeutralSentence(body, filler);
-      updated = joinContent(updatedBody, tail);
-    } else {
-      const updatedBody = `${body}\n<p>${filler}</p>`;
-      updated = joinContent(updatedBody, tail);
-    }
-    currentLength = stripHtml(updated).replace(/\s/g, '').length;
-    guard += 1;
+  if (currentLength < minLength) {
+    return html;
   }
 
   if (currentLength > maxTarget) {
@@ -561,62 +484,91 @@ function ensureLength(html, minLength, maxLength, keyword = '') {
   return updated;
 }
 
-function appendKeywordSentences(html, keyword, countNeeded) {
-  if (!keyword || countNeeded <= 0) return html;
+function injectKeywordByReplacement(html, keyword) {
+  if (!keyword) return html;
   const { body, tail } = splitContentBySignature(html || '');
   let updated = body || '';
-  const sentences = [];
-  for (let i = 0; i < countNeeded; i += 1) {
-    const template = KEYWORD_SENTENCES[i % KEYWORD_SENTENCES.length];
-    sentences.push(template.replace('{kw}', keyword));
+  for (const fallback of KEYWORD_REPLACEMENTS) {
+    if (updated.includes(fallback)) {
+      updated = updated.replace(fallback, keyword);
+      return joinContent(updated, tail);
+    }
   }
-  const addition = sentences.join(' ');
+  return html;
+}
+
+function appendKeywordInline(html, keyword) {
+  if (!keyword) return html;
+  const { body, tail } = splitContentBySignature(html || '');
+  let updated = body || '';
   const lastParagraphMatch = updated.match(/<p[^>]*>[\s\S]*?<\/p>(?![\s\S]*<p)/i);
+  const phrase = `${keyword}`;
   if (lastParagraphMatch) {
-    const replacement = lastParagraphMatch[0].replace(/<\/p>\s*$/i, ` ${addition}</p>`);
+    const replacement = lastParagraphMatch[0].replace(/<\/p>\s*$/i, ` (${phrase})</p>`);
     updated = updated.replace(lastParagraphMatch[0], replacement);
   } else {
-    updated += `\n<p>${addition}</p>`;
+    updated += `\n<p>${phrase}</p>`;
   }
   return joinContent(updated, tail);
 }
 
-function appendNeutralSentence(html, sentence) {
-  if (!sentence) return html;
-  const { body, tail } = splitContentBySignature(html || '');
-  const base = body || '';
-  const lastParagraphMatch = base.match(/<p[^>]*>[\s\S]*?<\/p>(?![\s\S]*<p)/i);
-  if (lastParagraphMatch) {
-    const replacement = lastParagraphMatch[0].replace(/<\/p>\s*$/i, ` ${sentence}</p>`);
-    const updated = base.replace(lastParagraphMatch[0], replacement);
-    return joinContent(updated, tail);
+function countKeywordCoverage(html, keyword) {
+  if (!keyword) return 0;
+  const variants = buildKeywordVariants(keyword);
+  const keywords = [keyword, ...variants];
+  return keywords.reduce((sum, kw) => sum + countOccurrences(html, kw), 0);
+}
+
+function appendKeywordSentences(html, keyword, countNeeded) {
+  if (!keyword || countNeeded <= 0) return html;
+  let updated = html;
+  const variants = [keyword, ...buildKeywordVariants(keyword)];
+  let index = 0;
+  for (let i = 0; i < countNeeded; i += 1) {
+    const candidate = variants[index % variants.length] || keyword;
+    const replaced = injectKeywordByReplacement(updated, candidate);
+    if (replaced !== updated) {
+      updated = replaced;
+    } else {
+      updated = appendKeywordInline(updated, candidate);
+    }
+    index += 1;
   }
-  return joinContent(`${base}\n<p>${sentence}</p>`, tail);
+  return updated;
 }
 
-
-function getSummaryIntro() {
-  return SUMMARY_INTROS[0];
+function isGreetingText(text) {
+  if (!text) return false;
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return false;
+  return /^(존경하는|사랑하는|안녕하세요|안녕하십니까)/.test(normalized)
+    || normalized.includes('시민 여러분')
+    || normalized.includes('주민 여러분');
 }
 
-function buildContextualParagraph(keyword, index) {
-  const topic = normalizeSpaces(keyword || '이 사안');
-  const aspect = CONTEXTUAL_ASPECTS[index % CONTEXTUAL_ASPECTS.length];
-  const template = CONTEXTUAL_TEMPLATES[index % CONTEXTUAL_TEMPLATES.length];
-  return template.replace('{topic}', topic).replace('{aspect}', aspect);
+function extractSummaryCandidates(body) {
+  const paragraphs = body.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
+  const candidates = [];
+  paragraphs.forEach((paragraph) => {
+    const text = stripHtml(paragraph).trim();
+    if (!text || isGreetingText(text)) return;
+    const sentences = splitIntoSentences(text);
+    if (sentences.length === 0) return;
+    const sentence = sentences[0];
+    if (!candidates.includes(sentence)) {
+      candidates.push(sentence);
+    }
+  });
+  return candidates;
 }
 
-function getNeutralParagraphForIndex(html, index, keyword = '') {
-  const plain = stripHtml(html);
-  const unused = NEUTRAL_PARAGRAPHS.filter((line) => !plain.includes(line));
-  if (unused.length > 0) {
-    return unused[index % unused.length];
-  }
-  return buildContextualParagraph(keyword, index);
-}
-
-function getNeutralSentenceForIndex(html, index, keyword = '') {
-  return getNeutralParagraphForIndex(html, index, keyword);
+function buildSummaryBlockFromBody(body, maxChars) {
+  const candidates = extractSummaryCandidates(body).slice(0, 3);
+  if (candidates.length === 0) return '';
+  const merged = normalizeSpaces(candidates.join(' '));
+  const trimmed = maxChars ? trimTextToLength(merged, maxChars) : merged;
+  if (!trimmed) return '';
+  return `<p data-summary="true">${trimmed}</p>`;
 }
 
 function splitIntoSentences(text) {
@@ -653,47 +605,10 @@ function hasSummarySignal(html) {
   return SUMMARY_HEADING_REGEX.test(html) || SUMMARY_TEXT_REGEX.test(plain);
 }
 
-function buildSummaryLines(keyword) {
-  const topic = normalizeSpaces(keyword || '이 사안');
-  return SUMMARY_LINES.map((line) => line.replace('{topic}', topic));
-}
-
-function buildSummaryText(keyword) {
-  const lines = buildSummaryLines(keyword);
-  return normalizeSpaces(`${getSummaryIntro()} ${lines.join(' ')}`);
-}
-
-function buildSummaryBlock(keyword, mode = 'full') {
-  const lines = buildSummaryLines(keyword);
-  const intro = getSummaryIntro();
-  if (mode === 'single') {
-    return [
-      `<p data-summary="true">${buildSummaryText(keyword)}</p>`
-    ].join('\n');
-  }
-  if (mode === 'compact') {
-    return [
-      `<p data-summary="true">${intro}</p>`,
-      `<p data-summary="true">${lines.join(' ')}</p>`
-    ].join('\n');
-  }
-  return [
-    `<p data-summary="true">${intro}</p>`,
-    ...lines.map((line) => `<p data-summary="true">${line}</p>`)
-  ].join('\n');
-}
-
-
-function buildSummaryBlockToFit(keyword, maxChars, preferHeading = true) {
+function buildSummaryBlockToFit(body, maxChars) {
+  if (!body) return '';
   if (!maxChars || maxChars <= 0) return '';
-  const available = maxChars;
-  if (available <= 0) return '';
-
-  const baseText = buildSummaryText(keyword);
-  const trimmedText = trimTextToLength(baseText, available);
-  if (!trimmedText) return '';
-
-  return `<p data-summary="true">${trimmedText}</p>`;
+  return buildSummaryBlockFromBody(body, maxChars);
 }
 
 function insertSummaryAtConclusion(body, block) {
@@ -709,13 +624,13 @@ function insertSummaryAtConclusion(body, block) {
 
 
 
-function ensureSummaryBlock(html, keyword, maxAdditionalChars = null) {
+function ensureSummaryBlock(html, _keyword, maxAdditionalChars = null) {
   if (!html) return html;
   if (hasSummarySignal(html)) return html;
   if (maxAdditionalChars !== null && maxAdditionalChars <= 0) return html;
 
   const { body, tail } = splitContentBySignature(html);
-  const block = buildSummaryBlockToFit(keyword, maxAdditionalChars || 0, true);
+  const block = buildSummaryBlockToFit(body, maxAdditionalChars || 0);
   if (!block) return html;
 
   const updatedBody = insertSummaryAtConclusion(body, block);
@@ -938,14 +853,11 @@ function buildCompliantDraft({
   const titleKeywords = userKeywords.length > 0 ? userKeywords : seoKeywords;
   const title = buildSafeTitle(seedTitle, titleKeywords);
 
-  const intro = `${safeTopic}에 대한 현황과 구조를 점검합니다.`;
   const paragraphs = [
-    intro,
-    NEUTRAL_PARAGRAPHS[0],
-    NEUTRAL_PARAGRAPHS[1],
-    NEUTRAL_PARAGRAPHS[2],
-    NEUTRAL_PARAGRAPHS[3],
-    NEUTRAL_PARAGRAPHS[4]
+    `${safeTopic}에 대한 현황과 구조를 점검합니다.`,
+    `${safeTopic}의 배경과 최근 흐름을 객관적으로 살펴봅니다.`,
+    '핵심 지표와 사실관계를 중심으로 현안을 정리합니다.',
+    '영향과 과제를 구분해 추가로 확인할 지점을 정리합니다.'
   ];
 
   let content = [
@@ -954,10 +866,8 @@ function buildCompliantDraft({
     `<p>${paragraphs[1]}</p>`,
     '<h2>핵심 진단</h2>',
     `<p>${paragraphs[2]}</p>`,
-    `<p>${paragraphs[3]}</p>`,
     '<h2>영향과 확인 과제</h2>',
-    `<p>${paragraphs[4]}</p>`,
-    `<p>${paragraphs[5]}</p>`
+    `<p>${paragraphs[3]}</p>`
   ].join('\n');
 
   const validationResult = {
@@ -1097,7 +1007,7 @@ function applyHardConstraints({
   const userKeywordSet = new Set(userKeywords);
 
   uniqueKeywords.forEach((keyword) => {
-    const currentCount = countOccurrences(updatedContent, keyword);
+    const currentCount = countKeywordCoverage(updatedContent, keyword);
     const isUserKeyword = userKeywordSet.has(keyword);
     const ensureOnce = isUserKeyword || (!userKeywords.length && keyword === primaryKeyword);
 
@@ -1106,8 +1016,8 @@ function applyHardConstraints({
       summary.push(`키워드 보강: ${keyword}`);
     }
 
-    const adjustedCount = countOccurrences(updatedContent, keyword);
-    if (isUserKeyword && adjustedCount > userMaxCount) {
+    const adjustedExactCount = countOccurrences(updatedContent, keyword);
+    if (isUserKeyword && adjustedExactCount > userMaxCount) {
       const reduced = reduceKeywordOccurrences(updatedContent, keyword, userMaxCount);
       updatedContent = reduced;
       const reducedCount = countOccurrences(updatedContent, keyword);
@@ -1197,11 +1107,11 @@ async function refineWithLLM({
     const keywordEntries = Object.entries(keywordResult.details?.keywords || {})
       .filter(([_, info]) => info.type === 'user');
     const missingKeywords = keywordEntries
-      .filter(([_, info]) => info.count < info.expected)
-      .map(([keyword, info]) => `"${keyword}" (현재 ${info.count}회, 최소 ${info.expected}회 필요)`);
+      .filter(([_, info]) => (info.coverage ?? info.count) < info.expected)
+      .map(([keyword, info]) => `"${keyword}" (현재 ${info.coverage ?? info.count}회, 최소 ${info.expected}회 필요)`);
     const overusedKeywords = keywordEntries
-      .filter(([_, info]) => typeof info.max === 'number' && info.count > info.max)
-      .map(([keyword, info]) => `"${keyword}" (현재 ${info.count}회, 최대 ${info.max}회 허용)`);
+      .filter(([_, info]) => typeof info.max === 'number' && (info.exactCount ?? info.count) > info.max)
+      .map(([keyword, info]) => `"${keyword}" (현재 ${info.exactCount ?? info.count}회, 최대 ${info.max}회 허용)`);
 
     if (missingKeywords.length > 0) {
       issues.push({

@@ -660,6 +660,30 @@ function countKeywordOccurrences(content, keyword) {
   return matches ? matches.length : 0;
 }
 
+function buildKeywordVariants(keyword) {
+  const trimmed = String(keyword || '').trim();
+  if (!trimmed) return [];
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  const variants = [];
+
+  if (parts.length >= 2) {
+    const first = parts[0];
+    const rest = parts.slice(1).join(' ');
+    variants.push(`${first}의 ${rest}`);
+    variants.push(`${rest} ${first}`);
+  }
+
+  return [...new Set(variants)]
+    .filter((variant) => variant && variant !== trimmed);
+}
+
+function countKeywordCoverage(content, keyword) {
+  if (!keyword) return 0;
+  const variants = buildKeywordVariants(keyword);
+  const keywords = [keyword, ...variants];
+  return keywords.reduce((sum, kw) => sum + countKeywordOccurrences(content, kw), 0);
+}
+
 function buildFallbackDraft({ topic, fullName, userKeywords = [] }) {
   const safeTopic = (topic || '현안').trim();
   const safeName = (fullName || '').trim();
@@ -710,12 +734,15 @@ function validateKeywordInsertion(content, userKeywords = [], autoKeywords = [],
 
   // 1. 사용자 입력 키워드 검증 (상한 엄격)
   for (const keyword of userKeywords) {
-    const count = countKeywordOccurrences(content, keyword);
-    totalOccurrences += count;
-    const isValid = count >= userMinCount && count <= userMaxCount;
+    const exactCount = countKeywordOccurrences(content, keyword);
+    const coverageCount = countKeywordCoverage(content, keyword);
+    totalOccurrences += coverageCount;
+    const isValid = coverageCount >= userMinCount && exactCount <= userMaxCount;
 
     results[keyword] = {
-      count,
+      count: coverageCount,
+      exactCount,
+      coverage: coverageCount,
       expected: userMinCount,
       max: userMaxCount,
       valid: isValid,
@@ -729,12 +756,15 @@ function validateKeywordInsertion(content, userKeywords = [], autoKeywords = [],
 
   // 2. 자동 추출 키워드 검증 (완화)
   for (const keyword of autoKeywords) {
-    const count = countKeywordOccurrences(content, keyword);
-    totalOccurrences += count;
-    const isValid = count >= autoMinCount;
+    const exactCount = countKeywordOccurrences(content, keyword);
+    const coverageCount = countKeywordCoverage(content, keyword);
+    totalOccurrences += coverageCount;
+    const isValid = coverageCount >= autoMinCount;
 
     results[keyword] = {
-      count,
+      count: coverageCount,
+      exactCount,
+      coverage: coverageCount,
       expected: autoMinCount,
       valid: isValid,
       type: 'auto'
@@ -744,7 +774,7 @@ function validateKeywordInsertion(content, userKeywords = [], autoKeywords = [],
   // 키워드 밀도 계산 (참고용)
   const allKeywords = [...userKeywords, ...autoKeywords];
   const totalKeywordChars = allKeywords.reduce((sum, kw) => {
-    const occurrences = countKeywordOccurrences(content, kw);
+    const occurrences = countKeywordCoverage(content, kw);
     return sum + (kw.replace(/\s/g, '').length * occurrences);
   }, 0);
   const density = actualWordCount > 0 ? (totalKeywordChars / actualWordCount * 100) : 0;

@@ -9,8 +9,8 @@
 export const BIO_ENTRY_TYPES = {
   SELF_INTRODUCTION: {
     id: 'self_introduction',
-    name: '자기소개',
-    description: '개인 철학, 가치관, 정치적 신념 등',
+    name: '자기소개 및 출마선언문',
+    description: '개인 철학, 가치관, 정치적 신념, 출마 의지 등',
     icon: 'person',
     color: '#152484',
     maxLength: 3000,
@@ -103,8 +103,8 @@ export const BIO_TYPE_ORDER = [
  */
 export const BIO_CATEGORIES = {
   PERSONAL: {
-    name: '자기소개',
-    description: '자기소개, 비전, 경험, 참고자료',
+    name: '자기소개 및 출마선언문',
+    description: '자기소개 및 출마선언문, 비전, 경험, 참고자료',
     types: [
       BIO_ENTRY_TYPES.SELF_INTRODUCTION,
       BIO_ENTRY_TYPES.VISION,
