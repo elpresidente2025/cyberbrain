@@ -285,15 +285,19 @@ function toQuestionHeading(text) {
   if (isConclusionHeadingText(cleaned)) return cleaned;
   if (cleaned.endsWith('?')) return cleaned;
 
-  if (/현안|이슈|사안/.test(cleaned)) return '현안은 무엇인가?';
-  if (/핵심|쟁점/.test(cleaned)) return '핵심 쟁점은 무엇인가?';
-  if (/영향|과제/.test(cleaned)) return '영향과 과제는 무엇인가?';
-  if (/진단/.test(cleaned)) return '핵심 진단은 무엇인가?';
-  if (/배경/.test(cleaned)) return '배경은 무엇인가?';
-  if (/방향|전략/.test(cleaned)) return '핵심 방향은 무엇인가?';
-  if (/효과|기대/.test(cleaned)) return '기대 효과는 무엇인가?';
-  if (/활동|실적/.test(cleaned)) return '무엇을 했나?';
-  if (/의미/.test(cleaned)) return '의미와 과제는 무엇인가?';
+  const isShort = cleaned.length <= 8;
+  const hasNumber = /\d/.test(cleaned);
+  if (isShort && !hasNumber) {
+    if (/현안|이슈|사안/.test(cleaned)) return '현안은 무엇인가?';
+    if (/핵심|쟁점/.test(cleaned)) return '핵심 쟁점은 무엇인가?';
+    if (/영향|과제/.test(cleaned)) return '영향과 과제는 무엇인가?';
+    if (/진단/.test(cleaned)) return '핵심 진단은 무엇인가?';
+    if (/배경/.test(cleaned)) return '배경은 무엇인가?';
+    if (/방향|전략/.test(cleaned)) return '핵심 방향은 무엇인가?';
+    if (/효과|기대/.test(cleaned)) return '기대 효과는 무엇인가?';
+    if (/활동|실적/.test(cleaned)) return '무엇을 했나?';
+    if (/의미/.test(cleaned)) return '의미와 과제는 무엇인가?';
+  }
 
   if (looksLikeQuestion(cleaned)) return `${cleaned}?`;
   const particle = pickTopicParticle(cleaned);
@@ -386,9 +390,20 @@ function ensureSectionHeadings(content, options = {}) {
   const providedHeadings = Array.isArray(options.bodyHeadings)
     ? options.bodyHeadings.map((heading) => toQuestionHeading(heading)).filter(Boolean)
     : [];
-  const bodyHeadings = providedHeadings.length === desiredBodyHeadings
-    ? providedHeadings
-    : getBodyHeadingTexts(options.category, options.subCategory, desiredBodyHeadings);
+  let bodyHeadings = [];
+  if (providedHeadings.length > 0) {
+    bodyHeadings = [...providedHeadings];
+    if (bodyHeadings.length > desiredBodyHeadings) {
+      bodyHeadings = bodyHeadings.slice(0, desiredBodyHeadings);
+    } else if (bodyHeadings.length < desiredBodyHeadings) {
+      const fallbackHeadings = getBodyHeadingTexts(options.category, options.subCategory, desiredBodyHeadings);
+      for (let i = bodyHeadings.length; i < desiredBodyHeadings; i += 1) {
+        bodyHeadings.push(fallbackHeadings[i] || fallbackHeadings[fallbackHeadings.length - 1]);
+      }
+    }
+  } else {
+    bodyHeadings = getBodyHeadingTexts(options.category, options.subCategory, desiredBodyHeadings);
+  }
   const sections = splitBlocksIntoSections(bodyBlocks, desiredBodyHeadings);
 
   let rebuilt = introBlocks.join('\n');

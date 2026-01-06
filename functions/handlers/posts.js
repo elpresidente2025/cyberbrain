@@ -1346,7 +1346,7 @@ exports.generatePosts = httpWrap(async (req) => {
             fullName,
             fullRegion
           });
-          if (generatedHeadings && generatedHeadings.length === desiredBodyHeadings) {
+          if (generatedHeadings && generatedHeadings.length > 0) {
             bodyHeadings = generatedHeadings;
           }
         } catch (headingError) {
