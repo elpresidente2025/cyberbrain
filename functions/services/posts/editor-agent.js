@@ -1376,6 +1376,74 @@ async function refineWithLLM({
 }
 
 /**
+ * 분량 부족 시 본문만 확장 (서명/슬로건은 유지)
+ */
+async function expandContentToTarget({
+  content,
+  targetWordCount,
+  modelName,
+  status
+}) {
+  if (!content || typeof targetWordCount !== 'number') {
+    return { content, edited: false };
+  }
+
+  const { body, tail } = splitContentBySignature(content);
+  const currentLength = stripHtml(body).replace(/\s/g, '').length;
+  const maxTarget = Math.round(targetWordCount * 1.1);
+
+  if (currentLength >= targetWordCount) {
+    return { content, edited: false };
+  }
+
+  const prompt = `다음 HTML 본문의 분량을 ${targetWordCount}~${maxTarget}자(공백 제외) 범위로 늘리세요.
+- 새 주제/새 소제목/요약/추신/마무리/감사 인사 추가 금지
+- 기존 문단에 1~2문장씩 구체화하여 확장
+- 원문에 없는 수치/사실 추가 금지
+- 합쇼체 유지
+- HTML 태그(<p>, <h2>, <h3>) 유지
+
+[본문]
+${body}
+
+다음 JSON 형식으로만 응답하세요:
+{
+  "content": "확장된 본문(HTML)"
+}`;
+
+  try {
+    const response = await callGenerativeModel(prompt, 1, modelName, true);
+    let result;
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        result = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error('JSON 형식 없음');
+      }
+    } catch (parseError) {
+      console.warn('⚠️ [EditorAgent] 분량 확장 JSON 파싱 실패:', parseError.message);
+      return { content, edited: false };
+    }
+
+    const nextBody = result?.content || body;
+    if (!nextBody || nextBody === body) {
+      return { content, edited: false };
+    }
+
+    let merged = joinContent(nextBody, tail);
+    const mergedLength = stripHtml(merged).replace(/\s/g, '').length;
+    if (mergedLength > maxTarget) {
+      merged = ensureLength(merged, targetWordCount, maxTarget);
+    }
+    return { content: merged, edited: true };
+  } catch (error) {
+    console.warn('⚠️ [EditorAgent] 분량 확장 실패:', error.message);
+    return { content, edited: false };
+  }
+}
+
+/**
  * EditorAgent용 프롬프트 생성
  */
 function buildEditorPrompt({ content, title, issues, userKeywords, status, targetWordCount }) {
@@ -1468,5 +1536,6 @@ module.exports = {
   refineWithLLM,
   buildCompliantDraft,
   buildFollowupValidation,
-  applyHardConstraintsOnly
+  applyHardConstraintsOnly,
+  expandContentToTarget
 };

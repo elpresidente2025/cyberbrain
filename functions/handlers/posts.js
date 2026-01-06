@@ -34,7 +34,7 @@ const { buildFactAllowlist } = require('../utils/fact-guard');
 const { loadUserProfile, getOrCreateSession, incrementSessionAttempts } = require('../services/posts/profile-loader');
 const { extractKeywordsFromInstructions } = require('../services/posts/keyword-extractor');
 const { validateAndRetry, runHeuristicValidation, validateKeywordInsertion } = require('../services/posts/validation');
-const { refineWithLLM, buildFollowupValidation, applyHardConstraintsOnly } = require('../services/posts/editor-agent');
+const { refineWithLLM, buildFollowupValidation, applyHardConstraintsOnly, expandContentToTarget } = require('../services/posts/editor-agent');
 const { processGeneratedContent, trimTrailingDiagnostics, trimAfterClosing, ensureParagraphTags, ensureSectionHeadings, moveSummaryToConclusionStart, cleanupPostContent, getIntroBlockCount, splitBlocksIntoSections } = require('../services/posts/content-processor');
 const { generateAeoSubheadings } = require('../services/posts/subheading-agent');
 const { callGenerativeModel } = require('../services/gemini');
@@ -1363,6 +1363,15 @@ exports.generatePosts = httpWrap(async (req) => {
           bodyHeadings
         }
       );
+      const expanded = await expandContentToTarget({
+        content: generatedContent,
+        targetWordCount,
+        modelName,
+        status: currentStatus
+      });
+      if (expanded?.edited) {
+        generatedContent = expanded.content;
+      }
       generatedContent = moveSummaryToConclusionStart(generatedContent);
       generatedContent = cleanupPostContent(generatedContent);
       generatedContent = stripGeneratedSlogan(generatedContent, slogan);
