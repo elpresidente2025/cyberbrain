@@ -1177,7 +1177,17 @@ async function refineWithLLM({
 
     for (const issue of seoIssues) {
       const description = issue.message || issue.description || issue.reason || 'SEO 기준 미달';
-      const instruction = issue.instruction || description;
+      let instruction = issue.instruction || description;
+      if (issue.id === 'content_length' && typeof targetWordCount === 'number') {
+        const currentCount = stripHtml(content).replace(/\s/g, '').length;
+        const minTarget = targetWordCount;
+        const maxTarget = Math.round(targetWordCount * 1.1);
+        if (currentCount < minTarget) {
+          instruction = `본문을 ${minTarget}~${maxTarget}자(공백 제외)로 확장하세요. 기존 사실/근거를 유지하고 이미 언급된 항목을 1~2문장씩 구체화하세요. 새 주제/추신/요약 추가는 금지합니다.`;
+        } else if (currentCount > maxTarget) {
+          instruction = `본문을 ${minTarget}~${maxTarget}자(공백 제외)로 줄이세요. 중복과 군더더기를 정리하되 핵심 사실은 유지하세요.`;
+        }
+      }
       issues.push({
         type: issue.id || 'seo_issue',
         severity: issue.severity || 'high',
@@ -1232,7 +1242,8 @@ async function refineWithLLM({
     title,
     issues,
     userKeywords,
-    status
+    status,
+    targetWordCount
   });
 
   try {
@@ -1367,13 +1378,20 @@ async function refineWithLLM({
 /**
  * EditorAgent용 프롬프트 생성
  */
-function buildEditorPrompt({ content, title, issues, userKeywords, status }) {
+function buildEditorPrompt({ content, title, issues, userKeywords, status, targetWordCount }) {
   const issuesList = issues.map((issue, idx) =>
     `${idx + 1}. [${issue.severity.toUpperCase()}] ${issue.description}\n   → ${issue.instruction}`
   ).join('\n\n');
 
   const statusNote = (status === '준비' || status === '현역')
     ? `\n⚠️ 작성자 상태: ${status} (예비후보 등록 전) - "~하겠습니다" 같은 공약성 표현 금지`
+    : '';
+
+  const hasLengthIssue = issues.some((issue) => issue.type === 'content_length');
+  const currentLength = stripHtml(content || '').replace(/\s/g, '').length;
+  const maxTarget = typeof targetWordCount === 'number' ? Math.round(targetWordCount * 1.1) : null;
+  const lengthGuideline = hasLengthIssue && typeof targetWordCount === 'number'
+    ? `\n📏 분량 목표: ${targetWordCount}~${maxTarget}자(공백 제외), 현재 ${currentLength}자\n- 새 주제/추신/요약 추가 금지\n- 기존 문단의 근거를 구체화해 분량을 맞출 것`
     : '';
 
   // 제목 관련 이슈가 있으면 상세 가이드라인 추가
@@ -1418,6 +1436,7 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status }) {
 [수정이 필요한 문제들]
 ${issuesList}
 ${statusNote}
+${lengthGuideline}
 ${titleGuideline}
 [원본 제목]
 ${title}
