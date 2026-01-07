@@ -75,33 +75,12 @@ exports.saveSelectedPost = saveSelectedPost;
 function insertSlogan(content, slogan) {
   if (!content || !slogan) return content;
 
-  // 슬로건을 HTML 형식으로 변환 (줄바꿈 → <br>)
+  // ?????? HTML ?????? ????(???????<br>)
   const sloganHtml = `<p style="text-align: center; font-weight: bold; margin: 1.5em 0;">${slogan.trim().replace(/\n/g, '<br>')}</p>`;
-
-  // "감사합니다" 패턴 찾기 (다양한 형태)
-  const thankYouPatterns = [
-    /<p[^>]*>\s*감사합니다\.?\s*<\/p>/gi,
-    /감사합니다\.?\s*<\/p>/gi,
-    /<p[^>]*>[^<]*감사합니다[^<]*<\/p>/gi
-  ];
-
-  for (const pattern of thankYouPatterns) {
-    if (pattern.test(content)) {
-      // "감사합니다" 앞에 슬로건 삽입
-      return content.replace(pattern, (match) => `${sloganHtml}\n${match}`);
-    }
-  }
-
-  // "감사합니다"가 없으면 마지막에 슬로건만 추가
-  // 마지막 </p> 태그 뒤에 추가
-  const lastPTagIndex = content.lastIndexOf('</p>');
-  if (lastPTagIndex !== -1) {
-    return content.substring(0, lastPTagIndex + 4) + '\n' + sloganHtml + content.substring(lastPTagIndex + 4);
-  }
-
-  // </p> 태그도 없으면 그냥 끝에 추가
-  return content + '\n' + sloganHtml;
+  const trimmed = content.trim();
+  return trimmed ? `${trimmed}\n${sloganHtml}` : sloganHtml;
 }
+
 
 function escapeRegExp(text) {
   return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -645,6 +624,7 @@ exports.generatePosts = httpWrap(async (req) => {
     await progress.stepPreparing();
 
     // 사용자 프로필 및 Bio 로딩
+    const strictSourceOnly = true;
     const stopProfile = startPerf('loadUserProfile');
     const {
       userProfile,
@@ -652,13 +632,15 @@ exports.generatePosts = httpWrap(async (req) => {
       dailyLimitWarning,
       ragContext,
       memoryContext,      // 🧠 메모리 컨텍스트 추가
+      bioContent,
+      bioEntries,
       styleGuide,         // 🎨 문체 가이드 (Style Fingerprint 기반)
       styleFingerprint,   // 🎨 Style Fingerprint 원본 (2단계 생성용)
       isAdmin,
       isTester,
       slogan,             // 🎯 슬로건
       sloganEnabled       // 🎯 슬로건 활성화 여부
-    } = await loadUserProfile(uid, category, topic);
+    } = await loadUserProfile(uid, category, topic, { strictSourceOnly });
     stopProfile();
 
     // 🔥 세션 조회 또는 생성 (attempts는 아직 증가하지 않음)
@@ -749,7 +731,7 @@ exports.generatePosts = httpWrap(async (req) => {
 
     // 뉴스 컨텍스트 조회
     let newsContext = '';
-    if (shouldFetchNews(category)) {
+    if (!strictSourceOnly && shouldFetchNews(category)) {
       try {
         const stopNewsFetch = startPerf('fetchNaverNews');
         const news = await fetchNaverNews(sanitizedTopic, 3);
@@ -767,6 +749,10 @@ exports.generatePosts = httpWrap(async (req) => {
 
     // 🗺️ 지역 검증: 주제 지역과 사용자 지역구 (또는 목표 선거 지역) 비교
     // 직책별 관할 범위: 광역단체장(시도 전체), 기초단체장(시군구 전체), 의원(선거구 기준)
+    const safeNewsContext = strictSourceOnly ? '' : newsContext;
+    const safeRagContext = strictSourceOnly ? '' : ragContext;
+    const safeMemoryContext = strictSourceOnly ? '' : memoryContext;
+
     let regionHint = '';
     try {
       const stopRegionValidation = startPerf('validateTopicRegion');
@@ -824,6 +810,48 @@ exports.generatePosts = httpWrap(async (req) => {
     if (data.sourceText) {
       referenceTexts.push(data.sourceText);
     }
+    if (bioContent) {
+      referenceTexts.push(bioContent);
+    }
+    if (Array.isArray(bioEntries) && bioEntries.length > 0) {
+      const entryTexts = bioEntries
+        .map((entry) => entry && entry.content ? String(entry.content).trim() : '')
+        .filter(Boolean);
+      if (entryTexts.length > 0) {
+        referenceTexts.push(...entryTexts);
+      }
+    }
+    if (Array.isArray(data.additionalInfo)) {
+      referenceTexts.push(...data.additionalInfo.filter(Boolean));
+    } else if (data.additionalInfo) {
+      referenceTexts.push(data.additionalInfo);
+    }
+
+    const sourceMaterials = referenceTexts.filter(Boolean);
+    const sourceInstruction = strictSourceOnly
+      ? (() => {
+          if (sourceMaterials.length === 0) {
+            return [
+              '[SOURCE LIMIT]',
+              '- No sources provided. Do not invent facts, figures, names, or organizations.',
+              '- Keep content general and omit uncertain claims.'
+            ].join('\n');
+          }
+          const lines = ['[SOURCE MATERIALS]'];
+          sourceMaterials.forEach((item, idx) => {
+            lines.push(`${idx + 1}. ${String(item).trim()}`);
+          });
+          lines.push('', '[SOURCE LIMIT]');
+          lines.push('- Use only the information in the sources above.');
+          lines.push('- Do not add facts/figures/names/orgs/policies not present.');
+          lines.push('- If unsure, omit.');
+          return lines.join('\n');
+        })()
+      : '';
+    const instructionPayload = [data.instructions, sourceInstruction]
+      .filter(Boolean)
+      .map((item) => Array.isArray(item) ? item.join('\n') : String(item))
+      .join('\n\n');
 
     const factAllowlist = buildFactAllowlist([
       sanitizedTopic,
@@ -872,9 +900,9 @@ exports.generatePosts = httpWrap(async (req) => {
             politicalExperience,
             familyStatus
           },
-          memoryContext,
-          instructions: data.instructions,
-          newsContext,
+          memoryContext: safeMemoryContext,
+          instructions: instructionPayload,
+          newsContext: safeNewsContext,
           regionHint,
           keywords: backgroundKeywords,
           userKeywords,  // 🔑 사용자 직접 입력 키워드 (최우선)
@@ -935,7 +963,7 @@ exports.generatePosts = httpWrap(async (req) => {
       const writingMethod = resolveWritingMethod(category, data.subCategory);
 
       // 🧠 메모리 컨텍스트와 개인화 힌트 통합
-      const combinedHints = [personalizedHints, memoryContext]
+      const combinedHints = [personalizedHints, safeMemoryContext]
         .filter(h => h && h.trim())
         .join(' | ');
 
@@ -955,11 +983,11 @@ exports.generatePosts = httpWrap(async (req) => {
         topic: sanitizedTopic,
         authorBio,
         targetWordCount,
-        instructions: data.instructions,
+        instructions: instructionPayload,
         keywords: backgroundKeywords,
         userKeywords,  // 🔑 사용자 직접 입력 키워드 (최우선 반영)
         factAllowlist,
-        newsContext,
+        newsContext: safeNewsContext,
         personalizedHints: combinedHints,  // 🧠 통합된 힌트 사용
         applyEditorialRules: true,
         // 원외 인사 판단 정보 추가
@@ -982,11 +1010,11 @@ exports.generatePosts = httpWrap(async (req) => {
         topic: sanitizedTopic,
         authorBio,
         targetWordCount,
-        instructions: data.instructions,
+        instructions: instructionPayload,
         keywords: backgroundKeywords,
         userKeywords,
         factAllowlist,
-        newsContext,
+        newsContext: safeNewsContext,
         personalizedHints: combinedHints,
         applyEditorialRules: true,
         isCurrentLawmaker,
@@ -1024,7 +1052,7 @@ exports.generatePosts = httpWrap(async (req) => {
       autoKeywords: extractedKeywords,  // 자동 추출 키워드 (완화 검증)
       status: currentStatus,  // 선거법 검증용 (준비/현역/예비/후보)
       factAllowlist,
-      ragContext,          // Critic Agent 팩트 검증용
+      ragContext: safeRagContext,          // Critic Agent 팩트 검증용
       authorName: fullName,  // Corrector Agent 톤 유지용
       topic: sanitizedTopic,  // Critic Agent 문맥 이해용
       maxAttempts: 1,      // 휴리스틱 검증 실패 시 재시도 (빠름)
@@ -1255,7 +1283,7 @@ exports.generatePosts = httpWrap(async (req) => {
         rawTopic: topic,
         category,
         subCategory: data.subCategory,
-        instructions: data.instructions,
+        instructions: instructionPayload,
         fullName,
         modelName,
         userProfile,
@@ -1287,7 +1315,7 @@ exports.generatePosts = httpWrap(async (req) => {
         const stopTitleGeneration = startPerf('generateTitle');
         generatedTitle = await generateTitleFromContent({
           content: generatedContent || '',
-          backgroundInfo: data.instructions,
+          backgroundInfo: instructionPayload,
           keywords: backgroundKeywords,
           userKeywords: userKeywords,
           topic: sanitizedTopic,
@@ -1307,7 +1335,7 @@ exports.generatePosts = httpWrap(async (req) => {
       const stopTitleGeneration = startPerf('generateTitle');
       generatedTitle = await generateTitleFromContent({
         content: generatedContent || '',
-        backgroundInfo: data.instructions,
+        backgroundInfo: instructionPayload,
         keywords: backgroundKeywords,
         userKeywords: userKeywords,
         topic: sanitizedTopic,
@@ -1400,13 +1428,13 @@ exports.generatePosts = httpWrap(async (req) => {
       generatedContent = moveSummaryToConclusionStart(generatedContent);
       generatedContent = cleanupPostContent(generatedContent);
       generatedContent = stripGeneratedSlogan(generatedContent, slogan);
-      if (sloganEnabled && slogan && slogan.trim()) {
-        generatedContent = insertSlogan(generatedContent, slogan);
-      }
       const allowDiagnosticTail = category === 'current-affairs'
         && data.subCategory === 'current_affairs_diagnosis';
       generatedContent = trimTrailingDiagnostics(generatedContent, { allowDiagnosticTail });
       generatedContent = trimAfterClosing(generatedContent);
+      if (sloganEnabled && slogan && slogan.trim()) {
+        generatedContent = insertSlogan(generatedContent, slogan);
+      }
     }
 
     // 글자수 계산

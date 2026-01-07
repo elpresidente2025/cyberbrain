@@ -113,9 +113,33 @@ function shortenHeadingText(text, maxLength = MAX_HEADING_LENGTH) {
   return `${safeCut}?`;
 }
 
+function ensureHeadingLength(text) {
+  const cleaned = normalizeHeadingSpaces(text);
+  if (!cleaned) return cleaned;
+  if (isConclusionHeadingText(cleaned)) return cleaned;
+  if (cleaned.length >= MIN_HEADING_LENGTH && cleaned.length <= MAX_HEADING_LENGTH) return cleaned;
+  if (cleaned.length > MAX_HEADING_LENGTH) return shortenHeadingText(cleaned, MAX_HEADING_LENGTH);
+
+  const base = cleaned.replace(/\?$/, '').trim();
+  const particle = pickTopicParticle(base);
+  const suffixes = [
+    `${particle} ????`,
+    `${particle} ? ????`,
+    `${particle} ?? ????`,
+    `${particle} ??? ?? ??`
+  ];
+  for (const suffix of suffixes) {
+    const candidate = `${base}${suffix}?`;
+    if (candidate.length >= MIN_HEADING_LENGTH && candidate.length <= MAX_HEADING_LENGTH) return candidate;
+  }
+  const fallback = `${base}${particle} ?????`;
+  return fallback.length <= MAX_HEADING_LENGTH ? fallback : shortenHeadingText(fallback, MAX_HEADING_LENGTH);
+}
+
 function normalizeHeadingText(text) {
   const question = toQuestionHeading(text);
-  return shortenHeadingText(question);
+  const shortened = shortenHeadingText(question, MAX_HEADING_LENGTH);
+  return ensureHeadingLength(shortened);
 }
 
 function isBannedHeading(text) {
@@ -144,6 +168,7 @@ function hasWeakHeadings(body) {
 
   if (headings.some((heading) => !heading.trim())) return true;
   if (headings.some((heading) => heading.length > MAX_HEADING_LENGTH)) return true;
+  if (headings.some((heading) => !isConclusionHeadingText(heading) && heading.length < MIN_HEADING_LENGTH)) return true;
   if (headings.some((heading) => isBannedHeading(heading))) return true;
   if (hasEmptyHeadingSection(body)) return true;
   return false;
@@ -155,7 +180,8 @@ function stripEmptyHeadingSections(content) {
 }
 
 const HEADING_TAG_REGEX = /<h[23][^>]*>[\s\S]*?<\/h[23]>/gi;
-const MAX_HEADING_LENGTH = 36;
+const MIN_HEADING_LENGTH = 12;
+const MAX_HEADING_LENGTH = 25;
 const BANNED_HEADING_PATTERNS = [
   /^무엇을 나누고 싶은가/i,
   /^생각의 핵심은 무엇인가/i,

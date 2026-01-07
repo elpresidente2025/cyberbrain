@@ -13,7 +13,8 @@ const { generateMemoryContext } = require('../memory');
  * @param {string} topic - 글 주제
  * @returns {Promise<Object>} 프로필 데이터
  */
-async function loadUserProfile(uid, category, topic) {
+async function loadUserProfile(uid, category, topic, options = {}) {
+  const { strictSourceOnly = false } = options;
   let userProfile = {};
   let bioMetadata = null;
   let personalizedHints = '';
@@ -22,7 +23,9 @@ async function loadUserProfile(uid, category, topic) {
   let ragContext = '';  // RAG 컨텍스트 (try 블록 외부에서도 접근 가능하도록)
   let memoryContext = '';  // 메모리 컨텍스트 (장기 메모리 기반)
   let styleFingerprint = null;  // 🎨 Style Fingerprint (try 블록 외부에서도 접근 가능하도록)
-  let styleGuide = '';  // 🎨 문체 가이드 (try 블록 외부에서도 접근 가능하도록)
+  let styleGuide = '';
+  let bioContent = '';
+  let bioEntries = [];
 
   try {
     // 사용자 기본 정보 조회
@@ -56,7 +59,18 @@ async function loadUserProfile(uid, category, topic) {
     // Bio 메타데이터 조회
     console.log(`🔍 Bio 메타데이터 조회 시도 - UID: ${uid}`);
     const bioDoc = await db.collection('bios').doc(uid).get();
-    console.log(`📋 Bio 문서 존재 여부: ${bioDoc.exists}`);
+
+    if (bioDoc.exists) {
+      const bioData = bioDoc.data() || {};
+      bioContent = bioData.content || '';
+      if (bioContent) {
+        userProfile.bio = bioContent;
+      }
+      if (Array.isArray(bioData.entries)) {
+        bioEntries = bioData.entries;
+        userProfile.bioEntries = bioEntries;
+      }
+    }
 
     if (bioDoc.exists && bioDoc.data().extractedMetadata) {
       bioMetadata = bioDoc.data().extractedMetadata;
@@ -113,7 +127,7 @@ async function loadUserProfile(uid, category, topic) {
     }
 
     // 🔍 RAG 컨텍스트 조회 (주제 기반 관련 정보 검색)
-    if (topic) {
+    if (topic && !strictSourceOnly) {
       try {
         const { generateRagContext } = require('../rag/retriever');
         const { indexOnDemand } = require('../rag/indexer');
@@ -135,6 +149,7 @@ async function loadUserProfile(uid, category, topic) {
         // RAG 실패해도 원고 생성은 계속 진행
       }
     }
+    if (!strictSourceOnly) {
 
     // 🧠 메모리 컨텍스트 로드 (장기 메모리 기반 개인화)
     try {
@@ -144,6 +159,7 @@ async function loadUserProfile(uid, category, topic) {
       }
     } catch (memoryError) {
       console.warn('⚠️ 메모리 컨텍스트 로드 실패 (무시하고 계속):', memoryError.message);
+    }
     }
 
   } catch (profileError) {
@@ -171,7 +187,9 @@ async function loadUserProfile(uid, category, topic) {
     dailyLimitWarning,
     userMetadata,
     ragContext,
-    memoryContext,      // 🧠 메모리 컨텍스트 추가
+    memoryContext,
+    bioContent,
+    bioEntries,
     styleGuide,         // 🎨 문체 가이드 (Style Fingerprint 기반)
     styleFingerprint,   // 🎨 Style Fingerprint 원본 (2단계 생성용)
     isAdmin: userProfile.isAdmin === true || userProfile.role === 'admin',
