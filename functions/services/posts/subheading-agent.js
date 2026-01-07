@@ -20,6 +20,69 @@ function coerceQuestion(text) {
   return cleaned;
 }
 
+function containsEntityHint(heading, hints) {
+  if (!heading || !hints || hints.length === 0) return true;
+  const normalized = heading.toLowerCase();
+  return hints.some((hint) => {
+    const cleanedHint = String(hint || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    return cleanedHint && normalized.includes(cleanedHint);
+  });
+}
+
+function isBadHeading(heading) {
+  if (!heading || heading.length < 12) return true;
+  if (heading.match(/\?{2,}/)) return true;
+  if (/[^\\w가-힣\s!?]/.test(heading)) return true;
+  return false;
+}
+
+function fallbackHeading(sectionText, regionHint) {
+  const cleaned = stripHtml(sectionText)
+    .split(/[.?!]/)[0]
+    .trim()
+    .replace(/[\u00A0]/g, ' ');
+  let base = cleaned.replace(/["'`]+/g, '').trim();
+  if (!base) {
+    base = regionHint || '부산';
+  }
+  if (base.length > 20) {
+    base = base
+      .split(/\s+/)
+      .slice(0, 5)
+      .join(' ')
+      .trim();
+  }
+  const region = regionHint || '부산';
+  const question = `${region} ${base}는 어떤 점인가?`;
+  return question.replace(/\s{2,}/g, ' ').trim();
+}
+
+function sanitizeHeading(heading, section, { fullName, fullRegion }) {
+  const hints = [fullName, fullRegion].filter(Boolean);
+  const coerced = coerceQuestion(heading);
+  if (!coerced || isBadHeading(coerced)) {
+    return fallbackHeading(section, fullRegion);
+  }
+
+  let normalized = coerced;
+  if (!containsEntityHint(normalized, hints)) {
+    const prefix = fullRegion || fullName || '부산';
+    normalized = `${prefix} ${normalized}`;
+  }
+
+  if (normalized.length > 25) {
+    const truncated = normalized
+      .replace(/\?/g, '')
+      .trim()
+      .split(' ')
+      .slice(0, 4)
+      .join(' ');
+    normalized = `${truncated}?`;
+  }
+
+  return normalized.replace(/\s{2,}/g, ' ').trim();
+}
+
 function parseHeadingsResponse(responseText) {
   if (!responseText) return null;
   let payload = responseText.trim();
@@ -121,10 +184,14 @@ async function generateAeoSubheadings({ sections, modelName, fullName, fullRegio
   const response = await callGenerativeModel(prompt, 1, modelName, true);
   const parsed = parseHeadingsResponse(response);
   let headings = Array.isArray(parsed?.headings)
-    ? parsed.headings.map(coerceQuestion).filter(Boolean)
+    ? parsed.headings
+      .map((heading, idx) => sanitizeHeading(heading, cleanedSections[idx], { fullName, fullRegion }))
+      .filter(Boolean)
     : [];
 
-  if (headings.length === 0) return null;
+  if (headings.length === 0) {
+    return cleanedSections.map((section) => fallbackHeading(section, fullRegion));
+  }
   if (headings.length > cleanedSections.length) {
     headings = headings.slice(0, cleanedSections.length);
   }
