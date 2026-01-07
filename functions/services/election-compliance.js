@@ -17,11 +17,11 @@ const { ELECTION_EXPRESSION_RULES, getElectionStage } = require('../prompts/guid
  */
 async function checkElectionCompliance(params) {
   const { userId, contentType, category, topic } = params;
-  
+
   try {
     // 1. 사용자의 선거 정보 조회 (향후 DB에서 가져올 예정)
     const userElectionInfo = await getUserElectionInfo(userId);
-    
+
     if (!userElectionInfo || !userElectionInfo.electionDate) {
       return {
         allowed: true,
@@ -115,20 +115,20 @@ async function getUserElectionInfo(userId) {
  */
 function getContentTypeFromCategory(category, topic) {
   const topicLower = (topic || '').toLowerCase();
-  
+
   // 키워드 기반 분류
   if (topicLower.includes('투표') || topicLower.includes('지지') || topicLower.includes('후보')) {
     return 'VOTE_REQUEST';
   }
-  
+
   if (topicLower.includes('정책') || topicLower.includes('공약') || category === 'policy') {
     return 'POLICY_STATEMENT';
   }
-  
+
   if (topicLower.includes('성과') || topicLower.includes('실적') || category === 'achievement') {
     return 'ACHIEVEMENT_PROMOTION';
   }
-  
+
   return 'PERSONAL_INTRODUCTION';
 }
 
@@ -150,7 +150,7 @@ function checkRestrictedKeywords(topic, phase) {
   };
 
   const keywords = restrictedKeywords[phase] || [];
-  const foundKeywords = keywords.filter(keyword => 
+  const foundKeywords = keywords.filter(keyword =>
     topic && topic.toLowerCase().includes(keyword)
   );
 
@@ -251,67 +251,15 @@ function validateElectionCompliance(content, userStatus) {
  * @returns {Object} { sanitizedContent, replacementsMade, replacementLog }
  */
 function sanitizeElectionContent(content, userStatus) {
-  if (!content || !userStatus) {
-    return {
-      sanitizedContent: content,
-      replacementsMade: 0,
-      replacementLog: []
-    };
-  }
-
-  const stage = getElectionStage(userStatus);
-  if (!stage || !stage.replacements) {
-    return {
-      sanitizedContent: content,
-      replacementsMade: 0,
-      replacementLog: []
-    };
-  }
-
-  let sanitizedContent = content;
-  const replacementLog = [];
-  let replacementsMade = 0;
-
-  // 긴 표현부터 먼저 치환 (부분 일치 방지)
-  const sortedReplacements = Object.entries(stage.replacements)
-    .sort((a, b) => b[0].length - a[0].length);
-
-  for (const [forbidden, replacement] of sortedReplacements) {
-    // 정규식 특수문자 이스케이프
-    const escapedForbidden = forbidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(escapedForbidden, 'g');
-
-    const matches = sanitizedContent.match(regex);
-    if (matches) {
-      const count = matches.length;
-      sanitizedContent = sanitizedContent.replace(regex, replacement);
-      replacementsMade += count;
-      replacementLog.push({
-        original: forbidden,
-        replacement: replacement || '(삭제됨)',
-        count
-      });
-    }
-  }
-
-  // 추가 정리: 빈 문자열 치환으로 인한 이중 공백 제거
-  sanitizedContent = sanitizedContent.replace(/\s{2,}/g, ' ');
-  // 빈 괄호 제거
-  sanitizedContent = sanitizedContent.replace(/\(\s*\)/g, '');
-  // 문장 시작의 공백 제거
-  sanitizedContent = sanitizedContent.replace(/<p>\s+/g, '<p>');
-
-  console.log(`🛡️ 선거법 준수 치환 완료: ${replacementsMade}개 표현 수정 (상태: ${userStatus})`);
-
-  if (replacementLog.length > 0) {
-    console.log('📝 치환 내역:', JSON.stringify(replacementLog, null, 2));
-  }
+  // 🔧 기계적 치환(String Replace) 비활성화
+  // 이유: "약속합니다" -> "필요가 있습니다" 같은 단순 치환이 문맥을 파괴하고 비문을 생성함 ("~것이라는 점입니다" 등)
+  // 대신 ChainWriterAgent의 프롬프트와 후속 EditorAgent의 LLM 기반 수정에 의존함.
 
   return {
-    sanitizedContent,
-    replacementsMade,
-    replacementLog,
-    stage: stage.name,
+    sanitizedContent: content,
+    replacementsMade: 0,
+    replacementLog: [],
+    stage: 'SANITIZATION_DISABLED',
     userStatus
   };
 }

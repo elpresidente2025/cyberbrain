@@ -17,7 +17,11 @@ import {
   DialogActions,
   IconButton,
   Button,
-  Typography
+  Typography,
+  FormControlLabel, // 🆕 추가
+  Switch,           // 🆕 추가
+  Tooltip,          // 🆕 추가
+  Chip              // 🆕 추가
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import ShareIcon from '@mui/icons-material/Share';
@@ -125,7 +129,7 @@ const GeneratePage = () => {
 
   // --- 👁️ 미리보기 상태 관리 ---
   const [selectedDraft, setSelectedDraft] = React.useState(null); // 사용자가 선택한 초안
-  
+
   // --- 📱 SNS 변환 상태 관리 ---
   const [snsModalOpen, setSnsModalOpen] = React.useState(false);
   const [snsPost, setSnsPost] = React.useState(null);
@@ -154,23 +158,33 @@ const GeneratePage = () => {
 
   // --- 헨들러 함수 (사용자 이벤트 처리) ---
 
+  // 🌟 고품질 모드 상태 (A/B 테스트)
+  const [useHighQuality, setUseHighQuality] = React.useState(false);
+  // 권한 체크: 테스트를 위해 일단 모두에게 공개
+  const canUseBetaFeatures = true; // user?.role === 'admin' || ... (테스트용 강제 활성화)
+
   /** 원고 생성 버튼 클릭 시 실행되는 함수 */
   const handleGenerate = async () => {
-    // 1. 폼 데이터 유효성 검사 (예: 주제가 비어있는지)
+    // 1. 폼 데이터 유효성 검사
     const validation = validateForm();
     if (!validation.isValid) {
-      // 유효하지 않으면 에러 스낵바를 띄움
       showNotification(validation.error, 'error');
       return;
     }
 
     // 2. 유효하면 API 호출
-    const result = await generate(formData);
+    // 🆕 고품질 모드 선택 시 pipeline 파라미터 추가
+    const payload = {
+      ...formData,
+      pipeline: useHighQuality ? 'highQuality' : 'standard'
+    };
 
-    // 3. API 결과에 따라 성공 또는 실패 스낵바를 띄움
+    const result = await generate(payload);
+
+    // 3. API 결과 처리
     if (result.success) {
-      // 원고 생성 성공 시 검수 안내 메시지 추가
-      const successMessage = result.message + '\n\n💡 생성된 원고를 꼭 검수하시고, 필요에 따라 직위나 내용을 직접 편집해주세요.';
+      const modeMsg = useHighQuality ? ' [고품질 모드 적용됨]' : '';
+      const successMessage = result.message + modeMsg + '\n\n💡 생성된 원고를 꼭 검수하시고, 필요에 따라 직위나 내용을 직접 편집해주세요.';
       showNotification(successMessage, 'success');
     } else {
       showNotification(result.error, 'error');
@@ -286,6 +300,43 @@ const GeneratePage = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.3 }}
         >
+          {/* 🆕 고품질 모드 토글 (PromptForm 위에 배치) */}
+          {canUseBetaFeatures && (
+            <Box sx={{
+              mb: 2,
+              p: 2,
+              bgcolor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)',
+              borderRadius: 2,
+              border: `1px solid ${theme.palette.divider}`
+            }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={useHighQuality}
+                      onChange={(e) => setUseHighQuality(e.target.checked)}
+                      color="secondary"
+                    />
+                  }
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography fontWeight="bold">💎 고품질 모드 (Chain Writer)</Typography>
+                      <Chip label="BETA" size="small" color="secondary" sx={{ height: 20, fontSize: '0.7rem' }} />
+                    </Box>
+                  }
+                />
+                {useHighQuality && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
+                    ⚠️ 생성 시간이 2~3배 더 소요됩니다
+                  </Typography>
+                )}
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1, ml: 4 }}>
+                단계별 생성(CoT) 기술을 적용하여 글의 구조와 핵심 내용 반영도를 극대화합니다. (관리자/테스터 전용)
+              </Typography>
+            </Box>
+          )}
+
           <PromptForm
             formData={formData}
             onChange={updateForm} // 폼 데이터가 변경될 때 호출될 함수
@@ -402,8 +453,8 @@ const GeneratePage = () => {
               <Button onClick={() => setSelectedDraft(null)}>
                 취소
               </Button>
-              <Button 
-                variant="contained" 
+              <Button
+                variant="contained"
                 onClick={() => handleConfirmSelection(selectedDraft)}
                 color="primary"
               >

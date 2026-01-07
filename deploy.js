@@ -6,7 +6,7 @@ function runCommand(command, cwd = process.cwd()) {
   console.log(`🔧 실행: ${command}`);
   try {
     execSync(command, { 
-      cwd, 
+      cwd,
       stdio: 'inherit',
       encoding: 'utf8'
     });
@@ -45,7 +45,7 @@ async function deploy() {
     // 2. 배포 방식 선택
     if (mode === 'hosting-only') {
       console.log('\n🌐 Firebase Hosting 배포 중...');
-      runCommand('firebase deploy --only hosting');
+      runCommand('firebase deploy --only hosting --force');
       
       console.log('\n💡 백엔드 정보:');
       console.log('   ✅ Firebase Functions 사용 중');
@@ -53,17 +53,17 @@ async function deploy() {
       
     } else if (mode === 'full') {
       console.log('\n☁️ Firebase 전체 배포 중...');
-      runCommand('firebase deploy');
+      runCommand('firebase deploy --force');
       
     } else if (mode === 'functions-only') {
       console.log('\n⚡ Firebase Functions 배포 중...');
-      runCommand('firebase deploy --only functions');
+      runCommand('firebase deploy --only functions --force');
       
     } else if (mode === 'both') {
       console.log('\n⚡ Firebase Functions 배포 중...');
-      runCommand('firebase deploy --only functions');
+      runCommand('firebase deploy --only functions --force');
       console.log('\n🌐 Firebase Hosting 배포 중...');
-      runCommand('firebase deploy --only hosting');
+      runCommand('firebase deploy --only hosting --force');
     }
     
     console.log('\n✅ 배포 완료!');

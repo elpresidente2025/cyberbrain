@@ -114,31 +114,14 @@ function shortenHeadingText(text, maxLength = MAX_HEADING_LENGTH) {
 }
 
 function ensureHeadingLength(text) {
-  const cleaned = normalizeHeadingSpaces(text);
-  if (!cleaned) return cleaned;
-  if (isConclusionHeadingText(cleaned)) return cleaned;
-  if (cleaned.length >= MIN_HEADING_LENGTH && cleaned.length <= MAX_HEADING_LENGTH) return cleaned;
-  if (cleaned.length > MAX_HEADING_LENGTH) return shortenHeadingText(cleaned, MAX_HEADING_LENGTH);
-
-  const base = cleaned.replace(/\?$/, '').trim();
-  const particle = pickTopicParticle(base);
-  const suffixes = [
-    `${particle} ????`,
-    `${particle} ? ????`,
-    `${particle} ?? ????`,
-    `${particle} ??? ?? ??`
-  ];
-  for (const suffix of suffixes) {
-    const candidate = `${base}${suffix}?`;
-    if (candidate.length >= MIN_HEADING_LENGTH && candidate.length <= MAX_HEADING_LENGTH) return candidate;
-  }
-  const fallback = `${base}${particle} ?????`;
-  return fallback.length <= MAX_HEADING_LENGTH ? fallback : shortenHeadingText(fallback, MAX_HEADING_LENGTH);
+  // 🔧 강제 수정 로직 비활성화: AI가 생성한 소제목을 그대로 사용
+  // 기존 로직은 "은은 현황은?" 같은 문법 오류를 유발함
+  return normalizeHeadingSpaces(text);
 }
 
 function normalizeHeadingText(text) {
-  const question = toQuestionHeading(text);
-  const shortened = shortenHeadingText(question, MAX_HEADING_LENGTH);
+  // 🔧 강제 의문문 변환 제거: "다대포 디즈니랜드는?" 처럼 억지스러운 표현 방지
+  const shortened = shortenHeadingText(text, MAX_HEADING_LENGTH);
   return ensureHeadingLength(shortened);
 }
 

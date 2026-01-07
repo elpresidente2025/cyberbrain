@@ -1,178 +1,31 @@
 'use strict';
 
-const { callGenerativeModel } = require('../gemini');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { getGeminiApiKey } = require('../../common/secrets');
+
+// LLM 인스턴스 (WriterAgent와 동일한 모델 사용)
+let genAI = null;
+function getGenAI() {
+  if (!genAI) {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) return null;
+    genAI = new GoogleGenerativeAI(apiKey);
+  }
+  return genAI;
+}
 
 function stripHtml(text) {
   return String(text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function coerceQuestion(text) {
-  if (!text) return '';
-  let cleaned = String(text)
-    .replace(/^["'“‘]|["'”’]$/g, '')
-    .replace(/^\d+[\).]\s*/, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!cleaned) return '';
-  if (!cleaned.endsWith('?')) {
-    cleaned = `${cleaned}?`;
-  }
-  return cleaned;
-}
-
-function containsEntityHint(heading, hints) {
-  if (!heading || !hints || hints.length === 0) return true;
-  const normalized = heading.toLowerCase();
-  return hints.some((hint) => {
-    const cleanedHint = String(hint || '').toLowerCase().replace(/\s+/g, ' ').trim();
-    return cleanedHint && normalized.includes(cleanedHint);
-  });
-}
-
-function isBadHeading(heading) {
-  if (!heading || heading.length < 12) return true;
-  if (heading.match(/\?{2,}/)) return true;
-  if (/[^\\w가-힣\s!?]/.test(heading)) return true;
-  return false;
-}
-
-function fallbackHeading(sectionText, regionHint) {
-  const cleaned = stripHtml(sectionText)
-    .split(/[.?!]/)[0]
-    .trim()
-    .replace(/[\u00A0]/g, ' ');
-  let base = cleaned.replace(/["'`]+/g, '').trim();
-  if (!base) {
-    base = regionHint || '부산';
-  }
-  if (base.length > 20) {
-    base = base
-      .split(/\s+/)
-      .slice(0, 5)
-      .join(' ')
-      .trim();
-  }
-  const region = regionHint || '부산';
-  const question = `${region} ${base}는 어떤 점인가?`;
-  return question.replace(/\s{2,}/g, ' ').trim();
-}
-
-function sanitizeHeading(heading, section, { fullName, fullRegion }) {
-  const hints = [fullName, fullRegion].filter(Boolean);
-  const coerced = coerceQuestion(heading);
-  if (!coerced || isBadHeading(coerced)) {
-    return fallbackHeading(section, fullRegion);
-  }
-
-  let normalized = coerced;
-  if (!containsEntityHint(normalized, hints)) {
-    const prefix = fullRegion || fullName || '부산';
-    normalized = `${prefix} ${normalized}`;
-  }
-
-  if (normalized.length > 25) {
-    const truncated = normalized
-      .replace(/\?/g, '')
-      .trim()
-      .split(' ')
-      .slice(0, 4)
-      .join(' ');
-    normalized = `${truncated}?`;
-  }
-
-  return normalized.replace(/\s{2,}/g, ' ').trim();
-}
-
-function parseHeadingsResponse(responseText) {
-  if (!responseText) return null;
-  let payload = responseText.trim();
-  if (!payload) return null;
-
-  try {
-    return JSON.parse(payload);
-  } catch (error) {
-    const jsonMatch = payload.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return null;
-    try {
-      return JSON.parse(jsonMatch[0]);
-    } catch (parseError) {
-      return null;
-    }
-  }
-}
-
-function buildAeoSubheadingPrompt(sections, { fullName, fullRegion }) {
-  const sectionBlocks = sections.map((section, index) => {
-    const trimmed = String(section || '').trim();
-    return `${index + 1}) ${trimmed}`;
-  }).join('\n\n');
-
-  const entityHints = [fullName, fullRegion]
-    .filter(Boolean)
-    .join(', ');
-  const desiredCount = sections.length;
-
-  return `# Role Definition
-당신은 'AEO(Answer Engine Optimization) Specialist'입니다.
-당신의 임무는 주어진 본문 단락을 가장 잘 설명하는 질문형 소제목(H2/H3)을 만드는 것입니다.
-
-# Logical Process (Step-by-Step)
-1) Analyze: 본문 단락을 깊이 읽고 핵심 사실/해답을 파악하세요.
-2) Reverse-Engineer: 이 단락이 "답변"이라면, 사용자가 던졌을 질문은 무엇인가?
-3) Formulate: 그 질문을 소제목으로 만드세요.
-
-# H2/H3 Generation Rules (Strict)
-## Rule 1: Question Format (Q&A Match)
-- 소제목은 반드시 질문형이어야 합니다.
-- 본문 단락이 소제목의 직접적인 "답변"이 되어야 합니다.
-
-## Rule 2: Entity First (Context Anchoring)
-- 대명사 금지(그/이것/저것 등).
-- 본문에 등장한 인물/지역/정책 등 구체 엔티티를 반드시 포함하세요.
-- 엔티티는 가능하면 문장 앞쪽에 배치하세요.
-
-## Rule 3: Concrete Details (No Clickbait)
-- 숫자(날짜/금액/비율/건수)가 있으면 소제목에 반영하세요.
-- 과장/클릭베이트 금지. 구체적으로 쓰세요.
-
-## Rule 4: Length Limit
-- ? ???? 12~25? ??(?? ??)? ?????.
-- ?? ??? ??? ????? ??? ???? ????.
-- ?? ?? ?? ??? ??? ????.
-
-## Rule 5: 금지 소제목
-- 아래 문구는 절대 사용 금지:
-  "무엇을 나누고 싶은가", "생각의 핵심은 무엇인가", "함께 생각할 점은 무엇인가",
-  "현안은 무엇인가", "핵심 쟁점은 무엇인가", "영향과 과제는 무엇인가"
-
-# Few-Shot Example
-[Input Body Text]
-김교흥 의원은 서구 주민들의 주차난 해소를 위해 '공영주차장 3개소 신설' 예산 50억 원을 확보했다고 밝혔다. 특히 루원시티 상업지구와 가정동 주택가에 우선적으로 주차 타워가 건립될 예정이며, 완공 목표는 2027년 하반기다.
-
-[Bad Output]
-- 주차난 해소를 위한 노력
-- 김교흥의 예산 확보 성과
-
-[Good Output]
-- 김교흥 의원이 확보한 '서구 주차장 예산' 규모와 건립 위치는?
-- 루원시티·가정동 주차 타워, 2027년까지 완공 가능한가?
-
-# Instruction
-- 본문 단락 수: ${desiredCount}개
-- headings 배열도 반드시 ${desiredCount}개로 출력하세요.
-
-[엔티티 힌트]
-${entityHints || '(없음)'}
-
-[본문 단락]
-${sectionBlocks}
-
-출력은 반드시 JSON만 허용:
-{"headings":["...","..."]}`;
-}
-
+/**
+ * AEO 전문가로서 본문 단락을 분석하여 질문형 소제목(H2) 생성
+ * - 복잡한 정규식 후처리 없이 LLM의 지능을 전적으로 활용
+ */
 async function generateAeoSubheadings({ sections, modelName, fullName, fullRegion }) {
   if (!sections || sections.length === 0) return null;
+
+  // 1. 단락 전처리 (HTML 제거 및 공백 정리)
   const cleanedSections = sections
     .map((section) => stripHtml(section))
     .map((text) => text.replace(/\s+/g, ' ').trim())
@@ -180,22 +33,107 @@ async function generateAeoSubheadings({ sections, modelName, fullName, fullRegio
 
   if (cleanedSections.length === 0) return null;
 
-  const prompt = buildAeoSubheadingPrompt(cleanedSections, { fullName, fullRegion });
-  const response = await callGenerativeModel(prompt, 1, modelName, true);
-  const parsed = parseHeadingsResponse(response);
-  let headings = Array.isArray(parsed?.headings)
-    ? parsed.headings
-      .map((heading, idx) => sanitizeHeading(heading, cleanedSections[idx], { fullName, fullRegion }))
-      .filter(Boolean)
-    : [];
+  // 2. 입력 데이터 요약 (Entity Hint 추출)
+  const entityHints = [fullName, fullRegion].filter(Boolean).join(', ');
 
-  if (headings.length === 0) {
-    return cleanedSections.map((section) => fallbackHeading(section, fullRegion));
+  // 3. 프롬프트 구성 (사용자가 제공한 AEO 가이드 완전 통합)
+  const prompt = `
+# Role Definition
+당신은 **AEO(Answer Engine Optimization) 전문가**입니다.
+주어진 본문 단락들을 분석하여, **검색 의도(Search Intent)**에 부합하는 질문형 또는 명확한 명사형 소제목(H2)을 생성해야 합니다.
+
+# Input Settings
+- **Region/Name**: ${entityHints || '(없음)'}
+- **Number of Headings**: ${cleanedSections.length}개 (각 단락마다 1개씩)
+
+# 🔴 Critical Rules (AEO Checklist)
+1. **길이**: 공백 포함 **15자 ~ 22자** (최적), 최대 25자 절대 넘지 말 것.
+2. **구조**: **"핵심 키워드 + 구체적 질문/정보"** 형태. 키워드를 무조건 앞쪽에 배치.
+3. **일치성**: 반드시 **해당 문단(Paragraph)에 실제로 있는 내용**으로만 소제목을 지을 것. (배경지식이나 힌트 사용 금지)
+4. **금지**: "~에 대한", "~관련", "좋은 성과", "열심히" 같은 **추상적 표현 절대 금지**.
+5. **필수**: 구체적인 **숫자(금액, 인원, 날짜)**나 **고유명사(지역명, 정책명)** 포함.
+
+# H2 Generation Strategy (5 Types)
+상황에 맞는 유형을 선택하여 생성하세요:
+
+1. **질문형 (AEO 최강)**: "청년 기본소득, 신청 방법은 무엇인가?" (19자)
+2. **명사형 (SEO 기본)**: "분당구 정자동 주차장 신설 위치" (16자)
+3. **데이터형 (신뢰성)**: "2025년 상반기 5대 주요 성과" (15자)
+4. **절차형 (실용성)**: "청년 기본소득 신청 3단계 절차" (16자)
+5. **비교형 (차별화)**: "기존 정책 vs 개선안 3가지 비교" (16자)
+
+# Bad vs Good Examples
+❌ "청년 지원 정책에 관한 모든 것을 알려드립니다" (22자) → 핵심 없음, 과장
+✅ "청년 기본소득, 어떻게 신청하나요?" (17자)
+
+❌ "좋은 성과를 냈습니다" (10자) → 추상적
+✅ "청년 일자리 274명 창출 성과" (15자)
+
+❌ "부산광역시 부산은 K은?" (12자) → 비문, 오류
+✅ "부산 K-콘텐츠 산업, 육성 전략은?" (17자)
+
+# Input Paragraphs
+${cleanedSections.map((sec, i) => `[Paragraph ${i + 1}]\n${sec.substring(0, 300)}...`).join('\n\n')}
+
+# Output Format (JSON Only)
+반드시 아래 JSON 포맷으로 출력하세요. 순서는 단락 순서와 일치해야 합니다.
+{
+  "headings": [
+    "소제목1 (15-22자)",
+    "소제목2 (15-22자)"
+  ]
+}
+`;
+
+  // 4. LLM 호출 (WriterAgent와 동일한 모델 사용 - 404 방지)
+  const ai = getGenAI();
+  if (!ai) {
+    console.error('Gemini API Key missing');
+    return fallbacks(cleanedSections, fullRegion);
   }
-  if (headings.length > cleanedSections.length) {
-    headings = headings.slice(0, cleanedSections.length);
+
+  // WriterAgent.js와 동일한 모델명 사용
+  const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+
+  try {
+    const result = await model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.7, // 창의성보다 정확성 중요
+        maxOutputTokens: 1000,
+        responseMimeType: 'application/json'
+      }
+    });
+
+    const responseText = result.response.text();
+    const parsed = JSON.parse(responseText);
+
+    if (Array.isArray(parsed?.headings)) {
+      // 5. 안전 장치 로직 (25자 초과 시에만 단순 축약, 조사 검사 X)
+      return parsed.headings.map((h, i) => {
+        let heading = String(h).trim();
+        // 혹시 모를 따옴표 제거
+        heading = heading.replace(/^["']|["']$/g, '');
+        // 길이 강제 (뒤에 자르기)
+        if (heading.length > 28) {
+          heading = heading.substring(0, 27) + '...';
+        }
+        return heading;
+      });
+    }
+
+  } catch (error) {
+    console.error('⚠️ [SubheadingAgent] LLM Error:', error.message);
   }
-  return headings;
+
+  // 6. 실패 시 안전한 Fallback (조잡한 문장 분석 X)
+  return fallbacks(cleanedSections, fullRegion);
+}
+
+// 7. 아주 단순하고 안전한 Fallback (버그 원천 차단)
+function fallbacks(sections, region) {
+  const safeRegion = region || '지역';
+  return sections.map(() => `${safeRegion}의 주요 정책과 비전`);
 }
 
 module.exports = {

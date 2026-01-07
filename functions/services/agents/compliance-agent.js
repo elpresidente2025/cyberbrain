@@ -575,16 +575,29 @@ class ComplianceAgent extends BaseAgent {
       const hasSubtitle =
         title.includes(' - ') ||  // 하이픈
         title.includes(': ') ||   // 콜론
-        title.includes('/') ||    // 슬래시
-        /,\s*.{4,}$/.test(title); // 콤마 부제목 (콤마 뒤 4자 이상)
+        title.includes('/');      // 슬래시
 
       if (hasSubtitle) {
         issues.push({
           type: 'title_has_subtitle',
           severity: 'high',
-          reason: '부제목 패턴 금지 (-, :, /, 콤마+문장)',
+          reason: '부제목 패턴 금지 (-, :, /)',
           current: title,
           suggestion: '단일 문장으로. 예: "부산 대형병원 5곳 응급실 24시간 운영"'
+        });
+      }
+    }
+
+    // 【조건 4】 선거법 위반 표현 (제목에 "약속", "공약" 금지)
+    const electionBannedWords = ['약속', '공약'];
+    for (const word of electionBannedWords) {
+      if (title.includes(word)) {
+        issues.push({
+          type: 'title_election_violation',
+          severity: 'critical',
+          reason: `제목에 선거법 위반 표현 "${word}" 포함`,
+          current: title,
+          suggestion: `"${word}"을 "비전", "정책 방향", "계획" 등으로 교체`
         });
       }
     }

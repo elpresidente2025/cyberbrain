@@ -614,11 +614,14 @@ function buildSummaryBlockToFit(body, maxChars) {
 function insertSummaryAtConclusion(body, block) {
   if (!block) return body;
   if (!body) return block;
-  const headingMatch = body.match(SUMMARY_HEADING_REGEX);
-  if (!headingMatch) {
+
+  const matches = [...body.matchAll(SUMMARY_HEADING_REGEX)];
+  if (matches.length === 0) {
     return `${body}\n${block}`.replace(/\n{3,}/g, '\n\n');
   }
-  const insertIndex = body.indexOf(headingMatch[0]) + headingMatch[0].length;
+
+  const lastMatch = matches[matches.length - 1];
+  const insertIndex = lastMatch.index + lastMatch[0].length;
   return `${body.slice(0, insertIndex)}\n${block}\n${body.slice(insertIndex)}`.replace(/\n{3,}/g, '\n\n');
 }
 
@@ -1474,7 +1477,7 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status, targe
 
 🔴 절대 금지 (위반 시 제목 재작성):
 • 부제목 패턴: "-", ":", "/" 사용 금지
-• 콤마 부제목: "OO, 해법을 찾다" 같은 패턴 금지
+• 선거법 위반: "약속", "공약" (준비/현역 상태에서 금지)
 • 추상적 명사: 해법, 진단, 방안, 대책, 과제, 분석, 전망, 혁신, 발전
 • 추상적 동사: 찾다, 막는다, 나선다, 밝히다, 모색
 • 25자 초과
@@ -1493,9 +1496,8 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status, targe
 • "환자 유출 30% 감소 3년 목표" (15자) ✅
 
 ❌ 절대 사용 금지 패턴:
-• "부산 대형병원, 순위 올리는 해법" ❌ (콤마 부제목, 해법)
+• "부산의 미래를 위한 약속" ❌ (약속 = 선거법 위반)
 • "부산 대형병원 순위 진단과 전망" ❌ (진단, 전망)
-• "대형병원 문제, 이렇게 해결한다" ❌ (콤마 부제목, 추상적)
 • "의료 혁신을 위한 5대 과제" ❌ (혁신, 과제)
 ` : '';
 

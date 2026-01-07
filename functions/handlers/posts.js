@@ -29,24 +29,22 @@ const { HttpsError } = require('firebase-functions/v2/https');
 const { httpWrap } = require('../common/http-wrap');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { ok, generateNaturalRegionTitle } = require('../utils/posts/helpers');
-const { STATUS_CONFIG, CATEGORY_TO_WRITING_METHOD, resolveWritingMethod } = require('../utils/posts/constants');
+const { STATUS_CONFIG } = require('../utils/posts/constants');
 const { buildFactAllowlist } = require('../utils/fact-guard');
 const { loadUserProfile, getOrCreateSession, incrementSessionAttempts } = require('../services/posts/profile-loader');
 const { extractKeywordsFromInstructions } = require('../services/posts/keyword-extractor');
-const { validateAndRetry, runHeuristicValidation, validateKeywordInsertion } = require('../services/posts/validation');
+const { validateKeywordInsertion } = require('../services/posts/validation');
 const { refineWithLLM, buildFollowupValidation, applyHardConstraintsOnly, expandContentToTarget } = require('../services/posts/editor-agent');
 const { processGeneratedContent, trimTrailingDiagnostics, trimAfterClosing, ensureParagraphTags, ensureSectionHeadings, moveSummaryToConclusionStart, cleanupPostContent, getIntroBlockCount, splitBlocksIntoSections } = require('../services/posts/content-processor');
 const { generateAeoSubheadings } = require('../services/posts/subheading-agent');
 const { callGenerativeModel } = require('../services/gemini');
 const { generateTitleFromContent } = require('../services/posts/title-generator');
-const { buildSmartPrompt, buildSmartPromptLegacy } = require('../prompts/prompts');
+// buildSmartPrompt는 더 이상 사용하지 않음 (Multi-Agent가 직접 프롬프트 생성)
 const { fetchNaverNews, compressNewsWithAI, formatNewsForPrompt, shouldFetchNews } = require('../services/news-fetcher');
 const { ProgressTracker } = require('../utils/progress-tracker');
 const { sanitizeElectionContent } = require('../services/election-compliance');
 const { validateTopicRegion } = require('../services/region-detector');
-const { isMultiAgentEnabled, generateWithMultiAgent } = require('../services/agents/pipeline-helper');
-const { SEOAgent } = require('../services/agents/seo-agent');
-const { transferStyle } = require('../services/stylometry');
+const { generateWithMultiAgent } = require('../services/agents/pipeline-helper');
 // 세션 관리는 이제 profile-loader에서 통합 관리 (users 문서의 activeGenerationSession 필드)
 // const { createGenerationSession, incrementSessionAttempt } = require('../services/generation-session');
 
@@ -75,7 +73,7 @@ exports.saveSelectedPost = saveSelectedPost;
 function insertSlogan(content, slogan) {
   if (!content || !slogan) return content;
 
-  // ?????? HTML ?????? ????(???????<br>)
+  // 슬로건을 HTML 형식으로 변환(줄바꿈을 <br>로 치환)
   const sloganHtml = `<p style="text-align: center; font-weight: bold; margin: 1.5em 0;">${slogan.trim().replace(/\n/g, '<br>')}</p>`;
   const trimmed = content.trim();
   return trimmed ? `${trimmed}\n${sloganHtml}` : sloganHtml;
@@ -178,322 +176,6 @@ function needsTitleRegeneration(title, topic, rawTopic) {
     normalized === t ||
     normalized.includes(`${t} 관련`)
   );
-}
-
-async function runLegacyQualityGate({
-  content,
-  title,
-  topic,
-  rawTopic,
-  category,
-  subCategory,
-  instructions,
-  fullName,
-  modelName,
-  userProfile,
-  status,
-  factAllowlist,
-  titleScope,
-  userKeywords,
-  autoKeywords,
-  backgroundKeywords,
-  targetWordCount,
-  maxAttempts = 3,
-  timeoutMs = 30000
-}) {
-  let currentContent = content;
-  let currentTitle = title;
-  const startTime = Date.now();
-  let lastSeoPassed = false;
-  let lastHeuristicResult = null;
-  let lastKeywordResult = null;
-  let lastSeoResult = null;
-  const seoKeywordSource = userKeywords.length > 0 ? userKeywords : backgroundKeywords;
-  const seoKeywordCandidates = [...seoKeywordSource]
-    .map((kw) => (kw && kw.keyword) ? kw.keyword : kw)
-    .filter(Boolean);
-  const seoKeywords = [...new Set(seoKeywordCandidates)].slice(0, 5);
-
-  if (needsTitleRegeneration(currentTitle, topic, rawTopic)) {
-    currentTitle = await generateTitleFromContent({
-      content: currentContent || '',
-      backgroundInfo: instructions,
-      keywords: backgroundKeywords,
-      userKeywords,
-      topic,
-      fullName,
-      modelName,
-      category,
-      subCategory,
-      status,
-      factAllowlist,
-      titleScope
-    });
-  }
-
-  let attempt = 0;
-
-  while (attempt < maxAttempts && Date.now() - startTime < timeoutMs) {
-    attempt += 1;
-
-    let seoResult = null;
-    let seoPassed = true;
-
-    try {
-      const seoAgent = new SEOAgent();
-      seoResult = await seoAgent.run({
-        userProfile,
-        targetWordCount,
-        category,
-        previousResults: {
-          KeywordAgent: {
-            success: true,
-            data: {
-              keywords: seoKeywords,
-              primary: userKeywords[0] || seoKeywords[0] || ''
-            }
-          },
-          WriterAgent: {
-            success: true,
-            data: { content: currentContent, title: currentTitle }
-          },
-          ComplianceAgent: {
-            success: true,
-            data: { content: currentContent, title: currentTitle }
-          }
-        }
-      });
-
-      if (seoResult?.success && seoResult.data) {
-        currentContent = seoResult.data.content || currentContent;
-        currentTitle = seoResult.data.title || currentTitle;
-        seoPassed = seoResult.data.seoPassed ?? seoResult.data.passed ?? false;
-        lastSeoResult = seoResult.data;
-      } else {
-        seoPassed = false;
-        lastSeoResult = null;
-      }
-    } catch (seoError) {
-      console.warn('SEO 검증 오류 (결과 없음):', seoError.message);
-      seoPassed = false;
-      lastSeoResult = null;
-    }
-
-    const heuristicResult = await runHeuristicValidation(
-      currentContent,
-      status,
-      currentTitle,
-      { useLLM: true, userKeywords, factAllowlist }
-    );
-
-    const keywordResult = validateKeywordInsertion(
-      currentContent,
-      userKeywords,
-      autoKeywords,
-      targetWordCount
-    );
-    lastHeuristicResult = heuristicResult;
-    lastKeywordResult = keywordResult;
-    lastSeoPassed = seoPassed;
-
-    const needsEdit = !heuristicResult.passed || !keywordResult.valid || !seoPassed;
-    if (!needsEdit) {
-      return {
-        content: currentContent,
-        title: currentTitle,
-        attempts: attempt,
-        seoPassed
-      };
-    }
-
-    const validationResult = {
-      ...heuristicResult,
-      details: {
-        ...heuristicResult.details,
-        seo: seoResult?.data
-          ? {
-              passed: seoPassed,
-              issues: seoResult.data.issues || [],
-              suggestions: seoResult.data.suggestions || []
-            }
-          : {
-              passed: false,
-              issues: [
-                {
-                  id: 'seo_unavailable',
-                  severity: 'high',
-                  message: 'SEO 검증 결과 없음'
-                }
-              ],
-              suggestions: []
-            }
-      }
-    };
-
-    const editorResult = await refineWithLLM({
-      content: currentContent,
-      title: currentTitle,
-      validationResult,
-      keywordResult,
-      userKeywords,
-      seoKeywords,
-      status,
-      modelName,
-      factAllowlist,
-      targetWordCount
-    });
-
-    if (!editorResult.edited) {
-      break;
-    }
-
-    currentContent = editorResult.content;
-    currentTitle = editorResult.title || currentTitle;
-
-    if (needsTitleRegeneration(currentTitle, topic, rawTopic)) {
-      currentTitle = await generateTitleFromContent({
-        content: currentContent || '',
-        backgroundInfo: instructions,
-        keywords: backgroundKeywords,
-        userKeywords,
-        topic,
-        fullName,
-        modelName,
-        category,
-        subCategory,
-        status,
-        factAllowlist,
-        titleScope
-      });
-    }
-  }
-
-  const finalHeuristicResult = lastHeuristicResult || await runHeuristicValidation(
-    currentContent,
-    status,
-    currentTitle,
-    { useLLM: true, userKeywords, factAllowlist }
-  );
-  const finalKeywordResult = lastKeywordResult || validateKeywordInsertion(
-    currentContent,
-    userKeywords,
-    autoKeywords,
-    targetWordCount
-  );
-
-  if (!finalHeuristicResult.passed || !finalKeywordResult.valid || !lastSeoPassed) {
-    const fallbackValidation = {
-      ...finalHeuristicResult,
-      details: {
-        ...finalHeuristicResult.details,
-        seo: lastSeoResult
-          ? {
-              passed: lastSeoPassed,
-              issues: lastSeoResult.issues || [],
-              suggestions: lastSeoResult.suggestions || []
-            }
-          : {
-              passed: false,
-              issues: [
-                {
-                  id: 'seo_unavailable',
-                  severity: 'high',
-                  message: 'SEO 결과 없음'
-                }
-              ],
-              suggestions: []
-            }
-      }
-    };
-
-    let finalSeoPassed = lastSeoPassed;
-    const forcedEdit = await refineWithLLM({
-      content: currentContent,
-      title: currentTitle,
-      validationResult: fallbackValidation,
-      keywordResult: finalKeywordResult,
-      userKeywords,
-      seoKeywords,
-      status,
-      modelName,
-      factAllowlist,
-      targetWordCount
-    });
-
-    if (forcedEdit.edited) {
-      currentContent = forcedEdit.content;
-      currentTitle = forcedEdit.title || currentTitle;
-
-      let forcedSeoPassed = false;
-      try {
-        const seoAgent = new SEOAgent();
-        const forcedSeoResult = await seoAgent.run({
-          userProfile,
-          targetWordCount,
-          category,
-          previousResults: {
-            KeywordAgent: {
-              success: true,
-              data: {
-                keywords: seoKeywords,
-                primary: userKeywords[0] || seoKeywords[0] || ''
-              }
-            },
-            WriterAgent: {
-              success: true,
-              data: { content: currentContent, title: currentTitle }
-            },
-            ComplianceAgent: {
-              success: true,
-              data: { content: currentContent, title: currentTitle }
-            }
-          }
-        });
-        forcedSeoPassed = forcedSeoResult?.data?.seoPassed ?? forcedSeoResult?.data?.passed ?? false;
-      } catch (error) {
-        forcedSeoPassed = false;
-      }
-
-      const forcedHeuristic = await runHeuristicValidation(
-        currentContent,
-        status,
-        currentTitle,
-        { useLLM: true, userKeywords, factAllowlist }
-      );
-      const forcedKeyword = validateKeywordInsertion(
-        currentContent,
-        userKeywords,
-        autoKeywords,
-        targetWordCount
-      );
-
-      if (forcedHeuristic.passed && forcedKeyword.valid && forcedSeoPassed) {
-        return {
-          content: currentContent,
-          title: currentTitle,
-          attempts: attempt,
-          seoPassed: forcedSeoPassed
-        };
-      }
-      finalSeoPassed = forcedSeoPassed;
-    }
-
-    console.warn('품질 기준 미충족 - 보정 결과로 종료');
-
-    return {
-      content: currentContent,
-      title: currentTitle,
-      attempts: attempt,
-      seoPassed: finalSeoPassed
-    };
-  }
-
-  return {
-    content: currentContent,
-    title: currentTitle,
-    attempts: attempt,
-    seoPassed: lastSeoPassed
-  };
 }
 
 // Generation 엔드포인트 (아직 분리하지 않음)
@@ -795,8 +477,8 @@ exports.generatePosts = httpWrap(async (req) => {
     // 예: "민주당 청년위원장, 경제활성화" → ['민주당 청년위원장', '경제활성화']
     const userKeywords = data.keywords
       ? (typeof data.keywords === 'string'
-          ? data.keywords.split(',').map(k => k.trim()).filter(k => k)
-          : data.keywords)
+        ? data.keywords.split(',').map(k => k.trim()).filter(k => k)
+        : data.keywords)
       : [];
 
     const backgroundKeywords = [...new Set([...userKeywords, ...extractedKeywords])];
@@ -845,23 +527,23 @@ exports.generatePosts = httpWrap(async (req) => {
     const sourceMaterials = referenceTexts.filter(Boolean);
     const sourceInstruction = strictSourceOnly
       ? (() => {
-          if (sourceMaterials.length === 0) {
-            return [
-              '[SOURCE LIMIT]',
-              '- No sources provided. Do not invent facts, figures, names, or organizations.',
-              '- Keep content general and omit uncertain claims.'
-            ].join('\n');
-          }
-          const lines = ['[SOURCE MATERIALS]'];
-          sourceMaterials.forEach((item, idx) => {
-            lines.push(`${idx + 1}. ${String(item).trim()}`);
-          });
-          lines.push('', '[SOURCE LIMIT]');
-          lines.push('- Use only the information in the sources above.');
-          lines.push('- Do not add facts/figures/names/orgs/policies not present.');
-          lines.push('- If unsure, omit.');
-          return lines.join('\n');
-        })()
+        if (sourceMaterials.length === 0) {
+          return [
+            '[SOURCE LIMIT]',
+            '- No sources provided. Do not invent facts, figures, names, or organizations.',
+            '- Keep content general and omit uncertain claims.'
+          ].join('\n');
+        }
+        const lines = ['[SOURCE MATERIALS]'];
+        sourceMaterials.forEach((item, idx) => {
+          lines.push(`${idx + 1}. ${String(item).trim()}`);
+        });
+        lines.push('', '[SOURCE LIMIT]');
+        lines.push('- Use only the information in the sources above.');
+        lines.push('- Do not add facts/figures/names/orgs/policies not present.');
+        lines.push('- If unsure, omit.');
+        return lines.join('\n');
+      })()
       : '';
     const instructionPayload = [data.instructions, sourceInstruction]
       .filter(Boolean)
@@ -874,244 +556,62 @@ exports.generatePosts = httpWrap(async (req) => {
       ...userKeywords
     ]);
 
-    // 🤖 Multi-Agent 모드 체크
-    const stopMultiAgentCheck = startPerf('isMultiAgentEnabled');
-    const useMultiAgent = await isMultiAgentEnabled();
-    stopMultiAgentCheck();
-
-    // 🎨 고품질 모드 체크 (2단계 생성: 중립적 초안 → 문체 변환)
-    const stopSystemConfig = startPerf('loadSystemConfig');
-    const systemConfigDoc = await db.collection('system').doc('config').get();
-    stopSystemConfig();
-    const useHighQualityMode = systemConfigDoc.exists
-      ? (systemConfigDoc.data().useHighQualityMode || false)
-      : false;
+    // ═══════════════════════════════════════════════════════════════
+    // 🤖 Multi-Agent 전체 파이프라인 (통합 리팩토링 버전)
+    // KeywordAgent → WriterAgent → ComplianceAgent → SEOAgent
+    // ═══════════════════════════════════════════════════════════════
+    console.log('🤖 [Multi-Agent] 전체 파이프라인 실행');
 
     let generatedContent = null;
     let generatedTitle = null;
     let multiAgentMetadata = null;
-    let highQualityMetadata = null;
-
-    if (useMultiAgent) {
-      // ═══════════════════════════════════════════════════════════════
-      // 🤖 Multi-Agent 전체 파이프라인 (통합 리팩토링 버전)
-      // KeywordAgent → WriterAgent → ComplianceAgent → SEOAgent
-      // ═══════════════════════════════════════════════════════════════
-      console.log('🤖 [Multi-Agent] 전체 파이프라인 모드 활성화');
-
-      // 3단계: AI 원고 작성 중
-      await progress.stepGenerating();
-
-      const stopMultiAgentGenerate = startPerf('multiAgentGenerate');
-      try {
-        const multiAgentResult = await generateWithMultiAgent({
-          topic: sanitizedTopic,
-          category,
-          subCategory: data.subCategory || '',
-          userProfile: {
-            ...userProfile,
-            status: currentStatus,
-            isCurrentLawmaker,
-            politicalExperience,
-            familyStatus
-          },
-          memoryContext: safeMemoryContext,
-          instructions: instructionPayload,
-          newsContext: safeNewsContext,
-          regionHint,
-          keywords: backgroundKeywords,
-          userKeywords,  // 🔑 사용자 직접 입력 키워드 (최우선)
-          factAllowlist,
-          targetWordCount,
-          attemptNumber: session.attempts,  // 🎯 현재 시도 번호 (수사학 전략 변형용)
-          rhetoricalPreferences: userProfile.rhetoricalPreferences || {}  // 🎯 수사학 전략 선호도
-        });
-        stopMultiAgentGenerate();
-
-        generatedContent = multiAgentResult.content;
-        generatedTitle = multiAgentResult.title;
-        multiAgentMetadata = multiAgentResult.metadata;
-        // 🎯 적용된 수사학 전략 저장
-        multiAgentMetadata.appliedStrategy = multiAgentResult.appliedStrategy;
-
-        console.log('✅ [Multi-Agent] 생성 완료', {
-          wordCount: multiAgentResult.wordCount,
-          seoPassed: multiAgentMetadata?.seo?.passed,
-          compliancePassed: multiAgentMetadata?.compliance?.passed
-        });
-
-        if (multiAgentMetadata?.quality?.thresholdMet === false) {
-          console.warn('⚠️ [Multi-Agent] 품질 기준 미충족 - legacy 경로로 전환');
-          generatedContent = null;
-          generatedTitle = null;
-          multiAgentMetadata = null;
-        }
-
-        if (generatedContent) {
-          const stopPostProcess = startPerf('postProcess');
-          generatedContent = processGeneratedContent({
-            content: generatedContent,
-            fullName,
-            fullRegion,
-            currentStatus,
-            userProfile,
-            config,
-            customTitle,
-            displayTitle,
-            isCurrentLawmaker,
-            category,
-            subCategory: data.subCategory || ''
-          });
-          stopPostProcess();
-        }
-
-      } catch (multiAgentError) {
-        stopMultiAgentGenerate();
-        console.error('❌ [Multi-Agent] 파이프라인 실패, 기존 방식으로 폴백:', multiAgentError.message);
-        // 폴백: 기존 방식으로 계속 진행 (아래 코드 실행)
-      }
-    }
-
-    // 기존 방식 (Multi-Agent 비활성화 또는 실패 시)
-    if (!generatedContent) {
-      // 작법 결정
-      const writingMethod = resolveWritingMethod(category, data.subCategory);
-
-      // 🧠 메모리 컨텍스트와 개인화 힌트 통합
-      const combinedHints = [personalizedHints, safeMemoryContext]
-        .filter(h => h && h.trim())
-        .join(' | ');
-
-      // authorBio 구성: "정당 직위 이름" 형태 (준비 중 표현 금지)
-      // 예: "더불어민주당 사하구 을 지역위원장 이재성"
-      const partyName = userProfile.partyName || '';
-      const authorBioParts = [];
-      if (partyName) authorBioParts.push(partyName);
-      if (displayTitle) authorBioParts.push(displayTitle);
-      authorBioParts.push(fullName);
-      const authorBio = authorBioParts.join(' ');
-
-      // 프롬프트 생성
-      const stopBuildPrompt = startPerf('buildPrompt');
-      let prompt = await buildSmartPrompt({
-        writingMethod,
-        topic: sanitizedTopic,
-        authorBio,
-        targetWordCount,
-        instructions: instructionPayload,
-        keywords: backgroundKeywords,
-        userKeywords,  // 🔑 사용자 직접 입력 키워드 (최우선 반영)
-        factAllowlist,
-        newsContext: safeNewsContext,
-        personalizedHints: combinedHints,  // 🧠 통합된 힌트 사용
-        applyEditorialRules: true,
-        // 원외 인사 판단 정보 추가
-        isCurrentLawmaker,
-        politicalExperience,
-        currentStatus,
-        // 선거법 준수를 위한 사용자 상태 (준비/현역/예비/후보)
-        status: currentStatus,
-        // 가족 상황 (자녀 환각 방지)
-        familyStatus,
-        // 🗺️ 타 지역 주제 시 관점 안내
-        regionHint
-      });
-      stopBuildPrompt();
-
-    if (typeof prompt !== 'string' || !prompt.trim()) {
-      console.warn('⚠️ buildSmartPrompt 결과가 비어 있습니다. Legacy 프롬프트로 대체합니다.');
-      prompt = await buildSmartPromptLegacy({
-        writingMethod,
-        topic: sanitizedTopic,
-        authorBio,
-        targetWordCount,
-        instructions: instructionPayload,
-        keywords: backgroundKeywords,
-        userKeywords,
-        factAllowlist,
-        newsContext: safeNewsContext,
-        personalizedHints: combinedHints,
-        applyEditorialRules: true,
-        isCurrentLawmaker,
-        politicalExperience,
-        currentStatus,
-        status: currentStatus,
-        familyStatus,
-        regionHint
-      });
-    }
-
-    // 🎨 문체 가이드 주입 (Style Fingerprint 기반)
-    if (styleGuide && styleGuide.trim()) {
-      prompt = styleGuide + prompt;
-      console.log('🎨 문체 가이드 주입 완료 (', styleGuide.length, '자)');
-    }
-
-    // 🔍 디버깅: 프롬프트 로깅 (처음 1000자만)
-    const promptPreview = String(prompt || '').substring(0, 1000);
-    console.log('📋 생성된 프롬프트 (처음 1000자):', promptPreview);
-    console.log('📋 프롬프트 전체 길이:', String(prompt || '').length, '자');
 
     // 3단계: AI 원고 작성 중
     await progress.stepGenerating();
 
-    // AI 호출 및 휴리스틱 검증 + Critic Agent 검토
-    const stopValidateAndRetry = startPerf('validateAndRetry');
-    const apiResponse = await validateAndRetry({
-      prompt,
-      modelName,
-      fullName,
-      fullRegion,
-      targetWordCount,
-      userKeywords,        // 사용자 입력 키워드 (엄격 검증)
-      autoKeywords: extractedKeywords,  // 자동 추출 키워드 (완화 검증)
-      status: currentStatus,  // 선거법 검증용 (준비/현역/예비/후보)
-      factAllowlist,
-      ragContext: safeRagContext,          // Critic Agent 팩트 검증용
-      authorName: fullName,  // Corrector Agent 톤 유지용
-      topic: sanitizedTopic,  // Critic Agent 문맥 이해용
-      maxAttempts: 1,      // 휴리스틱 검증 실패 시 재시도 (빠름)
-      maxCriticAttempts: 1   // Critic Agent 루프 최대 반복
-    });
-    stopValidateAndRetry();
+    const stopMultiAgentGenerate = startPerf('multiAgentGenerate');
+    try {
+      const multiAgentResult = await generateWithMultiAgent({
+        topic: sanitizedTopic,
+        category,
+        subCategory: data.subCategory || '',
+        userProfile: {
+          ...userProfile,
+          status: currentStatus,
+          isCurrentLawmaker,
+          politicalExperience,
+          familyStatus
+        },
+        memoryContext: safeMemoryContext,
+        instructions: instructionPayload,
+        newsContext: safeNewsContext,
+        regionHint,
+        keywords: backgroundKeywords,
+        userKeywords,  // 🔑 사용자 직접 입력 키워드 (최우선)
+        factAllowlist,
+        targetWordCount,
+        attemptNumber: session.attempts,  // 🎯 현재 시도 번호 (수사학 전략 변형용)
+        rhetoricalPreferences: userProfile.rhetoricalPreferences || {},  // 🎯 수사학 전략 선호도
+        pipeline: data.pipeline || 'standard'  // 🆕 파이프라인 전달 (highQuality 지원)
+      });
+      stopMultiAgentGenerate();
 
-      // JSON 파싱
-      let parsedResponse;
-      try {
-        try {
-          const apiResponsePreview = String(apiResponse || '').substring(0, 500);
-          console.log('🔍 AI 원본 응답 (첫 500자):', apiResponsePreview);
-          parsedResponse = JSON.parse(String(apiResponse || ''));
-          console.log('✅ 직접 JSON 파싱 성공');
-        } catch (directParseError) {
-          const jsonMatch = String(apiResponse || '').match(/```json\s*([\s\S]*?)\s*```/);
-          if (jsonMatch) {
-            parsedResponse = JSON.parse(jsonMatch[1]);
-          } else {
-            const cleaned = String(apiResponse || '').trim();
-            const firstBrace = cleaned.indexOf('{');
-            const lastBrace = cleaned.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-              parsedResponse = JSON.parse(cleaned.substring(firstBrace, lastBrace + 1));
-            } else {
-              throw new Error('JSON 형식 찾기 실패');
-            }
-          }
-        }
-      } catch (parseError) {
-        console.error('❌ JSON 파싱 실패:', parseError.message);
-        parsedResponse = {
-          title: `${sanitizedTopic} 관련 원고`,
-          content: `<p>${sanitizedTopic}에 대한 의견을 나누고자 합니다.</p>`,
-          wordCount: 100
-        };
-      }
+      generatedContent = multiAgentResult.content;
+      generatedTitle = multiAgentResult.title;
+      multiAgentMetadata = multiAgentResult.metadata;
+      // 🎯 적용된 수사학 전략 저장
+      multiAgentMetadata.appliedStrategy = multiAgentResult.appliedStrategy;
 
-      // 후처리
-      if (parsedResponse && parsedResponse.content) {
+      console.log('✅ [Multi-Agent] 생성 완료', {
+        wordCount: multiAgentResult.wordCount,
+        seoPassed: multiAgentMetadata?.seo?.passed,
+        compliancePassed: multiAgentMetadata?.compliance?.passed
+      });
+
+      if (generatedContent) {
         const stopPostProcess = startPerf('postProcess');
-        parsedResponse.content = processGeneratedContent({
-          content: parsedResponse.content,
+        generatedContent = processGeneratedContent({
+          content: generatedContent,
           fullName,
           fullRegion,
           currentStatus,
@@ -1126,52 +626,16 @@ exports.generatePosts = httpWrap(async (req) => {
         stopPostProcess();
       }
 
-      // 🎨 고품질 모드: 2단계 Style Transfer (styleFingerprint 필요)
-      if (useHighQualityMode && styleFingerprint && styleFingerprint.analysisMetadata?.confidence >= 0.6) {
-        console.log('🎨 [HighQuality] 2단계 Style Transfer 시작...');
-        const stopStyleTransfer = startPerf('styleTransfer');
-        try {
-          const styleTransferStart = Date.now();
-          const transformedContent = await transferStyle(
-            parsedResponse.content,
-            styleFingerprint,
-            {
-              userName: fullName,
-              category
-            }
-          );
+    } catch (multiAgentError) {
+      stopMultiAgentGenerate();
+      console.error('❌ [Multi-Agent] 파이프라인 실패:', multiAgentError.message);
+      throw new Error(`원고 생성 실패: ${multiAgentError.message}`);
+    }
 
-          if (transformedContent && transformedContent !== parsedResponse.content) {
-            parsedResponse.content = transformedContent;
-            const duration = Date.now() - styleTransferStart;
-            console.log(`✅ [HighQuality] Style Transfer 완료 (${duration}ms)`);
-
-            highQualityMetadata = {
-              enabled: true,
-              mode: 'two-stage',
-              styleConfidence: styleFingerprint.analysisMetadata.confidence,
-              dominantStyle: styleFingerprint.analysisMetadata.dominantStyle,
-              duration
-            };
-          } else {
-            console.log('⚠️ [HighQuality] Style Transfer 결과 동일 - 원본 유지');
-            highQualityMetadata = { enabled: true, mode: 'fallback', reason: 'no-change' };
-          }
-          stopStyleTransfer();
-        } catch (styleError) {
-          stopStyleTransfer();
-          console.error('❌ [HighQuality] Style Transfer 실패:', styleError.message);
-          highQualityMetadata = { enabled: true, mode: 'fallback', reason: styleError.message };
-          // 실패해도 원본 content 사용 (graceful degradation)
-        }
-      } else if (useHighQualityMode) {
-        console.log('⚠️ [HighQuality] Style Fingerprint 없음 또는 신뢰도 부족 - 1단계만 사용');
-        highQualityMetadata = { enabled: false, reason: 'no-style-fingerprint' };
-      }
-
-      generatedContent = parsedResponse.content;
-      generatedTitle = parsedResponse.title;
-    } // End of legacy generation path
+    // 생성 결과 검증
+    if (!generatedContent) {
+      throw new Error('원고 생성 실패 - 콘텐츠가 생성되지 않았습니다.');
+    }
 
     // 🎉 검증 성공! 이제 attempts 증가 및 생성 횟수 차감
     // 1단계: attempts 증가 (관리자만 DB에 기록 안 함, 테스터는 유료 사용자처럼 추적)
@@ -1288,36 +752,6 @@ exports.generatePosts = httpWrap(async (req) => {
           editSummary: refined.editSummary
         });
       }
-    } else {
-      const autoKeywords = backgroundKeywords.filter(k => !userKeywords.includes(k));
-      const stopQualityGate = startPerf('legacyQualityGate');
-      const qualityGateResult = await runLegacyQualityGate({
-        content: generatedContent,
-        title: generatedTitle,
-        topic: sanitizedTopic,
-        rawTopic: topic,
-        category,
-        subCategory: data.subCategory,
-        instructions: instructionPayload,
-        fullName,
-        modelName,
-        userProfile,
-        status: currentStatus,
-        factAllowlist,
-        titleScope,
-        userKeywords,
-        autoKeywords,
-        backgroundKeywords,
-        targetWordCount
-      });
-      stopQualityGate();
-
-      generatedContent = qualityGateResult.content;
-      generatedTitle = qualityGateResult.title;
-      console.log('[Legacy] 품질 보정 결과', {
-        attempts: qualityGateResult.attempts,
-        seoPassed: qualityGateResult.seoPassed
-      });
     }
 
     // Finalizing
@@ -1351,19 +785,19 @@ exports.generatePosts = httpWrap(async (req) => {
       console.log('🚨 [Legacy] 제목 재생성 필요:', { generatedTitle, topic: sanitizedTopic });
       const stopTitleGeneration = startPerf('generateTitle');
       generatedTitle = await generateTitleFromContent({
-          content: generatedContent || '',
-          backgroundInfo: instructionPayload,
-          keywords: backgroundKeywords,
-          userKeywords: userKeywords,
-          topic: sanitizedTopic,
-          fullName,
-          modelName,
-          category: data.category,
-          subCategory: data.subCategory,
-          status: currentStatus,
-          factAllowlist,
-          titleScope
-        });
+        content: generatedContent || '',
+        backgroundInfo: instructionPayload,
+        keywords: backgroundKeywords,
+        userKeywords: userKeywords,
+        topic: sanitizedTopic,
+        fullName,
+        modelName,
+        category: data.category,
+        subCategory: data.subCategory,
+        status: currentStatus,
+        factAllowlist,
+        titleScope
+      });
       stopTitleGeneration();
     }
 
@@ -1513,8 +947,8 @@ exports.generatePosts = httpWrap(async (req) => {
           duration: multiAgentMetadata.duration,
           appliedStrategy: multiAgentMetadata.appliedStrategy || null  // 🎯 적용된 수사학 전략
         } : { enabled: false },
-        // 🎨 고품질 모드 메타데이터 (2단계 생성)
-        highQuality: highQualityMetadata || { enabled: false }
+        // 🎨 고품질 모드 메타데이터 (레거시 모드에서만 사용, 현재 비활성화)
+        highQuality: { enabled: false }
       }
     });
 

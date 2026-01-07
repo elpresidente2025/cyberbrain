@@ -13,6 +13,8 @@
 
 const { KeywordAgent } = require('./keyword-agent');
 const { WriterAgent } = require('./writer-agent');
+const { ChainWriterAgent } = require('./chain-writer-agent'); // 🆕 추가
+const { TitleAgent } = require('./title-agent');
 const { ComplianceAgent } = require('./compliance-agent');
 const { SEOAgent } = require('./seo-agent');
 const { refineWithLLM } = require('../posts/editor-agent');
@@ -32,6 +34,16 @@ const PIPELINES = {
   standard: [
     { agent: KeywordAgent, name: 'KeywordAgent', required: false },
     { agent: WriterAgent, name: 'WriterAgent', required: true },
+    { agent: TitleAgent, name: 'TitleAgent', required: true },
+    { agent: ComplianceAgent, name: 'ComplianceAgent', required: true },
+    { agent: SEOAgent, name: 'SEOAgent', required: false }
+  ],
+
+  // 💎 고품질 파이프라인 (ChainWriterAgent 사용) - A/B 테스트 Group B
+  highQuality: [
+    { agent: KeywordAgent, name: 'KeywordAgent', required: false },
+    { agent: ChainWriterAgent, name: 'WriterAgent', required: true }, // 이름은 WriterAgent로 위장하여 후속 Agent 호환성 유지
+    { agent: TitleAgent, name: 'TitleAgent', required: true },
     { agent: ComplianceAgent, name: 'ComplianceAgent', required: true },
     { agent: SEOAgent, name: 'SEOAgent', required: false }
   ],
@@ -59,7 +71,7 @@ class Orchestrator {
     this.options = {
       pipeline: 'standard',
       continueOnError: true,  // 선택적 Agent 실패 시 계속 진행
-      timeout: 120000,        // 전체 타임아웃 (120초, WriterAgent가 오래 걸릴 수 있음)
+      timeout: 180000,        // 전체 타임아웃 (180초, ChainWriterAgent 고려 시간 연장)
       ...options
     };
 
@@ -115,7 +127,7 @@ class Orchestrator {
 
         // Agent 실행
         const result = await agent.run(enrichedContext);
-        this.results[name] = result;
+        this.results[name] = result; // 실행된 인스턴스 이름으로 저장 (ChainWriterAgent여도 'WriterAgent' 키로 저장됨)
 
         console.log(`✅ [Orchestrator] ${name} 완료 (${result.metadata?.duration || 0}ms)`);
 
@@ -557,6 +569,10 @@ class Orchestrator {
         // KeywordAgent는 topic과 category만 필요
         break;
 
+      case 'TitleAgent':
+        // TitleAgent는 WriterAgent 결과 필요 (previousResults에 포함됨)
+        break;
+
       case 'WriterAgent':
         // WriterAgent는 userProfile, memoryContext, keywords 필요
         // KeywordAgent 결과에서 키워드 가져오기
@@ -594,10 +610,10 @@ class Orchestrator {
     } else if (this.results.ComplianceAgent?.success) {
       finalContent = this.results.ComplianceAgent.data.content;
       // 🏷️ ComplianceAgent도 제목을 반환하므로 우선 사용 (EditorAgent로 수정된 제목 포함)
-      finalTitle = this.results.ComplianceAgent.data.title || this.results.WriterAgent?.data?.title || null;
+      finalTitle = this.results.ComplianceAgent.data.title || this.results.TitleAgent?.data?.title || this.results.WriterAgent?.data?.title || null;
     } else if (this.results.WriterAgent?.success) {
       finalContent = this.results.WriterAgent.data.content;
-      finalTitle = this.results.WriterAgent.data.title;
+      finalTitle = this.results.TitleAgent?.data?.title || this.results.WriterAgent.data.title;
     }
 
     // 메타데이터 수집
@@ -688,4 +704,3 @@ module.exports = {
   runAgentPipeline,
   PIPELINES
 };
-

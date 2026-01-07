@@ -105,16 +105,16 @@ ${searchTermList}
       const allowedTokens = (factAllowlist.tokens || []).slice(0, 30);
       if (allowedTokens.length > 0) {
         factLockSection = `
-[?? ?? ??]
-- ?? ??/??/??? ????, ??? ?? ??? ?????.
-- ??? ? ?? ??? ??? ?????.
-- ?? ??: ${allowedTokens.join(', ')}
+[수치 제한 규칙]
+- 아래 수치/날짜/금액만 사용하고, 나머지 수치는 사용하지 마세요.
+- 허용된 표현 외 다른 수치를 만들지 마세요.
+- 허용 목록: ${allowedTokens.join(', ')}
 `;
       } else {
         factLockSection = `
-[?? ?? ??]
-- ?? ??? ??? ????. ??(??/?? ??)? ?? ???.
-- ????? ?? ?? ???? ????.
+[수치 제한 규칙]
+- 수치 정보를 사용하지 마세요. 출처(자료/통계 등)가 없기 때문입니다.
+- 구체적인 숫자나 비율을 언급하지 마세요.
 `;
       }
     }
@@ -230,138 +230,10 @@ ${searchTermList}
 
   } catch (error) {
     console.error('❌ buildSmartPrompt 오류:', error);
-    // Fallback: 기존 방식으로 생성
-    return buildSmartPromptLegacy(options);
+    throw new Error(`프롬프트 생성 실패: ${error.message}`);
   }
 }
 
-// ============================================================================
-// Legacy 프롬프트 빌더 (Fallback용)
-// ============================================================================
-
-const { getElectionStage } = require('./guidelines/legal');
-const { buildSEOInstruction, buildAntiRepetitionInstruction } = require('./guidelines/seo');
-
-function injectElectionLawCompliance(basePrompt, status) {
-  if (!status) return basePrompt;
-
-  const electionStage = getElectionStage(status);
-  if (!electionStage || !electionStage.promptInstruction) {
-    return basePrompt;
-  }
-
-  if (electionStage.name === 'STAGE_1') {
-    const enhancedInstruction = `
-╔═══════════════════════════════════════════════════════════════╗
-║  ⚖️ [선거법 준수 - 최우선 원칙] ⚖️                            ║
-╚═══════════════════════════════════════════════════════════════╝
-
-**현재 상태: ${status} (예비후보 등록 이전)**
-
-${electionStage.promptInstruction}
-
-** 추가 주의사항 - 공약성 어미 금지 **
-다음과 같은 "~하겠습니다" 형태의 공약성 어미는 사용 금지:
-❌ 추진하겠습니다, 실현하겠습니다, 만들겠습니다, 해내겠습니다
-❌ 전개하겠습니다, 제공하겠습니다, 활성화하겠습니다
-❌ 개선하겠습니다, 확대하겠습니다, 강화하겠습니다
-❌ 설립하겠습니다, 구축하겠습니다, 마련하겠습니다
-❌ 지원하겠습니다, 해결하겠습니다, 바꾸겠습니다
-
-✅ 대신 사용할 표현:
-"~이 필요합니다", "~을 제안합니다", "~을 연구하고 있습니다"
-"~을 위해 노력 중입니다", "~에 대해 논의하고 있습니다"
-
----
-
-`;
-    return enhancedInstruction + basePrompt;
-  }
-
-  return `${electionStage.promptInstruction}\n\n---\n\n${basePrompt}`;
-}
-
-function injectUniversalQualityRules(basePrompt) {
-  const qualityRules = `
-
-╔═══════════════════════════════════════════════════════════════╗
-║  ⛔ [치명적 오류 방지] 위반 시 생성 실패                       ║
-╚═══════════════════════════════════════════════════════════════╝
-
-[필수 체크]
-1) 마무리 인사 이후 본문 금지
-2) 같은 내용/문장 반복 금지 (1문단 1메시지)
-3) 문장 미완결 금지
-4) 합쇼체 유지, 동일 어미 연속 반복은 피하고 유사 표현으로 분산(권장)
-
-`;
-
-  return qualityRules + basePrompt;
-}
-
-async function buildSmartPromptLegacy(options) {
-  console.warn('⚠️ Guideline Grounding 실패 - Legacy 방식으로 Fallback');
-
-  const { writingMethod, topic, status } = options;
-  let generatedPrompt;
-
-  switch (writingMethod) {
-    case 'emotional_writing':
-      generatedPrompt = buildDailyCommunicationPrompt(options);
-      break;
-    case 'logical_writing':
-      generatedPrompt = buildLogicalWritingPrompt(options);
-      break;
-    case 'direct_writing':
-      generatedPrompt = buildActivityReportPrompt(options);
-      break;
-    case 'critical_writing':
-      generatedPrompt = buildCriticalWritingPrompt(options);
-      break;
-    case 'analytical_writing':
-      generatedPrompt = buildLocalIssuesPrompt(options);
-      break;
-    default:
-      generatedPrompt = buildDailyCommunicationPrompt(options);
-      break;
-  }
-
-  const nonLawmakerWarning = generateNonLawmakerWarning({
-    isCurrentLawmaker: options.isCurrentLawmaker,
-    politicalExperience: options.politicalExperience,
-    authorBio: options.authorBio
-  });
-
-  if (nonLawmakerWarning) {
-    generatedPrompt = nonLawmakerWarning + '\n\n' + generatedPrompt;
-  }
-
-  const familyWarning = generateFamilyStatusWarning({
-    familyStatus: options.familyStatus
-  });
-
-  if (familyWarning) {
-    generatedPrompt = familyWarning + '\n\n' + generatedPrompt;
-  }
-
-  const electionCompliantPrompt = injectElectionLawCompliance(generatedPrompt, status);
-  const qualityEnhancedPrompt = injectUniversalQualityRules(electionCompliantPrompt);
-
-  const selectedFrame = analyzeAndSelectFrame(topic);
-  const framedPrompt = applyFramingToPrompt(qualityEnhancedPrompt, selectedFrame);
-
-  const editorialPrompt = options.applyEditorialRules
-    ? injectEditorialRules(framedPrompt, options)
-    : framedPrompt;
-
-  const seoInstruction = buildSEOInstruction({
-    keywords: options.keywords,
-    targetWordCount: options.targetWordCount
-  });
-  const antiRepetitionInstruction = buildAntiRepetitionInstruction();
-
-  return seoInstruction + antiRepetitionInstruction + editorialPrompt;
-}
 
 // ============================================================================
 // Editorial 규칙 주입기
@@ -389,9 +261,5 @@ function injectEditorialRules(basePrompt, options) {
 // ============================================================================
 
 module.exports = {
-  buildSmartPrompt,
-  // Legacy 함수들도 export (다른 모듈에서 사용할 경우)
-  buildSmartPromptLegacy,
-  injectElectionLawCompliance,
-  injectUniversalQualityRules
+  buildSmartPrompt
 };

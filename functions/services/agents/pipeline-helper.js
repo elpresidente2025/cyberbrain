@@ -3,31 +3,11 @@
 /**
  * Multi-Agent Pipeline Helper (통합 리팩토링 버전)
  *
- * 기존 generatePosts 로직과 통합하기 위한 헬퍼 함수
- * - 전체 파이프라인 실행 (생성 → 검수 → SEO)
- * - 기존 프롬프트 기반 생성과 병행 가능
- * - 설정으로 Multi-Agent 모드 활성화
+ * 생성 파이프라인: KeywordAgent → WriterAgent → ComplianceAgent → SEOAgent
+ * 레거시 모드 제거됨 - Multi-Agent가 유일한 생성 경로
  */
 
 const { runAgentPipeline, PIPELINES } = require('./orchestrator');
-const { db } = require('../../utils/firebaseAdmin');
-
-/**
- * Multi-Agent 모드 활성화 여부 확인
- * @returns {Promise<boolean>}
- */
-async function isMultiAgentEnabled() {
-  try {
-    const configDoc = await db.collection('system').doc('config').get();
-    if (configDoc.exists) {
-      return configDoc.data().useMultiAgent === true;
-    }
-    return false;
-  } catch (error) {
-    console.warn('⚠️ [MultiAgent] 설정 조회 실패:', error.message);
-    return false;
-  }
-}
 
 /**
  * 전체 Multi-Agent 파이프라인으로 원고 생성
@@ -61,9 +41,10 @@ async function generateWithMultiAgent({
   factAllowlist = null,
   targetWordCount = 1700,
   attemptNumber = 0,  // 🎯 시도 번호 (수사학 전략 변형용)
-  rhetoricalPreferences = {}  // 🎯 사용자 수사학 전략 선호도
+  rhetoricalPreferences = {},  // 🎯 사용자 수사학 전략 선호도
+  pipeline = 'standard' // 🆕 파이프라인 선택 (기본값: standard)
 }) {
-  console.log('🤖 [MultiAgent] 전체 파이프라인 시작', { attemptNumber });
+  console.log('🤖 [MultiAgent] 전체 파이프라인 시작', { attemptNumber, pipeline });
 
   const context = {
     topic,
@@ -82,8 +63,8 @@ async function generateWithMultiAgent({
     rhetoricalPreferences  // 🎯 수사학 전략 선호도 전달
   };
 
-  // 표준 파이프라인 실행 (KeywordAgent → WriterAgent → ComplianceAgent → SEOAgent)
-  const result = await runAgentPipeline(context, { pipeline: 'standard' });
+  // 선택된 파이프라인 실행
+  const result = await runAgentPipeline(context, { pipeline });
 
   if (!result.success) {
     console.error('❌ [MultiAgent] 파이프라인 실패:', result.error);
@@ -233,7 +214,6 @@ async function postProcessContent({ content, topic, userProfile, factAllowlist =
 }
 
 module.exports = {
-  isMultiAgentEnabled,
   generateWithMultiAgent,
   runComplianceCheck,
   runSEOOptimization,

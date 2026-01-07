@@ -27,6 +27,13 @@ function countWithoutSpace(str) {
 function collectUnsupportedNumbers(text, allowlist) {
   if (!allowlist) return [];
   const check = findUnsupportedNumericTokens(text, allowlist);
+  // 상세 로그 (디버그용)
+  if (check.derived?.length > 0) {
+    console.log('📊 [FactGuard] 파생 수치 허용:', check.derived.join(', '));
+  }
+  if (check.common?.length > 0) {
+    console.log('📊 [FactGuard] 일반 상식 허용:', check.common.join(', '));
+  }
   return check.unsupported || [];
 }
 
@@ -278,7 +285,7 @@ exports.convertToSNS = wrap(async (req) => {
           if (parsedResult.isThread) {
             const unsupportedNumbers = collectUnsupportedNumbersFromPosts(parsedResult.posts, factAllowlist);
             if (unsupportedNumbers.length > 0) {
-              console.warn('?? ' + platform + ' ?? ?? ??: ' + unsupportedNumbers.join(', '));
+              console.warn('⚠️ [FactGuard] ' + platform + ' 출처 미확인 수치: ' + unsupportedNumbers.join(', ') + ' (배경자료에 없는 수치)');
             }
 
             const minPosts = threadConstraints?.minPosts || 3;
@@ -338,7 +345,7 @@ exports.convertToSNS = wrap(async (req) => {
             const meetsMinLength = minimumContentLength === 0 || contentLength >= minimumContentLength;
             const unsupportedNumbers = collectUnsupportedNumbers(content, factAllowlist);
             if (unsupportedNumbers.length > 0) {
-              console.warn('?? ' + platform + ' ?? ?? ??: ' + unsupportedNumbers.join(', '));
+              console.warn('⚠️ [FactGuard] ' + platform + ' 출처 미확인 수치: ' + unsupportedNumbers.join(', ') + ' (배경자료에 없는 수치)');
             }
 
             if (hasContent && meetsMinLength) {
