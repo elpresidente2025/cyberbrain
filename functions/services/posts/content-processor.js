@@ -149,6 +149,11 @@ function hasWeakHeadings(body) {
   return false;
 }
 
+function stripEmptyHeadingSections(content) {
+  if (!content) return content;
+  return content.replace(/<h([23])[^>]*>[\s\S]*?<\/h\1>\s*(?=<h[23][^>]*>|$)/gi, '');
+}
+
 const HEADING_TAG_REGEX = /<h[23][^>]*>[\s\S]*?<\/h[23]>/gi;
 const MAX_HEADING_LENGTH = 36;
 const BANNED_HEADING_PATTERNS = [
@@ -270,6 +275,7 @@ function cleanupPostContent(content) {
   if (!content) return content;
   let updated = stripMarkdownEmphasis(content);
   updated = normalizeParagraphEndings(updated);
+  updated = stripEmptyHeadingSections(updated);
   return updated;
 }
 const CONTENT_BLOCK_REGEX = /<p[^>]*>[\s\S]*?<\/p>|<ul[^>]*>[\s\S]*?<\/ul>|<ol[^>]*>[\s\S]*?<\/ol>/gi;
