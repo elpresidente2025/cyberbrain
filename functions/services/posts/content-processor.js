@@ -62,7 +62,103 @@ function stripHtml(text) {
   return String(text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function normalizeHeadingSpaces(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+function extractQuotedTerm(text) {
+  if (!text) return '';
+  const match = String(text).match(/[“"‘']([^”"’']+)[”"’']/);
+  return match ? match[1].trim() : '';
+}
+
+function makeCompactQuestion(phrase) {
+  const cleaned = normalizeHeadingSpaces(phrase).replace(/\?$/, '').trim();
+  if (!cleaned) return '';
+  if (looksLikeQuestion(cleaned)) return `${cleaned}?`;
+  const particle = pickTopicParticle(cleaned);
+  return `${cleaned}${particle}?`;
+}
+
+function shortenHeadingText(text, maxLength = MAX_HEADING_LENGTH) {
+  if (!text) return text;
+  const normalized = normalizeHeadingSpaces(text);
+  if (normalized.length <= maxLength) return normalized;
+
+  const base = normalized.replace(/\?$/, '').trim();
+  const withoutParen = base.replace(/\([^)]*\)/g, '').trim();
+  const quoted = extractQuotedTerm(withoutParen);
+  const candidates = [];
+
+  if (quoted) {
+    const trimmedQuoted = quoted.length > maxLength - 4
+      ? quoted.slice(0, Math.max(1, maxLength - 4))
+      : quoted;
+    candidates.push(`${trimmedQuoted} 핵심`);
+  }
+
+  const splitCandidate = withoutParen.split(/,|·|:|—|–|-|및|그리고/)[0]?.trim();
+  if (splitCandidate) candidates.push(splitCandidate);
+
+  if (withoutParen) candidates.push(withoutParen);
+
+  for (const candidate of candidates) {
+    const question = makeCompactQuestion(candidate);
+    if (question && question.length <= maxLength) return question;
+  }
+
+  const cut = withoutParen.slice(0, Math.max(1, maxLength - 1));
+  const lastSpace = cut.lastIndexOf(' ');
+  const safeCut = lastSpace > 6 ? cut.slice(0, lastSpace) : cut;
+  return `${safeCut}?`;
+}
+
+function normalizeHeadingText(text) {
+  const question = toQuestionHeading(text);
+  return shortenHeadingText(question);
+}
+
+function isBannedHeading(text) {
+  const cleaned = normalizeHeadingSpaces(text);
+  return BANNED_HEADING_PATTERNS.some((pattern) => pattern.test(cleaned));
+}
+
+function hasEmptyHeadingSection(body) {
+  const headingRegex = /<h[23][^>]*>[\s\S]*?<\/h[23]>/gi;
+  let match;
+  while ((match = headingRegex.exec(body)) !== null) {
+    const after = body.slice(match.index + match[0].length);
+    const nextContent = after.match(/<p[^>]*>|<ul[^>]*>|<ol[^>]*>|<h[23][^>]*>/i);
+    if (!nextContent) return true;
+    if (/^<h[23]/i.test(nextContent[0])) return true;
+  }
+  return false;
+}
+
+function hasWeakHeadings(body) {
+  const headings = [];
+  body.replace(/<h[23][^>]*>([\s\S]*?)<\/h[23]>/gi, (_match, inner) => {
+    headings.push(stripHtml(inner));
+    return _match;
+  });
+
+  if (headings.some((heading) => !heading.trim())) return true;
+  if (headings.some((heading) => heading.length > MAX_HEADING_LENGTH)) return true;
+  if (headings.some((heading) => isBannedHeading(heading))) return true;
+  if (hasEmptyHeadingSection(body)) return true;
+  return false;
+}
+
 const HEADING_TAG_REGEX = /<h[23][^>]*>[\s\S]*?<\/h[23]>/gi;
+const MAX_HEADING_LENGTH = 36;
+const BANNED_HEADING_PATTERNS = [
+  /^무엇을 나누고 싶은가/i,
+  /^생각의 핵심은 무엇인가/i,
+  /^함께 생각할 점은 무엇인가/i,
+  /^현안은 무엇인가/i,
+  /^핵심 쟁점은 무엇인가/i,
+  /^영향과 과제는 무엇인가/i
+];
 
 const REPEATED_ENDINGS = [
   { ending: '합니다', replacements: ['하고 있습니다', '한다고 봅니다'] },
@@ -309,7 +405,7 @@ function normalizeExistingHeadings(body) {
   return body.replace(/<h([23])([^>]*)>([\s\S]*?)<\/h\1>/gi, (match, level, attrs, inner) => {
     const plain = String(inner).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
     if (!plain) return match;
-    const normalized = toQuestionHeading(plain);
+    const normalized = normalizeHeadingText(plain);
     return `<h${level}${attrs}>${normalized}</h${level}>`;
   });
 }
@@ -360,12 +456,13 @@ function ensureSectionHeadings(content, options = {}) {
   const headingCount = (normalizedBody.match(/<h[23][^>]*>/gi) || []).length;
   const hasConclusionHeading = /<h[23][^>]*>[^<]*(정리|결론|마무리|요약)[^<]*<\/h[23]>/i.test(normalizedBody);
   const forceRebuild = Number.isInteger(options.introBlockCount) && options.introBlockCount > 0;
-  if (headingCount >= 3 && hasConclusionHeading && !forceRebuild) {
+  if (headingCount >= 3 && hasConclusionHeading && !forceRebuild && !hasWeakHeadings(normalizedBody)) {
     return joinContent(normalizedBody, tail);
   }
 
   const bodyWithoutHeadings = normalizedBody.replace(HEADING_TAG_REGEX, '');
-  const blocks = bodyWithoutHeadings.match(CONTENT_BLOCK_REGEX) || [];
+  const blocks = (bodyWithoutHeadings.match(CONTENT_BLOCK_REGEX) || [])
+    .filter((block) => stripHtml(block).length > 0);
   if (blocks.length < 2) {
     return joinContent(bodyWithoutHeadings.trim() || body, tail);
   }
@@ -388,7 +485,7 @@ function ensureSectionHeadings(content, options = {}) {
   }
 
   const providedHeadings = Array.isArray(options.bodyHeadings)
-    ? options.bodyHeadings.map((heading) => toQuestionHeading(heading)).filter(Boolean)
+    ? options.bodyHeadings.map((heading) => normalizeHeadingText(heading)).filter(Boolean)
     : [];
   let bodyHeadings = [];
   if (providedHeadings.length > 0) {
@@ -398,11 +495,13 @@ function ensureSectionHeadings(content, options = {}) {
     } else if (bodyHeadings.length < desiredBodyHeadings) {
       const fallbackHeadings = getBodyHeadingTexts(options.category, options.subCategory, desiredBodyHeadings);
       for (let i = bodyHeadings.length; i < desiredBodyHeadings; i += 1) {
-        bodyHeadings.push(fallbackHeadings[i] || fallbackHeadings[fallbackHeadings.length - 1]);
+        const fallback = fallbackHeadings[i] || fallbackHeadings[fallbackHeadings.length - 1];
+        bodyHeadings.push(normalizeHeadingText(fallback));
       }
     }
   } else {
-    bodyHeadings = getBodyHeadingTexts(options.category, options.subCategory, desiredBodyHeadings);
+    bodyHeadings = getBodyHeadingTexts(options.category, options.subCategory, desiredBodyHeadings)
+      .map((heading) => normalizeHeadingText(heading));
   }
   const sections = splitBlocksIntoSections(bodyBlocks, desiredBodyHeadings);
 
