@@ -5,6 +5,27 @@ const { callGenerativeModel } = require('../gemini');
 
 const NAVER_CHAR_LIMIT = 25;
 
+function normalizeTitleRegion(title, titleScope = {}) {
+  if (!title) return title;
+  if (!titleScope || !titleScope.avoidLocalInTitle) return title;
+
+  const regionLocal = String(titleScope.regionLocal || '').trim();
+  const regionMetro = String(titleScope.regionMetro || '').trim();
+  const metroLabel = regionMetro
+    ? regionMetro.replace(/\uAD11\uC5ED\uC2DC|\uD2B9\uBCC4\uC2DC|\uD2B9\uBCC4\uC790\uCE58\uC2DC|\uC790\uCE58\uC2DC|\uC790\uCE58\uB3C4|\uB3C4$/g, '').trim()
+    : '';
+  const finalMetro = metroLabel || regionMetro;
+
+  let updated = title;
+  if (regionLocal) {
+    updated = finalMetro
+      ? updated.split(regionLocal).join(finalMetro)
+      : updated.split(regionLocal).join('');
+  }
+
+  return updated.replace(/\s{2,}/g, ' ').trim();
+}
+
 function normalizeSpaces(text) {
   return String(text || '').replace(/\s+/g, ' ').trim();
 }
@@ -97,7 +118,7 @@ async function rewriteTitleToLimit({ title, modelName, userKeywords, topic, limi
  * @param {string} params.status - 사용자 상태 (준비/현역/예비/후보)
  * @returns {Promise<string>} - 생성된 제목
  */
-async function generateTitleFromContent({ content, backgroundInfo, keywords, userKeywords, topic, fullName, modelName, category, subCategory, status, factAllowlist = null }) {
+async function generateTitleFromContent({ content, backgroundInfo, keywords, userKeywords, topic, fullName, modelName, category, subCategory, status, factAllowlist = null, titleScope = null }) {
   console.log('📝 2단계: 본문 기반 제목 생성 시작');
 
   // 본문에서 HTML 태그 제거하고 미리보기 추출
@@ -118,12 +139,14 @@ async function generateTitleFromContent({ content, backgroundInfo, keywords, use
     userKeywords,
     category,
     subCategory,
-    status
+    status,
+    titleScope
   });
 
   try {
     const titleResponse = await callGenerativeModel(titlePrompt, 1, modelName, false);
     let cleanTitle = normalizeSpaces(cleanTitleResponse(titleResponse));
+    cleanTitle = normalizeTitleRegion(cleanTitle, titleScope);
     const primaryKeyword = userKeywords?.[0] || '';
 
     if (cleanTitle.length > NAVER_CHAR_LIMIT) {

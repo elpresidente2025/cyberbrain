@@ -193,6 +193,7 @@ async function runLegacyQualityGate({
   userProfile,
   status,
   factAllowlist,
+  titleScope,
   userKeywords,
   autoKeywords,
   backgroundKeywords,
@@ -225,7 +226,8 @@ async function runLegacyQualityGate({
       category,
       subCategory,
       status,
-      factAllowlist
+      factAllowlist,
+      titleScope
     });
   }
 
@@ -360,7 +362,8 @@ async function runLegacyQualityGate({
         category,
         subCategory,
         status,
-        factAllowlist
+        factAllowlist,
+        titleScope
       });
     }
   }
@@ -703,6 +706,18 @@ exports.generatePosts = httpWrap(async (req) => {
       // 현재 직책 기준 (기존 로직)
       fullRegion = generateNaturalRegionTitle(userProfile.regionLocal, userProfile.regionMetro);
     }
+
+    const titleScope = (() => {
+      const position = effectivePosition || '';
+      const isMetro = position === '\uAD11\uC5ED\uC790\uCE58\uB2E8\uCCB4\uC7A5' || position.includes('\uC2DC\uC7A5') || position.includes('\uB3C4\uC9C0\uC0AC');
+      if (!isMetro) return null;
+      return {
+        avoidLocalInTitle: true,
+        position,
+        regionMetro: (targetElection && targetElection.regionMetro) || userProfile.regionMetro || '',
+        regionLocal: (targetElection && targetElection.regionLocal) || userProfile.regionLocal || ''
+      };
+    })();
 
     // 🔥 현역 의원 여부 판단 (politicalExperience 활용)
     const isCurrentLawmaker = ['초선', '재선', '3선이상'].includes(politicalExperience);
@@ -1289,6 +1304,7 @@ exports.generatePosts = httpWrap(async (req) => {
         userProfile,
         status: currentStatus,
         factAllowlist,
+        titleScope,
         userKeywords,
         autoKeywords,
         backgroundKeywords,
@@ -1324,7 +1340,8 @@ exports.generatePosts = httpWrap(async (req) => {
           category: data.category,
           subCategory: data.subCategory,
           status: currentStatus,
-          factAllowlist
+          factAllowlist,
+          titleScope
         });
         stopTitleGeneration();
       } else {
@@ -1334,18 +1351,19 @@ exports.generatePosts = httpWrap(async (req) => {
       console.log('🚨 [Legacy] 제목 재생성 필요:', { generatedTitle, topic: sanitizedTopic });
       const stopTitleGeneration = startPerf('generateTitle');
       generatedTitle = await generateTitleFromContent({
-        content: generatedContent || '',
-        backgroundInfo: instructionPayload,
-        keywords: backgroundKeywords,
-        userKeywords: userKeywords,
-        topic: sanitizedTopic,
-        fullName,
-        modelName,
-        category: data.category,
-        subCategory: data.subCategory,
-        status: currentStatus,
-        factAllowlist
-      });
+          content: generatedContent || '',
+          backgroundInfo: instructionPayload,
+          keywords: backgroundKeywords,
+          userKeywords: userKeywords,
+          topic: sanitizedTopic,
+          fullName,
+          modelName,
+          category: data.category,
+          subCategory: data.subCategory,
+          status: currentStatus,
+          factAllowlist,
+          titleScope
+        });
       stopTitleGeneration();
     }
 

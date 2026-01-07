@@ -333,9 +333,13 @@ ${secondaryKw ? `**2순위 키워드**: "${secondaryKw}" → 제목 중앙 배�
 /**
  * 본문 내용 기반 제목 생성 프롬프트를 빌드합니다
  */
-function buildTitlePrompt({ contentPreview, backgroundText, topic, fullName, keywords, userKeywords, category, subCategory, status }) {
+function buildTitlePrompt({ contentPreview, backgroundText, topic, fullName, keywords, userKeywords, category, subCategory, status, titleScope = null }) {
   // 1. 콘텐츠 유형 자동 감지
-  const detectedTypeId = detectContentType(contentPreview, category);
+  const avoidLocalInTitle = Boolean(titleScope && titleScope.avoidLocalInTitle);
+  let detectedTypeId = detectContentType(contentPreview, category);
+  if (avoidLocalInTitle && detectedTypeId === 'LOCAL_FOCUSED') {
+    detectedTypeId = 'ISSUE_ANALYSIS';
+  }
   const primaryType = TITLE_TYPES[detectedTypeId];
 
   // 2. 선거법 준수 지시문
@@ -343,6 +347,15 @@ function buildTitlePrompt({ contentPreview, backgroundText, topic, fullName, key
 
   // 3. 키워드 전략 지시문
   const keywordStrategy = getKeywordStrategyInstruction(userKeywords, keywords);
+
+  const regionScopeInstruction = avoidLocalInTitle
+    ? [
+        '[TITLE REGION SCOPE]',
+        `- Target position: ${titleScope && titleScope.position ? titleScope.position : 'metro-level'}`,
+        '- Do NOT use district/town names (gu/gun/dong/eup/myeon) in the title.',
+        `- Use the metro-wide region like "${titleScope && titleScope.regionMetro ? titleScope.regionMetro : 'the city/province'}".`
+      ].join('\n')
+    : '';
 
   // 4. Few-shot 예시 구성
   const goodExamples = primaryType.good
@@ -372,6 +385,7 @@ function buildTitlePrompt({ contentPreview, backgroundText, topic, fullName, key
 • 작성 후 반드시 글자 수 확인!
 ${electionCompliance}
 ${keywordStrategy}
+${regionScopeInstruction}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 감지된 콘텐츠 유형: ${primaryType.name}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
