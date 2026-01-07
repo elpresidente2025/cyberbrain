@@ -101,7 +101,7 @@ async function generateTitleFromContent({ content, backgroundInfo, keywords, use
   console.log('📝 2단계: 본문 기반 제목 생성 시작');
 
   // 본문에서 HTML 태그 제거하고 미리보기 추출
-  const contentPreview = content.substring(0, 1000).replace(/<[^>]*>/g, '');
+  const contentPreview = String(content || '').substring(0, 1000).replace(/<[^>]*>/g, '');
 
   // 배경정보 텍스트 추출
   const backgroundText = Array.isArray(backgroundInfo)

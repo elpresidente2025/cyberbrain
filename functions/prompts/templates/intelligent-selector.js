@@ -378,7 +378,8 @@ function selectLocalVocabulary(topic, instructions) {
  * @returns {Object} 선택된 파라미터 객체
  */
 function selectPromptParameters(category, topic, instructions = '') {
-  console.log(`🎯 지능형 파라미터 선택 시작 - 카테고리: ${category}, 주제: ${topic.substring(0, 50)}...`);
+  const safeTopic = String(topic || '');
+  console.log(`🎯 지능형 파라미터 선택 시작 - 카테고리: ${category}, 주제: ${safeTopic.substring(0, 50)}...`);
 
   let selectedParams = {};
 

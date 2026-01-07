@@ -397,7 +397,7 @@ ${badExamples}
 **작성자**: ${fullName}
 
 **본문 미리보기**:
-${contentPreview.substring(0, 800)}
+${String(contentPreview || '').substring(0, 800)}
 
 **배경정보**:
 ${backgroundText ? backgroundText.substring(0, 300) : '(없음)'}

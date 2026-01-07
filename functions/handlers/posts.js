@@ -39,7 +39,7 @@ const { processGeneratedContent, trimTrailingDiagnostics, trimAfterClosing, ensu
 const { generateAeoSubheadings } = require('../services/posts/subheading-agent');
 const { callGenerativeModel } = require('../services/gemini');
 const { generateTitleFromContent } = require('../services/posts/title-generator');
-const { buildSmartPrompt } = require('../prompts/prompts');
+const { buildSmartPrompt, buildSmartPromptLegacy } = require('../prompts/prompts');
 const { fetchNaverNews, compressNewsWithAI, formatNewsForPrompt, shouldFetchNews } = require('../services/news-fetcher');
 const { ProgressTracker } = require('../utils/progress-tracker');
 const { sanitizeElectionContent } = require('../services/election-compliance');
@@ -975,6 +975,29 @@ exports.generatePosts = httpWrap(async (req) => {
       });
       stopBuildPrompt();
 
+    if (typeof prompt !== 'string' || !prompt.trim()) {
+      console.warn('⚠️ buildSmartPrompt 결과가 비어 있습니다. Legacy 프롬프트로 대체합니다.');
+      prompt = await buildSmartPromptLegacy({
+        writingMethod,
+        topic: sanitizedTopic,
+        authorBio,
+        targetWordCount,
+        instructions: data.instructions,
+        keywords: backgroundKeywords,
+        userKeywords,
+        factAllowlist,
+        newsContext,
+        personalizedHints: combinedHints,
+        applyEditorialRules: true,
+        isCurrentLawmaker,
+        politicalExperience,
+        currentStatus,
+        status: currentStatus,
+        familyStatus,
+        regionHint
+      });
+    }
+
     // 🎨 문체 가이드 주입 (Style Fingerprint 기반)
     if (styleGuide && styleGuide.trim()) {
       prompt = styleGuide + prompt;
@@ -982,8 +1005,9 @@ exports.generatePosts = httpWrap(async (req) => {
     }
 
     // 🔍 디버깅: 프롬프트 로깅 (처음 1000자만)
-    console.log('📋 생성된 프롬프트 (처음 1000자):', prompt.substring(0, 1000));
-    console.log('📋 프롬프트 전체 길이:', prompt.length, '자');
+    const promptPreview = String(prompt || '').substring(0, 1000);
+    console.log('📋 생성된 프롬프트 (처음 1000자):', promptPreview);
+    console.log('📋 프롬프트 전체 길이:', String(prompt || '').length, '자');
 
     // 3단계: AI 원고 작성 중
     await progress.stepGenerating();
@@ -1012,15 +1036,16 @@ exports.generatePosts = httpWrap(async (req) => {
       let parsedResponse;
       try {
         try {
-          console.log('🔍 AI 원본 응답 (첫 500자):', apiResponse.substring(0, 500));
-          parsedResponse = JSON.parse(apiResponse);
+          const apiResponsePreview = String(apiResponse || '').substring(0, 500);
+          console.log('🔍 AI 원본 응답 (첫 500자):', apiResponsePreview);
+          parsedResponse = JSON.parse(String(apiResponse || ''));
           console.log('✅ 직접 JSON 파싱 성공');
         } catch (directParseError) {
-          const jsonMatch = apiResponse.match(/```json\s*([\s\S]*?)\s*```/);
+          const jsonMatch = String(apiResponse || '').match(/```json\s*([\s\S]*?)\s*```/);
           if (jsonMatch) {
             parsedResponse = JSON.parse(jsonMatch[1]);
           } else {
-            const cleaned = apiResponse.trim();
+            const cleaned = String(apiResponse || '').trim();
             const firstBrace = cleaned.indexOf('{');
             const lastBrace = cleaned.lastIndexOf('}');
             if (firstBrace !== -1 && lastBrace !== -1) {
