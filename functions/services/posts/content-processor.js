@@ -151,8 +151,13 @@ function hasWeakHeadings(body) {
 
   if (headings.some((heading) => !heading.trim())) return true;
   if (headings.some((heading) => heading.length > MAX_HEADING_LENGTH)) return true;
+  // 일반 소제목: 12자 미만이면 weak
   if (headings.some((heading) => !isConclusionHeadingText(heading) && heading.length < MIN_HEADING_LENGTH)) return true;
+  // 결론 소제목: 6자 미만이면 weak ("정리"=2자 금지)
+  if (headings.some((heading) => isConclusionHeadingText(heading) && heading.length < MIN_CONCLUSION_HEADING_LENGTH)) return true;
   if (headings.some((heading) => isBannedHeading(heading))) return true;
+  // 🔧 불완전한 질문형 감지 (예: "다대포 디즈니랜드는?", "부산은?")
+  if (headings.some((heading) => isIncompleteQuestion(heading))) return true;
   if (hasEmptyHeadingSection(body)) return true;
   return false;
 }
@@ -165,6 +170,7 @@ function stripEmptyHeadingSections(content) {
 const HEADING_TAG_REGEX = /<h[23][^>]*>[\s\S]*?<\/h[23]>/gi;
 const MIN_HEADING_LENGTH = 12;
 const MAX_HEADING_LENGTH = 25;
+const MIN_CONCLUSION_HEADING_LENGTH = 6;  // 결론 소제목 최소 길이 ("정리"=2자 금지)
 const BANNED_HEADING_PATTERNS = [
   /^무엇을 나누고 싶은가/i,
   /^생각의 핵심은 무엇인가/i,
@@ -173,6 +179,23 @@ const BANNED_HEADING_PATTERNS = [
   /^핵심 쟁점은 무엇인가/i,
   /^영향과 과제는 무엇인가/i
 ];
+
+/**
+ * 불완전한 질문형 소제목 감지
+ * - "~은?", "~는?" 형태로 끝나면서 구체적 질문어가 없는 경우
+ * - 예: "다대포 디즈니랜드는?", "부산은?", "이스포츠 박물관은?"
+ */
+function isIncompleteQuestion(text) {
+  if (!text) return false;
+  const cleaned = text.trim();
+  // "~은?", "~는?" 형태 (물음표 있든 없든)
+  if (/[은는]\??$/.test(cleaned)) {
+    // 구체적 질문어가 있으면 OK (무엇, 어떻게, 왜 등)
+    if (/무엇|어떻게|왜|어디|언제|누가|얼마|어떤/.test(cleaned)) return false;
+    return true;  // 구체적 질문어 없이 "~은/는?"만 있으면 불완전
+  }
+  return false;
+}
 
 const REPEATED_ENDINGS = [
   { ending: '합니다', replacements: ['하고 있습니다', '한다고 봅니다'] },
@@ -326,14 +349,24 @@ function getBodyHeadingTexts(category, subCategory, count) {
 }
 
 function getConclusionHeadingText(category, subCategory) {
-  if (category === 'activity-report' || category === 'daily-communication') {
-    return '마무리';
+  if (category === 'activity-report') {
+    return '앞으로의 다짐';
   }
-  return '정리';
+  if (category === 'daily-communication') {
+    return '함께 만들어갈 미래';
+  }
+  if (category === 'policy-proposal') {
+    return '기대하는 변화';
+  }
+  if (category === 'current-affairs') {
+    return '앞으로의 과제';
+  }
+  return '마무리 인사';  // 기본값 (6자 이상)
 }
 
 function isConclusionHeadingText(text) {
-  return /(정리|결론|마무리|요약)/.test(text || '');
+  // 기존 단어 + 새로 추가된 결론 소제목 패턴
+  return /(정리|결론|마무리|요약|다짐|미래|변화|과제|인사)/.test(text || '');
 }
 
 function looksLikeQuestion(text) {
