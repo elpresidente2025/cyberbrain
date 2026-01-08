@@ -160,8 +160,10 @@ const GeneratePage = () => {
 
   // 🌟 고품질 모드 상태 (A/B 테스트)
   const [useHighQuality, setUseHighQuality] = React.useState(false);
-  // 권한 체크: 테스트를 위해 일단 모두에게 공개
-  const canUseBetaFeatures = true; // user?.role === 'admin' || ... (테스트용 강제 활성화)
+  // 권한 체크: 관리자 또는 테스터만 허용
+  const canUseBetaFeatures = React.useMemo(() => {
+    return user?.role === 'admin' || user?.isAdmin === true || user?.isTester === true;
+  }, [user]);
 
   /** 원고 생성 버튼 클릭 시 실행되는 함수 */
   const handleGenerate = async () => {
@@ -193,7 +195,7 @@ const GeneratePage = () => {
 
   /** 초기화 버튼 클릭 시 실행되는 함수 */
   const handleReset = () => {
-    resetForm();        // 폼 데이터 초기화
+    // resetForm();     // 💡 사용자 요청: '새 생성' 시 주제와 검색어 등 입력값은 유지되어야 함.
     reset();            // API 관련 상태(초안, 에러 등) 초기화
     setSelectedDraft(null); // 선택된 초안 초기화
     setSnsPost(null);   // SNS 포스트 상태 초기화

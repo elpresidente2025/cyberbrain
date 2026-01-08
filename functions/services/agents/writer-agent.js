@@ -1,3 +1,4 @@
+/* eslint-disable */
 'use strict';
 
 /**
@@ -36,6 +37,7 @@ const { generateNonLawmakerWarning, generateFamilyStatusWarning } = require('../
 
 // ✅ 카테고리 매핑은 constants.js에서 import (단일 소스)
 const { resolveWritingMethod } = require('../../utils/posts/constants');
+const { extractStyleFromText } = require('../../utils/style-analyzer');
 
 // 작법 → 템플릿 빌더 매핑
 const TEMPLATE_BUILDERS = {
@@ -96,6 +98,37 @@ class WriterAgent extends BaseAgent {
     // 🔑 검색어(userKeywords)와 키워드(contextKeywords)는 완전히 다른 용도
     // - 키워드: 글의 맥락을 잡기 위한 참고 도구 (템플릿에 전달)
     // - 검색어: SEO를 위해 반드시 삽입해야 하는 필수 요소 (CRITICAL 섹션으로 별도 주입)
+
+    // 🔑 검색어(userKeywords)와 키워드(contextKeywords)는 완전히 다른 용도
+    // - 키워드: 글의 맥락을 잡기 위한 참고 도구 (템플릿에 전달)
+    // - 검색어: SEO를 위해 반드시 삽입해야 하는 필수 요소 (CRITICAL 섹션으로 별도 주입)
+
+    // 🌟 [NEW] 문체 분석 프로필 적용 (DB 캐싱 값 우선 + 실시간 Fallback)
+    let stylePrompt = '';
+
+    // 1. 이미 저장된 스타일 프로필이 있는지 확인 (성능 최적화)
+    let styleProfile = userProfile.styleProfile;
+
+    // 2. 없으면 실시간 분석 시도 (첫 회차 Fallback)
+    if (!styleProfile && userProfile.bio) {
+      try {
+        console.log("ℹ️ [WriterAgent] 스타일 프로필 없음 -> 실시간 분석 수행");
+        styleProfile = await extractStyleFromText(userProfile.bio);
+      } catch (err) {
+        console.warn('❌ 문체 분석 실패:', err);
+      }
+    }
+
+    if (styleProfile) {
+      const { metrics, signature_keywords, tone_manner, forbidden_style } = styleProfile;
+      stylePrompt = `
+- **어조 및 태도**: ${tone_manner || '정보 없음'} (기계적인 문체가 아닌, 작성자의 고유한 톤을 모방하십시오.)
+- **시그니처 키워드**: [${(signature_keywords || []).join(', ')}] - 이 단어들을 적재적소에 사용하여 작성자의 정체성을 드러내십시오.
+- **문장 호흡**: 평균 ${metrics?.sentence_length?.avg || 40}자 내외의 ${metrics?.sentence_length?.distinct || '문장'} 사용.
+- **종결 어미**: 주로 ${Object.keys(metrics?.ending_patterns?.ratios || {}).join(', ')} 사용.
+- **금지 문체**: ${forbidden_style || '어색한 번역투'} 사용 금지.
+`;
+    }
 
     // 2. 작법 결정
     const writingMethod = resolveWritingMethod(category, subCategory);
@@ -184,9 +217,13 @@ ${searchTermList}
 ❌ 절대 금지:
 - 검색어를 콤마로 나열 금지. 예: "부산, 대형병원, 순위에 대해" (X)
 - 한 문장에 여러 검색어 몰아넣기 금지.
+- 검색어를 괄호로 나열 금지. 예: "(6월 지방선거) (6월의 지방선거)" (X)
+- 글 마지막에 키워드 횟수 채우기 위해 억지로 넣기 금지. 부족하면 부족한 채로 두세요.
 
 ✅ 좋은 예: "부산 대형병원 순위가 해마다 하락하고 있습니다."
-❌ 나쁜 예: "부산, 대형병원, 순위에 대한 이야기입니다."`);
+❌ 나쁜 예: "부산, 대형병원, 순위에 대한 이야기입니다."
+❌ 나쁜 예(절대 금지): "감사합니다. (6월 지방선거) (6월의 지방선거) (6월 지방선거)"
+❌ 나쁜 예(절대 금지): 글 끝에 단순 키워드 나열. "6월 지방선거, 부산 의료관광" (X)`);
     }
 
     // 6.5 제목 가이드라인
@@ -225,7 +262,6 @@ ${searchTermList}
       promptSections.push(warnings);
     }
 
-    // 6.8 본문 템플릿 (맨 마지막)
     // 6.8 본문 템플릿 (기본)
     promptSections.push(prompt);
 
@@ -234,14 +270,72 @@ ${searchTermList}
     if (instructions || newsContext) {
       promptSections.push(`
 ╔═══════════════════════════════════════════════════════════════╗
-║  🚨 [CRITICAL] 최우선 반영 지시사항 (Override Rules)          ║
-║  (이 내용은 위의 모든 예시나 페르소나 설정보다 우선합니다)    ║
+║  🎭 [STYLE] 작성자 고유 페르소나 및 화법 가이드 (최우선 적용) ║
+╚═══════════════════════════════════════════════════════════════╝
+${stylePrompt}
+
+╔═══════════════════════════════════════════════════════════════╗
+║  🚨 [CRITICAL] 내용 구성 및 문투 교정 (Base Rules)           ║
+║  (위의 STYLE 가이드가 이 Base Rules보다 더 구체적이면 우선함) ║
 ╚═══════════════════════════════════════════════════════════════╝
 
-1. **입력된 뉴스/지시사항 기반 작성**:
-   - 아래 제공된 [뉴스/참고자료] 내용을 글의 **핵심 소재**로 사용하세요.
-   - **중요**: 기존에 알고 있는 저자의 고정 레파토리(의료, AI, 네이버/카카오 유치 등)가 [뉴스/참고자료]와 관련이 없다면 **과감히 생략하고**, 뉴스의 내용(예: 디즈니랜드, e스포츠 등)으로 문단을 채우세요.
-   - 글의 흐름: [인사말] -> [뉴스/이슈 제기 (디즈니랜드 등)] -> [해결책/비전] -> [마무리]
+**목표 분량: ${targetWordCount}자 내외**
+
+1. **[핵심] 참고자료 기반 재구성**:
+   - 가장 중요한 것은 아래 **[뉴스/참고자료]**입니다.
+   - 이 내용을 단순히 요약하지 말고, '사용자'의 관점에서 매끄러운 1인칭 서사로 재구성하세요.
+
+2. **[보충] 프로필(Bio) 활용으로 분량 확보**:
+   - 참고자료만으로 분량이 부족하면, **사용자 프로필(Bio)**의 철학, 배경, 평소 어조를 활용하여 살을 붙이세요.
+   - 단, 참고자료의 맥락을 해치지 않는 선에서 자연스럽게 녹여내야 합니다.
+
+3. **[확장] 연계 공약/정보 활용**:
+   - 만약 참고자료 내용이 사용자의 **기존 공약이나 추가 정보**와 논리적으로 연결된다면, 해당 내용을 가져와 내용을 보강하세요.
+   - 예: "문화" 관련 뉴스라면 -> 사용자의 "문화 공약" 언급 가능. (관련 없으면 언급 금지)
+
+4. **[최후] 요약 및 제언으로 분량 충족**:
+   - 위 방법으로도 분량이 부족하다면, 결말부 시작에 **본론의 핵심을 요약하고 향후 포부를 구체적으로 서술**하여 분량을 채우세요.
+
+5. **[필수] 문투 교정 (간결하고 힘 있는 문체)**:
+   - "~라는 점입니다", "~라고 볼 수 있습니다" 절대 금지.
+   - **"~하고 있습니다", "~하고자 하고 있습니다", "~해야 하고 있습니다" 같은 진행형 남발 금지.** (가장 중요)
+   - 선거법을 의식해서 말을 돌리지 마세요. **"~합니다", "~하겠습니다", "~입니다"**로 명확하게 끝내세요.
+   - ❌ "노력할 것이라고 볼 수 있습니다." → ✅ "노력하겠습니다."
+   - ❌ "극복해야 하고 있습니다." → ✅ "극복하겠습니다."
+   - 문장은 짧게 끊어 쓰세요. (복문 지양)
+
+6. **[구조] 5단 구성 및 문단 규칙 (황금 비율)**:
+   - 전체 구조: **[서론 - 본론1 - 본론2 - 본론3 - 결론]** (총 5개 섹션)
+   - 문단 분배: **각 섹션 당 3개 문단**으로 구성 (총 15문단)
+   - 문단 길이: **한 문단은 120자~150자** 내외 유지 (너무 길면 끊을 것)
+   - **소제목(H2) AEO 최적화 규칙 (매우 중요)**:
+     - 단순히 "서론", "본론"이라고 쓰지 마십시오. 검색자가 궁금해할 **구체적인 질문**이나 **키워드**를 포함해야 합니다.
+     - **유형 1 (질문형)**: "~ 신청 방법은 무엇인가요?", "~ 혜택은?"
+     - **유형 2 (데이터형)**: "~ 5대 핵심 성과", "~ 국비 100억 확보 내역"
+     - **유형 3 (정보형)**: "~ 신청 자격 및 절차 안내"
+     - **유형 4 (비교형)**: "기존 정책 vs 신규 공약 차이점"
+     - ❌ 금지: "관련 내용", "정책 안내", "이관훈은?" (너무 짧고 모호함)
+     - ✅ **본론1, 본론2, 본론3, 결론**: 위 규칙에 맞게 **매력적인 소제목(H2)**을 뽑아내십시오.
+
+7. **[정치] 역할 및 화자 구분 (공약 주체)**:
+   - **본인의 공약**: "저 이재성이 약속합니다"와 같이 본인이 주체가 되세요.
+   - **타인(대통령/당)의 정책**: 반드시 출처를 밝히고, 본인은 이를 '지역에서 실현/계승'하겠다는 입장을 취하세요. (내 정책인 척 기만 금지)
+   - **후원회장/지지자**: 오직 지지와 응원만 할 뿐, 공약의 주체가 될 수 없습니다. ("후원회장이 공약을 걸었다" X)
+   - ✅ 올바른 예: "윤석열 정부의 의료 개혁을, 저 이재성이 부산에서 완성하겠습니다."
+
+8. **[SEO] 키워드 남용 금지 (스팸 방지)**:
+   - 검색어는 글 전체에서 **최대 5~6회**까지만 자연스럽게 사용하세요.
+   - 10회 이상 과도하게 반복하면 스팸으로 간주됩니다.
+   - 억지로 끼워 넣지 말고, 문맥에 맞을 때만 사용하세요.
+
+9. **[CRITICAL] 분량 엄수**:
+   - 이 글은 블로그/칼럼용 긴 글입니다.
+   - 반드시 **5개 섹션(서론, 본론1, 본론2, 본론3, 결론)**을 모두 완벽하게 작성해야 합니다.
+   - 총 분량이 **1500자 미만이면 실패**로 간주됩니다. 절대 중간에 멈추지 말고 끝까지 작성하십시오.
+
+10. **[CRITICAL] 창작 허용 (Bio 확장)**:
+    - 사용자 프로필(Bio)에 없는 내용이라도, **주제와 관련된 일반적인 정책이나 비전(예: 의료, 교통, 문화, 경제)**을 적극적으로 창작하여 본론 2, 3을 가득 채우십시오.
+    - "Bio에 없어서 못 쓴다"는 변명은 허용되지 않습니다. 당신은 정치 전략가로서 구체적인 비전을 제시해야 합니다.
 
 [사용자 지시사항]
 ${instructions || '(없음)'}
@@ -254,10 +348,11 @@ ${newsContext || '(없음)'}
     // 최종 프롬프트 조립
     prompt = promptSections.join('\n\n');
 
-    console.log(`📝 [WriterAgent] 프롬프트 생성 완료 (${prompt.length}자, 작법: ${writingMethod}, 섹션: ${promptSections.length}개)`);
+    console.log(`📝 [WriterAgent] 프롬프트 생성 완료 (${prompt.length} 자, 작법: ${writingMethod}, 섹션: ${promptSections.length}개)`);
 
     // 9. Gemini 호출
-    const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+    // 9. Gemini 호출 (사용자 요청: 2.5 Flash Standard 모델 사용)
+    const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const result = await model.generateContent({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -371,7 +466,7 @@ ${newsContext || '(없음)'}
     const electionStage = getElectionStage(status);
 
     if (electionStage && electionStage.promptInstruction) {
-      console.log(`🗳️ [WriterAgent] 선거법 지시문 주입: ${electionStage.name} (상태: ${status})`);
+      console.log(`🗳️[WriterAgent] 선거법 지시문 주입: ${electionStage.name} (상태: ${status})`);
       return electionStage.promptInstruction.trim();
     }
 

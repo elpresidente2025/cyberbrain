@@ -159,7 +159,11 @@ class ComplianceAgent extends BaseAgent {
     }
 
     let content = writerResult.data.content;
-    let title = writerResult.data.title || '';
+
+    // 🏷️ TitleAgent 결과가 있으면 우선 사용, 없으면 WriterAgent 제목 사용
+    const titleAgentResult = previousResults.TitleAgent;
+    let title = titleAgentResult?.data?.title || writerResult.data.title || '';
+    console.log(`🏷️ [ComplianceAgent] 제목 소스: ${titleAgentResult?.data?.title ? 'TitleAgent' : 'WriterAgent'} - "${title}"`);
     const status = userProfile.status || '현역';
     const issues = [];
     const replacements = [];

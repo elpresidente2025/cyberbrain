@@ -144,7 +144,8 @@
       "mcp__codex-cli__listSessions",
       "mcp__codex-cli__review",
       "Skill(deploy)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: SNS 변환 타래\\(Thread\\) 기반 구조로 개편\n\n- X/Threads: 5-7개 타래 구조로 변환 \\(훅 50-80자 → 본문 100-150자 → 마무리\\)\n- Facebook/Instagram: 단일 게시물 구조 유지 \\(1,200-1,500자\\)\n- 프론트엔드 UI 개선: X/Threads 별도 타래 박스로 표시\n- 이모지 사용 금지, 글자수 억지로 채우지 않도록 지침 추가\n- posts 배열 파싱 로직 추가 \\(isThread, postCount, totalWordCount\\)\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: SNS 변환 타래\\(Thread\\) 기반 구조로 개편\n\n- X/Threads: 5-7개 타래 구조로 변환 \\(훅 50-80자 → 본문 100-150자 → 마무리\\)\n- Facebook/Instagram: 단일 게시물 구조 유지 \\(1,200-1,500자\\)\n- 프론트엔드 UI 개선: X/Threads 별도 타래 박스로 표시\n- 이모지 사용 금지, 글자수 억지로 채우지 않도록 지침 추가\n- posts 배열 파싱 로직 추가 \\(isThread, postCount, totalWordCount\\)\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(node deploy.js:*)"
     ]
   },
   "mcpServers": {

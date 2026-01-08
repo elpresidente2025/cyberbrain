@@ -151,15 +151,15 @@ async function loadUserProfile(uid, category, topic, options = {}) {
     }
     if (!strictSourceOnly) {
 
-    // 🧠 메모리 컨텍스트 로드 (장기 메모리 기반 개인화)
-    try {
-      memoryContext = await generateMemoryContext(uid, category);
-      if (memoryContext) {
-        console.log(`✅ 메모리 컨텍스트 로드 완료: ${memoryContext.length}자`);
+      // 🧠 메모리 컨텍스트 로드 (장기 메모리 기반 개인화)
+      try {
+        memoryContext = await generateMemoryContext(uid, category);
+        if (memoryContext) {
+          console.log(`✅ 메모리 컨텍스트 로드 완료: ${memoryContext.length}자`);
+        }
+      } catch (memoryError) {
+        console.warn('⚠️ 메모리 컨텍스트 로드 실패 (무시하고 계속):', memoryError.message);
       }
-    } catch (memoryError) {
-      console.warn('⚠️ 메모리 컨텍스트 로드 실패 (무시하고 계속):', memoryError.message);
-    }
     }
 
   } catch (profileError) {
@@ -265,19 +265,22 @@ async function checkUsageLimit(uid, userProfile) {
   const testMode = systemConfigDoc.exists ? (systemConfigDoc.data().testMode || false) : false;
 
   if (testMode) {
-    // === 데모 모드: 당원 인증 필수, 말일 제한 해제, 8회 생성 가능 ===
+    // === 데모 모드: 당원 인증만 확인, 월 8회 무료 (가입시기/결제 무관) ===
     // 1. 당원 인증 체크 (대면 인증 사용자는 면제)
     if (userProfile.verificationStatus !== 'verified' && userProfile.faceVerified !== true) {
       throw new HttpsError('failed-precondition',
         '당원 인증이 필요합니다. 결제 페이지에서 당원 인증을 완료해주세요.');
     }
 
-    // 2. 생성 횟수 체크
-    const generationsRemaining = userProfile.generationsRemaining || userProfile.trialPostsRemaining || 0;
+    // 2. 월별 생성 횟수 체크 (매월 8회 자동 리셋)
+    const demoMonthlyLimit = 8;
+    const currentMonthKey = getCurrentMonthKey();
+    const monthlyUsage = userProfile.monthlyUsage || {};
+    const currentMonthGenerations = monthlyUsage[currentMonthKey]?.generations || 0;
 
-    if (generationsRemaining <= 0) {
+    if (currentMonthGenerations >= demoMonthlyLimit) {
       throw new HttpsError('resource-exhausted',
-        '데모 기간 중 생성 가능 횟수(8회)를 모두 사용하셨습니다.');
+        `이번 달 데모 생성 횟수(${demoMonthlyLimit}회)를 모두 사용하셨습니다. 다음 달에 다시 이용해주세요.`);
     }
 
     // 3. 세션 내 시도 횟수 체크
@@ -287,10 +290,12 @@ async function checkUsageLimit(uid, userProfile) {
         '현재 생성에서 최대 시도 횟수(3회)에 도달했습니다. 원고를 선택하거나 다음 생성을 시작해주세요.');
     }
 
-    // 4. 데모 모드에서는 말일(trialExpiresAt) 체크 건너뜀 (타임 리미트 해제)
-    console.log('🧪 데모 모드 - 원고 생성 가능 (말일 제한 해제)', {
+    // 4. 데모 모드: 가입시기(trialExpiresAt), 결제상태(subscriptionStatus) 체크하지 않음
+    console.log('🧪 데모 모드 - 월 8회 무료 사용 가능 (가입시기/결제 무관)', {
       verificationStatus: userProfile.verificationStatus,
-      generationsRemaining,
+      currentMonth: currentMonthKey,
+      used: currentMonthGenerations,
+      remaining: demoMonthlyLimit - currentMonthGenerations,
       currentSessionAttempts: activeSession?.attempts || 0
     });
   } else {
@@ -385,85 +390,93 @@ async function getOrCreateSession(uid, isAdmin, isTester, category, topic) {
 
   try {
     if (!hasUnlimitedUsage) {
-        // 현재 사용자 데이터 조회
-        const userDoc = await db.collection('users').doc(uid).get();
-        const userData = userDoc.data() || {};
-        const subscriptionStatus = userData.subscriptionStatus || 'trial';
-        const activeSession = userData.activeGenerationSession;
+      // 현재 사용자 데이터 조회
+      const userDoc = await db.collection('users').doc(uid).get();
+      const userData = userDoc.data() || {};
+      const subscriptionStatus = userData.subscriptionStatus || 'trial';
+      const activeSession = userData.activeGenerationSession;
 
-        const updateData = {
-          [`dailyUsage.${todayKey}`]: admin.firestore.FieldValue.increment(1),
-          lastGenerated: admin.firestore.FieldValue.serverTimestamp(),
-          'usage.postsGenerated': admin.firestore.FieldValue.increment(1)
+      const updateData = {
+        [`dailyUsage.${todayKey}`]: admin.firestore.FieldValue.increment(1),
+        lastGenerated: admin.firestore.FieldValue.serverTimestamp(),
+        'usage.postsGenerated': admin.firestore.FieldValue.increment(1)
+      };
+
+      // 세션 관리
+      if (!activeSession) {
+        // === 새 세션 생성: attempts는 0으로 시작 (검증 성공 후 증가) ===
+        const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+        updateData.activeGenerationSession = {
+          id: sessionId,
+          startedAt: admin.firestore.FieldValue.serverTimestamp(),
+          attempts: 0,
+          category: category || '',
+          topic: topic || '',
+          subscriptionStatus: subscriptionStatus
         };
 
-        // 세션 관리
-        if (!activeSession) {
-          // === 새 세션 생성: attempts는 0으로 시작 (검증 성공 후 증가) ===
-          const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        sessionInfo = { sessionId, attempts: 0, maxAttempts: 3, isNewSession: true, subscriptionStatus };
 
-          updateData.activeGenerationSession = {
-            id: sessionId,
-            startedAt: admin.firestore.FieldValue.serverTimestamp(),
-            attempts: 0,
-            category: category || '',
-            topic: topic || '',
-            subscriptionStatus: subscriptionStatus
-          };
+        const currentRemaining = userData.generationsRemaining || userData.trialPostsRemaining || 0;
+        const currentMonthGenerations = userData.monthlyUsage?.[currentMonthKey]?.generations || 0;
 
-          sessionInfo = { sessionId, attempts: 0, maxAttempts: 3, isNewSession: true, subscriptionStatus };
-
-          const currentRemaining = userData.generationsRemaining || userData.trialPostsRemaining || 0;
-          const currentMonthGenerations = userData.monthlyUsage?.[currentMonthKey]?.generations || 0;
-
-          // 테스터는 유료 사용자처럼 월별 사용량 추적
-          if (isTester) {
-            console.log('🧪 테스터 - 새 세션 생성 (유료 사용자 기준 추적)', {
-              sessionId,
-              monthKey: currentMonthKey,
-              currentMonthGenerations,
-              monthlyLimit: 90
-            });
-          } else if (testMode || subscriptionStatus === 'trial') {
-            const modeLabel = testMode ? '🧪 데모 모드' : '✅무료 체험';
-            console.log(`${modeLabel} - 새 세션 생성 (attempts=0, 검증 성공 후 증가)`, {
-              sessionId,
-              currentRemaining
-            });
-          } else if (subscriptionStatus === 'active') {
-            console.log('✅ 유료 구독 - 새 세션 생성 (attempts=0, 검증 성공 후 증가)', {
-              sessionId,
-              monthKey: currentMonthKey,
-              currentMonthGenerations
-            });
-          }
-        } else {
-          // === 기존 세션 조회: attempts는 현재 값 유지 (검증 성공 후 증가) ===
-          const currentAttempts = activeSession.attempts || 0;
-          const maxAttempts = 3;
-
-          // 🚫 최대 시도 횟수 초과 검사
-          if (currentAttempts >= maxAttempts) {
-            console.warn(`⚠️ 최대 재생성 횟수 초과: ${currentAttempts}/${maxAttempts}`);
-            throw new HttpsError(
-              'resource-exhausted',
-              `최대 ${maxAttempts}회까지만 재생성할 수 있습니다. 새로운 원고를 생성해주세요.`
-            );
-          }
-
-          sessionInfo = {
-            sessionId: activeSession.id,
-            attempts: currentAttempts,
-            maxAttempts,
-            isNewSession: false
-          };
-
-          console.log('✅ 기존 세션 조회', {
-            sessionId: activeSession.id,
-            currentAttempts,
-            remainingAttempts: maxAttempts - currentAttempts
+        // 테스터는 유료 사용자처럼 월별 사용량 추적
+        if (isTester) {
+          console.log('🧪 테스터 - 새 세션 생성 (유료 사용자 기준 추적)', {
+            sessionId,
+            monthKey: currentMonthKey,
+            currentMonthGenerations,
+            monthlyLimit: 90
+          });
+        } else if (testMode) {
+          // 데모 모드: 월별 사용량 기준
+          console.log('🧪 데모 모드 - 새 세션 생성 (월 8회 무료)', {
+            sessionId,
+            monthKey: currentMonthKey,
+            currentMonthGenerations,
+            monthlyLimit: 8
+          });
+        } else if (subscriptionStatus === 'trial') {
+          // 프로덕션 무료 체험: generationsRemaining 기준
+          console.log('✅ 무료 체험 - 새 세션 생성 (attempts=0, 검증 성공 후 증가)', {
+            sessionId,
+            currentRemaining
+          });
+        } else if (subscriptionStatus === 'active') {
+          console.log('✅ 유료 구독 - 새 세션 생성 (attempts=0, 검증 성공 후 증가)', {
+            sessionId,
+            monthKey: currentMonthKey,
+            currentMonthGenerations
           });
         }
+      } else {
+        // === 기존 세션 조회: attempts는 현재 값 유지 (검증 성공 후 증가) ===
+        const currentAttempts = activeSession.attempts || 0;
+        const maxAttempts = 3;
+
+        // 🚫 최대 시도 횟수 초과 검사
+        if (currentAttempts >= maxAttempts) {
+          console.warn(`⚠️ 최대 재생성 횟수 초과: ${currentAttempts}/${maxAttempts}`);
+          throw new HttpsError(
+            'resource-exhausted',
+            `최대 ${maxAttempts}회까지만 재생성할 수 있습니다. 새로운 원고를 생성해주세요.`
+          );
+        }
+
+        sessionInfo = {
+          sessionId: activeSession.id,
+          attempts: currentAttempts,
+          maxAttempts,
+          isNewSession: false
+        };
+
+        console.log('✅ 기존 세션 조회', {
+          sessionId: activeSession.id,
+          currentAttempts,
+          remainingAttempts: maxAttempts - currentAttempts
+        });
+      }
 
       await db.collection('users').doc(uid).update(updateData);
       console.log('✅ 세션 정보 업데이트 완료 (attempts 변경 없음)');

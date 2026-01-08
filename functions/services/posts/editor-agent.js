@@ -99,7 +99,7 @@ const SIGNATURE_REGEXES = [
   /드림/
 ];
 
-const SUMMARY_HEADING_REGEX = /<h[23][^>]*>[^<]*(요약|정리|결론)[^<]*<\/h[23]>/i;
+const SUMMARY_HEADING_REGEX = /<h[23][^>]*>[^<]*(요약|정리|결론)[^<]*<\/h[23]>/ig;
 const SUMMARY_TEXT_REGEX = /(정리하면|요약하면|결론적으로|핵심을 정리하면)/;
 
 function escapeRegExp(text) {
@@ -413,7 +413,24 @@ function neutralizePledgeParagraphs(html) {
   });
 }
 
+function convertMarkdownToHtml(html) {
+  if (!html) return html;
+  let updated = html;
+  // Case 1: <p>## Title</p> -> <h2>Title</h2>
+  updated = updated.replace(/<p[^>]*>\s*#{2,3}\s*(.*?)<\/p>/gi, (match, title) => {
+    const level = match.includes('###') ? 'h3' : 'h2';
+    return `<${level}>${title.trim()}</${level}>`;
+  });
+  // Case 2: \n## Title\n -> \n<h2>Title</h2>\n
+  updated = updated.replace(/(^|\n)\s*#{2,3}\s+(.*?)\s*(\n|$)/g, (match, prefix, title, suffix) => {
+    const level = match.includes('###') ? 'h3' : 'h2';
+    return `${prefix}<${level}>${title.trim()}</${level}>${suffix}`;
+  });
+  return updated;
+}
+
 function ensureHeadings(html) {
+  // Check for h2/h3 tags
   if (/<h2>|<h3>/i.test(html)) {
     return html;
   }
@@ -646,7 +663,9 @@ function buildSeoIssues(content, primaryKeyword, targetWordCount) {
   const h2Count = (content.match(/<h2>/gi) || []).length;
   const h3Count = (content.match(/<h3>/gi) || []).length;
   const pCount = (content.match(/<p>/gi) || []).length;
-  const hasHeadings = h2Count >= 1 || h3Count >= 2;
+
+  // [강화된 기준] 소제목이 최소 3개 이상이어야 함 (2000자 기준)
+  const hasHeadings = h2Count >= 3 || (h2Count + h3Count) >= 4;
 
   if (!hasHeadings) {
     issues.push({
@@ -744,6 +763,10 @@ function applyHardConstraintsOnly({
       editSummary: []
     };
   }
+
+  // [NEW] 마크다운 소제목 변환 (가장 먼저 수행)
+  // eslint-disable-next-line no-param-reassign
+  content = convertMarkdownToHtml(content);
 
   const validationResult = buildFollowupValidation({
     content,
@@ -915,13 +938,17 @@ function applyHardConstraints({
   let updatedTitle = title;
   const summary = [];
 
+  // 1. 선거법 위반 표현 필터 (기계적 치환 삭제 -> LLM 위임)
+  /*
   const electionViolations = validationResult?.details?.electionLaw?.violations || [];
   if (electionViolations.length > 0) {
     updatedContent = neutralizePledgeParagraphs(updatedContent);
     updatedTitle = neutralizePledgeTitle(updatedTitle);
     summary.push('선거법 위험 표현 완화');
   }
+  */
 
+  // 2. 문장 반복 제거 (안전하므로 유지)
   const repetitionIssues = validationResult?.details?.repetition?.repeatedSentences || [];
   if (repetitionIssues.length > 0) {
     updatedContent = removeRepeatedSentences(updatedContent);
@@ -929,16 +956,15 @@ function applyHardConstraints({
   }
 
   const primaryKeyword = userKeywords[0] || '';
-  const needsSafeTitle = !updatedTitle
-    || updatedTitle.length < 18
-    || updatedTitle.length > 25
-    || (primaryKeyword && !updatedTitle.includes(primaryKeyword))
-    || (validationResult?.details?.titleQuality && validationResult.details.titleQuality.passed === false);
+  // [수정] 제목 강제 변경 조건 대폭 완화
+  // 기존에는 길이(18~25자)나 키워드 미포함 시 무조건 '안전한 제목(노잼)'으로 바꿨음.
+  // 이제는 제목이 없거나 너무 짧은(5자 미만) 경우에만 개입함.
+  const needsSafeTitle = !updatedTitle || updatedTitle.length < 5;
 
   if (needsSafeTitle) {
     const titleKeywords = userKeywords.length > 0 ? userKeywords : seoKeywords;
     updatedTitle = buildSafeTitle(updatedTitle, titleKeywords);
-    summary.push('제목 보정');
+    summary.push('제목 보정(누락/너무 짧음)');
   }
 
   const seoIssues = validationResult?.details?.seo?.issues || [];
@@ -953,37 +979,37 @@ function applyHardConstraints({
   const needsLength = seoIssues.some(issue => issue.id === 'content_length')
     || (targetWordCount && (contentCharCount < targetWordCount || (maxTargetCount && contentCharCount > maxTargetCount)));
 
+  // 구조/분량 관련 강제 로직(ensureHeadings, ensureLength 등)은 
+  // 5단 구조(황금 비율)를 파괴하므로 전면 제거.
+  // 오직 LLM이 프롬프트 규칙에 따라 수정하도록 함.
+
+  // 1. 소제목 보강 로직 제거 (LLM 위임)
+  /*
   if (needsHeadings) {
     updatedContent = ensureHeadings(updatedContent);
     summary.push('소제목 보강');
   }
+  */
 
+  // 2. 문단 수 보정 로직 제거 (LLM 위임)
+  /*
   if (needsParagraphs) {
     updatedContent = ensureParagraphCount(updatedContent, 5, 10, primaryKeyword);
     summary.push('문단 수 보정');
   }
+  */
 
+  // 3. 분량 강제 조절 로직 제거 (가장 큰 원인 - 뒤를 잘라버림)
+  /*
   let currentCharCount = stripHtml(updatedContent).replace(/\s/g, '').length;
   if (needsLength && targetWordCount && currentCharCount < targetWordCount) {
-    const summaryKeyword = primaryKeyword
-      || (seoKeywords[0] && seoKeywords[0].keyword ? seoKeywords[0].keyword : seoKeywords[0])
-      || '';
-    const deficit = targetWordCount - currentCharCount;
-    const withSummary = ensureSummaryBlock(updatedContent, summaryKeyword, deficit);
-    if (withSummary !== updatedContent) {
-      updatedContent = withSummary;
-      summary.push('요약 보강');
-      currentCharCount = stripHtml(updatedContent).replace(/\s/g, '').length;
-    }
+    // ... 요약 추가 로직 ...
   }
 
   if (needsLength && targetWordCount) {
-    const maxTarget = maxTargetCount || Math.round(targetWordCount * 1.1);
-    if (currentCharCount < targetWordCount || (maxTarget && currentCharCount > maxTarget)) {
-      updatedContent = ensureLength(updatedContent, targetWordCount, maxTargetCount, primaryKeyword);
-      summary.push('분량 보정');
-    }
+    // ... 강제 자르기 로직 ...
   }
+  */
 
   const dedupedContent = removeRepeatedSentences(updatedContent);
   if (dedupedContent !== updatedContent) {
@@ -991,46 +1017,26 @@ function applyHardConstraints({
     summary.push('중복 문장 정리');
   }
 
+  // 4. 재검증 후 분량 조절 로직 제거
+  /*
   if (needsLength && targetWordCount) {
-    const refreshedCount = stripHtml(updatedContent).replace(/\s/g, '').length;
-    if (refreshedCount < targetWordCount) {
-      updatedContent = ensureLength(updatedContent, targetWordCount, maxTargetCount, primaryKeyword);
-    }
+     // ...
   }
+  */
 
+  // 3. 키워드 강제 주입 및 과다 조정 로직 (문맥 파괴의 주범 -> 삭제)
+  // 키워드 부족 문제는 LLM 프롬프트(refineWithLLM)에서 해결하도록 유도함.
+  /*
   const keywordCandidates = [...userKeywords, ...seoKeywords]
     .map(k => (k && k.keyword) ? k.keyword : k)
     .filter(Boolean);
   const uniqueKeywords = [...new Set(keywordCandidates)];
-  const textForCount = stripHtml(updatedContent);
-  const charCount = textForCount.replace(/\s/g, '').length || 1;
-  const userTargetCount = Math.max(1, Math.floor(charCount / 400));
-  const userMaxCount = userTargetCount;
-  const userMinCount = userTargetCount;
-  const userKeywordSet = new Set(userKeywords);
+  
+  // ... forEach 루프 및 appendKeywordSentences 삭제 ...
+  */
 
-  uniqueKeywords.forEach((keyword) => {
-    const currentCount = countKeywordCoverage(updatedContent, keyword);
-    const isUserKeyword = userKeywordSet.has(keyword);
-    const ensureOnce = isUserKeyword || (!userKeywords.length && keyword === primaryKeyword);
-
-    if (ensureOnce && currentCount < userMinCount) {
-      updatedContent = appendKeywordSentences(updatedContent, keyword, userMinCount - currentCount);
-      summary.push(`키워드 보강: ${keyword}`);
-    }
-
-    const adjustedExactCount = countOccurrences(updatedContent, keyword);
-    if (isUserKeyword && adjustedExactCount > userMaxCount) {
-      const reduced = reduceKeywordOccurrences(updatedContent, keyword, userMaxCount);
-      updatedContent = reduced;
-      const reducedCount = countOccurrences(updatedContent, keyword);
-      if (reducedCount > userMaxCount) {
-        updatedContent = replaceKeywordBeyondLimit(updatedContent, keyword, userMaxCount);
-      }
-      summary.push(`키워드 과다 조정: ${keyword}`);
-    }
-  });
-
+  // 5. 마지막 분량 상한 조정 로직 제거
+  /*
   if (needsLength && targetWordCount) {
     const maxTarget = maxTargetCount || Math.round(targetWordCount * 1.1);
     const finalCharCount = stripHtml(updatedContent).replace(/\s/g, '').length;
@@ -1039,10 +1045,16 @@ function applyHardConstraints({
       summary.push('분량 상한 조정');
     }
   }
+  */
 
+  /*
   if (needsParagraphs) {
     updatedContent = ensureParagraphCount(updatedContent, 5, 10, primaryKeyword);
   }
+  */
+
+  // 🌟 [NEW] 최후의 말투 교정 (강제 치환)
+  updatedContent = forceFixContent(updatedContent);
 
   return {
     content: updatedContent,
@@ -1501,11 +1513,26 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status, targe
 • "의료 혁신을 위한 5대 과제" ❌ (혁신, 과제)
 ` : '';
 
+  const structureGuideline = `
+╔═══════════════════════════════════════════════════════════════╗
+║  🚨 [CRITICAL] 5단 구조 유지 필수 (황금 비율)                 ║
+╚═══════════════════════════════════════════════════════════════╝
+1. 전체 구조: **[서론] - [본론1] - [본론2] - [본론3] - [결론]** (총 5개 섹션 유지)
+2. 문단 규칙: **각 섹션은 반드시 3개의 문단**으로 구성하세요. (총 15문단)
+3. 길이 규칙: **한 문단은 120~150자** 내외로 짧게 끊어 쓰세요.
+4. 소제목(H2) 규칙:
+   - ❌ **서론**: 소제목 절대 금지 (인사말로 시작)
+   - ✅ **본론1~3, 결론**: 각 섹션 시작 부분에 반드시 **뉴스 헤드라인형 소제목** 삽입
+   - 예: <h2>이관훈 배우, 부산 방문</h2>
+5. 편집/수정 시 이 **섹션-문단 구조를 절대 깨지 마세요.** 내용이 늘어나거나 줄어들어도 이 비율을 유지해야 합니다.
+`;
+
   return `당신은 정치 원고 편집 전문가입니다. 아래 원고에서 발견된 문제들을 수정해주세요.
 
 [수정이 필요한 문제들]
 ${issuesList}
 ${statusNote}
+${structureGuideline}
 ${lengthGuideline}
 ${titleGuideline}
 [원본 제목]
@@ -1517,21 +1544,62 @@ ${content}
 [필수 포함 키워드]
 ${userKeywords.join(', ') || '(없음)'}
 
-  [수정 지침]
-  1. 지적된 문제들만 최소한으로 수정하세요. 원고의 전체적인 톤과 맥락은 유지하세요.
-  2. 선거법 위반 표현은 동일한 의미를 전달하면서 완곡하게 수정하세요.
-  3. 합쇼체(합니다체)를 유지하되, 같은 문단에서 동일 어미가 연속되지 않도록 유사 표현으로 분산하는 것을 권장합니다.
-  4. 키워드는 문맥에 자연스럽게 삽입하세요. 억지로 끼워넣지 마세요.
-  5. 숫자/연도/비율은 원문·배경자료에 있는 것만 사용하세요.
-  6. 제목은 25자 이내로 유지하고, 키워드를 앞쪽에 배치하세요.
-  7. HTML 구조(<p>, <strong> 등)는 유지하세요.
+  [수정 지침 (매우 중요)]
+  1. **[CRITICAL] 말투 강제 교정 (AI 투 제거)**:
+     - **"~라는 점입니다", "~것이라는 점입니다"** 패턴은 발견 즉시 삭제하거나 자연스러운 종결어미("**~입니다**", "**~합니다**", "**~것입니다**")로 고쳐 쓰세요. (문장을 분해해서라도 반드시 수정)
+     - **"노력하겠습니다"** 보다는 **"반드시 해내겠습니다"** 또는 **"완수하겠습니다"** 같은 단호한 표현을 쓰세요.
+     - **"하고 있습니다", "하고자 합니다"** 같은 진행형/유보적 표현을 금지하고, **"합니다", "약속합니다"**로 명확히 끝내세요.
+
+  2. **[CRITICAL] 정치적 화법 준수**:
+     - 후원회장이나 지지자는 '조력자'일 뿐입니다. 공약은 후보자인 **'저'** 또는 **'제가'** 직접 약속하는 형식을 취하세요.
+     - 외부(정부/당) 정책 인용 시, "윤석열 정부의 정책을 **제가 부산에서 완성하겠습니다**"와 같이 주체성을 확보하세요.
+
+  3. **[구조 및 서식 (AEO 최적화 소제목)]**:
+     - 소제목(H2)은 검색 사용자가 궁금해하는 **구체적인 질문**이나 **데이터 기반 정보** 형태로 작성하세요. (12~25자 권장)
+     - **✅ 좋은 예시 (따라 할 것)**:
+       - "청년 기본소득, **신청 방법은 무엇인가요?**" (질문형+키워드 전진배치)
+       - "부산 의료 관광 **클러스터 3대 핵심 전략**" (구체적 수치)
+       - "이관훈 후원회장 **위촉 배경과 역할은?**" (구체적 질문)
+       - "기존 정책 vs 신규 공약 **차이점 분석**" (비교형)
+     - **❌ 나쁜 예시 (절대 금지 - 무조건 수정)**:
+       - "관련 내용", "정책 안내" (너무 짧고 모호함)
+       - "이관훈은?", "부산은?" (단순 명사/질문 → 구체적으로 서술어 포함할 것)
+     - 소제목 텍스트는 반드시 **<h2> 태그**로 감싸세요.
+     - 문단은 3줄~4줄 정도로 호흡을 짧게 끊어 가독성을 높이세요.
+
+  4. **[검색어/SEO]**:
+     - 키워드는 문맥에 맞게 자연스럽게 녹이되, 전체 글에서 **최대 5~6회**까지만 사용하세요. (과도한 반복 금지)
+     - 숫자나 통계는 원문에 있는 것만 정확히 인용하세요.
+
+  5. **[최소한의 수정 원칙]**:
+     - 위 문제들이 없는 문장은 원문의 맛을 살려 그대로 두세요.
+     - 선거법 위반 표현만 완곡하게 다듬으세요.
 
 다음 JSON 형식으로만 응답하세요:
 {
   "title": "수정된 제목",
-  "content": "수정된 본문 (HTML)",
-  "editSummary": ["수정한 내용 1", "수정한 내용 2"]
+  "content": "수정된 본문 (HTML) - h2, h3, p 태그 구조 준수",
+  "editSummary": ["~라는 점입니다 말투 수정", "소제목 태그 적용"]
 }`;
+}
+
+/**
+ * 악성 말투 강제 교정 (최후의 수단)
+ */
+function forceFixContent(content) {
+  if (!content) return content;
+  let fixed = content;
+
+  // 1. "~라는 점입니다" 계열 제거 (다양한 변종 대응)
+  fixed = fixed.replace(/([가-힣]+)\s*다는 점입니다/g, '$1다고 확신합니다');
+  fixed = fixed.replace(/([가-힣]+)\s*라는 점입니다/g, '$1입니다');
+  fixed = fixed.replace(/([가-힣]+)\s*것이라는 점입니다/g, '$1것입니다');
+  fixed = fixed.replace(/점입니다/g, '점은 사실입니다'); // 남은 찌꺼기 처리
+
+  // 2. 힘 없는 표현 강화
+  fixed = fixed.replace(/노력하겠습니다/g, '반드시 해내겠습니다');
+
+  return fixed;
 }
 
 module.exports = {

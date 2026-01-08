@@ -179,14 +179,14 @@ const checkBonusEligibility = wrap(async (request) => {
   try {
     const db = admin.firestore();
     const userDoc = await db.collection('users').doc(uid).get();
-    
+
     if (!userDoc.exists) {
       throw new HttpsError('not-found', '사용자를 찾을 수 없습니다.');
     }
 
     const userData = userDoc.data();
     const isAdmin = userData.role === 'admin' || userData.isAdmin === true;
-    
+
     // 관리자는 무제한 보너스 제공
     if (isAdmin) {
       return {
@@ -200,13 +200,13 @@ const checkBonusEligibility = wrap(async (request) => {
         }
       };
     }
-    
+
     const usage = userData.usage || { postsGenerated: 0, monthlyLimit: 50, bonusGenerated: 0 };
-    
+
     // NaN 방지를 위한 안전한 숫자 변환
     const bonusGenerated = parseInt(usage.bonusGenerated) || 0;
     const bonusUsed = parseInt(usage.bonusUsed) || 0;
-    
+
     // 보너스 사용 가능 개수 계산
     const availableBonus = Math.max(0, bonusGenerated - bonusUsed);
 
@@ -248,7 +248,7 @@ const useBonusGeneration = wrap(async (request) => {
 
       const userData = userDoc.data();
       const isAdmin = userData.role === 'admin' || userData.isAdmin === true;
-      
+
       // 관리자는 무제한 보너스 사용 가능
       if (isAdmin) {
         console.log('관리자 계정 보너스 사용 - 제한 없음:', uid);
@@ -257,9 +257,9 @@ const useBonusGeneration = wrap(async (request) => {
           message: '관리자 권한으로 보너스 원고를 사용했습니다.'
         };
       }
-      
+
       const usage = userData.usage || { postsGenerated: 0, monthlyLimit: 50, bonusGenerated: 0, bonusUsed: 0 };
-      
+
       const availableBonus = Math.max(0, usage.bonusGenerated - (usage.bonusUsed || 0));
 
       if (availableBonus <= 0) {
@@ -350,13 +350,12 @@ const resetUserUsage = wrap(async (request) => {
     };
 
     if (testMode) {
-      // === 데모 모드: generationsRemaining 및 세션 초기화 ===
-      const monthlyLimit = userData.monthlyLimit || 8;
-      updateData.generationsRemaining = monthlyLimit;
+      // === 데모 모드: 월별 사용량 초기화 (당월 8회 리셋) ===
+      const currentMonthGenerations = (monthlyUsage[currentMonthKey]?.generations) || 0;
+      updateData[`monthlyUsage.${currentMonthKey}`] = { generations: 0, attempts: 0 };
       updateData.activeGenerationSession = admin.firestore.FieldValue.delete();
-      updateData[`monthlyUsage.${currentMonthKey}`] = 0;
 
-      console.log(`🧪 데모 모드 사용자 초기화: generationsRemaining ${userData.generationsRemaining || 0} -> ${monthlyLimit}`);
+      console.log(`🧪 데모 모드 사용자 초기화: monthlyUsage.${currentMonthKey} ${currentMonthGenerations} -> 0`);
     } else if (subscriptionStatus === 'trial') {
       // 무료 체험: generationsRemaining 복구
       const monthlyLimit = userData.monthlyLimit || 8;
@@ -381,10 +380,10 @@ const resetUserUsage = wrap(async (request) => {
     const currentGenerationsRemaining = userData.generationsRemaining || userData.trialPostsRemaining || 0;
 
     if (testMode) {
-      const monthlyLimit = userData.monthlyLimit || 8;
-      message = `데모 모드 생성 횟수가 초기화되었습니다. (${currentGenerationsRemaining}회 -> ${monthlyLimit}회)`;
-      before = currentGenerationsRemaining;
-      after = monthlyLimit;
+      const currentMonthData = monthlyUsage[currentMonthKey]?.generations || 0;
+      message = `데모 모드 이번 달 사용량이 초기화되었습니다. (${currentMonthData}회 -> 0회)`;
+      before = currentMonthData;
+      after = 0;
     } else if (subscriptionStatus === 'trial') {
       const monthlyLimit = userData.monthlyLimit || 8;
       message = `무료 체험 생성 횟수가 초기화되었습니다. (${currentGenerationsRemaining}회 -> ${monthlyLimit}회)`;

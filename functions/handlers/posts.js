@@ -36,7 +36,7 @@ const { extractKeywordsFromInstructions } = require('../services/posts/keyword-e
 const { validateKeywordInsertion } = require('../services/posts/validation');
 const { refineWithLLM, buildFollowupValidation, applyHardConstraintsOnly, expandContentToTarget } = require('../services/posts/editor-agent');
 const { processGeneratedContent, trimTrailingDiagnostics, trimAfterClosing, ensureParagraphTags, ensureSectionHeadings, moveSummaryToConclusionStart, cleanupPostContent, getIntroBlockCount, splitBlocksIntoSections } = require('../services/posts/content-processor');
-const { generateAeoSubheadings } = require('../services/posts/subheading-agent');
+const { generateAeoSubheadings, optimizeHeadingsInContent } = require('../services/posts/subheading-agent');
 const { callGenerativeModel } = require('../services/gemini');
 const { generateTitleFromContent } = require('../services/posts/title-generator');
 // buildSmartPrompt는 더 이상 사용하지 않음 (Multi-Agent가 직접 프롬프트 생성)
@@ -569,6 +569,15 @@ exports.generatePosts = httpWrap(async (req) => {
     // 3단계: AI 원고 작성 중
     await progress.stepGenerating();
 
+    // 파이프라인 모드 결정
+    let pipelineRoute = data.pipeline || 'standard';
+
+    // 🔒 고품질 모드(highQuality) 권한 체크: 관리자/테스터만 허용
+    if (pipelineRoute === 'highQuality' && !isAdmin && !isTester) {
+      console.warn(`⚠️ [권한 제한] ${uid} 사용자는 highQuality 모드 접근 권한이 없습니다. standard 모드로 전환합니다.`);
+      pipelineRoute = 'standard';
+    }
+
     const stopMultiAgentGenerate = startPerf('multiAgentGenerate');
     try {
       const multiAgentResult = await generateWithMultiAgent({
@@ -592,13 +601,21 @@ exports.generatePosts = httpWrap(async (req) => {
         targetWordCount,
         attemptNumber: session.attempts,  // 🎯 현재 시도 번호 (수사학 전략 변형용)
         rhetoricalPreferences: userProfile.rhetoricalPreferences || {},  // 🎯 수사학 전략 선호도
-        pipeline: data.pipeline || 'standard'  // 🆕 파이프라인 전달 (highQuality 지원)
+        pipeline: pipelineRoute  // 🆕 파이프라인 전달 (highQuality 지원)
       });
       stopMultiAgentGenerate();
 
       generatedContent = multiAgentResult.content;
       generatedTitle = multiAgentResult.title;
       multiAgentMetadata = multiAgentResult.metadata;
+
+      // 🌟 [SubheadingAgent] 소제목 최적화 (AEO 가이드 적용)
+      generatedContent = await optimizeHeadingsInContent({
+        content: generatedContent,
+        fullName,
+        fullRegion
+      });
+
       // 🎯 적용된 수사학 전략 저장
       multiAgentMetadata.appliedStrategy = multiAgentResult.appliedStrategy;
 
@@ -674,14 +691,29 @@ exports.generatePosts = httpWrap(async (req) => {
           generationsAfter: currentMonthGenerations + 1,
           monthlyLimit: 90
         });
-      } else if (testMode || subscriptionStatus === 'trial') {
-        // 데모/무료 체험: generationsRemaining 차감
+      } else if (testMode) {
+        // 🧪 데모 모드: 월별 사용량으로 관리 (매월 8회 자동 리셋)
+        const currentMonthKey = (() => {
+          const now = new Date();
+          return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        })();
+
+        const currentMonthGenerations = userData.monthlyUsage?.[currentMonthKey]?.generations || 0;
+        updateData[`monthlyUsage.${currentMonthKey}.generations`] = admin.firestore.FieldValue.increment(1);
+        console.log('🧪 데모 모드 - 검증 성공, 월별 생성 횟수 증가', {
+          sessionId: session.sessionId,
+          monthKey: currentMonthKey,
+          generationsBefore: currentMonthGenerations,
+          generationsAfter: currentMonthGenerations + 1,
+          monthlyLimit: 8
+        });
+      } else if (subscriptionStatus === 'trial') {
+        // ✅ 무료 체험 (프로덕션 모드): generationsRemaining 차감
         const currentRemaining = userData.generationsRemaining || userData.trialPostsRemaining || 0;
 
         if (currentRemaining > 0) {
           updateData.generationsRemaining = admin.firestore.FieldValue.increment(-1);
-          const modeLabel = testMode ? '🧪 데모 모드' : '✅ 무료 체험';
-          console.log(`${modeLabel} - 검증 성공, 생성 횟수 차감`, {
+          console.log('✅ 무료 체험 - 검증 성공, 생성 횟수 차감', {
             sessionId: session.sessionId,
             generationsBefore: currentRemaining,
             generationsAfter: currentRemaining - 1
