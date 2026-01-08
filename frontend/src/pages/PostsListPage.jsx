@@ -23,8 +23,22 @@ import {
   DialogContent,
   DialogActions,
   Alert,
+  ToggleButton,
+  ToggleButtonGroup,
+  Stack,
 } from '@mui/material';
-import { DeleteOutline, Assignment, Publish, Link, Transform, AddLink } from '@mui/icons-material';
+import {
+  DeleteOutline,
+  Assignment,
+  Publish,
+  Link,
+  Transform,
+  AddLink,
+  ViewList,
+  CalendarToday,
+  ChevronLeft,
+  ChevronRight
+} from '@mui/icons-material';
 import DashboardLayout from '../components/DashboardLayout';
 import SNSConversionModal from '../components/SNSConversionModal';
 import { LoadingSpinner } from '../components/loading';
@@ -93,6 +107,119 @@ function isNaverBlogUrl(value = '') {
   }
 }
 
+// 🗓️ 캘린더 뷰 컴포넌트 (내부 정의)
+function CalendarView({ posts, onPostClick, theme }) {
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDay = new Date(year, month, 1).getDay(); // 0: 일요일
+
+  // 날짜별 포스트 그룹핑
+  const postsByDate = posts.reduce((acc, post) => {
+    const d = new Date(post.createdAt);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(post);
+    return acc;
+  }, {});
+
+  const handlePrev = () => setCurrentDate(new Date(year, month - 1, 1));
+  const handleNext = () => setCurrentDate(new Date(year, month + 1, 1));
+  const handleToday = () => setCurrentDate(new Date());
+
+  const weekDays = ['일', '월', '화', '수', '목', '금', '토'];
+
+  return (
+    <Paper elevation={0} sx={{ p: 3, mb: 3, border: `1px solid ${theme.palette.divider}` }}>
+      {/* 달력 헤더 */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="h5" fontWeight="bold">
+            {year}년 {month + 1}월
+          </Typography>
+          <Button size="small" onClick={handleToday} sx={{ ml: 1, minWidth: 'auto', px: 1 }}>
+            오늘
+          </Button>
+        </Box>
+        <Box>
+          <IconButton onClick={handlePrev}><ChevronLeft /></IconButton>
+          <IconButton onClick={handleNext}><ChevronRight /></IconButton>
+        </Box>
+      </Box>
+
+      {/* 요일 헤더 */}
+      <Grid container sx={{ mb: 1 }}>
+        {weekDays.map((day, idx) => (
+          <Grid item xs={12 / 7} key={day} sx={{ textAlign: 'center', fontWeight: 'bold', color: idx === 0 ? 'error.main' : idx === 6 ? 'primary.main' : 'text.secondary' }}>
+            {day}
+          </Grid>
+        ))}
+      </Grid>
+
+      {/* 날짜 그리드 */}
+      <Grid container spacing={1}>
+        {/* 빈 칸 (1일 전까지) */}
+        {Array.from({ length: firstDay }).map((_, i) => (
+          <Grid item xs={12 / 7} key={`empty-${i}`} sx={{ minHeight: 120 }} />
+        ))}
+
+        {/* 날짜 칸 */}
+        {Array.from({ length: daysInMonth }).map((_, i) => {
+          const day = i + 1;
+          const dateKey = `${year}-${month}-${day}`;
+          const dayPosts = postsByDate[dateKey] || [];
+          const isToday = new Date().toDateString() === new Date(year, month, day).toDateString();
+
+          return (
+            <Grid item xs={12 / 7} key={day}>
+              <Box
+                sx={{
+                  border: `1px solid ${theme.palette.divider}`,
+                  borderRadius: 1,
+                  p: 0.5,
+                  height: '100%',
+                  minHeight: 120,
+                  bgcolor: isToday ? 'rgba(33, 150, 243, 0.08)' : 'background.paper',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 0.5
+                }}
+              >
+                <Typography variant="caption" sx={{ fontWeight: 'bold', color: isToday ? 'primary.main' : 'text.primary', textAlign: 'center', display: 'block' }}>
+                  {day}
+                </Typography>
+
+                {/* 뱃지 목록 */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, overflowY: 'auto', maxHeight: 100 }}>
+                  {dayPosts.map(post => (
+                    <Chip
+                      key={post.id}
+                      label={post.title || '제목 없음'}
+                      size="small"
+                      onClick={() => onPostClick(post)}
+                      sx={{
+                        height: 20,
+                        fontSize: '0.7rem',
+                        cursor: 'pointer',
+                        justifyContent: 'flex-start',
+                        '.MuiChip-label': { px: 1, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' },
+                        bgcolor: post.status === 'published' ? 'success.light' : 'primary.light',
+                        color: 'white'
+                      }}
+                    />
+                  ))}
+                </Box>
+              </Box>
+            </Grid>
+          );
+        })}
+      </Grid>
+    </Paper>
+  );
+}
+
 export default function PostsListPage() {
   const { user, loading: authLoading } = useAuth();
   const theme = useTheme();
@@ -101,6 +228,7 @@ export default function PostsListPage() {
   const [loading, setLoading] = useState(true);
   const [posts, setPosts] = useState([]);
   const [error, setError] = useState('');
+  const [viewMode, setViewMode] = useState('list'); // 뷰 모드 (list | calendar)
 
   // useNotification 훅 사용
   const { notification, showNotification, hideNotification } = useNotification();
@@ -131,7 +259,7 @@ export default function PostsListPage() {
           setError('사용자 정보를 불러올 수 없습니다. 다시 로그인해주세요.');
           return;
         }
-        
+
         console.log('🚀 Firebase Functions 호출:', { uid: user.uid });
         const res = await callFunctionWithNaverAuth('getUserPosts');
         console.log('✅ getUserPosts 응답:', res);
@@ -141,7 +269,7 @@ export default function PostsListPage() {
         console.log('📝 첫 번째 post:', list[0]);
         if (!mounted) return;
         setPosts(list);
-        
+
         // URL 쿼리 파라미터에서 openPost 확인하고 자동으로 Modal 열기
         const urlParams = new URLSearchParams(location.search);
         const openPostId = urlParams.get('openPost');
@@ -179,7 +307,7 @@ export default function PostsListPage() {
     try {
       // 네이버 인증 시스템 사용
       await callFunctionWithNaverAuth('deletePost', { postId });
-      
+
       setPosts((prev) => prev.filter((p) => p.id !== postId));
       showNotification('삭제되었습니다.', 'info');
       if (viewerPost?.id === postId) {
@@ -228,18 +356,18 @@ export default function PostsListPage() {
     }
 
     try {
-      await callFunctionWithNaverAuth('publishPost', { 
-        postId: publishPost.id, 
+      await callFunctionWithNaverAuth('publishPost', {
+        postId: publishPost.id,
         publishUrl: normalizedUrl
       });
-      
+
       // 로컬 상태 업데이트
       setPosts(prev => prev.map(p =>
         p.id === publishPost.id
           ? { ...p, publishUrl: normalizedUrl, publishedAt: new Date().toISOString(), status: 'published' }
           : p
       ));
-      
+
       setPublishDialogOpen(false);
       setPublishPost(null);
       setPublishUrl('');
@@ -297,7 +425,7 @@ export default function PostsListPage() {
               <Assignment sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
               내 원고 목록
             </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px` }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px`, flexWrap: 'wrap' }}>
               <Typography variant="body1" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
                 생성한 원고를 관리할 수 있습니다
               </Typography>
@@ -310,6 +438,24 @@ export default function PostsListPage() {
                 }}
                 variant="outlined"
               />
+
+              {/* 뷰 모드 토글 */}
+              <Box sx={{ ml: 'auto' }}>
+                <ToggleButtonGroup
+                  value={viewMode}
+                  exclusive
+                  onChange={(e, newView) => { if (newView) setViewMode(newView); }}
+                  size="small"
+                  aria-label="view mode"
+                >
+                  <ToggleButton value="list" aria-label="list view">
+                    <ViewList fontSize="small" />
+                  </ToggleButton>
+                  <ToggleButton value="calendar" aria-label="calendar view">
+                    <CalendarToday fontSize="small" />
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
             </Box>
           </Box>
         </motion.div>
@@ -323,138 +469,140 @@ export default function PostsListPage() {
             p: { xs: 2, sm: 3 }
           }}>
 
-          <Typography variant="body2" sx={{ mb: `${spacing.md}px`, color: 'grey.100', fontStyle: 'italic' }}>
-            이 화면은 읽기 전용입니다. 카드를 터치/클릭하면 원고가 열립니다.
-          </Typography>
+            <Typography variant="body2" sx={{ mb: `${spacing.md}px`, color: 'grey.100', fontStyle: 'italic' }}>
+              이 화면은 읽기 전용입니다. 카드를 터치/클릭하면 원고가 열립니다.
+            </Typography>
 
-          {loading ? (
-            <LoadingSpinner message="게시글 목록 로딩 중..." fullHeight={true} />
-          ) : error ? (
-            <Alert severity="error">{error}</Alert>
-          ) : posts.length === 0 ? (
-            <Alert severity="warning">저장된 원고가 없습니다.</Alert>
-          ) : (
-            <Grid container spacing={`${spacing.md}px`}>
-              {posts.map((p) => {
-                const preview = stripHtml(p.content || '');
-                const wordCount = countWithoutSpace(preview); // 공백 제외 글자수로 계산
-                const status = p.status || 'draft';
-                const statusColor =
-                  status === 'published' ? 'success' : status === 'scheduled' ? 'warning' : 'default';
-                const statusLabel =
-                  status === 'published' ? '발행 완료' : status === 'scheduled' ? '대기 중' : status;
-                const statusBgColor =
-                  status === 'published' ? '#2E7D32' : status === 'scheduled' ? '#F57C00' : undefined;
+            {loading ? (
+              <LoadingSpinner message="게시글 목록 로딩 중..." fullHeight={true} />
+            ) : error ? (
+              <Alert severity="error">{error}</Alert>
+            ) : posts.length === 0 ? (
+              <Alert severity="warning">저장된 원고가 없습니다.</Alert>
+            ) : viewMode === 'calendar' ? (
+              <CalendarView posts={posts} onPostClick={openViewer} theme={theme} />
+            ) : (
+              <Grid container spacing={`${spacing.md}px`}>
+                {posts.map((p) => {
+                  const preview = stripHtml(p.content || '');
+                  const wordCount = countWithoutSpace(preview); // 공백 제외 글자수로 계산
+                  const status = p.status || 'draft';
+                  const statusColor =
+                    status === 'published' ? 'success' : status === 'scheduled' ? 'warning' : 'default';
+                  const statusLabel =
+                    status === 'published' ? '발행 완료' : status === 'scheduled' ? '대기 중' : status;
+                  const statusBgColor =
+                    status === 'published' ? '#2E7D32' : status === 'scheduled' ? '#F57C00' : undefined;
 
-                return (
-                  <Grid item xs={12} sm={6} md={4} key={p.id}>
-                    <Card
-                      elevation={0}
-                      sx={{
-                        height: '100%',
-                        display: 'flex',
-                        flexDirection: 'column',
-                      }}
-                    >
-                      <CardActionArea onClick={() => openViewer(p)} sx={{ flexGrow: 1 }}>
-                        <CardContent>
-                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.xs}px` }}>
-                            <Chip size="small" label={statusLabel} color={statusColor} sx={{ color: 'white', backgroundColor: statusBgColor }} />
-                            <Typography variant="caption" color="text.secondary">
-                              {formatDate(p.updatedAt) || formatDate(p.createdAt)}
+                  return (
+                    <Grid item xs={12} sm={6} md={4} key={p.id}>
+                      <Card
+                        elevation={0}
+                        sx={{
+                          height: '100%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                        }}
+                      >
+                        <CardActionArea onClick={() => openViewer(p)} sx={{ flexGrow: 1 }}>
+                          <CardContent>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.xs}px` }}>
+                              <Chip size="small" label={statusLabel} color={statusColor} sx={{ color: 'white', backgroundColor: statusBgColor }} />
+                              <Typography variant="caption" color="text.secondary">
+                                {formatDate(p.updatedAt) || formatDate(p.createdAt)}
+                              </Typography>
+                            </Box>
+
+                            <Typography
+                              variant="h6"
+                              sx={{
+                                fontWeight: 700,
+                                mb: `${spacing.xs}px`,
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                wordBreak: 'break-word',
+                              }}
+                              title={p.title || '제목 없음'}
+                            >
+                              {p.title || '제목 없음'}
                             </Typography>
-                          </Box>
 
-                          <Typography
-                            variant="h6"
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                              sx={{
+                                display: '-webkit-box',
+                                WebkitLineClamp: 4,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                wordBreak: 'break-word',
+                                minHeight: 84,
+                              }}
+                            >
+                              {preview || '내용 미리보기가 없습니다.'}
+                            </Typography>
+
+                            <Divider sx={{ my: 1.5 }} />
+
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <Typography variant="caption" color="text.secondary">
+                                글자수: {wordCount} (공백 제외)
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                생성일 {formatDate(p.createdAt)}
+                              </Typography>
+                            </Box>
+                          </CardContent>
+                        </CardActionArea>
+
+                        <CardActions sx={{ justifyContent: 'flex-end', pt: 0, gap: 1 }}>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            startIcon={<Transform fontSize="small" />}
+                            onClick={(e) => handleSNSConvert(p, e)}
                             sx={{
-                              fontWeight: 700,
-                              mb: `${spacing.xs}px`,
-                              display: '-webkit-box',
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden',
-                              wordBreak: 'break-word',
+                              bgcolor: theme.palette.ui?.header || colors.brand.primary,
+                              color: 'white',
+                              '&:hover': {
+                                bgcolor: theme.palette.ui?.headerHover || colors.brand.primaryHover
+                              }
                             }}
-                            title={p.title || '제목 없음'}
                           >
-                            {p.title || '제목 없음'}
-                          </Typography>
-
-                          <Typography
-                            variant="body2"
-                            color="text.secondary"
+                            SNS 변환
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            startIcon={<AddLink fontSize="small" />}
+                            onClick={(e) => handlePublish(p, e)}
                             sx={{
-                              display: '-webkit-box',
-                              WebkitLineClamp: 4,
-                              WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden',
-                              wordBreak: 'break-word',
-                              minHeight: 84,
+                              bgcolor: p.publishUrl ? (theme.palette.ui?.header || colors.brand.primary) : colors.brand.primary,
+                              color: 'white',
+                              '&:hover': {
+                                bgcolor: p.publishUrl ? (theme.palette.ui?.headerHover || colors.brand.primaryHover) : colors.brand.primaryHover
+                              }
                             }}
                           >
-                            {preview || '내용 미리보기가 없습니다.'}
-                          </Typography>
-
-                          <Divider sx={{ my: 1.5 }} />
-
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Typography variant="caption" color="text.secondary">
-                              글자수: {wordCount} (공백 제외)
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              생성일 {formatDate(p.createdAt)}
-                            </Typography>
-                          </Box>
-                        </CardContent>
-                      </CardActionArea>
-
-                      <CardActions sx={{ justifyContent: 'flex-end', pt: 0, gap: 1 }}>
-                        <Button
-                          size="small"
-                          variant="contained"
-                          startIcon={<Transform fontSize="small" />}
-                          onClick={(e) => handleSNSConvert(p, e)}
-                          sx={{
-                            bgcolor: theme.palette.ui?.header || colors.brand.primary,
-                            color: 'white',
-                            '&:hover': {
-                              bgcolor: theme.palette.ui?.headerHover || colors.brand.primaryHover
-                            }
-                          }}
-                        >
-                          SNS 변환
-                        </Button>
-                        <Button
-                          size="small"
-                          variant="contained"
-                          startIcon={<AddLink fontSize="small" />}
-                          onClick={(e) => handlePublish(p, e)}
-                          sx={{
-                            bgcolor: p.publishUrl ? (theme.palette.ui?.header || colors.brand.primary) : colors.brand.primary,
-                            color: 'white',
-                            '&:hover': {
-                              bgcolor: p.publishUrl ? (theme.palette.ui?.headerHover || colors.brand.primaryHover) : colors.brand.primaryHover
-                            }
-                          }}
-                        >
-                          URL 입력
-                        </Button>
-                        <IconButton
-                          size="small"
-                          onClick={(e) => handleDelete(p.id, e)}
-                          sx={{ color: 'text.secondary' }}
-                        >
-                          <DeleteOutline fontSize="small" />
-                        </IconButton>
-                      </CardActions>
-                    </Card>
-                  </Grid>
-                );
-              })}
-            </Grid>
-          )}
-        </Paper>
+                            URL 입력
+                          </Button>
+                          <IconButton
+                            size="small"
+                            onClick={(e) => handleDelete(p.id, e)}
+                            sx={{ color: 'text.secondary' }}
+                          >
+                            <DeleteOutline fontSize="small" />
+                          </IconButton>
+                        </CardActions>
+                      </Card>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+            )}
+          </Paper>
         </motion.div>
 
         {/* 원고 보기 모달 */}
@@ -498,8 +646,8 @@ export default function PostsListPage() {
             <Button onClick={closePublishDialog} color="inherit">
               취소
             </Button>
-            <Button 
-              onClick={handlePublishSubmit} 
+            <Button
+              onClick={handlePublishSubmit}
               variant="contained"
               sx={{
                 bgcolor: theme.palette.ui?.header || colors.brand.primary,
