@@ -18,7 +18,11 @@ const {
   validateKeywordInsertion,
   validateTitleQuality
 } = require('./validation');
-const { stripHtml } = require('./content-processor');  // 🆕 추가: stripHtml 함수 import
+const {
+  stripHtml,
+  splitContentBySignature,
+  joinContent
+} = require('./content-processor');
 
 const PLEDGE_PATTERNS = [
   /약속드?립니다/,
@@ -114,6 +118,45 @@ function convertMarkdownToHtml(content) {
   // ## 를 <h2>로 변환
   converted = converted.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
   return converted;
+}
+
+/**
+ * 공백 정규화
+ */
+function normalizeSpaces(text) {
+  if (!text) return '';
+  return String(text).replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * 선거법 위반 제목 중립화
+ */
+function neutralizePledgeTitle(title) {
+  if (!title) return '';
+  let neutralized = title;
+  // "약속", "공약" 등 제거
+  for (const { pattern, replacement } of PLEDGE_REPLACEMENTS) {
+    neutralized = neutralized.replace(pattern, replacement);
+  }
+  return neutralized;
+}
+
+/**
+ * 요약문 존재 여부 확인
+ */
+function hasSummarySignal(content) {
+  if (!content) return false;
+  return SUMMARY_HEADING_REGEX.test(content) || SUMMARY_TEXT_REGEX.test(content);
+}
+
+/**
+ * 요약 블록 생성 (분량에 맞춰)
+ */
+function buildSummaryBlockToFit(body, maxChars) {
+  if (!body || maxChars <= 0) return '';
+  // 간단한 요약 블록 생성 (실제로는 더 복잡한 로직 필요)
+  const summary = '<p data-summary="true">위 내용을 정리하면 다음과 같습니다.</p>';
+  return summary.length <= maxChars ? summary : '';
 }
 
 // ...
@@ -306,7 +349,7 @@ function applyHardConstraintsOnly({
   };
 }
 
-function buildSafeTitle(title, userKeywords = []) {
+function buildSafeTitle(title, userKeywords = [], seoKeywords = []) {
   const primaryKeyword = userKeywords[0] || (seoKeywords[0]?.keyword || seoKeywords[0] || '');
   let base = neutralizePledgeTitle(title || '');
   if (!base || base.length < 5) {
@@ -371,7 +414,7 @@ function buildCompliantDraft({
   const safeTopic = sanitizeTopicForFacts(topic, factAllowlist) || '현안';
   const seedTitle = `${safeTopic} 현안 진단`;
   const titleKeywords = userKeywords.length > 0 ? userKeywords : seoKeywords;
-  const title = buildSafeTitle(seedTitle, titleKeywords);
+  const title = buildSafeTitle(seedTitle, userKeywords, seoKeywords);
 
   const paragraphs = [
     `${safeTopic}에 대한 현황과 구조를 점검합니다.`,
@@ -456,8 +499,7 @@ function applyHardConstraints({
   const needsSafeTitle = !updatedTitle || updatedTitle.length < 5;
 
   if (needsSafeTitle) {
-    const titleKeywords = userKeywords.length > 0 ? userKeywords : seoKeywords;
-    updatedTitle = buildSafeTitle(updatedTitle, titleKeywords);
+    updatedTitle = buildSafeTitle(updatedTitle, userKeywords, seoKeywords);
     summary.push('제목 보정(누락/너무 짧음)');
   }
 
