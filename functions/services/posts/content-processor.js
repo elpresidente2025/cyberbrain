@@ -1068,5 +1068,7 @@ module.exports = {
   getBodyHeadingTexts,
   getConclusionHeadingText,
   splitBlocksIntoSections,
-  stripHtml  // 🆕 추가: 다른 모듈에서 사용 중
+  stripHtml,
+  splitContentBySignature,  // 🆕 추가: editor-agent에서 사용
+  joinContent               // 🆕 추가: editor-agent에서 사용
 };
