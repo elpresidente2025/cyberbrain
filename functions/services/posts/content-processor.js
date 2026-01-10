@@ -1067,5 +1067,6 @@ module.exports = {
   getIntroBlockCount,
   getBodyHeadingTexts,
   getConclusionHeadingText,
-  splitBlocksIntoSections
+  splitBlocksIntoSections,
+  stripHtml  // 🆕 추가: 다른 모듈에서 사용 중
 };
