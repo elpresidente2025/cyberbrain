@@ -170,6 +170,24 @@ class ComplianceAgent extends BaseAgent {
     const warnings = [];
     const titleIssues = [];
 
+    // 0. 분량 검증 (물리적 스펙)
+    const plainContent = content.replace(/<[^>]*>/g, '').replace(/\s+/g, '');
+    const contentLength = plainContent.length;
+    const targetLength = context.targetWordCount || 1700;
+
+    // 85% 미만이면 부족으로 판단 (예: 1700자 목표일 때 1445자 미만)
+    if (contentLength < targetLength * 0.85) {
+      console.log(`📊 [ComplianceAgent] 분량 부족: ${contentLength}/${targetLength}자 (부족: ${targetLength - contentLength}자)`);
+      issues.push({
+        type: 'length_deficiency',
+        severity: 'high',  // Orchestrator 루프 트리거
+        reason: `분량 부족 (${contentLength}/${targetLength}자)`,
+        shortage: targetLength - contentLength,
+        current: contentLength,
+        target: targetLength
+      });
+    }
+
     // 1. Firestore에서 동적 정책 로드 (옵션)
     let dynamicPolicy = null;
     try {

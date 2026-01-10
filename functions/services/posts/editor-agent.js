@@ -1358,6 +1358,25 @@ async function refineWithLLM({
       ].filter(Boolean)
     };
 
+    // 🆕 분량 부족 시 우선적으로 본문 확장 시도 (요약문 생성 및 삽입)
+    const lengthIssue = issues.find(i => i.type === 'content_length' && i.description.includes('분량 부족'));
+    if (lengthIssue && typeof targetWordCount === 'number') {
+      console.log(`📉 [EditorAgent] 분량 부족 감지 (${lengthIssue.description}) -> 요약문 생성 및 확장 시도`);
+      const expansionResult = await expandContentToTarget({
+        content,
+        targetWordCount,
+        modelName,
+        status
+      });
+
+      if (expansionResult.edited) {
+        content = expansionResult.content;
+        // 분량이 채워졌다고 가정하고 이슈 목록에서 제거하거나, 재검증 로직에 의해 다음 루프에서 처리됨
+        // 여기서는 일단 content를 업데이트하고 계속 진행 (다른 이슈들도 고쳐야 하므로)
+        console.log('✅ [EditorAgent] 분량 확장/요약문 삽입 완료');
+      }
+    }
+
   } catch (error) {
     console.error('❌ [EditorAgent] LLM 호출 실패:', error.message);
     const refreshedValidation = buildFollowupValidation({
@@ -1404,6 +1423,7 @@ async function expandContentToTarget({
   }
 
   const { body, tail } = splitContentBySignature(content);
+  // HTML 태그와 공백을 제거한 실제 글자 수 (기준)
   const currentLength = stripHtml(body).replace(/\s/g, '').length;
   const maxTarget = Math.round(targetWordCount * 1.1);
 
@@ -1411,19 +1431,28 @@ async function expandContentToTarget({
     return { content, edited: false };
   }
 
-  const prompt = `다음 HTML 본문의 분량을 ${targetWordCount}~${maxTarget}자(공백 제외) 범위로 늘리세요.
-- 새 주제/새 소제목/요약/추신/마무리/감사 인사 추가 금지
-- 기존 문단에 1~2문장씩 구체화하여 확장
-- 원문에 없는 수치/사실 추가 금지
-- 합쇼체 유지
-- HTML 태그(<p>, <h2>, <h3>) 유지
+  const deficit = targetWordCount - currentLength;
+  console.log(`📊 [EditorAgent] 분량 부족: ${deficit}자 필요 (현재 ${currentLength} / 목표 ${targetWordCount})`);
+
+  // 사용자 요청: 본론 요약문 생성하여 결론 앞에 삽입
+  const prompt = `
+당신은 전문 원고 교정가입니다.
+현재 원고의 분량이 **${deficit}자** 부족합니다.
+아래 [본문]의 핵심 내용을 **구체적으로 요약 및 재진술**하여, **정확히 ${Math.max(deficit, 300)}자** 분량의 새로운 문단들을 작성해 주십시오.
+
+[지시사항]
+1. **분량 필수**: 반드시 **${Math.max(deficit, 300)}자 이상**의 텍스트가 나와야 합니다. (너무 짧으면 안 됨)
+2. **위치**: 이 내용은 **'결론' 바로 앞**에 삽입될 것입니다.
+3. **내용**: 앞선 본론(1,2,3)의 내용을 종합적으로 아우르면서, 독자에게 다시 한번 강조하는 "종합 요약" 성격으로 쓰십시오.
+4. **형식**: <p> 태그로 감싸진 2~3개의 문단으로 작성하십시오. 소제목(H2)은 쓰지 마십시오.
+5. **어조**: 원문의 어조(합쇼체)를 유지하십시오.
 
 [본문]
 ${body}
 
 다음 JSON 형식으로만 응답하세요:
 {
-  "content": "확장된 본문(HTML)"
+  "summaryBlock": "<p>...요약 내용 1...</p><p>...요약 내용 2...</p>"
 }`;
 
   try {
@@ -1437,23 +1466,25 @@ ${body}
         throw new Error('JSON 형식 없음');
       }
     } catch (parseError) {
-      console.warn('⚠️ [EditorAgent] 분량 확장 JSON 파싱 실패:', parseError.message);
+      console.warn('⚠️ [EditorAgent] 요약문 생성 JSON 파싱 실패:', parseError.message);
       return { content, edited: false };
     }
 
-    const nextBody = result?.content || body;
-    if (!nextBody || nextBody === body) {
+    const summaryBlock = result?.summaryBlock;
+    if (!summaryBlock) {
       return { content, edited: false };
     }
 
-    let merged = joinContent(nextBody, tail);
-    const mergedLength = stripHtml(merged).replace(/\s/g, '').length;
-    if (mergedLength > maxTarget) {
-      merged = ensureLength(merged, targetWordCount, maxTarget);
-    }
-    return { content: merged, edited: true };
+    // 결론 앞에 요약문 삽입
+    // insertSummaryAtConclusion 함수가 이미 editor-agent.js 내부에 존재함 (활용)
+    const updatedBody = insertSummaryAtConclusion(body, summaryBlock);
+    const finalContent = joinContent(updatedBody, tail);
+
+    console.log(`✅ [EditorAgent] 요약문(${stripHtml(summaryBlock).length}자) 추가 완료`);
+    return { content: finalContent, edited: true };
+
   } catch (error) {
-    console.warn('⚠️ [EditorAgent] 분량 확장 실패:', error.message);
+    console.warn('⚠️ [EditorAgent] 분량 확장(요약문 생성) 실패:', error.message);
     return { content, edited: false };
   }
 }
