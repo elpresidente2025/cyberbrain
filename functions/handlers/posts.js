@@ -391,7 +391,7 @@ exports.generatePosts = httpWrap(async (req) => {
 
     const titleScope = (() => {
       const position = effectivePosition || '';
-      const isMetro = position === '\uAD11\uC5ED\uC790\uCE58\uB2E8\uCCB4\uC7A5' || position.includes('\uC2DC\uC7A5') || position.includes('\uB3C4\uC9C0\uC0AC');
+      const isMetro = position === '광역자치단체장' || position.includes('시장') || position.includes('도지사');
       if (!isMetro) return null;
       return {
         avoidLocalInTitle: true,
@@ -615,6 +615,22 @@ exports.generatePosts = httpWrap(async (req) => {
         fullName,
         fullRegion
       });
+
+      // 🚨 [필수 교정] 사용자가 금지한 "~라는 점입니다" 말투 강제 삭제 (정규식 후처리)
+      if (generatedContent) {
+        generatedContent = generatedContent
+          .replace(/것이라는 점입니다/g, '것입니다')
+          .replace(/거라는 점입니다/g, '것입니다')
+          .replace(/한다는 점입니다/g, '합니다')
+          .replace(/하다는 점입니다/g, '합니다')
+          .replace(/된다는 점입니다/g, '됩니다')
+          .replace(/있다는 점입니다/g, '있습니다')
+          .replace(/없다는 점입니다/g, '없습니다')
+          .replace(/이라는 점입니다/g, '입니다') // 명사 + 이라는 점입니다 -> 입니다
+          .replace(/라는 점입니다/g, '입니다')  // 나머지 케이스
+          .replace(/\(출처 필요\)/g, '')       // (출처 필요) 삭제
+          .replace(/\[출처 필요\]/g, '');      // [출처 필요] 삭제
+      }
 
       // 🎯 적용된 수사학 전략 저장
       multiAgentMetadata.appliedStrategy = multiAgentResult.appliedStrategy;

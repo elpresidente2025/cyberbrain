@@ -35,7 +35,7 @@ const CLOSING_MARKERS = [
 ];
 
 const SUMMARY_PARAGRAPH_REGEX = /<p[^>]*data-summary=["']true["'][^>]*>[\s\S]*?<\/p>/gi;
-const CONCLUSION_HEADING_REGEX = /<h[23][^>]*>[^<]*(\uC815\uB9AC|\uACB0\uB860|\uC694\uC57D|\uB9C8\uBB34\uB9AC)[^<]*<\/h[23]>/i;
+const CONCLUSION_HEADING_REGEX = /<h[23][^>]*>[^<]*(정리|결론|요약|마무리)[^<]*<\/h[23]>/i;
 
 function ensureParagraphTags(content) {
   if (!content) return content;
@@ -198,11 +198,11 @@ function isIncompleteQuestion(text) {
 }
 
 const REPEATED_ENDINGS = [
-  { ending: '합니다', replacements: ['하고 있습니다', '한다고 봅니다'] },
-  { ending: '됩니다', replacements: ['되는 상황입니다', '된다고 봅니다'] },
-  { ending: '입니다', replacements: ['이라는 점입니다', '이라고 볼 수 있습니다'] },
-  { ending: '있습니다', replacements: ['있는 상황입니다', '있다고 봅니다'] },
-  { ending: '없습니다', replacements: ['없는 상황입니다', '없다고 봅니다'] }
+  { ending: '합니다', replacements: ['하겠습니다', '할 것입니다'] },
+  { ending: '됩니다', replacements: ['될 것입니다', '되어야 합니다'] },
+  { ending: '입니다', replacements: ['일 것입니다', '이라고 확신합니다'] },
+  { ending: '있습니다', replacements: ['있을 것입니다', '있다고 자부합니다'] },
+  { ending: '없습니다', replacements: ['없을 것입니다', '없다고 생각합니다'] }
 ];
 
 const SORTED_REPEATED_ENDINGS = [...REPEATED_ENDINGS].sort(
@@ -217,7 +217,19 @@ function stripMarkdownEmphasis(content) {
 
 function splitPlainSentences(text) {
   if (!text) return [];
-  const matches = String(text).match(/[^.!?]+[.!?]+|[^.!?]+$/g);
+  // 단순 마침표 분리가 아닌, 소수점(0.7)을 보호하는 정교한 분리 로직
+  // 1. 숫자가 아닌 문자 뒤의 마침표
+  // 2. 또는 문장 부호(!?)
+  // 3. 또는 소수점이 아닌 마침표
+  // 이를 구현하기 위해 "숫자+점+숫자" 패턴을 제외하고 매칭하거나,
+  // 더 안전하게는 세그먼트 매칭을 사용
+
+  // "어떤 문자들의 나열(소수점 포함 가능)" + "종결 부호(.!?)" + "공백 혹은 끝"
+  // 정규식 설명:
+  // ([^.!?]|(?<=\d)\.(?=\d))+  : 마침표/!/?가 아니거나, 숫자 사이의 점(소수점)인 것들의 반복
+  // ([.!?]+|$)                : 그리고 문장 부호 덩어리 또는 문자열 끝
+  const matches = String(text).match(/([^.!?]|(?<=\d)\.(?=\d))+([.!?]+|$)/g);
+
   if (!matches) return [];
   return matches.map((s) => s.trim()).filter(Boolean);
 }
@@ -308,6 +320,11 @@ function cleanupPostContent(content) {
   let updated = stripMarkdownEmphasis(content);
   updated = normalizeParagraphEndings(updated);
   updated = stripEmptyHeadingSections(updated);
+
+  // 🔧 [FIX] 소수점 뒤 공백 제거 (0. 7% -> 0.7%)
+  // splitPlainSentences가 소수점을 문장 끝으로 오인하여 분리 후 join(' ')을 할 때 발생하는 문제 해결
+  updated = updated.replace(/(\d)\.\s+(\d)/g, '$1.$2');
+
   return updated;
 }
 const CONTENT_BLOCK_REGEX = /<p[^>]*>[\s\S]*?<\/p>|<ul[^>]*>[\s\S]*?<\/ul>|<ol[^>]*>[\s\S]*?<\/ol>/gi;

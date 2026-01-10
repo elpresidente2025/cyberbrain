@@ -12,7 +12,7 @@ function normalizeTitleRegion(title, titleScope = {}) {
   const regionLocal = String(titleScope.regionLocal || '').trim();
   const regionMetro = String(titleScope.regionMetro || '').trim();
   const metroLabel = regionMetro
-    ? regionMetro.replace(/\uAD11\uC5ED\uC2DC|\uD2B9\uBCC4\uC2DC|\uD2B9\uBCC4\uC790\uCE58\uC2DC|\uC790\uCE58\uC2DC|\uC790\uCE58\uB3C4|\uB3C4$/g, '').trim()
+    ? regionMetro.replace(/광역시|특별시|특별자치시|자치시|자치도|도$/g, '').trim()
     : '';
   const finalMetro = metroLabel || regionMetro;
 
