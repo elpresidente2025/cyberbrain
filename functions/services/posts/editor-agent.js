@@ -429,11 +429,11 @@ function applyHardConstraints({
   }
   */
 
-  // 2. 문장 반복 제거 (안전하므로 유지)
+  // 2. 문장 반복 제거 (LLM 위임)
+  // removeRepeatedSentences 함수는 구현되지 않았으므로 LLM이 처리하도록 함
   const repetitionIssues = validationResult?.details?.repetition?.repeatedSentences || [];
   if (repetitionIssues.length > 0) {
-    updatedContent = removeRepeatedSentences(updatedContent);
-    summary.push('문장 반복 완화');
+    summary.push('문장 반복 감지 (LLM 수정 필요)');
   }
 
   const primaryKeyword = userKeywords[0] || '';
@@ -492,11 +492,7 @@ function applyHardConstraints({
   }
   */
 
-  const dedupedContent = removeRepeatedSentences(updatedContent);
-  if (dedupedContent !== updatedContent) {
-    updatedContent = dedupedContent;
-    summary.push('중복 문장 정리');
-  }
+  // 중복 문장 제거는 LLM이 처리하도록 함 (removeRepeatedSentences 미구현)
 
   // 4. 재검증 후 분량 조절 로직 제거
   /*
