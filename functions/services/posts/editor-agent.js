@@ -58,6 +58,8 @@ const PLEDGE_REPLACEMENTS = [
   { pattern: /하겠(?:습니다)?/g, replacement: '할 필요가 있습니다' }
 ];
 
+// (삭제됨 - 하드코딩 매핑 테이블 제거, LLM 기반 동의어 생성으로 대체)
+
 const KEYWORD_REPLACEMENTS = [
   '관련 현안',
   '지역 현안',
@@ -157,6 +159,75 @@ function buildSummaryBlockToFit(body, maxChars) {
   // 간단한 요약 블록 생성 (실제로는 더 복잡한 로직 필요)
   const summary = '<p data-summary="true">위 내용을 정리하면 다음과 같습니다.</p>';
   return summary.length <= maxChars ? summary : '';
+}
+
+/**
+ * 키워드 사용 빈도 체크 (범용)
+ * @returns {{ keyword: string, count: number, shouldVary: boolean }[]}
+ */
+function analyzeKeywordUsage(content, keywords) {
+  const results = [];
+
+  for (const keyword of keywords) {
+    const regex = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    const matches = content.match(regex) || [];
+    const count = matches.length;
+
+    // 5회 이상 사용 시 변주 권장
+    const shouldVary = count >= 5;
+
+    results.push({
+      keyword,
+      count,
+      shouldVary
+    });
+  }
+
+  return results;
+}
+
+/**
+ * 키워드 과다 사용 시 LLM에게 의미론적 변주 요청
+ * (범용 설계: LLM이 문맥 기반으로 동의어 생성)
+ */
+function buildKeywordVariationGuide(keywordAnalysis) {
+  const overusedKeywords = keywordAnalysis.filter(k => k.shouldVary);
+
+  if (overusedKeywords.length === 0) {
+    return '';
+  }
+
+  const keywordList = overusedKeywords.map(k =>
+    `- **"${k.keyword}"** (현재 ${k.count}회 사용)`
+  ).join('\n');
+
+  return `
+╔═══════════════════════════════════════════════════════════════╗
+║  🎯 [SEO 최적화] 키워드 과다 사용 방지 - 의미론적 변주 필수  ║
+╚═══════════════════════════════════════════════════════════════╝
+
+**[CRITICAL] 검색엔진 스터핑 페널티 방지를 위해 아래 키워드를 반드시 변주하세요:**
+
+${keywordList}
+
+**변주 방법 (LLM이 자율적으로 판단)**:
+각 키워드에 대해 문맥에 맞는 **동의어, 유사어, 상위어, 하위어**를 찾아 자연스럽게 혼용하세요.
+
+**변주 원칙**:
+1. **첫 등장**(제목, 서론 첫 문단): 정확한 키워드 사용 (SEO 앵커)
+2. **본문 중반**: 의미론적 변주 표현 30% 이상 혼용 (자연스러움)
+3. **결론**: 다시 정확한 키워드로 회귀 (강조)
+
+**변주 예시 (few-shot)**:
+- "디즈니랜드" → "세계구급 테마파크", "글로벌 IP 시설", "국제급 엔터테인먼트 단지"
+- "AI 디지털밸리" → "첨단 산업 클러스터", "기술 혁신 단지", "차세대 산업 거점"
+- "공약" → "정책 방향", "비전", "추진 과제"
+
+**주의사항**:
+- 변주 표현은 원래 키워드와 **정확히 같은 의미**여야 함
+- 독자가 "이게 뭐지?" 하지 않도록 문맥상 자연스러워야 함
+- 검색엔진은 시맨틱 이해 능력이 있으므로 동의어도 같은 주제로 인식함
+`;
 }
 
 // ...
@@ -1040,6 +1111,10 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status, targe
     ? `\n📏 분량 목표: ${targetWordCount}~${maxTarget}자(공백 제외), 현재 ${currentLength}자\n- 새 주제/추신/요약 추가 금지\n- 기존 문단의 근거를 구체화해 분량을 맞출 것`
     : '';
 
+  // 🆕 키워드 과다 사용 체크 및 변주 가이드 생성
+  const keywordAnalysis = analyzeKeywordUsage(content, userKeywords);
+  const keywordVariationGuide = buildKeywordVariationGuide(keywordAnalysis);
+
   // 제목 관련 이슈가 있으면 상세 가이드라인 추가
   const hasTitleIssues = issues.some(i =>
     i.type.startsWith('title_') || ['keyword_missing', 'keyword_position', 'abstract_expression'].includes(i.type)
@@ -1137,7 +1212,7 @@ ${userKeywords.join(', ') || '(없음)'}
   5. **[최소한의 수정 원칙]**:
      - 위 문제들이 없는 문장은 원문의 맛을 살려 그대로 두세요.
      - 선거법 위반 표현만 완곡하게 다듬으세요.
-
+${keywordVariationGuide}
 다음 JSON 형식으로만 응답하세요:
 {
   "title": "수정된 제목",
