@@ -103,6 +103,19 @@ const SIGNATURE_REGEXES = [
 const SUMMARY_HEADING_REGEX = /<h[23][^>]*>[^<]*(요약|정리|결론|마무리|맺음말)[^<]*<\/h[23]>/ig;
 const SUMMARY_TEXT_REGEX = /(정리하면|요약하면|결론적으로|핵심을 정리하면)/;
 
+/**
+ * 마크다운 헤딩을 HTML로 변환
+ */
+function convertMarkdownToHtml(content) {
+  if (!content) return content;
+  let converted = content;
+  // ### 를 <h3>로 변환 (먼저 처리)
+  converted = converted.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+  // ## 를 <h2>로 변환
+  converted = converted.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+  return converted;
+}
+
 // ...
 
 function insertSummaryAtConclusion(body, block) {
