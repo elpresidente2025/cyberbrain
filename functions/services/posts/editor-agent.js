@@ -18,6 +18,7 @@ const {
   validateKeywordInsertion,
   validateTitleQuality
 } = require('./validation');
+const { stripHtml } = require('./content-processor');  // 🆕 추가: stripHtml 함수 import
 
 const PLEDGE_PATTERNS = [
   /약속드?립니다/,
