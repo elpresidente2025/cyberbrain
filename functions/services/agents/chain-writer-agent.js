@@ -107,7 +107,9 @@ class ChainWriterAgent extends BaseAgent {
                 contents: [{ role: 'user', parts: [{ text: prompt }] }],
                 generationConfig: { responseMimeType: 'application/json' }
             });
-            return JSON.parse(result.response.text());
+            const parsedPlan = JSON.parse(result.response.text());
+            console.log('📋 [ChainWriter] 생성된 기획:', JSON.stringify(parsedPlan, null, 2));
+            return parsedPlan;
         } catch (e) {
             console.error('❌ [ChainWriter] 기획 실패:', e);
             return null;
@@ -181,11 +183,6 @@ class ChainWriterAgent extends BaseAgent {
 7. **${headerInstruction}**
 8. **독립성**: 이 글은 전체 원고의 조각입니다. 인사는 서론이 아니면 절대 하지 말고, 바로 본론으로 들어가십시오.
 
-9. **[CRITICAL] 페르소나 체화 및 키워드 절제 (Persona Embodiment & Keyword Restraint)**:
-   - **[직함 선언 제한]**: "저는 OOO 전문가로서", "전문가의 입장에서"와 같은 정체성 선언(Explicit Declaration)은 **글 전체에서 최대 0~1회**만 허용합니다. 가급적 쓰지 마십시오.
-   - **[전문성 증명]**: 말로 선언하는 대신, 구체적인 데이터와 기술적 통찰을 통해 전문성을 암묵적으로 증명(Implicit Demonstration)하십시오.
-   - **[기계적 수식 금지]**: 자신의 전문 분야 키워드(예: AI, 디지털, 경제)를 모든 명사 앞에 **접두어처럼 습관적으로 붙이는 행위(Mechanical Labeling)**를 절대 금지합니다. (예: "AI 관광", "AI 도시", "AI 교육" 반복 금지). 문맥상 꼭 필요한 경우에만 한정적으로 사용하십시오.
-
 # Goal
 이 파트 하나만 읽어도 배가 부를 정도로 **풍성하고 구체적인 내용**을 담으십시오.
 빈약한 문장은 용납되지 않습니다.
@@ -193,10 +190,18 @@ class ChainWriterAgent extends BaseAgent {
 
         try {
             const result = await model.generateContent({
-                contents: [{ role: 'user', parts: [{ text: prompt }] }]
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                generationConfig: {
+                    temperature: 0.9,
+                    maxOutputTokens: 2000
+                }
             });
             let text = result.response.text().trim();
             text = text.replace(/```html/g, '').replace(/```/g, '');
+
+            const charCount = text.replace(/<[^>]*>/g, '').length;
+            console.log(`✅ [ChainWriter] 섹션 ${index} (${sectionPlan.type}) 생성: ${charCount}자`);
+
             return text;
         } catch (e) {
             console.error(`❌ [ChainWriter] 섹션 ${index} 작성 실패:`, e);
