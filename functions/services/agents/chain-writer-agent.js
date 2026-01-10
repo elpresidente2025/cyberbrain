@@ -123,9 +123,15 @@ class ChainWriterAgent extends BaseAgent {
         const minChars = isBody ? 400 : 250;
         const lengthTarget = isBody ? "500자 이상 (아무리 짧아도 400자는 넘길 것)" : "300자 내외";
 
-        const headerInstruction = isBody
-            ? '가장 먼저 이 문단의 핵심을 꿰뚫는 **매력적인 소제목을 <h2>태그**로 작성하십시오.'
-            : '서론이나 결론에는 소제목을 달지 마십시오. 바로 본문(<p>)으로 시작하십시오.';
+        let headerInstruction = '';
+        if (sectionPlan.type === 'intro') {
+            headerInstruction = '서론에는 절대 소제목을 달지 마십시오. "존경하는..." 같은 인사말로 바로 시작하십시오. (<p> 태그)';
+        } else if (sectionPlan.type === 'outro') {
+            headerInstruction = '결론의 시작에는 반드시 **"마무리 인사"** 또는 **"맺음말"** 같은 소제목을 <h2>태그로 작성하십시오.';
+        } else {
+            // 본론 (body)
+            headerInstruction = '가장 먼저 이 문단의 핵심을 꿰뚫는 **매력적인 소제목을 <h2>태그**로 작성하십시오.';
+        }
 
         const prompt = `
 # Role
