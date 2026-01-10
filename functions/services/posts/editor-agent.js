@@ -1101,6 +1101,10 @@ function forceFixContent(content) {
   if (!content) return content;
   let fixed = content;
 
+  // 0. [NEW] 메타 발언 및 주석 제거 (안전장치)
+  fixed = fixed.replace(/(관련 데이터|정확한 수치|출처|구체적인 수치|통계)(.*)(확보|확인|검증)(가|이) (필요합니다|바랍니다|요구됩니다|불분명합니다)\.?/gi, '');
+  fixed = fixed.replace(/※.*$/gm, ''); // 당구장 표시 주석 제거
+
   // 1. "~라는 점입니다" 계열 제거 (다양한 변종 대응)
   fixed = fixed.replace(/([가-힣]+)\s*다는 점입니다/g, '$1다고 확신합니다');
   fixed = fixed.replace(/([가-힣]+)\s*라는 점입니다/g, '$1입니다');
