@@ -1105,11 +1105,8 @@ function forceFixContent(content) {
   fixed = fixed.replace(/(관련 데이터|정확한 수치|출처|구체적인 수치|통계)(.*)(확보|확인|검증)(가|이) (필요합니다|바랍니다|요구됩니다|불분명합니다)\.?/gi, '');
   fixed = fixed.replace(/※.*$/gm, ''); // 당구장 표시 주석 제거
 
-  // 1. "~라는 점입니다" 계열 제거 (다양한 변종 대응)
-  fixed = fixed.replace(/([가-힣]+)\s*다는 점입니다/g, '$1다고 확신합니다');
-  fixed = fixed.replace(/([가-힣]+)\s*라는 점입니다/g, '$1입니다');
-  fixed = fixed.replace(/([가-힣]+)\s*것이라는 점입니다/g, '$1것입니다');
-  fixed = fixed.replace(/점입니다/g, '점은 사실입니다'); // 남은 찌꺼기 처리
+  // 1. "~라는 점입니다" 계열 제거 -> content-processor.js로 이관 (중복 제거)
+  // 🗑️ 삭제됨: 규칙 통합을 위해 content-processor.js에서만 처리
 
   // 2. 힘 없는 표현 강화
   fixed = fixed.replace(/노력하겠습니다/g, '반드시 해내겠습니다');

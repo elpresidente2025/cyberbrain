@@ -205,6 +205,20 @@ const REPEATED_ENDINGS = [
   { ending: '없습니다', replacements: ['없을 것입니다', '없다고 생각합니다'] }
 ];
 
+// 🆕 이미 변환된 어미 패턴 - 이 어미로 끝나면 재변환하지 않음
+const ALREADY_TRANSFORMED_ENDINGS = [
+  '것입니다',
+  '겠습니다',
+  '확신합니다',
+  '자부합니다',
+  '생각합니다',
+  '것일 것입니다',
+  '있을 것입니다',
+  '없을 것입니다',
+  '될 것입니다',
+  '할 것입니다'
+];
+
 const SORTED_REPEATED_ENDINGS = [...REPEATED_ENDINGS].sort(
   (a, b) => b.ending.length - a.ending.length
 );
@@ -238,6 +252,14 @@ function findEndingRule(text) {
   if (!text) return null;
   const trimmed = String(text).replace(/\s+$/g, '');
   if (!trimmed) return null;
+
+  // 🆕 이미 변환된 어미로 끝나면 재변환하지 않음 (이중 변환 방지)
+  for (const transformed of ALREADY_TRANSFORMED_ENDINGS) {
+    if (trimmed.endsWith(transformed)) {
+      return null;
+    }
+  }
+
   for (const rule of SORTED_REPEATED_ENDINGS) {
     if (trimmed.endsWith(rule.ending)) {
       return rule;
@@ -315,9 +337,39 @@ function normalizeParagraphEndings(content) {
   });
 }
 
+// 🆕 비문 패턴 중앙 집중 처리 (기존 3곳에서 통합)
+const GRAMMATICAL_ERROR_PATTERNS = [
+  { pattern: /것이라는 점입니다/g, replacement: '것입니다' },
+  { pattern: /거라는 점입니다/g, replacement: '것입니다' },
+  { pattern: /한다는 점입니다/g, replacement: '합니다' },
+  { pattern: /하다는 점입니다/g, replacement: '합니다' },
+  { pattern: /된다는 점입니다/g, replacement: '됩니다' },
+  { pattern: /있다는 점입니다/g, replacement: '있습니다' },
+  { pattern: /없다는 점입니다/g, replacement: '없습니다' },
+  { pattern: /이라는 점입니다/g, replacement: '입니다' },
+  { pattern: /라는 점입니다/g, replacement: '입니다' },
+  // 🆕 이중 변환 복원 (것일 것입니다 → 것입니다)
+  { pattern: /것일 것입니다/g, replacement: '것입니다' },
+  { pattern: /있을 것일 것입니다/g, replacement: '있을 것입니다' },
+  { pattern: /없을 것일 것입니다/g, replacement: '없을 것입니다' },
+  { pattern: /될 것일 것입니다/g, replacement: '될 것입니다' },
+  { pattern: /할 것일 것입니다/g, replacement: '할 것입니다' }
+];
+
+function removeGrammaticalErrors(content) {
+  if (!content) return content;
+  let fixed = content;
+  for (const { pattern, replacement } of GRAMMATICAL_ERROR_PATTERNS) {
+    fixed = fixed.replace(pattern, replacement);
+  }
+  return fixed;
+}
+
 function cleanupPostContent(content) {
   if (!content) return content;
-  let updated = stripMarkdownEmphasis(content);
+  // 🆕 [1단계] 비문 패턴 제거 (가장 먼저 실행)
+  let updated = removeGrammaticalErrors(content);
+  updated = stripMarkdownEmphasis(updated);
   updated = normalizeParagraphEndings(updated);
   updated = stripEmptyHeadingSections(updated);
 
