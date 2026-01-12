@@ -14,6 +14,7 @@ import {
   CardActionArea,
   Chip,
   useTheme,
+  useMediaQuery,
   Button,
   IconButton,
   Divider,
@@ -109,7 +110,7 @@ function isNaverBlogUrl(value = '') {
 // 🗓️ 캘린더 뷰 컴포넌트
 function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish }) {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedPost, setSelectedPost] = useState(null); // 카드 팝업용
+  const [selectedDate, setSelectedDate] = useState(null); // 선택된 날짜
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -120,7 +121,7 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
   // 날짜별 포스트 그룹핑
   const postsByDate = posts.reduce((acc, post) => {
     const d = new Date(post.createdAt);
-    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
     if (!acc[key]) acc[key] = [];
     acc[key].push(post);
     return acc;
@@ -160,29 +161,42 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
 
         <Grid container spacing={1}>
           {Array.from({ length: firstDay }).map((_, i) => (
-            <Grid item xs={12 / 7} key={`empty-${i}`} sx={{ minHeight: 150 }} />
+            <Grid item xs={12 / 7} key={`empty-${i}`}>
+              <Box sx={{ minHeight: 60, aspectRatio: '3 / 2' }} />
+            </Grid>
           ))}
 
           {Array.from({ length: daysInMonth }).map((_, i) => {
             const day = i + 1;
-            const dateKey = `${year}-${month}-${day}`;
+            const dateKey = `${year}-${month + 1}-${day}`;
             const dayPosts = postsByDate[dateKey] || [];
             const todayObj = new Date();
             const isToday = day === todayObj.getDate() && month === todayObj.getMonth() && year === todayObj.getFullYear();
+            const isSelected = selectedDate === dateKey;
 
             return (
               <Grid item xs={12 / 7} key={day}>
                 <Box
+                  onClick={() => {
+                    if (dayPosts.length > 0) {
+                      setSelectedDate(isSelected ? null : dateKey);
+                    }
+                  }}
                   sx={{
                     border: `1px solid ${theme.palette.divider}`,
                     borderRadius: 1,
                     p: 0.5,
-                    height: '100%',
-                    minHeight: 150,
-                    bgcolor: isToday ? 'primary.main' : 'background.paper',
+                    aspectRatio: '3 / 2',
+                    minHeight: 60,
+                    bgcolor: isToday ? 'primary.main' : isSelected ? 'primary.light' : 'background.paper',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 0.5
+                    gap: 0.5,
+                    cursor: dayPosts.length > 0 ? 'pointer' : 'default',
+                    transition: 'all 0.2s',
+                    '&:hover': dayPosts.length > 0 ? {
+                      bgcolor: isToday ? 'primary.main' : 'action.hover'
+                    } : {}
                   }}
                 >
                   <Typography
@@ -199,40 +213,27 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
                     {day}
                   </Typography>
 
-                  {/* 배지 목록 (높이 1/3, 줄바꿈 허용) */}
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, flex: 1 }}>
-                    {dayPosts.map(post => (
-                      <Box
-                        key={post.id}
-                        onClick={() => setSelectedPost(post)}
-                        sx={{
-                          bgcolor: post.status === 'published' ? 'success.light' : 'primary.light',
-                          color: 'white',
-                          borderRadius: '1px',
-                          p: '2px 4px',
-                          fontSize: '0.75rem',
-                          cursor: 'pointer',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          textAlign: 'left',
-                          lineHeight: 1.3,
-                          wordBreak: 'keep-all',
-                          width: '100%',
-                          transition: 'all 0.2s',
-                          '&:hover': { opacity: 0.9, transform: 'translateY(-1px)' }
-                        }}
-                      >
-                        {post.title || '제목 없음'}
-                      </Box>
-                    ))}
-                    {/* 빈 공간 채우기 (칸 높이 유지용) */}
-                    {Array.from({ length: Math.max(0, 3 - dayPosts.length) }).map((_, idx) => (
-                      <Box key={`empty-fill-${idx}`} sx={{ flex: 1 }} />
-                    ))}
-                  </Box>
+                  {/* 포스트 개수 표시용 점 표시 */}
+                  {dayPosts.length > 0 && (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5, mt: 0.5 }}>
+                      {dayPosts.slice(0, 3).map((_, idx) => (
+                        <Box
+                          key={idx}
+                          sx={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            bgcolor: isToday ? 'primary.contrastText' : 'primary.main'
+                          }}
+                        />
+                      ))}
+                      {dayPosts.length > 3 && (
+                        <Typography variant="caption" sx={{ fontSize: '0.65rem', ml: 0.5 }}>
+                          +{dayPosts.length - 3}
+                        </Typography>
+                      )}
+                    </Box>
+                  )}
                 </Box>
               </Grid>
             );
@@ -240,50 +241,68 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
         </Grid>
       </Paper>
 
-      {/* 카드 팝업 */}
-      <Dialog
-        open={!!selectedPost}
-        onClose={() => setSelectedPost(null)}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogContent sx={{ p: 0 }}>
-          {selectedPost && (() => {
-            const p = selectedPost;
-            const preview = stripHtml(p.content || '');
-            const wordCount = countWithoutSpace(preview);
-            const status = p.status || 'draft';
-            const statusLabel = status === 'published' ? '발행 완료' : status === 'scheduled' ? '대기 중' : status;
-            const statusColor = status === 'published' ? 'success' : status === 'scheduled' ? 'warning' : 'default';
-            const statusBgColor = status === 'published' ? '#2E7D32' : status === 'scheduled' ? '#F57C00' : undefined;
+      {/* 선택된 날짜의 포스트 카드 표시 */}
+      {selectedDate && (() => {
+        const selectedPosts = postsByDate[selectedDate] || [];
+        if (selectedPosts.length === 0) return null;
 
-            return (
-              <Card elevation={0}>
-                <CardActionArea onClick={() => { setSelectedPost(null); onPostClick(p); }}>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                      <Chip size="small" label={statusLabel} color={statusColor} sx={{ color: 'white', backgroundColor: statusBgColor }} />
-                      <Typography variant="caption" color="text.secondary">{formatDate(p.createdAt)}</Typography>
-                    </Box>
-                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 1, wordBreak: 'break-word' }}>
-                      {p.title || '제목 없음'}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: 60 }}>
-                      {preview || '내용 없음'}
-                    </Typography>
-                    <Divider sx={{ my: 1.5 }} />
-                    <Typography variant="caption">글자수: {wordCount}</Typography>
-                  </CardContent>
-                </CardActionArea>
-                <CardActions sx={{ justifyContent: 'flex-end', pt: 0, gap: 1, pb: 2, px: 2 }}>
-                  <Button size="small" variant="contained" onClick={(e) => onSNS(p, e)} startIcon={<Transform />}>SNS</Button>
-                  <IconButton size="small" onClick={(e) => onDelete(p.id, e)}><DeleteOutline /></IconButton>
-                </CardActions>
-              </Card>
-            );
-          })()}
-        </DialogContent>
-      </Dialog>
+        const [y, m, d] = selectedDate.split('-');
+        const formattedDate = `${y}.${String(m).padStart(2, '0')}.${String(d).padStart(2, '0')}`;
+
+        return (
+          <Box sx={{ mt: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                {formattedDate}
+              </Typography>
+              <Button size="small" onClick={() => setSelectedDate(null)}>
+                닫기
+              </Button>
+            </Box>
+            <Grid container spacing={2} justifyContent="center">
+              {selectedPosts.map(post => {
+                const preview = stripHtml(post.content || '');
+                const wordCount = countWithoutSpace(preview);
+                const status = post.status || 'draft';
+                const statusLabel = status === 'published' ? '발행 완료' : status === 'scheduled' ? '대기 중' : status;
+                const statusColor = status === 'published' ? 'success' : status === 'scheduled' ? 'warning' : 'default';
+                const statusBgColor = status === 'published' ? '#2E7D32' : status === 'scheduled' ? '#F57C00' : undefined;
+
+                // 개수에 따른 열 배치: 1개=12(전체), 2개=6(반반), 3개=4(1/3씩)
+                const gridSize = selectedPosts.length === 1 ? 12 : selectedPosts.length === 2 ? 6 : 4;
+
+                return (
+                  <Grid item xs={12} sm={gridSize} key={post.id}>
+                    <Card elevation={2}>
+                      <CardActionArea onClick={() => onPostClick(post)}>
+                        <CardContent>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                            <Chip size="small" label={statusLabel} color={statusColor} sx={{ color: 'white', backgroundColor: statusBgColor }} />
+                            <Typography variant="caption" color="text.secondary">{formatDate(post.createdAt)}</Typography>
+                          </Box>
+                          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1, wordBreak: 'break-word' }}>
+                            {post.title || '제목 없음'}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: 60 }}>
+                            {preview || '내용 없음'}
+                          </Typography>
+                          <Divider sx={{ my: 1.5 }} />
+                          <Typography variant="caption">글자수: {wordCount}</Typography>
+                        </CardContent>
+                      </CardActionArea>
+                      <CardActions sx={{ justifyContent: 'flex-end', pt: 0, gap: 1, pb: 2, px: 2 }}>
+                        <Button size="small" variant="contained" onClick={(e) => { e.stopPropagation(); onSNS(post, e); }} startIcon={<Transform />}>SNS</Button>
+                        <Button size="small" variant="outlined" onClick={(e) => { e.stopPropagation(); onPublish(post, e); }} startIcon={<Publish />}>발행</Button>
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); onDelete(post.id, e); }}><DeleteOutline /></IconButton>
+                      </CardActions>
+                    </Card>
+                  </Grid>
+                );
+              })}
+            </Grid>
+          </Box>
+        );
+      })()}
     </>
   );
 }
@@ -536,9 +555,15 @@ export default function PostsListPage() {
             <Button
               onClick={handlePublishSubmit}
               variant="contained"
+              disabled={!isNaverBlogUrl(publishUrl)}
               sx={{
-                bgcolor: theme.palette.ui?.header || colors.brand.primary,
-                '&:hover': { bgcolor: theme.palette.ui?.headerHover || colors.brand.primaryHover }
+                bgcolor: isNaverBlogUrl(publishUrl)
+                  ? (theme.palette.ui?.header || colors.brand.primary)
+                  : 'action.disabledBackground',
+                '&:hover': isNaverBlogUrl(publishUrl)
+                  ? { bgcolor: theme.palette.ui?.headerHover || colors.brand.primaryHover }
+                  : {},
+                color: isNaverBlogUrl(publishUrl) ? 'white' : 'action.disabled'
               }}
             >
               발행 완료

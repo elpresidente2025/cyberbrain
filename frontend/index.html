@@ -184,9 +184,18 @@
     </div>
   </div>
   
+  <!-- 카카오 JavaScript SDK -->
+  <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
+  <script>
+    // 카카오 SDK 초기화
+    if (window.Kakao && !window.Kakao.isInitialized()) {
+      window.Kakao.init('8ca97facc945d573693718175b67c3b8');
+    }
+  </script>
+
   <!-- 네이버 로그인 SDK -->
   <script type="text/javascript" src="https://static.nid.naver.com/js/naveridlogin_js_sdk_2.0.0.js" charset="utf-8"></script>
-  
+
   <!-- React 앱 스크립트 -->
   <script type="module" src="/src/main.jsx"></script>
   

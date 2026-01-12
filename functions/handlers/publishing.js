@@ -49,10 +49,7 @@ const publishPost = wrap(async (request) => {
         throw new HttpsError('not-found', '원고를 찾을 수 없습니다.');
       }
 
-      // 이미 발행된 원고인지 확인
-      if (postDoc.data().publishUrl) {
-        throw new HttpsError('already-exists', '이미 발행된 원고입니다.');
-      }
+      // 기존 발행 URL이 있으면 덮어쓰기 (재등록 허용)
 
       // 발행 데이터 준비
       const currentYear = publishedAt.getFullYear();

@@ -54,6 +54,7 @@ import ElectionDDay from '../components/dashboard/ElectionDDay';
 import PublishingProgress from '../components/dashboard/PublishingProgress';
 import PostViewerModal from '../components/PostViewerModal';
 import OnboardingWelcomeModal from '../components/onboarding/OnboardingWelcomeModal';
+import MobileToPCBanner from '../components/MobileToPCBanner';
 import { useAuth } from '../hooks/useAuth';
 import { getUserFullTitle, getUserDisplayTitle, getUserRegionInfo, getUserStatusIcon } from '../utils/userUtils';
 import { functions } from '../services/firebase';
@@ -487,8 +488,8 @@ const Dashboard = () => {
                   </Typography>
                 )}
 
-                {/* 셋째 줄: 프로필 수정 버튼 */}
-                <Box>
+                {/* 셋째 줄: 프로필 수정 버튼 + PC 유도 버튼 */}
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                   <Button
                     variant="outlined"
                     size="small"
@@ -516,6 +517,7 @@ const Dashboard = () => {
                   >
                     프로필 수정{showBioAlert && ' ⚠️'}
                   </Button>
+                  <MobileToPCBanner />
                 </Box>
               </Box>
 

@@ -24,7 +24,8 @@ import {
   TrendingUp,
   Speed,
   Share,
-  Psychology
+  Psychology,
+  AutoAwesome
 } from '@mui/icons-material';
 
 const AboutPage = () => {
@@ -33,6 +34,7 @@ const AboutPage = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [showAllFAQs, setShowAllFAQs] = useState(false);
   const [expandedFAQ, setExpandedFAQ] = useState(false);
+  const [selectedFeature, setSelectedFeature] = useState(null); // 모달 상태 추가
 
   const handleFAQChange = (panel) => (event, isExpanded) => {
     setExpandedFAQ(isExpanded ? panel : false);
@@ -43,27 +45,74 @@ const AboutPage = () => {
     {
       icon: <EditNote />,
       title: '월 90회 원고 생성',
-      description: '충분한 분량'
+      description: '충분한 분량',
+      modalTitle: '🔥 한 달 90개. 경쟁자는 뒤에서 구경만 합니다.',
+      details: `하루 3개. 일주일이면 21개. 한 달이면 90개.
+
+침묵하는 동안, 상대 후보는 매일 유권자와 대화하고 있습니다.
+이제 '오늘 뭘 올리지?' 고민은 끝났습니다.
+매일, 쉬지 않고, 지치지 않고. 비서관은 24시간 대기 중입니다.`
     },
     {
       icon: <TrendingUp />,
       title: '검색 최적화',
-      description: '네이버 상위노출'
+      description: '네이버 상위노출',
+      modalTitle: '🎯 네이버 1페이지. 현수막보다 강력합니다.',
+      details: `'우리 동네 의정활동'을 검색할 때,
+가장 먼저 뜨는 이름은 누구일까요?
+
+네이버 알고리즘이 좋아하는 키워드 배치, 소제목 구조, 본문 길이.
+알아서 맞춰 드립니다. 검색 결과 1페이지,
+그건 돈 주고도 못 사는 노출입니다.`
     },
     {
       icon: <Speed />,
       title: '2~3분 빠른 생성',
-      description: '바쁜 의원님께 딱'
+      description: '바쁜 의원님께 딱',
+      modalTitle: '⚡ 3시간 → 3분. 보좌진도 놀랍니다.',
+      details: `긴급 성명서. 축사. 해명 자료.
+정치에서 '타이밍'은 생명입니다.
+
+보좌관이 밤새 쓰던 초안, 이제 커피 한 잔 마시는 사이에 완성됩니다.
+골든타임을 놓치지 않는 빠른 대응. 그게 경쟁력입니다.`
     },
     {
       icon: <Share />,
       title: '블로그+SNS 자동 변환',
-      description: '한 번에 다채널'
+      description: '한 번에 다채널',
+      modalTitle: '📱 한 번 쓰고, 네 번 씁니다.',
+      details: `블로그 원고 하나면 충분합니다.
+버튼 하나로 인스타그램, 페이스북, X(트위터), 스레드까지.
+
+각 플랫폼 문법에 맞게 자동 변환.
+해시태그, 글자 수, 어투까지 알아서 맞춥니다.
+'승인' 버튼만 누르면 끝.`
     },
     {
       icon: <Psychology />,
       title: '점점 나다워지는 AI',
-      description: '프로필 학습으로 진화'
+      description: '프로필 학습으로 진화',
+      modalTitle: '🧠 쓸수록 닮아갑니다. 나만의 AI 비서관.',
+      details: `처음엔 조금 어색할 수 있습니다.
+하지만 걱정 마세요.
+
+과거 글, 자주 쓰는 표현, 말투 습관.
+AI가 학습합니다. 점점 닮아갑니다.
+나중엔 보좌진도 구분 못 합니다.
+'이거 직접 쓰신 거 아니에요?'`
+    },
+    {
+      icon: <AutoAwesome />,
+      title: '읽히는 글, 살아있는 글',
+      description: '끝까지 읽게 만드는 힘',
+      modalTitle: '✨ AI 티 안 나는 글. 사람 냄새 나는 글.',
+      details: `정보 나열? 그건 ChatGPT도 합니다.
+
+전자두뇌비서관은 다릅니다.
+서론의 훅(Hook), 본론의 논리 전개, 결론의 여운.
+베테랑 정치 칼럼니스트의 작법을 학습했습니다.
+읽는 사람이 끝까지 읽게 만드는 힘.
+그게 진짜 글쓰기입니다.`
     }
   ];
 
@@ -199,12 +248,16 @@ const AboutPage = () => {
                 fontWeight: 700,
                 px: 8,
                 py: 3,
-                borderRadius: 0,
-                boxShadow: 'none',
+                borderRadius: '8px',
+                boxShadow: '0 2px 8px rgba(21, 36, 132, 0.15)',
                 textTransform: 'none',
                 '&:hover': {
                   bgcolor: '#0f1a5f',
-                  boxShadow: 'none'
+                  boxShadow: '0 4px 12px rgba(21, 36, 132, 0.25)'
+                },
+                '&:active': {
+                  transform: 'scale(0.98)',
+                  boxShadow: '0 1px 4px rgba(21, 36, 132, 0.2)'
                 }
               }}
             >
@@ -224,12 +277,18 @@ const AboutPage = () => {
                 fontWeight: 600,
                 px: 6,
                 py: 3,
-                borderRadius: 0,
+                borderRadius: '8px',
+                boxShadow: '0 2px 8px rgba(21, 36, 132, 0.1)',
                 textTransform: 'none',
                 '&:hover': {
                   borderWidth: 2,
                   borderColor: '#152484',
-                  bgcolor: 'rgba(21, 36, 132, 0.04)'
+                  bgcolor: 'rgba(21, 36, 132, 0.04)',
+                  boxShadow: '0 4px 12px rgba(21, 36, 132, 0.2)'
+                },
+                '&:active': {
+                  transform: 'scale(0.98)',
+                  boxShadow: '0 1px 4px rgba(21, 36, 132, 0.15)'
                 }
               }}
             >
@@ -260,6 +319,7 @@ const AboutPage = () => {
               <Grid item xs={6} md={4} key={index}>
                 <Card
                   elevation={0}
+                  onClick={() => setSelectedFeature(value)}
                   sx={{
                     textAlign: 'center',
                     p: { xs: 1, sm: 1.5, md: 3 },
@@ -270,8 +330,11 @@ const AboutPage = () => {
                     border: '1px solid #e0e0e0',
                     boxShadow: 'none',
                     transition: 'all 0.2s ease',
+                    cursor: 'pointer',
                     '&:hover': {
-                      borderColor: '#152484'
+                      borderColor: '#152484',
+                      transform: 'translateY(-4px)',
+                      boxShadow: '0 4px 12px rgba(21, 36, 132, 0.08)'
                     }
                   }}
                 >
@@ -333,6 +396,79 @@ const AboutPage = () => {
           </Grid>
         </Container>
       </motion.div>
+
+      {/* 기능 상세 모달 */}
+      <Dialog
+        open={!!selectedFeature}
+        onClose={() => setSelectedFeature(null)}
+        maxWidth="sm"
+        fullWidth
+        sx={{
+          '& .MuiDialog-paper': {
+            borderRadius: 0, // 🇨🇭 스위스 스타일: 각진 모서리
+            p: 2
+          }
+        }}
+      >
+        {selectedFeature && (
+          <>
+            <Box sx={{ p: 3, textAlign: 'center' }}>
+              <Box sx={{
+                mb: 3,
+                display: 'flex',
+                justifyContent: 'center'
+              }}>
+                {/* 아이콘 재사용 (크기 키움) */}
+                {React.cloneElement(selectedFeature.icon, {
+                  sx: { fontSize: 80, color: '#152484' }
+                })}
+              </Box>
+              <Typography
+                variant="h5"
+                sx={{
+                  fontWeight: 700,
+                  mb: 3,
+                  color: '#000000',
+                  wordBreak: 'keep-all'
+                }}
+              >
+                {selectedFeature.modalTitle}
+              </Typography>
+              <Typography
+                variant="body1"
+                sx={{
+                  color: '#444444',
+                  lineHeight: 1.8,
+                  whiteSpace: 'pre-line', // 줄바꿈 반영
+                  wordBreak: 'keep-all',
+                  fontSize: '1.1rem'
+                }}
+              >
+                {selectedFeature.details}
+              </Typography>
+            </Box>
+            <Box sx={{ p: 2, pt: 0, textAlign: 'center' }}>
+              <Button
+                onClick={() => setSelectedFeature(null)}
+                variant="outlined"
+                size="large"
+                sx={{
+                  color: '#152484',
+                  borderColor: '#152484',
+                  borderRadius: 0,
+                  px: 4,
+                  '&:hover': {
+                    borderColor: '#152484',
+                    bgcolor: 'rgba(21, 36, 132, 0.04)'
+                  }
+                }}
+              >
+                닫기
+              </Button>
+            </Box>
+          </>
+        )}
+      </Dialog>
 
       {/* FAQ 섹션 */}
       <motion.div
@@ -489,12 +625,16 @@ const AboutPage = () => {
                   fontSize: '1.5rem',
                   fontWeight: 700,
                   py: 3,
-                  borderRadius: 0,
-                  boxShadow: 'none',
+                  borderRadius: '8px',
+                  boxShadow: '0 2px 8px rgba(21, 36, 132, 0.15)',
                   textTransform: 'none',
                   '&:hover': {
                     bgcolor: '#0f1a5f',
-                    boxShadow: 'none'
+                    boxShadow: '0 4px 12px rgba(21, 36, 132, 0.25)'
+                  },
+                  '&:active': {
+                    transform: 'scale(0.98)',
+                    boxShadow: '0 1px 4px rgba(21, 36, 132, 0.2)'
                   }
                 }}
               >
