@@ -92,7 +92,7 @@ class SEOAgent extends BaseAgent {
   }
 
   async execute(context) {
-    const { previousResults = {}, userProfile = {}, targetWordCount } = context;
+    const { previousResults = {}, userProfile = {}, targetWordCount, userKeywords = [] } = context;
 
     // Compliance Agent 결과에서 콘텐츠 가져오기
     const complianceResult = previousResults.ComplianceAgent;
@@ -120,6 +120,9 @@ class SEOAgent extends BaseAgent {
     // 4. 키워드 밀도 분석
     const keywordDensity = this.analyzeKeywordDensity(optimizedContent, keywords);
 
+    // 🔍 4-1. userKeywords 검증 (절대 횟수 체크)
+    const userKeywordValidation = this.validateUserKeywords(optimizedContent, userKeywords, targetWordCount);
+
     // 5. 구조 분석
     const wordCountRange = this.getWordCountRange(targetWordCount);
     const structureAnalysis = this.analyzeStructure(optimizedContent, wordCountRange);
@@ -133,19 +136,29 @@ class SEOAgent extends BaseAgent {
       contentLength: optimizedContent.replace(/<[^>]*>/g, '').length,
       structure: structureAnalysis,
       keywordCount: keywords.length,
-      wordCountRange
+      wordCountRange,
+      userKeywordValidation  // 🔑 검색어 검증 결과 추가
     });
 
     // 7. 개선 제안 생성
     const suggestions = this.generateSuggestions(seoEvaluation.issues);
 
-    console.log(`🔍 [SEOAgent] 최적화 완료`, {
+    // 🔍 로그 출력 (userKeywords 검증 결과 포함)
+    const logData = {
       titleLength: title.length,
       contentLength: optimizedContent.replace(/<[^>]*>/g, '').length,
       seoPassed: seoEvaluation.passed,
       issueCount: seoEvaluation.issues.length,
       keywordCount: keywords.length
-    });
+    };
+
+    if (userKeywordValidation && userKeywordValidation.details) {
+      logData.userKeywordCounts = Object.entries(userKeywordValidation.details)
+        .map(([kw, info]) => `"${kw}": ${info.count}회`)
+        .join(', ');
+    }
+
+    console.log(`🔍 [SEOAgent] 최적화 완료`, logData);
 
     return {
       title,
@@ -157,6 +170,7 @@ class SEOAgent extends BaseAgent {
       suggestions,
       analysis: {
         keywordDensity,
+        userKeywordValidation,  // 🔑 검색어 검증 결과 추가
         structure: structureAnalysis,
         seoEvaluation
       }
@@ -332,6 +346,75 @@ class SEOAgent extends BaseAgent {
   }
 
   /**
+   * 사용자 검색어(userKeywords) 절대 횟수 검증
+   * - 키워드 밀도(%)가 아닌 절대 횟수로 검증
+   * - 부족/과다 모두 critical 오류
+   *
+   * @param {string} content - HTML 본문
+   * @param {Array<string>} userKeywords - 사용자가 입력한 검색어 목록
+   * @param {number} targetWordCount - 목표 글자수
+   * @returns {Object} 검증 결과 { passed, issues, details }
+   */
+  validateUserKeywords(content, userKeywords, targetWordCount = 2050) {
+    const issues = [];
+    const details = {};
+
+    if (!userKeywords || userKeywords.length === 0) {
+      return { passed: true, issues: [], details: {} };
+    }
+
+    const plainText = content.replace(/<[^>]*>/g, ' ').toLowerCase();
+    const minRequired = calculateMinInsertions(targetWordCount);  // 2000자 → 5회
+    const maxAllowed = Math.min(minRequired + 2, Math.floor(minRequired * 1.4));  // 5 → 7회
+
+    console.log(`🔍 [SEOAgent] 검색어 검증 시작: ${userKeywords.length}개, 범위 ${minRequired}~${maxAllowed}회`);
+
+    for (const keyword of userKeywords) {
+      const regex = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      const matches = plainText.match(regex);
+      const count = matches ? matches.length : 0;
+
+      details[keyword] = {
+        count,
+        minRequired,
+        maxAllowed,
+        status: count < minRequired ? 'insufficient' : (count > maxAllowed ? 'spam_risk' : 'valid')
+      };
+
+      // 부족 검증
+      if (count < minRequired) {
+        issues.push({
+          id: 'user_keyword_insufficient',
+          severity: 'critical',
+          message: `검색어 "${keyword}" 부족: ${count}회 (최소 ${minRequired}회 필요) - SEO 효과 없음`
+        });
+        console.warn(`⚠️ [SEOAgent] 검색어 부족: "${keyword}" ${count}회 < ${minRequired}회`);
+      }
+
+      // 과다 검증 (네이버 스팸 필터 방지)
+      if (count > maxAllowed) {
+        issues.push({
+          id: 'user_keyword_spam_risk',
+          severity: 'critical',
+          message: `검색어 "${keyword}" 과다: ${count}회 (최대 ${maxAllowed}회) - 네이버 스팸 차단 위험 🚨`
+        });
+        console.error(`🚨 [SEOAgent] 스팸 위험: "${keyword}" ${count}회 > ${maxAllowed}회`);
+      }
+
+      // 정상 범위
+      if (count >= minRequired && count <= maxAllowed) {
+        console.log(`✅ [SEOAgent] 검색어 적정: "${keyword}" ${count}회 (범위: ${minRequired}~${maxAllowed}회)`);
+      }
+    }
+
+    return {
+      passed: issues.length === 0,
+      issues,
+      details
+    };
+  }
+
+  /**
    * 구조 분석 (SEO_RULES.structure 기준)
    */
   analyzeStructure(content, wordCountRange = SEO_RULES.wordCount) {
@@ -377,9 +460,15 @@ class SEOAgent extends BaseAgent {
     contentLength,
     structure,
     keywordCount,
-    wordCountRange = SEO_RULES.wordCount
+    wordCountRange = SEO_RULES.wordCount,
+    userKeywordValidation = null  // 🔑 검색어 검증 결과
   }) {
     const issues = [];
+
+    // 🔑 1순위: userKeywords 검증 (가장 중요)
+    if (userKeywordValidation && !userKeywordValidation.passed) {
+      issues.push(...userKeywordValidation.issues);
+    }
     const titleLength = title.length;
     const titleHasKeyword = primaryKeyword ? title.includes(primaryKeyword) : true;
 
