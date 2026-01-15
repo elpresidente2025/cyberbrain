@@ -66,4 +66,14 @@ export const CATEGORIES = [
       { value: 'daily_life_sharing', label: '일상 공유', writingMethod: 'emotional_writing', needsAudienceStance: false },
     ],
   },
+  {
+    value: 'bipartisan-cooperation',
+    label: '초당적 협력',
+    description: '야당 인사의 소신 발언 인정, 초당적 협력 제안 등 진영을 넘어선 정치를 다룹니다. (특수 용도)',
+    subCategories: [
+      { value: 'principled_stance_recognition', label: '소신 발언 인정', writingMethod: 'bipartisan_writing', needsAudienceStance: false },
+      { value: 'policy_cooperation_proposal', label: '정책 협력 제안', writingMethod: 'bipartisan_writing', needsAudienceStance: false },
+      { value: 'crisis_response_cooperation', label: '위기 대응 협력', writingMethod: 'bipartisan_writing', needsAudienceStance: false },
+    ],
+  },
 ];

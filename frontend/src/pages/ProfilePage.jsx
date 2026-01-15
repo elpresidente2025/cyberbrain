@@ -54,7 +54,7 @@ import { colors, spacing, typography, visualWeight, verticalRhythm } from '../th
 export default function ProfilePage() {
   const { user, logout } = useAuth();
   const theme = useTheme();
-  
+
   // 상태 관리
 
   const [loading, setLoading] = useState(true);
@@ -63,7 +63,7 @@ export default function ProfilePage() {
 
   // useNotification 훅 사용
   const { notification, showNotification, hideNotification } = useNotification();
-  
+
   // 회원탈퇴 다이얼로그 상태
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -359,7 +359,7 @@ export default function ProfilePage() {
             });
           }
         }
-        
+
       } catch (e) {
         console.error('[getUserProfile 오류]', e);
         setError('프로필 정보를 불러오지 못했습니다: ' + (e.message || '알 수 없는 오류'));
@@ -483,10 +483,10 @@ export default function ProfilePage() {
 
   // Bio 엔트리 변경 핸들러
   const handleBioEntryChange = (index, field, value) => {
-    setBioEntries(prev => prev.map((entry, i) => 
+    setBioEntries(prev => prev.map((entry, i) =>
       i === index ? { ...entry, [field]: value } : entry
     ));
-    
+
     // 첫 번째 엔트리(자기소개)면 기존 bio 필드도 동기화
     if (index === 0 && field === 'content') {
       setProfile(prev => ({ ...prev, bio: value }));
@@ -497,12 +497,12 @@ export default function ProfilePage() {
   // 카테고리별 Bio 엔트리 필터링
   const getEntriesByCategory = (category) => {
     if (category === 'PERSONAL') {
-      return bioEntries.filter(entry => 
+      return bioEntries.filter(entry =>
         BIO_CATEGORIES.PERSONAL.types.some(type => type.id === entry.type)
       );
     }
     if (category === 'PERFORMANCE') {
-      return bioEntries.filter(entry => 
+      return bioEntries.filter(entry =>
         BIO_CATEGORIES.PERFORMANCE.types.some(type => type.id === entry.type)
       );
     }
@@ -539,7 +539,7 @@ export default function ProfilePage() {
       setError('자기소개 및 출마선언문은 삭제할 수 없습니다.');
       return;
     }
-    
+
     setBioEntries(prev => prev.filter((_, i) => i !== index));
   };
 
@@ -798,7 +798,7 @@ export default function ProfilePage() {
 
       const res = await callFunctionWithNaverAuth('updateProfile', payload);
       console.log('updateProfile 응답:', res);
-      
+
       // callFunctionWithNaverAuth는 이미 .data를 반환하므로 직접 사용
       if (res) {
         let message = '프로필이 저장되었습니다.';
@@ -825,7 +825,7 @@ export default function ProfilePage() {
       } else {
         throw new Error('서버 응답이 올바르지 않습니다.');
       }
-      
+
     } catch (e) {
       console.error('[updateProfile 오류 - 전체 객체]', {
         error: e,
@@ -834,14 +834,14 @@ export default function ProfilePage() {
         details: e?.details,
         customData: e?.customData
       });
-      
+
       // 사용자 친화적인 에러 메시지
       let errorMessage = '저장 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.';
-      
+
       // 다양한 경로로 오는 에러 메시지 체크
       const actualMessage = e?.message || e?.details?.message || '';
       console.log('[오류 메시지 분석]', { actualMessage });
-      
+
       // 선거구 중복 관련 메시지 우선 체크
       if (actualMessage.includes('선거구') || actualMessage.includes('사용 중') || actualMessage.includes('다른 사용자')) {
         errorMessage = '해당 선거구는 이미 다른 사용자가 사용 중입니다. 다른 선거구를 선택해주세요.';
@@ -873,9 +873,30 @@ export default function ProfilePage() {
           errorMessage = '저장 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.';
         }
       }
-      
+
       setError(errorMessage);
-      
+
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 과거 원고 학습 요청
+  const handlePastPostsIndexing = async () => {
+    try {
+      setSaving(true);
+      showNotification('과거 원고 학습을 시작합니다. 잠시만 기다려주세요...', 'info');
+
+      const res = await callFunctionWithNaverAuth('indexPastPosts');
+
+      if (res && res.success) {
+        showNotification(res.message || '과거 원고 학습이 완료되었습니다.', 'success');
+      } else {
+        showNotification(res.message || '학습에 실패했습니다.', 'error');
+      }
+    } catch (e) {
+      console.error('[과거 원고 학습 오류]', e);
+      showNotification('학습 중 오류가 발생했습니다.', 'error');
     } finally {
       setSaving(false);
     }
@@ -884,21 +905,21 @@ export default function ProfilePage() {
   if (loading) {
     return (
       <DashboardLayout>
-        <Container 
-        maxWidth="xl" 
-        sx={{ 
-          py: 4,
-          maxWidth: {
-            xs: '100%',
-            sm: '100%', 
-            md: '900px',
-            lg: '1200px',
-            xl: '1400px',
-            xxl: '1800px', // 2K 화면
-            xxxl: '2400px', // 4K 화면
-          }
-        }}
-      >
+        <Container
+          maxWidth="xl"
+          sx={{
+            py: 4,
+            maxWidth: {
+              xs: '100%',
+              sm: '100%',
+              md: '900px',
+              lg: '1200px',
+              xl: '1400px',
+              xxl: '1800px', // 2K 화면
+              xxxl: '2400px', // 4K 화면
+            }
+          }}
+        >
           <LoadingSpinner message="프로필 로딩 중..." fullHeight={true} />
         </Container>
       </DashboardLayout>
@@ -906,7 +927,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <DashboardLayout>
+    <DashboardLayout title="프로필 설정">
       <Container
         maxWidth="xl"
         sx={{
@@ -927,21 +948,33 @@ export default function ProfilePage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
         >
-          <Box sx={{ mb: `${spacing.xl}px` }}>
-            <Typography variant="h4" sx={{
-              fontWeight: 'bold',
-              mb: `${spacing.xs}px`,
-              color: theme.palette.mode === 'dark' ? 'white' : 'black',
-              display: 'flex',
-              alignItems: 'center',
-              gap: `${spacing.xs}px`
-            }}>
-              <Settings sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
-              프로필 수정
-            </Typography>
-            <Typography variant="body1" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
-              프로필 정보를 바탕으로 맞춤형 원고가 생성됩니다.
-            </Typography>
+          <Box sx={{ mb: `${spacing.xl}px`, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+            <Box>
+              <Typography variant="h4" sx={{
+                fontWeight: 'bold',
+                mb: `${spacing.xs}px`,
+                color: theme.palette.mode === 'dark' ? 'white' : 'black',
+                display: 'flex',
+                alignItems: 'center',
+                gap: `${spacing.xs}px`
+              }}>
+                <Settings sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
+                프로필 수정
+              </Typography>
+              <Typography variant="body1" sx={{ color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)' }}>
+                프로필 정보를 바탕으로 맞춤형 원고가 생성됩니다.
+              </Typography>
+            </Box>
+            <Button
+              variant="outlined"
+              color="secondary"
+              startIcon={<AutoAwesome />}
+              onClick={handlePastPostsIndexing}
+              disabled={loading || saving}
+              sx={{ height: 40, whiteSpace: 'nowrap' }}
+            >
+              과거 원고 학습
+            </Button>
           </Box>
         </motion.div>
 
@@ -951,233 +984,378 @@ export default function ProfilePage() {
           transition={{ duration: 0.5, delay: 0.2 }}
         >
           <Grid container spacing={3}>
-          {/* 좌측 컬럼: 기본 정보 */}
-          <Grid item xs={12} xxl={6} xxxl={6}>
-            <Paper elevation={0} sx={{
-              p: `${spacing.lg}px`,
-              height: 'fit-content'
-            }}>
-              <Box>
-                <Grid container spacing={3}>
-              
-              {/* 🔧 UserInfoForm 컴포넌트 사용 */}
-              <UserInfoForm
-                name={profile.name}
-                status={profile.status}
-                customTitle={profile.customTitle}
-                savedCustomTitle={savedCustomTitle}
-                position={profile.position}
-                regionMetro={profile.regionMetro}
-                regionLocal={profile.regionLocal}
-                electoralDistrict={profile.electoralDistrict}
-                targetElection={profile.targetElection}
-                onChange={handleUserInfoChange}
-                onCustomTitleSave={handleCustomTitleSave}
-                nameDisabled={true}
-                disabled={saving}
-                showTitle={true}
-              />
+            {/* 좌측 컬럼: 기본 정보 */}
+            <Grid item xs={12} xxl={6} xxxl={6}>
+              <Paper elevation={0} sx={{
+                p: `${spacing.lg}px`,
+                height: 'fit-content'
+              }}>
+                <Box>
+                  <Grid container spacing={3}>
 
-              {/* 개인화 정보 섹션 (선택사항) */}
-              <Grid item xs={12}>
-                <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', mb: `${spacing.md}px`, mt: `${spacing.lg}px` }}>
+                    {/* 🔧 UserInfoForm 컴포넌트 사용 */}
+                    <UserInfoForm
+                      name={profile.name}
+                      status={profile.status}
+                      customTitle={profile.customTitle}
+                      savedCustomTitle={savedCustomTitle}
+                      position={profile.position}
+                      regionMetro={profile.regionMetro}
+                      regionLocal={profile.regionLocal}
+                      electoralDistrict={profile.electoralDistrict}
+                      targetElection={profile.targetElection}
+                      onChange={handleUserInfoChange}
+                      onCustomTitleSave={handleCustomTitleSave}
+                      nameDisabled={true}
+                      disabled={saving}
+                      showTitle={true}
+                    />
+
+                    {/* 개인화 정보 섹션 (선택사항) */}
+                    <Grid item xs={12}>
+                      <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', mb: `${spacing.md}px`, mt: `${spacing.lg}px` }}>
+                        <AutoAwesome sx={{ mr: `${spacing.xs}px`, color: 'colors.brand.primary' }} />
+                        개인화 정보 (선택사항)
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.lg}px` }}>
+                        더 개인화되고 진정성 있는 원고 생성을 위한 선택 정보입니다. 입력하지 않아도 서비스 이용에 문제없습니다.
+                      </Typography>
+                    </Grid>
+
+                    {/* 연령대 - 연대 */}
+                    <Grid item xs={12} sm={6} md={2}>
+                      <FormControl fullWidth>
+                        <InputLabel>연령대</InputLabel>
+                        <Select
+                          name="ageDecade"
+                          value={profile.ageDecade || ''}
+                          label="연령대"
+                          onChange={(e) => handleUserInfoChange('ageDecade', e.target.value)}
+                          disabled={saving}
+                        >
+                          <MenuItem value="">선택 안함</MenuItem>
+                          <MenuItem value="20대">20대</MenuItem>
+                          <MenuItem value="30대">30대</MenuItem>
+                          <MenuItem value="40대">40대</MenuItem>
+                          <MenuItem value="50대">50대</MenuItem>
+                          <MenuItem value="60대">60대</MenuItem>
+                          <MenuItem value="70대 이상">70대 이상</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+
+                    {/* 연령대 - 세부 */}
+                    <Grid item xs={12} sm={6} md={2}>
+                      <FormControl fullWidth>
+                        <InputLabel>세부 연령</InputLabel>
+                        <Select
+                          name="ageDetail"
+                          value={profile.ageDetail || ''}
+                          label="세부 연령"
+                          onChange={(e) => handleUserInfoChange('ageDetail', e.target.value)}
+                          disabled={saving || !profile.ageDecade}
+                        >
+                          <MenuItem value="">선택 안함</MenuItem>
+                          <MenuItem value="초반">초반</MenuItem>
+                          <MenuItem value="중반">중반</MenuItem>
+                          <MenuItem value="후반">후반</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+
+                    {/* 성별 */}
+                    <Grid item xs={12} sm={6} md={4}>
+                      <FormControl fullWidth>
+                        <InputLabel>성별</InputLabel>
+                        <Select
+                          name="gender"
+                          value={profile.gender}
+                          label="성별"
+                          onChange={(e) => handleUserInfoChange('gender', e.target.value)}
+                          disabled={saving}
+                        >
+                          <MenuItem value="">선택 안함</MenuItem>
+                          <MenuItem value="남성">남성</MenuItem>
+                          <MenuItem value="여성">여성</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+
+                    {/* 가족 상황 */}
+                    <Grid item xs={12} sm={6} md={4}>
+                      <FormControl fullWidth>
+                        <InputLabel>가족 상황</InputLabel>
+                        <Select
+                          name="familyStatus"
+                          value={profile.familyStatus}
+                          label="가족 상황"
+                          onChange={(e) => handleUserInfoChange('familyStatus', e.target.value)}
+                          disabled={saving}
+                        >
+                          <MenuItem value="">선택 안함</MenuItem>
+                          <MenuItem value="미혼">미혼</MenuItem>
+                          <MenuItem value="기혼(자녀 있음)">기혼(자녀 있음)</MenuItem>
+                          <MenuItem value="기혼(자녀 없음)">기혼(자녀 없음)</MenuItem>
+                          <MenuItem value="한부모">한부모</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+
+                    {/* 배경 경력 */}
+                    <Grid item xs={12} sm={6} md={4}>
+                      <FormControl fullWidth>
+                        <InputLabel>주요 배경</InputLabel>
+                        <Select
+                          name="backgroundCareer"
+                          value={profile.backgroundCareer}
+                          label="주요 배경"
+                          onChange={(e) => handleUserInfoChange('backgroundCareer', e.target.value)}
+                          disabled={saving}
+                        >
+                          <MenuItem value="">선택 안함</MenuItem>
+                          <MenuItem value="교육자">교육자</MenuItem>
+                          <MenuItem value="사업가">사업가</MenuItem>
+                          <MenuItem value="공무원">공무원</MenuItem>
+                          <MenuItem value="시민운동가">시민운동가</MenuItem>
+                          <MenuItem value="법조인">법조인</MenuItem>
+                          <MenuItem value="의료인">의료인</MenuItem>
+                          <MenuItem value="기타">기타</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+
+                    {/* 지역 연고성 */}
+                    <Grid item xs={12} sm={6} md={4}>
+                      <FormControl fullWidth>
+                        <InputLabel>지역 연고</InputLabel>
+                        <Select
+                          name="localConnection"
+                          value={profile.localConnection}
+                          label="지역 연고"
+                          onChange={(e) => handleUserInfoChange('localConnection', e.target.value)}
+                          disabled={saving}
+                        >
+                          <MenuItem value="">선택 안함</MenuItem>
+                          <MenuItem value="토박이">토박이</MenuItem>
+                          <MenuItem value="오래 거주">오래 거주 (10년 이상)</MenuItem>
+                          <MenuItem value="이주민">이주민</MenuItem>
+                          <MenuItem value="귀향">귀향</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+
+                    {/* 정치 경험 */}
+                    <Grid item xs={12} sm={6} md={4}>
+                      <FormControl fullWidth>
+                        <InputLabel>정치 경험</InputLabel>
+                        <Select
+                          name="politicalExperience"
+                          value={profile.politicalExperience}
+                          label="정치 경험"
+                          onChange={(e) => handleUserInfoChange('politicalExperience', e.target.value)}
+                          disabled={saving}
+                        >
+                          <MenuItem value="">선택 안함</MenuItem>
+                          <MenuItem value="초선">초선</MenuItem>
+                          <MenuItem value="재선">재선</MenuItem>
+                          <MenuItem value="3선 이상">3선 이상</MenuItem>
+                          <MenuItem value="정치 신인">정치 신인</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+
+                    {/* X 프리미엄 구독 여부 */}
+                    <Grid item xs={12} sm={6} md={4}>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={profile.twitterPremium}
+                            onChange={(e) => handleUserInfoChange('twitterPremium', e.target.checked)}
+                            disabled={saving}
+                            sx={{
+                              color: 'colors.brand.primary',
+                              '&.Mui-checked': {
+                                color: 'colors.brand.primary'
+                              }
+                            }}
+                          />
+                        }
+                        label="X 프리미엄 구독"
+                        sx={{ mt: `${spacing.md}px` }}
+                      />
+                    </Grid>
+
+                    {/* 소속 위원회 */}
+                    <Grid item xs={12}>
+                      <Box sx={{ mb: `${spacing.lg}px` }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.md}px` }}>
+                          <Typography variant="h6" sx={{
+                            color: theme.palette.mode === 'dark' ? '#e1bee7' : 'colors.brand.primary',
+                            fontWeight: 600
+                          }}>
+                            🏛️ 소속 위원회
+                          </Typography>
+                          <Tooltip title="위원회 추가">
+                            <IconButton
+                              size="small"
+                              onClick={() => {
+                                const newCommittees = [...profile.committees, ''];
+                                handleUserInfoChange('committees', newCommittees);
+                              }}
+                              disabled={saving || profile.committees.length >= 5}
+                              sx={{
+                                width: 24,
+                                height: 24,
+                                backgroundColor: colors.brand.primary,
+                                color: 'white',
+                                border: '1px solid',
+                                borderColor: 'colors.brand.primary',
+                                '&:hover': {
+                                  backgroundColor: colors.brand.primaryHover,
+                                  borderColor: 'colors.brand.primaryHover'
+                                },
+                                '&:disabled': {
+                                  backgroundColor: 'grey.50',
+                                  borderColor: 'grey.200',
+                                  color: 'grey.400'
+                                }
+                              }}
+                            >
+                              <Add sx={{ fontSize: 14 }} />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+
+                        <Stack spacing={2}>
+                          {profile.committees.map((committee, index) => (
+                            <Paper key={index} elevation={0} sx={{
+                              p: `${spacing.md}px`
+                            }}>
+                              <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: `${spacing.md}px` }}>
+                                <Box sx={{ flex: 1 }}>
+                                  <FormControl fullWidth>
+                                    <InputLabel>위원회 선택</InputLabel>
+                                    <Select
+                                      value={committee}
+                                      label="위원회 선택"
+                                      onChange={(e) => {
+                                        const newCommittees = [...profile.committees];
+                                        newCommittees[index] = e.target.value;
+                                        handleUserInfoChange('committees', newCommittees);
+                                      }}
+                                      disabled={saving}
+                                    >
+                                      <MenuItem value="">선택 안함</MenuItem>
+                                      <MenuItem value="교육위원회">교육위원회</MenuItem>
+                                      <MenuItem value="보건복지위원회">보건복지위원회</MenuItem>
+                                      <MenuItem value="국토교통위원회">국토교통위원회</MenuItem>
+                                      <MenuItem value="기획재정위원회">기획재정위원회</MenuItem>
+                                      <MenuItem value="행정안전위원회">행정안전위원회</MenuItem>
+                                      <MenuItem value="문화체육관광위원회">문화체육관광위원회</MenuItem>
+                                      <MenuItem value="농림축산식품해양수산위원회">농림축산식품해양수산위원회</MenuItem>
+                                      <MenuItem value="산업통상자원중소벤처기업위원회">산업통상자원중소벤처기업위원회</MenuItem>
+                                      <MenuItem value="환경노동위원회">환경노동위원회</MenuItem>
+                                      <MenuItem value="정무위원회">정무위원회</MenuItem>
+                                      <MenuItem value="법제사법위원회">법제사법위원회</MenuItem>
+                                      <MenuItem value="국방위원회">국방위원회</MenuItem>
+                                      <MenuItem value="외교통일위원회">외교통일위원회</MenuItem>
+                                      <MenuItem value="정보위원회">정보위원회</MenuItem>
+                                      <MenuItem value="여성가족위원회">여성가족위원회</MenuItem>
+                                      <MenuItem value="과학기술정보방송통신위원회">과학기술정보방송통신위원회</MenuItem>
+                                      <MenuItem value="도시계획위원회">도시계획위원회</MenuItem>
+                                      <MenuItem value="경제위원회">경제위원회</MenuItem>
+                                      <MenuItem value="복지위원회">복지위원회</MenuItem>
+                                      <MenuItem value="기타">기타 (직접 입력)</MenuItem>
+                                    </Select>
+                                  </FormControl>
+
+                                  {/* 기타 선택 시 직접 입력 */}
+                                  {committee === '기타' && (
+                                    <TextField
+                                      fullWidth
+                                      label="위원회명 직접 입력"
+                                      value={profile.customCommittees?.[index] || ''}
+                                      onChange={(e) => {
+                                        const newCustomCommittees = [...(profile.customCommittees || [])];
+                                        newCustomCommittees[index] = e.target.value;
+                                        handleUserInfoChange('customCommittees', newCustomCommittees);
+                                      }}
+                                      disabled={saving}
+                                      placeholder="예: 특별위원회, 소위원회명 등"
+                                      sx={{ mt: `${spacing.xs}px` }}
+                                    />
+                                  )}
+                                </Box>
+
+                                <IconButton
+                                  size="small"
+                                  onClick={() => {
+                                    const newCommittees = profile.committees.filter((_, i) => i !== index);
+                                    handleUserInfoChange('committees', newCommittees.length ? newCommittees : ['']);
+                                  }}
+                                  disabled={saving}
+                                  sx={{
+                                    color: 'error.main',
+                                    '&:hover': { bgcolor: 'error.50' }
+                                  }}
+                                >
+                                  <Remove />
+                                </IconButton>
+                              </Box>
+                            </Paper>
+                          ))}
+                        </Stack>
+                      </Box>
+                    </Grid>
+
+                    {/* 에러 메시지 */}
+                    {error && (
+                      <Grid item xs={12}>
+                        <Alert severity="error">{error}</Alert>
+                      </Grid>
+                    )}
+
+                  </Grid>
+                </Box>
+              </Paper>
+            </Grid>
+
+            {/* 우측 컬럼: Bio 엔트리들 */}
+            <Grid item xs={12} xxl={6} xxxl={6}>
+              <Paper elevation={0} sx={{
+                p: `${spacing.lg}px`,
+                height: 'fit-content'
+              }}>
+                <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', mb: `${spacing.md}px` }}>
                   <AutoAwesome sx={{ mr: `${spacing.xs}px`, color: 'colors.brand.primary' }} />
-                  개인화 정보 (선택사항)
+                  자기소개 및 출마선언문 · 추가 정보
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.lg}px` }}>
-                  더 개인화되고 진정성 있는 원고 생성을 위한 선택 정보입니다. 입력하지 않아도 서비스 이용에 문제없습니다.
+                  다양한 유형의 정보를 추가하여 더 정확한 개인화 원고를 생성하세요.
                 </Typography>
-              </Grid>
 
-              {/* 연령대 - 연대 */}
-              <Grid item xs={12} sm={6} md={2}>
-                <FormControl fullWidth>
-                  <InputLabel>연령대</InputLabel>
-                  <Select
-                    name="ageDecade"
-                    value={profile.ageDecade || ''}
-                    label="연령대"
-                    onChange={(e) => handleUserInfoChange('ageDecade', e.target.value)}
-                    disabled={saving}
-                  >
-                    <MenuItem value="">선택 안함</MenuItem>
-                    <MenuItem value="20대">20대</MenuItem>
-                    <MenuItem value="30대">30대</MenuItem>
-                    <MenuItem value="40대">40대</MenuItem>
-                    <MenuItem value="50대">50대</MenuItem>
-                    <MenuItem value="60대">60대</MenuItem>
-                    <MenuItem value="70대 이상">70대 이상</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-
-              {/* 연령대 - 세부 */}
-              <Grid item xs={12} sm={6} md={2}>
-                <FormControl fullWidth>
-                  <InputLabel>세부 연령</InputLabel>
-                  <Select
-                    name="ageDetail"
-                    value={profile.ageDetail || ''}
-                    label="세부 연령"
-                    onChange={(e) => handleUserInfoChange('ageDetail', e.target.value)}
-                    disabled={saving || !profile.ageDecade}
-                  >
-                    <MenuItem value="">선택 안함</MenuItem>
-                    <MenuItem value="초반">초반</MenuItem>
-                    <MenuItem value="중반">중반</MenuItem>
-                    <MenuItem value="후반">후반</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-
-              {/* 성별 */}
-              <Grid item xs={12} sm={6} md={4}>
-                <FormControl fullWidth>
-                  <InputLabel>성별</InputLabel>
-                  <Select
-                    name="gender"
-                    value={profile.gender}
-                    label="성별"
-                    onChange={(e) => handleUserInfoChange('gender', e.target.value)}
-                    disabled={saving}
-                  >
-                    <MenuItem value="">선택 안함</MenuItem>
-                    <MenuItem value="남성">남성</MenuItem>
-                    <MenuItem value="여성">여성</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-
-              {/* 가족 상황 */}
-              <Grid item xs={12} sm={6} md={4}>
-                <FormControl fullWidth>
-                  <InputLabel>가족 상황</InputLabel>
-                  <Select
-                    name="familyStatus"
-                    value={profile.familyStatus}
-                    label="가족 상황"
-                    onChange={(e) => handleUserInfoChange('familyStatus', e.target.value)}
-                    disabled={saving}
-                  >
-                    <MenuItem value="">선택 안함</MenuItem>
-                    <MenuItem value="미혼">미혼</MenuItem>
-                    <MenuItem value="기혼(자녀 있음)">기혼(자녀 있음)</MenuItem>
-                    <MenuItem value="기혼(자녀 없음)">기혼(자녀 없음)</MenuItem>
-                    <MenuItem value="한부모">한부모</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-
-              {/* 배경 경력 */}
-              <Grid item xs={12} sm={6} md={4}>
-                <FormControl fullWidth>
-                  <InputLabel>주요 배경</InputLabel>
-                  <Select
-                    name="backgroundCareer"
-                    value={profile.backgroundCareer}
-                    label="주요 배경"
-                    onChange={(e) => handleUserInfoChange('backgroundCareer', e.target.value)}
-                    disabled={saving}
-                  >
-                    <MenuItem value="">선택 안함</MenuItem>
-                    <MenuItem value="교육자">교육자</MenuItem>
-                    <MenuItem value="사업가">사업가</MenuItem>
-                    <MenuItem value="공무원">공무원</MenuItem>
-                    <MenuItem value="시민운동가">시민운동가</MenuItem>
-                    <MenuItem value="법조인">법조인</MenuItem>
-                    <MenuItem value="의료인">의료인</MenuItem>
-                    <MenuItem value="기타">기타</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-
-              {/* 지역 연고성 */}
-              <Grid item xs={12} sm={6} md={4}>
-                <FormControl fullWidth>
-                  <InputLabel>지역 연고</InputLabel>
-                  <Select
-                    name="localConnection"
-                    value={profile.localConnection}
-                    label="지역 연고"
-                    onChange={(e) => handleUserInfoChange('localConnection', e.target.value)}
-                    disabled={saving}
-                  >
-                    <MenuItem value="">선택 안함</MenuItem>
-                    <MenuItem value="토박이">토박이</MenuItem>
-                    <MenuItem value="오래 거주">오래 거주 (10년 이상)</MenuItem>
-                    <MenuItem value="이주민">이주민</MenuItem>
-                    <MenuItem value="귀향">귀향</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-
-              {/* 정치 경험 */}
-              <Grid item xs={12} sm={6} md={4}>
-                <FormControl fullWidth>
-                  <InputLabel>정치 경험</InputLabel>
-                  <Select
-                    name="politicalExperience"
-                    value={profile.politicalExperience}
-                    label="정치 경험"
-                    onChange={(e) => handleUserInfoChange('politicalExperience', e.target.value)}
-                    disabled={saving}
-                  >
-                    <MenuItem value="">선택 안함</MenuItem>
-                    <MenuItem value="초선">초선</MenuItem>
-                    <MenuItem value="재선">재선</MenuItem>
-                    <MenuItem value="3선 이상">3선 이상</MenuItem>
-                    <MenuItem value="정치 신인">정치 신인</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-
-              {/* X 프리미엄 구독 여부 */}
-              <Grid item xs={12} sm={6} md={4}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={profile.twitterPremium}
-                      onChange={(e) => handleUserInfoChange('twitterPremium', e.target.checked)}
-                      disabled={saving}
-                      sx={{
-                        color: 'colors.brand.primary',
-                        '&.Mui-checked': {
-                          color: 'colors.brand.primary'
-                        }
-                      }}
-                    />
-                  }
-                  label="X 프리미엄 구독"
-                  sx={{ mt: `${spacing.md}px` }}
-                />
-              </Grid>
-
-              {/* 소속 위원회 */}
-              <Grid item xs={12}>
-                <Box sx={{ mb: `${spacing.lg}px` }}>
+                {/* 1. 자기소개/출마선언문 섹션 */}
+                <Box sx={{ mb: `${spacing.xl}px` }} data-bio-section="personal">
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.md}px` }}>
-                    <Typography variant="h6" sx={{ 
-                      color: theme.palette.mode === 'dark' ? '#e1bee7' : 'colors.brand.primary', 
-                      fontWeight: 600 
+                    <Typography variant="h6" sx={{
+                      color: theme.palette.mode === 'dark' ? '#81d4fa' : 'colors.brand.primaryHover',
+                      fontWeight: 600
                     }}>
-                      🏛️ 소속 위원회
+                      👤 자기소개 및 출마선언문
                     </Typography>
-                    <Tooltip title="위원회 추가">
-                      <IconButton 
-                        size="small" 
-                        onClick={() => {
-                          const newCommittees = [...profile.committees, ''];
-                          handleUserInfoChange('committees', newCommittees);
-                        }}
-                        disabled={saving || profile.committees.length >= 5}
-                        sx={{ 
+                    <Tooltip title="자기소개 및 출마선언문 항목 추가">
+                      <IconButton
+                        size="small"
+                        onClick={() => addBioEntry('PERSONAL')}
+                        disabled={saving || bioEntries.length >= VALIDATION_RULES.maxEntries}
+                        sx={{
                           width: 24,
                           height: 24,
                           backgroundColor: colors.brand.primary,
                           color: 'white',
                           border: '1px solid',
                           borderColor: 'colors.brand.primary',
-                          '&:hover': { 
+                          '&:hover': {
                             backgroundColor: colors.brand.primaryHover,
                             borderColor: 'colors.brand.primaryHover'
                           },
@@ -1188,430 +1366,288 @@ export default function ProfilePage() {
                           }
                         }}
                       >
-                        <Add sx={{ fontSize: 14 }} />
+                        <Add fontSize="small" />
                       </IconButton>
                     </Tooltip>
                   </Box>
 
                   <Stack spacing={2}>
-                    {profile.committees.map((committee, index) => (
-                      <Paper key={index} elevation={0} sx={{
-                        p: `${spacing.md}px`
-                      }}>
-                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: `${spacing.md}px` }}>
-                          <Box sx={{ flex: 1 }}>
-                            <FormControl fullWidth>
-                              <InputLabel>위원회 선택</InputLabel>
-                              <Select
-                                value={committee}
-                                label="위원회 선택"
-                                onChange={(e) => {
-                                  const newCommittees = [...profile.committees];
-                                  newCommittees[index] = e.target.value;
-                                  handleUserInfoChange('committees', newCommittees);
-                                }}
-                                disabled={saving}
-                              >
-                                <MenuItem value="">선택 안함</MenuItem>
-                                <MenuItem value="교육위원회">교육위원회</MenuItem>
-                                <MenuItem value="보건복지위원회">보건복지위원회</MenuItem>
-                                <MenuItem value="국토교통위원회">국토교통위원회</MenuItem>
-                                <MenuItem value="기획재정위원회">기획재정위원회</MenuItem>
-                                <MenuItem value="행정안전위원회">행정안전위원회</MenuItem>
-                                <MenuItem value="문화체육관광위원회">문화체육관광위원회</MenuItem>
-                                <MenuItem value="농림축산식품해양수산위원회">농림축산식품해양수산위원회</MenuItem>
-                                <MenuItem value="산업통상자원중소벤처기업위원회">산업통상자원중소벤처기업위원회</MenuItem>
-                                <MenuItem value="환경노동위원회">환경노동위원회</MenuItem>
-                                <MenuItem value="정무위원회">정무위원회</MenuItem>
-                                <MenuItem value="법제사법위원회">법제사법위원회</MenuItem>
-                                <MenuItem value="국방위원회">국방위원회</MenuItem>
-                                <MenuItem value="외교통일위원회">외교통일위원회</MenuItem>
-                                <MenuItem value="정보위원회">정보위원회</MenuItem>
-                                <MenuItem value="여성가족위원회">여성가족위원회</MenuItem>
-                                <MenuItem value="과학기술정보방송통신위원회">과학기술정보방송통신위원회</MenuItem>
-                                <MenuItem value="도시계획위원회">도시계획위원회</MenuItem>
-                                <MenuItem value="경제위원회">경제위원회</MenuItem>
-                                <MenuItem value="복지위원회">복지위원회</MenuItem>
-                                <MenuItem value="기타">기타 (직접 입력)</MenuItem>
-                              </Select>
-                            </FormControl>
+                    {getEntriesByCategory('PERSONAL').map((entry) => {
+                      const index = bioEntries.findIndex(e => e.id === entry.id);
+                      const typeConfig = Object.values(BIO_ENTRY_TYPES).find(t => t.id === entry.type) || BIO_ENTRY_TYPES.SELF_INTRODUCTION;
+                      const isRequired = entry.type === 'self_introduction';
 
-                            {/* 기타 선택 시 직접 입력 */}
-                            {committee === '기타' && (
-                              <TextField
-                                fullWidth
-                                label="위원회명 직접 입력"
-                                value={profile.customCommittees?.[index] || ''}
-                                onChange={(e) => {
-                                  const newCustomCommittees = [...(profile.customCommittees || [])];
-                                  newCustomCommittees[index] = e.target.value;
-                                  handleUserInfoChange('customCommittees', newCustomCommittees);
-                                }}
-                                disabled={saving}
-                                placeholder="예: 특별위원회, 소위원회명 등"
-                                sx={{ mt: `${spacing.xs}px` }}
-                              />
-                            )}
-                          </Box>
-
-                          <IconButton
-                            size="small"
-                            onClick={() => {
-                              const newCommittees = profile.committees.filter((_, i) => i !== index);
-                              handleUserInfoChange('committees', newCommittees.length ? newCommittees : ['']);
-                            }}
-                            disabled={saving}
-                            sx={{ 
-                              color: 'error.main',
-                              '&:hover': { bgcolor: 'error.50' }
-                            }}
-                          >
-                            <Remove />
-                          </IconButton>
-                        </Box>
-                      </Paper>
-                    ))}
-                  </Stack>
-                </Box>
-              </Grid>
-
-              {/* 에러 메시지 */}
-              {error && (
-                <Grid item xs={12}>
-                  <Alert severity="error">{error}</Alert>
-                </Grid>
-              )}
-
-                </Grid>
-              </Box>
-            </Paper>
-          </Grid>
-
-          {/* 우측 컬럼: Bio 엔트리들 */}
-          <Grid item xs={12} xxl={6} xxxl={6}>
-            <Paper elevation={0} sx={{
-              p: `${spacing.lg}px`,
-              height: 'fit-content'
-            }}>
-              <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', mb: `${spacing.md}px` }}>
-                <AutoAwesome sx={{ mr: `${spacing.xs}px`, color: 'colors.brand.primary' }} />
-                자기소개 및 출마선언문 · 추가 정보
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.lg}px` }}>
-                다양한 유형의 정보를 추가하여 더 정확한 개인화 원고를 생성하세요.
-              </Typography>
-
-              {/* 1. 자기소개/출마선언문 섹션 */}
-              <Box sx={{ mb: `${spacing.xl}px` }} data-bio-section="personal">
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.md}px` }}>
-                  <Typography variant="h6" sx={{
-                    color: theme.palette.mode === 'dark' ? '#81d4fa' : 'colors.brand.primaryHover',
-                    fontWeight: 600
-                  }}>
-                    👤 자기소개 및 출마선언문
-                  </Typography>
-                  <Tooltip title="자기소개 및 출마선언문 항목 추가">
-                    <IconButton 
-                      size="small" 
-                      onClick={() => addBioEntry('PERSONAL')}
-                      disabled={saving || bioEntries.length >= VALIDATION_RULES.maxEntries}
-                      sx={{ 
-                        width: 24,
-                        height: 24,
-                        backgroundColor: colors.brand.primary,
-                        color: 'white',
-                        border: '1px solid',
-                        borderColor: 'colors.brand.primary',
-                        '&:hover': { 
-                          backgroundColor: colors.brand.primaryHover,
-                          borderColor: 'colors.brand.primaryHover'
-                        },
-                        '&:disabled': {
-                          backgroundColor: 'grey.50',
-                          borderColor: 'grey.200',
-                          color: 'grey.400'
-                        }
-                      }}
-                    >
-                      <Add fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </Box>
-                
-                <Stack spacing={2}>
-                  {getEntriesByCategory('PERSONAL').map((entry) => {
-                    const index = bioEntries.findIndex(e => e.id === entry.id);
-                    const typeConfig = Object.values(BIO_ENTRY_TYPES).find(t => t.id === entry.type) || BIO_ENTRY_TYPES.SELF_INTRODUCTION;
-                    const isRequired = entry.type === 'self_introduction';
-
-                    return (
-                      <Paper key={entry.id} elevation={0} sx={{
-                        p: `${spacing.md}px`
-                      }}>
-                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: `${spacing.md}px` }}>
-                          <Box sx={{ flex: 1 }}>
-                            <TextField
-                              required={isRequired}
-                              fullWidth
-                              multiline
-                              rows={isRequired ? 4 : 5}
-                              label={isRequired ? '자기소개 및 출마선언문 *필수' : '내용'}
-                              value={entry.content}
-                              onChange={(e) => handleBioEntryChange(index, 'content', e.target.value)}
-                              disabled={saving}
-                              placeholder={isRequired ? '본인의 정치 철학, 가치관, 지역에 대한 애정 등을 자유롭게 작성해주세요.' : '연설문, 기고문, 인터뷰 등을 자유롭게 올려 주세요.'}
-                              inputProps={{ maxLength: typeConfig.maxLength }}
-                              helperText={`${entry.content?.length || 0}/${typeConfig.maxLength}자`}
-                              FormHelperTextProps={{ sx: { color: 'black' } }}
-                            />
-                          </Box>
-                          
-                          {!isRequired && (
-                            <Tooltip title="이 항목 삭제">
-                              <IconButton
-                                size="small"
-                                onClick={() => removeBioEntry(index)}
-                                disabled={saving}
-                                sx={{
-                                  mt: `${spacing.xs}px`,
-                                  width: 24,
-                                  height: 24,
-                                  backgroundColor: colors.brand.primary,
-                                  color: 'white',
-                                  border: '1px solid',
-                                  borderColor: colors.brand.primary,
-                                  '&:hover': {
-                                    backgroundColor: colors.brand.primaryHover,
-                                    borderColor: colors.brand.primaryHover
-                                  },
-                                  '&:disabled': {
-                                    backgroundColor: 'grey.50',
-                                    borderColor: 'grey.200',
-                                    color: 'grey.400'
-                                  }
-                                }}
-                              >
-                                <Remove />
-                              </IconButton>
-                            </Tooltip>
-                          )}
-                        </Box>
-                      </Paper>
-                    );
-                  })}
-                </Stack>
-              </Box>
-
-              {/* 2. 슬로건 섹션 */}
-              <Box sx={{ mb: `${spacing.xl}px` }}>
-                <Typography variant="h6" sx={{
-                  color: theme.palette.mode === 'dark' ? '#ffcc80' : '#e65100',
-                  fontWeight: 600,
-                  mb: `${spacing.md}px`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: `${spacing.xs}px`
-                }}>
-                  🎯 슬로건 (선택)
-                </Typography>
-
-                <Paper elevation={0} sx={{ p: `${spacing.md}px` }}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={profile.sloganEnabled}
-                        onChange={(e) => handleUserInfoChange('sloganEnabled', e.target.checked)}
-                        disabled={saving}
-                        sx={{
-                          color: 'colors.brand.primary',
-                          '&.Mui-checked': {
-                            color: 'colors.brand.primary'
-                          }
-                        }}
-                      />
-                    }
-                    label="원고 끝에 슬로건 자동 삽입"
-                    sx={{ mb: `${spacing.md}px` }}
-                  />
-
-                  <TextField
-                    fullWidth
-                    multiline
-                    rows={3}
-                    label="슬로건"
-                    value={profile.slogan}
-                    onChange={(e) => handleUserInfoChange('slogan', e.target.value)}
-                    disabled={saving || !profile.sloganEnabled}
-                    placeholder={`예시:\n부산의 준비된 신상품\n부산경제는 홍길동`}
-                    inputProps={{ maxLength: 200 }}
-                    helperText={`${profile.slogan?.length || 0}/200자 · 원고 마지막에 "감사합니다" 앞에 삽입됩니다`}
-                    FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
-                  />
-                </Paper>
-              </Box>
-
-              {/* 3. 추가 정보 섹션 (카드형 배치) */}
-              <Box sx={{ mb: `${spacing.xl}px` }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.md}px` }}>
-                  <Typography variant="h6" sx={{
-                    color: theme.palette.mode === 'dark' ? '#e1bee7' : 'colors.brand.primary',
-                    fontWeight: 600
-                  }}>
-                    📋 추가 정보
-                  </Typography>
-                  <Tooltip title="추가 정보 항목 추가">
-                    <IconButton 
-                      size="small" 
-                      onClick={() => addBioEntry('PERFORMANCE')}
-                      disabled={saving || bioEntries.length >= VALIDATION_RULES.maxEntries}
-                      sx={{ 
-                        width: 24,
-                        height: 24,
-                        backgroundColor: colors.brand.primary,
-                        color: 'white',
-                        border: '1px solid',
-                        borderColor: 'colors.brand.primary',
-                        '&:hover': { 
-                          backgroundColor: colors.brand.primaryHover,
-                          borderColor: 'colors.brand.primaryHover'
-                        },
-                        '&:disabled': {
-                          backgroundColor: 'grey.50',
-                          borderColor: 'grey.200',
-                          color: 'grey.400'
-                        }
-                      }}
-                    >
-                      <Add fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </Box>
-                
-                <Grid container spacing={2}>
-                  {getEntriesByCategory('PERFORMANCE').map((entry) => {
-                    const index = bioEntries.findIndex(e => e.id === entry.id);
-                    const typeConfig = Object.values(BIO_ENTRY_TYPES).find(t => t.id === entry.type) || BIO_ENTRY_TYPES.POLICY;
-
-                    return (
-                      <Grid item xs={12} sm={6} md={4} key={entry.id}>
-                        <Card elevation={0} sx={{
-                          height: '100%',
-                          display: 'flex',
-                          flexDirection: 'column'
+                      return (
+                        <Paper key={entry.id} elevation={0} sx={{
+                          p: `${spacing.md}px`
                         }}>
-                          <CardContent sx={{ flex: 1 }}>
-                            <Box sx={{ mb: `${spacing.md}px` }}>
-                              <Chip
-                                label={typeConfig.name}
-                                size="small"
-                                sx={{
-                                  bgcolor: typeConfig.color,
-                                  color: 'white',
-                                  fontWeight: 600
-                                }}
+                          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: `${spacing.md}px` }}>
+                            <Box sx={{ flex: 1 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', mb: `${spacing.xs}px` }}>
+                                <Box sx={{ flexGrow: 1 }} />
+                              </Box>
+                              <TextField
+                                required={isRequired}
+                                fullWidth
+                                multiline
+                                rows={isRequired ? 4 : 5}
+                                label={isRequired ? '자기소개 및 출마선언문 *필수' : '내용'}
+                                value={entry.content}
+                                onChange={(e) => handleBioEntryChange(index, 'content', e.target.value)}
+                                disabled={saving}
+                                placeholder={isRequired ? '본인의 정치 철학, 가치관, 지역에 대한 애정 등을 자유롭게 작성해주세요.' : '연설문, 기고문, 인터뷰 등을 자유롭게 올려 주세요.'}
+                                inputProps={{ maxLength: typeConfig.maxLength }}
+                                helperText={`${entry.content?.length || 0}/${typeConfig.maxLength}자`}
+                                FormHelperTextProps={{ sx: { color: 'black' } }}
                               />
                             </Box>
 
-                            <FormControl fullWidth sx={{ mb: `${spacing.md}px` }}>
-                              <InputLabel>유형 선택</InputLabel>
-                              <Select
-                                value={entry.type}
-                                label="유형 선택"
-                                onChange={(e) => handleBioEntryChange(index, 'type', e.target.value)}
+                            {!isRequired && (
+                              <Tooltip title="이 항목 삭제">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => removeBioEntry(index)}
+                                  disabled={saving}
+                                  sx={{
+                                    mt: `${spacing.xs}px`,
+                                    width: 24,
+                                    height: 24,
+                                    backgroundColor: colors.brand.primary,
+                                    color: 'white',
+                                    border: '1px solid',
+                                    borderColor: colors.brand.primary,
+                                    '&:hover': {
+                                      backgroundColor: colors.brand.primaryHover,
+                                      borderColor: colors.brand.primaryHover
+                                    },
+                                    '&:disabled': {
+                                      backgroundColor: 'grey.50',
+                                      borderColor: 'grey.200',
+                                      color: 'grey.400'
+                                    }
+                                  }}
+                                >
+                                  <Remove />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                          </Box>
+                        </Paper>
+                      );
+                    })}
+                  </Stack>
+                </Box>
+
+                {/* 2. 슬로건 섹션 */}
+                <Box sx={{ mb: `${spacing.xl}px` }}>
+                  <Typography variant="h6" sx={{
+                    color: theme.palette.mode === 'dark' ? '#ffcc80' : '#e65100',
+                    fontWeight: 600,
+                    mb: `${spacing.md}px`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: `${spacing.xs}px`
+                  }}>
+                    🎯 슬로건 (선택)
+                  </Typography>
+
+                  <Paper elevation={0} sx={{ p: `${spacing.md}px` }}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={profile.sloganEnabled}
+                          onChange={(e) => handleUserInfoChange('sloganEnabled', e.target.checked)}
+                          disabled={saving}
+                          sx={{
+                            color: 'colors.brand.primary',
+                            '&.Mui-checked': {
+                              color: 'colors.brand.primary'
+                            }
+                          }}
+                        />
+                      }
+                      label="원고 끝에 슬로건 자동 삽입"
+                      sx={{ mb: `${spacing.md}px` }}
+                    />
+
+                    <TextField
+                      fullWidth
+                      multiline
+                      rows={3}
+                      label="슬로건"
+                      value={profile.slogan}
+                      onChange={(e) => handleUserInfoChange('slogan', e.target.value)}
+                      disabled={saving || !profile.sloganEnabled}
+                      placeholder={`예시:\n부산의 준비된 신상품\n부산경제는 홍길동`}
+                      inputProps={{ maxLength: 200 }}
+                      helperText={`${profile.slogan?.length || 0}/200자 · 원고 마지막에 "감사합니다" 앞에 삽입됩니다`}
+                      FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
+                    />
+                  </Paper>
+                </Box>
+
+                {/* 3. 추가 정보 섹션 (카드형 배치) */}
+                <Box sx={{ mb: `${spacing.xl}px` }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: `${spacing.md}px` }}>
+                    <Typography variant="h6" sx={{
+                      color: theme.palette.mode === 'dark' ? '#e1bee7' : 'colors.brand.primary',
+                      fontWeight: 600
+                    }}>
+                      📋 추가 정보
+                    </Typography>
+                    <Tooltip title="추가 정보 항목 추가">
+                      <IconButton
+                        size="small"
+                        onClick={() => addBioEntry('PERFORMANCE')}
+                        disabled={saving || bioEntries.length >= VALIDATION_RULES.maxEntries}
+                        sx={{
+                          width: 24,
+                          height: 24,
+                          backgroundColor: colors.brand.primary,
+                          color: 'white',
+                          border: '1px solid',
+                          borderColor: 'colors.brand.primary',
+                          '&:hover': {
+                            backgroundColor: colors.brand.primaryHover,
+                            borderColor: 'colors.brand.primaryHover'
+                          },
+                          '&:disabled': {
+                            backgroundColor: 'grey.50',
+                            borderColor: 'grey.200',
+                            color: 'grey.400'
+                          }
+                        }}
+                      >
+                        <Add fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+
+                  <Grid container spacing={2}>
+                    {getEntriesByCategory('PERFORMANCE').map((entry) => {
+                      const index = bioEntries.findIndex(e => e.id === entry.id);
+                      const typeConfig = Object.values(BIO_ENTRY_TYPES).find(t => t.id === entry.type) || BIO_ENTRY_TYPES.POLICY;
+
+                      return (
+                        <Grid item xs={12} sm={6} md={4} key={entry.id}>
+                          <Card elevation={0} sx={{
+                            height: '100%',
+                            display: 'flex',
+                            flexDirection: 'column'
+                          }}>
+                            <CardContent sx={{ flex: 1 }}>
+                              <Box sx={{ mb: `${spacing.md}px` }}>
+                                <Chip
+                                  label={typeConfig.name}
+                                  size="small"
+                                  sx={{
+                                    bgcolor: typeConfig.color,
+                                    color: 'white',
+                                    fontWeight: 600
+                                  }}
+                                />
+                              </Box>
+
+                              <FormControl fullWidth sx={{ mb: `${spacing.md}px` }}>
+                                <InputLabel>유형 선택</InputLabel>
+                                <Select
+                                  value={entry.type}
+                                  label="유형 선택"
+                                  onChange={(e) => handleBioEntryChange(index, 'type', e.target.value)}
+                                  disabled={saving}
+                                  size="small"
+                                >
+                                  {BIO_CATEGORIES.PERFORMANCE.types.map((type) => (
+                                    <MenuItem key={type.id} value={type.id}>
+                                      {type.name}
+                                    </MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
+
+                              <TextField
+                                fullWidth
+                                multiline
+                                rows={4}
+                                label="내용"
+                                value={entry.content}
+                                onChange={(e) => handleBioEntryChange(index, 'content', e.target.value)}
                                 disabled={saving}
+                                placeholder={typeConfig.placeholder}
+                                inputProps={{ maxLength: typeConfig.maxLength }}
                                 size="small"
-                              >
-                                {BIO_CATEGORIES.PERFORMANCE.types.map((type) => (
-                                  <MenuItem key={type.id} value={type.id}>
-                                    {type.name}
-                                  </MenuItem>
-                                ))}
-                              </Select>
-                            </FormControl>
-                            
-                            <TextField
-                              fullWidth
-                              multiline
-                              rows={4}
-                              label="내용"
-                              value={entry.content}
-                              onChange={(e) => handleBioEntryChange(index, 'content', e.target.value)}
-                              disabled={saving}
-                              placeholder={typeConfig.placeholder}
-                              inputProps={{ maxLength: typeConfig.maxLength }}
-                              size="small"
-                            />
-                          </CardContent>
+                              />
+                            </CardContent>
 
-                          <CardActions sx={{ justifyContent: 'space-between', px: `${spacing.md}px`, pb: `${spacing.md}px` }}>
-                            <Typography variant="caption" color="text.secondary">
-                              {entry.content?.length || 0}/{typeConfig.maxLength}자
-                            </Typography>
-                            <Tooltip title="이 항목 삭제">
-                              <IconButton
-                                size="small"
-                                onClick={() => removeBioEntry(index)}
-                                disabled={saving}
-                                sx={{ 
-                                  width: 24,
-                                  height: 24,
-                                  backgroundColor: colors.brand.primary,
-                                  color: 'white',
-                                  border: '1px solid',
-                                  borderColor: colors.brand.primary,
-                                  '&:hover': {
-                                    backgroundColor: colors.brand.primaryHover,
-                                    borderColor: colors.brand.primaryHover
-                                  },
-                                  '&:disabled': {
-                                    backgroundColor: 'grey.50',
-                                    borderColor: 'grey.200',
-                                    color: 'grey.400'
-                                  }
-                                }}
-                              >
-                                <Remove />
-                              </IconButton>
-                            </Tooltip>
-                          </CardActions>
-                        </Card>
-                      </Grid>
-                    );
-                  })}
-                </Grid>
-              </Box>
+                            <CardActions sx={{ justifyContent: 'space-between', px: `${spacing.md}px`, pb: `${spacing.md}px` }}>
+                              <Typography variant="caption" color="text.secondary">
+                                {entry.content?.length || 0}/{typeConfig.maxLength}자
+                              </Typography>
+                              <Tooltip title="이 항목 삭제">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => removeBioEntry(index)}
+                                  disabled={saving}
+                                  sx={{
+                                    width: 24,
+                                    height: 24,
+                                    backgroundColor: colors.brand.primary,
+                                    color: 'white',
+                                    border: '1px solid',
+                                    borderColor: colors.brand.primary,
+                                    '&:hover': {
+                                      backgroundColor: colors.brand.primaryHover,
+                                      borderColor: colors.brand.primaryHover
+                                    },
+                                    '&:disabled': {
+                                      backgroundColor: 'grey.50',
+                                      borderColor: 'grey.200',
+                                      color: 'grey.400'
+                                    }
+                                  }}
+                                >
+                                  <Remove />
+                                </IconButton>
+                              </Tooltip>
+                            </CardActions>
+                          </Card>
+                        </Grid>
+                      );
+                    })}
+                  </Grid>
+                </Box>
 
-              {bioEntries.length >= VALIDATION_RULES.maxEntries && (
-                <Alert severity="info" sx={{ mb: `${spacing.md}px` }}>
-                  최대 {VALIDATION_RULES.maxEntries}개의 엔트리까지 추가할 수 있습니다.
-                </Alert>
-              )}
+                {bioEntries.length >= VALIDATION_RULES.maxEntries && (
+                  <Alert severity="info" sx={{ mb: `${spacing.md}px` }}>
+                    최대 {VALIDATION_RULES.maxEntries}개의 엔트리까지 추가할 수 있습니다.
+                  </Alert>
+                )}
 
-              {/* 전체 프로필 저장 버튼 (통합) */}
-              <LoadingButton
-                fullWidth
-                variant="contained"
-                onClick={handleSubmit}
-                loading={saving}
-                disabled={saving}
-                startIcon={<Save />}
-                sx={{
-                  mt: `${spacing.lg}px`,
-                  py: 2,
-                  bgcolor: colors.brand.primary,
-                  color: '#fff',
-                  fontWeight: 700,
-                  fontSize: '1.1rem',
-                  '&:hover': {
-                    bgcolor: colors.brand.primaryHover
-                  }
-                }}
-              >
-                전체 프로필 저장
-              </LoadingButton>
-            </Paper>
+                {/* 전체 프로필 저장 버튼 (통합) */}
+                <LoadingButton
+                  fullWidth
+                  variant="contained"
+                  onClick={handleSubmit}
+                  loading={saving}
+                  disabled={saving}
+                  startIcon={<Save />}
+                  sx={{
+                    mt: `${spacing.lg}px`,
+                    py: 2,
+                    bgcolor: colors.brand.primary,
+                    color: '#fff',
+                    fontWeight: 700,
+                    fontSize: '1.1rem',
+                    '&:hover': {
+                      bgcolor: colors.brand.primaryHover
+                    }
+                  }}
+                >
+                  전체 프로필 저장
+                </LoadingButton>
+              </Paper>
+            </Grid>
           </Grid>
-        </Grid>
         </motion.div>
 
         {/* 회원탈퇴 버튼 (최하단, 카드 폭과 동일) */}
@@ -1621,22 +1657,22 @@ export default function ProfilePage() {
           transition={{ duration: 0.5, delay: 0.3 }}
         >
           <Box sx={{ mt: `${spacing.xl}px` }}>
-          <Button
-            onClick={() => setDeleteDialogOpen(true)}
-            variant="contained"
-            startIcon={<DeleteForever />}
-            fullWidth
-            sx={{
-              bgcolor: '#d22730',
-              color: 'white',
-              '&:hover': {
-                bgcolor: '#b71c1c'
-              }
-            }}
-          >
-            회원탈퇴
-          </Button>
-        </Box>
+            <Button
+              onClick={() => setDeleteDialogOpen(true)}
+              variant="contained"
+              startIcon={<DeleteForever />}
+              fullWidth
+              sx={{
+                bgcolor: '#d22730',
+                color: 'white',
+                '&:hover': {
+                  bgcolor: '#b71c1c'
+                }
+              }}
+            >
+              회원탈퇴
+            </Button>
+          </Box>
         </motion.div>
 
         {/* 알림 스낵바 */}
@@ -1671,9 +1707,9 @@ export default function ProfilePage() {
                 ⚠️ 회원탈퇴 시 다음 데이터가 영구적으로 삭제됩니다:
               </Typography>
               <Typography component="div">
-                • 모든 게시물 및 댓글<br/>
-                • 프로필 정보 및 Bio 데이터<br/>
-                • 선거구 점유 정보<br/>
+                • 모든 게시물 및 댓글<br />
+                • 프로필 정보 및 Bio 데이터<br />
+                • 선거구 점유 정보<br />
                 • 계정 정보 (복구 불가능)
               </Typography>
             </Alert>
@@ -1685,7 +1721,7 @@ export default function ProfilePage() {
             <Typography variant="body2" color="text.secondary" sx={{ mb: `${spacing.md}px` }}>
               탈퇴를 확인하려면 아래에 <strong>"회원탈퇴"</strong>를 정확히 입력해주세요.
             </Typography>
-            
+
             <TextField
               fullWidth
               label="확인 문구 입력"
@@ -1695,17 +1731,17 @@ export default function ProfilePage() {
               disabled={deleting}
               error={deleteConfirmText !== '' && deleteConfirmText !== '회원탈퇴'}
               helperText={
-                deleteConfirmText !== '' && deleteConfirmText !== '회원탈퇴' 
-                  ? '정확히 "회원탈퇴"를 입력해주세요.' 
+                deleteConfirmText !== '' && deleteConfirmText !== '회원탈퇴'
+                  ? '정확히 "회원탈퇴"를 입력해주세요.'
                   : ''
               }
               FormHelperTextProps={{ sx: { color: 'black' } }}
             />
           </DialogContent>
-          
+
           <DialogActions>
-            <Button 
-              onClick={handleCloseDeleteDialog} 
+            <Button
+              onClick={handleCloseDeleteDialog}
               disabled={deleting}
             >
               취소

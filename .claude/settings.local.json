@@ -154,7 +154,22 @@
       "Bash(git commit -m \"$\\(cat <<''EOF''\nFix: editor-agent.js 모든 미정의 함수 전수조사 및 수정\n\n문제:\n- removeRepeatedSentences \\(미구현 함수 호출\\)\n- convertMarkdownToHtml \\(미구현 함수 호출\\)\n- splitContentBySignature \\(import 누락\\)\n- joinContent \\(import 누락\\)\n- normalizeSpaces \\(미구현\\)\n- neutralizePledgeTitle \\(미구현\\)\n- hasSummarySignal \\(미구현\\)\n- buildSummaryBlockToFit \\(미구현\\)\n- buildSafeTitle \\(매개변수 누락\\)\n\n조치:\n1. content-processor에서 splitContentBySignature, joinContent import 추가\n2. normalizeSpaces, neutralizePledgeTitle, hasSummarySignal, buildSummaryBlockToFit 함수 구현\n3. buildSafeTitle 함수에 seoKeywords 매개변수 추가\n4. 모든 buildSafeTitle 호출부 수정\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(node -c:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nFix: content-processor에서 splitContentBySignature, joinContent export 추가\n\n문제:\n- editor-agent.js에서 import했으나 module.exports에 없어서 \n  \"splitContentBySignature is not a function\" 오류 발생\n\n조치:\n- content-processor.js의 module.exports에 \n  splitContentBySignature, joinContent 추가\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nFeature: 범용 SEO 키워드 의미론적 변주 시스템 구축\n\n배경:\n- 기존: 키워드를 그대로 반복 사용 → 검색엔진 스터핑 위험\n- 문제: \"디즈니랜드\" 12회 반복 → 부자연스러움 + SEO 페널티\n\n해결책:\n1. 하드코딩된 매핑 테이블 제거\n2. LLM이 문맥 기반으로 동의어 자동 생성\n3. 키워드 5회 이상 사용 시 자동으로 변주 가이드 제공\n\n작동 방식:\n- analyzeKeywordUsage\\(\\): 키워드 빈도 분석 \\(5회 이상 → 변주 필요\\)\n- buildKeywordVariationGuide\\(\\): LLM에게 변주 요청 프롬프트 생성\n- Few-shot 예시 제공: \"디즈니랜드\" → \"세계구급 테마파크\"\n\n범용성:\n- 어떤 키워드든 처리 가능 \\(정치, 경제, 문화 등\\)\n- LLM이 문맥에 맞는 동의어/유사어/상위어 자율 생성\n- 검색엔진 시맨틱 이해 활용 \\(동의어도 같은 주제 인식\\)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nFeature: 범용 SEO 키워드 의미론적 변주 시스템 구축\n\n배경:\n- 기존: 키워드를 그대로 반복 사용 → 검색엔진 스터핑 위험\n- 문제: \"디즈니랜드\" 12회 반복 → 부자연스러움 + SEO 페널티\n\n해결책:\n1. 하드코딩된 매핑 테이블 제거\n2. LLM이 문맥 기반으로 동의어 자동 생성\n3. 키워드 5회 이상 사용 시 자동으로 변주 가이드 제공\n\n작동 방식:\n- analyzeKeywordUsage\\(\\): 키워드 빈도 분석 \\(5회 이상 → 변주 필요\\)\n- buildKeywordVariationGuide\\(\\): LLM에게 변주 요청 프롬프트 생성\n- Few-shot 예시 제공: \"디즈니랜드\" → \"세계구급 테마파크\"\n\n범용성:\n- 어떤 키워드든 처리 가능 \\(정치, 경제, 문화 등\\)\n- LLM이 문맥에 맞는 동의어/유사어/상위어 자율 생성\n- 검색엔진 시맨틱 이해 활용 \\(동의어도 같은 주제 인식\\)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(gcloud secrets create:*)",
+      "Bash(node test-district-sync.js:*)",
+      "Bash(gcloud scheduler jobs list:*)",
+      "Bash(python -m json.tool:*)",
+      "Bash(for page in {1..11})",
+      "Bash(do curl -s \"http://apis.data.go.kr/9760000/CommonCodeService/getCommonSggCodeList?serviceKey=09fb1d1524a7a16f698104dbae2e34e4292a7d38c6a044cb6a420b40502f232d&sgId=20140604&sgTypecode=6&pageNo=$page&numOfRows=100&resultType=xml\")",
+      "Bash(for page in {1..2})",
+      "Bash(do curl -s \"http://apis.data.go.kr/9760000/CommonCodeService/getCommonSgCodeList?serviceKey=09fb1d1524a7a16f698104dbae2e34e4292a7d38c6a044cb6a420b40502f232d&pageNo=$page&numOfRows=100&resultType=xml\")",
+      "Bash(do curl -s \"http://apis.data.go.kr/9760000/CommonCodeService/getCommonSggCodeList?serviceKey=09fb1d1524a7a16f698104dbae2e34e4292a7d38c6a044cb6a420b40502f232d&sgId=20220601&sgTypecode=6&pageNo=$page&numOfRows=100&resultType=xml\")",
+      "Bash(iconv:*)",
+      "Bash(node test-keyword-insertion.js:*)",
+      "Bash(gcloud auth login:*)",
+      "Bash(timeout 120 firebase deploy:*)",
+      "Bash(tar:*)",
+      "Bash(bash .claude/skills/web-artifacts-builder/scripts/init-artifact.sh:*)"
     ]
   },
   "mcpServers": {

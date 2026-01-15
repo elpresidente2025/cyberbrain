@@ -25,18 +25,20 @@ import {
 import {
   ContentCopy,
   Transform,
-  Close
+  Close,
+  Refresh
 } from '@mui/icons-material';
 import { convertToSNS, getSNSUsage, testSNS } from '../services/firebaseService';
+import { useAuth } from '../hooks/useAuth';
 
 // SNS 아이콘 컴포넌트 (이미지 사용)
 const SNSIcon = ({ src, alt, size = 20 }) => (
-  <img 
-    src={src} 
+  <img
+    src={src}
     alt={alt}
-    style={{ 
-      width: size, 
-      height: size, 
+    style={{
+      width: size,
+      height: size,
       objectFit: 'contain'
     }}
   />
@@ -105,23 +107,26 @@ const ThreadPostsDisplay = ({ posts, hashtags, onCopy }) => {
             position: 'relative'
           }}
         >
-          {/* 게시물 번호 뱃지 */}
-          <Box
-            sx={{
-              position: 'absolute',
-              top: -8,
-              left: 8,
-              backgroundColor: index === 0 ? 'primary.main' : 'grey.500',
-              color: 'white',
-              px: 1,
-              py: 0.25,
-              borderRadius: 1,
-              fontSize: '0.7rem',
-              fontWeight: 'bold'
-            }}
-          >
-            {index === 0 ? '훅' : `${index + 1}번`}
-          </Box>
+          {/* 게시물 번호 뱃지 (게시물이 2개 이상일 때만 표시) */}
+          {posts.length > 1 && (
+            <Box
+              sx={{
+                position: 'absolute',
+                top: -8,
+                left: 8,
+                backgroundColor: index === 0 ? 'primary.main' : 'grey.600',
+                color: 'white',
+                px: 1,
+                py: 0.25,
+                borderRadius: 4,
+                fontSize: '0.75rem',
+                fontWeight: 'bold',
+                boxShadow: 1
+              }}
+            >
+              {index + 1}/{posts.length}
+            </Box>
+          )}
 
           {/* 게시물 내용 */}
           <Typography
@@ -174,13 +179,35 @@ function SNSConversionModal({ open, onClose, post }) {
   const [error, setError] = useState('');
   const [usage, setUsage] = useState(null);
   const [copySuccess, setCopySuccess] = useState('');
+  const [regenerating, setRegenerating] = useState({}); // { platform: boolean }
 
-  // 사용량 정보 조회
+  const { user } = useAuth();
+  // DEBUG: Role check
+  useEffect(() => {
+    console.log('🔍 [SNSModal] User Role Check:', {
+      role: user?.role,
+      isAdmin: user?.isAdmin,
+      isTester: user?.isTester,
+      computedAdmin: user?.role === 'admin' || user?.isAdmin === true || user?.isTester === true
+    });
+  }, [user]);
+
+  // DEBUG: Role check logic preserved but log kept
+  // const isAdminOrTester = true; // Reverted for security
+  const isAdminOrTester = user?.role === 'admin' || user?.isAdmin === true || user?.isTester === true;
+  // 🆕 모달이 열릴 때 기존 SNS 변환 결과 불러오기
   useEffect(() => {
     if (open) {
       fetchUsage();
+      // 기존 변환 결과가 있으면 불러오기
+      if (post?.snsConversions && Object.keys(post.snsConversions).length > 0) {
+        console.log('📦 기존 SNS 변환 결과 불러오기:', Object.keys(post.snsConversions));
+        setResults(post.snsConversions);
+      } else {
+        setResults({});
+      }
     }
-  }, [open]);
+  }, [open, post?.snsConversions]);
 
   const fetchUsage = async () => {
     try {
@@ -204,11 +231,11 @@ function SNSConversionModal({ open, onClose, post }) {
     try {
       console.log('🔍 post 객체 전체:', post);
       console.log('🔍 post.id:', post.id, 'typeof:', typeof post.id);
-      
+
       if (!post || !post.id) {
         throw new Error(`post 또는 post.id가 없습니다: ${JSON.stringify(post)}`);
       }
-      
+
       // testSNS 함수 먼저 테스트
       console.log('🧪 testSNS 함수 테스트 중...');
       try {
@@ -218,13 +245,13 @@ function SNSConversionModal({ open, onClose, post }) {
         console.error('❌ testSNS 실패:', testError);
         throw new Error(`SNS 함수 테스트 실패: ${testError.message}`);
       }
-      
+
       const result = await convertToSNS(post.id);
-      
+
       console.log('🔍 SNS 변환 결과:', result);
       console.log('🔍 result.results:', result.results);
       console.log('🔍 결과 키들:', Object.keys(result.results || {}));
-      
+
       // 각 플랫폼 결과 상세 확인
       Object.entries(result.results || {}).forEach(([platform, data]) => {
         console.log(`📱 ${platform}:`, {
@@ -234,12 +261,12 @@ function SNSConversionModal({ open, onClose, post }) {
           hashtagCount: data?.hashtags?.length || 0
         });
       });
-      
+
       setResults(result.results);
-      
+
       // 사용량 정보 갱신
       await fetchUsage();
-      
+
     } catch (err) {
       console.error('SNS 변환 실패:', err);
       setError(err.message || 'SNS 변환에 실패했습니다.');
@@ -255,6 +282,32 @@ function SNSConversionModal({ open, onClose, post }) {
       setTimeout(() => setCopySuccess(''), 2000);
     } catch (err) {
       console.error('복사 실패:', err);
+    }
+  };
+
+  const handleRegenerate = async (platform) => {
+    if (!post?.id) return;
+
+    setRegenerating(prev => ({ ...prev, [platform]: true }));
+    setError('');
+
+    try {
+      console.log(`🔄 ${platform} 재생성 시작...`);
+      const result = await convertToSNS(post.id, platform);
+
+      if (result.results && result.results[platform]) {
+        console.log(`✅ ${platform} 재생성 완료`);
+        setResults(prev => ({
+          ...prev,
+          [platform]: result.results[platform]
+        }));
+        await fetchUsage();
+      }
+    } catch (err) {
+      console.error(`${platform} 재생성 실패:`, err);
+      setError(`${platform} 재생성 실패: ${err.message}`);
+    } finally {
+      setRegenerating(prev => ({ ...prev, [platform]: false }));
     }
   };
 
@@ -289,17 +342,53 @@ function SNSConversionModal({ open, onClose, post }) {
         </IconButton>
       </DialogTitle>
 
-      <DialogContent>
-        {/* 접근 권한 정보 */}
-        {usage && (
-          <Alert 
-            severity={canConvert ? "success" : "warning"} 
-            sx={{ mb: 2 }}
+      <DialogContent sx={{ position: 'relative' }}>
+        {/* 로딩 오버레이 */}
+        {loading && (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(255, 255, 255, 0.9)',
+              zIndex: 10,
+              gap: 2
+            }}
           >
-            <Typography variant="body2">
-              <strong>SNS 변환 사용 가능</strong>
+            <CircularProgress size={40} />
+            <Typography variant="body1" color="text.secondary" fontWeight="medium">
+              모든 SNS 플랫폼에 최적화된 원고를 생성하고 있습니다...
             </Typography>
-          </Alert>
+            <Typography variant="caption" color="text.disabled">
+              (약 10-20초 소요됩니다)
+            </Typography>
+          </Box>
+        )}
+
+        {/* 🆕 저장된 원고가 없을 때 안내 문구 */}
+        {!hasResults && !loading && (
+          <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: 300,
+            color: 'text.secondary'
+          }}>
+            <Transform sx={{ fontSize: 64, mb: 2, opacity: 0.5 }} />
+            <Typography variant="h6" color="text.secondary" gutterBottom>
+              저장된 원고가 없습니다.
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              아래 버튼을 눌러 SNS 원고를 생성해보세요.
+            </Typography>
+          </Box>
         )}
 
         {error && (
@@ -322,18 +411,32 @@ function SNSConversionModal({ open, onClose, post }) {
                       Facebook + Instagram
                     </Typography>
                   </Box>
-                  <Tooltip title="전체 복사하기">
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        const r = results['facebook-instagram'];
-                        const text = r.content + (r.hashtags?.length > 0 ? '\n\n' + r.hashtags.join(' ') : '');
-                        handleCopy(text);
-                      }}
-                    >
-                      <ContentCopy fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
+
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    {isAdminOrTester && (
+                      <Tooltip title="이 플랫폼만 재생성 (관리자 전용)">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleRegenerate('facebook-instagram')}
+                          disabled={regenerating['facebook-instagram']}
+                        >
+                          {regenerating['facebook-instagram'] ? <CircularProgress size={20} /> : <Refresh fontSize="small" />}
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                    <Tooltip title="전체 복사하기">
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          const r = results['facebook-instagram'];
+                          const text = r.content + (r.hashtags?.length > 0 ? '\n\n' + r.hashtags.join(' ') : '');
+                          handleCopy(text);
+                        }}
+                      >
+                        <ContentCopy fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
                 </Box>
                 <Box sx={{
                   maxHeight: '200px',
@@ -375,21 +478,35 @@ function SNSConversionModal({ open, onClose, post }) {
                         <Chip label={`${results.x.postCount}개`} size="small" color="primary" sx={{ fontSize: '0.7rem' }} />
                       )}
                     </Box>
-                    <Tooltip title="전체 타래 복사">
-                      <IconButton
-                        size="small"
-                        onClick={() => {
-                          const r = results.x;
-                          if (r.posts) {
-                            const text = r.posts.map((p, i) => `[${i + 1}/${r.posts.length}]\n${p.content}`).join('\n\n');
-                            const hashtagText = r.hashtags?.length > 0 ? '\n\n' + r.hashtags.join(' ') : '';
-                            handleCopy(text + hashtagText);
-                          }
-                        }}
-                      >
-                        <ContentCopy fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
+
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {isAdminOrTester && (
+                        <Tooltip title="이 플랫폼만 재생성 (관리자 전용)">
+                          <IconButton
+                            size="small"
+                            onClick={() => handleRegenerate('x')}
+                            disabled={regenerating['x']}
+                          >
+                            {regenerating['x'] ? <CircularProgress size={20} /> : <Refresh fontSize="small" />}
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      <Tooltip title="전체 타래 복사">
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            const r = results.x;
+                            if (r.posts) {
+                              const text = r.posts.map((p, i) => `[${i + 1}/${r.posts.length}]\n${p.content}`).join('\n\n');
+                              const hashtagText = r.hashtags?.length > 0 ? '\n\n' + r.hashtags.join(' ') : '';
+                              handleCopy(text + hashtagText);
+                            }
+                          }}
+                        >
+                          <ContentCopy fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
                   </Box>
                   <Box sx={{ maxHeight: '400px', overflowY: 'auto' }}>
                     {results.x.posts ? (
@@ -419,21 +536,35 @@ function SNSConversionModal({ open, onClose, post }) {
                         <Chip label={`${results.threads.postCount}개`} size="small" color="primary" sx={{ fontSize: '0.7rem' }} />
                       )}
                     </Box>
-                    <Tooltip title="전체 타래 복사">
-                      <IconButton
-                        size="small"
-                        onClick={() => {
-                          const r = results.threads;
-                          if (r.posts) {
-                            const text = r.posts.map((p, i) => `[${i + 1}/${r.posts.length}]\n${p.content}`).join('\n\n');
-                            const hashtagText = r.hashtags?.length > 0 ? '\n\n' + r.hashtags.join(' ') : '';
-                            handleCopy(text + hashtagText);
-                          }
-                        }}
-                      >
-                        <ContentCopy fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
+
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {isAdminOrTester && (
+                        <Tooltip title="이 플랫폼만 재생성 (관리자 전용)">
+                          <IconButton
+                            size="small"
+                            onClick={() => handleRegenerate('threads')}
+                            disabled={regenerating['threads']}
+                          >
+                            {regenerating['threads'] ? <CircularProgress size={20} /> : <Refresh fontSize="small" />}
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      <Tooltip title="전체 타래 복사">
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            const r = results.threads;
+                            if (r.posts) {
+                              const text = r.posts.map((p, i) => `[${i + 1}/${r.posts.length}]\n${p.content}`).join('\n\n');
+                              const hashtagText = r.hashtags?.length > 0 ? '\n\n' + r.hashtags.join(' ') : '';
+                              handleCopy(text + hashtagText);
+                            }
+                          }}
+                        >
+                          <ContentCopy fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
                   </Box>
                   <Box sx={{ maxHeight: '400px', overflowY: 'auto' }}>
                     {results.threads.posts ? (
@@ -463,13 +594,13 @@ function SNSConversionModal({ open, onClose, post }) {
             <Box sx={{ mt: 3, textAlign: 'center', borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
               <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
                 SNS 아이콘 ⓒ{' '}
-                <a 
-                  href="https://www.flaticon.com/kr/free-icons/" 
+                <a
+                  href="https://www.flaticon.com/kr/free-icons/"
                   title="SNS 아이콘"
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ 
-                    color: '#666', 
+                  style={{
+                    color: '#666',
                     textDecoration: 'none',
                     '&:hover': {
                       textDecoration: 'underline'
@@ -491,13 +622,13 @@ function SNSConversionModal({ open, onClose, post }) {
             variant="contained"
             onClick={handleConvert}
             disabled={loading || !canConvert}
-            startIcon={loading ? <CircularProgress size={20} /> : <Transform />}
+            startIcon={<Transform />}
           >
             {loading ? '모든 플랫폼 변환 중...' : '모든 SNS 플랫폼으로 변환'}
           </Button>
         )}
       </DialogActions>
-    </Dialog>
+    </Dialog >
   );
 }
 

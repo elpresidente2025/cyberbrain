@@ -1,7 +1,7 @@
 // frontend/src/pages/GeneratePage.jsx
 
 // React 및 UI 라이브러리에서 필요한 기능들을 가져옵니다.
-import React, { Suspense, useEffect, useCallback } from 'react';
+import React, { Suspense, useEffect, useCallback, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -21,7 +21,9 @@ import {
   FormControlLabel, // 🆕 추가
   Switch,           // 🆕 추가
   Tooltip,          // 🆕 추가
-  Chip              // 🆕 추가
+  Chip,             // 🆕 추가
+  Backdrop,         // 🆕 추가
+  CircularProgress  // 🆕 추가
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import ShareIcon from '@mui/icons-material/Share';
@@ -44,6 +46,74 @@ import { spacing, typography, visualWeight, verticalRhythm } from '../theme/toke
 // 🚀 성능 최적화를 위해 초안 그리드와 미리보기 패널은 필요할 때만 불러옵니다 (Lazy Loading).
 const DraftGrid = React.lazy(() => import('../components/generate/DraftGrid'));
 const PreviewPane = React.lazy(() => import('../components/generate/PreviewPane'));
+
+// 🔄 로딩 오버레이 컴포넌트 (텍스트 순환 애니메이션)
+const LOADING_MESSAGES = [
+  'AI가 원고를 생성하고 있습니다...',
+  '원고 초안 정리 중...',
+  '핵심 메시지 다듬는 중...',
+  '문장 흐름 정리 중...',
+  '근거와 구조를 정돈 중...',
+  '표현을 자연스럽게 다듬는 중...',
+  '읽기 쉬운 문장으로 변환 중...',
+  '주요 포인트 정리 중...',
+  '문단 구성 조율 중...',
+  '맥락을 반영해 문장을 다듬는 중...',
+  '완성도를 높이는 중...'
+];
+
+const LoadingOverlayWithRotatingText = React.memo(({ loading, progress }) => {
+  const [messageIndex, setMessageIndex] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!loading) {
+      setMessageIndex(0);
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      setMessageIndex(prev => (prev + 1) % LOADING_MESSAGES.length);
+    }, 2500); // 2.5초마다 변경
+
+    return () => clearInterval(intervalId);
+  }, [loading]);
+
+  const displayMessage = progress?.message || LOADING_MESSAGES[messageIndex];
+
+  return (
+    <Backdrop
+      sx={{
+        color: '#fff',
+        zIndex: (theme) => theme.zIndex.drawer + 1,
+        flexDirection: 'column',
+        gap: 2,
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)'
+      }}
+      open={loading}
+    >
+      <CircularProgress color="inherit" size={60} thickness={4} />
+      <Typography
+        variant="h6"
+        align="center"
+        sx={{
+          fontWeight: 500,
+          whiteSpace: 'pre-line',
+          minHeight: '3em',  // 레이아웃 안정화
+          display: 'flex',
+          alignItems: 'center'
+        }}
+      >
+        {displayMessage}
+      </Typography>
+      <Typography variant="body2" color="rgba(255, 255, 255, 0.7)">
+        (최대 1~2분 정도 소요될 수 있습니다)
+      </Typography>
+    </Backdrop>
+  );
+});
+
 
 const GeneratePage = () => {
   // --- 🎨 UI 및 사용자 상태 관리 ---
@@ -167,6 +237,14 @@ const GeneratePage = () => {
 
   /** 원고 생성 버튼 클릭 시 실행되는 함수 */
   const handleGenerate = async () => {
+    // 🔴 [FIX] 한글 IME 조합 완료를 위해 약간의 딜레이 추가
+    // '윤석열 사형 구형' 입력 중 버튼 클릭 시 '구형'의 '형'이 조합 중인 상태에서 잘리는 버그 방지
+    await new Promise(resolve => {
+      requestAnimationFrame(() => {
+        setTimeout(resolve, 50);
+      });
+    });
+
     // 1. 폼 데이터 유효성 검사
     const validation = validateForm();
     if (!validation.isValid) {
@@ -482,6 +560,9 @@ const GeneratePage = () => {
         onClose={() => setSnsModalOpen(false)}
         post={snsPost}
       />
+
+      {/* 🔄 전체 로딩 오버레이 (텍스트 순환 적용) */}
+      <LoadingOverlayWithRotatingText loading={loading} progress={progress} />
 
     </DashboardLayout>
   );

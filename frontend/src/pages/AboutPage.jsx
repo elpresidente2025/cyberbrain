@@ -12,6 +12,7 @@ import {
   Grid,
   Card,
   CardContent,
+  Dialog,
   Accordion,
   AccordionSummary,
   AccordionDetails,
@@ -40,10 +41,19 @@ const AboutPage = () => {
     setExpandedFAQ(isExpanded ? panel : false);
   };
 
+  // 카드 키보드 핸들러
+  const handleCardKeyDown = (event, value) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      setSelectedFeature(value);
+    }
+  };
+
   // 핵심 가치 6개
   const coreValues = [
     {
-      icon: <EditNote />,
+      icon: <EditNote aria-hidden="true" />,
+      ariaLabel: '원고 생성 기능',
       title: '월 90회 원고 생성',
       description: '충분한 분량',
       modalTitle: '🔥 한 달 90개. 경쟁자는 뒤에서 구경만 합니다.',
@@ -54,7 +64,8 @@ const AboutPage = () => {
 매일, 쉬지 않고, 지치지 않고. 비서관은 24시간 대기 중입니다.`
     },
     {
-      icon: <TrendingUp />,
+      icon: <TrendingUp aria-hidden="true" />,
+      ariaLabel: '검색 최적화 기능',
       title: '검색 최적화',
       description: '네이버 상위노출',
       modalTitle: '🎯 네이버 1페이지. 현수막보다 강력합니다.',
@@ -66,7 +77,8 @@ const AboutPage = () => {
 그건 돈 주고도 못 사는 노출입니다.`
     },
     {
-      icon: <Speed />,
+      icon: <Speed aria-hidden="true" />,
+      ariaLabel: '빠른 생성 기능',
       title: '2~3분 빠른 생성',
       description: '바쁜 의원님께 딱',
       modalTitle: '⚡ 3시간 → 3분. 보좌진도 놀랍니다.',
@@ -77,7 +89,8 @@ const AboutPage = () => {
 골든타임을 놓치지 않는 빠른 대응. 그게 경쟁력입니다.`
     },
     {
-      icon: <Share />,
+      icon: <Share aria-hidden="true" />,
+      ariaLabel: 'SNS 변환 기능',
       title: '블로그+SNS 자동 변환',
       description: '한 번에 다채널',
       modalTitle: '📱 한 번 쓰고, 네 번 씁니다.',
@@ -89,7 +102,8 @@ const AboutPage = () => {
 '승인' 버튼만 누르면 끝.`
     },
     {
-      icon: <Psychology />,
+      icon: <Psychology aria-hidden="true" />,
+      ariaLabel: 'AI 학습 기능',
       title: '점점 나다워지는 AI',
       description: '프로필 학습으로 진화',
       modalTitle: '🧠 쓸수록 닮아갑니다. 나만의 AI 비서관.',
@@ -102,7 +116,8 @@ AI가 학습합니다. 점점 닮아갑니다.
 '이거 직접 쓰신 거 아니에요?'`
     },
     {
-      icon: <AutoAwesome />,
+      icon: <AutoAwesome aria-hidden="true" />,
+      ariaLabel: '고품질 글쓰기 기능',
       title: '읽히는 글, 살아있는 글',
       description: '끝까지 읽게 만드는 힘',
       modalTitle: '✨ AI 티 안 나는 글. 사람 냄새 나는 글.',
@@ -244,10 +259,10 @@ AI가 학습합니다. 점점 닮아갑니다.
                 // 🇨🇭 네이비 버튼
                 bgcolor: '#152484',
                 color: '#ffffff',
-                fontSize: '1.75rem',
+                fontSize: { xs: '1.1rem', sm: '1.3rem', md: '1.75rem' },
                 fontWeight: 700,
-                px: 8,
-                py: 3,
+                px: { xs: 4, sm: 6, md: 8 },
+                py: { xs: 2, sm: 2.5, md: 3 },
                 borderRadius: '8px',
                 boxShadow: '0 2px 8px rgba(21, 36, 132, 0.15)',
                 textTransform: 'none',
@@ -258,6 +273,10 @@ AI가 학습합니다. 점점 닮아갑니다.
                 '&:active': {
                   transform: 'scale(0.98)',
                   boxShadow: '0 1px 4px rgba(21, 36, 132, 0.2)'
+                },
+                '&:focus-visible': {
+                  outline: '2px solid #ffffff',
+                  outlineOffset: '2px'
                 }
               }}
             >
@@ -273,10 +292,10 @@ AI가 학습합니다. 점점 닮아갑니다.
                 color: '#152484',
                 borderColor: '#152484',
                 borderWidth: 2,
-                fontSize: '1.5rem',
+                fontSize: { xs: '1rem', sm: '1.2rem', md: '1.5rem' },
                 fontWeight: 600,
-                px: 6,
-                py: 3,
+                px: { xs: 3, sm: 4, md: 6 },
+                py: { xs: 1.5, sm: 2, md: 3 },
                 borderRadius: '8px',
                 boxShadow: '0 2px 8px rgba(21, 36, 132, 0.1)',
                 textTransform: 'none',
@@ -289,6 +308,10 @@ AI가 학습합니다. 점점 닮아갑니다.
                 '&:active': {
                   transform: 'scale(0.98)',
                   boxShadow: '0 1px 4px rgba(21, 36, 132, 0.15)'
+                },
+                '&:focus-visible': {
+                  outline: '2px solid #152484',
+                  outlineOffset: '2px'
                 }
               }}
             >
@@ -320,6 +343,10 @@ AI가 학습합니다. 점점 닮아갑니다.
                 <Card
                   elevation={0}
                   onClick={() => setSelectedFeature(value)}
+                  onKeyDown={(e) => handleCardKeyDown(e, value)}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`${value.title} - ${value.description}. 클릭하여 자세히 보기`}
                   sx={{
                     textAlign: 'center',
                     p: { xs: 1, sm: 1.5, md: 3 },
@@ -331,10 +358,14 @@ AI가 학습합니다. 점점 닮아갑니다.
                     boxShadow: 'none',
                     transition: 'all 0.2s ease',
                     cursor: 'pointer',
-                    '&:hover': {
+                    '&:hover, &:focus': {
                       borderColor: '#152484',
                       transform: 'translateY(-4px)',
                       boxShadow: '0 4px 12px rgba(21, 36, 132, 0.08)'
+                    },
+                    '&:focus-visible': {
+                      outline: '2px solid #152484',
+                      outlineOffset: '2px'
                     }
                   }}
                 >
@@ -366,11 +397,9 @@ AI가 학습합니다. 점점 닮아갑니다.
                         fontWeight: 700,
                         mb: 1.5,
                         color: '#000000 !important',
-                        fontSize: { xs: '1.1rem', sm: '1.4rem', md: '2rem', lg: '2.25rem' },
-                        lineHeight: 1.2,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis'
+                        fontSize: { xs: '1rem', sm: '1.3rem', md: '1.8rem', lg: '2rem' },
+                        lineHeight: 1.3,
+                        wordBreak: 'keep-all'
                       }}
                     >
                       {value.title}
@@ -379,12 +408,10 @@ AI가 학습합니다. 점점 닮아갑니다.
                       variant="body1"
                       sx={{
                         color: '#666666 !important',
-                        fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem', lg: '1.25rem' },
+                        fontSize: { xs: '0.8rem', sm: '0.9rem', md: '1rem', lg: '1.1rem' },
                         fontWeight: 400,
-                        lineHeight: 1.4,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis'
+                        lineHeight: 1.5,
+                        wordBreak: 'keep-all'
                       }}
                     >
                       {value.description}
@@ -403,6 +430,8 @@ AI가 학습합니다. 점점 닮아갑니다.
         onClose={() => setSelectedFeature(null)}
         maxWidth="sm"
         fullWidth
+        aria-labelledby="feature-dialog-title"
+        aria-describedby="feature-dialog-description"
         sx={{
           '& .MuiDialog-paper': {
             borderRadius: 0, // 🇨🇭 스위스 스타일: 각진 모서리
@@ -424,6 +453,7 @@ AI가 학습합니다. 점점 닮아갑니다.
                 })}
               </Box>
               <Typography
+                id="feature-dialog-title"
                 variant="h5"
                 sx={{
                   fontWeight: 700,
@@ -435,6 +465,7 @@ AI가 학습합니다. 점점 닮아갑니다.
                 {selectedFeature.modalTitle}
               </Typography>
               <Typography
+                id="feature-dialog-description"
                 variant="body1"
                 sx={{
                   color: '#444444',
@@ -560,8 +591,14 @@ AI가 학습합니다. 점점 닮아갑니다.
                   borderWidth: 2,
                   borderColor: '#152484',
                   bgcolor: 'rgba(21, 36, 132, 0.04)'
+                },
+                '&:focus-visible': {
+                  outline: '2px solid #152484',
+                  outlineOffset: '2px'
                 }
               }}
+              aria-expanded={showAllFAQs}
+              aria-controls="faq-list"
             >
               {showAllFAQs ? '질문 접기' : '더 많은 질문 보기 (4개)'}
             </Button>
@@ -580,7 +617,7 @@ AI가 학습합니다. 점점 닮아갑니다.
             elevation={0}
             sx={{
               textAlign: 'center',
-              p: 8,
+              p: { xs: 4, sm: 6, md: 8 },
               borderRadius: 0,
               // 🇨🇭 화이트 카드 + 네이비 강조
               bgcolor: '#ffffff',
@@ -596,7 +633,7 @@ AI가 학습합니다. 점점 닮아갑니다.
                   sx={{
                     fontWeight: 700,
                     color: '#152484 !important',
-                    fontSize: { xs: '4rem', md: '6rem' },
+                    fontSize: { xs: '2.5rem', sm: '3.5rem', md: '5rem', lg: '6rem' },
                     letterSpacing: '-0.03em',
                     lineHeight: 1,
                     mb: 2
@@ -622,9 +659,9 @@ AI가 학습합니다. 점점 닮아갑니다.
                 sx={{
                   bgcolor: '#152484',
                   color: '#ffffff',
-                  fontSize: '1.5rem',
+                  fontSize: { xs: '1rem', sm: '1.2rem', md: '1.5rem' },
                   fontWeight: 700,
-                  py: 3,
+                  py: { xs: 2, sm: 2.5, md: 3 },
                   borderRadius: '8px',
                   boxShadow: '0 2px 8px rgba(21, 36, 132, 0.15)',
                   textTransform: 'none',
@@ -635,6 +672,10 @@ AI가 학습합니다. 점점 닮아갑니다.
                   '&:active': {
                     transform: 'scale(0.98)',
                     boxShadow: '0 1px 4px rgba(21, 36, 132, 0.2)'
+                  },
+                  '&:focus-visible': {
+                    outline: '2px solid #ffffff',
+                    outlineOffset: '2px'
                   }
                 }}
               >

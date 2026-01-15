@@ -1,5 +1,5 @@
 // frontend/src/components/PostViewerModal.jsx
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -10,9 +10,11 @@ import {
   Typography,
   useTheme
 } from '@mui/material';
-import { ContentCopy, DeleteOutline } from '@mui/icons-material';
+import { ContentCopy, Transform, Publish } from '@mui/icons-material';
 import { NotificationSnackbar, useNotification } from './ui';
+import { useAuth } from '../hooks/useAuth';
 import { transitions } from '../theme/tokens';
+import SNSConversionModal from './SNSConversionModal'; // 🆕 내장형 SNS 모달
 
 // 유틸리티 함수들
 function formatDate(iso) {
@@ -34,48 +36,48 @@ function formatDate(iso) {
 function convertHtmlToFormattedText(html = '') {
   try {
     if (!html) return '';
-    
-    // 임시 div 엘리먼트 생성
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = html;
-    
-    // HTML 태그를 텍스트로 변환하면서 formatting 보존
     let text = tempDiv.innerHTML;
-    
-    // 블록 요소들을 줄바꿈으로 변환
     text = text.replace(/<\/?(h[1-6]|p|div|br|li)[^>]*>/gi, '\n');
     text = text.replace(/<\/?(ul|ol)[^>]*>/gi, '\n\n');
-    
-    // 나머지 HTML 태그 제거
     text = text.replace(/<[^>]*>/g, '');
-    
-    // HTML 엔티티 변환
     text = text.replace(/&nbsp;/g, ' ');
     text = text.replace(/&amp;/g, '&');
     text = text.replace(/&lt;/g, '<');
     text = text.replace(/&gt;/g, '>');
     text = text.replace(/&quot;/g, '"');
-    
-    // 연속된 줄바꿈을 정리 (3개 이상을 2개로)
     text = text.replace(/\n{3,}/g, '\n\n');
-    
-    // 앞뒤 공백 제거
     return text.trim();
   } catch {
     return html || '';
   }
 }
 
+/**
+ * PostViewerModal - 완전 자체 포함형 원고 뷰어
+ * 
+ * 부모 컴포넌트는 단순히 open, onClose, post만 전달하면 됩니다.
+ * 복사, SNS 변환, 발행 기능은 모두 이 컴포넌트 내부에서 처리됩니다.
+ */
 export default function PostViewerModal({
   open,
   onClose,
-  post,
-  onDelete,
-  showDeleteButton = true
+  post
 }) {
   const theme = useTheme();
   const { notification, showNotification, hideNotification } = useNotification();
+  const { user } = useAuth();
 
+  // 🆕 내장형 SNS 모달 상태
+  const [snsOpen, setSnsOpen] = useState(false);
+
+  // 권한 체크: 관리자 또는 테스터만 SNS 사용 가능
+  const canUseSNS = useMemo(() => {
+    return user?.role === 'admin' || user?.isAdmin === true || user?.isTester === true;
+  }, [user]);
+
+  // 복사 핸들러
   const handleCopy = () => {
     try {
       const title = post?.title || '제목 없음';
@@ -92,10 +94,23 @@ export default function PostViewerModal({
     }
   };
 
-  const handleDelete = (e) => {
-    if (e) e.stopPropagation();
-    if (onDelete && post?.id) {
-      onDelete(post.id, e);
+  // 🆕 SNS 변환 핸들러 (내장)
+  const handleSNSClick = (e) => {
+    e.stopPropagation();
+    if (canUseSNS) {
+      setSnsOpen(true);
+    } else {
+      showNotification('준비 중입니다.', 'info');
+    }
+  };
+
+  // 🆕 발행 핸들러 (내장) - 발행 URL이 있으면 링크 표시, 없으면 안내
+  const handlePublishClick = (e) => {
+    e.stopPropagation();
+    if (post?.publishUrl) {
+      window.open(post.publishUrl, '_blank');
+    } else {
+      showNotification('발행 URL이 등록되지 않았습니다. 내 원고 목록에서 등록해주세요.', 'info');
     }
   };
 
@@ -134,7 +149,6 @@ export default function PostViewerModal({
               borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'grey.200',
             }}
           >
-            {/* 제목을 텍스트박스 안에 포함 */}
             <Typography
               variant="h6"
               sx={{
@@ -151,48 +165,69 @@ export default function PostViewerModal({
             >
               제목: {post?.title || '제목 없음'}
             </Typography>
-            
             <Box dangerouslySetInnerHTML={{ __html: post?.content || '<p>내용이 없습니다.</p>' }} />
           </Box>
         </DialogContent>
         <Box sx={{ px: 3, py: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+          {/* 🆕 제목 길이 경고 (25자 초과 시) */}
+          {post?.title && post.title.length > 25 && (
+            <Typography variant="body2" color="error" sx={{ textAlign: 'left', fontWeight: 'bold', mb: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              ⚠️ 제목이 깁니다. 25자 내외로 적절히 수정해 주세요.
+            </Typography>
+          )}
           <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'left' }}>
             포스팅 시 이미지는 최소 15장 이상 삽입해 주세요
           </Typography>
         </Box>
-        <DialogActions>
-          <Button 
-            onClick={handleCopy} 
+        <DialogActions sx={{ gap: 1, p: 2 }}>
+          {/* 복사 버튼 */}
+          <Button
+            onClick={handleCopy}
+            variant="contained"
             startIcon={<ContentCopy />}
-            sx={{ 
-              bgcolor: theme.palette.ui?.header || '#152484',
+            sx={{
+              bgcolor: theme.palette.primary.main,
               color: 'white',
-              '&:hover': { bgcolor: '#003A87' }
+              '&:hover': { bgcolor: theme.palette.primary.dark }
             }}
           >
             복사
           </Button>
-          {showDeleteButton && (
-            <Button 
-              onClick={handleDelete} 
-              color="error" 
-              startIcon={<DeleteOutline />}
-            >
-              삭제
-            </Button>
-          )}
-          <Button 
-            onClick={onClose} 
-            variant="contained"
-            sx={{ 
-              bgcolor: theme.palette.ui?.header || '#152484',
-              '&:hover': { bgcolor: '#003A87' }
-            }}
+
+          {/* 발행 버튼 (항상 표시) */}
+          <Button
+            onClick={handlePublishClick}
+            variant="outlined"
+            startIcon={<Publish />}
           >
+            발행
+          </Button>
+
+          {/* SNS 변환 버튼 (항상 표시, 권한 체크는 내부에서) */}
+          <Button
+            onClick={handleSNSClick}
+            variant="contained"
+            sx={{
+              bgcolor: '#55207D',
+              '&:hover': { bgcolor: '#6d2b93' }
+            }}
+            startIcon={<Transform />}
+          >
+            SNS 변환
+          </Button>
+
+          <Button onClick={onClose} color="inherit">
             닫기
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* 🆕 내장형 SNS 변환 모달 */}
+      <SNSConversionModal
+        open={snsOpen}
+        onClose={() => setSnsOpen(false)}
+        post={post}
+      />
 
       {/* 복사 알림 스낵바 */}
       <NotificationSnackbar

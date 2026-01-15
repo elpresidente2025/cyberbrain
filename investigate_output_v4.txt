@@ -1,0 +1,27 @@
+﻿[dotenv@17.2.3] injecting env (3) from functions\.env -- tip: ?뵍 prevent committing .env to code: https://dotenvx.com/precommit
+?뵇 ?몄쿇 ?쒓뎄 ?꾩쟾 議곗궗 ?쒖옉
+
+1截뤴깵 援ъ떆援?紐⑸줉 API ?뺤씤...
+   ?몄쿇 援?援? 10媛?   - 以묎뎄 (wOrder: 55)
+   - ?숆뎄 (wOrder: 56)
+   - 誘몄텛?援?(wOrder: 57)
+   - ?곗닔援?(wOrder: 58)
+   - ?⑤룞援?(wOrder: 59)
+   - 遺?됯뎄 (wOrder: 60)
+   - 怨꾩뼇援?(wOrder: 61)
+   - ?쒓뎄 (wOrder: 62)
+   - 媛뺥솕援?(wOrder: 63)
+   - ?뱀쭊援?(wOrder: 64)
+
+   ???쒓뎄 諛쒓껄! wOrder: 62
+
+2截뤴깵 愿묒뿭?섏썝 ?좉굅援?sgTypecode=5) ?꾩껜 議고쉶...
+   ?몄쿇 愿묒뿭?섏썝 ?좉굅援? 36媛?   ?쒓뎄 愿?? 1媛?   - undefined
+
+3截뤴깵 湲곗큹?섏썝 ?좉굅援?sgTypecode=6) ?꾩껜 議고쉶...
+   ?몄쿇 湲곗큹?섏썝 ?좉굅援? 40媛?
+   ???쒓뎄 ?좉굅援?諛쒓껄: 6媛?   - ?쒓뎄媛?좉굅援?   - ?쒓뎄?섏꽑嫄곌뎄
+   - ?쒓뎄?ㅼ꽑嫄곌뎄
+   - ?쒓뎄?쇱꽑嫄곌뎄
+   - ?쒓뎄留덉꽑嫄곌뎄
+   - ?쒓뎄諛붿꽑嫄곌뎄

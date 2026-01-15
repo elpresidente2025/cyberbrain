@@ -47,8 +47,8 @@ function UsersSection() {
       try {
         setLoading(true);
         setError(null);
-        const result = await callFunctionWithRetry('getUsers');
-        
+        const result = await callFunctionWithRetry('getAllUsers');
+
         if (result?.users) {
           setUsers(result.users);
           setFilteredUsers(result.users);
@@ -70,7 +70,7 @@ function UsersSection() {
 
     // 텍스트 검색
     if (searchTerm) {
-      filtered = filtered.filter(user => 
+      filtered = filtered.filter(user =>
         user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.position?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -165,7 +165,7 @@ function UsersSection() {
       <Typography variant="h6" gutterBottom>
         사용자 관리 ({filteredUsers.length}명)
       </Typography>
-      
+
       {/* 검색 및 필터 */}
       <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
         <TextField
@@ -182,7 +182,7 @@ function UsersSection() {
           sx={{ minWidth: 300, flexGrow: 1 }}
           size="small"
         />
-        
+
         <FormControl size="small" sx={{ minWidth: 120 }}>
           <InputLabel>상태</InputLabel>
           <Select
@@ -275,7 +275,7 @@ function UsersSection() {
         onPageChange={handleChangePage}
         onRowsPerPageChange={handleChangeRowsPerPage}
         labelRowsPerPage="페이지당 행:"
-        labelDisplayedRows={({ from, to, count }) => 
+        labelDisplayedRows={({ from, to, count }) =>
           `${from}-${to} / 총 ${count !== -1 ? count : `${to}개 이상`}`
         }
       />

@@ -16,13 +16,19 @@ const { callGenerativeModel } = require('../gemini');
 const {
   runHeuristicValidationSync,
   validateKeywordInsertion,
-  validateTitleQuality
+  validateTitleQuality,
+  validateBipartisanPraise
 } = require('./validation');
 const {
   stripHtml,
   splitContentBySignature,
   joinContent
 } = require('./content-processor');
+const {
+  preventDoubleTransformation,
+  determineWritingContext,
+  normalizeNameSpacing
+} = require('../../prompts/guidelines/editorial');
 
 const PLEDGE_PATTERNS = [
   /약속드?립니다/,
@@ -933,11 +939,18 @@ async function refineWithLLM({
     );
 
     if (refreshedValidation.passed && refreshedKeyword.valid) {
+      // 초당적 협력 금지 표현 후처리 (자동 대체)
+      const bipartisanResult = validateBipartisanPraise(nextContent, {
+        rivalNames: userKeywords.filter(k => k.match(/^[가-힣]{2,4}$/)),  // 이름 형태 키워드 추출
+        category: 'bipartisan'  // 일단 항상 적용 (향후 카테고리 정보 추가 필요)
+      });
+      const finalContent = bipartisanResult.correctedContent || nextContent;
+
       return {
-        content: nextContent,
+        content: finalContent,
         title: nextTitle,
         edited: true,
-        editSummary: result.editSummary || []
+        editSummary: [...(result.editSummary || []), ...(bipartisanResult.issues || [])]
       };
     }
 
@@ -951,34 +964,23 @@ async function refineWithLLM({
       targetWordCount
     });
 
+    // 초당적 협력 금지 표현 후처리 (자동 대체)
+    const bipartisanResult2 = validateBipartisanPraise(hardFixed.content || content, {
+      rivalNames: userKeywords.filter(k => k.match(/^[가-힣]{2,4}$/)),
+      category: 'bipartisan'
+    });
+    const finalContent2 = bipartisanResult2.correctedContent || hardFixed.content || content;
+
     return {
-      content: hardFixed.content || content,
+      content: finalContent2,
       title: hardFixed.title || title,
       edited: true,
       editSummary: [
         ...(result.editSummary || issues.map(i => i.description)),
-        ...(hardFixed.editSummary || [])
+        ...(hardFixed.editSummary || []),
+        ...(bipartisanResult2.issues || [])
       ].filter(Boolean)
     };
-
-    // 🆕 분량 부족 시 우선적으로 본문 확장 시도 (요약문 생성 및 삽입)
-    const lengthIssue = issues.find(i => i.type === 'content_length' && i.description.includes('분량 부족'));
-    if (lengthIssue && typeof targetWordCount === 'number') {
-      console.log(`📉 [EditorAgent] 분량 부족 감지 (${lengthIssue.description}) -> 요약문 생성 및 확장 시도`);
-      const expansionResult = await expandContentToTarget({
-        content,
-        targetWordCount,
-        modelName,
-        status
-      });
-
-      if (expansionResult.edited) {
-        content = expansionResult.content;
-        // 분량이 채워졌다고 가정하고 이슈 목록에서 제거하거나, 재검증 로직에 의해 다음 루프에서 처리됨
-        // 여기서는 일단 content를 업데이트하고 계속 진행 (다른 이슈들도 고쳐야 하므로)
-        console.log('✅ [EditorAgent] 분량 확장/요약문 삽입 완료');
-      }
-    }
 
   } catch (error) {
     console.error('❌ [EditorAgent] LLM 호출 실패:', error.message);
@@ -1108,7 +1110,7 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status, targe
   const currentLength = stripHtml(content || '').replace(/\s/g, '').length;
   const maxTarget = typeof targetWordCount === 'number' ? Math.round(targetWordCount * 1.1) : null;
   const lengthGuideline = hasLengthIssue && typeof targetWordCount === 'number'
-    ? `\n📏 분량 목표: ${targetWordCount}~${maxTarget}자(공백 제외), 현재 ${currentLength}자\n- 새 주제/추신/요약 추가 금지\n- 기존 문단의 근거를 구체화해 분량을 맞출 것`
+    ? `\n📏 분량 목표: ${targetWordCount}~${maxTarget}자(공백 제외), 현재 ${currentLength}자\n- 새 주제/추신 추가 금지\n- 기존 문단의 근거를 구체화해 분량을 맞출 것\n🚨 [CRITICAL] 문단 복사 붙여넣기 절대 금지! 동일한 문단이 2번 이상 등장하면 원고 폐기됩니다.`
     : '';
 
   // 🆕 키워드 과다 사용 체크 및 변주 가이드 생성
@@ -1206,7 +1208,8 @@ ${userKeywords.join(', ') || '(없음)'}
      - 문단은 3줄~4줄 정도로 호흡을 짧게 끊어 가독성을 높이세요.
 
   4. **[검색어/SEO]**:
-     - 키워드는 문맥에 맞게 자연스럽게 녹이되, 전체 글에서 **최대 5~6회**까지만 사용하세요. (과도한 반복 금지)
+     - 키워드는 문맥에 맞게 자연스럽게 녹이되, 전체 글에서 **4~6회**까지만 사용하세요.
+     - **[CRITICAL]** 제공된 검색어를 단 한 글자도 바꾸지 말고 그대로 사용해야 합니다 (패러프레이즈 금지).
      - 숫자나 통계는 원문에 있는 것만 정확히 인용하세요.
 
   5. **[CRITICAL] 글의 품질 향상 (중복·과장·논리 비약 제거)**:
@@ -1252,8 +1255,14 @@ function forceFixContent(content) {
   fixed = fixed.replace(/(관련 데이터|정확한 수치|출처|구체적인 수치|통계)(.*)(확보|확인|검증)(가|이) (필요합니다|바랍니다|요구됩니다|불분명합니다)\.?/gi, '');
   fixed = fixed.replace(/※.*$/gm, ''); // 당구장 표시 주석 제거
 
-  // 1. "~라는 점입니다" 계열 제거 -> content-processor.js로 이관 (중복 제거)
-  // 🗑️ 삭제됨: 규칙 통합을 위해 content-processor.js에서만 처리
+  // 1. 🔴 [Phase 1] 이중 변환 방지 (CRITICAL - 반드시 마지막 전에 실행)
+  //    "것일 것입니다" → "것입니다" 등 부자연스러운 이중 변환 수정
+  const doubleTransformResult = preventDoubleTransformation(fixed);
+  if (doubleTransformResult.hadDoubleTransform) {
+    console.log('🔧 [forceFixContent] 이중 변환 감지 및 수정:',
+      doubleTransformResult.corrections.map(c => c.patternId).join(', '));
+    fixed = doubleTransformResult.content;
+  }
 
   // 2. 힘 없는 표현 강화
   fixed = fixed.replace(/노력하겠습니다/g, '반드시 해내겠습니다');

@@ -14,8 +14,8 @@ const { SEO_RULES } = require('./editorial');
  * @returns {number} 키워드당 최소 삽입 횟수
  */
 function calculateMinInsertions(targetWordCount) {
-  const interval = SEO_RULES.keywordPlacement.body.interval; // 400
-  return Math.max(2, Math.floor(targetWordCount / interval));
+  // [수정] 네이버 SEO 로직 변경: 글자수 무관하게 최소 4회, 최대 6회 유지
+  return 4;  // 항상 4 리턴
 }
 
 /**

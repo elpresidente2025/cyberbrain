@@ -11,7 +11,7 @@
 const BIO_ENTRY_TYPES = {
   SELF_INTRODUCTION: {
     id: 'self_introduction',
-    name: '자기소개',
+    name: '자기소개 및 출마선언문',
     description: '개인 철학, 가치관, 정치적 신념 등',
     icon: 'person',
     color: '#2196F3',
@@ -91,6 +91,17 @@ const BIO_ENTRY_TYPES = {
     placeholder: '언론 인터뷰, 기고문, 연설문 등 본인을 더 잘 알 수 있는 자료를 추가해주세요.',
     analysisWeight: 0.6,
     analysisAreas: ['publicImage', 'mediaStrategy', 'messageConsistency']
+  },
+
+  POST_CONTENT: {
+    id: 'post_content',
+    name: '과거 작성 원고',
+    description: '이전에 작성된 원고 내용 (스타일/내용 학습용)',
+    icon: 'history_edu',
+    color: '#795548',
+    maxLength: 5000,
+    analysisWeight: 1.0,
+    analysisAreas: ['writingStyle', 'policyConsistency', 'keyArguments']
   }
 };
 

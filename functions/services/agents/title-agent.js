@@ -58,7 +58,7 @@ class TitleAgent extends BaseAgent {
         }
 
         // WriterAgent와 동일한 모델 사용
-        const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+        const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
         const result = await model.generateContent({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],

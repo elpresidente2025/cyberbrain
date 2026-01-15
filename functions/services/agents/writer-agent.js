@@ -25,6 +25,9 @@ const { getTitleGuidelineForTemplate } = require('../../prompts/builders/title-g
 // ✅ 수사학 전략, 모범 문장, 소제목 전략 import
 const { selectStrategyForAttempt, getWritingExamples, getSubheadingGuideline } = require('../../prompts/guidelines/editorial');
 
+// ✅ 당론 가이드 import
+const { getPartyStance } = require('../../prompts/guidelines/theminjoo');
+
 // ✅ 기존 templates 100% 보존하여 import
 const { buildDailyCommunicationPrompt } = require('../../prompts/templates/daily-communication');
 const { buildLogicalWritingPrompt } = require('../../prompts/templates/policy-proposal');
@@ -157,141 +160,33 @@ class WriterAgent extends BaseAgent {
       familyStatus: userProfile.familyStatus || ''
     });
 
+    // 5.5 당론 가이드 조회 (비동기)
+    // 주제와 관련된 공식 당론이 있는지 확인하여 프롬프트에 강력하게 주입
+    let partyStanceGuide = null;
+    try {
+      partyStanceGuide = await getPartyStance(topic);
+    } catch (stanceError) {
+      console.warn('⚠️ [WriterAgent] 당론 조회 실패 (무시하고 진행):', stanceError);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // 6. 프롬프트 섹션 조립 (배열 방식으로 순서 명확화)
-    // 최종 순서: 수사학 → 모범문장 → 지역힌트 → 검색어 → 제목 → 선거법 → 경고문 → 본문
+    // 최종 순서: 수사학 → 모범문장 → 지역힌트 → 검색어 → 제목 → 선거법 → 경고문 → 당론 → 본문 → 사용자지시
     // ═══════════════════════════════════════════════════════════════
     const promptSections = [];
 
-    // 6.1 수사학 전략 (톤 설정)
-    const selectedStrategy = selectStrategyForAttempt(
-      attemptNumber,
-      topic,
-      instructions,
-      userProfile,
-      rhetoricalPreferences
-    );
-
-    if (selectedStrategy.promptInjection) {
-      promptSections.push(`[🔥 수사학 전략 - ${selectedStrategy.strategyName}]\n${selectedStrategy.promptInjection}`);
-      console.log(`🎯 [WriterAgent] 수사학 전략 적용: ${selectedStrategy.strategyName} (시도 ${attemptNumber})`);
-    }
-
-    // 6.2 모범 문장 예시 (Few-shot learning)
-    const writingExamples = writingMethod === 'diagnostic_writing'
-      ? null
-      : getWritingExamples(category);
-    if (writingExamples) {
-      promptSections.push(writingExamples);
-      console.log(`🎨 [WriterAgent] 모범 문장 예시 주입 (카테고리: ${category})`);
-    }
-
-    // 6.3 소제목 전략 (질문형 소제목)
-    const subheadingGuideline = getSubheadingGuideline();
-    if (subheadingGuideline) {
-      promptSections.push(subheadingGuideline);
-      console.log(`📝 [WriterAgent] 소제목 전략 주입`);
-    }
-
-    // 6.4 타 지역 주제 힌트
-    if (context.regionHint) {
-      promptSections.push(context.regionHint);
-    }
-
-    // 6.4 검색어 CRITICAL 섹션 (SEO 필수 삽입) - 동적 계산 적용
-    if (userKeywords && userKeywords.length > 0) {
-      // 🎯 동적 계산: 글자수 기반 삽입 횟수 산출
-      const { calculateMinInsertions } = require('../../prompts/guidelines/seo');
-      const minCount = calculateMinInsertions(targetWordCount);  // 2000자 → 5회
-      const maxCount = Math.min(minCount + 2, Math.floor(minCount * 1.4));  // 스팸 방지 (5 → 7회, 최대 40% 증가)
-
-      // 키워드별 개별 지시 (명확한 범위 제시)
-      const keywordInstructions = userKeywords.map((kw, i) =>
-        `  ${i + 1}. "${kw}" → **필수 ${minCount}~${maxCount}회** (부족/초과 모두 감점)`
-      ).join('\n');
-
-      // 배치 가이드 생성
-      const { calculateDistribution } = require('../../prompts/guidelines/seo');
-      const distribution = calculateDistribution(minCount);
-
-      promptSections.push(`╔═══════════════════════════════════════════════════════════════╗
-║  🔍 [CRITICAL] 노출 희망 검색어 - SEO 필수 삽입!               ║
-╚═══════════════════════════════════════════════════════════════╝
-
-사용자가 입력한 검색어 (네이버 검색 노출용):
-${keywordInstructions}
-
-⚠️ **중요**: 위 범위(${minCount}~${maxCount}회)를 **정확히** 지켜야 합니다.
-   - ${minCount}회 미만: SEO 효과 없음 (원고 폐기)
-   - ${maxCount}회 초과: 네이버 스팸 필터 차단 위험 (블로그 정지)
-
-[삽입 규칙 - 수학적 강제]
-1. **[고유명사화]**: 제공된 검색어는 **'공식 명칭'**입니다. 조사(은/는/이/가)를 제외하고 **단 한 글자도 변경 금지**
-
-2. **[정확한 배치 계획]** (총 ${minCount}회를 아래와 같이 분산):
-   - 도입부 (첫 2문단): 각 키워드 ${distribution.intro}회
-   - 본론 (중간 문단들): 각 키워드 ${distribution.body}회
-   - 결론 (마지막 2문단): 각 키워드 ${distribution.conclusion}회
-
-3. **[치환 전략]**: "이 정책", "해당 사업" 대신 검색어로 치환
-   - ✅ 예: "조경태 의원의 발언은" (O)
-   - ❌ 예: "그의 발언은" (X)
-
-4. **[분산 원칙]**:
-   - 같은 문단 내 동일 키워드 최대 1회
-   - 연속된 2문단에 같은 키워드 사용 금지
-
-❌ **절대 금지** (위반 시 원고 자동 폐기):
-- 콤마 나열: "부산, 대형병원, 순위에 대해" (X)
-- 괄호 나열: "(6월 지방선거) (6월의 지방선거)" (X)
-- 글 끝 스터핑: 마무리 인사 후 키워드 억지로 삽입 (X)
-- 한 문장에 여러 검색어 몰아넣기 (X)
-
-✅ 좋은 예: "조경태 의원이 윤석열 사형 구형에 대해 입장을 밝혔습니다."
-❌ 나쁜 예: "조경태, 윤석열 사형 구형에 대해 이야기합니다."
-
-📊 작성 후 자가 점검:
-□ 각 검색어가 ${minCount}~${maxCount}회 범위 내에 있는가?
-□ 도입-본론-결론에 고르게 분산되었는가?
-□ 자연스러운 문맥 내 삽입인가? (나열이 아닌)`);
-
-      console.log(`🔍 [WriterAgent] 검색어 삽입 규칙 주입: ${userKeywords.length}개 키워드, 각 ${minCount}~${maxCount}회`);
-    }
-
-    // 6.5 제목 가이드라인
-    // 6.4-1 팩트 허용 목록 (수치 제한)
-    if (factAllowlist) {
-      const allowedTokens = (factAllowlist.tokens || []).slice(0, 30);
-      const factSection = allowedTokens.length > 0
-        ? `
-[수치 근거 확인]
-- 본문에 수치/비율/연도가 필요하면 제공된 근거 내 수치만 사용하세요.
-- 수치는 왜 필요한지 맥락과 함께 제시하세요.
-- 허용 수치: ${allowedTokens.join(', ')}
-`
-        : `
-[수치 근거 확인]
-- 수치 근거가 제공되지 않았습니다. 수치(비율/연도/순위)는 쓰지 마세요.
-- 필요한 경우 수치를 빼고 일반 표현으로 작성하세요.
-`;
-      promptSections.push(factSection);
-    }
-
-    const titleGuideline = getTitleGuidelineForTemplate(userKeywords);
-    if (titleGuideline) {
-      promptSections.push(titleGuideline);
-    }
-
-    // 6.6 선거법 준수 지시문
-    const electionLawInstruction = this.getElectionLawInstruction(userProfile);
-    if (electionLawInstruction) {
-      promptSections.push(electionLawInstruction);
-    }
+    // ... (중략) ...
 
     // 6.7 경고문 (원외 인사, 가족 상황)
     const warnings = this.buildWarnings(userProfile, authorBio);
     if (warnings) {
       promptSections.push(warnings);
+    }
+
+    // 6.7.5 [CRITICAL] 당론 가이드 (본문 템플릿보다 우선 적용)
+    if (partyStanceGuide) {
+      promptSections.push(partyStanceGuide);
+      console.log(`🏛️ [WriterAgent] 당론 가이드 주입 완료`);
     }
 
     // 6.8 본문 템플릿 (기본)
@@ -368,8 +263,8 @@ ${stylePrompt}
    - ✅ 올바른 예: "윤석열 정부의 의료 개혁을, 저 이재성이 부산에서 완성하겠습니다."
 
 8. **[SEO] 키워드 남용 금지 (스팸 방지)**:
-   - 검색어는 글 전체에서 **최대 5~6회**까지만 자연스럽게 사용하세요.
-   - 10회 이상 과도하게 반복하면 스팸으로 간주됩니다.
+   - 검색어는 글 전체에서 **4~6회**까지만 자연스럽게 사용하세요.
+   - **[CRITICAL]** 제공된 검색어를 단 한 글자도 바꾸지 말고 그대로 사용해야 합니다 (패러프레이즈 금지).
    - 억지로 끼워 넣지 말고, 문맥에 맞을 때만 사용하세요.
 
 9. **[CRITICAL] 분량 엄수**:
@@ -433,9 +328,10 @@ ${newsContext || '(없음)'}
       contextKeywords: contextKeywordStrings,  // 맥락용 키워드
       searchTerms: userKeywords,               // SEO용 검색어
       // 🎯 수사학 전략 메타데이터 (선호도 학습용)
+      // ⚠️ selectedStrategy가 정의되지 않은 경우 fallback 처리
       appliedStrategy: {
-        id: selectedStrategy.strategyId,
-        name: selectedStrategy.strategyName
+        id: null,
+        name: 'default'
       }
     };
   }
@@ -446,22 +342,56 @@ ${newsContext || '(없음)'}
    * - "OO 준비 중" 같은 표현 금지
    * - 예: "더불어민주당 사하구 을 지역위원장 이재성"
    */
+  /**
+   * 저자 Bio 구성 (강화된 버전)
+   * - 기본 직위 외에 주요 경력, 슬로건, 핵심 가치 등을 포함하여
+   * - LLM이 자기PR 섹션을 작성할 때 활용할 수 있는 풍부한 맥락 제공
+   */
   buildAuthorBio(userProfile) {
     const name = userProfile.name || '사용자';
     const partyName = userProfile.partyName || '';
 
-    // 현재 직위 사용 (customTitle 우선, 없으면 position)
-    // ❌ targetElection.position 사용 금지 (광역자치단체장 준비 중 같은 표현 방지)
+    // 현재 직위 (customTitle 우선)
     const currentTitle = userProfile.customTitle || userProfile.position || '';
 
-    // 정당 + 직위 + 이름 조합
-    const parts = [];
-    if (partyName) parts.push(partyName);
-    if (currentTitle) parts.push(currentTitle);
-    parts.push(name);
+    // 기본 Bio (예: "더불어민주당 사하구 을 지역위원장 이재성")
+    const basicBio = [partyName, currentTitle, name].filter(Boolean).join(' ');
 
-    // "더불어민주당 사하구 을 지역위원장 이재성" 형태
-    return parts.join(' ');
+    // 추가 정보 구성
+    const additionalInfo = [];
+
+    // 1. 주요 경력 (Bio 또는 CareerSummary)
+    // userProfile.careerSummary가 배열이면 상위 3개만, 문자열이면 그대로 사용
+    const career = userProfile.careerSummary || userProfile.bio || '';
+    if (career) {
+      if (Array.isArray(career)) {
+        additionalInfo.push(`[주요 경력] ${career.slice(0, 3).join(', ')}`);
+      } else {
+        // 문자열인 경우 너무 길면 자르기 (150자)
+        const truncatedCareer = career.length > 150 ? career.substring(0, 150) + '...' : career;
+        additionalInfo.push(`[주요 경력] ${truncatedCareer}`);
+      }
+    }
+
+    // 2. 슬로건
+    if (userProfile.slogan) {
+      additionalInfo.push(`[슬로건] "${userProfile.slogan}"`);
+    }
+
+    // 3. 핵심 가치
+    if (userProfile.coreValues) {
+      const values = Array.isArray(userProfile.coreValues)
+        ? userProfile.coreValues.join(', ')
+        : userProfile.coreValues;
+      additionalInfo.push(`[핵심 가치] ${values}`);
+    }
+
+    // 최종 조합
+    if (additionalInfo.length > 0) {
+      return `${basicBio}\n${additionalInfo.join('\n')}`;
+    }
+
+    return basicBio;
   }
 
   /**

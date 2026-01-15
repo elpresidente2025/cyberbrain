@@ -53,6 +53,7 @@ import NoticeBanner from '../components/dashboard/NoticeBanner';
 import ElectionDDay from '../components/dashboard/ElectionDDay';
 import PublishingProgress from '../components/dashboard/PublishingProgress';
 import PostViewerModal from '../components/PostViewerModal';
+import SNSConversionModal from '../components/SNSConversionModal';
 import OnboardingWelcomeModal from '../components/onboarding/OnboardingWelcomeModal';
 import MobileToPCBanner from '../components/MobileToPCBanner';
 import { useAuth } from '../hooks/useAuth';
@@ -83,6 +84,9 @@ const Dashboard = () => {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerPost, setViewerPost] = useState(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  // 🆕 SNS/Publish 모달 상태
+  const [snsOpen, setSnsOpen] = useState(false);
+  const [snsPost, setSnsPost] = useState(null);
 
   // Bio 체크 실행 여부 추적
   const hasCheckedBio = useRef(false);
@@ -91,7 +95,7 @@ const Dashboard = () => {
   const userTitle = getUserFullTitle(user);
   const userIcon = getUserStatusIcon(user);
   const regionInfo = getUserRegionInfo(user);
-  
+
   // 관리자/테스터 확인
   const isAdmin = user?.role === 'admin' || user?.isAdmin === true;
   const isTester = user?.isTester === true;
@@ -99,7 +103,7 @@ const Dashboard = () => {
   // 데이터 로딩 함수 (재사용 가능하도록 분리)
   const fetchDashboardData = async () => {
     if (!user?.uid) return;
-    
+
     setIsLoading(true);
     setError(null);
 
@@ -110,19 +114,19 @@ const Dashboard = () => {
         callFunctionWithNaverAuth('getDashboardData'),
         callFunctionWithNaverAuth('getUserPosts')
       ]);
-      
+
       const postsArray = postsData?.posts || [];
-      
+
       // 사용량 정보 설정
       setUsage(dashboardData.usage || { postsGenerated: 0, monthlyLimit: 50 });
-      
+
       // 히스토리 페이지와 동일한 포스트 목록 사용 (최신순으로 정렬)
       const sortedPosts = postsArray.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       setRecentPosts(sortedPosts);
-      
+
     } catch (err) {
       console.error('❌ Dashboard: 데이터 요청 실패:', err);
-      
+
       // 에러 처리
       let errorMessage = '데이터를 불러오는 데 실패했습니다.';
       if (err.code === 'functions/unauthenticated') {
@@ -132,7 +136,7 @@ const Dashboard = () => {
       } else if (err.message) {
         errorMessage = err.message;
       }
-      
+
       setError(errorMessage);
     } finally {
       setIsLoading(false);
@@ -361,9 +365,23 @@ const Dashboard = () => {
     }
   };
 
+  // 🆕 SNS 변환 핸들러
+  const handleSNSConvert = (post, e) => {
+    if (e) e.stopPropagation();
+    setSnsPost(post);
+    setSnsOpen(true);
+  };
+
+  // 🆕 발행 핸들러 (내 원고 목록으로 이동)
+  const handlePublish = (post, e) => {
+    if (e) e.stopPropagation();
+    // 발행 기능은 내 원고 목록 페이지에서 사용
+    navigate(`/posts`);
+    showNotification('내 원고 목록에서 발행 기능을 이용해주세요.', 'info');
+  };
 
   // 사용량 퍼센트 계산
-  const usagePercentage = isAdmin ? 100 : 
+  const usagePercentage = isAdmin ? 100 :
     usage.monthlyLimit > 0 ? (usage.postsGenerated / usage.monthlyLimit) * 100 : 0;
 
   // 로딩 중
@@ -394,7 +412,7 @@ const Dashboard = () => {
   // 자기소개 완성 여부 확인
   const hasBio = user?.bio && user.bio.trim().length > 0;
   const showBioAlert = !hasBio && !isAdmin;
-  
+
   // 버튼 비활성화 조건 계산 (관리자/테스터는 무제한)
   const canGeneratePost = isAdmin || isTester || (hasBio && usage.postsGenerated < usage.monthlyLimit);
 
@@ -417,229 +435,229 @@ const Dashboard = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
         >
-        <Box sx={{ mb: `${spacing.lg}px` }}>
+          <Box sx={{ mb: `${spacing.lg}px` }}>
 
-          {/* 플랜 정보 및 사용량 */}
-          <Paper
-            elevation={0}
-            sx={{
-              p: `${spacing.lg}px`,
-              bgcolor: theme.palette.mode === 'dark'
-                ? 'rgba(255, 255, 255, 0.08)'
-                : 'rgba(255, 255, 255, 0.98)',
-              backdropFilter: 'blur(30px) saturate(150%)',
-              WebkitBackdropFilter: 'blur(30px) saturate(150%)',
-              border: `2px solid ${theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(21, 36, 132, 0.1)'}`,
-              borderRadius: '2px',
-              boxShadow: theme.palette.mode === 'dark'
-                ? '0 12px 40px rgba(0, 0, 0, 0.4), inset 0 2px 0 rgba(255, 255, 255, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05) inset'
-                : '0 4px 16px rgba(0, 0, 0, 0.1), inset 0 2px 0 rgba(255, 255, 255, 1), 0 0 0 1px rgba(21, 36, 132, 0.05) inset',
-              transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: `${spacing.md}px`,
-              position: 'relative',
-              overflow: 'hidden',
-              '&::before': {
-                content: '""',
-                position: 'absolute',
-                top: 0,
-                left: '-100%',
-                width: '100%',
-                height: '100%',
-                background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent)',
-                transition: 'left 0.8s ease',
-              },
-              '&:hover': {
-                transform: 'translateY(-4px)',
+            {/* 플랜 정보 및 사용량 */}
+            <Paper
+              elevation={0}
+              sx={{
+                p: `${spacing.lg}px`,
+                bgcolor: theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.08)'
+                  : 'rgba(255, 255, 255, 0.98)',
+                backdropFilter: 'blur(30px) saturate(150%)',
+                WebkitBackdropFilter: 'blur(30px) saturate(150%)',
+                border: `2px solid ${theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(21, 36, 132, 0.1)'}`,
+                borderRadius: '2px',
                 boxShadow: theme.palette.mode === 'dark'
-                  ? '0 16px 60px rgba(0, 0, 0, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.2), 0 0 0 2px rgba(255, 255, 255, 0.1) inset'
-                  : '0 8px 28px rgba(0, 0, 0, 0.15), inset 0 2px 0 rgba(255, 255, 255, 1), 0 0 0 2px rgba(21, 36, 132, 0.1) inset',
-                borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(21, 36, 132, 0.2)',
+                  ? '0 12px 40px rgba(0, 0, 0, 0.4), inset 0 2px 0 rgba(255, 255, 255, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05) inset'
+                  : '0 4px 16px rgba(0, 0, 0, 0.1), inset 0 2px 0 rgba(255, 255, 255, 1), 0 0 0 1px rgba(21, 36, 132, 0.05) inset',
+                transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: `${spacing.md}px`,
+                position: 'relative',
+                overflow: 'hidden',
                 '&::before': {
-                  left: '100%',
-                }
-              }
-            }}
-          >
-            {/* 2열 레이아웃 */}
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'stretch', width: '100%', gap: `${spacing.lg}px` }}>
-              {/* 왼쪽: 사용자 정보 */}
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px`, flex: 1 }}>
-                {/* 첫 줄: 이름 + 직책 */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px` }}>
-                  <Typography variant="h5" sx={{
-                    fontWeight: 600,
-                    color: theme.palette.text.primary
-                  }}>
-                    {user.name || '사용자'}
-                  </Typography>
-                  {user.position && (
-                    <Chip label={user.position} size="small" sx={{ bgcolor: colors.brand.primary, color: '#ffffff', fontWeight: 500 }} />
-                  )}
-                </Box>
-
-                {/* 둘째 줄: 선거구 */}
-                {user.electoralDistrict && (
-                  <Typography variant="body1" sx={{ color: theme.palette.text.secondary }}>
-                    {user.electoralDistrict}
-                  </Typography>
-                )}
-
-                {/* 셋째 줄: 프로필 수정 버튼 + PC 유도 버튼 */}
-                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    startIcon={<Settings />}
-                    onClick={handleChangePlan}
-                    sx={{
-                      bgcolor: showBioAlert ? colors.brand.gold : 'transparent',
-                      color: showBioAlert ? '#ffffff' : (theme.palette.mode === 'dark' ? '#ffffff' : '#000000'),
-                      borderColor: showBioAlert ? colors.brand.gold : (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : 'rgba(0, 0, 0, 0.23)'),
-                      fontSize: '0.75rem',
-                      py: 0.5,
-                      px: 1.5,
-                      '&:hover': {
-                        bgcolor: showBioAlert ? '#e6a91c' : 'rgba(0, 0, 0, 0.04)',
-                        borderColor: showBioAlert ? '#e6a91c' : 'rgba(0, 0, 0, 0.23)',
-                      },
-                      ...(showBioAlert && {
-                        animation: 'profileEditBlink 2s ease-in-out infinite',
-                        '@keyframes profileEditBlink': {
-                          '0%, 50%, 100%': { opacity: 1 },
-                          '25%, 75%': { opacity: 0.6 }
-                        }
-                      })
-                    }}
-                  >
-                    프로필 수정{showBioAlert && ' ⚠️'}
-                  </Button>
-                  <MobileToPCBanner />
-                </Box>
-              </Box>
-
-              {/* 오른쪽: 인증 상태 */}
-              <Box
-                sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'flex-end',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  transition: 'transform 0.2s ease',
-                  '&:hover': {
-                    transform: 'scale(1.02)'
-                  }
-                }}
-                onClick={handleViewBilling}
-              >
-                <Box
-                  component="img"
-                  src={authStatus.image}
-                  alt={authStatus.title}
-                  sx={{
-                    width: '60px',
-                    height: 'auto',
-                    filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.15))',
-                    mb: `${spacing.xs}px`
-                  }}
-                />
-                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', fontWeight: 500, textAlign: 'right' }}>
-                  {authStatus.message}
-                </Typography>
-              </Box>
-            </Box>
-          </Paper>
-
-          {/* 새 원고 생성 버튼 - 크고 눈에 띄게 */}
-          <Button
-            variant="contained"
-            size="large"
-            startIcon={<Create sx={{ fontSize: '2rem !important' }} />}
-            onClick={handleGeneratePost}
-            disabled={!canGeneratePost}
-            fullWidth
-            sx={{
-              mt: `${spacing.lg}px`,
-              background: canGeneratePost
-                ? `linear-gradient(135deg, ${colors.brand.primary} 0%, #1e3a8a 100%)`
-                : '#757575',
-              color: '#ffffff',
-              fontSize: '1.5rem',
-              py: 4,
-              px: 4,
-              minHeight: '100px',
-              fontWeight: 800,
-              borderRadius: '2px',
-              boxShadow: canGeneratePost
-                ? '0 16px 48px rgba(21, 36, 132, 0.5), 0 8px 16px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1) inset'
-                : '0 4px 12px rgba(0, 0, 0, 0.3)',
-              transform: 'translateY(0) scale(1)',
-              transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              position: 'relative',
-              overflow: 'hidden',
-              '&::before': canGeneratePost ? {
-                content: '""',
-                position: 'absolute',
-                top: 0,
-                left: '-100%',
-                width: '100%',
-                height: '100%',
-                background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
-                transition: 'left 0.6s ease',
-              } : {},
-              '&::after': canGeneratePost ? {
-                content: '""',
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                width: '0',
-                height: '0',
-                borderRadius: '50%',
-                background: 'rgba(255, 255, 255, 0.3)',
-                transform: 'translate(-50%, -50%)',
-                transition: 'width 0.6s, height 0.6s',
-              } : {},
-              '&:hover': canGeneratePost ? {
-                background: `linear-gradient(135deg, #1e3a8a 0%, ${colors.brand.primary} 100%)`,
-                boxShadow: '0 20px 60px rgba(21, 36, 132, 0.6), 0 10px 20px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(255, 255, 255, 0.15) inset',
-                transform: 'translateY(-4px) scale(1.02)',
-                '&::before': {
-                  left: '100%',
+                  content: '""',
+                  position: 'absolute',
+                  top: 0,
+                  left: '-100%',
+                  width: '100%',
+                  height: '100%',
+                  background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent)',
+                  transition: 'left 0.8s ease',
                 },
-                '&::after': {
-                  width: '300px',
-                  height: '300px',
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  boxShadow: theme.palette.mode === 'dark'
+                    ? '0 16px 60px rgba(0, 0, 0, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.2), 0 0 0 2px rgba(255, 255, 255, 0.1) inset'
+                    : '0 8px 28px rgba(0, 0, 0, 0.15), inset 0 2px 0 rgba(255, 255, 255, 1), 0 0 0 2px rgba(21, 36, 132, 0.1) inset',
+                  borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(21, 36, 132, 0.2)',
+                  '&::before': {
+                    left: '100%',
+                  }
                 }
-              } : {},
-              '&:active': canGeneratePost ? {
-                transform: 'translateY(-2px) scale(0.98)',
-              } : {},
-              '&.Mui-disabled': {
-                background: '#757575 !important',
-                color: 'rgba(255, 255, 255, 0.6) !important',
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3) !important',
-              }
-            }}
-          >
-            새 원고 생성
-          </Button>
+              }}
+            >
+              {/* 2열 레이아웃 */}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'stretch', width: '100%', gap: `${spacing.lg}px` }}>
+                {/* 왼쪽: 사용자 정보 */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: `${spacing.sm}px`, flex: 1 }}>
+                  {/* 첫 줄: 이름 + 직책 */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px` }}>
+                    <Typography variant="h5" sx={{
+                      fontWeight: 600,
+                      color: theme.palette.text.primary
+                    }}>
+                      {user.name || '사용자'}
+                    </Typography>
+                    {user.position && (
+                      <Chip label={user.position} size="small" sx={{ bgcolor: colors.brand.primary, color: '#ffffff', fontWeight: 500 }} />
+                    )}
+                  </Box>
 
-          {/* 프로필 미완료 경고 메시지 */}
-          {showBioAlert && (
-            <Alert severity="warning" sx={{ mt: `${spacing.md}px` }}>
-              <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, color: theme.palette.text.primary }}>
-                프로필 설정이 완료되지 않았습니다
-              </Typography>
-              <Typography variant="body2" sx={{ color: theme.palette.text.primary }}>
-                AI 원고 생성을 위해 자기소개 작성이 필요합니다.
-              </Typography>
-            </Alert>
-          )}
-        </Box>
+                  {/* 둘째 줄: 선거구 */}
+                  {user.electoralDistrict && (
+                    <Typography variant="body1" sx={{ color: theme.palette.text.secondary }}>
+                      {user.electoralDistrict}
+                    </Typography>
+                  )}
+
+                  {/* 셋째 줄: 프로필 수정 버튼 + PC 유도 버튼 */}
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<Settings />}
+                      onClick={handleChangePlan}
+                      sx={{
+                        bgcolor: showBioAlert ? colors.brand.gold : 'transparent',
+                        color: showBioAlert ? '#ffffff' : (theme.palette.mode === 'dark' ? '#ffffff' : '#000000'),
+                        borderColor: showBioAlert ? colors.brand.gold : (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : 'rgba(0, 0, 0, 0.23)'),
+                        fontSize: '0.75rem',
+                        py: 0.5,
+                        px: 1.5,
+                        '&:hover': {
+                          bgcolor: showBioAlert ? '#e6a91c' : 'rgba(0, 0, 0, 0.04)',
+                          borderColor: showBioAlert ? '#e6a91c' : 'rgba(0, 0, 0, 0.23)',
+                        },
+                        ...(showBioAlert && {
+                          animation: 'profileEditBlink 2s ease-in-out infinite',
+                          '@keyframes profileEditBlink': {
+                            '0%, 50%, 100%': { opacity: 1 },
+                            '25%, 75%': { opacity: 0.6 }
+                          }
+                        })
+                      }}
+                    >
+                      프로필 수정{showBioAlert && ' ⚠️'}
+                    </Button>
+                    <MobileToPCBanner />
+                  </Box>
+                </Box>
+
+                {/* 오른쪽: 인증 상태 */}
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-end',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    transition: 'transform 0.2s ease',
+                    '&:hover': {
+                      transform: 'scale(1.02)'
+                    }
+                  }}
+                  onClick={handleViewBilling}
+                >
+                  <Box
+                    component="img"
+                    src={authStatus.image}
+                    alt={authStatus.title}
+                    sx={{
+                      width: '60px',
+                      height: 'auto',
+                      filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.15))',
+                      mb: `${spacing.xs}px`
+                    }}
+                  />
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', fontWeight: 500, textAlign: 'right' }}>
+                    {authStatus.message}
+                  </Typography>
+                </Box>
+              </Box>
+            </Paper>
+
+            {/* 새 원고 생성 버튼 - 크고 눈에 띄게 */}
+            <Button
+              variant="contained"
+              size="large"
+              startIcon={<Create sx={{ fontSize: '2rem !important' }} />}
+              onClick={handleGeneratePost}
+              disabled={!canGeneratePost}
+              fullWidth
+              sx={{
+                mt: `${spacing.lg}px`,
+                background: canGeneratePost
+                  ? `linear-gradient(135deg, ${colors.brand.primary} 0%, #1e3a8a 100%)`
+                  : '#757575',
+                color: '#ffffff',
+                fontSize: '1.5rem',
+                py: 4,
+                px: 4,
+                minHeight: '100px',
+                fontWeight: 800,
+                borderRadius: '2px',
+                boxShadow: canGeneratePost
+                  ? '0 16px 48px rgba(21, 36, 132, 0.5), 0 8px 16px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1) inset'
+                  : '0 4px 12px rgba(0, 0, 0, 0.3)',
+                transform: 'translateY(0) scale(1)',
+                transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                position: 'relative',
+                overflow: 'hidden',
+                '&::before': canGeneratePost ? {
+                  content: '""',
+                  position: 'absolute',
+                  top: 0,
+                  left: '-100%',
+                  width: '100%',
+                  height: '100%',
+                  background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
+                  transition: 'left 0.6s ease',
+                } : {},
+                '&::after': canGeneratePost ? {
+                  content: '""',
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  width: '0',
+                  height: '0',
+                  borderRadius: '50%',
+                  background: 'rgba(255, 255, 255, 0.3)',
+                  transform: 'translate(-50%, -50%)',
+                  transition: 'width 0.6s, height 0.6s',
+                } : {},
+                '&:hover': canGeneratePost ? {
+                  background: `linear-gradient(135deg, #1e3a8a 0%, ${colors.brand.primary} 100%)`,
+                  boxShadow: '0 20px 60px rgba(21, 36, 132, 0.6), 0 10px 20px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(255, 255, 255, 0.15) inset',
+                  transform: 'translateY(-4px) scale(1.02)',
+                  '&::before': {
+                    left: '100%',
+                  },
+                  '&::after': {
+                    width: '300px',
+                    height: '300px',
+                  }
+                } : {},
+                '&:active': canGeneratePost ? {
+                  transform: 'translateY(-2px) scale(0.98)',
+                } : {},
+                '&.Mui-disabled': {
+                  background: '#757575 !important',
+                  color: 'rgba(255, 255, 255, 0.6) !important',
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3) !important',
+                }
+              }}
+            >
+              새 원고 생성
+            </Button>
+
+            {/* 프로필 미완료 경고 메시지 */}
+            {showBioAlert && (
+              <Alert severity="warning" sx={{ mt: `${spacing.md}px` }}>
+                <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, color: theme.palette.text.primary }}>
+                  프로필 설정이 완료되지 않았습니다
+                </Typography>
+                <Typography variant="body2" sx={{ color: theme.palette.text.primary }}>
+                  AI 원고 생성을 위해 자기소개 작성이 필요합니다.
+                </Typography>
+              </Alert>
+            )}
+          </Box>
         </motion.div>
 
         {/* 콘텐츠 섹션 - 기존 구조 유지하되 공지사항은 데이터가 있을 때만 표시 */}
@@ -739,14 +757,14 @@ const Dashboard = () => {
                   최근 생성한 글
                 </Typography>
               </Box>
-              
+
               {recentPosts.length > 0 ? (
                 <>
                   <List>
                     {recentPosts.slice(0, 5).map((post, index) => (
                       <React.Fragment key={post.id}>
-                        <ListItem 
-                          button 
+                        <ListItem
+                          button
                           onClick={() => handlePostClick(post.id)}
                         >
                           <ListItemText
@@ -787,8 +805,8 @@ const Dashboard = () => {
           <Grid container spacing={3}>
             {/* 좌측: 최근 생성한 글 */}
             <Grid item xs={12} md={6} xl={4}>
-              <Paper elevation={0} sx={{ 
-                height: 'fit-content', 
+              <Paper elevation={0} sx={{
+                height: 'fit-content',
                 bgcolor: 'transparent',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 borderRadius: 2,
@@ -799,13 +817,13 @@ const Dashboard = () => {
                     최근 생성한 글
                   </Typography>
                 </Box>
-                
+
                 {recentPosts.length > 0 ? (
                   <List>
                     {recentPosts.slice(0, 5).map((post, index) => (
                       <React.Fragment key={post.id}>
-                        <ListItem 
-                          button 
+                        <ListItem
+                          button
                           onClick={() => handlePostClick(post.id)}
                         >
                           <ListItemText
@@ -839,15 +857,15 @@ const Dashboard = () => {
             </Grid>
 
             {/* 가운데: 공지사항 (2K 이상에서만 표시) */}
-            <Grid 
-              item 
+            <Grid
+              item
               xl={4}
-              sx={{ 
+              sx={{
                 display: { xs: 'none', xl: 'block' } // 2K 미만에서는 숨김
               }}
             >
-              <Paper elevation={0} sx={{ 
-                height: 'fit-content', 
+              <Paper elevation={0} sx={{
+                height: 'fit-content',
                 bgcolor: 'transparent',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 borderRadius: 2,
@@ -859,7 +877,7 @@ const Dashboard = () => {
                     공지사항
                   </Typography>
                 </Box>
-                
+
                 {notices.length === 0 ? (
                   <EmptyState
                     icon={Notifications}
@@ -884,16 +902,16 @@ const Dashboard = () => {
                                     )}
                                   </Box>
                                   <Typography variant="caption" color="text.secondary">
-                                    {notice.createdAt ? new Date(notice.createdAt).toLocaleDateString('ko-KR', { 
-                                      month: 'short', 
-                                      day: 'numeric' 
+                                    {notice.createdAt ? new Date(notice.createdAt).toLocaleDateString('ko-KR', {
+                                      month: 'short',
+                                      day: 'numeric'
                                     }) : ''}
                                   </Typography>
                                 </Box>
                               }
                               secondary={
-                                <Typography 
-                                  variant="body2" 
+                                <Typography
+                                  variant="body2"
                                   color="text.secondary"
                                   sx={{
                                     mt: 0.5,
@@ -937,9 +955,9 @@ const Dashboard = () => {
 
                 {/* 2K 미만에서만 표시되는 공지사항 */}
                 <Box sx={{ display: { xs: 'block', xl: 'none' } }}>
-                  <Paper elevation={0} sx={{ 
+                  <Paper elevation={0} sx={{
                     bgcolor: 'rgba(255, 255, 255, 0.03)',
-                          border: '1px solid rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.05)',
                     borderRadius: 2
                   }}>
                     <Box sx={{ p: `${spacing.md}px`, borderBottom: '1px solid', borderColor: 'divider' }}>
@@ -948,7 +966,7 @@ const Dashboard = () => {
                         공지사항
                       </Typography>
                     </Box>
-                    
+
                     {notices.length === 0 ? (
                       <EmptyState
                         icon={Notifications}
@@ -973,16 +991,16 @@ const Dashboard = () => {
                                         )}
                                       </Box>
                                       <Typography variant="caption" color="text.secondary">
-                                        {notice.createdAt ? new Date(notice.createdAt).toLocaleDateString('ko-KR', { 
-                                          month: 'short', 
-                                          day: 'numeric' 
+                                        {notice.createdAt ? new Date(notice.createdAt).toLocaleDateString('ko-KR', {
+                                          month: 'short',
+                                          day: 'numeric'
                                         }) : ''}
                                       </Typography>
                                     </Box>
                                   }
                                   secondary={
-                                    <Typography 
-                                      variant="body2" 
+                                    <Typography
+                                      variant="body2"
                                       color="text.secondary"
                                       sx={{
                                         mt: 0.5,
@@ -1022,12 +1040,11 @@ const Dashboard = () => {
         )}
       </Box>
 
-      {/* 원고 보기 모달 */}
+      {/* 원고 보기 모달 (자체 포함형: 복사/SNS/발행 기능 내장) */}
       <PostViewerModal
         open={viewerOpen}
         onClose={closeViewer}
         post={viewerPost}
-        onDelete={handleDelete}
       />
 
       {/* 알림 스낵바 */}

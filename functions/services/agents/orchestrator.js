@@ -22,7 +22,7 @@ const { refineWithLLM } = require('../posts/editor-agent');
 // 품질 기준 상수
 const QUALITY_THRESHOLDS = {
   SEO_REQUIRED: true,          // SEO Pass/Fail 기준 적용
-  MAX_REFINEMENT_ATTEMPTS: 5,  // 최대 재검증 시도 횟수
+  MAX_REFINEMENT_ATTEMPTS: 2,  // 🔴 [PERF] 5→2로 축소 (-90초 절감)
   ALLOWED_ISSUE_SEVERITIES: ['low', 'info']  // 허용되는 이슈 심각도 (critical, high는 불허)
 };
 
@@ -71,7 +71,7 @@ class Orchestrator {
     this.options = {
       pipeline: 'standard',
       continueOnError: true,  // 선택적 Agent 실패 시 계속 진행
-      timeout: 180000,        // 전체 타임아웃 (180초, ChainWriterAgent 고려 시간 연장)
+      timeout: 120000,        // 🔴 [PERF] 180초→120초로 단축
       ...options
     };
 
@@ -115,6 +115,17 @@ class Orchestrator {
       }
 
       try {
+        // 🔴 [PERF] KeywordAgent 조건부 스킵: 사용자가 userKeywords 입력 시 건너뛰기 (-10초)
+        if (name === 'KeywordAgent' && context.userKeywords && context.userKeywords.length > 0) {
+          console.log('⏭️ [Orchestrator] KeywordAgent 스킵 (사용자 키워드 있음):', context.userKeywords);
+          this.results[name] = {
+            success: true,
+            data: { keywords: context.userKeywords.map(kw => ({ keyword: kw, score: 1 })), primary: context.userKeywords[0] },
+            metadata: { duration: 0, skipped: true }
+          };
+          continue;  // 다음 Agent로
+        }
+
         const agent = new AgentClass();
 
         // 이전 결과를 컨텍스트에 포함
@@ -230,7 +241,7 @@ class Orchestrator {
           userKeywords: context.userKeywords || [],
           seoKeywords: context.keywords || [],
           status: context.userProfile?.status || '준비',
-          modelName: 'gemini-2.5-flash-lite',
+          modelName: 'gemini-2.5-flash',
           factAllowlist: context.factAllowlist || null,
           targetWordCount: context.targetWordCount
         });
@@ -386,7 +397,7 @@ class Orchestrator {
           userKeywords: context.userKeywords || [],
           seoKeywords: context.keywords || [],
           status: context.userProfile?.status || '준비',
-          modelName: 'gemini-2.5-flash-lite',
+          modelName: 'gemini-2.5-flash',
           factAllowlist: context.factAllowlist || null,
           targetWordCount: context.targetWordCount
         });
@@ -515,7 +526,7 @@ class Orchestrator {
                   userKeywords: context.userKeywords || [],
                   seoKeywords: context.keywords || [],
                   status: context.userProfile?.status || '준비',
-                  modelName: 'gemini-2.5-flash-lite',
+                  modelName: 'gemini-2.5-flash',
                   factAllowlist: context.factAllowlist || null,
                   targetWordCount: context.targetWordCount
                 });

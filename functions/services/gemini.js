@@ -19,40 +19,40 @@ const { getGeminiApiKey } = require('../common/secrets');
 function getUserFriendlyErrorMessage(error) {
   const errorMessage = error.message || '';
   const errorString = String(error);
-  
+
   // 429 Too Many Requests - 할당량 초과
-  if (errorMessage.includes('429') || errorMessage.includes('Too Many Requests') || 
-      errorMessage.includes('quota') || errorMessage.includes('exceeded')) {
+  if (errorMessage.includes('429') || errorMessage.includes('Too Many Requests') ||
+    errorMessage.includes('quota') || errorMessage.includes('exceeded')) {
     return '⚠️ AI 모델의 일일 사용량을 초과했습니다.\n\n• 내일 00시(한국시간) 이후 다시 시도해주세요.\n• 또는 관리자에게 문의하여 유료 플랜 업그레이드를 요청하세요.\n\n현재 무료 플랜: 하루 50회 제한';
   }
-  
+
   // 401 Unauthorized - API 키 문제
-  if (errorMessage.includes('401') || errorMessage.includes('Unauthorized') || 
-      errorMessage.includes('API key')) {
+  if (errorMessage.includes('401') || errorMessage.includes('Unauthorized') ||
+    errorMessage.includes('API key')) {
     return '🔑 API 인증에 실패했습니다. 관리자에게 문의해주세요.';
   }
-  
+
   // 403 Forbidden - 권한 문제
   if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
     return '🚫 API 접근 권한이 없습니다. 관리자에게 문의해주세요.';
   }
-  
+
   // 500 Internal Server Error - 서버 오류
   if (errorMessage.includes('500') || errorMessage.includes('Internal Server Error')) {
     return '🔧 AI 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.';
   }
-  
+
   // 네트워크 오류
-  if (errorMessage.includes('ECONNRESET') || errorMessage.includes('ETIMEDOUT') || 
-      errorMessage.includes('network') || errorMessage.includes('timeout')) {
+  if (errorMessage.includes('ECONNRESET') || errorMessage.includes('ETIMEDOUT') ||
+    errorMessage.includes('network') || errorMessage.includes('timeout')) {
     return '🌐 네트워크 연결에 문제가 발생했습니다. 잠시 후 다시 시도해주세요.';
   }
-  
+
   // 빈 응답
   if (errorMessage.includes('빈 응답')) {
     return '📝 AI가 응답을 생성하지 못했습니다. 다른 주제로 다시 시도해주세요.';
   }
-  
+
   // 기본 오류 메시지
   return `❌ AI 원고 생성 중 오류가 발생했습니다.\n\n오류 내용: ${errorMessage}\n\n관리자에게 문의하거나 잠시 후 다시 시도해주세요.`;
 }
@@ -66,7 +66,7 @@ function getUserFriendlyErrorMessage(error) {
  * @param {boolean} useJsonMode - JSON 형식 응답 강제 (기본값: true)
  * @returns {Promise<string>} - AI가 생성한 텍스트
  */
-async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.5-flash-lite', useJsonMode = true) {
+async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.5-flash', useJsonMode = true) {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
     logError('callGenerativeModel', 'Gemini API 키가 설정되지 않았습니다.');
@@ -74,7 +74,7 @@ async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.5-
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  
+
   // 모델별 설정
   const supportsJsonMode = modelName.startsWith('gemini-2.');
 
@@ -94,11 +94,13 @@ async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.5-
   const model = genAI.getGenerativeModel({
     model: modelName,
     generationConfig,
+    // 🔴 [FIX] BLOCK_ONLY_HIGH로 완화 - 합법적 법률/정치 용어 검열 방지
+    // "사형 구형" 같은 법률 용어가 DANGEROUS_CONTENT로 잘못 분류되어 검열되는 문제 해결
     safetySettings: [
-      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
       { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
     ],
   });
 
@@ -127,7 +129,7 @@ async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.5-
         status: error.status,
         statusText: error.statusText
       });
-      logError('callGenerativeModel', `Gemini API 시도 ${attempt} 실패`, { 
+      logError('callGenerativeModel', `Gemini API 시도 ${attempt} 실패`, {
         error: error.message,
         code: error.code,
         name: error.name,

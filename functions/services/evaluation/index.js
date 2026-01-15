@@ -89,7 +89,7 @@ async function evaluateContent({ content, category, topic, author }) {
   }
 
   try {
-    const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+    const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     // 콘텐츠 길이 제한 (토큰 절약)
     const truncatedContent = content.length > 3000

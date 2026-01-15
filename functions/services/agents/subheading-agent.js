@@ -4,33 +4,33 @@ const { getGeminiApiKey } = require('../../common/secrets');
 
 let genAI = null;
 function getGenAI() {
-    if (!genAI) {
-        const apiKey = getGeminiApiKey();
-        if (!apiKey) return null;
-        genAI = new GoogleGenerativeAI(apiKey);
-    }
-    return genAI;
+  if (!genAI) {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) return null;
+    genAI = new GoogleGenerativeAI(apiKey);
+  }
+  return genAI;
 }
 
 class SubheadingAgent extends BaseAgent {
-    constructor() {
-        super('SubheadingAgent');
-        this.modelName = 'gemini-2.0-flash'; // 빠르고 똑똑한 2.0 Flash 사용
-    }
+  constructor() {
+    super('SubheadingAgent');
+    this.modelName = 'gemini-2.5-flash'; // 품질 최적화 위해 2.5-flash 사용
+  }
 
-    getRequiredContext() {
-        return ['content', 'userKeywords'];
-    }
+  getRequiredContext() {
+    return ['content', 'userKeywords'];
+  }
 
-    async execute(context) {
-        const { content, userKeywords = [] } = context;
-        const ai = getGenAI();
-        const model = ai.getGenerativeModel({
-            model: this.modelName,
-            generationConfig: { responseMimeType: "application/json" }
-        });
+  async execute(context) {
+    const { content, userKeywords = [] } = context;
+    const ai = getGenAI();
+    const model = ai.getGenerativeModel({
+      model: this.modelName,
+      generationConfig: { responseMimeType: "application/json" }
+    });
 
-        const prompt = `
+    const prompt = `
 # Role
 당신은 대한민국 최고의 **AEO(Answer Engine Optimization) & SEO 전문 카피라이터**입니다.
 주어진 글의 문단을 분석하여, 검색 엔진과 사용자 모두에게 매력적인 **최적의 소제목(H2)**을 작성해야 합니다.
@@ -85,24 +85,24 @@ ${content}
 (content 필드에는 <body> 내부의 HTML만 포함하세요. <html>, <head> 태그 제외)
 `;
 
-        try {
-            const result = await model.generateContent({
-                contents: [{ role: 'user', parts: [{ text: prompt }] }]
-            });
-            const response = JSON.parse(result.response.text());
+    try {
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }]
+      });
+      const response = JSON.parse(result.response.text());
 
-            console.log(`✨ [SubheadingAgent] 소제목 교체 완료: ${response.beforeTitles.length}개 -> ${response.afterTitles.length}개`);
+      console.log(`✨ [SubheadingAgent] 소제목 교체 완료: ${response.beforeTitles.length}개 -> ${response.afterTitles.length}개`);
 
-            return {
-                content: response.content || content, // 실패 시 원본 반환
-                log: response.afterTitles
-            };
+      return {
+        content: response.content || content, // 실패 시 원본 반환
+        log: response.afterTitles
+      };
 
-        } catch (e) {
-            console.error('❌ [SubheadingAgent] 소제목 최적화 실패:', e);
-            return { content }; // 에러 시 원본 그대로 반환 (안전장치)
-        }
+    } catch (e) {
+      console.error('❌ [SubheadingAgent] 소제목 최적화 실패:', e);
+      return { content }; // 에러 시 원본 그대로 반환 (안전장치)
     }
+  }
 }
 
 module.exports = { SubheadingAgent };

@@ -12,6 +12,10 @@
     ],
     "rewrites": [
       {
+        "source": "/s/**",
+        "function": "redirectShortUrl"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

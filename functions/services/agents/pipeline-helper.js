@@ -33,6 +33,7 @@ async function generateWithMultiAgent({
   subCategory = '',
   userProfile,
   memoryContext = '',
+  ragContext = '',  // 🔍 RAG 컨텍스트 (과거 글 스타일 학습)
   instructions = '',
   newsContext = '',
   regionHint = '',
@@ -52,6 +53,7 @@ async function generateWithMultiAgent({
     subCategory,
     userProfile,
     memoryContext,
+    ragContext,  // 🔍 RAG 컨텍스트 전달
     instructions,
     newsContext,
     regionHint,

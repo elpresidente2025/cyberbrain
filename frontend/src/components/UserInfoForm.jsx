@@ -20,33 +20,11 @@ import {
 import { Add } from '@mui/icons-material';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../services/firebase';
-import allLocations from '../data/location/locations.index';
-
-const DIST_DATA = allLocations;
-const metroList = Object.keys(DIST_DATA);
-
-function getLocalList(metro) {
-  return metro && DIST_DATA[metro] ? Object.keys(DIST_DATA[metro]) : [];
-}
-
-function getElectoralList(metro, local, position) {
-  if (!metro || !local || !DIST_DATA[metro]?.[local] || !position) return [];
-
-  const districtData = DIST_DATA[metro][local];
-
-  if (position === '국회의원') {
-    return districtData['국회의원'] || [];
-  } else if (position === '광역의원') {
-    return districtData['광역의원'] || [];
-  } else if (position === '기초의원') {
-    return districtData['기초의원'] || [];
-  } else if (position === '광역자치단체장' || position === '기초자치단체장') {
-    // 지자체장은 국회의원 선거구를 따라감 (지역위원회 소속 기준)
-    return districtData['국회의원'] || [];
-  }
-
-  return [];
-}
+import {
+  getElectionMetroList,
+  getElectionLocalList,
+  getElectionDistrictList
+} from '../utils/election-data-provider';
 
 /**
  * 자치단체장 호칭 자동 생성
@@ -125,30 +103,40 @@ export default function UserInfoForm({
   // 🔧 보안상 이유로 클라이언트 중복 체크 완전 제거
   // 모든 중복 확인은 서버에서만 처리됩니다.
 
-  const callCheckAvailability = useMemo(() => 
+  const callCheckAvailability = useMemo(() =>
     httpsCallable(functions, 'checkDistrictAvailability'), []
   );
 
-  // 셀렉트 목록 (현재 직책)
-  const localList = useMemo(() => getLocalList(regionMetro), [regionMetro]);
-  const electoralList = useMemo(
-    () => getElectoralList(regionMetro, regionLocal, position),
-    [regionMetro, regionLocal, position]
-  );
+  // 셀렉트 목록 (현재 직책 기준)
+  // 직책이 변경되면 목록을 새로 불러옴 (총선 vs 지선)
+  const metroList = useMemo(() => getElectionMetroList(position), [position]);
 
-  // 목표 선거 셀렉트 목록
-  const targetLocalList = useMemo(
-    () => getLocalList(targetElection?.regionMetro),
-    [targetElection?.regionMetro]
-  );
-  const targetElectoralList = useMemo(
-    () => getElectoralList(
+  const localList = useMemo(() =>
+    getElectionLocalList(position, regionMetro),
+    [position, regionMetro]);
+
+  const electoralList = useMemo(() =>
+    getElectionDistrictList(position, regionMetro, regionLocal),
+    [position, regionMetro, regionLocal]);
+
+  // 목표 선거 셀렉트 목록 (목표 직책 기준)
+  const targetPosition = targetElection?.position || '';
+
+  const targetMetroList = useMemo(() =>
+    getElectionMetroList(targetPosition),
+    [targetPosition]);
+
+  const targetLocalList = useMemo(() =>
+    getElectionLocalList(targetPosition, targetElection?.regionMetro),
+    [targetPosition, targetElection?.regionMetro]);
+
+  const targetElectoralList = useMemo(() =>
+    getElectionDistrictList(
+      targetPosition,
       targetElection?.regionMetro,
-      targetElection?.regionLocal,
-      targetElection?.position
+      targetElection?.regionLocal
     ),
-    [targetElection?.regionMetro, targetElection?.regionLocal, targetElection?.position]
-  );
+    [targetPosition, targetElection?.regionMetro, targetElection?.regionLocal]);
 
   // 자치단체장 호칭 자동 생성
   const automaticTitle = useMemo(
@@ -587,7 +575,7 @@ export default function UserInfoForm({
                   PaperProps: { style: { zIndex: 1400 } },
                 }}
               >
-                {metroList.map((metro) => (
+                {targetMetroList.map((metro) => (
                   <MenuItem key={metro} value={metro}>
                     {metro}
                   </MenuItem>

@@ -1214,6 +1214,418 @@ function getSubheadingGuideline() {
 }
 
 // ============================================================================
+// 🔴 Phase 1: 규칙 실행 순서 (RULE_EXECUTION_ORDER)
+// ============================================================================
+
+/**
+ * 규칙 실행 순서 정의
+ * 
+ * 목적: 규칙 간 충돌 방지 및 이중 변환 방지
+ * 원칙: 의존성이 있는 규칙은 반드시 순서에 따라 실행
+ * 
+ * 실행 흐름:
+ * 입력 → [1]문장분할 → [2]맥락판단 → [3]인명인식 → [4]존칭적용 → [5]문체개선 → [6]이중변환방지 → 출력
+ */
+const RULE_EXECUTION_ORDER = [
+  {
+    id: 'SPLIT_SENTENCES',
+    phase: 1,
+    name: '문장 분할',
+    description: '텍스트를 문장 단위로 분할',
+    dependencies: [],
+    critical: true
+  },
+  {
+    id: 'DETECT_CONTEXT',
+    phase: 2,
+    name: '맥락 판단',
+    description: '비판/협력/중립 맥락 판단',
+    dependencies: ['SPLIT_SENTENCES'],
+    critical: true,
+    note: '존칭 규칙 적용 전 반드시 선행 필요'
+  },
+  {
+    id: 'RECOGNIZE_NAMES',
+    phase: 3,
+    name: '인명 인식',
+    description: '인명, 직함, 선거구 인식',
+    dependencies: ['SPLIT_SENTENCES'],
+    critical: true
+  },
+  {
+    id: 'APPLY_HONORIFICS',
+    phase: 4,
+    name: '존칭 적용',
+    description: '맥락 기반 존칭 규칙 적용',
+    dependencies: ['DETECT_CONTEXT', 'RECOGNIZE_NAMES'],
+    critical: true,
+    conflictsWith: ['IMPROVE_STYLE'],
+    note: '비판 맥락에서는 님 생략, 협력 맥락에서는 님 필수'
+  },
+  {
+    id: 'IMPROVE_STYLE',
+    phase: 5,
+    name: '문체 개선',
+    description: '문장 다양화, 반복 제거, 어미 개선',
+    dependencies: ['SPLIT_SENTENCES'],
+    conflictsWith: ['APPLY_HONORIFICS'],
+    note: 'APPLY_HONORIFICS와 순서 주의 - 존칭 적용 후 실행'
+  },
+  {
+    id: 'PREVENT_DOUBLE_TRANSFORM',
+    phase: 6,
+    name: '이중 변환 방지',
+    description: '것입니다→것일 것입니다 등 이중 변환 감지 및 롤백',
+    dependencies: ['APPLY_HONORIFICS', 'IMPROVE_STYLE'],
+    critical: true,
+    note: '반드시 모든 변환 후 마지막에 실행'
+  }
+];
+
+// ============================================================================
+// 🔴 Phase 1: 이중 변환 방지 (DOUBLE_TRANSFORMATION_PREVENTION)
+// ============================================================================
+
+/**
+ * 이중 변환이 발생하는 패턴 정의
+ * 
+ * 문제: AI가 "~것입니다"를 개선하려다 "~것일 것입니다"로 변환
+ * 원인: 추측성 표현 + 종결어미 중복 적용
+ */
+const DOUBLE_TRANSFORMATION_PATTERNS = [
+  {
+    id: 'double_speculation',
+    name: '이중 추측 표현',
+    problematic: /것일\s*것입니다/g,
+    correction: '것입니다',
+    severity: 'critical',
+    description: '"것일 것입니다" → "것입니다"로 정규화'
+  },
+  {
+    id: 'double_future',
+    name: '이중 미래 표현',
+    problematic: /될\s*것일\s*것입니다/g,
+    correction: '될 것입니다',
+    severity: 'critical'
+  },
+  {
+    id: 'double_ending',
+    name: '이중 종결어미',
+    problematic: /입니다입니다/g,
+    correction: '입니다',
+    severity: 'high'
+  },
+  {
+    id: 'redundant_honorific',
+    name: '중복 존칭',
+    problematic: /님님/g,
+    correction: '님',
+    severity: 'high'
+  },
+  {
+    id: 'double_point',
+    name: '이중 강조',
+    problematic: /라는\s*점이라는\s*점/g,
+    correction: '라는 점',
+    severity: 'medium'
+  },
+  {
+    id: 'awkward_point_ending',
+    name: '부자연스러운 ~점입니다 변환',
+    problematic: /라는\s*점일\s*것입니다/g,
+    correction: '라는 점입니다',
+    severity: 'high',
+    description: '"~라는 점일 것입니다" 패턴 정규화'
+  }
+];
+
+/**
+ * 이중 변환 방지 함수
+ * 
+ * @param {string} content - 변환된 콘텐츠
+ * @returns {Object} { content: string, corrections: Array, hadDoubleTransform: boolean }
+ */
+function preventDoubleTransformation(content) {
+  if (!content) return { content, corrections: [], hadDoubleTransform: false };
+
+  let correctedContent = content;
+  const corrections = [];
+
+  for (const pattern of DOUBLE_TRANSFORMATION_PATTERNS) {
+    const matches = correctedContent.match(pattern.problematic);
+    if (matches) {
+      corrections.push({
+        patternId: pattern.id,
+        found: matches.length,
+        severity: pattern.severity,
+        description: pattern.description || pattern.name
+      });
+      correctedContent = correctedContent.replace(pattern.problematic, pattern.correction);
+    }
+  }
+
+  return {
+    content: correctedContent,
+    corrections,
+    hadDoubleTransform: corrections.length > 0
+  };
+}
+
+// ============================================================================
+// 🔴 Phase 1: O(n) 중복 탐지 최적화 (DUPLICATE_DETECTION)
+// ============================================================================
+
+/**
+ * O(n) 복잡도의 단어 중복 탐지
+ * 
+ * 기존 O(n²) 방식 대비 약 90배 성능 개선
+ * - 1500자(~300단어): O(n²) = 45,000 비교 → O(n) = 300 비교
+ * 
+ * @param {string} content - 검사할 콘텐츠
+ * @param {Object} options - { threshold: number, excludePatterns: RegExp[] }
+ * @returns {Object} { duplicates: Map, violations: Array }
+ */
+function detectDuplicatesOptimized(content, options = {}) {
+  const {
+    threshold = 3,  // 한 문단 내 중복 허용 횟수
+    excludePatterns = [
+      /^(은|는|이|가|을|를|에|의|로|와|과|도|만|까지|부터|에서|으로|라고|하고)$/, // 조사
+      /^(그리고|또한|그러나|하지만|따라서|그래서|즉|왜냐하면)$/ // 접속사
+    ]
+  } = options;
+
+  if (!content) return { duplicates: new Map(), violations: [] };
+
+  // 1. 문단 분할
+  const paragraphs = content.split(/\n\n|\r\n\r\n|<\/p>\s*<p>|<br\s*\/?>\s*<br\s*\/?>/i);
+
+  const allViolations = [];
+
+  for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
+    const paragraph = paragraphs[pIdx];
+
+    // 2. 단어 추출 (HTML 태그 제거)
+    const cleanParagraph = paragraph.replace(/<[^>]*>/g, ' ');
+    const words = cleanParagraph
+      .split(/[\s.,!?;:""''「」『』【】\[\](){}]+/)
+      .filter(w => w.length >= 2);  // 2글자 이상만
+
+    // 3. O(n) 빈도 계산 (HashMap)
+    const wordCount = new Map();
+
+    for (const word of words) {
+      // 제외 패턴 체크
+      const isExcluded = excludePatterns.some(pattern => pattern.test(word));
+      if (isExcluded) continue;
+
+      const lower = word.toLowerCase();
+      wordCount.set(lower, (wordCount.get(lower) || 0) + 1);
+    }
+
+    // 4. threshold 초과 단어 찾기
+    for (const [word, count] of wordCount) {
+      if (count > threshold) {
+        allViolations.push({
+          word,
+          count,
+          paragraphIndex: pIdx,
+          message: `"${word}" ${count}회 반복 (문단 ${pIdx + 1}, 허용: ${threshold}회)`
+        });
+      }
+    }
+  }
+
+  return {
+    duplicates: new Map(allViolations.map(v => [v.word, v.count])),
+    violations: allViolations,
+    passed: allViolations.length === 0
+  };
+}
+
+// ============================================================================
+// 🔴 Phase 1: 강화된 인명 인식 정규식 (NAME_RECOGNITION_PATTERNS)
+// ============================================================================
+
+/**
+ * 인명 인식 강화 정규식
+ * 
+ * 해결하는 edge case:
+ * - "박성민의원" (띄어쓰기 없음)
+ * - "(박성민 의원)" (괄호 포함)
+ * - "박성민·이영희" (중점 연결)
+ * - "박성민-이영희" (하이픈 연결)
+ */
+const NAME_RECOGNITION_PATTERNS = {
+  // 한글 성명 패턴 (2-4자, 한글만)
+  koreanName: /[가-힣]{2,4}/,
+
+  // 직함 패턴
+  titles: /(의원|구청장|시장|도지사|지사|장관|총리|대통령|위원장|대표|총장|총재|의장|사무총장)/,
+
+  // 인명+직함 (띄어쓰기 있음/없음 모두 지원)
+  nameWithTitle: /([가-힣]{2,4})\s*(의원|구청장|시장|도지사|지사|장관|위원장|대표)(님)?/g,
+
+  // 인명+직함 (괄호 내 포함)
+  nameInParentheses: /[[(]([가-힣]{2,4})\s*(의원|구청장|시장)(님)?[\])]/g,
+
+  // 선거구 + 인명 + 직함
+  districtNameTitle: /((?:[가-힣]+구|[가-힣]+시|[가-힣]+군)\s*(?:갑|을|병|정)?)\s*([가-힣]{2,4})\s*(의원)(님)?/g,
+
+  // 당명 + 인명 + 직함
+  partyNameTitle: /(더불어민주당|국민의힘|조국혁신당|개혁신당|정의당|진보당)\s*([가-힣]{2,4})\s*(의원|대표|위원장)(님)?/g,
+
+  // 중점(·) 또는 하이픈(-)으로 연결된 복수 인명
+  multipleNames: /([가-힣]{2,4})[·\-]([가-힣]{2,4})/g,
+
+  // 직함 단독 (님 누락 감지용)
+  titleWithoutHonorific: /([가-힣]{2,4})\s*(의원|구청장|시장|도지사|장관)(?!님)/g
+};
+
+/**
+ * 인명 띄어쓰기 정규화
+ * 
+ * "박성민의원" → "박성민 의원님"
+ * "국민의힘이영희의원" → "국민의힘 이영희 의원님"
+ * 
+ * @param {string} content - 원본 콘텐츠
+ * @param {string} context - 맥락 ('critical' | 'cooperative' | 'neutral')
+ * @returns {Object} { content: string, changes: Array }
+ */
+function normalizeNameSpacing(content, context = 'neutral') {
+  if (!content) return { content, changes: [] };
+
+  let normalized = content;
+  const changes = [];
+
+  // 1. 띄어쓰기 없는 "인명+직함" 정규화
+  normalized = normalized.replace(
+    NAME_RECOGNITION_PATTERNS.nameWithTitle,
+    (match, name, title, honorific) => {
+      // 이미 존칭이 있으면 띄어쓰기만 추가
+      if (honorific) {
+        const fixed = `${name} ${title}님`;
+        if (match !== fixed) {
+          changes.push({ from: match, to: fixed, reason: '띄어쓰기 정규화' });
+        }
+        return fixed;
+      }
+
+      // 존칭 추가 (맥락에 따라)
+      if (context === 'critical') {
+        // 비판 맥락: 님 생략
+        const fixed = `${name} ${title}`;
+        if (match !== fixed) {
+          changes.push({ from: match, to: fixed, reason: '띄어쓰기 정규화 (비판 맥락)' });
+        }
+        return fixed;
+      } else {
+        // 협력/중립 맥락: 님 추가
+        const fixed = `${name} ${title}님`;
+        changes.push({ from: match, to: fixed, reason: '띄어쓰기 + 존칭 추가' });
+        return fixed;
+      }
+    }
+  );
+
+  // 2. 당명+인명+직함 정규화
+  normalized = normalized.replace(
+    NAME_RECOGNITION_PATTERNS.partyNameTitle,
+    (match, party, name, title, honorific) => {
+      if (honorific) return `${party} ${name} ${title}님`;
+
+      if (context === 'critical') {
+        const fixed = `${party} ${name} ${title}`;
+        changes.push({ from: match, to: fixed, reason: '당명+인명 정규화 (비판 맥락)' });
+        return fixed;
+      } else {
+        const fixed = `${party} ${name} ${title}님`;
+        changes.push({ from: match, to: fixed, reason: '당명+인명 존칭 추가' });
+        return fixed;
+      }
+    }
+  );
+
+  return { content: normalized, changes };
+}
+
+/**
+ * 글쓰기 맥락 판단 함수
+ * 
+ * @param {string} category - 원고 카테고리
+ * @param {string} content - 원고 내용 (선택)
+ * @returns {string} 'critical' | 'cooperative' | 'neutral'
+ */
+function determineWritingContext(category, content = '') {
+  // 1. 카테고리 기반 판단
+  const criticalCategories = ['current-affairs', 'critical_writing', '시사 비평', '정책 비판'];
+  const cooperativeCategories = ['daily-communication', 'activity-report', 'direct_writing', 'emotional_writing', 'bipartisan-cooperation'];
+
+  const lowerCategory = (category || '').toLowerCase();
+
+  if (criticalCategories.some(c => lowerCategory.includes(c.toLowerCase()))) {
+    return 'critical';
+  }
+
+  if (cooperativeCategories.some(c => lowerCategory.includes(c.toLowerCase()))) {
+    return 'cooperative';
+  }
+
+  // 2. 콘텐츠 기반 휴리스틱 (카테고리로 판단 불가 시)
+  if (content) {
+    const criticalKeywords = ['비판', '비리', '의혹', '무능', '실패', '부정', '부패', '특혜'];
+    const cooperativeKeywords = ['감사', '함께', '협력', '참석', '환영', '축하', '응원'];
+
+    const criticalScore = criticalKeywords.filter(kw => content.includes(kw)).length;
+    const cooperativeScore = cooperativeKeywords.filter(kw => content.includes(kw)).length;
+
+    if (criticalScore > cooperativeScore && criticalScore >= 2) {
+      return 'critical';
+    }
+    if (cooperativeScore > criticalScore && cooperativeScore >= 2) {
+      return 'cooperative';
+    }
+  }
+
+  // 3. 기본값: 안전한 중립 (님 사용)
+  return 'neutral';
+}
+
+// ============================================================================
+// 🔴 Phase 1: 규칙 간 우선순위 관계 (RULE_PRIORITY_MATRIX)
+// ============================================================================
+
+/**
+ * 규칙 간 충돌 시 우선순위 정의
+ * 
+ * 키워드 삽입 vs 반복 회피:
+ * - SEO 키워드는 반복 회피 규칙 예외 (단, 밀도 3% 이하)
+ * 
+ * 존칭 적용 vs 비판 맥락:
+ * - 맥락 판단 결과가 항상 우선
+ */
+const RULE_PRIORITY_MATRIX = {
+  // 키워드 관련
+  keywordVsRepetition: {
+    winner: 'keyword',
+    condition: 'keyword_density <= 3%',
+    note: 'SEO 키워드는 반복 규칙 예외, 단 밀도 3% 이하일 때만'
+  },
+
+  // 존칭 관련
+  honorificVsContext: {
+    winner: 'context',
+    note: '맥락 판단 결과(critical/cooperative)가 항상 우선'
+  },
+
+  // 문체 관련
+  firstPersonVsSentenceVariety: {
+    winner: 'firstPerson',
+    condition: 'consecutive <= 2',
+    note: '"저는" 연속 2문장까지만 허용, 이후 문장 다양화 필수'
+  }
+};
+
+// ============================================================================
 // 내보내기
 // ============================================================================
 
@@ -1241,5 +1653,21 @@ module.exports = {
 
   // 소제목 전략
   SUBHEADING_STRATEGIES,
-  getSubheadingGuideline
+  getSubheadingGuideline,
+
+  // 🔴 Phase 1: 규칙 실행 순서 및 충돌 방지
+  RULE_EXECUTION_ORDER,
+  RULE_PRIORITY_MATRIX,
+
+  // 🔴 Phase 1: 이중 변환 방지
+  DOUBLE_TRANSFORMATION_PATTERNS,
+  preventDoubleTransformation,
+
+  // 🔴 Phase 1: 중복 탐지 최적화
+  detectDuplicatesOptimized,
+
+  // 🔴 Phase 1: 인명 인식 강화
+  NAME_RECOGNITION_PATTERNS,
+  normalizeNameSpacing,
+  determineWritingContext
 };

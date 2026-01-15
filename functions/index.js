@@ -230,3 +230,34 @@ try {
 } catch (e) {
   console.warn('[index] user-style-trigger warning:', e?.message);
 }
+
+// Add district sync handlers (scheduled + manual)
+try {
+  const districtSyncHandlers = require('./handlers/district-sync-handler');
+  Object.assign(exports, districtSyncHandlers);
+} catch (e) {
+  console.warn('[index] district-sync-handler warning:', e?.message);
+}
+// Add URL Shortener handlers
+try {
+  const urlShortenerHandlers = require('./handlers/url-shortener');
+  Object.assign(exports, urlShortenerHandlers);
+} catch (e) {
+  console.warn('[index] url-shortener handler warning:', e?.message);
+}
+
+// Add Politician Sync handlers (일 1회 동기화)
+try {
+  const politicianSyncHandlers = require('./handlers/politician-sync-handler');
+  Object.assign(exports, politicianSyncHandlers);
+} catch (e) {
+  console.warn('[index] politician-sync-handler warning:', e?.message);
+}
+
+// Add Test Utils handlers (일회성 시딩용)
+try {
+  const testUtilsHandlers = require('./handlers/test-utils');
+  Object.assign(exports, testUtilsHandlers);
+} catch (e) {
+  console.warn('[index] test-utils handler warning:', e?.message);
+}

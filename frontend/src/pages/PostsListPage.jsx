@@ -290,9 +290,12 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
                           <Typography variant="caption">글자수: {wordCount}</Typography>
                         </CardContent>
                       </CardActionArea>
-                      <CardActions sx={{ justifyContent: 'flex-end', pt: 0, gap: 1, pb: 2, px: 2 }}>
-                        <Button size="small" variant="contained" onClick={(e) => { e.stopPropagation(); onSNS(post, e); }} startIcon={<Transform />}>SNS</Button>
-                        <Button size="small" variant="outlined" onClick={(e) => { e.stopPropagation(); onPublish(post, e); }} startIcon={<Publish />}>발행</Button>
+                      <CardActions sx={{ justifyContent: 'space-between', pt: 0, pb: 2, px: 2 }}>
+                        {/* 🆕 안내 문구 추가 */}
+                        <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                          클릭 시 원고 전문을 확인하실 수 있습니다.
+                        </Typography>
+
                         <IconButton size="small" onClick={(e) => { e.stopPropagation(); onDelete(post.id, e); }}><DeleteOutline /></IconButton>
                       </CardActions>
                     </Card>
@@ -495,8 +498,8 @@ export default function PostsListPage() {
           transition={{ duration: 0.5, delay: 0.2 }}
         >
           <Paper elevation={0} sx={{ p: { xs: 2, sm: 3 } }}>
-            <Typography variant="body2" sx={{ mb: `${spacing.md}px`, color: 'grey.100', fontStyle: 'italic' }}>
-              이 화면은 읽기 전용입니다. 카드를 터치/클릭하면 원고가 열립니다.
+            <Typography variant="body2" sx={{ mb: `${spacing.md}px`, color: 'grey.100', fontStyle: 'italic', textAlign: 'center' }}>
+              날짜를 클릭/터치하면 달력 하단에 원고가 나옵니다.
             </Typography>
 
             {loading ? (
@@ -518,11 +521,11 @@ export default function PostsListPage() {
           </Paper>
         </motion.div>
 
+        {/* 원고 보기 모달 (자체 포함형: 복사/SNS/발행 기능 내장) */}
         <PostViewerModal
           open={viewerOpen}
           onClose={closeViewer}
           post={viewerPost}
-          onDelete={handleDelete}
         />
 
         <Dialog open={publishDialogOpen} onClose={closePublishDialog} maxWidth="sm" fullWidth slotProps={{ backdrop: { 'aria-hidden': false } }}>

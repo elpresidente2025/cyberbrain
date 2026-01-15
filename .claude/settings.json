@@ -32,6 +32,10 @@
     "code-review": {
       "description": "코드 리뷰",
       "file": "skills/code-review.md"
+    },
+    "web-artifacts-builder": {
+      "description": "React + Tailwind + shadcn/ui HTML 아티팩트 빌더",
+      "file": "skills/web-artifacts-builder/SKILL.md"
     }
   },
   "hooks": {

@@ -239,7 +239,7 @@ async function runCriticReview({
   status,
   topic,
   authorName,
-  modelName = 'gemini-2.5-flash-lite'
+  modelName = 'gemini-2.5-flash'
 }) {
   console.log('👔 Critic Agent 검토 시작...');
 

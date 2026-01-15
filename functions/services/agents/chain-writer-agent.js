@@ -25,9 +25,9 @@ class ChainWriterAgent extends BaseAgent {
     }
 
     async execute(context) {
-        const { topic, instructions, newsContext, userProfile } = context;
+        const { topic, instructions, ragContext, newsContext, userProfile } = context;
 
-        const plan = await this.createPlan(topic, instructions, newsContext, userProfile);
+        const plan = await this.createPlan(topic, instructions, ragContext, newsContext, userProfile);
         if (!plan) throw new Error('원고 기획에 실패했습니다.');
 
         console.log(`📝 [ChainWriter] 기획 완료: ${plan.sections.length}개 섹션 집필 시작`);
@@ -46,7 +46,7 @@ class ChainWriterAgent extends BaseAgent {
         };
     }
 
-    async createPlan(topic, instructions, newsContext, userProfile) {
+    async createPlan(topic, instructions, ragContext, newsContext, userProfile) {
         const ai = getGenAI();
         const model = ai.getGenerativeModel({ model: this.modelName });
 
@@ -68,6 +68,7 @@ class ChainWriterAgent extends BaseAgent {
 - **주제**: ${topic}
 - **작성자**: ${userProfile.name} (${userProfile.role || '정치인'})
 - **지시사항**: ${instructions || '(없음)'}
+- **과거 작성 스타일 참고**: ${ragContext || '(없음)'}
 - **참고자료(뉴스)**: ${newsContext || '(없음)'}
 - **사용자 정보**: ${JSON.stringify(userProfile.rhetoricalPreferences || {})}
 

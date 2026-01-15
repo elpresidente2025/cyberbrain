@@ -1,5 +1,5 @@
 // functions/handlers/sns-addon.js
-const { HttpsError } = require('firebase-functions/v2/https');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { wrap } = require('../common/wrap');
 const { httpWrap } = require('../common/http-wrap');
 const { ok, error } = require('../common/response');
@@ -7,6 +7,72 @@ const { admin, db } = require('../utils/firebaseAdmin');
 const { callGenerativeModel } = require('../services/gemini');
 const { buildFactAllowlist, findUnsupportedNumericTokens } = require('../utils/fact-guard');
 const { buildSNSPrompt, SNS_LIMITS } = require('../prompts/builders/sns-conversion');
+
+// Base62 definition for shortener
+const CHARS = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+function generateCode(length = 6) {
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += CHARS.charAt(Math.floor(Math.random() * CHARS.length));
+  }
+  return result;
+}
+
+/**
+ * Generate Short URL (Internal Helper)
+ */
+async function generateShortLink(originalUrl, uid, postId, platform) {
+  if (!originalUrl) return '';
+
+  try {
+    // Check for existing link for this exact context to avoid duplicates?
+    // For simplicity and speed, just generate new one.
+
+    let shortCode;
+    let isUnique = false;
+    let attempts = 0;
+
+    // Retry loop for uniqueness
+    while (!isUnique && attempts < 3) {
+      shortCode = generateCode(6);
+      const doc = await db.collection('short_links').doc(shortCode).get();
+      if (!doc.exists) isUnique = true;
+      attempts++;
+    }
+
+    if (!isUnique) return originalUrl; // Fallback to original if fails
+
+    await db.collection('short_links').doc(shortCode).set({
+      originalUrl,
+      shortCode,
+      userId: uid || 'system',
+      postId: postId || null,
+      platform: platform || 'sns-autogen',
+      clicks: 0,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Return the relative path, frontend/client handles domain
+    // Or if we know the domain... 
+    // Construct absolute URL if possible, or just returned simplified one.
+    // For CTA text, absolute URL is needed.
+    // We'll use a placeholder domain or relative if the client fills it?
+    // "https://ai-secretary-6e9c8.web.app/s/" + shortCode
+    // Better to use a configured base URL.
+    // For now hardcode the hosting URL since I saw it in logs: https://ai-secretary-6e9c8.web.app
+    const baseUrl = 'https://ai-secretary-6e9c8.web.app';
+    return `${baseUrl}/s/${shortCode}`;
+
+  } catch (error) {
+    console.error('Short link generation failed:', error);
+    return originalUrl;
+  }
+}
+
+/**
+ * 공백 제외 글자수 계산
+// ... (rest of imports)
+
 
 /**
  * 공백 제외 글자수 계산 (Java 코드와 동일한 로직)
@@ -82,17 +148,26 @@ function buildThreadCtaText(blogUrl) {
   return `더 자세한 내용은 블로그에서 확인해주세요: ${blogUrl}`;
 }
 
-function applyThreadCtaToLastPost(posts, blogUrl, platform, platformConfig) {
+async function applyThreadCtaToLastPost(posts, blogUrl, platform, platformConfig, context = {}) {
   const normalizedUrl = normalizeBlogUrl(blogUrl);
   if (!normalizedUrl || !Array.isArray(posts) || posts.length === 0) return posts;
 
-  const ctaText = buildThreadCtaText(normalizedUrl);
+  // 🔗 Generate Short Link
+  const shortUrl = await generateShortLink(
+    normalizedUrl,
+    context.uid,
+    context.postId,
+    platform
+  );
+
+  const ctaText = buildThreadCtaText(shortUrl);
   if (!ctaText) return posts;
 
   const lastIndex = posts.length - 1;
   const lastPost = posts[lastIndex] || {};
   const lastContent = (lastPost.content || '').trim();
 
+  // Check if original URL is already there (unlikely if we just generated short one)
   if (lastContent.includes(normalizedUrl)) return posts;
 
   const separator = lastContent ? '\n' : '';
@@ -148,7 +223,7 @@ exports.convertToSNS = wrap(async (req) => {
     throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
   }
 
-  const { postId, modelName } = req.data || {};
+  const { postId, modelName, targetPlatform } = req.data || {};
 
   console.log('📝 입력 데이터:', { uid, postId, modelName });
 
@@ -160,7 +235,7 @@ exports.convertToSNS = wrap(async (req) => {
 
   // postId를 문자열로 변환 (숫자나 문자열 모두 허용)
   const postIdStr = String(postId).trim();
-  
+
   if (!postIdStr || postIdStr === 'undefined' || postIdStr === 'null') {
     throw new HttpsError('invalid-argument', `유효하지 않은 원고 ID: "${postId}"`);
   }
@@ -175,10 +250,10 @@ exports.convertToSNS = wrap(async (req) => {
     const userData = userDoc.data();
     const userRole = userData.role || 'local_blogger';
     const userPlan = userData.plan || userData.subscription;
-    
+
     // 관리자는 모든 제한 무시
     const isAdmin = userData.role === 'admin' || userData.isAdmin === true;
-    
+
     // 2. 원고 조회 (사용량 제한 없음)
     const postDoc = await db.collection('posts').doc(postIdStr).get();
     if (!postDoc.exists) {
@@ -187,7 +262,7 @@ exports.convertToSNS = wrap(async (req) => {
 
     const postData = postDoc.data();
     const blogUrl = normalizeBlogUrl(postData.publishUrl);
-    
+
     // 원고 소유권 확인
     if (postData.userId !== uid) {
       throw new HttpsError('permission-denied', '본인의 원고만 변환할 수 있습니다.');
@@ -207,22 +282,32 @@ exports.convertToSNS = wrap(async (req) => {
     // 4. 모든 플랫폼에 대해 SNS 변환 실행
     const originalContent = postData.content;
     const postKeywords = postData.keywords || '';
-    const platforms = Object.keys(SNS_LIMITS);
+    let platforms = Object.keys(SNS_LIMITS);
+
+    // 🎯 특정 플랫폼만 재생성하는 경우
+    if (targetPlatform) {
+      if (!platforms.includes(targetPlatform)) {
+        throw new HttpsError('invalid-argument', `지원하지 않는 플랫폼입니다: ${targetPlatform}`);
+      }
+      platforms = [targetPlatform];
+      console.log(`🎯 단일 플랫폼 재생성 모드: ${targetPlatform}`);
+    }
+
     const results = {};
-    
+
     // 사용할 모델 결정 (기본값: gemini-2.5-flash-lite)
-    const selectedModel = modelName || 'gemini-2.5-flash-lite';
+    const selectedModel = modelName || 'gemini-2.5-flash';
     console.log('🔄 모든 SNS 플랫폼 변환 시작:', { postId: postIdStr, userRole, userInfo, selectedModel });
 
     // 각 플랫폼별로 병렬 처리로 변환 (재시도 로직 포함)
     console.log(`🚀 ${platforms.length}개 플랫폼 병렬 변환 시작`);
-    
+
     // 원본 글자수 계산 (공백 제외)
     const originalLength = countWithoutSpace(originalContent);
     const cleanedOriginalContent = cleanContent(originalContent || '');
     const cleanedOriginalLength = countWithoutSpace(cleanedOriginalContent);
     const factAllowlist = buildFactAllowlist([originalContent]);
-    
+
     const platformPromises = platforms.map(async (platform) => {
       // X(트위터)는 사용자 프리미엄 구독 여부에 따라 동적 제한 적용
       const baseConfig = SNS_LIMITS[platform];
@@ -237,18 +322,18 @@ exports.convertToSNS = wrap(async (req) => {
       const minimumContentLength = platformConfig.minLength
         ? Math.min(platformConfig.minLength, cleanedOriginalLength)
         : 0;
-      
+
       console.log(`🔄 ${platform} 변환 시작 - 모델: ${selectedModel}`);
-      
+
       // 최대 2번 시도 (병렬 처리에서는 속도 우선)
       let convertedResult = null;
       let fallbackThreadResult = null;
       let threadTargetPostCount = null;
       const maxAttempts = 2; // 병렬 처리에서는 2번으로 줄여서 전체 시간 단축
-      
+
       for (let attempt = 1; attempt <= maxAttempts && !convertedResult; attempt++) {
         console.log(`🔄 ${platform} 시도 ${attempt}/${maxAttempts}...`);
-        
+
         try {
           const snsPrompt = buildSNSPrompt(
             originalContent,
@@ -256,17 +341,22 @@ exports.convertToSNS = wrap(async (req) => {
             platformConfig,
             postKeywords,
             userInfo,
-            { targetPostCount: threadTargetPostCount }
+            {
+              targetPostCount: threadTargetPostCount,
+              blogUrl: blogUrl,
+              category: postData.category || '',
+              subCategory: postData.subCategory || ''
+            }
           );
-          
+
           // Gemini API로 변환 실행 (타임아웃 추가)
           const convertedText = await Promise.race([
             callGenerativeModel(snsPrompt, 1, selectedModel),
-            new Promise((_, reject) => 
+            new Promise((_, reject) =>
               setTimeout(() => reject(new Error('AI 호출 타임아웃 (30초)')), 30000)
             )
           ]);
-          
+
           console.log(`📝 ${platform} 원본 응답 (시도 ${attempt}):`, {
             length: convertedText?.length || 0,
             preview: convertedText?.substring(0, 100) + '...',
@@ -280,7 +370,7 @@ exports.convertToSNS = wrap(async (req) => {
 
           // 결과 파싱
           const parsedResult = parseConvertedContent(convertedText, platform, platformConfig);
-          
+
           // 타래 형식 검증 (X, Threads)
           if (parsedResult.isThread) {
             const unsupportedNumbers = collectUnsupportedNumbersFromPosts(parsedResult.posts, factAllowlist);
@@ -292,7 +382,10 @@ exports.convertToSNS = wrap(async (req) => {
             const hasValidPosts = Array.isArray(parsedResult.posts) && parsedResult.posts.length >= minPosts;
             const hasHashtags = Array.isArray(parsedResult.hashtags) && parsedResult.hashtags.length > 0;
 
-            if (hasValidPosts) {
+            // X 플랫폼은 1개 게시물만 허용
+            const isValidX = platform === 'x' && Array.isArray(parsedResult.posts) && parsedResult.posts.length === 1;
+
+            if (hasValidPosts || isValidX) {
               const threadResult = {
                 isThread: true,
                 posts: parsedResult.posts,
@@ -300,7 +393,8 @@ exports.convertToSNS = wrap(async (req) => {
                 totalWordCount: parsedResult.totalWordCount,
                 postCount: parsedResult.postCount
               };
-              const lengthAdjustment = threadConstraints
+              // X 플랫폼은 1-2개 게시물이 목표이므로 길이 조정 로직 스킵
+              const lengthAdjustment = (platform !== 'x' && threadConstraints)
                 ? getThreadLengthAdjustment(
                   threadResult.posts,
                   threadConstraints.minLengthPerPost,
@@ -379,21 +473,34 @@ exports.convertToSNS = wrap(async (req) => {
                 hashtags: generateDefaultHashtags(platform)
               };
             } else {
-              // X, Threads는 기본 타래 생성
-              convertedResult = {
-                isThread: true,
-                posts: [
-                  { order: 1, content: `${userInfo.name}입니다.`, wordCount: 10 },
-                  { order: 2, content: originalContent.substring(0, 100), wordCount: 50 },
-                  { order: 3, content: '앞으로도 소통하겠습니다.', wordCount: 12 }
-                ],
-                hashtags: generateDefaultHashtags(platform),
-                totalWordCount: 72,
-                postCount: 3
-              };
+              // X는 1-2개 헤드라인, Threads는 기본 타래 생성
+              if (platform === 'x') {
+                convertedResult = {
+                  isThread: true,
+                  posts: [
+                    { order: 1, content: `${userInfo.name}입니다.\n원고 내용을 공유드립니다.`, wordCount: 20 }
+                  ],
+                  hashtags: generateDefaultHashtags(platform),
+                  totalWordCount: 20,
+                  postCount: 1
+                };
+              } else {
+                // Threads 기본 타래
+                convertedResult = {
+                  isThread: true,
+                  posts: [
+                    { order: 1, content: `${userInfo.name}입니다.`, wordCount: 10 },
+                    { order: 2, content: originalContent.substring(0, 100), wordCount: 50 },
+                    { order: 3, content: '앞으로도 소통하겠습니다.', wordCount: 12 }
+                  ],
+                  hashtags: generateDefaultHashtags(platform),
+                  totalWordCount: 72,
+                  postCount: 3
+                };
+              }
             }
           }
-          
+
         } catch (error) {
           console.error(`❌ ${platform} 시도 ${attempt} 오류:`, error.message);
           if (attempt === maxAttempts) {
@@ -407,17 +514,30 @@ exports.convertToSNS = wrap(async (req) => {
                 hashtags: generateDefaultHashtags(platform)
               };
             } else {
-              convertedResult = {
-                isThread: true,
-                posts: [
-                  { order: 1, content: `${userInfo.name}입니다.`, wordCount: 10 },
-                  { order: 2, content: '원고 내용을 공유드립니다.', wordCount: 12 },
-                  { order: 3, content: '앞으로도 소통하겠습니다.', wordCount: 12 }
-                ],
-                hashtags: generateDefaultHashtags(platform),
-                totalWordCount: 34,
-                postCount: 3
-              };
+              // X는 1개 헤드라인, Threads는 기본 타래
+              if (platform === 'x') {
+                convertedResult = {
+                  isThread: true,
+                  posts: [
+                    { order: 1, content: `${userInfo.name}입니다.\n원고 내용을 공유드립니다.`, wordCount: 20 }
+                  ],
+                  hashtags: generateDefaultHashtags(platform),
+                  totalWordCount: 20,
+                  postCount: 1
+                };
+              } else {
+                convertedResult = {
+                  isThread: true,
+                  posts: [
+                    { order: 1, content: `${userInfo.name}입니다.`, wordCount: 10 },
+                    { order: 2, content: '원고 내용을 공유드립니다.', wordCount: 12 },
+                    { order: 3, content: '앞으로도 소통하겠습니다.', wordCount: 12 }
+                  ],
+                  hashtags: generateDefaultHashtags(platform),
+                  totalWordCount: 34,
+                  postCount: 3
+                };
+              }
             }
           }
         }
@@ -426,7 +546,14 @@ exports.convertToSNS = wrap(async (req) => {
       console.log(`✅ ${platform} 변환 완료`);
       if (convertedResult?.isThread) {
         const basePosts = Array.isArray(convertedResult.posts) ? convertedResult.posts : [];
-        const threadPosts = applyThreadCtaToLastPost(basePosts, blogUrl, platform, platformConfig);
+        // CTA 추가 (숏링크 생성 포함, Async)
+        const threadPosts = await applyThreadCtaToLastPost(
+          basePosts,
+          blogUrl,
+          platform,
+          platformConfig,
+          { uid, postId: postIdStr }
+        );
         const totalWordCount = threadPosts.reduce((sum, post) => sum + countWithoutSpace(post.content), 0);
         convertedResult = {
           ...convertedResult,
@@ -443,18 +570,18 @@ exports.convertToSNS = wrap(async (req) => {
     try {
       const platformResults = await Promise.race([
         Promise.all(platformPromises),
-        new Promise((_, reject) => 
+        new Promise((_, reject) =>
           setTimeout(() => reject(new Error('전체 변환 타임아웃 (4분)')), 240000)
         )
       ]);
-      
+
       // 결과 정리
       platformResults.forEach(({ platform, result }) => {
         results[platform] = result;
       });
-      
+
       console.log(`🎉 모든 플랫폼 변환 완료: ${Object.keys(results).length}개`);
-      
+
     } catch (error) {
       console.error('❌ 병렬 변환 실패:', error.message);
       throw new HttpsError('internal', `SNS 변환 중 타임아웃 또는 오류가 발생했습니다: ${error.message}`);
@@ -476,11 +603,28 @@ exports.convertToSNS = wrap(async (req) => {
 
     await db.collection('sns_conversions').add(conversionData);
 
+    // 🆕 원고 문서에도 SNS 변환 결과 저장 (재오픈 시 불러오기 위해)
+    // 🆕 원고 문서에도 SNS 변환 결과 저장 (재오픈 시 불러오기 위해)
+    const updateData = {
+      snsConvertedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    if (targetPlatform) {
+      // 단일 플랫폼 업데이트 (Dot Notation 사용)
+      updateData[`snsConversions.${targetPlatform}`] = results[targetPlatform];
+    } else {
+      // 전체 업데이트
+      updateData.snsConversions = results;
+    }
+
+    await db.collection('posts').doc(postIdStr).update(updateData);
+    console.log('✅ SNS 변환 결과를 원고 문서에 저장 완료');
+
     // 5. 관리자가 아닌 경우 사용량 차감
     if (!isAdmin) {
       const now = new Date();
       const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      
+
       await db.collection('users').doc(uid).update({
         [`snsAddon.monthlyUsage.${currentMonthKey}`]: admin.firestore.FieldValue.increment(1),
         'snsAddon.lastUsedAt': admin.firestore.FieldValue.serverTimestamp()
@@ -543,80 +687,80 @@ exports.getSNSUsage = wrap(async (req) => {
 function validateSNSResult(parsedResult, platform, platformConfig, userInfo, targetLength) {
   try {
     const { content = '', hashtags = [] } = parsedResult;
-    
+
     // 1. 기본 구조 검증
     if (!content || content.trim().length === 0) {
       return { valid: false, reason: '콘텐츠가 비어있음' };
     }
-    
+
     // 2. 글자수 검증 (공백 제외)
     const actualLength = countWithoutSpace(content);
     const maxLength = platformConfig.maxLength;
     const minLength = Math.max(50, Math.floor(targetLength * 0.5)); // 최소 50자 또는 목표의 50%
-    
+
     if (actualLength > maxLength) {
       return { valid: false, reason: `글자수 초과: ${actualLength}자 > ${maxLength}자` };
     }
-    
+
     if (actualLength < minLength) {
       return { valid: false, reason: `글자수 부족: ${actualLength}자 < ${minLength}자` };
     }
-    
+
     // 3. 사용자 이름 포함 검증
     const hasUserName = content.includes(userInfo.name);
     if (!hasUserName && userInfo.name && userInfo.name !== '사용자') {
       return { valid: false, reason: `사용자 이름 누락: "${userInfo.name}" 미포함` };
     }
-    
+
     // 4. 문장 완결성 검증
     const sentences = content.split(/[.!?]/).filter(s => s.trim().length > 0);
     const lastSentence = content.trim();
     const isComplete = /[.!?]$/.test(lastSentence) || /[다니습]$/.test(lastSentence);
-    
+
     if (!isComplete) {
       return { valid: false, reason: '문장이 완전히 끝나지 않음' };
     }
-    
+
     // 5. 금지 표현 검증
     const forbiddenWords = ['요약', 'summary', '정리하면', '...', '[', ']', '(예시)', '(내용)'];
     const hasForbiddenWord = forbiddenWords.some(word => content.includes(word));
-    
+
     if (hasForbiddenWord) {
       const foundWord = forbiddenWords.find(word => content.includes(word));
       return { valid: false, reason: `금지 표현 포함: "${foundWord}"` };
     }
-    
+
     // 6. 해시태그 검증
     if (!Array.isArray(hashtags)) {
       return { valid: false, reason: '해시태그가 배열이 아님' };
     }
-    
+
     const expectedHashtagCount = platformConfig.hashtagLimit;
     if (hashtags.length < 1 || hashtags.length > expectedHashtagCount) {
       return { valid: false, reason: `해시태그 개수 오류: ${hashtags.length}개 (예상: 1-${expectedHashtagCount}개)` };
     }
-    
+
     // 7. 해시태그 형식 검증
     const invalidHashtags = hashtags.filter(tag => !tag.startsWith('#') || tag.trim().length < 2);
     if (invalidHashtags.length > 0) {
       return { valid: false, reason: `잘못된 해시태그 형식: ${invalidHashtags.join(', ')}` };
     }
-    
+
     // 8. 플랫폼별 특별 검증
     if (platform === 'x' && actualLength > 280) {
       return { valid: false, reason: 'X 플랫폼 280자 초과' };
     }
-    
+
     if (platform === 'threads' && actualLength > 500) {
       return { valid: false, reason: 'Threads 플랫폼 500자 초과' };
     }
-    
+
     // 모든 검증 통과
-    return { 
-      valid: true, 
+    return {
+      valid: true,
       score: calculateQualityScore(content, actualLength, targetLength, hashtags.length, expectedHashtagCount)
     };
-    
+
   } catch (error) {
     console.error('품질 검증 오류:', error);
     return { valid: false, reason: `검증 오류: ${error.message}` };
@@ -628,20 +772,20 @@ function validateSNSResult(parsedResult, platform, platformConfig, userInfo, tar
  */
 function calculateQualityScore(content, actualLength, targetLength, hashtagCount, expectedHashtagCount) {
   let score = 100;
-  
+
   // 글자수 정확도 (±20% 이내면 만점)
   const lengthDiff = Math.abs(actualLength - targetLength) / targetLength;
   if (lengthDiff > 0.2) score -= (lengthDiff - 0.2) * 100;
-  
+
   // 해시태그 정확도
   const hashtagDiff = Math.abs(hashtagCount - expectedHashtagCount);
   score -= hashtagDiff * 5;
-  
+
   // 문장 구조 점수
   const sentences = content.split(/[.!?]/).filter(s => s.trim().length > 0);
   if (sentences.length < 1) score -= 20;
   if (sentences.length > 10) score -= 10;
-  
+
   return Math.max(0, Math.round(score));
 }
 
@@ -870,7 +1014,7 @@ function cleanContent(content) {
  */
 function validateHashtags(hashtags, platform) {
   if (!Array.isArray(hashtags)) hashtags = [];
-  
+
   const cleaned = hashtags
     .map(tag => tag.trim())
     .filter(tag => tag.length > 1)
@@ -894,19 +1038,19 @@ function generateDefaultHashtags(platform) {
 function enforceLength(content, platform, platformConfig = null) {
   const maxLength = platformConfig ? platformConfig.maxLength : SNS_LIMITS[platform].maxLength;
   const actualLength = countWithoutSpace(content);
-  
+
   if (actualLength <= maxLength) return content;
 
   // 공백 제외 기준으로 자르기
   let trimmed = '';
   let charCount = 0;
-  
+
   for (let i = 0; i < content.length && charCount < maxLength - 3; i++) {
     trimmed += content.charAt(i);
     if (!/\s/.test(content.charAt(i))) {
       charCount++;
     }
   }
-  
+
   return trimmed + '...';
 }

@@ -22,6 +22,8 @@ const {
 
 // Save handler
 const { saveSelectedPost } = require('./posts/save-handler');
+// Indexing handler
+const { indexPastPosts } = require('./posts/indexing-handler');
 
 // Generation handler는 아직 분리하지 않았으므로 기존 파일에서 가져옴
 // TODO: generation-handler.js로 분리 예정
@@ -56,7 +58,9 @@ exports.deletePost = deletePost;
 exports.checkUsageLimit = checkUsageLimit;
 
 // Save 엔드포인트 export
+// Save 엔드포인트 export
 exports.saveSelectedPost = saveSelectedPost;
+exports.indexPastPosts = indexPastPosts;
 
 // ============================================================================
 // 🎯 슬로건 삽입 헬퍼 함수
@@ -252,7 +256,7 @@ exports.generatePosts = httpWrap(async (req) => {
   // 데이터 검증
   const topic = data.prompt || data.topic || '';
   const category = data.category || '';
-  const modelName = data.modelName || 'gemini-2.5-flash-lite';
+  const modelName = data.modelName || 'gemini-2.5-flash';
 
   // 카테고리별 최소 분량 설정 (블로그 원고 기준)
   // 키는 CATEGORY_TO_WRITING_METHOD와 일치해야 함
@@ -592,6 +596,7 @@ exports.generatePosts = httpWrap(async (req) => {
           familyStatus
         },
         memoryContext: safeMemoryContext,
+        ragContext: safeRagContext,  // 🔍 RAG 컨텍스트 추가 (과거 글 스타일 학습)
         instructions: instructionPayload,
         newsContext: safeNewsContext,
         regionHint,

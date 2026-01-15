@@ -130,7 +130,7 @@ ${sentences.map((s, i) => `${i + 1}. "${s}"`).join('\n')}
 }`;
 
   try {
-    const response = await callGenerativeModel(prompt, 1, 'gemini-2.5-flash-lite', true);
+    const response = await callGenerativeModel(prompt, 1, 'gemini-2.5-flash', true);
     const parsed = JSON.parse(response);
 
     return parsed.results.map((r, i) => ({
@@ -645,6 +645,138 @@ async function runHeuristicValidation(content, status, title = '', options = {})
 }
 
 // ============================================================================
+// 초당적 협력 칭찬 검증 (Bipartisan Praise Validation)
+// ============================================================================
+
+/**
+ * 초당적 협력 글에서 금지 표현 사용 및 과잉 칭찬 감지
+ */
+const BIPARTISAN_FORBIDDEN_PHRASES = [
+  // 과잉 칭찬/추종
+  '정신을 이어받아', '뜻을 받들어', '배워야 합니다', '배울 점',
+  '깊은 울림', '용기에 박수', '귀감이 됩니다', '본받아야',
+  '존경합니다', '멘토', '스승', '깊은 감명',
+  // 자진영 폄하
+  '우리보다 낫다', '우리보다 훨씬 낫다', '우리는 저렇게 못한다',
+  // 전면적 동의
+  '정책이 100% 맞다', '전적으로 동의한다', '완전히 옳다',
+  // 과장 극찬
+  '정치인 중 최고', '유일하게 믿을 수 있다', '가장 훌륭하다',
+  // 🔴 [FIX] 사적 호칭 제거 - 후처리 삭제 시 '박형준'→'박준' 같은 버그 발생
+  // '형', '누나', '동지' 등은 프롬프트 가이드라인으로만 제공 (LLM이 맥락 판단)
+  '개인적으로 좋아한다',
+  // 헌신적 (과잉)
+  '헌신적인 노력', '헌신적인 모습'
+];
+
+/**
+ * 금지 표현 검출 및 대체
+ * @param {string} content - 검증할 콘텐츠
+ * @returns {Object} { hasForbidden, violations, correctedContent }
+ */
+function detectBipartisanForbiddenPhrases(content) {
+  const violations = [];
+  let correctedContent = content;
+
+  for (const phrase of BIPARTISAN_FORBIDDEN_PHRASES) {
+    if (content.includes(phrase)) {
+      violations.push(phrase);
+      // 금지 표현 삭제 또는 대체
+      if (phrase === '귀감이 됩니다') {
+        correctedContent = correctedContent.replace(new RegExp(phrase, 'g'), '주목할 만합니다');
+      } else if (phrase === '배워야 합니다') {
+        correctedContent = correctedContent.replace(new RegExp(phrase, 'g'), '참고할 수 있습니다');
+      } else if (phrase === '깊은 감명') {
+        correctedContent = correctedContent.replace(new RegExp(phrase, 'g'), '관심');
+      } else if (phrase.includes('헌신적인')) {
+        correctedContent = correctedContent.replace(new RegExp(phrase, 'g'), '꾸준한 노력');
+      } else {
+        // 기타 금지 표현은 삭제
+        correctedContent = correctedContent.replace(new RegExp(phrase, 'g'), '');
+      }
+    }
+  }
+
+  return {
+    hasForbidden: violations.length > 0,
+    violations,
+    correctedContent: correctedContent.replace(/\s+/g, ' ').replace(/\s+\./g, '.').trim()
+  };
+}
+
+/**
+ * 경쟁자 칭찬 비중 계산
+ * @param {string} content - 콘텐츠
+ * @param {string[]} rivalNames - 경쟁자 이름 배열 (예: ['조경태'])
+ * @returns {Object} { percentage, exceedsLimit, rivalMentions }
+ */
+function calculatePraiseProportion(content, rivalNames = []) {
+  if (rivalNames.length === 0) return { percentage: 0, exceedsLimit: false, rivalMentions: 0 };
+
+  const sentences = extractSentences(content);
+  let rivalMentionSentences = 0;
+
+  for (const sentence of sentences) {
+    for (const name of rivalNames) {
+      if (sentence.includes(name)) {
+        rivalMentionSentences++;
+        break;
+      }
+    }
+  }
+
+  const percentage = sentences.length > 0
+    ? Math.round((rivalMentionSentences / sentences.length) * 100)
+    : 0;
+
+  return {
+    percentage,
+    exceedsLimit: percentage > 15,  // 15% 초과 시 경고
+    rivalMentions: rivalMentionSentences,
+    totalSentences: sentences.length
+  };
+}
+
+/**
+ * 초당적 협력 글 통합 검증
+ * @param {string} content - 검증할 콘텐츠
+ * @param {Object} options - { rivalNames: string[], category: string }
+ * @returns {Object} { passed, issues, correctedContent }
+ */
+function validateBipartisanPraise(content, options = {}) {
+  const { rivalNames = [], category = '' } = options;
+
+  // 초당적 협력 카테고리가 아니면 스킵
+  if (!category.includes('bipartisan') && !category.includes('초당적')) {
+    return { passed: true, issues: [], correctedContent: content };
+  }
+
+  const issues = [];
+
+  // 1. 금지 표현 검출 및 자동 대체
+  const forbiddenResult = detectBipartisanForbiddenPhrases(content);
+  if (forbiddenResult.hasForbidden) {
+    issues.push(`⚠️ 초당적 협력 금지 표현 감지 및 자동 수정: ${forbiddenResult.violations.join(', ')}`);
+  }
+
+  // 2. 경쟁자 칭찬 비중 체크
+  const proportionResult = calculatePraiseProportion(forbiddenResult.correctedContent, rivalNames);
+  if (proportionResult.exceedsLimit) {
+    issues.push(`⚠️ 경쟁자 칭찬 비중 초과: ${proportionResult.percentage}% (${proportionResult.rivalMentions}/${proportionResult.totalSentences} 문장) - 권장 15% 이하`);
+  }
+
+  return {
+    passed: issues.length === 0,
+    issues,
+    correctedContent: forbiddenResult.correctedContent,
+    details: {
+      forbiddenPhrases: forbiddenResult,
+      praiseProportion: proportionResult
+    }
+  };
+}
+
+// ============================================================================
 // 키워드 검증 함수
 // ============================================================================
 
@@ -720,10 +852,9 @@ function validateKeywordInsertion(content, userKeywords = [], autoKeywords = [],
   const plainText = content.replace(/<[^>]*>/g, '').replace(/\s/g, '');
   const actualWordCount = plainText.length;
 
-  // 사용자 입력 키워드: 400자당 1회 (목표 개수 고정)
-  const userTargetCount = Math.max(1, Math.floor(actualWordCount / 400));
-  const userMaxCount = userTargetCount;
-  const userMinCount = userTargetCount;
+  // 사용자 입력 키워드: 300~400자당 1회 (사용자 제안: 총 4~6회 적당)
+  const userMinCount = 4;
+  const userMaxCount = 6;
 
   // 자동 추출 키워드: 최소 1회만 (완화)
   const autoMinCount = 1;
@@ -943,7 +1074,7 @@ async function validateAndRetry({
       status,
       topic,
       authorName,
-      modelName: 'gemini-2.5-flash-lite'
+      modelName: 'gemini-2.5-flash'
     });
 
     // 점수 추적
@@ -975,7 +1106,7 @@ async function validateAndRetry({
             ragContext,
             authorName,
             status,
-            modelName: 'gemini-2.5-flash-lite'
+            modelName: 'gemini-2.5-flash'
           });
 
           if (correctionResult.success && !correctionResult.unchanged) {
@@ -1003,7 +1134,7 @@ async function validateAndRetry({
         ragContext,
         authorName,
         status,
-        modelName: 'gemini-2.5-flash-lite'
+        modelName: 'gemini-2.5-flash'
       });
 
       if (correctionResult.success && !correctionResult.unchanged) {
@@ -1064,9 +1195,14 @@ module.exports = {
   validateKeywordInsertion,
   validateTitleQuality,              // 제목 품질 검증
   countKeywordOccurrences,
+  // 초당적 협력 검증
+  validateBipartisanPraise,
+  detectBipartisanForbiddenPhrases,
+  BIPARTISAN_FORBIDDEN_PHRASES,
   // 화이트리스트/블랙리스트 (테스트용)
   ALLOWED_ENDINGS,
   EXPLICIT_PLEDGE_PATTERNS,
   // Progress 관련
   GENERATION_STAGES
 };
+

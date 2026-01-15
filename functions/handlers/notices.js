@@ -224,6 +224,106 @@ exports.getAdminStats = wrap(async (request) => {
 });
 
 // ============================================================================
+// 일별 활성 사용자 통계 조회 (관리자용)
+// 주간/월간/연간 데이터를 일 단위로 반환
+// - dailyActive: 일별 활동 횟수 (같은 사람이 여러 날 활동하면 중복 카운트)
+// - uniqueUsers: 기간 내 고유 사용자 수 (DAU/WAU/MAU)
+// ============================================================================
+exports.getActiveUserStats = wrap(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  }
+  const userDoc = await db.collection('users').doc(request.auth.uid).get();
+  if (!userDoc.exists || userDoc.data().role !== 'admin') {
+    throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
+  }
+
+  try {
+    const { period = 'week' } = request.data || {};
+    const now = new Date();
+
+    // 기간 설정: week(7일), month(30일), year(365일)
+    let daysCount;
+    switch (period) {
+      case 'month':
+        daysCount = 30;
+        break;
+      case 'year':
+        daysCount = 365;
+        break;
+      case 'week':
+      default:
+        daysCount = 7;
+        break;
+    }
+
+    // 기간 시작일
+    const periodStart = new Date(now);
+    periodStart.setDate(now.getDate() - daysCount + 1);
+    periodStart.setHours(0, 0, 0, 0);
+
+    // 기간 내 모든 활성 사용자 한 번에 조회 (고유 사용자 계산용)
+    const allActiveSnapshot = await db.collection('users')
+      .where('updatedAt', '>=', periodStart)
+      .get();
+
+    // 고유 사용자 ID 집합 및 사용자별 활동일 맵
+    const uniqueUserIds = new Set();
+    const userActivityDays = new Map(); // uid -> Set of date strings
+
+    allActiveSnapshot.forEach(doc => {
+      const data = doc.data();
+      if (data.isActive !== false && data.updatedAt) {
+        uniqueUserIds.add(doc.id);
+
+        // 사용자별 활동일 기록
+        const activityDate = data.updatedAt.toDate?.() || new Date(data.updatedAt);
+        const dateStr = activityDate.toISOString().split('T')[0];
+
+        if (!userActivityDays.has(doc.id)) {
+          userActivityDays.set(doc.id, new Set());
+        }
+        userActivityDays.get(doc.id).add(dateStr);
+      }
+    });
+
+    // 각 날짜별 활성 사용자 수 계산 (DAU)
+    const dailyStats = [];
+
+    for (let i = daysCount - 1; i >= 0; i--) {
+      const targetDate = new Date(now);
+      targetDate.setDate(now.getDate() - i);
+      targetDate.setHours(0, 0, 0, 0);
+      const dateStr = targetDate.toISOString().split('T')[0];
+
+      // 해당 날짜에 활동한 고유 사용자 수
+      let activeCount = 0;
+      userActivityDays.forEach((dates) => {
+        if (dates.has(dateStr)) {
+          activeCount++;
+        }
+      });
+
+      dailyStats.push({
+        date: dateStr,
+        count: activeCount
+      });
+    }
+
+    return ok({
+      period,
+      stats: dailyStats,
+      uniqueUsers: uniqueUserIds.size, // 기간 내 고유 사용자 수
+      totalActivity: dailyStats.reduce((sum, d) => sum + d.count, 0) // 총 활동 횟수
+    });
+
+  } catch (error) {
+    console.error('❌ getActiveUserStats 오류:', error);
+    throw new HttpsError('internal', `활성 사용자 통계 조회 실패: ${error.message}`);
+  }
+});
+
+// ============================================================================
 // 에러 로그 조회 (관리자용)
 // ============================================================================
 exports.getErrorLogs = wrap(async (request) => {

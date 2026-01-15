@@ -364,8 +364,8 @@ class SEOAgent extends BaseAgent {
     }
 
     const plainText = content.replace(/<[^>]*>/g, ' ').toLowerCase();
-    const minRequired = calculateMinInsertions(targetWordCount);  // 2000자 → 5회
-    const maxAllowed = Math.min(minRequired + 2, Math.floor(minRequired * 1.4));  // 5 → 7회
+    const minRequired = 4; // 항상 4회
+    const maxAllowed = 6;  // 항상 6회
 
     console.log(`🔍 [SEOAgent] 검색어 검증 시작: ${userKeywords.length}개, 범위 ${minRequired}~${maxAllowed}회`);
 
@@ -383,20 +383,26 @@ class SEOAgent extends BaseAgent {
 
       // 부족 검증
       if (count < minRequired) {
+        const missing = minRequired - count;
         issues.push({
           id: 'user_keyword_insufficient',
           severity: 'critical',
-          message: `검색어 "${keyword}" 부족: ${count}회 (최소 ${minRequired}회 필요) - SEO 효과 없음`
+          message: `검색어 "${keyword}" 부족: ${count}회 (최소 ${minRequired}회 필요) - SEO 효과 없음`,
+          description: `검색어 "${keyword}" 부족: 현재 ${count}회 (최소 ${minRequired}회 필요)`,
+          instruction: `문맥에 맞게 "${keyword}"를 ${missing}회 더 추가하여, 최소 ${minRequired}회 이상 사용하세요.`
         });
         console.warn(`⚠️ [SEOAgent] 검색어 부족: "${keyword}" ${count}회 < ${minRequired}회`);
       }
 
       // 과다 검증 (네이버 스팸 필터 방지)
       if (count > maxAllowed) {
+        const excess = count - maxAllowed;
         issues.push({
           id: 'user_keyword_spam_risk',
           severity: 'critical',
-          message: `검색어 "${keyword}" 과다: ${count}회 (최대 ${maxAllowed}회) - 네이버 스팸 차단 위험 🚨`
+          message: `검색어 "${keyword}" 과다: ${count}회 (최대 ${maxAllowed}회) - 네이버 스팸 차단 위험 🚨`,
+          description: `검색어 "${keyword}" 과다: ${count}회 사용됨 (허용 범위: ${maxAllowed}회 이하)`,
+          instruction: `문맥상 불필요한 "${keyword}"를 ${excess}회 삭제하여, 전체 사용 횟수를 ${maxAllowed}회 이하로 줄이세요.`
         });
         console.error(`🚨 [SEOAgent] 스팸 위험: "${keyword}" ${count}회 > ${maxAllowed}회`);
       }

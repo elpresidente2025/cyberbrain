@@ -114,7 +114,7 @@ ${combined}
 }`;
 
   try {
-    const result = await callGenerativeModel(prompt, 1, 'gemini-2.5-flash-lite');
+    const result = await callGenerativeModel(prompt, 1, 'gemini-2.5-flash');
 
     // JSON 추출
     const jsonMatch = result.match(/\{[\s\S]*\}/);

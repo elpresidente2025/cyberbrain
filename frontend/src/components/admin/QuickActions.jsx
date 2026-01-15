@@ -1,17 +1,15 @@
 // frontend/src/components/admin/QuickActions.jsx
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Typography,
   Grid,
   Button,
   Box,
-  Switch,
-  FormControlLabel,
   Alert,
-  useTheme
+  useTheme,
+  Snackbar
 } from '@mui/material';
 import {
-  Settings,
   Download,
   People,
   Api,
@@ -26,107 +24,123 @@ function QuickActions() {
   const theme = useTheme();
   const [userListOpen, setUserListOpen] = useState(false);
   const [statusUpdateOpen, setStatusUpdateOpen] = useState(false);
-  const [serviceMode, setServiceMode] = useState(null); // null: loading, true: test, false: production
+  const [serviceMode, setServiceMode] = useState(null);
   const [loadingToggle, setLoadingToggle] = useState(false);
+  const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
+
+  // cleanup ref
+  const isMountedRef = useRef(true);
+
+  // 알림 표시
+  const showNotification = useCallback((message, severity = 'info') => {
+    setNotification({ open: true, message, severity });
+  }, []);
 
   // 시스템 설정 로드
-  React.useEffect(() => {
+  useEffect(() => {
+    isMountedRef.current = true;
+
     const loadServiceMode = async () => {
       try {
         const result = await callFunctionWithRetry('getSystemConfig');
-        if (result?.config) {
+        if (isMountedRef.current && result?.config) {
           setServiceMode(result.config.testMode || false);
         }
       } catch (error) {
         console.error('시스템 설정 로드 실패:', error);
-        setServiceMode(false); // 기본값: 프로덕션 모드
+        if (isMountedRef.current) {
+          setServiceMode(false);
+        }
       }
     };
     loadServiceMode();
+
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
-  const exportAllData = async () => {
+  // CSV 생성 헬퍼 함수
+  const createCsv = useCallback((data, filename) => {
+    if (!data || data.length === 0) return false;
+
+    const headers = Object.keys(data[0]);
+    const csvContent = [
+      headers.join(','),
+      ...data.map(row =>
+        headers.map(header => {
+          const value = row[header];
+          if (value === null || value === undefined) return '';
+          if (typeof value === 'object') return JSON.stringify(value).replace(/"/g, '""');
+          return String(value).replace(/"/g, '""');
+        }).map(v => `"${v}"`).join(',')
+      )
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    return true;
+  }, []);
+
+  // 전체 데이터 CSV 내보내기
+  const exportAllData = useCallback(async () => {
     try {
-      console.log('📊 전체 데이터 CSV 내보내기 시작...');
-      
-      // 모든 데이터를 가져와서 CSV로 변환
-      const [usersResult, errorsResult, statsResult] = await Promise.all([
-        callFunctionWithRetry('getUsers'),
-        callFunctionWithRetry('getErrors', { limit: 1000 }),
+      const [usersResult, statsResult] = await Promise.all([
+        callFunctionWithRetry('getAllUsers'),
         getAdminStats()
       ]);
 
-      // CSV 생성 함수
-      const createCsv = (data, filename) => {
-        if (!data || data.length === 0) return;
-        
-        const headers = Object.keys(data[0]);
-        const csvContent = [
-          headers.join(','),
-          ...data.map(row => 
-            headers.map(header => {
-              const value = row[header];
-              if (value === null || value === undefined) return '';
-              if (typeof value === 'object') return JSON.stringify(value).replace(/"/g, '""');
-              return String(value).replace(/"/g, '""');
-            }).map(v => `"${v}"`).join(',')
-          )
-        ].join('\n');
+      let filesExported = 0;
 
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      };
-
-      // 각각 CSV로 내보내기
-      if (usersResult?.users) {
-        createCsv(usersResult.users, 'users');
-      }
-      
-      if (errorsResult?.errors) {
-        createCsv(errorsResult.errors, 'errors');
+      if (usersResult?.users && createCsv(usersResult.users, 'users')) {
+        filesExported++;
       }
 
-      // 통계 데이터도 CSV로
-      if (statsResult?.stats) {
-        createCsv([{
-          date: new Date().toISOString(),
-          ...statsResult.stats
-        }], 'stats');
+      if (statsResult?.stats || statsResult?.data) {
+        const statsData = statsResult.stats || statsResult.data;
+        if (createCsv([{ date: new Date().toISOString(), ...statsData }], 'stats')) {
+          filesExported++;
+        }
       }
 
-      alert('✅ CSV 파일들이 다운로드되었습니다.');
-      
+      if (filesExported > 0) {
+        showNotification(`${filesExported}개의 CSV 파일이 다운로드되었습니다.`, 'success');
+      } else {
+        showNotification('내보낼 데이터가 없습니다.', 'warning');
+      }
     } catch (error) {
-      console.error('❌ CSV 내보내기 실패:', error);
-      alert('❌ CSV 내보내기 실패: ' + error.message);
+      console.error('CSV 내보내기 실패:', error);
+      showNotification('CSV 내보내기 실패: ' + error.message, 'error');
     }
-  };
+  }, [createCsv, showNotification]);
 
-  const clearCache = async () => {
-    if (!confirm('정말로 캐시를 비우시겠습니까?')) return;
-    
+  // 캐시 비우기
+  const clearCache = useCallback(async () => {
+    if (!window.confirm('정말로 캐시를 비우시겠습니까?')) return;
+
     try {
       await callFunctionWithRetry('clearSystemCache');
-      alert('✅ 캐시가 성공적으로 비워졌습니다.');
-      window.location.reload();
+      showNotification('캐시가 성공적으로 비워졌습니다.', 'success');
+      setTimeout(() => window.location.reload(), 1500);
     } catch (error) {
-      console.error('❌ 캐시 비우기 실패:', error);
-      alert('❌ 캐시 비우기 실패: ' + error.message);
+      console.error('캐시 비우기 실패:', error);
+      showNotification('캐시 비우기 실패: ' + error.message, 'error');
     }
-  };
+  }, [showNotification]);
 
-  const toggleServiceMode = async () => {
+  // 서비스 모드 토글
+  const toggleServiceMode = useCallback(async () => {
     const newMode = !serviceMode;
     const modeText = newMode ? '데모 모드' : '프로덕션 모드';
 
-    const confirmed = confirm(
+    const confirmed = window.confirm(
       `정말로 ${modeText}로 전환하시겠습니까?\n\n` +
       (newMode
         ? '• 당원 인증 시 월 8회 무료 제공\n• 당원 인증 필수, 구독 불필요\n• 대시보드에 "데모 모드" 배지 표시'
@@ -141,37 +155,51 @@ function QuickActions() {
         testMode: newMode
       });
 
-      setServiceMode(newMode);
-      alert(`✅ ${modeText}로 전환되었습니다.`);
-
-      // 페이지 새로고침하여 모든 컴포넌트에 반영
-      setTimeout(() => window.location.reload(), 1000);
+      if (isMountedRef.current) {
+        setServiceMode(newMode);
+        showNotification(`${modeText}로 전환되었습니다.`, 'success');
+        setTimeout(() => window.location.reload(), 1500);
+      }
     } catch (error) {
       console.error('서비스 모드 전환 실패:', error);
-      alert('❌ 서비스 모드 전환 실패: ' + error.message);
+      showNotification('서비스 모드 전환 실패: ' + error.message, 'error');
     } finally {
-      setLoadingToggle(false);
+      if (isMountedRef.current) {
+        setLoadingToggle(false);
+      }
     }
-  };
+  }, [serviceMode, showNotification]);
 
   return (
     <>
-      <HongKongNeonCard sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom sx={{ color: theme.palette.ui?.header || '#152484', fontWeight: 600 }}>
+      <HongKongNeonCard sx={{ p: { xs: 2, sm: 3 }, mb: 3 }}>
+        <Typography
+          variant="h6"
+          component="h2"
+          id="quick-actions-heading"
+          gutterBottom
+          sx={{ color: theme.palette.ui?.header || '#152484', fontWeight: 600 }}
+        >
           빠른 작업 (Quick Actions)
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
           자주 사용하는 관리 기능들을 빠르게 실행할 수 있습니다.
         </Typography>
-        
-        <Grid container spacing={2}>
+
+        <Grid
+          container
+          spacing={2}
+          role="group"
+          aria-labelledby="quick-actions-heading"
+        >
           <Grid item xs={12} sm={6} md={4}>
             <Button
               fullWidth
               variant="contained"
-              startIcon={<People />}
+              startIcon={<People aria-hidden="true" />}
               onClick={() => setUserListOpen(true)}
-              sx={{ 
+              aria-label="사용자 목록 모달 열기"
+              sx={{
                 py: 2,
                 bgcolor: theme.palette.ui?.header || '#152484',
                 color: 'white',
@@ -179,20 +207,25 @@ function QuickActions() {
                   bgcolor: '#1e2d9f',
                   transform: 'translateY(-2px)',
                   boxShadow: '0 6px 16px rgba(21, 36, 132, 0.3)'
+                },
+                '&:focus-visible': {
+                  outline: '2px solid #152484',
+                  outlineOffset: '2px'
                 }
               }}
             >
               사용자 목록
             </Button>
           </Grid>
-          
+
           <Grid item xs={12} sm={6} md={4}>
             <Button
               fullWidth
               variant="contained"
-              startIcon={<Api />}
+              startIcon={<Api aria-hidden="true" />}
               onClick={() => setStatusUpdateOpen(true)}
-              sx={{ 
+              aria-label="상태 수정 모달 열기"
+              sx={{
                 py: 2,
                 bgcolor: '#006261',
                 color: 'white',
@@ -200,20 +233,25 @@ function QuickActions() {
                   bgcolor: '#007a74',
                   transform: 'translateY(-2px)',
                   boxShadow: '0 6px 16px rgba(0, 98, 97, 0.3)'
+                },
+                '&:focus-visible': {
+                  outline: '2px solid #006261',
+                  outlineOffset: '2px'
                 }
               }}
             >
               상태 수정
             </Button>
           </Grid>
-          
+
           <Grid item xs={12} sm={6} md={4}>
             <Button
               fullWidth
               variant="contained"
-              startIcon={<Download />}
+              startIcon={<Download aria-hidden="true" />}
               onClick={exportAllData}
-              sx={{ 
+              aria-label="전체 데이터 CSV 다운로드"
+              sx={{
                 py: 2,
                 bgcolor: '#55207D',
                 color: 'white',
@@ -221,6 +259,10 @@ function QuickActions() {
                   bgcolor: '#6d2b93',
                   transform: 'translateY(-2px)',
                   boxShadow: '0 6px 16px rgba(85, 32, 125, 0.3)'
+                },
+                '&:focus-visible': {
+                  outline: '2px solid #55207D',
+                  outlineOffset: '2px'
                 }
               }}
             >
@@ -232,9 +274,11 @@ function QuickActions() {
             <Button
               fullWidth
               variant={serviceMode ? "contained" : "outlined"}
-              startIcon={<ToggleOn />}
+              startIcon={<ToggleOn aria-hidden="true" />}
               onClick={toggleServiceMode}
               disabled={loadingToggle || serviceMode === null}
+              aria-label={serviceMode ? '데모 모드에서 프로덕션 모드로 전환' : '프로덕션 모드에서 데모 모드로 전환'}
+              aria-pressed={serviceMode}
               sx={{
                 py: 2,
                 borderColor: serviceMode ? '#006261' : '#d22730',
@@ -246,33 +290,42 @@ function QuickActions() {
                 },
                 '&.Mui-disabled': {
                   opacity: 0.6
+                },
+                '&:focus-visible': {
+                  outline: `2px solid ${serviceMode ? '#006261' : '#d22730'}`,
+                  outlineOffset: '2px'
                 }
               }}
             >
-              {serviceMode === null ? '로딩 중...' : (serviceMode ? '🧪 데모 모드' : '💼 프로덕션 모드')}
+              {serviceMode === null ? '로딩 중...' : (serviceMode ? '데모 모드' : '프로덕션 모드')}
             </Button>
           </Grid>
         </Grid>
 
         {/* 서비스 모드 상태 표시 */}
         {serviceMode !== null && (
-          <Alert severity={serviceMode ? "info" : "success"} sx={{ mt: 2 }}>
-            <Typography variant="body2">
+          <Alert
+            severity={serviceMode ? "info" : "success"}
+            sx={{ mt: 2 }}
+            role="status"
+            aria-live="polite"
+          >
+            <Typography variant="body2" component="div">
               {serviceMode ? (
                 <>
-                  🧪 <strong>데모 모드</strong>
+                  <strong>데모 모드 활성화됨</strong>
                   <br />
-                  • 당원 인증 시 월 8회 무료 제공
+                  <span>• 당원 인증 시 월 8회 무료 제공</span>
                   <br />
-                  • 당원 인증 필수, 구독 불필요
+                  <span>• 당원 인증 필수, 구독 불필요</span>
                 </>
               ) : (
                 <>
-                  💼 <strong>프로덕션 모드</strong>
+                  <strong>프로덕션 모드 활성화됨</strong>
                   <br />
-                  • 유료 구독 + 당원 인증 필수
+                  <span>• 유료 구독 + 당원 인증 필수</span>
                   <br />
-                  • 무료 체험 8회 제공 후 결제 필요
+                  <span>• 무료 체험 8회 제공 후 결제 필요</span>
                 </>
               )}
             </Typography>
@@ -290,7 +343,14 @@ function QuickActions() {
                 size="small"
                 variant="text"
                 onClick={clearCache}
-                sx={{ color: '#55207D' }}
+                aria-label="시스템 캐시 비우기"
+                sx={{
+                  color: '#55207D',
+                  '&:focus-visible': {
+                    outline: '2px solid #55207D',
+                    outlineOffset: '2px'
+                  }
+                }}
               >
                 캐시 비우기
               </Button>
@@ -300,13 +360,22 @@ function QuickActions() {
       </HongKongNeonCard>
 
       {/* 모달들 */}
-      <UserListModal 
-        open={userListOpen} 
-        onClose={() => setUserListOpen(false)} 
+      <UserListModal
+        open={userListOpen}
+        onClose={() => setUserListOpen(false)}
       />
-      <StatusUpdateModal 
-        open={statusUpdateOpen} 
-        onClose={() => setStatusUpdateOpen(false)} 
+      <StatusUpdateModal
+        open={statusUpdateOpen}
+        onClose={() => setStatusUpdateOpen(false)}
+      />
+
+      {/* 알림 스낵바 */}
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={4000}
+        onClose={() => setNotification(prev => ({ ...prev, open: false }))}
+        message={notification.message}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       />
     </>
   );

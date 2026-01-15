@@ -82,7 +82,7 @@ exports.generatePosts = httpWrap(async (req) => {
 원고를 작성해주세요.`;
 
     // AI 모델 호출
-    const rawResponse = await callGenerativeModel(generationPrompt, 1, 'gemini-2.5-flash-lite');
+    const rawResponse = await callGenerativeModel(generationPrompt, 1, 'gemini-2.5-flash');
 
     if (!rawResponse) {
       throw new HttpsError('internal', '원고 생성에 실패했습니다.');
@@ -137,8 +137,8 @@ exports.generatePosts = httpWrap(async (req) => {
     );
 
     if (!generatedContent ||
-        (typeof generatedContent === 'string' && generatedContent.trim().length < 10) ||
-        (typeof generatedContent !== 'string' && !generatedContent)) {
+      (typeof generatedContent === 'string' && generatedContent.trim().length < 10) ||
+      (typeof generatedContent !== 'string' && !generatedContent)) {
       throw new HttpsError('internal', '유효한 원고 콘텐츠를 생성하지 못했습니다.');
     }
 

@@ -110,7 +110,7 @@ const ProfileBioGuideModal = ({ open, onClose, onStartWriting, userName }) => {
         <Box sx={{ mb: 3 }}>
           <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, textAlign: 'center' }}>
             {userName}님만의 고유한 문체와 가치관을<br />
-            자기소개서에 자유롭게 담아주세요
+            자기소개 및 출마선언문에 자유롭게 담아주세요
           </Typography>
 
           <Box sx={{

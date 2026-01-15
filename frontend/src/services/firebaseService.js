@@ -103,6 +103,10 @@ export const getAdminStats = async () => {
   return await callFunction('getAdminStats', {});
 };
 
+export const getActiveUserStats = async (period = 'week') => {
+  return await callFunction('getActiveUserStats', { period });
+};
+
 export const getErrorLogs = async () => {
   return await callFunction('getErrorLogs', {});
 };
@@ -162,9 +166,9 @@ export const clearSystemCache = async () => {
   return await callFunctionWithRetry('clearSystemCache');
 };
 
-export const convertToSNS = async (postId) => {
+export const convertToSNS = async (postId, targetPlatform = null) => {
   const modelName = localStorage.getItem('gemini_model') || 'gemini-2.5-flash-lite';
-  return await callFunctionWithNaverAuth('convertToSNS', { postId, modelName });
+  return await callFunctionWithNaverAuth('convertToSNS', { postId, modelName, targetPlatform });
 };
 
 export const testSNS = async () => {
