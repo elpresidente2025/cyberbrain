@@ -681,7 +681,9 @@ class Orchestrator {
           passed: seoResult.seoPassed ?? seoResult.passed ?? null,
           issueCount: seoResult.issues?.length || 0,
           issues: seoResult.issues || [],
-          suggestions: seoResult.suggestions || []
+          suggestions: seoResult.suggestions || [],
+          // 🔑 검색어별 검증 결과 (프론트엔드 표시용)
+          keywordValidation: seoResult.analysis?.userKeywordValidation?.details || null
         },
         // 글자수
         wordCount: finalContent ? finalContent.replace(/<[^>]*>/g, '').length : 0,

@@ -235,7 +235,10 @@ export function useGenerateAPI() {
         seoOptimized: isSeoOptimized(content),
 
         // 🤖 Multi-Agent 메타데이터 (관리자/테스터용)
-        multiAgent: responseData.metadata?.multiAgent || null
+        multiAgent: responseData.metadata?.multiAgent || null,
+
+        // 🔑 검색어 검증 결과 (백엔드 판정 기준)
+        keywordValidation: responseData.metadata?.seo?.keywordValidation || null
       };
 
       // 📌 메모리 누수 방지: 제한된 개수로 추가

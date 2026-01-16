@@ -128,11 +128,11 @@ export default function PreviewPane({ draft }) {
           }
         }}
       >
-        <Box sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between', 
-          mb: 2 
+        <Box sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          mb: 2
         }}>
           <Typography
             variant="h6"
@@ -156,8 +156,8 @@ export default function PreviewPane({ draft }) {
             {characterCount.toLocaleString()}자
           </Typography>
         </Box>
-        
-        <Box 
+
+        <Box
           className="article-content"
           dangerouslySetInnerHTML={{ __html: draft.htmlContent || '내용이 없습니다.' }}
           sx={{
@@ -201,20 +201,32 @@ export default function PreviewPane({ draft }) {
                   <Typography variant="caption" sx={{ fontWeight: 600, color: '#ffffff !important' }}>
                     검색어 삽입 횟수:
                   </Typography>
-                  {keywordStats.map((stat, index) => (
-                    <Typography
-                      key={index}
-                      variant="caption"
-                      sx={{
-                        color: stat.count >= Math.floor(characterCount / 400) ? '#4caf50 !important' : '#f44336 !important',
-                        fontWeight: 500,
-                        pl: 1
-                      }}
-                    >
-                      "{stat.keyword}": {stat.count}회
-                      {stat.count < Math.floor(characterCount / 400) && ' (부족)'}
-                    </Typography>
-                  ))}
+                  {keywordStats.map((stat, index) => {
+                    // 🔑 백엔드 검증 결과 우선 사용
+                    const backendValidation = draft.keywordValidation?.[stat.keyword];
+                    const isValid = backendValidation
+                      ? backendValidation.status === 'valid'
+                      : stat.count >= Math.floor(characterCount / 400); // fallback
+                    const statusLabel = backendValidation
+                      ? (backendValidation.status === 'insufficient' ? ' (부족)'
+                        : backendValidation.status === 'spam_risk' ? ' (과다)'
+                          : '')
+                      : (stat.count < Math.floor(characterCount / 400) ? ' (부족)' : '');
+
+                    return (
+                      <Typography
+                        key={index}
+                        variant="caption"
+                        sx={{
+                          color: isValid ? '#4caf50 !important' : '#f44336 !important',
+                          fontWeight: 500,
+                          pl: 1
+                        }}
+                      >
+                        "{stat.keyword}": {stat.count}회{statusLabel}
+                      </Typography>
+                    );
+                  })}
                 </Box>
               )}
               {draft.generatedAt && (
