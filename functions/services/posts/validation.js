@@ -868,7 +868,10 @@ function validateKeywordInsertion(content, userKeywords = [], autoKeywords = [],
     const exactCount = countKeywordOccurrences(content, keyword);
     const coverageCount = countKeywordCoverage(content, keyword);
     totalOccurrences += coverageCount;
-    const isValid = coverageCount >= userMinCount && exactCount <= userMaxCount;
+    // 🔧 [수정] exactCount와 coverageCount 모두 상한 체크
+    const isUnderMin = coverageCount < userMinCount;
+    const isOverMax = exactCount > userMaxCount || coverageCount > userMaxCount;
+    const isValid = !isUnderMin && !isOverMax;
 
     results[keyword] = {
       count: coverageCount,
