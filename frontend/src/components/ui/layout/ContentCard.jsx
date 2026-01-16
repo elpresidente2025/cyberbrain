@@ -31,7 +31,7 @@ const ContentCard = ({
         p: `${padding}px`,
         bgcolor: transparent ? 'transparent' : 'rgba(255,255,255,0.03)',
         border: '1px solid rgba(255,255,255,0.1)',
-        borderRadius: `${borders.radius.md}px`,
+        borderRadius: borders.radius.md,
         transition: `all ${transitions.normal} ${transitions.easing.easeInOut}`,
         '&:hover': {
           boxShadow: shadows.cardHover,

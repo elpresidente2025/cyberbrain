@@ -132,14 +132,16 @@ export const spacing = {
 
 /**
  * 테두리 토큰
+ * - 명시적 px 단위 사용으로 일관성 확보
  */
 export const borders = {
   radius: {
-    sm: 1,
-    md: 2,
-    lg: 2,
-    xl: 3,
-    round: 9999,
+    none: '0px',
+    sm: '2px',
+    md: '4px',
+    lg: '8px',
+    xl: '12px',
+    round: '9999px',
   },
   width: {
     thin: 1,

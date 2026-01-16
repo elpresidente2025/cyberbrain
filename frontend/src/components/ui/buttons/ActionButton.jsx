@@ -38,11 +38,10 @@ const ActionButton = ({
           sx: {
             bgcolor: baseColor,
             color: '#ffffff',
-            transition: `all ${transitions.normal} ${transitions.easing.easeInOut}`,
+            transition: `all 0.2s ease`,
             '&:hover': {
-              bgcolor: baseColor,
-              filter: 'brightness(0.9)',
-              transform: 'scale(0.98)'
+              bgcolor: '#1e3a8a',
+              boxShadow: '0 2px 8px rgba(21, 36, 132, 0.3)',
             }
           }
         };
@@ -53,11 +52,10 @@ const ActionButton = ({
           sx: {
             color: baseColor,
             borderColor: baseColor,
-            transition: `all ${transitions.normal} ${transitions.easing.easeInOut}`,
+            transition: `all 0.2s ease`,
             '&:hover': {
-              borderColor: baseColor,
-              bgcolor: `${baseColor}10`,
-              transform: 'scale(0.98)'
+              borderColor: '#1e3a8a',
+              bgcolor: 'rgba(21, 36, 132, 0.08)',
             }
           }
         };

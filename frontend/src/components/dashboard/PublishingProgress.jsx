@@ -94,14 +94,6 @@ const PublishingProgress = () => {
   const [loading, setLoading] = useState(true);
   const [testMode, setTestMode] = useState(false);
 
-  // 호버 시 랜덤 글로우 색상 생성 함수
-  const getRandomGlowColor = () => {
-    const colors = ['#00ffff', '#ff00ff', '#00ff88', '#ff4444', '#8844ff', '#ffff00'];
-    return colors[Math.floor(Math.random() * colors.length)];
-  };
-
-  const [currentGlowColor, setCurrentGlowColor] = useState('#00ffff');
-
   // ColorContext에서 색상을 자동으로 동기화하므로 별도 로직 불필요
 
   // 시스템 설정 로드 (데모 모드 확인)
@@ -233,18 +225,17 @@ const PublishingProgress = () => {
 
   if (loading || !publishingStats || !user) {
     return (
-      <Card 
-        onMouseEnter={() => setCurrentGlowColor(getRandomGlowColor())}
+      <Card
         elevation={0}
-        sx={{ 
+        sx={{
           height: '100%',
           bgcolor: 'transparent',
-          cursor: 'pointer',
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          borderRadius: '4px',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          transition: 'all 0.2s ease',
           '&:hover': {
-            transform: 'scale(0.98)',
-            boxShadow: `0 8px 32px ${currentGlowColor}40, 0 4px 16px ${currentGlowColor}20, inset 0 1px 0 ${currentGlowColor}10`,
-            border: `1px solid ${currentGlowColor}30`
+            borderColor: 'rgba(255, 255, 255, 0.2)',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
           }
         }}>
         <CardContent>
@@ -298,18 +289,17 @@ const PublishingProgress = () => {
 
   return (
     <Card
-      onMouseEnter={() => setCurrentGlowColor(getRandomGlowColor())}
       elevation={0}
-      sx={{ 
-        height: '100%', 
+      sx={{
+        height: '100%',
         bgcolor: 'transparent',
         position: 'relative',
-        cursor: 'pointer',
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        borderRadius: '4px',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        transition: 'all 0.2s ease',
         '&:hover': {
-          transform: 'scale(0.98)',
-          boxShadow: `0 8px 32px ${currentGlowColor}40, 0 4px 16px ${currentGlowColor}20, inset 0 1px 0 ${currentGlowColor}10`,
-          border: `1px solid ${currentGlowColor}30`
+          borderColor: 'rgba(255, 255, 255, 0.2)',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
         }
       }}>
       <CardContent>

@@ -93,37 +93,14 @@ const DashboardLayout = ({ children }) => {
         position="fixed"
         elevation={0}
         sx={{
-          bgcolor: 'transparent',
-          background: isDarkMode
-            ? 'linear-gradient(180deg, rgba(21, 36, 132, 0.95) 0%, rgba(21, 36, 132, 0.85) 100%)'
-            : 'linear-gradient(180deg, rgba(21, 36, 132, 0.98) 0%, rgba(21, 36, 132, 0.92) 100%)',
-          backdropFilter: 'blur(20px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+          bgcolor: isDarkMode ? 'rgba(21, 36, 132, 0.95)' : 'rgba(21, 36, 132, 0.98)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
           borderBottom: `1px solid ${isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.2)'}`,
-          boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1), 0 1px 0 rgba(255, 255, 255, 0.1) inset',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
           top: 0,
           zIndex: (t) => t.zIndex.appBar + 1,
           borderRadius: 0,
-          '&::before': {
-            content: '""',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.05) 50%, transparent 100%)',
-            pointerEvents: 'none',
-            zIndex: 1,
-            animation: 'shimmer 3s ease-in-out infinite',
-          },
-          '@keyframes shimmer': {
-            '0%, 100%': {
-              opacity: 0.3,
-            },
-            '50%': {
-              opacity: 0.6,
-            }
-          }
         }}
       >
         <Toolbar sx={{ position: 'relative', zIndex: 2 }}>
