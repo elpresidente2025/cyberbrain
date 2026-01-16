@@ -1,4 +1,5 @@
 'use strict';
+// Force Redeploy: 2026-01-16T22:15:00
 
 /**
  * EditorAgent - 검증 결과 기반 LLM 수정
@@ -1160,6 +1161,9 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status, targe
     ? `\n\n🚨 [반복 서술 감지됨] 동일한 문장이나 표현을 반복하지 마십시오. 같은 내용을 말하더라도 반드시 다른 단어와 문장 구조를 사용해야 합니다.`
     : '';
 
+  const keywordVariationGuide = `
+   - **[키워드 변형 허용]**: 조사나 어미가 붙은 형태(예: "부산의", "경제는")나 복합 명사(예: "부산경제", "부산 경제")도 키워드 사용으로 인정합니다. 억지로 분리하거나 정확히 일치시키려 하지 마세요.`;
+
   const structureGuideline = `
 ╔═══════════════════════════════════════════════════════════════╗
 ║  🚨 [CRITICAL] 5단 구조 유지 필수 (황금 비율)                 ║
@@ -1239,7 +1243,6 @@ ${userKeywords.join(', ') || '(없음)'}
   6. **[최소한의 수정 원칙]**:
      - 위 문제들이 없는 문장은 원문의 맛을 살려 그대로 두세요.
      - 선거법 위반 표현만 완곡하게 다듬으세요.
-      - 선거법 위반 표현만 완곡하게 다듬으세요.
 ${repetitionInstruction}
 ${keywordVariationGuide}
 다음 JSON 형식으로만 응답하세요:
