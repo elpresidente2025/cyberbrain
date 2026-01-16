@@ -1142,99 +1142,23 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status, targe
     ? `\n⚠️ 작성자 상태: ${status} (예비후보 등록 전) - "~하겠습니다" 같은 공약성 표현 금지`
     : '';
 
-  const hasLengthIssue = issues.some((issue) => issue.type === 'content_length');
-  const currentLength = stripHtml(content || '').replace(/\s/g, '').length;
-  const maxTarget = typeof targetWordCount === 'number' ? Math.round(targetWordCount * 1.2) : null;
-  const lengthGuideline = (() => {
-    if (!hasLengthIssue || typeof targetWordCount !== 'number') return '';
+  const lengthGuideline = hasLengthIssue && typeof targetWordCount === 'number'
+    ? `\n📏 분량 목표: ${targetWordCount}~${maxTarget}자(공백 제외), 현재 ${currentLength}자\n- 새 주제/추신 추가 금지\n- 기존 문단의 근거를 구체화해 분량을 맞출 것\n🚨 [CRITICAL] 문단 복사 붙여넣기 절대 금지! 동일한 문단이 2번 이상 등장하면 원고 폐기됩니다.`
+    : '';
 
-    if (currentLength > maxTarget) {
-      return `\n📏 분량 목표: ${targetWordCount}~${maxTarget}자, 현재 ${currentLength}자 (초과)\n🚨 [CRITICAL] 분량 축소 필수:\n1. 중복된 문단이나 불필요한 수식어를 과감히 삭제하세요.\n2. 핵심 내용만 남기고 문장을 간결하게 다듬어 ${maxTarget}자 이내로 맞추세요.\n3. 의미 없이 반복되는 부연 설명을 제거하세요.`;
-    }
-
-    return `\n📏 분량 목표: ${targetWordCount}~${maxTarget}자, 현재 ${currentLength}자 (부족)\n- 기존 문단의 근거를 구체화해 분량을 맞출 것\n🚨 [CRITICAL] 문단 복사 붙여넣기 절대 금지! 억지로 늘리지 말고 자연스럽게 보완하세요.`;
-  })();
-
-  // 🆕 키워드 과다 사용 체크 및 변주 가이드 생성
-  const keywordAnalysis = analyzeKeywordUsage(content, userKeywords);
-  const keywordVariationGuide = buildKeywordVariationGuide(keywordAnalysis);
-
-  // 제목 관련 이슈가 있으면 상세 가이드라인 추가
-  const hasTitleIssues = issues.some(i =>
-    i.type.startsWith('title_') || ['keyword_missing', 'keyword_position', 'abstract_expression'].includes(i.type)
-  );
-
-  const titleGuideline = hasTitleIssues ? `
-╔═══════════════════════════════════════════════════════════════╗
-║  🚨 [CRITICAL] 제목 수정 필수 - 반드시 아래 규칙을 따르세요  ║
-╚═══════════════════════════════════════════════════════════════╝
-
-🔴 절대 금지 (위반 시 제목 재작성):
-• 부제목 패턴: "-", ":", "/" 사용 금지
-• 선거법 위반: "약속", "공약" (준비/현역 상태에서 금지)
-• 추상적 명사: 해법, 진단, 방안, 대책, 과제, 분석, 전망, 혁신, 발전
-• 추상적 동사: 찾다, 막는다, 나선다, 밝히다, 모색
-• 25자 초과
-
-✅ 필수 규칙:
-• 25자 이내 (엄격히 준수)
-• 핵심 키워드는 제목 맨 앞에 배치
-• 반드시 구체적인 숫자 1개 이상 포함
-• 제목의 숫자/단위는 본문에 실제 등장한 수치만 사용
-• 단일 문장 형태 (부제목 없이)
-
-📊 올바른 제목 형식 (반드시 이 패턴 사용):
-• "[키워드] + [숫자/사실] + [결과]"
-• "부산 대형병원 5곳 응급실 확대" (17자) ✅
-• "부산 대형병원 순위 27위→10위권" (17자) ✅
-• "환자 유출 30% 감소 3년 목표" (15자) ✅
-
-❌ 절대 사용 금지 패턴:
-• "부산의 미래를 위한 약속" ❌ (약속 = 선거법 위반)
-• "부산 대형병원 순위 진단과 전망" ❌ (진단, 전망)
-• "의료 혁신을 위한 5대 과제" ❌ (혁신, 과제)
-` : '';
-
-  const repetitionInstruction = `
-  7. **[CRITICAL] 중복 및 반복 제거**:
-     - **"존경하는 시민 여러분", "사랑하는..." 등의 인사말이 본문에 2회 이상 나오면 첫 번째만 남기고 모두 삭제하십시오.**
-     - 자기소개(학력, 경력 등)가 서론 외에 결론에서 또 반복되면 삭제하십시오.
-     - **중복된 내용의 문단이 있다면 과감히 통합하거나 삭제하여 분량을 줄이십시오.** (무의미한 3000자보다 알찬 2000자가 낫습니다.)
-     - "다시 말씀드리지만", "앞서 언급했듯이" 같은 표현으로 시작하는 재진술 문단을 삭제하십시오.
-  `;
-
-  const commonStructureRules = `
-4. 소제목(H2) 규칙:
-   - ❌ **서론**: 소제목 절대 금지 (인사말로 시작)
-   - ✅ **본론1~3, 결론**: 각 섹션 시작 부분에 반드시 **뉴스 헤드라인형 소제목** 삽입
-   - 예: <h2>이관훈 배우, 부산 방문</h2>
-5. 편집/수정 시 이 **섹션-문단 구조를 절대 깨지 마세요.** 내용이 늘어나거나 줄어들어도 이 비율을 유지해야 합니다.
-`;
-
-  const structureGuideline = (() => {
-    // 🚨 분량 초과 시: 구조 제약 완화 (문단 수 줄이기 허용)
-    if (currentLength > maxTarget) {
-      return `
-╔═══════════════════════════════════════════════════════════════╗
-║  🚨 [CRITICAL] 5단 구조 유지하되, 분량 축소 최우선             ║
-╚═══════════════════════════════════════════════════════════════╝
-1. 전체 구조: **[서론] - [본론1] - [본론2] - [본론3] - [결론]** (총 5개 섹션 유지)
-2. 문단 규칙: **각 섹션은 2~3개의 문단**으로 유연하게 구성하세요. (총 10~13문단 권장)
-   - 분량을 줄이기 위해 굳이 3문단을 채울 필요 없습니다. 2문단으로 핵심만 쓰세요.
-3. 길이 규칙: **한 문단은 120~150자** 내외로 짧게 끊어 쓰세요.
-${commonStructureRules}`;
-    }
-
-    // 기본: 황금 비율 유지 (3문단 강제)
-    return `
+  const structureGuideline = `
 ╔═══════════════════════════════════════════════════════════════╗
 ║  🚨 [CRITICAL] 5단 구조 유지 필수 (황금 비율)                 ║
 ╚═══════════════════════════════════════════════════════════════╝
 1. 전체 구조: **[서론] - [본론1] - [본론2] - [본론3] - [결론]** (총 5개 섹션 유지)
 2. 문단 규칙: **각 섹션은 반드시 3개의 문단**으로 구성하세요. (총 15문단)
 3. 길이 규칙: **한 문단은 120~150자** 내외로 짧게 끊어 쓰세요.
-${commonStructureRules}`;
-  })();
+4. 소제목(H2) 규칙:
+   - ❌ **서론**: 소제목 절대 금지 (인사말로 시작)
+   - ✅ **본론1~3, 결론**: 각 섹션 시작 부분에 반드시 **뉴스 헤드라인형 소제목** 삽입
+   - 예: <h2>이관훈 배우, 부산 방문</h2>
+5. 편집/수정 시 이 **섹션-문단 구조를 절대 깨지 마세요.** 내용이 늘어나거나 줄어들어도 이 비율을 유지해야 합니다.
+`;
 
   return `당신은 정치 원고 편집 전문가입니다. 아래 원고에서 발견된 문제들을 수정해주세요.
 
