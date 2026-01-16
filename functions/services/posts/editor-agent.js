@@ -1145,9 +1145,15 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status, targe
   const hasLengthIssue = issues.some((issue) => issue.type === 'content_length');
   const currentLength = stripHtml(content || '').replace(/\s/g, '').length;
   const maxTarget = typeof targetWordCount === 'number' ? Math.round(targetWordCount * 1.2) : null;
-  const lengthGuideline = hasLengthIssue && typeof targetWordCount === 'number'
-    ? `\n📏 분량 목표: ${targetWordCount}~${maxTarget}자(공백 제외), 현재 ${currentLength}자\n- 새 주제/추신 추가 금지\n- 기존 문단의 근거를 구체화해 분량을 맞출 것\n🚨 [CRITICAL] 문단 복사 붙여넣기 절대 금지! 동일한 문단이 2번 이상 등장하면 원고 폐기됩니다.`
-    : '';
+  const lengthGuideline = (() => {
+    if (!hasLengthIssue || typeof targetWordCount !== 'number') return '';
+
+    if (currentLength > maxTarget) {
+      return `\n📏 분량 목표: ${targetWordCount}~${maxTarget}자, 현재 ${currentLength}자 (초과)\n🚨 [CRITICAL] 분량 축소 필수:\n1. 중복된 문단이나 불필요한 수식어를 과감히 삭제하세요.\n2. 핵심 내용만 남기고 문장을 간결하게 다듬어 ${maxTarget}자 이내로 맞추세요.\n3. 의미 없이 반복되는 부연 설명을 제거하세요.`;
+    }
+
+    return `\n📏 분량 목표: ${targetWordCount}~${maxTarget}자, 현재 ${currentLength}자 (부족)\n- 기존 문단의 근거를 구체화해 분량을 맞출 것\n🚨 [CRITICAL] 문단 복사 붙여넣기 절대 금지! 억지로 늘리지 말고 자연스럽게 보완하세요.`;
+  })();
 
   // 🆕 키워드 과다 사용 체크 및 변주 가이드 생성
   const keywordAnalysis = analyzeKeywordUsage(content, userKeywords);
@@ -1230,13 +1236,10 @@ ${userKeywords.join(', ') || '(없음)'}
 
   [수정 지침 (매우 중요)]
   1. **[CRITICAL] 말투 강제 교정 (AI 투 제거)**:
-     - **"~라는 점입니다", "~것이라는 점입니다"** 패턴은 발견 즉시 삭제하거나 자연스러운 종결어미("**~입니다**", "**~합니다**", "**~것입니다**")로 고쳐 쓰세요. (문장을 분해해서라도 반드시 수정)
-     - **"노력하겠습니다"** 보다는 **"반드시 해내겠습니다"** 또는 **"완수하겠습니다"** 같은 단호한 표현을 쓰세요.
-     - **"하고 있습니다", "하고자 합니다"** 같은 진행형/유보적 표현을 금지하고, **"합니다", "약속합니다"**로 명확히 끝내세요.
-
-  2. **[CRITICAL] 정치적 화법 준수**:
-     - 후원회장이나 지지자는 '조력자'일 뿐입니다. 공약은 후보자인 **'저'** 또는 **'제가'** 직접 약속하는 형식을 취하세요.
-     - 외부(정부/당) 정책 인용 시, "윤석열 정부의 정책을 **제가 부산에서 완성하겠습니다**"와 같이 주체성을 확보하세요.
+     - **"~라는 점입니다", "~것이라는 점입니다"** 패턴은 발견 즉시 삭제하거나 자연스러운 종결어미("**~입니다**", "**~합니다**", "**~것입니다**")로 고쳐 쓰세요.
+     - **본인에 대한 서술에 추측성 어미 금지**: "저는 ~일 것입니다", "저는 ~알고 있을 것입니다"와 같이 자기 자신의 행동이나 감정을 남 말하듯 추측하지 마세요. 반드시 **"~입니다", "~하고 있습니다"**로 명확하게 쓰세요.
+     - **과도한 확신 자제**: "반드시 해내겠습니다", "무조건 ~합니다"와 같은 표현이 너무 잦으면 오만해 보일 수 있습니다. 진정성 있는 **"노력하겠습니다", "최선을 다하겠습니다"** 표현도 적절히 섞어 쓰세요.
+     - **부자연스러운 수동태/피동형 금지**: "~보여주는 증거일 것입니다" → "~보여줍니다"
 
   3. **[구조 및 서식 (AEO 최적화 소제목)]**:
      - 소제목(H2)은 검색 사용자가 궁금해하는 **구체적인 질문**이나 **데이터 기반 정보** 형태로 작성하세요. (12~25자 권장)
