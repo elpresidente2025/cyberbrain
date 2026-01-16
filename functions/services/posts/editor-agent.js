@@ -901,7 +901,7 @@ async function refineWithLLM({
   });
 
   try {
-    const response = await callGenerativeModel(prompt, 1, modelName, true);
+    const response = await callGenerativeModel(prompt, 1, modelName, true, 1700);
 
     // JSON 파싱
     let result;

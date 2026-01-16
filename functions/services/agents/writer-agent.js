@@ -297,7 +297,7 @@ ${newsContext || '(없음)'}
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.8,
-        maxOutputTokens: Math.min(targetWordCount * 3, 8000),
+        maxOutputTokens: 1700,
         responseMimeType: 'application/json'
       }
     });
