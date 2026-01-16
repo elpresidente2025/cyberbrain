@@ -1154,8 +1154,9 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status, targe
   const titleGuideline = `
 4. [CRITICAL] 제목 규칙:
    - "XXX 님의 공지", "XXX 후보의 약속" 같은 제목 절대 금지.
-   - 반드시 **"[지역명] 핵심키워드 - 구체적 이득/행동"** 형식으로 작성.
-   - 예: "[부산] 가덕신공항 조기 착공 - 국비 5천억 추가 확보 확정"`;
+   - **"[지역명] 키워드"** 같은 기계적인 대괄호 형식을 **절대 사용하지 마세요.**
+   - **"부산 경제, 확실하게 살리겠습니다 - 국비 5천억 확보"** 처럼 자연스러운 헤드라인 형태로 작성하세요.
+   - 지역명은 문맥상 자연스럽게 녹여내되, 제목 앞머리에 말머리처럼 '[부산]'을 붙이는 행위를 금지합니다.`;
 
   const repetitionInstruction = issues.some(i => i.type === 'repetition')
     ? `\n\n🚨 [반복 서술 감지됨] 동일한 문장이나 표현을 반복하지 마십시오. 같은 내용을 말하더라도 반드시 다른 단어와 문장 구조를 사용해야 합니다.`
