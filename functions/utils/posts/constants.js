@@ -30,14 +30,16 @@ const CATEGORY_TO_WRITING_METHOD = {
   'activity-report': 'direct_writing',
   'policy-proposal': 'logical_writing',
   'current-affairs': 'critical_writing',
-  'local-issues': 'analytical_writing'
+  'local-issues': 'analytical_writing',
+  'educational-content': 'logical_writing'
 };
 
 /**
  * 하위 카테고리 → 작법(writingMethod) 매핑
  */
 const SUBCATEGORY_TO_WRITING_METHOD = {
-  current_affairs_diagnosis: 'diagnostic_writing'
+  current_affairs_diagnosis: 'diagnostic_writing',
+  policy_explanation: 'logical_writing'
 };
 
 /**
