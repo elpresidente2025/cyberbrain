@@ -1069,20 +1069,32 @@ async function expandContentToTarget({
   const deficit = targetWordCount - currentLength;
   console.log(`📊 [EditorAgent] 분량 부족: ${deficit}자 필요 (현재 ${currentLength} / 목표 ${targetWordCount})`);
 
-  // 🔴 [수정] 사용자의 강력한 피드백 반영:
-  // "억지로 분량을 늘리는 행위는 필연적으로 할루시네이션을 유발한다."
-  // 따라서 분량이 부족하더라도, 팩트가 아닌 내용을 창작하여 채우는 로직을 전면 비활성화합니다.
-  // 질보다 양을 채우려다 콘텐츠 신뢰도를 떨어뜨리는 것을 방지합니다.
+  // 🔧 [수정] 요약 확장 복구 + 최대 250자 제한
+  const maxExpansion = 250; // 최대 확장 한도
+  const actualExpansion = Math.min(deficit, maxExpansion);
 
-  console.log(`🚫 [EditorAgent] 분량 확장 스킵: 부족분(${deficit}자)을 억지로 채우지 않음 (할루시네이션 방지)`);
+  if (deficit > maxExpansion) {
+    console.log(`⚠️ [EditorAgent] 부족분 ${deficit}자 중 ${maxExpansion}자까지만 확장 (할루시네이션 방지)`);
+  }
 
-  return { content, edited: false };
+  const prompt = `
+당신은 전문 원고 교정가입니다.
+현재 원고의 분량이 부족합니다. 아래 [본문]의 핵심 내용을 **간결하게 요약**하여, **정확히 ${actualExpansion}자** 분량의 마무리 문단을 작성해 주십시오.
 
-  /* 기존 위험 로직 주석 처리
-  // 분량 부족분에 따라 전략 차별화
-  let instruction = '';
-  // ... (이하 삭제) ...
-  */
+[지시사항]
+1. **분량 엄수**: 반드시 **${actualExpansion}자** 내외로 작성. 절대 초과 금지.
+2. **위치**: 결론 바로 앞에 삽입됩니다.
+3. **내용**: 본론의 핵심을 한 문장으로 압축하고, 긍정적 전망으로 마무리.
+4. **형식**: <p> 태그 하나로 감싸서 작성.
+5. **금지**: 자기소개 반복, 인사말 반복, 새로운 사실 창작 금지.
+
+[본문]
+${body}
+
+다음 JSON 형식으로만 응답하세요:
+{
+  "summaryBlock": "<p>...요약 마무리 문단...</p>"
+}`;
 
   try {
     const response = await callGenerativeModel(prompt, 1, modelName, true);
