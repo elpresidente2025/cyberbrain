@@ -1150,6 +1150,16 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status, targe
     ? `\n📏 분량 목표: ${targetWordCount}~${maxTarget}자(공백 제외), 현재 ${currentLength}자\n- 새 주제/추신 추가 금지\n- 기존 문단의 근거를 구체화해 분량을 맞출 것\n🚨 [CRITICAL] 문단 복사 붙여넣기 절대 금지! 동일한 문단이 2번 이상 등장하면 원고 폐기됩니다.`
     : '';
 
+  const titleGuideline = `
+4. [CRITICAL] 제목 규칙:
+   - "XXX 님의 공지", "XXX 후보의 약속" 같은 제목 절대 금지.
+   - 반드시 **"[지역명] 핵심키워드 - 구체적 이득/행동"** 형식으로 작성.
+   - 예: "[부산] 가덕신공항 조기 착공 - 국비 5천억 추가 확보 확정"`;
+
+  const repetitionInstruction = issues.some(i => i.type === 'repetition')
+    ? `\n\n🚨 [반복 서술 감지됨] 동일한 문장이나 표현을 반복하지 마십시오. 같은 내용을 말하더라도 반드시 다른 단어와 문장 구조를 사용해야 합니다.`
+    : '';
+
   const structureGuideline = `
 ╔═══════════════════════════════════════════════════════════════╗
 ║  🚨 [CRITICAL] 5단 구조 유지 필수 (황금 비율)                 ║
