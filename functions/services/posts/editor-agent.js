@@ -1142,6 +1142,10 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status, targe
     ? `\n⚠️ 작성자 상태: ${status} (예비후보 등록 전) - "~하겠습니다" 같은 공약성 표현 금지`
     : '';
 
+  const hasLengthIssue = issues.some((issue) => issue.type === 'content_length');
+  const currentLength = stripHtml(content || '').replace(/\s/g, '').length;
+  const maxTarget = typeof targetWordCount === 'number' ? Math.round(targetWordCount * 1.2) : null;
+
   const lengthGuideline = hasLengthIssue && typeof targetWordCount === 'number'
     ? `\n📏 분량 목표: ${targetWordCount}~${maxTarget}자(공백 제외), 현재 ${currentLength}자\n- 새 주제/추신 추가 금지\n- 기존 문단의 근거를 구체화해 분량을 맞출 것\n🚨 [CRITICAL] 문단 복사 붙여넣기 절대 금지! 동일한 문단이 2번 이상 등장하면 원고 폐기됩니다.`
     : '';
