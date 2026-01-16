@@ -588,7 +588,7 @@ function applyHardConstraints({
     || paragraphCount < 5
     || paragraphCount > 10;
   const contentCharCount = stripHtml(updatedContent).replace(/\s/g, '').length;
-  const maxTargetCount = targetWordCount ? Math.round(targetWordCount * 1.1) : null;
+  const maxTargetCount = targetWordCount ? Math.round(targetWordCount * 1.2) : null;
   const needsLength = seoIssues.some(issue => issue.id === 'content_length')
     || (targetWordCount && (contentCharCount < targetWordCount || (maxTargetCount && contentCharCount > maxTargetCount)));
 
@@ -647,7 +647,7 @@ function applyHardConstraints({
   // 5. 마지막 분량 상한 조정 로직 제거
   /*
   if (needsLength && targetWordCount) {
-    const maxTarget = maxTargetCount || Math.round(targetWordCount * 1.1);
+    const maxTarget = maxTargetCount || Math.round(targetWordCount * 1.2);
     const finalCharCount = stripHtml(updatedContent).replace(/\s/g, '').length;
     if (maxTarget && finalCharCount > maxTarget) {
       updatedContent = ensureLength(updatedContent, targetWordCount, maxTargetCount, primaryKeyword);
@@ -662,8 +662,8 @@ function applyHardConstraints({
   }
   */
 
-  // 🌟 [NEW] 최후의 말투 교정 (강제 치환)
-  updatedContent = forceFixContent(updatedContent);
+  // 🌟 [NEW] 최후의 말투 교정 + 과다 키워드 분산 (강제 치환)
+  updatedContent = forceFixContent(updatedContent, userKeywords);
 
   return {
     content: updatedContent,
@@ -698,7 +698,8 @@ async function refineWithLLM({
   status,
   modelName,
   factAllowlist = null,
-  targetWordCount = null
+  targetWordCount = null,
+  dilutionAnalysis = null  // 🔑 키워드 희석 분석 결과
 }) {
   // 수정이 필요한 문제들 수집
   const issues = [];
@@ -805,7 +806,7 @@ async function refineWithLLM({
       if (issue.id === 'content_length' && typeof targetWordCount === 'number') {
         const currentCount = stripHtml(content).replace(/\s/g, '').length;
         const minTarget = targetWordCount;
-        const maxTarget = Math.round(targetWordCount * 1.1);
+        const maxTarget = Math.round(targetWordCount * 1.2);
         if (currentCount < minTarget) {
           instruction = `본문을 ${minTarget}~${maxTarget}자(공백 제외)로 확장하세요. 기존 사실/근거를 유지하고 이미 언급된 항목을 1~2문장씩 구체화하세요. 새 주제/추신/요약 추가는 금지합니다.`;
         } else if (currentCount > maxTarget) {
@@ -845,6 +846,35 @@ async function refineWithLLM({
         instruction: '제목에 위 키워드 중 하나를 자연스럽게 포함하세요. 제목은 25자 이내로 유지하세요.'
       });
     }
+  }
+
+  // 5. 키워드 희석 문제 (경쟁 구문이 메인 키워드보다 많음)
+  if (dilutionAnalysis && dilutionAnalysis.hasDilution && dilutionAnalysis.competitors?.length > 0) {
+    const competitorInfo = dilutionAnalysis.competitors
+      .map(c => `"${c.phrase}" (현재 ${c.count}회, 메인 키워드 "${dilutionAnalysis.primaryKeyword}": ${dilutionAnalysis.primaryCount}회)`)
+      .join(', ');
+
+    const alternatives = dilutionAnalysis.competitors
+      .map(c => {
+        // 경쟁 구문별 대체어 제안
+        if (c.phrase.includes('병원')) {
+          return `"${c.phrase}" → "의료 인프라", "대형 의료기관", "상급종합병원" 등`;
+        }
+        if (c.phrase.includes('유치')) {
+          return `"${c.phrase}" → "유치 추진", "유치 노력", "유치 목표" 등`;
+        }
+        return `"${c.phrase}" → 동의어/유사어로 분산`;
+      })
+      .join('; ');
+
+    issues.push({
+      type: 'keyword_dilution',
+      severity: 'high',
+      description: `키워드 희석 위험: ${competitorInfo}`,
+      instruction: `메인 SEO 키워드는 "${dilutionAnalysis.primaryKeyword}"입니다. 다음 경쟁 구문들을 동의어로 분산하여 메인 키워드가 가장 많이 등장하도록 하세요: ${alternatives}`
+    });
+
+    console.log(`⚠️ [EditorAgent] 키워드 희석 문제 발견: ${dilutionAnalysis.competitors.length}개 경쟁 구문`);
   }
 
   // 수정할 문제가 없으면 원본 반환
@@ -1030,7 +1060,7 @@ async function expandContentToTarget({
   const { body, tail } = splitContentBySignature(content);
   // HTML 태그와 공백을 제거한 실제 글자 수 (기준)
   const currentLength = stripHtml(body).replace(/\s/g, '').length;
-  const maxTarget = Math.round(targetWordCount * 1.1);
+  const maxTarget = Math.round(targetWordCount * 1.2);
 
   if (currentLength >= targetWordCount) {
     return { content, edited: false };
@@ -1039,26 +1069,20 @@ async function expandContentToTarget({
   const deficit = targetWordCount - currentLength;
   console.log(`📊 [EditorAgent] 분량 부족: ${deficit}자 필요 (현재 ${currentLength} / 목표 ${targetWordCount})`);
 
-  // 사용자 요청: 본론 요약문 생성하여 결론 앞에 삽입
-  const prompt = `
-당신은 전문 원고 교정가입니다.
-현재 원고의 분량이 **${deficit}자** 부족합니다.
-아래 [본문]의 핵심 내용을 **구체적으로 요약 및 재진술**하여, **정확히 ${Math.max(deficit, 300)}자** 분량의 새로운 문단들을 작성해 주십시오.
+  // 🔴 [수정] 사용자의 강력한 피드백 반영:
+  // "억지로 분량을 늘리는 행위는 필연적으로 할루시네이션을 유발한다."
+  // 따라서 분량이 부족하더라도, 팩트가 아닌 내용을 창작하여 채우는 로직을 전면 비활성화합니다.
+  // 질보다 양을 채우려다 콘텐츠 신뢰도를 떨어뜨리는 것을 방지합니다.
 
-[지시사항]
-1. **분량 필수**: 반드시 **${Math.max(deficit, 300)}자 이상**의 텍스트가 나와야 합니다. (너무 짧으면 안 됨)
-2. **위치**: 이 내용은 **'결론' 바로 앞**에 삽입될 것입니다.
-3. **내용**: 앞선 본론(1,2,3)의 내용을 종합적으로 아우르면서, 독자에게 다시 한번 강조하는 "종합 요약" 성격으로 쓰십시오.
-4. **형식**: <p> 태그로 감싸진 2~3개의 문단으로 작성하십시오. 소제목(H2)은 쓰지 마십시오.
-5. **어조**: 원문의 어조(합쇼체)를 유지하십시오.
+  console.log(`🚫 [EditorAgent] 분량 확장 스킵: 부족분(${deficit}자)을 억지로 채우지 않음 (할루시네이션 방지)`);
 
-[본문]
-${body}
+  return { content, edited: false };
 
-다음 JSON 형식으로만 응답하세요:
-{
-  "summaryBlock": "<p>...요약 내용 1...</p><p>...요약 내용 2...</p>"
-}`;
+  /* 기존 위험 로직 주석 처리
+  // 분량 부족분에 따라 전략 차별화
+  let instruction = '';
+  // ... (이하 삭제) ...
+  */
 
   try {
     const response = await callGenerativeModel(prompt, 1, modelName, true);
@@ -1108,7 +1132,7 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status, targe
 
   const hasLengthIssue = issues.some((issue) => issue.type === 'content_length');
   const currentLength = stripHtml(content || '').replace(/\s/g, '').length;
-  const maxTarget = typeof targetWordCount === 'number' ? Math.round(targetWordCount * 1.1) : null;
+  const maxTarget = typeof targetWordCount === 'number' ? Math.round(targetWordCount * 1.2) : null;
   const lengthGuideline = hasLengthIssue && typeof targetWordCount === 'number'
     ? `\n📏 분량 목표: ${targetWordCount}~${maxTarget}자(공백 제외), 현재 ${currentLength}자\n- 새 주제/추신 추가 금지\n- 기존 문단의 근거를 구체화해 분량을 맞출 것\n🚨 [CRITICAL] 문단 복사 붙여넣기 절대 금지! 동일한 문단이 2번 이상 등장하면 원고 폐기됩니다.`
     : '';
@@ -1152,6 +1176,14 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status, targe
 • "부산 대형병원 순위 진단과 전망" ❌ (진단, 전망)
 • "의료 혁신을 위한 5대 과제" ❌ (혁신, 과제)
 ` : '';
+
+  const repetitionInstruction = `
+  7. **[CRITICAL] 중복 및 반복 제거**:
+     - **"존경하는 시민 여러분", "사랑하는..." 등의 인사말이 본문에 2회 이상 나오면 첫 번째만 남기고 모두 삭제하십시오.**
+     - 자기소개(학력, 경력 등)가 서론 외에 결론에서 또 반복되면 삭제하십시오.
+     - **중복된 내용의 문단이 있다면 과감히 통합하거나 삭제하여 분량을 줄이십시오.** (무의미한 3000자보다 알찬 2000자가 낫습니다.)
+     - "다시 말씀드리지만", "앞서 언급했듯이" 같은 표현으로 시작하는 재진술 문단을 삭제하십시오.
+  `;
 
   const structureGuideline = `
 ╔═══════════════════════════════════════════════════════════════╗
@@ -1235,6 +1267,8 @@ ${userKeywords.join(', ') || '(없음)'}
   6. **[최소한의 수정 원칙]**:
      - 위 문제들이 없는 문장은 원문의 맛을 살려 그대로 두세요.
      - 선거법 위반 표현만 완곡하게 다듬으세요.
+      - 선거법 위반 표현만 완곡하게 다듬으세요.
+${repetitionInstruction}
 ${keywordVariationGuide}
 다음 JSON 형식으로만 응답하세요:
 {
@@ -1245,11 +1279,155 @@ ${keywordVariationGuide}
 }
 
 /**
+ * 🚨 과다 키워드 강제 분산 (스팸 방지)
+ * - 최대 허용 횟수(6회)를 초과하는 키워드를 동의어로 대체
+ * - 교차 제거: 앞에서 4회 유지, 뒤에서 2회 유지, 중간 초과분 대체
+ *
+ * @param {string} content - HTML 본문
+ * @param {Array<string>} userKeywords - 사용자 입력 키워드
+ * @returns {Object} { content, reduced, summary }
+ */
+function reduceKeywordSpam(content, userKeywords = []) {
+  if (!content || !userKeywords || userKeywords.length === 0) {
+    return { content, reduced: false, summary: [] };
+  }
+
+  const maxAllowed = 6;
+  const preserveFront = 4; // 앞에서 4회는 유지 (SEO 중요)
+  const preserveBack = 2;  // 뒤에서 2회는 유지 (결론 강조)
+
+  let updatedContent = content;
+  const summary = [];
+
+  for (const keyword of userKeywords) {
+    // 키워드 등장 위치 찾기
+    const regex = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+    const plainText = updatedContent.replace(/<[^>]*>/g, '');
+    const matches = [...plainText.matchAll(regex)];
+    const count = matches.length;
+
+    if (count <= maxAllowed) {
+      continue; // 허용 범위 내
+    }
+
+    const excess = count - maxAllowed;
+    console.warn(`🚨 [reduceKeywordSpam] "${keyword}" 과다: ${count}회 → ${excess}회 삭감 필요`);
+
+    // 동의어 목록 생성 (키워드 기반)
+    const synonyms = generateKeywordSynonyms(keyword);
+
+    if (synonyms.length === 0) {
+      console.warn(`⚠️ [reduceKeywordSpam] "${keyword}" 동의어 없음 - 삭감 불가`);
+      continue;
+    }
+
+    // 중간 부분 등장을 동의어로 대체 (preserveFront+1 ~ count-preserveBack)
+    // HTML에서 직접 대체 (위치 기반)
+    let replacedCount = 0;
+    let occurrenceIndex = 0;
+
+    updatedContent = updatedContent.replace(regex, (match) => {
+      occurrenceIndex++;
+
+      // 앞 4개, 뒤 2개는 유지
+      if (occurrenceIndex <= preserveFront || occurrenceIndex > count - preserveBack) {
+        return match;
+      }
+
+      // 이미 충분히 대체했으면 유지
+      if (replacedCount >= excess) {
+        return match;
+      }
+
+      // 동의어로 대체 (순환 사용)
+      const synonym = synonyms[replacedCount % synonyms.length];
+      replacedCount++;
+      return synonym;
+    });
+
+    if (replacedCount > 0) {
+      summary.push(`"${keyword}" ${count}회→${count - replacedCount}회 (${replacedCount}회 동의어 대체)`);
+      console.log(`✅ [reduceKeywordSpam] "${keyword}" ${replacedCount}회 동의어 대체 완료`);
+    }
+  }
+
+  return {
+    content: updatedContent,
+    reduced: summary.length > 0,
+    summary
+  };
+}
+
+/**
+ * 키워드 기반 동의어 생성
+ * @param {string} keyword - 원본 키워드
+ * @returns {Array<string>} 동의어 목록
+ */
+function generateKeywordSynonyms(keyword) {
+  const synonyms = [];
+  const lowerKeyword = keyword.toLowerCase();
+
+  // 의료 관련
+  if (lowerKeyword.includes('병원') && lowerKeyword.includes('순위')) {
+    synonyms.push('의료기관 랭킹', '의료 경쟁력', '의료 수준', '의료 인프라 현황');
+  }
+  if (lowerKeyword.includes('병원')) {
+    synonyms.push('의료기관', '의료시설', '대형 의료기관');
+  }
+
+  // 유치 관련
+  if (lowerKeyword.includes('유치')) {
+    synonyms.push('유치 추진', '유치 목표', '유치 계획');
+  }
+
+  // 지역 관련 - 지역명은 유지하고 뒤 단어만 변경
+  const regions = ['부산', '서울', '대구', '인천', '광주', '대전', '울산'];
+  for (const region of regions) {
+    if (lowerKeyword.includes(region)) {
+      if (lowerKeyword.includes('순위')) {
+        synonyms.push(`${region} 의료 현황`, `${region} 의료 경쟁력`, `${region}지역 의료`);
+      }
+    }
+  }
+
+  // 일반 패턴
+  if (lowerKeyword.includes('정책')) {
+    synonyms.push('정책 방향', '추진 과제', '핵심 과제');
+  }
+  if (lowerKeyword.includes('경제')) {
+    synonyms.push('경제 발전', '지역 경제', '경제 혁신');
+  }
+  if (lowerKeyword.includes('교통')) {
+    synonyms.push('교통 인프라', '교통 체계', '대중교통');
+  }
+
+  // 기본 동의어 (아무것도 매칭 안 되면)
+  if (synonyms.length === 0) {
+    // 키워드를 분해해서 대체어 생성 시도
+    const parts = keyword.split(/\s+/).filter(p => p.length > 1);
+    if (parts.length >= 2) {
+      synonyms.push(`${parts[0]} 관련 현황`);
+      synonyms.push(`${parts[0]} 이슈`);
+      synonyms.push(`해당 ${parts[parts.length - 1]}`);
+    }
+  }
+
+  return synonyms;
+}
+
+/**
  * 악성 말투 강제 교정 (최후의 수단)
  */
-function forceFixContent(content) {
+function forceFixContent(content, userKeywords = []) {
   if (!content) return content;
   let fixed = content;
+
+  // 🚨 [NEW] 과다 키워드 강제 분산 (스팸 방지)
+  const spamReduced = reduceKeywordSpam(fixed, userKeywords);
+  if (spamReduced.reduced) {
+    fixed = spamReduced.content;
+    console.log('🚨 [forceFixContent] 과다 키워드 분산:', spamReduced.summary.join(', '));
+  }
 
   // 0. [NEW] 메타 발언 및 주석 제거 (안전장치)
   fixed = fixed.replace(/(관련 데이터|정확한 수치|출처|구체적인 수치|통계)(.*)(확보|확인|검증)(가|이) (필요합니다|바랍니다|요구됩니다|불분명합니다)\.?/gi, '');

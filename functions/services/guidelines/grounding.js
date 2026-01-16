@@ -141,7 +141,7 @@ function buildGroundedGuidelines(context) {
     writingMethod,
     topic,
     keywords = [],
-    targetWordCount = 2050
+    targetWordCount = 2000
   } = context;
 
   console.log('🔧 Guideline Grounding 시작:', {

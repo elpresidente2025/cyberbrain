@@ -123,6 +123,9 @@ class SEOAgent extends BaseAgent {
     // 🔍 4-1. userKeywords 검증 (절대 횟수 체크)
     const userKeywordValidation = this.validateUserKeywords(optimizedContent, userKeywords, targetWordCount);
 
+    // 🔍 4-2. 키워드 희석 감지 (경쟁 구문 탐지)
+    const dilutionAnalysis = this.detectKeywordDilution(optimizedContent, userKeywords);
+
     // 5. 구조 분석
     const wordCountRange = this.getWordCountRange(targetWordCount);
     const structureAnalysis = this.analyzeStructure(optimizedContent, wordCountRange);
@@ -137,7 +140,8 @@ class SEOAgent extends BaseAgent {
       structure: structureAnalysis,
       keywordCount: keywords.length,
       wordCountRange,
-      userKeywordValidation  // 🔑 검색어 검증 결과 추가
+      userKeywordValidation,  // 🔑 검색어 검증 결과 추가
+      dilutionAnalysis        // 🔑 키워드 희석 분석 추가
     });
 
     // 7. 개선 제안 생성
@@ -171,6 +175,7 @@ class SEOAgent extends BaseAgent {
       analysis: {
         keywordDensity,
         userKeywordValidation,  // 🔑 검색어 검증 결과 추가
+        dilutionAnalysis,       // 🔑 키워드 희석 분석 추가
         structure: structureAnalysis,
         seoEvaluation
       }
@@ -355,7 +360,7 @@ class SEOAgent extends BaseAgent {
    * @param {number} targetWordCount - 목표 글자수
    * @returns {Object} 검증 결과 { passed, issues, details }
    */
-  validateUserKeywords(content, userKeywords, targetWordCount = 2050) {
+  validateUserKeywords(content, userKeywords, targetWordCount = 2000) {
     const issues = [];
     const details = {};
 
@@ -421,6 +426,155 @@ class SEOAgent extends BaseAgent {
   }
 
   /**
+   * 키워드 희석(Keyword Dilution) 감지
+   * - 메인 키워드보다 더 자주 등장하는 경쟁 구문 탐지
+   * - SEO 효과 감소 위험 경고
+   *
+   * @param {string} content - HTML 본문
+   * @param {Array<string>} userKeywords - 사용자 입력 메인 키워드
+   * @returns {Object} { hasDilution, competitors, suggestions }
+   */
+  detectKeywordDilution(content, userKeywords) {
+    if (!userKeywords || userKeywords.length === 0) {
+      return { hasDilution: false, competitors: [], suggestions: [] };
+    }
+
+    const plainText = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+
+    // 1. 메인 키워드 출현 횟수 (가장 많은 것 기준)
+    let maxMainCount = 0;
+    let primaryKeyword = userKeywords[0];
+
+    for (const keyword of userKeywords) {
+      const regex = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      const count = (plainText.match(regex) || []).length;
+      if (count > maxMainCount) {
+        maxMainCount = count;
+        primaryKeyword = keyword;
+      }
+    }
+
+    // 2. N-gram 추출 (2~4어절 구문) - 띄어쓰기 있는 구문
+    const words = plainText.split(/\s+/).filter(w => w.length > 1);
+    const phraseCount = {};
+
+    for (let n = 2; n <= 4; n++) {
+      for (let i = 0; i <= words.length - n; i++) {
+        const phrase = words.slice(i, i + n).join(' ');
+        // 너무 짧거나 조사로만 된 구문 제외
+        if (phrase.length < 4) continue;
+        // 메인 키워드와 동일하면 제외
+        if (userKeywords.some(kw => phrase.toLowerCase() === kw.toLowerCase())) continue;
+        // 메인 키워드를 포함하면 제외 (변형 카운트 방지)
+        if (userKeywords.some(kw => phrase.toLowerCase().includes(kw.toLowerCase()))) continue;
+        // 메인 키워드의 일부이면 제외 (예: "부산 병원"은 "부산 병원 순위"의 일부)
+        if (userKeywords.some(kw => kw.toLowerCase().includes(phrase.toLowerCase()))) continue;
+
+        phraseCount[phrase] = (phraseCount[phrase] || 0) + 1;
+      }
+    }
+
+    // 2-1. 복합어+조사 패턴 감지 (예: "서울대병원 유치")
+    // 주요 반복 구문을 직접 검색 (4글자 이상 한글 단어가 3회 이상 등장)
+    const compoundPatterns = {};
+
+    // 본문에서 모든 단어(조사 포함) 추출
+    const allWords = plainText.split(/\s+/).filter(w => w.length >= 3);
+
+    // 각 단어에서 핵심 어근 추출 (조사 제거)
+    const particles = ['은', '는', '이', '가', '을', '를', '에', '의', '로', '으로', '와', '과', '에서', '부터', '까지', '도', '만', '조차'];
+
+    for (const word of allWords) {
+      // 조사 제거하여 어근 추출
+      let stem = word;
+      for (const p of particles) {
+        if (word.endsWith(p) && word.length > p.length + 2) {
+          stem = word.slice(0, -p.length);
+          break;
+        }
+      }
+
+      // 4글자 이상 어근만 카운트
+      if (stem.length >= 4 && /^[가-힣]+$/.test(stem)) {
+        // 메인 키워드와 관련 없는 것만
+        const isRelatedToMain = userKeywords.some(kw =>
+          stem.includes(kw.replace(/\s/g, '')) ||
+          kw.replace(/\s/g, '').includes(stem)
+        );
+        if (!isRelatedToMain) {
+          compoundPatterns[stem] = (compoundPatterns[stem] || 0) + 1;
+        }
+      }
+    }
+
+    // 복합어 중 빈도수가 높은 것을 phraseCount에 병합
+    for (const [word, count] of Object.entries(compoundPatterns)) {
+      if (count >= 3) { // 최소 3회 이상 등장
+        phraseCount[word] = (phraseCount[word] || 0) + count;
+      }
+    }
+
+    // 3. 메인 키워드보다 많이 등장하는 경쟁 구문 탐지
+    const competitors = [];
+    const threshold = maxMainCount; // 메인 키워드와 같거나 더 많으면 경쟁자
+
+    for (const [phrase, count] of Object.entries(phraseCount)) {
+      if (count >= threshold && count >= 3) { // 최소 3회 이상 등장
+        // 의미 있는 구문인지 확인
+        const words = phrase.split(' ');
+
+        // 복합어(띄어쓰기 없는 4글자 이상 단일 단어)도 의미있음
+        const isCompoundWord = words.length === 1 && phrase.length >= 4 && /^[가-힣]+$/.test(phrase);
+
+        // 다중 단어 구문: 조사만 있는 구문 제외
+        const meaningfulWords = words.filter(w =>
+          !['의', '를', '을', '에', '가', '이', '는', '은', '로', '와', '과', '에서', '으로', '이다', '있다'].includes(w)
+        );
+
+        if (isCompoundWord || meaningfulWords.length >= 2) {
+          competitors.push({
+            phrase,
+            count,
+            mainKeywordCount: maxMainCount,
+            ratio: (count / maxMainCount).toFixed(2),
+            severity: count > maxMainCount ? 'high' : 'medium'
+          });
+        }
+      }
+    }
+
+    // 4. 심각도순 정렬 (횟수 많은 순)
+    competitors.sort((a, b) => b.count - a.count);
+
+    // 5. 상위 3개만 추출
+    const topCompetitors = competitors.slice(0, 3);
+
+    // 6. 대체어 제안 생성
+    const suggestions = topCompetitors.map(comp => ({
+      original: comp.phrase,
+      suggestion: `"${comp.phrase}" → 동의어/유사어로 분산 권장`,
+      reason: `메인 키워드 "${primaryKeyword}"(${maxMainCount}회)보다 ${comp.count}회 등장 - SEO 희석 위험`
+    }));
+
+    const hasDilution = topCompetitors.length > 0;
+
+    if (hasDilution) {
+      console.warn(`⚠️ [SEOAgent] 키워드 희석 감지: ${topCompetitors.length}개 경쟁 구문 발견`);
+      topCompetitors.forEach(c => {
+        console.warn(`   - "${c.phrase}": ${c.count}회 (메인: ${maxMainCount}회)`);
+      });
+    }
+
+    return {
+      hasDilution,
+      primaryKeyword,
+      primaryCount: maxMainCount,
+      competitors: topCompetitors,
+      suggestions
+    };
+  }
+
+  /**
    * 구조 분석 (SEO_RULES.structure 기준)
    */
   analyzeStructure(content, wordCountRange = SEO_RULES.wordCount) {
@@ -467,13 +621,27 @@ class SEOAgent extends BaseAgent {
     structure,
     keywordCount,
     wordCountRange = SEO_RULES.wordCount,
-    userKeywordValidation = null  // 🔑 검색어 검증 결과
+    userKeywordValidation = null,  // 🔑 검색어 검증 결과
+    dilutionAnalysis = null        // 🔑 키워드 희석 분석 결과
   }) {
     const issues = [];
 
     // 🔑 1순위: userKeywords 검증 (가장 중요)
     if (userKeywordValidation && !userKeywordValidation.passed) {
       issues.push(...userKeywordValidation.issues);
+    }
+
+    // 🔑 2순위: 키워드 희석 검증 (경쟁 구문 감지)
+    if (dilutionAnalysis && dilutionAnalysis.hasDilution) {
+      for (const comp of dilutionAnalysis.competitors) {
+        issues.push({
+          id: 'keyword_dilution',
+          severity: comp.severity === 'high' ? 'high' : 'medium',
+          message: `키워드 희석 위험: "${comp.phrase}"가 ${comp.count}회 등장 (메인 키워드 "${dilutionAnalysis.primaryKeyword}": ${dilutionAnalysis.primaryCount}회)`,
+          description: `경쟁 구문 "${comp.phrase}"이 메인 키워드보다 많거나 같게 등장하여 SEO 효과가 분산될 수 있습니다.`,
+          instruction: `"${comp.phrase}"을 동의어(예: "의료 인프라 확충", "대형병원 유치" 등)로 분산하세요.`
+        });
+      }
     }
     const titleLength = title.length;
     const titleHasKeyword = primaryKeyword ? title.includes(primaryKeyword) : true;

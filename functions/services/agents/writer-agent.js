@@ -80,7 +80,7 @@ class WriterAgent extends BaseAgent {
       memoryContext = '',
       instructions = '',
       newsContext = '',
-      targetWordCount = 1700,
+      targetWordCount = 2000,
       userKeywords = [],  // 🔑 사용자 직접 입력 키워드 (최우선)
       factAllowlist = null,
       previousResults = {},

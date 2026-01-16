@@ -77,7 +77,7 @@ ${newsContext}
 [기본 정보]
 - 작성자: ${authorBio}
 - 글의 주제: "${topic}"
-- 목표 분량: ${targetWordCount || 1700}자 (공백 제외)
+- 목표 분량: ${targetWordCount || 2000}자 (공백 제외)
 ${backgroundSection}${keywordsSection}${hintsSection}${newsSection}
 [글쓰기 설계도]
 너는 아래 3가지 부품을 조립하여, 매우 명확하고 신뢰감 있는 글을 만들어야 한다.
@@ -101,7 +101,7 @@ ${backgroundSection}${keywordsSection}${hintsSection}${newsSection}
 {
   "title": "제목",
   "content": "<p>존댓말로 작성된 본문...</p><h2>소제목</h2><p>내용...</p>",
-  "wordCount": 2050
+  "wordCount": 2000
 }
 \`\`\`
 

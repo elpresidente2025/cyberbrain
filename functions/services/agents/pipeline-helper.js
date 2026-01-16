@@ -40,7 +40,7 @@ async function generateWithMultiAgent({
   keywords = [],
   userKeywords = [],  // 🔑 사용자 직접 입력 키워드 (최우선)
   factAllowlist = null,
-  targetWordCount = 1700,
+  targetWordCount = 2000,
   attemptNumber = 0,  // 🎯 시도 번호 (수사학 전략 변형용)
   rhetoricalPreferences = {},  // 🎯 사용자 수사학 전략 선호도
   pipeline = 'standard' // 🆕 파이프라인 선택 (기본값: standard)

@@ -79,7 +79,7 @@ async function buildSmartPrompt(options) {
       keywords = [],
       userKeywords = [],  // 🔑 사용자 직접 입력 키워드 (최우선)
       factAllowlist = null,
-      targetWordCount = 2050
+      targetWordCount = 2000
     } = options;
 
     // 0. [검색어(userKeywords) CRITICAL 섹션] - SEO 필수 삽입

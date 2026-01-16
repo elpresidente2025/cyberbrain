@@ -173,9 +173,9 @@ class ComplianceAgent extends BaseAgent {
     // 0. 분량 검증 (물리적 스펙)
     const plainContent = content.replace(/<[^>]*>/g, '').replace(/\s+/g, '');
     const contentLength = plainContent.length;
-    const targetLength = context.targetWordCount || 1700;
+    const targetLength = context.targetWordCount || 2000;
 
-    // 85% 미만이면 부족으로 판단 (예: 1700자 목표일 때 1445자 미만)
+    // 85% 미만이면 부족으로 판단 (예: 2000자 목표일 때 1700자 미만)
     if (contentLength < targetLength * 0.85) {
       console.log(`📊 [ComplianceAgent] 분량 부족: ${contentLength}/${targetLength}자 (부족: ${targetLength - contentLength}자)`);
       issues.push({

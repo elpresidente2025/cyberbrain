@@ -11,7 +11,7 @@ const SEO_RULES = {
   wordCount: {
     min: 1500,
     max: 2300,
-    target: 2050,
+    target: 2000,
     description: '네이버 SEO 최적화를 위한 권장 분량',
     rationale: '1500자 미만은 콘텐츠 부족, 2300자 초과는 가독성 저하'
   },

@@ -24,7 +24,7 @@ const SEO_CHUNKS = [
     details: {
       min: 1500,
       max: 2300,
-      target: 2050,
+      target: 2000,
       rationale: '1500자 미만은 콘텐츠 부족, 2300자 초과는 가독성 저하'
     }
   },
@@ -143,7 +143,7 @@ function calculateKeywordDistribution(targetWordCount, keywordCount) {
 /**
  * SEO 지침 텍스트 생성
  */
-function buildSEOGuideline(keywords = [], targetWordCount = 2050) {
+function buildSEOGuideline(keywords = [], targetWordCount = 2000) {
   const seoChunk = SEO_CHUNKS.find(c => c.id === 'SEO-001');
   const keywordChunk = SEO_CHUNKS.find(c => c.id === 'SEO-002');
 

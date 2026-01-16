@@ -243,7 +243,8 @@ class Orchestrator {
           status: context.userProfile?.status || '준비',
           modelName: 'gemini-2.5-flash',
           factAllowlist: context.factAllowlist || null,
-          targetWordCount: context.targetWordCount
+          targetWordCount: context.targetWordCount,
+          dilutionAnalysis: this.results.SEOAgent?.data?.analysis?.dilutionAnalysis || null  // 🔑 키워드 희석 분석
         });
 
         if (editorResult.edited) {
@@ -399,7 +400,8 @@ class Orchestrator {
           status: context.userProfile?.status || '준비',
           modelName: 'gemini-2.5-flash',
           factAllowlist: context.factAllowlist || null,
-          targetWordCount: context.targetWordCount
+          targetWordCount: context.targetWordCount,
+          dilutionAnalysis: this.results.SEOAgent?.data?.analysis?.dilutionAnalysis || null  // 🔑 키워드 희석 분석
         });
 
         if (editorResult.edited) {
@@ -528,7 +530,8 @@ class Orchestrator {
                   status: context.userProfile?.status || '준비',
                   modelName: 'gemini-2.5-flash',
                   factAllowlist: context.factAllowlist || null,
-                  targetWordCount: context.targetWordCount
+                  targetWordCount: context.targetWordCount,
+                  dilutionAnalysis: this.results.SEOAgent?.data?.analysis?.dilutionAnalysis || null  // 🔑 키워드 희석 분석
                 });
 
                 if (seoEditorResult.edited) {
