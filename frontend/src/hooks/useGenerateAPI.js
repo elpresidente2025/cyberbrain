@@ -297,8 +297,8 @@ export function useGenerateAPI() {
       });
 
       const message = useBonus
-        ? `보너스 원고가 성공적으로 생성되었습니다! (${newDraft.wordCount}자)`
-        : `AI 원고가 성공적으로 생성되었습니다! (${newDraft.wordCount}자)`;
+        ? `보너스 원고가 성공적으로 생성되었습니다!`
+        : `AI 원고가 성공적으로 생성되었습니다!`;
 
       return {
         success: true,
@@ -377,7 +377,7 @@ export function useGenerateAPI() {
       } else {
         throw new Error(result?.error || '저장에 실패했습니다.');
       }
-      
+
     } catch (err) {
       console.error('❌ savePost 호출 실패:', err);
 
