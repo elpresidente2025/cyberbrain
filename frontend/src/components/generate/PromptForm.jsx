@@ -196,18 +196,18 @@ export default function PromptForm({
               참고자료 및 배경정보 (선택사항)
             </Typography>
             <Tooltip title="참고자료 입력창 추가">
-              <IconButton 
-                size="small" 
+              <IconButton
+                size="small"
                 onClick={addInstructionField}
                 disabled={disabled || instructionsList.length >= 10}
-                sx={{ 
+                sx={{
                   width: 24,
                   height: 24,
                   backgroundColor: '#006261',
                   color: 'white',
                   border: '1px solid',
                   borderColor: '#006261',
-                  '&:hover': { 
+                  '&:hover': {
                     backgroundColor: '#003A87',
                     borderColor: '#003A87'
                   },
@@ -222,14 +222,14 @@ export default function PromptForm({
               </IconButton>
             </Tooltip>
           </Box>
-          
+
           {instructionsList.map((instruction, index) => (
             <Box key={index} sx={{ mb: index < instructionsList.length - 1 ? 2 : 0 }}>
               <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
                 <TextField
                   fullWidth
                   size={formSize}
-                  label={`참고자료 ${index + 1}`}
+                  label={index === 0 ? '페이스북 게시글' : `참고자료 ${index}`}
                   placeholder={index === 0
                     ? "실제 뉴스, 정책 내용, 통계 데이터 등 원고 작성에 참고할 배경정보를 입력하세요."
                     : "추가 참고자료나 배경정보를 입력하세요."
@@ -253,7 +253,7 @@ export default function PromptForm({
                       size="small"
                       onClick={() => removeInstructionField(index)}
                       disabled={disabled}
-                      sx={{ 
+                      sx={{
                         mt: 1,
                         width: 24,
                         height: 24,
@@ -279,7 +279,7 @@ export default function PromptForm({
               </Box>
             </Box>
           ))}
-          
+
           {instructionsList.length >= 10 && (
             <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
               최대 10개까지 참고자료를 입력할 수 있습니다.

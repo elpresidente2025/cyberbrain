@@ -128,7 +128,7 @@ const GeneratePage = () => {
 
   // --- 🧠 커스텀 훅을 통한 핵심 로직 분리 ---
   // 폼의 상태와 관련된 모든 로직을 useGenerateForm 훅이 전담합니다.
-  const { formData, updateForm, resetForm, validateForm, canGenerate } = useGenerateForm();
+  const { formData, updateForm, resetForm, validateForm, canGenerate } = useGenerateForm(user);
   // API 통신과 관련된 모든 상태와 함수를 useGenerateAPI 훅이 전담합니다.
   const {
     loading,      // 로딩 중인지 여부 (true/false)

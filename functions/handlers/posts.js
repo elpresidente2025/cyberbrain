@@ -450,6 +450,8 @@ exports.generatePosts = httpWrap(async (req) => {
 
     // 🗺️ 지역 검증: 주제 지역과 사용자 지역구 (또는 목표 선거 지역) 비교
     // 직책별 관할 범위: 광역단체장(시도 전체), 기초단체장(시군구 전체), 의원(선거구 기준)
+    // strictSourceOnly 모드에서는 외부 뉴스/RAG/메모리를 차단하되,
+    // 사용자가 직접 입력한 참고자료(instructions)는 newsContext로 전달
     const safeNewsContext = strictSourceOnly ? '' : newsContext;
     const safeRagContext = strictSourceOnly ? '' : ragContext;
     const safeMemoryContext = strictSourceOnly ? '' : memoryContext;
@@ -598,7 +600,11 @@ exports.generatePosts = httpWrap(async (req) => {
         memoryContext: safeMemoryContext,
         ragContext: safeRagContext,  // 🔍 RAG 컨텍스트 추가 (과거 글 스타일 학습)
         instructions: instructionPayload,
-        newsContext: safeNewsContext,
+        // 🔧 핵심 수정: strictSourceOnly 모드에서는 사용자 입력(instructions)을 newsContext로 전달
+        // 이렇게 해야 WriterAgent의 [뉴스/참고자료] 섹션에 실제 내용이 표시됨
+        newsContext: strictSourceOnly && data.instructions
+          ? String(data.instructions).trim()
+          : safeNewsContext,
         regionHint,
         keywords: backgroundKeywords,
         userKeywords,  // 🔑 사용자 직접 입력 키워드 (최우선)
