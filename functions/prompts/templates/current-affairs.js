@@ -136,11 +136,7 @@ function buildCriticalWritingPrompt(options) {
   // 🎯 수사학 전략 동적 적용
   const rhetoricalStrategy = getActiveStrategies(topic, instructions || '', userProfile);
 
-  const backgroundSection = instructions ? `
-[배경 정보 및 필수 포함 내용]
-${Array.isArray(instructions) ? instructions.join('\n') : instructions}
-` : '';
-
+  // 참고자료는 writer-agent.js의 최우선 섹션에서 주입되므로 여기서는 제거 (중복 방지)
   const keywordsSection = keywords && keywords.length > 0 ? `
 [맥락 키워드 (참고용 - 삽입 강제 아님)]
 ${keywords.join(', ')}
@@ -150,11 +146,6 @@ ${keywords.join(', ')}
   const hintsSection = personalizedHints ? `
 [개인화 가이드]
 ${personalizedHints}
-` : '';
-
-  const newsSection = newsContext ? `
-[참고 뉴스 (최신 정보 반영)]
-${newsContext}
 ` : '';
 
   // 🎯 수사학 전략 섹션
@@ -170,7 +161,7 @@ ${rhetoricalStrategy.promptInjection}
 - 작성자: ${authorBio}
 - 글의 주제: "${topic}"
 - 목표 분량: ${targetWordCount || 2000}자 (공백 제외)
-${backgroundSection}${keywordsSection}${hintsSection}${newsSection}${rhetoricalSection}
+${keywordsSection}${hintsSection}${rhetoricalSection}
 
 [📖 참고: 올바른 작성 예시]
 ${relevantExample}
@@ -250,11 +241,7 @@ function buildDiagnosisWritingPrompt(options) {
 
   const rhetoricalStrategy = getActiveStrategies(topic, instructions || '', userProfile);
 
-  const backgroundSection = instructions ? `
-[배경 정보 및 필수 포함 내용]
-${Array.isArray(instructions) ? instructions.join('\n') : instructions}
-` : '';
-
+  // 참고자료는 writer-agent.js의 최우선 섹션에서 주입되므로 여기서는 제거 (중복 방지)
   const keywordsSection = keywords && keywords.length > 0 ? `
 [맥락 키워드(참고용 - 삽입 강제 아님)]
 ${keywords.join(', ')}
@@ -264,11 +251,6 @@ ${keywords.join(', ')}
   const hintsSection = personalizedHints ? `
 [개인화 가이드]
 ${personalizedHints}
-` : '';
-
-  const newsSection = newsContext ? `
-[참고 뉴스 (최신 정보 반영)]
-${newsContext}
 ` : '';
 
   const rhetoricalSection = rhetoricalStrategy.promptInjection ? `
@@ -283,7 +265,7 @@ ${rhetoricalStrategy.promptInjection}
 - 작성자: ${authorBio}
 - 글의 주제: "${topic}"
 - 목표 분량: ${targetWordCount || 2000}자(공백 제외)
-${backgroundSection}${keywordsSection}${hintsSection}${newsSection}${rhetoricalSection}
+${keywordsSection}${hintsSection}${rhetoricalSection}
 
 [진단 전용 규칙]
 - 해법/대안/정책 제안/요구/추진 계획/약속은 절대 포함하지 않는다.

@@ -30,6 +30,7 @@ const {
   determineWritingContext,
   normalizeNameSpacing
 } = require('../../prompts/guidelines/editorial');
+const { buildNaturalTonePrompt } = require('../../prompts/guidelines/natural-tone');
 
 const PLEDGE_PATTERNS = [
   /약속드?립니다/,
@@ -1078,23 +1079,31 @@ async function expandContentToTarget({
     console.log(`⚠️ [EditorAgent] 부족분 ${deficit}자 중 ${maxExpansion}자까지만 확장 (할루시네이션 방지)`);
   }
 
+  const naturalToneGuide = buildNaturalTonePrompt({ severity: 'strict' });
+
   const prompt = `
-당신은 전문 원고 교정가입니다.
-현재 원고의 분량이 부족합니다. 아래 [본문]의 핵심 내용을 **간결하게 요약**하여, **정확히 ${actualExpansion}자** 분량의 마무리 문단을 작성해 주십시오.
+당신은 정치 블로그 원고 작성 전문가입니다.
+현재 원고의 분량이 부족하여, 독자에게 깊은 울림을 줄 수 있는 **마무리 문단**을 추가하려 합니다.
+아래 [본문]의 맥락을 이어받아, **정확히 ${actualExpansion}자** 분량으로 자연스럽게 작성해 주십시오.
 
 [지시사항]
-1. **분량 엄수**: 반드시 **${actualExpansion}자** 내외로 작성. 절대 초과 금지.
-2. **위치**: 결론 바로 앞에 삽입됩니다.
-3. **내용**: 본론의 핵심을 한 문장으로 압축하고, 긍정적 전망으로 마무리.
-4. **형식**: <p> 태그 하나로 감싸서 작성.
-5. **금지**: 자기소개 반복, 인사말 반복, 새로운 사실 창작 금지.
+1. **분량 엄수**: 반드시 **${actualExpansion}자** 내외로 작성.
+2. **위치**: 본문 맨 마지막(결론부)에 자연스럽게 이어집니다.
+3. **톤앤매너 (매우 중요)**:
+${naturalToneGuide}
+   - 블로그 이웃에게 말하듯 부드럽고 호소력 짙은 문체. ("~합니다", "~하겠습니다", "~함께 나아갑시다")
+
+4. **내용**:
+   - 기계적인 요약보다는 **미래지향적인 다짐**이나 **독자의 동참을 호소**하는 감성적인 내용으로 채우세요.
+   - 새로운 사실(수치, 정책명)을 지어내지 말고, 본문의 흐름을 감성적으로 마무리하세요.
+5. **형식**: <p> 태그 하나로 감싸서 작성.
 
 [본문]
 ${body}
 
 다음 JSON 형식으로만 응답하세요:
 {
-  "summaryBlock": "<p>...요약 마무리 문단...</p>"
+  "summaryBlock": "<p>...작성된 문단...</p>"
 }`;
 
   try {
@@ -1165,6 +1174,8 @@ function buildEditorPrompt({ content, title, issues, userKeywords, status, targe
   const keywordVariationGuide = `
    - **[키워드 변형 허용]**: 조사나 어미가 붙은 형태(예: "부산의", "경제는")나 복합 명사(예: "부산경제", "부산 경제")도 키워드 사용으로 인정합니다. 억지로 분리하거나 정확히 일치시키려 하지 마세요.`;
 
+  const naturalToneGuide = buildNaturalTonePrompt({ severity: 'strict' });
+
   const structureGuideline = `
 ╔═══════════════════════════════════════════════════════════════╗
 ║  🚨 [CRITICAL] 5단 구조 유지 필수 (황금 비율)                 ║
@@ -1187,6 +1198,7 @@ ${statusNote}
 ${structureGuideline}
 ${lengthGuideline}
 ${titleGuideline}
+
 [원본 제목]
 ${title}
 
@@ -1198,13 +1210,15 @@ ${userKeywords.join(', ') || '(없음)'}
 
   [수정 지침 (매우 중요)]
   1. **[CRITICAL] 말투 강제 교정 (AI 투 제거)**:
-     - **"~라는 점입니다", "~것이라는 점입니다"** 패턴은 발견 즉시 삭제하거나 자연스러운 종결어미("**~입니다**", "**~합니다**", "**~것입니다**")로 고쳐 쓰세요.
-     - **본인에 대한 서술에 추측성 어미 금지**: "저는 ~일 것입니다", "저는 ~알고 있을 것입니다"와 같이 자기 자신의 행동이나 감정을 남 말하듯 추측하지 마세요. 반드시 **"~입니다", "~하고 있습니다"**로 명확하게 쓰세요.
-     - **과도한 확신 자제**: "반드시 해내겠습니다", "무조건 ~합니다"와 같은 표현이 너무 잦으면 오만해 보일 수 있습니다. 진정성 있는 **"노력하겠습니다", "최선을 다하겠습니다"** 표현도 적절히 섞어 쓰세요.
-     - **부자연스러운 수동태/피동형 금지**: "~보여주는 증거일 것입니다" → "~보여줍니다"
+${naturalToneGuide}
+     - **본인에 대한 서술에 추측성 어미 금지**: "저는 ~일 것입니다" (본인 이야기를 남처럼 쓰지 말 것) -> "저는 ~생각합니다/판단합니다"
+
+  2. **[CRITICAL] 할루시네이션(거짓 정보) 방지**:
+     - ❌ **없는 정책 창작 금지**: 원문에 없는 구체적인 정책명(예: "링 프로그램", "청년희망적금")이나 수치(예: "5천억", "10만 개")를 절대 지어내지 마세요.
+     - ✅ **방향성 제시**: 구체적인 팩트가 없다면 "지원이 필요합니다", "방안을 모색하겠습니다"와 같이 **방향성 위주로** 서술하세요. 질문형 소제목에 답할 팩트가 없으면 당위성으로 답변하세요.
 
   3. **[구조 및 서식 (AEO 최적화 소제목)]**:
-     - 소제목(H2)은 검색 사용자가 궁금해하는 **구체적인 질문**이나 **데이터 기반 정보** 형태로 작성하세요. (12~25자 권장)
+     - 소제목(H2)은 검색 사용자가 궁금해하는 **구체적인 질문**이나 **데이터 기반 정보** 형태로 작성하세요. (15~25자 권장)
      - **✅ 좋은 예시 (따라 할 것)**:
        - "청년 기본소득, **신청 방법은 무엇인가요?**" (질문형+키워드 전진배치)
        - "부산 의료 관광 **클러스터 3대 핵심 전략**" (구체적 수치)
@@ -1255,9 +1269,74 @@ ${keywordVariationGuide}
 }
 
 /**
+ * 한글 받침 유무 판별
+ * @param {string} word - 검사할 단어
+ * @returns {boolean} 받침이 있으면 true
+ */
+function hasFinalConsonant(word) {
+  if (!word || word.length === 0) return false;
+  const lastChar = word[word.length - 1];
+  const code = lastChar.charCodeAt(0);
+  // 한글 유니코드 범위: 0xAC00 ~ 0xD7A3
+  if (code < 0xAC00 || code > 0xD7A3) return false;
+  // 받침 여부: (code - 0xAC00) % 28 !== 0 이면 받침 있음
+  return (code - 0xAC00) % 28 !== 0;
+}
+
+/**
+ * 조사 변환 매핑 (원본 조사 → 받침 유무에 따른 조사)
+ * key: 원본 조사, value: [받침 있을 때, 받침 없을 때]
+ */
+const JOSA_MAP = {
+  '이': ['이', '가'],
+  '가': ['이', '가'],
+  '을': ['을', '를'],
+  '를': ['을', '를'],
+  '은': ['은', '는'],
+  '는': ['은', '는'],
+  '과': ['과', '와'],
+  '와': ['과', '와'],
+  '으로': ['으로', '로'],
+  '로': ['으로', '로'],
+  '이라': ['이라', '라'],
+  '라': ['이라', '라'],
+  '이나': ['이나', '나'],
+  '나': ['이나', '나'],
+  '이란': ['이란', '란'],
+  '란': ['이란', '란'],
+  '이든': ['이든', '든'],
+  '든': ['이든', '든'],
+  '이야': ['이야', '야'],
+  '야': ['이야', '야'],
+  '이여': ['이여', '여'],
+  '여': ['이여', '여'],
+  '이고': ['이고', '고'],
+  '고': ['이고', '고'],
+  '이며': ['이며', '며'],
+  '며': ['이며', '며'],
+};
+
+/**
+ * 동의어에 맞는 조사 변환
+ * @param {string} originalJosa - 원본 조사
+ * @param {string} synonym - 동의어 (조사 앞 단어)
+ * @returns {string} 변환된 조사
+ */
+function convertJosa(originalJosa, synonym) {
+  if (!originalJosa || !synonym) return originalJosa || '';
+
+  const mapping = JOSA_MAP[originalJosa];
+  if (!mapping) return originalJosa; // 매핑 없으면 원본 유지
+
+  const hasBatchim = hasFinalConsonant(synonym);
+  return hasBatchim ? mapping[0] : mapping[1];
+}
+
+/**
  * 🚨 과다 키워드 강제 분산 (스팸 방지)
  * - 최대 허용 횟수(6회)를 초과하는 키워드를 동의어로 대체
  * - 교차 제거: 앞에서 4회 유지, 뒤에서 2회 유지, 중간 초과분 대체
+ * - 조사 자동 변환: 동의어 받침에 따라 적절한 조사로 변환
  *
  * @param {string} content - HTML 본문
  * @param {Array<string>} userKeywords - 사용자 입력 키워드
@@ -1272,14 +1351,21 @@ function reduceKeywordSpam(content, userKeywords = []) {
   const preserveFront = 4; // 앞에서 4회는 유지 (SEO 중요)
   const preserveBack = 2;  // 뒤에서 2회는 유지 (결론 강조)
 
+  // 조사 패턴 (키워드 뒤에 붙을 수 있는 조사들)
+  const josaPattern = '(이|가|을|를|은|는|과|와|으로|로|이라|라|이나|나|이란|란|이든|든|이야|야|이여|여|이고|고|이며|며)?';
+
   let updatedContent = content;
   const summary = [];
 
   for (const keyword of userKeywords) {
-    // 키워드 등장 위치 찾기
-    const regex = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+    // 키워드 + 조사를 함께 캡처하는 정규식
+    const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regexWithJosa = new RegExp(`(${escapedKeyword})${josaPattern}`, 'g');
+
+    // 먼저 키워드만으로 등장 횟수 체크
+    const keywordOnlyRegex = new RegExp(escapedKeyword, 'g');
     const plainText = updatedContent.replace(/<[^>]*>/g, '');
-    const matches = [...plainText.matchAll(regex)];
+    const matches = [...plainText.matchAll(keywordOnlyRegex)];
     const count = matches.length;
 
     if (count <= maxAllowed) {
@@ -1298,11 +1384,10 @@ function reduceKeywordSpam(content, userKeywords = []) {
     }
 
     // 중간 부분 등장을 동의어로 대체 (preserveFront+1 ~ count-preserveBack)
-    // HTML에서 직접 대체 (위치 기반)
     let replacedCount = 0;
     let occurrenceIndex = 0;
 
-    updatedContent = updatedContent.replace(regex, (match) => {
+    updatedContent = updatedContent.replace(regexWithJosa, (match, _keywordPart, josaPart) => {
       occurrenceIndex++;
 
       // 앞 4개, 뒤 2개는 유지
@@ -1318,12 +1403,19 @@ function reduceKeywordSpam(content, userKeywords = []) {
       // 동의어로 대체 (순환 사용)
       const synonym = synonyms[replacedCount % synonyms.length];
       replacedCount++;
+
+      // 조사가 있으면 동의어에 맞게 변환
+      if (josaPart) {
+        const convertedJosa = convertJosa(josaPart, synonym);
+        return synonym + convertedJosa;
+      }
+
       return synonym;
     });
 
     if (replacedCount > 0) {
       summary.push(`"${keyword}" ${count}회→${count - replacedCount}회 (${replacedCount}회 동의어 대체)`);
-      console.log(`✅ [reduceKeywordSpam] "${keyword}" ${replacedCount}회 동의어 대체 완료`);
+      console.log(`✅ [reduceKeywordSpam] "${keyword}" ${replacedCount}회 동의어 대체 완료 (조사 자동 변환)`);
     }
   }
 
@@ -1366,15 +1458,29 @@ function generateKeywordSynonyms(keyword) {
     }
   }
 
-  // 일반 패턴
+  // 일반 패턴 (지역명이 있으면 유지)
+  const foundRegion = regions.find(r => lowerKeyword.includes(r));
+
   if (lowerKeyword.includes('정책')) {
-    synonyms.push('정책 방향', '추진 과제', '핵심 과제');
+    if (foundRegion) {
+      synonyms.push(`${foundRegion} 정책 방향`, `${foundRegion} 추진 과제`, `${foundRegion}의 핵심 과제`);
+    } else {
+      synonyms.push('정책 방향', '추진 과제', '핵심 과제');
+    }
   }
   if (lowerKeyword.includes('경제')) {
-    synonyms.push('경제 발전', '지역 경제', '경제 혁신');
+    if (foundRegion) {
+      synonyms.push(`${foundRegion} 경제 발전`, `${foundRegion} 지역경제`, `${foundRegion} 경제 혁신`, `${foundRegion}의 경제`);
+    } else {
+      synonyms.push('경제 발전', '지역 경제', '경제 혁신');
+    }
   }
   if (lowerKeyword.includes('교통')) {
-    synonyms.push('교통 인프라', '교통 체계', '대중교통');
+    if (foundRegion) {
+      synonyms.push(`${foundRegion} 교통 인프라`, `${foundRegion} 교통 체계`, `${foundRegion} 대중교통`);
+    } else {
+      synonyms.push('교통 인프라', '교통 체계', '대중교통');
+    }
   }
 
   // 기본 동의어 (아무것도 매칭 안 되면)

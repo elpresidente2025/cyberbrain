@@ -35,6 +35,7 @@ function buildLogicalWritingPrompt(options) {
   const {
     topic,
     authorBio,
+    authorName = '',  // 이름만 (예: "이재성")
     instructions,
     keywords,
     targetWordCount,
@@ -46,6 +47,9 @@ function buildLogicalWritingPrompt(options) {
     currentStatus,  // 사용자 상태 (준비/현역/예비/후보)
     userProfile = {},  // 수사학 전략용 프로필
   } = options;
+
+  // authorName이 없으면 '화자'로 고정 (이름 창작 방지)
+  const speakerName = authorName || '화자';
 
   // 🎯 수사학 전략 동적 적용
   const rhetoricalStrategy = getActiveStrategies(topic, instructions || '', userProfile);
@@ -66,11 +70,7 @@ ${electionStage.promptInstruction}
   const argumentationTactic = Object.values(ARGUMENTATION_TACTICS).find(t => t.id === argumentationTacticId) || ARGUMENTATION_TACTICS.EVIDENCE_CITATION;
   const vocabularyModule = Object.values(VOCABULARY_MODULES).find(m => m.id === vocabularyModuleId) || VOCABULARY_MODULES.RATIONAL_PERSUASION;
 
-  const backgroundSection = instructions ? `
-[배경 정보 및 필수 포함 내용]
-${Array.isArray(instructions) ? instructions.join('\n') : instructions}
-` : '';
-
+  // 참고자료는 writer-agent.js의 최우선 섹션에서 주입되므로 여기서는 제거 (중복 방지)
   const keywordsSection = keywords && keywords.length > 0 ? `
 [맥락 키워드 (참고용 - 삽입 강제 아님)]
 ${keywords.join(', ')}
@@ -80,11 +80,6 @@ ${keywords.join(', ')}
   const hintsSection = personalizedHints ? `
 [개인화 가이드]
 ${personalizedHints}
-` : '';
-
-  const newsSection = newsContext ? `
-[참고 뉴스 (최신 정보 반영)]
-${newsContext}
 ` : '';
 
   // 🎯 수사학 전략 섹션
@@ -104,19 +99,23 @@ ${electionComplianceSection}
 **당신은 "${authorBio}"입니다. 이 글의 유일한 1인칭 화자입니다.**
 
 [필수 규칙]
-1. 이 글은 철저히 **1인칭 시점**으로 작성합니다. "저는", "제가"는 오직 **${authorBio}** 자신만을 지칭합니다.
-2. 참고 자료에 등장하는 다른 정치인(예: 조경태, 윤석열 등)은 **관찰과 평가의 대상(3인칭)**입니다.
+1. 이 글은 철저히 **1인칭 시점**으로 작성합니다. "저는", "제가"를 사용하세요.
+2. **[CRITICAL] 본인 이름 사용 제한**: "${speakerName}"이라는 이름은 **서론에서 1회, 결론에서 1회**만 사용하세요.
+   - ❌ 금지: "${speakerName}은 약속합니다", "${speakerName}은 노력하겠습니다" (본문에서 반복)
+   - ✅ 허용: "저 ${speakerName}은 약속드립니다" (서론/결론에서 1회씩만)
+   - ✅ 본문에서는: "저는", "제가", "본 의원은" 등 대명사 사용
+3. 참고 자료에 등장하는 다른 정치인(예: 조경태, 윤석열 등)은 **관찰과 평가의 대상(3인칭)**입니다.
    - ❌ "조경태는 최선을 다할 것입니다." (작성자가 조경태 대변인이 아님)
    - ✅ "조경태 의원의 소신에 박수를 보냅니다." (작성자가 그를 평가함)
-3. **절대 다른 정치인의 입장에서 공약을 내거나 다짐하지 마십시오.** 오직 화자(${authorBio})의 생각과 비전만 이야기하십시오.
-4. 칭찬할 대상이 있다면, "경쟁자이지만 훌륭하다", "배울 점이 있다"는 식으로 **화자와의 관계성**을 명확히 하십시오.
-5. 서명/인사도 반드시 화자 이름(${authorBio})으로 마무리하세요.
+4. **절대 다른 정치인의 입장에서 공약을 내거나 다짐하지 마십시오.** 오직 화자의 생각과 비전만 이야기하십시오.
+5. 칭찬할 대상이 있다면, "경쟁자이지만 훌륭하다", "배울 점이 있다"는 식으로 **화자와의 관계성**을 명확히 하십시오.
 
 [기본 정보]
 - 작성자(화자): ${authorBio}
+- 이름: ${speakerName} (서론 1회, 결론 1회만 사용)
 - 글의 주제: "${topic}"
 - 목표 분량: ${targetWordCount || 2000}자 (공백 제외)
-${backgroundSection}${keywordsSection}${hintsSection}${newsSection}${rhetoricalSection}
+${keywordsSection}${hintsSection}${rhetoricalSection}
 [글쓰기 설계도]
 너는 아래 3가지 부품을 조립하여, 매우 체계적이고 설득력 있는 글을 만들어야 한다.
 

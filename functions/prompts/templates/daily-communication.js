@@ -33,6 +33,7 @@ function buildDailyCommunicationPrompt(options) {
   const {
     topic,
     authorBio,
+    authorName = '',  // 이름만 (예: "이재성")
     instructions,
     keywords,
     targetWordCount,
@@ -43,15 +44,14 @@ function buildDailyCommunicationPrompt(options) {
     vocabularyModuleId,
   } = options;
 
+  // authorName이 없으면 '화자'로 고정 (이름 창작 방지)
+  const speakerName = authorName || '화자';
+
   const narrativeFrame = Object.values(NARRATIVE_FRAMES).find(f => f.id === narrativeFrameId) || NARRATIVE_FRAMES.SERVANT_LEADER;
   const emotionalArchetype = Object.values(EMOTIONAL_ARCHETYPES).find(a => a.id === emotionalArchetypeId) || EMOTIONAL_ARCHETYPES.PERSONAL_NARRATIVE;
   const vocabularyModule = Object.values(VOCABULARY_MODULES).find(m => m.id === vocabularyModuleId) || VOCABULARY_MODULES.SOLIDARITY_AND_PEOPLE;
 
-  const backgroundSection = instructions ? `
-[배경 정보 및 필수 포함 내용]
-${Array.isArray(instructions) ? instructions.join('\n') : instructions}
-` : '';
-
+  // 참고자료는 writer-agent.js의 최우선 섹션에서 주입되므로 여기서는 제거 (중복 방지)
   const keywordsSection = keywords && keywords.length > 0 ? `
 [맥락 키워드 (참고용 - 삽입 강제 아님)]
 ${keywords.join(', ')}
@@ -61,11 +61,6 @@ ${keywords.join(', ')}
   const hintsSection = personalizedHints ? `
 [개인화 가이드]
 ${personalizedHints}
-` : '';
-
-  const newsSection = newsContext ? `
-[참고 뉴스 (최신 정보 반영)]
-${newsContext}
 ` : '';
 
   const prompt = `
@@ -79,18 +74,22 @@ ${newsContext}
 
 [필수 규칙]
 1. 이 글은 철저히 **1인칭 시점**으로 작성합니다. "저는", "제가"를 사용하세요.
-2. 참고 자료(뉴스, 배경 정보)에 다른 인물의 발언이나 행동이 있더라도, **그 사람이 화자인 척 하지 마세요**.
+2. **[CRITICAL] 본인 이름 사용 제한**: "${speakerName}"이라는 이름은 **서론에서 1회, 결론에서 1회**만 사용하세요.
+   - ❌ 금지: "${speakerName}은 약속합니다", "${speakerName}은 노력하겠습니다" (본문에서 반복)
+   - ✅ 허용: "저 ${speakerName}은 약속드립니다" (서론/결론에서 1회씩만)
+   - ✅ 본문에서는: "저는", "제가", "본 의원은" 등 대명사 사용
+3. 참고 자료(뉴스, 배경 정보)에 다른 인물의 발언이나 행동이 있더라도, **그 사람이 화자인 척 하지 마세요**.
    - ❌ 잘못된 예: "후원회장을 맡게 되었습니다" (당신이 후원회장이 아니라면 이렇게 쓰면 안 됨)
    - ✅ 올바른 예: "OOO 배우님께서 후원회장을 맡아주셨습니다"
-3. 참고 자료에 등장하는 타인은 반드시 **3인칭**으로 언급하세요.
-4. 글의 처음부터 끝까지 화자(${authorBio})의 관점을 일관되게 유지하세요.
-5. 서명/인사도 반드시 화자 이름으로 마무리하세요.
+4. 참고 자료에 등장하는 타인은 반드시 **3인칭**으로 언급하세요.
+5. 글의 처음부터 끝까지 화자의 관점을 일관되게 유지하세요.
 
 [기본 정보]
 - 작성자(화자): ${authorBio}
+- 이름: ${speakerName} (서론 1회, 결론 1회만 사용)
 - 글의 주제: "${topic}"
 - 목표 분량: ${targetWordCount || 2000}자 (공백 제외)
-${backgroundSection}${keywordsSection}${hintsSection}${newsSection}
+${keywordsSection}${hintsSection}
 [글쓰기 설계도]
 너는 아래 3가지 부품을 조립하여 하나의 완성된 글을 만들어야 한다.
 

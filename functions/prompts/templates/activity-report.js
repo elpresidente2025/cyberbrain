@@ -46,12 +46,7 @@ function buildActivityReportPrompt(options) {
   const rhetoricalTactic = Object.values(RHETORICAL_TACTICS).find(t => t.id === rhetoricalTacticId) || RHETORICAL_TACTICS.FACTS_AND_EVIDENCE;
   const vocabularyModule = Object.values(VOCABULARY_MODULES).find(m => m.id === vocabularyModuleId) || VOCABULARY_MODULES.FORMAL_AND_REPORTING;
 
-  // 배경정보 포맷팅
-  const backgroundSection = instructions ? `
-[배경 정보 및 필수 포함 내용]
-${Array.isArray(instructions) ? instructions.join('\n') : instructions}
-` : '';
-
+  // 참고자료는 writer-agent.js의 최우선 섹션에서 주입되므로 여기서는 제거 (중복 방지)
   // 맥락 키워드 포맷팅 (참고용)
   const keywordsSection = keywords && keywords.length > 0 ? `
 [맥락 키워드 (참고용 - 삽입 강제 아님)]
@@ -65,12 +60,6 @@ ${keywords.join(', ')}
 ${personalizedHints}
 ` : '';
 
-  // 뉴스 컨텍스트 포맷팅
-  const newsSection = newsContext ? `
-[참고 뉴스 (최신 정보 반영)]
-${newsContext}
-` : '';
-
   const prompt = `
 # 전자두뇌비서관 - 의정활동 보고 원고 생성
 
@@ -78,7 +67,7 @@ ${newsContext}
 - 작성자: ${authorBio}
 - 글의 주제: "${topic}"
 - 목표 분량: ${targetWordCount || 2000}자 (공백 제외)
-${backgroundSection}${keywordsSection}${hintsSection}${newsSection}
+${keywordsSection}${hintsSection}
 [글쓰기 설계도]
 너는 아래 3가지 부품을 조립하여, 매우 명확하고 신뢰감 있는 글을 만들어야 한다.
 
