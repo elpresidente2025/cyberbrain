@@ -193,7 +193,11 @@ export default function PromptForm({
         <Grid item xs={12}>
           <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-              참고자료 및 배경정보 (선택사항)
+              참고자료 입력
+            </Typography>
+            {/* ✅ 역할 구분 안내 text */}
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+              ℹ️ <strong style={{ color: '#1565c0' }}>첫 번째 = 내 입장/주장 (필수)</strong>, <strong style={{ color: '#2e7d32' }}>두 번째 이후 = 뉴스/데이터</strong> (순서가 중요합니다)
             </Typography>
             <Tooltip title="참고자료 입력창 추가">
               <IconButton
@@ -229,21 +233,22 @@ export default function PromptForm({
                 <TextField
                   fullWidth
                   size={formSize}
-                  label={index === 0 ? '페이스북 게시글' : `참고자료 ${index}`}
+                  label={index === 0 ? '① 내 입장문 / 페이스북 글 (필수)' : `② 뉴스/데이터 ${index}`}
                   placeholder={index === 0
-                    ? "실제 뉴스, 정책 내용, 통계 데이터 등 원고 작성에 참고할 배경정보를 입력하세요."
-                    : "추가 참고자료나 배경정보를 입력하세요."
+                    ? "내가 이 주제에 대해 가진 입장, 의견, 페이스북에 올린 글 등을 입력하세요. 이 내용이 원고의 핵심 논조가 됩니다."
+                    : "뉴스 기사, 통계 데이터, 보도자료 등 팩트 자료를 입력하세요. 인용/근거로 활용됩니다."
                   }
                   value={instruction}
                   onChange={handleInstructionChange(index)}
                   onBlur={handleInstructionBlur(index)}
                   disabled={disabled}
+                  required={index === 0}
                   multiline
                   rows={index === 0 ? 4 : 3}
                   inputProps={{ maxLength: 3000 }}
                   helperText={index === 0
-                    ? `사용법: 언론사 기사/보도자료, 당 공지사항, 입장문, 논문 등 원고 작성에 필요한 배경지식 입력 (최대 3000자/초과 시 우측 상단 + 버튼으로 분할 입력) | ${instruction?.length || 0}/3000자`
-                    : `${instruction?.length || 0}/3000자`
+                    ? `💡 원고의 '논조와 주장'을 결정합니다. 내가 말하고 싶은 핵심 메시지를 입력하세요. | ${instruction?.length || 0}/3000자`
+                    : `📰 원고의 '근거와 팩트'가 됩니다. 언론 기사, 수치, 인용문 등 객관적 정보 입력. | ${instruction?.length || 0}/3000자`
                   }
                   FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
                 />

@@ -17,11 +17,90 @@ function stripHtml(text) {
   return String(text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+// 🔑 [방안 3] 카테고리별 소제목 스타일 정의
+const SUBHEADING_STYLES = {
+  // 논평/시사: 주장형 소제목 (질문형 금지)
+  'current-affairs': {
+    style: 'assertive',
+    description: '논평/시사 카테고리는 주장형 소제목을 사용합니다.',
+    preferredTypes: ['주장형', '명사형'],
+    forbiddenPatterns: ['~인가요?', '~일까요?', '~는?', '~할까?', '~인가?'],
+    examples: [
+      '"신공안 프레임"은 책임 회피에 불과하다',
+      '특검은 정치 보복이 아니다',
+      '당당하면 피할 이유 없다',
+      '민주주의의 기본 질서를 지켜야'
+    ]
+  },
+  // 정책 제안: 정보형/데이터형 소제목
+  'policy-proposal': {
+    style: 'informative',
+    description: '정책 제안 카테고리는 구체적인 정보형 소제목을 사용합니다.',
+    preferredTypes: ['데이터형', '명사형', '절차형'],
+    forbiddenPatterns: [],
+    examples: [
+      '청년 일자리 3대 핵심 전략',
+      '국비 100억 확보 내역',
+      '교통 체계 개편 5단계 로드맵'
+    ]
+  },
+  // 의정활동: 실적/성과 중심
+  'activity-report': {
+    style: 'achievement',
+    description: '의정활동 보고는 성과 중심 소제목을 사용합니다.',
+    preferredTypes: ['데이터형', '명사형'],
+    forbiddenPatterns: [],
+    examples: [
+      '국정감사 5대 핵심 성과',
+      '지역 현안 해결 실적',
+      '국회 발의 법안 현황'
+    ]
+  },
+  // 일상 소통: 친근한 질문형 허용
+  'daily-communication': {
+    style: 'friendly',
+    description: '일상 소통은 친근한 질문형도 허용됩니다.',
+    preferredTypes: ['질문형', '명사형'],
+    forbiddenPatterns: [],
+    examples: [
+      '요즘 어떻게 지내시나요?',
+      '함께 나눈 이야기들',
+      '시민 여러분께 전하는 말씀'
+    ]
+  },
+  // 기본값: 기존 AEO 최적화 유지
+  'default': {
+    style: 'aeo-optimized',
+    description: '기본 AEO 최적화 스타일을 사용합니다.',
+    preferredTypes: ['질문형', '명사형', '데이터형'],
+    forbiddenPatterns: [],
+    examples: []
+  }
+};
+
+/**
+ * 카테고리에 맞는 소제목 스타일 가져오기
+ */
+function getSubheadingStyle(category, subCategory = '') {
+  // 논평 하위 카테고리 감지
+  if (category === 'current-affairs') {
+    return SUBHEADING_STYLES['current-affairs'];
+  }
+
+  // 그 외 카테고리
+  if (SUBHEADING_STYLES[category]) {
+    return SUBHEADING_STYLES[category];
+  }
+
+  return SUBHEADING_STYLES['default'];
+}
+
 /**
  * AEO 전문가로서 본문 단락을 분석하여 최적의 소제목(H2) 생성
  * 사용자 제공 가이드라인(유형 1~5) 완벽 준수
+ * 🔑 [방안 3] 카테고리별 스타일 분기 추가
  */
-async function generateAeoSubheadings({ sections, modelName = 'gemini-2.0-flash', fullName, fullRegion }) {
+async function generateAeoSubheadings({ sections, modelName = 'gemini-2.0-flash', fullName, fullRegion, category = '', subCategory = '' }) {
   if (!sections || sections.length === 0) return null;
 
   // 1. 단락 전처리
@@ -34,8 +113,75 @@ async function generateAeoSubheadings({ sections, modelName = 'gemini-2.0-flash'
 
   const entityHints = [fullName, fullRegion].filter(Boolean).join(', ');
 
-  // 2. 프롬프트: 사용자 AEO 가이드라인 반영
-  const prompt = `
+  // 🔑 [방안 3] 카테고리별 스타일 가져오기
+  const styleConfig = getSubheadingStyle(category, subCategory);
+  const isAssertiveStyle = styleConfig.style === 'assertive';
+
+  // 2. 프롬프트: 카테고리별 분기
+  let prompt;
+
+  if (isAssertiveStyle) {
+    // 🔑 논평/시사 카테고리: 주장형 소제목 (질문형 금지)
+    prompt = `
+# Role Definition
+당신은 대한민국 최고의 **정치 논평 전문 에디터**입니다.
+주어진 논평/입장문 단락들을 분석하여, **날카롭고 주장이 담긴 소제목(H2)**을 생성해야 합니다.
+
+# Input Data
+- **Context**: ${entityHints || '(없음)'}
+- **Target Count**: ${cleanedSections.length} Headings
+- **글 유형**: 논평/입장문 (주장형 소제목 필수)
+
+# [CRITICAL] 논평용 H2 작성 가이드라인
+⚠️ 이 글은 논평/입장문입니다. 질문형 소제목은 절대 금지됩니다.
+
+## 1. 필수 요소
+- **길이**: **12~25자** (네이버 최적: 15~22자)
+- **형식**: **주장형** 또는 **명사형** (질문형 절대 금지)
+- **어조**: 단정적, 비판적, 명확한 입장 표명
+
+## 2. ✅ 권장 유형 (주장형)
+- **유형 A (단정형)**: "~이다", "~해야 한다"
+  - ✅ "특검은 정치 보복이 아니다" (12자)
+  - ✅ "당당하면 피할 이유 없다" (12자)
+  - ✅ "'신공안 프레임'은 책임 회피다" (15자)
+  - ✅ "민주주의는 권력자에게 편하지 않다" (17자)
+
+- **유형 B (비판형)**: 대상을 명시한 비판
+  - ✅ "진실 규명을 거부하는 태도" (13자)
+  - ✅ "특검 전에 프레임부터 씌우는 이유" (16자)
+  - ✅ "책임 회피로 일관하는 자세" (13자)
+
+- **유형 C (명사형)**: 핵심 쟁점 명시
+  - ✅ "특검법의 정당성과 의의" (12자)
+  - ✅ "민주주의 수호의 당위성" (12자)
+  - ✅ "투명한 검증을 위한 제도적 장치" (16자)
+
+## 3. ❌ 절대 금지 (질문형)
+- ❌ "~인가요?", "~일까요?", "~는?", "~할까?"
+- ❌ "어떻게 해소해야 하나?" (질문형)
+- ❌ "정말 답인가?" (질문형)
+- ❌ "왜 피하는가?" (질문형, 수사적 질문도 금지)
+
+## 4. ❌ 나쁜 예시 (절대 금지)
+- "부산광역시의 주요 비전과 과제" → 본문 내용과 무관한 일반적 표현
+- "앞으로의 과제" → 구체성 없음
+- "투명한 사회를 위한 노력" → AI 슬롭 표현
+
+# Input Paragraphs
+${cleanedSections.map((sec, i) => `[Paragraph ${i + 1}]\n${sec.substring(0, 400)}...`).join('\n\n')}
+
+# Output Format (JSON Only)
+반드시 아래 JSON 포맷으로 출력하세요. 순서는 단락 순서와 일치해야 합니다.
+{
+  "headings": [
+    "주장형 소제목1",
+    "주장형 소제목2"
+  ]
+}`;
+  } else {
+    // 기본: 기존 AEO 최적화 프롬프트
+    prompt = `
 # Role Definition
 당신은 대한민국 최고의 **AEO(Answer Engine Optimization) & SEO 전문 카피라이터**입니다.
 주어진 본문 단락들을 분석하여, 검색 엔진과 사용자 모두에게 매력적인 **최적의 소제목(H2)**을 생성해야 합니다.
@@ -108,6 +254,10 @@ ${cleanedSections.map((sec, i) => `[Paragraph ${i + 1}]\n${sec.substring(0, 400)
   ]
 }
 `;
+  }
+
+  // 🔑 [방안 3] 카테고리별 스타일 로깅
+  console.log(`📝 [SubheadingAgent] 소제목 생성 시작 (category=${category}, style=${styleConfig.style}, sections=${cleanedSections.length})`);
 
   const ai = getGenAI();
   if (!ai) return fallbacks(cleanedSections, fullRegion);
@@ -125,18 +275,21 @@ ${cleanedSections.map((sec, i) => `[Paragraph ${i + 1}]\n${sec.substring(0, 400)
     const parsed = JSON.parse(result.response.text());
 
     if (Array.isArray(parsed?.headings)) {
-      return parsed.headings.map((h) => {
+      const processedHeadings = parsed.headings.map((h) => {
         let heading = String(h).trim().replace(/^["']|["']$/g, '');
         // 혹시라도 너무 길면 자르기 (28자)
         if (heading.length > 28) heading = heading.substring(0, 27) + '...';
         return heading;
       });
+      console.log(`✅ [SubheadingAgent] 소제목 생성 완료 (style=${styleConfig.style}):`, processedHeadings);
+      return processedHeadings;
     }
 
   } catch (error) {
     console.error('⚠️ [SubheadingAgent] LLM Error:', error.message);
   }
 
+  console.warn(`⚠️ [SubheadingAgent] LLM 실패, fallback 사용 (category=${category})`);
   return fallbacks(cleanedSections, fullRegion);
 }
 

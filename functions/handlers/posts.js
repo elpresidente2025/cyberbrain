@@ -551,9 +551,13 @@ exports.generatePosts = httpWrap(async (req) => {
         return lines.join('\n');
       })()
       : '';
+    // 📌 배열인 경우 빈 문자열 필터링 후 join
     const instructionPayload = [data.instructions, sourceInstruction]
       .filter(Boolean)
-      .map((item) => Array.isArray(item) ? item.join('\n') : String(item))
+      .map((item) => Array.isArray(item)
+        ? item.filter(i => i && String(i).trim()).join('\n')
+        : String(item))
+      .filter(s => s && s.trim())  // 빈 결과 제거
       .join('\n\n');
 
     const factAllowlist = buildFactAllowlist([
@@ -585,6 +589,27 @@ exports.generatePosts = httpWrap(async (req) => {
     }
 
     const stopMultiAgentGenerate = startPerf('multiAgentGenerate');
+
+    // 🔍 디버그: newsContext 값 확인
+    const resolvedNewsContext = strictSourceOnly && data.instructions
+      ? (Array.isArray(data.instructions)
+          ? data.instructions.filter(item => item && String(item).trim()).join('\n\n')
+          : String(data.instructions).trim())
+      : safeNewsContext;
+
+    console.log('🔍 [DEBUG] 참고자료 전달 현황:', {
+      strictSourceOnly,
+      'data.instructions 타입': Array.isArray(data.instructions) ? 'array' : typeof data.instructions,
+      'data.instructions 길이': Array.isArray(data.instructions) ? data.instructions.length : (data.instructions?.length || 0),
+      'data.instructions 원본 (배열이면 각 요소 길이)': Array.isArray(data.instructions)
+        ? data.instructions.map((item, i) => `[${i}]: ${item?.length || 0}자`)
+        : `${data.instructions?.length || 0}자`,
+      'instructionPayload 길이': instructionPayload?.length || 0,
+      'instructionPayload 미리보기': instructionPayload?.substring(0, 300) || '(없음)',
+      'resolvedNewsContext 길이': resolvedNewsContext?.length || 0,
+      'resolvedNewsContext 미리보기': resolvedNewsContext?.substring(0, 300) || '(없음)'
+    });
+
     try {
       const multiAgentResult = await generateWithMultiAgent({
         topic: sanitizedTopic,
@@ -601,10 +626,7 @@ exports.generatePosts = httpWrap(async (req) => {
         ragContext: safeRagContext,  // 🔍 RAG 컨텍스트 추가 (과거 글 스타일 학습)
         instructions: instructionPayload,
         // 🔧 핵심 수정: strictSourceOnly 모드에서는 사용자 입력(instructions)을 newsContext로 전달
-        // 이렇게 해야 WriterAgent의 [뉴스/참고자료] 섹션에 실제 내용이 표시됨
-        newsContext: strictSourceOnly && data.instructions
-          ? String(data.instructions).trim()
-          : safeNewsContext,
+        newsContext: resolvedNewsContext,
         regionHint,
         keywords: backgroundKeywords,
         userKeywords,  // 🔑 사용자 직접 입력 키워드 (최우선)
@@ -896,11 +918,14 @@ exports.generatePosts = httpWrap(async (req) => {
         const sections = splitBlocksIntoSections(bodyBlocks, desiredBodyHeadings);
         const sectionTexts = sections.map((section) => section.join('\n'));
         try {
+          // 🔑 [방안 3] 카테고리 전달하여 소제목 스타일 분기
           const generatedHeadings = await generateAeoSubheadings({
             sections: sectionTexts,
             modelName,
             fullName,
-            fullRegion
+            fullRegion,
+            category,
+            subCategory: data.subCategory || ''
           });
           if (generatedHeadings && generatedHeadings.length > 0) {
             bodyHeadings = generatedHeadings;
@@ -919,14 +944,25 @@ exports.generatePosts = httpWrap(async (req) => {
           bodyHeadings
         }
       );
-      const expanded = await expandContentToTarget({
-        content: generatedContent,
-        targetWordCount,
-        modelName,
-        status: currentStatus
-      });
-      if (expanded?.edited) {
-        generatedContent = expanded.content;
+      // 🔑 [방안 5] 분량 확장 조건부 비활성화
+      // - 논평/시사 카테고리: AI 슬롭 방지를 위해 분량 확장 비활성화
+      // - 참고자료가 충분한 경우(500자 이상): 확장 불필요
+      const SKIP_EXPANSION_CATEGORIES = ['current-affairs', 'activity-report'];
+      const sourceLength = (instructionPayload?.length || 0) + (resolvedNewsContext?.length || 0);
+      const shouldSkipExpansion = SKIP_EXPANSION_CATEGORIES.includes(category) || sourceLength >= 500;
+
+      if (shouldSkipExpansion) {
+        console.log(`⏭️ [방안 5] 분량 확장 스킵 (category=${category}, sourceLength=${sourceLength})`);
+      } else {
+        const expanded = await expandContentToTarget({
+          content: generatedContent,
+          targetWordCount,
+          modelName,
+          status: currentStatus
+        });
+        if (expanded?.edited) {
+          generatedContent = expanded.content;
+        }
       }
       generatedContent = moveSummaryToConclusionStart(generatedContent);
       generatedContent = cleanupPostContent(generatedContent);

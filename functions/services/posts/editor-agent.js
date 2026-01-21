@@ -18,7 +18,9 @@ const {
   runHeuristicValidationSync,
   validateKeywordInsertion,
   validateTitleQuality,
-  validateBipartisanPraise
+  validateBipartisanPraise,
+  validateKeyPhraseInclusion,
+  validateCriticismTarget
 } = require('./validation');
 const {
   stripHtml,
@@ -701,7 +703,11 @@ async function refineWithLLM({
   modelName,
   factAllowlist = null,
   targetWordCount = null,
-  dilutionAnalysis = null  // 🔑 키워드 희석 분석 결과
+  dilutionAnalysis = null,  // 🔑 키워드 희석 분석 결과
+  // 🔑 [방안 1] 핵심 문구 검증용 파라미터
+  extractedKeyPhrases = [],
+  responsibilityTarget = null,
+  category = ''
 }) {
   // 수정이 필요한 문제들 수집
   const issues = [];
@@ -850,7 +856,63 @@ async function refineWithLLM({
     }
   }
 
-  // 5. 키워드 희석 문제 (경쟁 구문이 메인 키워드보다 많음)
+  // 5. 🔑 [방안 1] 핵심 문구 포함 검증 (논평/시사 카테고리)
+  if (extractedKeyPhrases && extractedKeyPhrases.length > 0) {
+    const keyPhraseResult = validateKeyPhraseInclusion(content, extractedKeyPhrases);
+
+    if (!keyPhraseResult.passed) {
+      // 누락된 핵심 문구가 있음
+      const missingPhrases = keyPhraseResult.missing
+        .map(p => `"${p.length > 40 ? p.substring(0, 40) + '...' : p}"`)
+        .join(', ');
+
+      issues.push({
+        type: 'key_phrase_missing',
+        severity: 'critical',  // 🔴 최고 우선순위
+        description: keyPhraseResult.message || `입장문 핵심 문구 누락: ${missingPhrases}`,
+        instruction: `다음 핵심 문구를 본문에 반드시 포함하세요 (혼합 방식: 1개는 원문 그대로, 나머지는 의미 유지 패러프레이즈 허용):\n${extractedKeyPhrases.map((p, i) => `${i + 1}. "${p}"`).join('\n')}`
+      });
+
+      console.log('🔴 [EditorAgent] 핵심 문구 누락 감지:', keyPhraseResult.missing.length, '개');
+    } else {
+      console.log('✅ [EditorAgent] 핵심 문구 검증 통과:', keyPhraseResult.included.length, '개 포함');
+    }
+  }
+
+  // 5-1. 🔑 [방안 1] 비판 대상 명시 검증 (논평/시사 카테고리)
+  if (responsibilityTarget && (category === 'current-affairs' || category.includes('논평'))) {
+    const targetResult = validateCriticismTarget(content, responsibilityTarget);
+
+    if (!targetResult.passed) {
+      // 🔴 [FIX] 의도 역전 감지 - 비판이 협력/존중으로 변질된 경우
+      if (targetResult.hasIntentReversal) {
+        issues.push({
+          type: 'intent_reversal',
+          severity: 'critical',  // 🔴 가장 높은 심각도
+          description: targetResult.message || `의도 역전 감지: 비판 대상 "${responsibilityTarget}"이(가) 긍정적 맥락으로 언급됨`,
+          instruction: `🚨 [CRITICAL] 원본 참고자료에서 "${responsibilityTarget}"은(는) 비판의 대상입니다.
+"협력", "존중", "함께", "노력" 등 긍정적 표현을 사용하지 마세요.
+원본의 비판적 논조("역부족", "한계", "문제점" 등)를 그대로 유지하세요.
+현재 감지된 긍정 표현 ${targetResult.intentReversalCount}회 vs 비판 표현 ${targetResult.criticismContextCount}회`
+        });
+
+        console.log('🔴🔴🔴 [EditorAgent] 의도 역전 감지!:', responsibilityTarget,
+          `(긍정: ${targetResult.intentReversalCount}회, 비판: ${targetResult.criticismContextCount}회)`);
+      } else {
+        // 단순 언급 부족
+        issues.push({
+          type: 'criticism_target_missing',
+          severity: 'high',
+          description: targetResult.message || `비판 대상 "${responsibilityTarget}" 언급 부족`,
+          instruction: `비판/논평의 대상인 "${responsibilityTarget}"을(를) 본문에서 최소 2회 이상 명시적으로 언급하세요. 모호한 표현("해당 공직자", "그 사람")으로 대체하지 마세요.`
+        });
+
+        console.log('🔴 [EditorAgent] 비판 대상 언급 부족:', responsibilityTarget, `(${targetResult.count}회)`);
+      }
+    }
+  }
+
+  // 6. 키워드 희석 문제 (경쟁 구문이 메인 키워드보다 많음)
   if (dilutionAnalysis && dilutionAnalysis.hasDilution && dilutionAnalysis.competitors?.length > 0) {
     const competitorInfo = dilutionAnalysis.competitors
       .map(c => `"${c.phrase}" (현재 ${c.count}회, 메인 키워드 "${dilutionAnalysis.primaryKeyword}": ${dilutionAnalysis.primaryCount}회)`)
@@ -903,7 +965,7 @@ async function refineWithLLM({
   });
 
   try {
-    const response = await callGenerativeModel(prompt, 1, modelName, true, 1700);
+    const response = await callGenerativeModel(prompt, 1, modelName, true, 2200);
 
     // JSON 파싱
     let result;
@@ -971,18 +1033,27 @@ async function refineWithLLM({
     );
 
     if (refreshedValidation.passed && refreshedKeyword.valid) {
-      // 초당적 협력 금지 표현 후처리 (자동 대체)
-      const bipartisanResult = validateBipartisanPraise(nextContent, {
-        rivalNames: userKeywords.filter(k => k.match(/^[가-힣]{2,4}$/)),  // 이름 형태 키워드 추출
-        category: 'bipartisan'  // 일단 항상 적용 (향후 카테고리 정보 추가 필요)
-      });
-      const finalContent = bipartisanResult.correctedContent || nextContent;
+      // 초당적 협력 금지 표현 후처리 - 카테고리가 'bipartisan-cooperation'일 때만 적용
+      // 🔴 [FIX] 기존: 모든 카테고리에 무조건 적용 → 비판 글도 협력 프레임으로 왜곡됨
+      // 🟢 [FIX] 수정: bipartisan-cooperation 카테고리일 때만 적용
+      const isBipartisanCategory = category === 'bipartisan-cooperation' || category === '초당적 협력';
+      let finalContent = nextContent;
+
+      let bipartisanIssues = [];
+      if (isBipartisanCategory) {
+        const bipartisanResult = validateBipartisanPraise(nextContent, {
+          rivalNames: userKeywords.filter(k => k.match(/^[가-힣]{2,4}$/)),
+          category: 'bipartisan'
+        });
+        finalContent = bipartisanResult.correctedContent || nextContent;
+        bipartisanIssues = bipartisanResult.issues || [];
+      }
 
       return {
         content: finalContent,
         title: nextTitle,
         edited: true,
-        editSummary: [...(result.editSummary || []), ...(bipartisanResult.issues || [])]
+        editSummary: [...(result.editSummary || []), ...bipartisanIssues]
       };
     }
 
@@ -996,12 +1067,19 @@ async function refineWithLLM({
       targetWordCount
     });
 
-    // 초당적 협력 금지 표현 후처리 (자동 대체)
-    const bipartisanResult2 = validateBipartisanPraise(hardFixed.content || content, {
-      rivalNames: userKeywords.filter(k => k.match(/^[가-힣]{2,4}$/)),
-      category: 'bipartisan'
-    });
-    const finalContent2 = bipartisanResult2.correctedContent || hardFixed.content || content;
+    // 초당적 협력 금지 표현 후처리 - 카테고리가 'bipartisan-cooperation'일 때만 적용
+    // 🔴 [FIX] 기존: 모든 카테고리에 무조건 적용 → 비판 글도 협력 프레임으로 왜곡됨
+    let finalContent2 = hardFixed.content || content;
+    let bipartisanIssues2 = [];
+
+    if (isBipartisanCategory) {
+      const bipartisanResult2 = validateBipartisanPraise(hardFixed.content || content, {
+        rivalNames: userKeywords.filter(k => k.match(/^[가-힣]{2,4}$/)),
+        category: 'bipartisan'
+      });
+      finalContent2 = bipartisanResult2.correctedContent || hardFixed.content || content;
+      bipartisanIssues2 = bipartisanResult2.issues || [];
+    }
 
     return {
       content: finalContent2,
@@ -1010,7 +1088,7 @@ async function refineWithLLM({
       editSummary: [
         ...(result.editSummary || issues.map(i => i.description)),
         ...(hardFixed.editSummary || []),
-        ...(bipartisanResult2.issues || [])
+        ...bipartisanIssues2
       ].filter(Boolean)
     };
 

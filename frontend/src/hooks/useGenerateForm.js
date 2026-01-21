@@ -72,8 +72,16 @@ export const useGenerateForm = (user = null) => {
     if (!formData.category) {
       return { isValid: false, error: '카테고리를 선택해주세요.' };
     }
+    // ✅ 수정: 첫 번째 참고자료(입장문) 필수 체크
+    const firstInstruction = Array.isArray(formData.instructions)
+      ? formData.instructions[0]
+      : formData.instructions;
+
+    if (!firstInstruction || firstInstruction.trim() === '') {
+      return { isValid: false, error: '첫 번째 참고자료(내 입장문/페이스북 글)를 입력해주세요.' };
+    }
     return { isValid: true, error: null };
-  }, [formData.topic, formData.category]);
+  }, [formData.topic, formData.category, formData.instructions]);
 
   /**
    * '생성하기' 버튼의 활성화 여부를 결정하는 변수.
@@ -81,8 +89,12 @@ export const useGenerateForm = (user = null) => {
    */
   const canGenerate = useMemo(() => {
     // ✅ 수정: 'prompt' 대신 'topic' 필드를 기준으로 판단합니다.
-    return !!formData.topic && !!formData.category;
-  }, [formData.topic, formData.category]);
+    // ✅ 수정: 주제, 카테고리, 그리고 첫 번째 참고자료가 있어야 생성 가능
+    const firstInstruction = Array.isArray(formData.instructions)
+      ? formData.instructions[0]
+      : formData.instructions;
+    return !!formData.topic && !!formData.category && !!firstInstruction && firstInstruction.trim() !== '';
+  }, [formData.topic, formData.category, formData.instructions]);
 
   // 훅이 외부로 제공하는 상태와 함수들
   return {

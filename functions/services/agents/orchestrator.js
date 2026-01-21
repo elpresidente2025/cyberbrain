@@ -222,6 +222,9 @@ class Orchestrator {
         const currentSuggestions = this.results.SEOAgent?.data?.suggestions || [];
         if (currentSuggestions.length === 0) break;
 
+        // 🔑 [방안 1] WriterAgent에서 추출한 핵심 문구 가져오기
+        const writerDataSeo = this.results.WriterAgent?.data || {};
+
         const editorResult = await refineWithLLM({
           content: currentContent,
           title: currentTitle,
@@ -244,7 +247,11 @@ class Orchestrator {
           modelName: 'gemini-2.5-flash',
           factAllowlist: context.factAllowlist || null,
           targetWordCount: context.targetWordCount,
-          dilutionAnalysis: this.results.SEOAgent?.data?.analysis?.dilutionAnalysis || null  // 🔑 키워드 희석 분석
+          dilutionAnalysis: this.results.SEOAgent?.data?.analysis?.dilutionAnalysis || null,  // 🔑 키워드 희석 분석
+          // 🔑 [방안 1] 핵심 문구 검증용 파라미터
+          extractedKeyPhrases: writerDataSeo.extractedKeyPhrases || [],
+          responsibilityTarget: writerDataSeo.responsibilityTarget || null,
+          category: context.category || ''
         });
 
         if (editorResult.edited) {
@@ -378,6 +385,10 @@ class Orchestrator {
           }))
         } : null;
 
+        // 🔑 [방안 1] WriterAgent에서 추출한 핵심 문구 가져오기
+        const writerData = this.results.WriterAgent?.data || {};
+        const extractedKeyPhrases = writerData.extractedKeyPhrases || [];
+
         const editorResult = await refineWithLLM({
           content: currentContent,
           title: currentTitle,
@@ -401,7 +412,11 @@ class Orchestrator {
           modelName: 'gemini-2.5-flash',
           factAllowlist: context.factAllowlist || null,
           targetWordCount: context.targetWordCount,
-          dilutionAnalysis: this.results.SEOAgent?.data?.analysis?.dilutionAnalysis || null  // 🔑 키워드 희석 분석
+          dilutionAnalysis: this.results.SEOAgent?.data?.analysis?.dilutionAnalysis || null,  // 🔑 키워드 희석 분석
+          // 🔑 [방안 1] 핵심 문구 검증용 파라미터
+          extractedKeyPhrases,
+          responsibilityTarget: writerData.responsibilityTarget || null,
+          category: context.category || ''
         });
 
         if (editorResult.edited) {
@@ -509,6 +524,9 @@ class Orchestrator {
               console.log(`🔧 [Orchestrator] SEO 개선 시도 (${suggestions.length}개 제안)`);
 
               try {
+                // 🔑 [방안 1] WriterAgent에서 추출한 핵심 문구 가져오기
+                const writerDataSeoLoop = this.results.WriterAgent?.data || {};
+
                 const seoEditorResult = await refineWithLLM({
                   content: currentContent,
                   title: currentTitle,
@@ -531,7 +549,11 @@ class Orchestrator {
                   modelName: 'gemini-2.5-flash',
                   factAllowlist: context.factAllowlist || null,
                   targetWordCount: context.targetWordCount,
-                  dilutionAnalysis: this.results.SEOAgent?.data?.analysis?.dilutionAnalysis || null  // 🔑 키워드 희석 분석
+                  dilutionAnalysis: this.results.SEOAgent?.data?.analysis?.dilutionAnalysis || null,  // 🔑 키워드 희석 분석
+                  // 🔑 [방안 1] 핵심 문구 검증용 파라미터
+                  extractedKeyPhrases: writerDataSeoLoop.extractedKeyPhrases || [],
+                  responsibilityTarget: writerDataSeoLoop.responsibilityTarget || null,
+                  category: context.category || ''
                 });
 
                 if (seoEditorResult.edited) {

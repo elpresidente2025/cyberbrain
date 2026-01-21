@@ -777,6 +777,162 @@ function validateBipartisanPraise(content, options = {}) {
 }
 
 // ============================================================================
+// 🔑 [방안 1] 핵심 문구 포함 검증 (입장문 핵심 메시지 보존)
+// ============================================================================
+
+/**
+ * 핵심 문구가 본문에 포함되었는지 검증
+ * - 혼합 방식: 1개는 원문 그대로, 나머지는 패러프레이즈 허용
+ *
+ * @param {string} content - 생성된 본문
+ * @param {string[]} requiredPhrases - ContextAnalyzer가 추출한 핵심 문구
+ * @returns {Object} { passed, missing, included, details }
+ */
+function validateKeyPhraseInclusion(content, requiredPhrases = []) {
+  if (!content || !requiredPhrases || requiredPhrases.length === 0) {
+    return { passed: true, missing: [], included: [], details: {} };
+  }
+
+  const plainContent = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  const included = [];
+  const missing = [];
+  const details = {};
+
+  for (const phrase of requiredPhrases) {
+    if (!phrase || phrase.length < 5) continue;
+
+    // 1차: 정확히 일치 (원문 그대로)
+    const exactMatch = plainContent.includes(phrase);
+
+    // 2차: 핵심 키워드 포함 여부 (패러프레이즈 감지)
+    // 문구에서 핵심 단어(4자 이상 명사/동사) 추출
+    const coreWords = phrase
+      .replace(/[.?!,~]/g, '')
+      .split(/\s+/)
+      .filter(word => word.length >= 4 && !/^(있습니다|없습니다|합니다|입니다|것입니다|아닙니다)$/.test(word));
+
+    // 핵심 단어 중 절반 이상이 본문에 있으면 패러프레이즈로 인정
+    const coreWordMatches = coreWords.filter(word => plainContent.includes(word));
+    const paraphraseMatch = coreWords.length > 0 && coreWordMatches.length >= Math.ceil(coreWords.length * 0.5);
+
+    details[phrase] = {
+      exactMatch,
+      paraphraseMatch,
+      coreWords,
+      coreWordMatches,
+      included: exactMatch || paraphraseMatch
+    };
+
+    if (exactMatch || paraphraseMatch) {
+      included.push({ phrase, matchType: exactMatch ? 'exact' : 'paraphrase' });
+    } else {
+      missing.push(phrase);
+    }
+  }
+
+  // 혼합 방식: 최소 1개는 원문 그대로 포함되어야 함
+  const hasExactMatch = included.some(item => item.matchType === 'exact');
+
+  // 통과 조건:
+  // 1. 모든 핵심 문구가 포함됨 (정확 또는 패러프레이즈)
+  // 2. 최소 1개는 원문 그대로 포함
+  const allIncluded = missing.length === 0;
+  const passed = allIncluded && (requiredPhrases.length <= 1 || hasExactMatch);
+
+  return {
+    passed,
+    missing,
+    included,
+    hasExactMatch,
+    details,
+    message: passed
+      ? null
+      : missing.length > 0
+        ? `핵심 문구 누락: ${missing.map(p => `"${p.substring(0, 30)}..."`).join(', ')}`
+        : '원문 그대로 인용된 문구가 없습니다. 최소 1개는 원문 인용이 필요합니다.'
+  };
+}
+
+/**
+ * 비판/논평 대상이 본문에 명시되었는지 검증
+ *
+ * @param {string} content - 생성된 본문
+ * @param {string} responsibilityTarget - ContextAnalyzer가 추출한 비판 대상 (예: "박형준 시장")
+ * @returns {Object} { passed, targetMentioned, count }
+ */
+function validateCriticismTarget(content, responsibilityTarget) {
+  if (!content || !responsibilityTarget) {
+    return { passed: true, targetMentioned: false, count: 0 };
+  }
+
+  const plainContent = content.replace(/<[^>]*>/g, ' ');
+
+  // 이름에서 직책 분리 (예: "박형준 시장" → ["박형준", "시장"])
+  const targetParts = responsibilityTarget.split(/\s+/).filter(Boolean);
+  const targetName = targetParts[0]; // 이름만 (예: "박형준")
+
+  // 이름 등장 횟수
+  const nameRegex = new RegExp(targetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+  const matches = plainContent.match(nameRegex) || [];
+  const count = matches.length;
+
+  // 논평 글에서 비판 대상은 최소 2회 이상 언급되어야 함
+  const countPassed = count >= 2;
+
+  // 🔴 [FIX] 의도 역전 감지 - 비판 대상이 긍정적 맥락에서 언급되는지 확인
+  // 비판 글인데 "협력", "존중", "함께" 등 긍정 표현과 함께 언급되면 의도 역전
+  const intentReversalPatterns = [
+    new RegExp(`${targetName}[^.]*(?:협력|존중|함께|노력|인정|공로|성과)`, 'g'),
+    new RegExp(`(?:협력|존중|함께)하여[^.]*${targetName}`, 'g'),
+    new RegExp(`${targetName}[^.]*(?:의\\s*노력|과\\s*협력|과\\s*함께|을\\s*존중)`, 'g'),
+  ];
+
+  let intentReversalCount = 0;
+  const intentReversalMatches = [];
+
+  for (const pattern of intentReversalPatterns) {
+    const reversalMatches = plainContent.match(pattern) || [];
+    intentReversalCount += reversalMatches.length;
+    intentReversalMatches.push(...reversalMatches);
+  }
+
+  // 비판적 맥락 패턴 (역부족, 비판, 문제, 책임 등)
+  const criticismPatterns = [
+    new RegExp(`${targetName}[^.]*(?:역부족|한계|문제|책임|비판|실패|부족)`, 'g'),
+    new RegExp(`(?:역부족|한계|문제|책임|비판|실패|부족)[^.]*${targetName}`, 'g'),
+  ];
+
+  let criticismContextCount = 0;
+  for (const pattern of criticismPatterns) {
+    const critMatches = plainContent.match(pattern) || [];
+    criticismContextCount += critMatches.length;
+  }
+
+  // 의도 역전 판정: 긍정 맥락이 비판 맥락보다 많으면 역전으로 판단
+  const hasIntentReversal = intentReversalCount > 0 && intentReversalCount > criticismContextCount;
+
+  const passed = countPassed && !hasIntentReversal;
+
+  let message = null;
+  if (!countPassed) {
+    message = `비판 대상 "${targetName}" 언급 부족 (현재 ${count}회, 최소 2회 필요)`;
+  } else if (hasIntentReversal) {
+    message = `🔴 의도 역전 감지: 비판 대상 "${targetName}"이(가) 긍정적 맥락(협력/존중/함께)으로 언급됨. 원본의 비판적 논조를 유지하세요. [감지된 표현: ${intentReversalMatches.slice(0, 2).join(', ')}]`;
+  }
+
+  return {
+    passed,
+    targetMentioned: count > 0,
+    count,
+    targetName,
+    hasIntentReversal,
+    intentReversalCount,
+    criticismContextCount,
+    message
+  };
+}
+
+// ============================================================================
 // 키워드 검증 함수
 // ============================================================================
 
@@ -1198,6 +1354,9 @@ module.exports = {
   validateKeywordInsertion,
   validateTitleQuality,              // 제목 품질 검증
   countKeywordOccurrences,
+  // 🔑 [방안 1] 핵심 문구 검증
+  validateKeyPhraseInclusion,
+  validateCriticismTarget,
   // 초당적 협력 검증
   validateBipartisanPraise,
   detectBipartisanForbiddenPhrases,
