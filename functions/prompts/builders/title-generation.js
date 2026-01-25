@@ -745,6 +745,28 @@ function calculateTitleQualityScore(title, params = {}) {
     };
   }
 
+  // 🚨 [CRITICAL] 본문 패턴 검증 - 본문처럼 보이는 제목은 즉시 0점
+  const looksLikeContent =
+    title.includes('여러분') ||           // 호칭 (본문 첫 문장)
+    title.includes('<') ||                 // HTML 태그
+    title.endsWith('입니다') ||            // 서술형 종결
+    title.endsWith('습니다') ||            // 서술형 종결
+    title.endsWith('습니까') ||            // 의문형 종결 (인사말)
+    title.endsWith('니다') ||              // 서술형 종결
+    title.length > 50;                     // 너무 긴 제목
+
+  if (looksLikeContent) {
+    const reason = title.includes('여러분') ? '호칭("여러분") 포함' :
+                   title.includes('<') ? 'HTML 태그 포함' :
+                   title.length > 50 ? '50자 초과' : '서술형 종결어미';
+    return {
+      score: 0,
+      breakdown: { contentPattern: { score: 0, max: 100, status: '실패', reason } },
+      passed: false,
+      suggestions: [`제목이 본문처럼 보입니다 (${reason}). 검색어 중심의 간결한 제목으로 다시 작성하세요.`]
+    };
+  }
+
   const breakdown = {};
   const suggestions = [];
   const titleLength = title.length;
