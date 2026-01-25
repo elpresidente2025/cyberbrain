@@ -275,7 +275,7 @@ function extractNumbersFromContent(content) {
     };
   }
 
-  return {
+  const result = {
     numbers,
     instruction: `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -290,6 +290,9 @@ function extractNumbersFromContent(content) {
 • 본문에 "85억"이 없는데 → "지원금 85억" ❌ (날조!)
 `
   };
+
+  console.log('[DEBUG] extractNumbersFromContent result:', result?.numbers ? result.numbers.length : 'undefined keywords');
+  return result;
 }
 
 // ============================================================================
@@ -417,7 +420,12 @@ function buildTitlePrompt({ contentPreview, backgroundText, topic, fullName, key
       detectedTypeId = 'ISSUE_ANALYSIS';
     }
   }
+
   const primaryType = TITLE_TYPES[detectedTypeId];
+  if (!primaryType) {
+    console.warn(`[TitleGen] detectedTypeId '${detectedTypeId}' not found, falling back to DATA_BASED`);
+    detectedTypeId = 'DATA_BASED';
+  }
 
   // 🔴 [Phase 1] 숫자 추출 및 검증 지시문 생성
   const numberValidation = extractNumbersFromContent(contentPreview);
@@ -438,11 +446,11 @@ function buildTitlePrompt({ contentPreview, backgroundText, topic, fullName, key
     : '';
 
   // 4. Few-shot 예시 구성
-  const goodExamples = primaryType.good
+  const goodExamples = (TITLE_TYPES[detectedTypeId] || TITLE_TYPES.DATA_BASED).good
     .map((ex, i) => `${i + 1}. "${ex.title}" (${ex.chars}자)\n   → ${ex.analysis}`)
     .join('\n');
 
-  const badExamples = primaryType.bad
+  const badExamples = (TITLE_TYPES[detectedTypeId] || TITLE_TYPES.DATA_BASED).bad
     .map((ex, i) => `${i + 1}. ❌ "${ex.title}"\n   문제: ${ex.problem}\n   ✅ 수정: "${ex.fix}"`)
     .join('\n\n');
 
@@ -457,11 +465,11 @@ function buildTitlePrompt({ contentPreview, backgroundText, topic, fullName, key
   return `당신은 네이버 블로그 제목 전문가입니다. 아래 규칙을 엄격히 따라 제목을 생성하세요.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📏 절대 규칙: 25자 이내
+📏 절대 규칙 (위반 시 즉시 실패)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• 최적: 15~22자 (가장 높은 클릭률)
-• 25자 초과 시 네이버 검색결과에서 잘림
-• 25자 초과 시 자르지 말고 다시 구성
+• **20자 이상 35자 이하** (필수!)
+• 말줄임표("...") 절대 금지 - 내용을 자르지 말 것
+• 핵심 키워드를 앞 10자에 배치 (필수!)
 • 작성 후 반드시 글자 수 확인!
 ${electionCompliance}
 ${keywordStrategy}
@@ -513,12 +521,12 @@ ${backgroundText ? backgroundText.substring(0, 300) : '(없음)'}
   → ❌ "부산 AI 예산 103억, 경제 혁신 이끈다" (주제 이탈!)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🚨 최종 출력 규칙
+🚨 최종 출력 규칙 (필수!)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. **25자 이내 권장** (필수는 아니지만 네이버 최적화)
-2. **길면 자르지 말고 다시 구성**
-3. **핵심 키워드 앞 8자 배치** (앞쪽 1/3 법칙)
-4. **본문에 실제 등장하는 숫자만 사용** (없으면 생략 가능, 절대 만들어내지 말 것!)
+1. **20자 이상 35자 이하** (필수! 위반 시 재생성)
+2. **말줄임표("...") 절대 금지** (내용 자르기 금지)
+3. **핵심 키워드 앞 10자 배치** (필수!)
+4. **본문에 실제 등장하는 숫자만 사용** (없으면 생략, 절대 만들어내지 말 것!)
 5. 콤마(,), 콜론(:), 물음표(?)는 자연스럽게 사용 가능
 6. "~에 대한", "~관련" 불필요 표현 제거
 7. 키워드 최대 3개 (2개 최적)
@@ -734,162 +742,198 @@ function extractTopicKeywords(topic) {
  * @returns {Object} { score, breakdown, passed, suggestions }
  */
 function calculateTitleQualityScore(title, params = {}) {
-  const { topic = '', content = '', userKeywords = [], authorName = '' } = params;
+  try {
+    const { topic = '', content = '', userKeywords = [], authorName = '' } = params;
 
-  if (!title) {
+    if (!title) {
+      return {
+        score: 0,
+        breakdown: {},
+        passed: false,
+        suggestions: ['제목이 없습니다']
+      };
+    }
+
+    // 🚨 [CRITICAL] 본문 패턴 검증 - 본문처럼 보이는 제목은 즉시 0점
+    const looksLikeContent =
+      title.includes('여러분') ||           // 호칭 (본문 첫 문장)
+      title.includes('<') ||                 // HTML 태그
+      title.endsWith('입니다') ||            // 서술형 종결
+      title.endsWith('습니다') ||            // 서술형 종결
+      title.endsWith('습니까') ||            // 의문형 종결 (인사말)
+      title.endsWith('니다') ||              // 서술형 종결
+      title.length > 50;                     // 너무 긴 제목
+
+    if (looksLikeContent) {
+      const reason = title.includes('여러분') ? '호칭("여러분") 포함' :
+        title.includes('<') ? 'HTML 태그 포함' :
+          title.length > 50 ? '50자 초과' : '서술형 종결어미';
+      return {
+        score: 0,
+        breakdown: { contentPattern: { score: 0, max: 100, status: '실패', reason } },
+        passed: false,
+        suggestions: [`제목이 본문처럼 보입니다 (${reason}). 검색어 중심의 간결한 제목으로 다시 작성하세요.`]
+      };
+    }
+
+    // 🚨 [HARD FAIL] 말줄임표 금지 - 즉시 실패
+    if (title.includes('...') || title.endsWith('..')) {
+      return {
+        score: 0,
+        breakdown: { ellipsis: { score: 0, max: 100, status: '실패', reason: '말줄임표 포함' } },
+        passed: false,
+        suggestions: ['말줄임표("...") 사용 금지. 내용을 자르지 말고 완결된 제목을 작성하세요.']
+      };
+    }
+
+    const breakdown = {};
+    const suggestions = [];
+    const titleLength = title.length;
+
+    // 🚨 [HARD FAIL] 글자수 범위 (15자 미만 또는 40자 초과 시 실패)
+    if (titleLength < 15 || titleLength > 40) {
+      return {
+        score: 0,
+        breakdown: { length: { score: 0, max: 100, status: '실패', reason: `${titleLength}자 (20-35자 필요)` } },
+        passed: false,
+        suggestions: [`제목이 ${titleLength}자입니다. 20-35자 범위로 작성하세요.`]
+      };
+    }
+
+    // 1. 길이 점수 (최대 20점) - 기준: 20-35자
+    if (titleLength >= 20 && titleLength <= 35) {
+      breakdown.length = { score: 20, max: 20, status: '적정' };
+    } else if (titleLength >= 15 && titleLength <= 40) {
+      breakdown.length = { score: 10, max: 20, status: '경계' };
+      if (titleLength < 20) {
+        suggestions.push(`제목이 ${titleLength}자입니다. 20자 이상 권장.`);
+      } else {
+        suggestions.push(`제목이 ${titleLength}자입니다. 35자 이하 권장.`);
+      }
+    } else {
+      breakdown.length = { score: 0, max: 20, status: '부적정' };
+      suggestions.push(`제목이 ${titleLength}자입니다. 20-35자 범위로 작성하세요.`);
+    }
+
+    // 2. 키워드 위치 점수 (최대 20점) - 복수 키워드 지원, 앞 10자 기준
+    if (userKeywords && userKeywords.length > 0) {
+      // 모든 키워드의 위치 확인
+      const keywordPositions = userKeywords.map(kw => ({
+        keyword: kw,
+        index: title.indexOf(kw),
+        inFront10: title.indexOf(kw) >= 0 && title.indexOf(kw) <= 10
+      }));
+
+      const anyInFront10 = keywordPositions.some(kp => kp.inFront10);
+      const anyInTitle = keywordPositions.some(kp => kp.index >= 0);
+      const frontKeyword = keywordPositions.find(kp => kp.inFront10)?.keyword || '';
+      const anyKeyword = keywordPositions.find(kp => kp.index >= 0)?.keyword || '';
+
+      if (anyInFront10) {
+        breakdown.keywordPosition = { score: 20, max: 20, status: '최적', keyword: frontKeyword };
+      } else if (anyInTitle) {
+        breakdown.keywordPosition = { score: 12, max: 20, status: '포함됨', keyword: anyKeyword };
+        suggestions.push(`키워드 "${anyKeyword}"를 제목 앞쪽(10자 내)으로 이동하면 SEO 효과 증가.`);
+      } else {
+        breakdown.keywordPosition = { score: 0, max: 20, status: '없음', keywords: userKeywords };
+        suggestions.push(`키워드 중 하나라도 제목에 포함하세요: ${userKeywords.slice(0, 2).join(', ')}`);
+      }
+    } else {
+      breakdown.keywordPosition = { score: 10, max: 20, status: '키워드없음' };
+    }
+
+    // 3. 숫자 포함 점수 (최대 15점)
+    const hasNumbers = /\d+(?:억|만원|%|명|건|가구|곳)?/.test(title);
+    if (hasNumbers) {
+      // 본문에서 추출한 숫자와 일치하는지 확인
+      const contentNumbers = extractNumbersFromContent(content);
+      // Safety guard for contentNumbers
+      const safeContentNumbers = contentNumbers && contentNumbers.numbers ? contentNumbers.numbers : [];
+
+      const titleNumbers = title.match(/\d+(?:억|만원|%|명|건|가구|곳)?/g) || [];
+
+      const allValid = titleNumbers.every(num =>
+        safeContentNumbers.some(cn => cn.includes(num) || num.includes(cn.replace(/[^\d]/g, '')))
+      );
+
+      if (allValid) {
+        breakdown.numbers = { score: 15, max: 15, status: '검증됨' };
+      } else {
+        breakdown.numbers = { score: 5, max: 15, status: '미검증' };
+        suggestions.push('제목의 숫자가 본문에서 확인되지 않았습니다.');
+      }
+    } else {
+      breakdown.numbers = { score: 8, max: 15, status: '없음' };
+    }
+
+    // 4. 주제 일치도 점수 (최대 25점) - 가장 중요
+    if (topic) {
+      const themeValidation = validateThemeAndContent(topic, content, title);
+
+      if (themeValidation.overlapScore >= 80) {
+        breakdown.topicMatch = { score: 25, max: 25, status: '높음', overlap: themeValidation.overlapScore };
+      } else if (themeValidation.overlapScore >= 50) {
+        breakdown.topicMatch = { score: 15, max: 25, status: '보통', overlap: themeValidation.overlapScore };
+        suggestions.push(...themeValidation.mismatchReasons.slice(0, 1));
+      } else {
+        breakdown.topicMatch = { score: 5, max: 25, status: '낮음', overlap: themeValidation.overlapScore };
+        suggestions.push('제목이 주제와 많이 다릅니다. 주제 핵심어를 반영하세요.');
+      }
+    } else {
+      breakdown.topicMatch = { score: 15, max: 25, status: '주제없음' };
+    }
+
+    // 5. 화자 포함 점수 (최대 10점) - 논평/시사 글
+    if (authorName) {
+      if (title.includes(authorName)) {
+        breakdown.authorIncluded = { score: 10, max: 10, status: '포함' };
+      } else {
+        breakdown.authorIncluded = { score: 0, max: 10, status: '미포함' };
+        suggestions.push(`화자 "${authorName}"를 제목에 포함하면 브랜딩에 도움됩니다.`);
+      }
+    } else {
+      breakdown.authorIncluded = { score: 5, max: 10, status: '해당없음' };
+    }
+
+    // 6. 임팩트 요소 점수 (최대 10점)
+    let impactScore = 0;
+    const impactFeatures = [];
+
+    if (title.includes('?')) { impactScore += 3; impactFeatures.push('물음표'); }
+    if (/'.*'/.test(title) || /".*"/.test(title)) { impactScore += 3; impactFeatures.push('인용문'); }
+    if (/vs|\bvs\b|→|대비/.test(title)) { impactScore += 2; impactFeatures.push('대비구조'); }
+    if (/이 본|가 본/.test(title)) { impactScore += 2; impactFeatures.push('관점표현'); }
+
+    breakdown.impact = {
+      score: Math.min(impactScore, 10),
+      max: 10,
+      status: impactScore > 0 ? '있음' : '없음',
+      features: impactFeatures
+    };
+
+    // 총점 계산
+    const totalScore = Object.values(breakdown).reduce((sum, item) => sum + (item.score || 0), 0);
+    const maxScore = Object.values(breakdown).reduce((sum, item) => sum + (item.max || 0), 0);
+    const normalizedScore = Math.round((totalScore / maxScore) * 100);
+
     return {
-      score: 0,
-      breakdown: {},
+      score: normalizedScore,
+      rawScore: totalScore,
+      maxScore,
+      breakdown,
+      passed: normalizedScore >= 70,  // 70점 이상 통과
+      suggestions: suggestions.slice(0, 3)  // 최대 3개 제안
+    };
+  } catch (error) {
+    console.error('❌ [TitleGen] calculateTitleQualityScore CRASH:', error);
+    // Return a safe fallback to prevent TitleAgent from failing completely
+    return {
+      score: 50, // Fail by default but don't crash the agent
+      breakdown: { error: { score: 0, status: 'Crash' } },
       passed: false,
-      suggestions: ['제목이 없습니다']
+      suggestions: ['제목 품질 검사 중 오류 발생']
     };
   }
-
-  // 🚨 [CRITICAL] 본문 패턴 검증 - 본문처럼 보이는 제목은 즉시 0점
-  const looksLikeContent =
-    title.includes('여러분') ||           // 호칭 (본문 첫 문장)
-    title.includes('<') ||                 // HTML 태그
-    title.endsWith('입니다') ||            // 서술형 종결
-    title.endsWith('습니다') ||            // 서술형 종결
-    title.endsWith('습니까') ||            // 의문형 종결 (인사말)
-    title.endsWith('니다') ||              // 서술형 종결
-    title.length > 50;                     // 너무 긴 제목
-
-  if (looksLikeContent) {
-    const reason = title.includes('여러분') ? '호칭("여러분") 포함' :
-                   title.includes('<') ? 'HTML 태그 포함' :
-                   title.length > 50 ? '50자 초과' : '서술형 종결어미';
-    return {
-      score: 0,
-      breakdown: { contentPattern: { score: 0, max: 100, status: '실패', reason } },
-      passed: false,
-      suggestions: [`제목이 본문처럼 보입니다 (${reason}). 검색어 중심의 간결한 제목으로 다시 작성하세요.`]
-    };
-  }
-
-  const breakdown = {};
-  const suggestions = [];
-  const titleLength = title.length;
-
-  // 1. 길이 점수 (최대 20점)
-  if (titleLength >= 15 && titleLength <= 22) {
-    breakdown.length = { score: 20, max: 20, status: '최적' };
-  } else if (titleLength >= 10 && titleLength <= 25) {
-    breakdown.length = { score: 15, max: 20, status: '양호' };
-  } else if (titleLength > 25) {
-    breakdown.length = { score: 0, max: 20, status: '초과' };
-    suggestions.push(`제목이 ${titleLength}자입니다. 25자 이내로 줄이세요.`);
-  } else {
-    breakdown.length = { score: 10, max: 20, status: '짧음' };
-    suggestions.push('제목이 너무 짧습니다. 15자 이상 권장.');
-  }
-
-  // 2. 키워드 위치 점수 (최대 20점) - 복수 키워드 지원
-  if (userKeywords.length > 0) {
-    // 모든 키워드의 위치 확인
-    const keywordPositions = userKeywords.map(kw => ({
-      keyword: kw,
-      index: title.indexOf(kw),
-      inFront8: title.indexOf(kw) >= 0 && title.indexOf(kw) <= 8
-    }));
-
-    const anyInFront8 = keywordPositions.some(kp => kp.inFront8);
-    const anyInTitle = keywordPositions.some(kp => kp.index >= 0);
-    const frontKeyword = keywordPositions.find(kp => kp.inFront8)?.keyword || '';
-    const anyKeyword = keywordPositions.find(kp => kp.index >= 0)?.keyword || '';
-
-    if (anyInFront8) {
-      breakdown.keywordPosition = { score: 20, max: 20, status: '최적', keyword: frontKeyword };
-    } else if (anyInTitle) {
-      breakdown.keywordPosition = { score: 12, max: 20, status: '포함됨', keyword: anyKeyword };
-      suggestions.push(`키워드 "${anyKeyword}"를 제목 앞쪽(8자 내)으로 이동하면 SEO 효과 증가.`);
-    } else {
-      breakdown.keywordPosition = { score: 0, max: 20, status: '없음', keywords: userKeywords };
-      suggestions.push(`키워드 중 하나라도 제목에 포함하세요: ${userKeywords.slice(0, 2).join(', ')}`);
-    }
-  } else {
-    breakdown.keywordPosition = { score: 10, max: 20, status: '키워드없음' };
-  }
-
-  // 3. 숫자 포함 점수 (최대 15점)
-  const hasNumbers = /\d+(?:억|만원|%|명|건|가구|곳)?/.test(title);
-  if (hasNumbers) {
-    // 본문에서 추출한 숫자와 일치하는지 확인
-    const contentNumbers = extractNumbersFromContent(content);
-    const titleNumbers = title.match(/\d+(?:억|만원|%|명|건|가구|곳)?/g) || [];
-
-    const allValid = titleNumbers.every(num =>
-      contentNumbers.numbers.some(cn => cn.includes(num) || num.includes(cn.replace(/[^\d]/g, '')))
-    );
-
-    if (allValid) {
-      breakdown.numbers = { score: 15, max: 15, status: '검증됨' };
-    } else {
-      breakdown.numbers = { score: 5, max: 15, status: '미검증' };
-      suggestions.push('제목의 숫자가 본문에서 확인되지 않았습니다.');
-    }
-  } else {
-    breakdown.numbers = { score: 8, max: 15, status: '없음' };
-  }
-
-  // 4. 주제 일치도 점수 (최대 25점) - 가장 중요
-  if (topic) {
-    const themeValidation = validateThemeAndContent(topic, content, title);
-
-    if (themeValidation.overlapScore >= 80) {
-      breakdown.topicMatch = { score: 25, max: 25, status: '높음', overlap: themeValidation.overlapScore };
-    } else if (themeValidation.overlapScore >= 50) {
-      breakdown.topicMatch = { score: 15, max: 25, status: '보통', overlap: themeValidation.overlapScore };
-      suggestions.push(...themeValidation.mismatchReasons.slice(0, 1));
-    } else {
-      breakdown.topicMatch = { score: 5, max: 25, status: '낮음', overlap: themeValidation.overlapScore };
-      suggestions.push('제목이 주제와 많이 다릅니다. 주제 핵심어를 반영하세요.');
-    }
-  } else {
-    breakdown.topicMatch = { score: 15, max: 25, status: '주제없음' };
-  }
-
-  // 5. 화자 포함 점수 (최대 10점) - 논평/시사 글
-  if (authorName) {
-    if (title.includes(authorName)) {
-      breakdown.authorIncluded = { score: 10, max: 10, status: '포함' };
-    } else {
-      breakdown.authorIncluded = { score: 0, max: 10, status: '미포함' };
-      suggestions.push(`화자 "${authorName}"를 제목에 포함하면 브랜딩에 도움됩니다.`);
-    }
-  } else {
-    breakdown.authorIncluded = { score: 5, max: 10, status: '해당없음' };
-  }
-
-  // 6. 임팩트 요소 점수 (최대 10점)
-  let impactScore = 0;
-  const impactFeatures = [];
-
-  if (title.includes('?')) { impactScore += 3; impactFeatures.push('물음표'); }
-  if (/'.*'/.test(title) || /".*"/.test(title)) { impactScore += 3; impactFeatures.push('인용문'); }
-  if (/vs|\bvs\b|→|대비/.test(title)) { impactScore += 2; impactFeatures.push('대비구조'); }
-  if (/이 본|가 본/.test(title)) { impactScore += 2; impactFeatures.push('관점표현'); }
-
-  breakdown.impact = {
-    score: Math.min(impactScore, 10),
-    max: 10,
-    status: impactScore > 0 ? '있음' : '없음',
-    features: impactFeatures
-  };
-
-  // 총점 계산
-  const totalScore = Object.values(breakdown).reduce((sum, item) => sum + (item.score || 0), 0);
-  const maxScore = Object.values(breakdown).reduce((sum, item) => sum + (item.max || 0), 0);
-  const normalizedScore = Math.round((totalScore / maxScore) * 100);
-
-  return {
-    score: normalizedScore,
-    rawScore: totalScore,
-    maxScore,
-    breakdown,
-    passed: normalizedScore >= 70,  // 70점 이상 통과
-    suggestions: suggestions.slice(0, 3)  // 최대 3개 제안
-  };
 }
 
 // ============================================================================
@@ -930,12 +974,18 @@ async function generateAndValidateTitle(generateFn, params, options = {}) {
 
     // 1. 프롬프트 생성 (이전 시도 피드백 포함)
     let prompt;
-    if (attempt === 1) {
-      prompt = buildTitlePrompt(params);
-    } else {
-      // 이전 시도 피드백 추가
-      const lastAttempt = history[history.length - 1];
-      const feedbackPrompt = `
+    try {
+      if (attempt === 1 || history.length === 0) {
+        prompt = buildTitlePrompt(params);
+      } else {
+        // 이전 시도 피드백 추가
+        const lastAttempt = history[history.length - 1];
+
+        // Safety check just in case
+        if (!lastAttempt) {
+          prompt = buildTitlePrompt(params);
+        } else {
+          const feedbackPrompt = `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ 이전 제목 피드백 (점수: ${lastAttempt.score}/100)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -947,30 +997,46 @@ ${lastAttempt.suggestions.map(s => `• ${s}`).join('\n')}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 `;
-      prompt = feedbackPrompt + buildTitlePrompt(params);
+          prompt = feedbackPrompt + buildTitlePrompt(params);
+        }
+      }
+    } catch (e) {
+      console.error('[CRITICAL] buildTitlePrompt THREW:', e);
+      throw e;
     }
 
     // 2. 제목 생성 (LLM 호출)
     let generatedTitle;
     try {
+      console.log(`[DEBUG] Attempt ${attempt}: Calling generateFn...`);
       generatedTitle = await generateFn(prompt);
       generatedTitle = (generatedTitle || '').trim().replace(/^["']|["']$/g, '');
+      console.log(`[DEBUG] Generated title: "${generatedTitle}"`);
     } catch (error) {
       console.error(`[TitleGen] 생성 오류 (${attempt}/${maxAttempts}):`, error.message);
       continue;
     }
 
     if (!generatedTitle) {
+      console.log('[DEBUG] Generated title is empty, continuing...');
       continue;
     }
 
     // 3. 품질 점수 계산
-    const scoreResult = calculateTitleQualityScore(generatedTitle, {
-      topic: params.topic,
-      content: params.contentPreview,
-      userKeywords: params.userKeywords,
-      authorName: params.fullName
-    });
+    console.log('[DEBUG] Calling calculateTitleQualityScore...');
+    let scoreResult;
+    try {
+      scoreResult = calculateTitleQualityScore(generatedTitle, {
+        topic: params.topic,
+        content: params.contentPreview,
+        userKeywords: params.userKeywords,
+        authorName: params.fullName
+      });
+      console.log('[DEBUG] calculateTitleQualityScore returned score:', scoreResult?.score);
+    } catch (e) {
+      console.error('[CRITICAL] calculateTitleQualityScore THREW:', e);
+      throw e; // Re-throw to see if it's caught upstream
+    }
 
     // 기록 저장
     history.push({
@@ -995,7 +1061,12 @@ ${lastAttempt.suggestions.map(s => `• ${s}`).join('\n')}
       console.log(`✅ [TitleGen] 통과! (${attempt}회 시도, 점수: ${scoreResult.score})`);
 
       if (onProgress) {
-        onProgress({ attempt, maxAttempts, status: 'passed', score: scoreResult.score });
+        try {
+          console.log('[DEBUG] Calling onProgress passed...');
+          onProgress({ attempt, maxAttempts, status: 'passed', score: scoreResult.score });
+        } catch (e) {
+          console.error('[CRITICAL] onProgress passed callback FAILED:', e);
+        }
       }
 
       return {
