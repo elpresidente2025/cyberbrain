@@ -11,7 +11,7 @@
 
 'use strict';
 
-const { getElectionStage } = require('../guidelines/legal');
+const { getElectionStage } = require('../guidelines/election-rules');
 
 // ============================================================================
 // 7가지 콘텐츠 구조 유형 정의
