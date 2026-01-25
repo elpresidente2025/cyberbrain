@@ -599,7 +599,7 @@ ${mustIncludeFromStanceForSandwich}
     // ═══════════════════════════════════════════════════════════════
     // 🔄 [NEW] 분량 검증 재시도 루프 (최대 3회, 에러 없음, 항상 반환)
     // ═══════════════════════════════════════════════════════════════
-    const MIN_CHAR_COUNT = 1500;  // 최소 분량 기준
+    const MIN_CHAR_COUNT = Math.max(1200, Math.round(targetWordCount * 0.85));  // 최소 분량 기준
     const MAX_ATTEMPTS = 3;
     let content = null;
     let title = null;
@@ -636,23 +636,57 @@ ${mustIncludeFromStanceForSandwich}
       attemptCount++;
       const isRetry = attemptCount > 1;
 
-      // 재시도 시 분량 강조 프롬프트 추가
+      // 재시도 시 분량 강조 및 키워드 누락 보완 프롬프트 추가
       let currentPrompt = prompt;
       if (isRetry) {
+        // 1. 키워드 누락 확인
+        const missingKeywords = userKeywords.filter(k => !content || !content.includes(k));
+        const hasMissingKeywords = missingKeywords.length > 0;
+
+        // 2. 분량 부족 확인
+        const currentLength = content ? content.replace(/<[^>]*>/g, '').length : 0;
+        const isShort = currentLength < MIN_CHAR_COUNT;
+
+        console.log(`⚠️ [WriterAgent] 재시도 진입: 분량부족=${isShort}(${currentLength}자), 키워드누락=${hasMissingKeywords}(${missingKeywords.join(', ')})`);
+
+        let retryInstructions = [];
+
+        if (isShort) {
+          retryInstructions.push(`
+🚨 **[CRITICAL] 분량 심각하게 부족 (${currentLength}자 < ${MIN_CHAR_COUNT}자)**
+- 현재 글이 목표 분량의 절반도 되지 않습니다.
+- **각 문단을 지금보다 3배 더 길게 늘려 쓰십시오.**
+- 문단마다 구체적인 사례, 통계, 배경 설명을 **반드시 2문장 이상 추가**하십시오.
+- 서론과 결론도 각각 5문장 이상으로 대폭 확장하십시오.
+- "요약"하지 말고 "상세 설명" 하십시오.
+`);
+        }
+
+        if (hasMissingKeywords) {
+          retryInstructions.push(`
+🚨 **[CRITICAL] 필수 검색어 누락**
+- 다음 단어들이 본문에 반드시 포함되어야 합니다: **[${missingKeywords.join(', ')}]**
+- 위 단어들을 **본론** 섹션에 자연스럽게 녹여내십시오.
+- 단, 문맥에 맞지 않게 억지로 끼워넣지 말고 문장을 만들어 넣으세요.
+`);
+        }
+
         const lengthEnforcement = `
 ╔═══════════════════════════════════════════════════════════════╗
-║  🚨 [CRITICAL] 분량 부족으로 재생성 중 (시도 ${attemptCount}/${MAX_ATTEMPTS})    ║
+║  🔥 [RETRY MODE] 원고 보강 및 확장 지시 (시도 ${attemptCount}/${MAX_ATTEMPTS})       ║
 ╚═══════════════════════════════════════════════════════════════╝
 
-⚠️ 이전 응답이 ${content ? content.replace(/<[^>]*>/g, '').length : 0}자로 너무 짧았습니다.
-**반드시 ${MIN_CHAR_COUNT}자 이상** 작성해야 합니다.
+직전 생성된 원고에 심각한 문제가 있어 재요청합니다.
+아래 지적사항을 **완벽하게(100%)** 반영하여 다시 작성하십시오.
 
-[긴급 분량 확보 가이드]:
-1. 각 문단을 **최소 150자 이상**으로 작성
-2. 서론/본론1/본론2/본론3/결론 **5개 섹션 모두** 작성
-3. 구체적인 예시, 숫자, 인용문을 풍부하게 사용
-4. 절대 요약하지 말고 상세하게 서술
+${retryInstructions.join('\n')}
 
+**[작성 팁]**
+- 이미 쓴 내용을 지우지 말고, 그 사이에 **살을 붙이는 방식**으로 확장하세요.
+- 추상적인 표현(노력하겠습니다 등) 대신 **'어떻게(How)', '왜(Why)'**를 구체적으로 서술하세요.
+
+(아래는 원래 프롬프트입니다)
+----------------------------------------------------------------------
 `;
         currentPrompt = lengthEnforcement + prompt;
       }
@@ -701,6 +735,10 @@ ${mustIncludeFromStanceForSandwich}
 
     const finalCharCount = content ? content.replace(/<[^>]*>/g, '').length : 0;
     console.log(`📝 [WriterAgent] 최종 결과: ${finalCharCount}자 (${attemptCount}회 시도)`);
+
+    if (finalCharCount < MIN_CHAR_COUNT) {
+      throw new Error(`WriterAgent 분량 부족 (${finalCharCount}/${MIN_CHAR_COUNT}자)`);
+    }
 
     return {
       content,

@@ -33,9 +33,19 @@ const QUALITY_THRESHOLDS = {
 
 /**
  * 파이프라인 정의
+ *
+ * 🚨 [LEGACY] standard, fast 파이프라인은 레거시입니다.
+ * 현재 기본값은 'modular' 파이프라인입니다.
+ * standard는 WriterAgent 단일 호출 방식으로, templates 작법은 적용되지만
+ * 프롬프트가 너무 커서 불안정합니다. 복구용으로만 보관합니다.
  */
 const PIPELINES = {
-  // 전체 파이프라인: 키워드 → 작성 → 검수 → SEO
+  // ============================================================
+  // 🚨 [LEGACY] 아래 파이프라인은 레거시입니다. 사용하지 마세요.
+  // ============================================================
+
+  // [LEGACY] 전체 파이프라인: 키워드 → 작성 → 검수 → SEO
+  // ⚠️ WriterAgent 단일 호출 - 프롬프트 과대로 불안정
   standard: [
     { agent: KeywordAgent, name: 'KeywordAgent', required: false },
     { agent: WriterAgent, name: 'WriterAgent', required: true },
@@ -44,9 +54,20 @@ const PIPELINES = {
     { agent: SEOAgent, name: 'SEOAgent', required: false }
   ],
 
-  // 💎 고품질 파이프라인 (modular 에이전트 사용) - 프롬프트 분산으로 안정성 향상
-  highQuality: [
-    { agent: DraftAgent, name: 'DraftAgent', required: true },
+  // [LEGACY] 빠른 파이프라인: 작성 → 검수만
+  fast: [
+    { agent: WriterAgent, name: 'WriterAgent', required: true },
+    { agent: ComplianceAgent, name: 'ComplianceAgent', required: true }
+  ],
+
+  // ============================================================
+  // ✅ [ACTIVE] 아래 파이프라인만 사용하세요.
+  // ============================================================
+
+  // ✅ [기본값] 모듈형 파이프라인: 프롬프트 분산으로 안정성 향상
+  // StructureAgent(맥락분석+구조화+작법) → KeywordInjectorAgent(SEO) → StyleAgent(교정) → TitleAgent → ComplianceAgent → SEOAgent
+  // 🔄 [변경] DraftAgent 제거 (맥락 손실 방지, StructureAgent가 통합 수행)
+  modular: [
     { agent: StructureAgent, name: 'StructureAgent', required: true },
     { agent: KeywordInjectorAgent, name: 'KeywordInjectorAgent', required: true },
     { agent: StyleAgent, name: 'StyleAgent', required: true },
@@ -55,10 +76,14 @@ const PIPELINES = {
     { agent: SEOAgent, name: 'SEOAgent', required: false }
   ],
 
-  // 빠른 파이프라인: 작성 → 검수만
-  fast: [
-    { agent: WriterAgent, name: 'WriterAgent', required: true },
-    { agent: ComplianceAgent, name: 'ComplianceAgent', required: true }
+  // highQuality는 modular의 별칭 (하위 호환성)
+  highQuality: [
+    { agent: StructureAgent, name: 'StructureAgent', required: true },
+    { agent: KeywordInjectorAgent, name: 'KeywordInjectorAgent', required: true },
+    { agent: StyleAgent, name: 'StyleAgent', required: true },
+    { agent: TitleAgent, name: 'TitleAgent', required: true },
+    { agent: ComplianceAgent, name: 'ComplianceAgent', required: true },
+    { agent: SEOAgent, name: 'SEOAgent', required: false }
   ],
 
   // 검수만 파이프라인 (외부 콘텐츠 검수용)
@@ -68,18 +93,6 @@ const PIPELINES = {
 
   // SEO 최적화만 (검수 + SEO)
   seoOptimize: [
-    { agent: ComplianceAgent, name: 'ComplianceAgent', required: true },
-    { agent: SEOAgent, name: 'SEOAgent', required: false }
-  ],
-
-  // 🆕 모듈형 파이프라인: 프롬프트 분산으로 안정성 향상
-  // DraftAgent(초안) → StructureAgent(구조화) → KeywordInjectorAgent(SEO) → StyleAgent(교정) → TitleAgent → ComplianceAgent → SEOAgent
-  modular: [
-    { agent: DraftAgent, name: 'DraftAgent', required: true },
-    { agent: StructureAgent, name: 'StructureAgent', required: true },
-    { agent: KeywordInjectorAgent, name: 'KeywordInjectorAgent', required: true },
-    { agent: StyleAgent, name: 'StyleAgent', required: true },
-    { agent: TitleAgent, name: 'TitleAgent', required: true },
     { agent: ComplianceAgent, name: 'ComplianceAgent', required: true },
     { agent: SEOAgent, name: 'SEOAgent', required: false }
   ]
@@ -96,6 +109,9 @@ class Orchestrator {
 
     this.results = {};
     this.startTime = null;
+    this.timedOut = false;
+    this.timeoutAtMs = null;
+    this.timeoutAgent = null;
   }
 
   /**
@@ -106,6 +122,9 @@ class Orchestrator {
   async run(context) {
     this.startTime = Date.now();
     this.results = {};
+    this.timedOut = false;
+    this.timeoutAtMs = null;
+    this.timeoutAgent = null;
 
     const pipelineName = this.options.pipeline;
     const pipeline = PIPELINES[pipelineName];
@@ -129,6 +148,9 @@ class Orchestrator {
       // 타임아웃 체크
       const elapsed = Date.now() - this.startTime;
       if (elapsed > this.options.timeout) {
+        this.timedOut = true;
+        this.timeoutAtMs = elapsed;
+        this.timeoutAgent = name;
         console.warn(`⏱️ [Orchestrator] 타임아웃 (${elapsed}ms) - 파이프라인 중단`);
         break;
       }
@@ -187,7 +209,13 @@ class Orchestrator {
     }
 
     // 🎯 파이프라인 종료 전 최종 품질 검사
-    await this.ensureQualityThreshold(currentContext);
+    if (!this.timedOut) {
+      await this.ensureQualityThreshold(currentContext);
+    }
+
+    if (this.timedOut) {
+      return this.buildFinalResult(false, 'timeout');
+    }
 
     return this.buildFinalResult(true);
   }
@@ -645,16 +673,14 @@ class Orchestrator {
         break;
 
       // 🆕 모듈형 파이프라인 에이전트
-      case 'DraftAgent':
-        // DraftAgent는 참고자료(instructions, newsContext)와 userProfile 필요
-        break;
-
       case 'StructureAgent':
-        // StructureAgent는 DraftAgent 결과 필요 (previousResults에 포함됨)
+        // 🔄 DraftAgent 제거됨: StructureAgent가 Raw Data 직접 수신
+        // instructions, newsContext, userProfile은 기본 context에 이미 포함되어 있음
         break;
 
       case 'KeywordInjectorAgent':
         // KeywordInjectorAgent는 StructureAgent 결과 + userKeywords 필요
+        enriched.userKeywords = context.userKeywords || [];
         break;
 
       case 'StyleAgent':
@@ -670,6 +696,7 @@ class Orchestrator {
    */
   buildFinalResult(success, error = null) {
     const duration = Date.now() - this.startTime;
+    const partial = this.timedOut === true;
 
     // 최종 콘텐츠는 마지막 성공한 콘텐츠 Agent에서 가져옴
     let finalContent = null;
@@ -725,7 +752,8 @@ class Orchestrator {
       hasContent: !!finalContent,
       hasTitle: !!finalTitle,
       qualityThresholdMet,
-      refinementAttempts
+      refinementAttempts,
+      partial
     });
 
     return {
@@ -736,6 +764,11 @@ class Orchestrator {
       metadata: {
         duration,
         pipeline: this.options.pipeline,
+        partial,
+        partialReason: partial ? 'timeout' : null,
+        timeoutMs: this.timeoutAtMs,
+        agentsCompleted: Object.keys(this.results),
+        lastAgent: this.timeoutAgent || null,
         agents: Object.fromEntries(
           Object.entries(this.results).map(([name, result]) => [
             name,
@@ -761,34 +794,20 @@ class Orchestrator {
           passed: seoResult.seoPassed ?? seoResult.passed ?? null,
           issueCount: seoResult.issues?.length || 0,
           issues: seoResult.issues || [],
-          suggestions: seoResult.suggestions || [],
-          // 🔑 검색어별 검증 결과 (프론트엔드 표시용)
-          keywordValidation: seoResult.analysis?.userKeywordValidation?.details || null
+          suggestions: seoResult.suggestions || []
         },
-        // 글자수
-        wordCount: finalContent ? finalContent.replace(/<[^>]*>/g, '').length : 0,
-        // 🎯 품질 기준 정보
-        quality: {
-          thresholdMet: qualityThresholdMet,
-          refinementAttempts,
-          seoRequired: QUALITY_THRESHOLDS.SEO_REQUIRED,
-          maxRefinementAttempts: QUALITY_THRESHOLDS.MAX_REFINEMENT_ATTEMPTS
-        }
-      },
-      agentResults: this.results
+        // 메타 정보
+        qualityThresholdMet,
+        refinementAttempts
+      }
     };
-  }
-
-  /**
-   * 특정 Agent 결과 조회
-   */
-  getAgentResult(agentName) {
-    return this.results[agentName] || null;
   }
 }
 
 /**
- * 간편 실행 함수
+ * 파이프라인 실행 헬퍼 함수
+ * @param {Object} context
+ * @param {Object} options
  */
 async function runAgentPipeline(context, options = {}) {
   const orchestrator = new Orchestrator(options);

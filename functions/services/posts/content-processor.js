@@ -62,6 +62,10 @@ function stripHtml(text) {
   return String(text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function normalizeHeadingSpaces(text) {
   return String(text || '').replace(/\s+/g, ' ').trim();
 }
@@ -365,16 +369,50 @@ function removeGrammaticalErrors(content) {
   return fixed;
 }
 
+function removeArtifacts(content) {
+  if (!content) return content;
+  let cleaned = content;
+
+  // 1. 앞뒤 따옴표/이스케이프 문자 제거 (반복적으로 수행)
+  /* eslint-disable no-constant-condition */
+  while (true) {
+    const original = cleaned;
+    cleaned = cleaned.trim();
+    if (cleaned.startsWith('"') || cleaned.startsWith('“')) cleaned = cleaned.slice(1);
+    if (cleaned.endsWith('"') || cleaned.endsWith('”')) cleaned = cleaned.slice(0, -1);
+    if (cleaned.startsWith('\\"')) cleaned = cleaned.slice(2);
+    if (cleaned.endsWith('\\"')) cleaned = cleaned.slice(0, -2);
+
+    // 변화가 없으면 루프 종료
+    if (cleaned === original) break;
+  }
+  /* eslint-enable no-constant-condition */
+
+  // 2. 메타데이터 라인 제거
+  cleaned = cleaned.replace(/카테고리:[\s\S]*$/, '')      // 카테고리 이후 다 날림 (보통 맨 뒤에 옴)
+    .replace(/검색어 삽입 횟수:[\s\S]*$/, '')
+    .replace(/생성 시간:[\s\S]*$/, '');
+
+  // 3. JSON 키 잔여물 제거
+  cleaned = cleaned.replace(/"content"\s*:\s*/g, '');
+
+  return cleaned.trim();
+}
+
 function cleanupPostContent(content) {
   if (!content) return content;
-  // 🆕 [1단계] 비문 패턴 제거 (가장 먼저 실행)
-  let updated = removeGrammaticalErrors(content);
+
+  // 🆕 [0단계] 아티팩트 제거 (가장 먼저 수행해야 함)
+  // JSON 포맷이나 따옴표가 남아있으면 뒤쪽 로직이 꼬일 수 있음
+  let updated = removeArtifacts(content);
+
+  // 🆕 [1단계] 비문 패턴 제거
+  updated = removeGrammaticalErrors(updated);
   updated = stripMarkdownEmphasis(updated);
   updated = normalizeParagraphEndings(updated);
   updated = stripEmptyHeadingSections(updated);
 
   // 🔧 [FIX] 소수점 뒤 공백 제거 (0. 7% -> 0.7%)
-  // splitPlainSentences가 소수점을 문장 끝으로 오인하여 분리 후 join(' ')을 할 때 발생하는 문제 해결
   updated = updated.replace(/(\d)\.\s+(\d)/g, '$1.$2');
 
   return updated;
@@ -985,16 +1023,21 @@ function applyRetirementCorrections(content, fullName, userProfile) {
 
   // 3인칭을 1인칭 변경
   const sentences = fixed.split('</p>');
-  for (let i = 1; i < sentences.length; i++) {
-    sentences[i] = sentences[i].replace(new RegExp(`${fullName}는`, 'g'), '저는');
-    sentences[i] = sentences[i].replace(new RegExp(`${fullName}가`, 'g'), '제가');
-    sentences[i] = sentences[i].replace(new RegExp(`${fullName}를`, 'g'), '저를');
-    sentences[i] = sentences[i].replace(new RegExp(`${fullName}의`, 'g'), '저의');
+  const safeName = escapeRegExp(fullName);
+  if (safeName) {
+    for (let i = 1; i < sentences.length; i++) {
+      sentences[i] = sentences[i].replace(new RegExp(`${safeName}는`, 'g'), '저는');
+      sentences[i] = sentences[i].replace(new RegExp(`${safeName}가`, 'g'), '제가');
+      sentences[i] = sentences[i].replace(new RegExp(`${safeName}를`, 'g'), '저를');
+      sentences[i] = sentences[i].replace(new RegExp(`${safeName}의`, 'g'), '저의');
+    }
   }
   fixed = sentences.join('</p>');
 
   // 마지막 형식 마무리/인사 완전 제거
-  fixed = fixed.replace(new RegExp(`${fullName} 드림`, 'g'), '');
+  if (safeName) {
+    fixed = fixed.replace(new RegExp(`${safeName} 드림`, 'g'), '');
+  }
   fixed = fixed.replace(/드림<\/p>/g, '</p>');
   fixed = fixed.replace(/<p>드림<\/p>/g, '');
   fixed = fixed.replace(/\n\n드림$/g, '');
@@ -1005,9 +1048,12 @@ function applyRetirementCorrections(content, fullName, userProfile) {
   // 이상한 지역 표현 수정
   const regionName = userProfile.regionLocal || userProfile.regionMetro || '양양군시';
   const baseRegion = regionName.replace('도민', '').replace('민', '');
-  fixed = fixed.replace(new RegExp(`${baseRegion}도민 경제`, 'g'), `${baseRegion} 경제`);
-  fixed = fixed.replace(new RegExp(`${baseRegion}도민 관광`, 'g'), `${baseRegion} 관광`);
-  fixed = fixed.replace(new RegExp(`${baseRegion}도민 발전`, 'g'), `${baseRegion} 발전`);
+  const safeBaseRegion = escapeRegExp(baseRegion);
+  if (safeBaseRegion) {
+    fixed = fixed.replace(new RegExp(`${safeBaseRegion}도민 경제`, 'g'), `${baseRegion} 경제`);
+    fixed = fixed.replace(new RegExp(`${safeBaseRegion}도민 관광`, 'g'), `${baseRegion} 관광`);
+    fixed = fixed.replace(new RegExp(`${safeBaseRegion}도민 발전`, 'g'), `${baseRegion} 발전`);
+  }
 
   // 중복/이상한 표현 정리
   fixed = fixed.replace(/양양군시민을 포함한 많은 군민들/g, '많은 주민들');
@@ -1040,18 +1086,21 @@ function removeDuplicateNames(content, fullName) {
 
   console.log('🔩 최종 중복 이름 제거 시작');
 
-  fixed = fixed.replace(new RegExp(`안녕 ${fullName} ${fullName}입`, 'g'), `안녕 ${fullName}입`);
-  fixed = fixed.replace(new RegExp(`안녕 ${fullName} ${fullName}가`, 'g'), `안녕 ${fullName}가`);
-  fixed = fixed.replace(new RegExp(`안녕 ${fullName} ${fullName}를`, 'g'), `안녕 ${fullName}를`);
-  fixed = fixed.replace(new RegExp(`안녕 ${fullName} ${fullName}`, 'g'), `안녕 ${fullName}`);
-  fixed = fixed.replace(new RegExp(`${fullName} ${fullName}입`, 'g'), `${fullName}입`);
-  fixed = fixed.replace(new RegExp(`${fullName} ${fullName}가`, 'g'), `${fullName}가`);
-  fixed = fixed.replace(new RegExp(`${fullName} ${fullName}를`, 'g'), `${fullName}를`);
-  fixed = fixed.replace(new RegExp(`${fullName} ${fullName}`, 'g'), fullName);
+  const safeName = escapeRegExp(fullName);
+  if (!safeName) return fixed;
+
+  fixed = fixed.replace(new RegExp(`안녕 ${safeName} ${safeName}입`, 'g'), `안녕 ${fullName}입`);
+  fixed = fixed.replace(new RegExp(`안녕 ${safeName} ${safeName}가`, 'g'), `안녕 ${fullName}가`);
+  fixed = fixed.replace(new RegExp(`안녕 ${safeName} ${safeName}를`, 'g'), `안녕 ${fullName}를`);
+  fixed = fixed.replace(new RegExp(`안녕 ${safeName} ${safeName}`, 'g'), `안녕 ${fullName}`);
+  fixed = fixed.replace(new RegExp(`${safeName} ${safeName}입`, 'g'), `${fullName}입`);
+  fixed = fixed.replace(new RegExp(`${safeName} ${safeName}가`, 'g'), `${fullName}가`);
+  fixed = fixed.replace(new RegExp(`${safeName} ${safeName}를`, 'g'), `${fullName}를`);
+  fixed = fixed.replace(new RegExp(`${safeName} ${safeName}`, 'g'), fullName);
 
   // 3연속 이상 중복도 처리
-  fixed = fixed.replace(new RegExp(`${fullName} ${fullName} ${fullName}`, 'g'), fullName);
-  fixed = fixed.replace(new RegExp(`안녕 ${fullName} ${fullName} ${fullName}`, 'g'), `안녕 ${fullName}`);
+  fixed = fixed.replace(new RegExp(`${safeName} ${safeName} ${safeName}`, 'g'), fullName);
+  fixed = fixed.replace(new RegExp(`안녕 ${safeName} ${safeName} ${safeName}`, 'g'), `안녕 ${fullName}`);
 
   return fixed;
 }

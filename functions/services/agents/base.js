@@ -54,6 +54,24 @@ class BaseAgent {
     console.log(`🤖 [${this.name}] 시작`);
 
     try {
+      const required = this.getRequiredContext();
+      const missingKeys = required.filter((key) => context[key] === undefined);
+      if (missingKeys.length > 0) {
+        const duration = Date.now() - this.startTime;
+        const errorMessage = `${this.name}: 필수 컨텍스트 누락 (${missingKeys.join(', ')})`;
+        console.warn(`⚠️ [${this.name}] ${errorMessage}`);
+        return {
+          success: false,
+          data: null,
+          error: errorMessage,
+          metadata: {
+            agent: this.name,
+            duration,
+            timestamp: new Date().toISOString()
+          }
+        };
+      }
+
       const result = await this.execute(context);
       const duration = Date.now() - this.startTime;
 

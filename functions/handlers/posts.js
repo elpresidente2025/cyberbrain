@@ -665,8 +665,17 @@ exports.generatePosts = httpWrap(async (req) => {
       console.log('✅ [Multi-Agent] 생성 완료', {
         wordCount: multiAgentResult.wordCount,
         seoPassed: multiAgentMetadata?.seo?.passed,
-        compliancePassed: multiAgentMetadata?.compliance?.passed
+        compliancePassed: multiAgentMetadata?.compliance?.passed,
+        partial: multiAgentMetadata?.partial
       });
+
+      if (multiAgentMetadata?.partial) {
+        console.warn('⚠️ [Multi-Agent] 부분 성공 상태 감지', {
+          reason: multiAgentMetadata?.partialReason,
+          timeoutMs: multiAgentMetadata?.timeoutMs,
+          agentsCompleted: multiAgentMetadata?.agentsCompleted
+        });
+      }
 
       if (generatedContent) {
         const stopPostProcess = startPerf('postProcess');
@@ -1034,6 +1043,11 @@ exports.generatePosts = httpWrap(async (req) => {
           seoPassed: multiAgentMetadata.seo?.passed,
           keywords: multiAgentMetadata.keywords,
           duration: multiAgentMetadata.duration,
+          partial: multiAgentMetadata.partial || false,
+          partialReason: multiAgentMetadata.partialReason || null,
+          timeoutMs: multiAgentMetadata.timeoutMs || null,
+          agentsCompleted: multiAgentMetadata.agentsCompleted || [],
+          lastAgent: multiAgentMetadata.lastAgent || null,
           appliedStrategy: multiAgentMetadata.appliedStrategy || null  // 🎯 적용된 수사학 전략
         } : { enabled: false },
         // 🎨 고품질 모드 메타데이터 (레거시 모드에서만 사용, 현재 비활성화)

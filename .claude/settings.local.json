@@ -179,7 +179,9 @@
       "Bash(firebase functions:log --only generatePosts)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: prevent intent reversal in critical writing \\(criticism→cooperation\\)\n\n- EditorAgent: Apply bipartisan filter only for ''bipartisan-cooperation'' category\n- validation.js: Add intent reversal detection \\(criticism vs cooperation context\\)\n- WriterAgent: Add tone warning for critical/rebuttal articles\n- EditorAgent: Generate critical issue when intent reversal is detected\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(cd /d e:ai-secretaryfunctions)",
-      "Bash(node -e \"require\\(''./handlers/posts''\\)\")"
+      "Bash(node -e \"require\\(''./handlers/posts''\\)\")",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nrefactor: integrate title-generation.js into TitleAgent for quality scoring\n\n- Replace hardcoded prompt with generateAndValidateTitle\\(\\) from title-generation.js\n- Add automatic retry with 70-point quality threshold \\(max 3 attempts\\)\n- Support modular pipeline \\(StyleAgent, StructureAgent fallback\\)\n- Extract backgroundText from instructions/newsContext\n- Pass allKeywords and titleScope to title generation params\n\nThis fixes the \"brain-dead TitleAgent\" issue where low-quality titles like\n\"존경하는 부산 시민 여러분\" were passing through without validation.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: add content-pattern validation to title quality scoring\n\nTitles that look like content \\(containing \"여러분\", ending with \"입니다/습니다/습니까\",\nHTML tags, or exceeding 50 chars\\) now immediately score 0 points.\n\nThis prevents titles like \"존경하는 부산 시민 여러분, 안녕하십니까\" from passing validation.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   },
   "mcpServers": {

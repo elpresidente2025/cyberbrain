@@ -68,9 +68,19 @@ async function generateWithMultiAgent({
   // 선택된 파이프라인 실행
   const result = await runAgentPipeline(context, { pipeline });
 
-  if (!result.success) {
+  const isPartial = Boolean(result.metadata?.partial);
+
+  if (!result.success && !isPartial) {
     console.error('❌ [MultiAgent] 파이프라인 실패:', result.error);
     throw new Error(result.error || 'Multi-Agent 파이프라인 실패');
+  }
+
+  if (isPartial) {
+    console.warn('⚠️ [MultiAgent] 파이프라인 부분 성공 처리:', {
+      reason: result.metadata?.partialReason,
+      timeoutMs: result.metadata?.timeoutMs,
+      agentsCompleted: result.metadata?.agentsCompleted
+    });
   }
 
   // 🎯 WriterAgent에서 적용된 수사학 전략 추출
@@ -82,7 +92,8 @@ async function generateWithMultiAgent({
     duration: result.metadata?.duration,
     seoPassed: result.metadata?.seo?.passed,
     compliancePassed: result.metadata?.compliance?.passed,
-    appliedStrategy: appliedStrategy?.id
+    appliedStrategy: appliedStrategy?.id,
+    partial: result.metadata?.partial
   });
 
   return {

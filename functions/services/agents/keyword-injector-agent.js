@@ -42,44 +42,93 @@ class KeywordInjectorAgent extends BaseAgent {
       return { content, title, keywordCounts: {} };
     }
 
-    // 현재 키워드 삽입 횟수 확인
-    const currentCounts = this.countKeywords(content, userKeywords);
-    const needsInjection = userKeywords.some(kw => currentCounts[kw] < 4);
+    // 🔄 재시도 로직 설정
+    const MAX_RETRIES = 2; // 총 3회 시도
+    let attempt = 0;
+    let feedback = '';
+    let currentContent = content;
+    let currentCounts = this.countKeywords(currentContent, userKeywords);
 
-    if (!needsInjection) {
-      console.log('✅ [KeywordInjectorAgent] 이미 충분히 삽입됨:', currentCounts);
+    // 초기 상태 체크: 이미 충분하면 바로 리턴
+    if (this.validateInjection(userKeywords, currentCounts).passed) {
+      console.log('✅ [KeywordInjectorAgent] 초기 상태부터 검색어 충족:', currentCounts);
       return { content, title, keywordCounts: currentCounts };
     }
 
-    // 프롬프트 생성
-    const prompt = this.buildPrompt({ content, userKeywords, currentCounts });
+    while (attempt <= MAX_RETRIES) {
+      attempt++;
+      console.log(`🔄 [KeywordInjectorAgent] 시도 ${attempt}/${MAX_RETRIES + 1}`);
 
-    console.log(`📝 [KeywordInjectorAgent] 프롬프트 생성 완료 (${prompt.length}자)`);
+      // 프롬프트 생성 (피드백 포함)
+      const prompt = this.buildPrompt({
+        content: currentContent,
+        userKeywords,
+        currentCounts,
+        feedback
+      });
 
-    // LLM 호출
-    const response = await callGenerativeModel(prompt, 1, 'gemini-2.5-flash', true, 3500);
+      console.log(`📝 [KeywordInjectorAgent] 프롬프트 생성 완료 (${prompt.length}자)`);
 
-    // 응답 파싱
-    const injected = this.parseResponse(response, content);
+      // LLM 호출 (JSON 모드 OFF - HTML 직접 출력)
+      const response = await callGenerativeModel(prompt, 1, 'gemini-2.5-flash', false, 4000);
 
-    // 삽입 후 검증
-    const newCounts = this.countKeywords(injected, userKeywords);
-    console.log(`✅ [KeywordInjectorAgent] 검색어 삽입 완료:`, newCounts);
+      // 응답 파싱
+      const injected = this.parseResponse(response, currentContent);
 
+      // 삽입 후 검증
+      const newCounts = this.countKeywords(injected, userKeywords);
+      const validation = this.validateInjection(userKeywords, newCounts);
+
+      if (validation.passed) {
+        console.log(`✅ [KeywordInjectorAgent] 검색어 삽입 성공:`, newCounts);
+        return {
+          content: injected,
+          title,
+          keywordCounts: newCounts,
+          sourceText
+        };
+      }
+
+      // 검증 실패 처리
+      console.warn(`⚠️ [KeywordInjectorAgent] 검증 실패 (${validation.reason})`);
+      feedback = validation.feedback; // 피드백 저장
+      currentContent = content;       // 원본 내용을 다시 넣는게 나을까? 아니면 부분 성공한걸 쓸까? -> 부분 성공한 걸 쓰면 문맥이 꼬일 수 있음. 원본 재시도 추천.
+
+      // 만약 2번 실패했다면, 그냥 현재 결과라도 반환 (무한 루프 방지 및 부분 성공 인정)
+      if (attempt > MAX_RETRIES) {
+        console.warn('⛔ [KeywordInjectorAgent] 재시도 횟수 초과 - 최선 결과 반환');
+        return {
+          content: injected, // 실패했더라도 시도한 결과물 반환
+          title,
+          keywordCounts: newCounts,
+          sourceText
+        };
+      }
+    }
+  }
+
+  validateInjection(keywords, counts) {
+    const missing = keywords.filter(kw => (counts[kw] || 0) < 4);
+
+    if (missing.length === 0) {
+      return { passed: true };
+    }
+
+    // 실패 사유 상세화
+    const feedbackList = missing.map(kw => `"${kw}" (${counts[kw] || 0}/4회)`);
     return {
-      content: injected,
-      title,
-      keywordCounts: newCounts,
-      sourceText
+      passed: false,
+      reason: `검색어 미달: ${missing.length}개`,
+      feedback: `다음 검색어의 삽입 횟수가 부족합니다. 더 적극적으로 본문에 삽입해주세요: ${feedbackList.join(', ')}`
     };
   }
 
-  buildPrompt({ content, userKeywords, currentCounts }) {
+  buildPrompt({ content, userKeywords, currentCounts, feedback }) {
     const keywordList = userKeywords.map(kw =>
       `- "${kw}": 현재 ${currentCounts[kw] || 0}회 → 목표 4~6회`
     ).join('\n');
 
-    return `당신은 SEO 전문가입니다. 본문에 검색어를 자연스럽게 삽입하세요.
+    let basePrompt = `당신은 SEO 전문가입니다. 본문에 검색어를 자연스럽게 삽입하세요.
 
 ## 삽입할 검색어
 ${keywordList}
@@ -105,26 +154,38 @@ ${content}
 
 ## 출력 형식
 검색어가 삽입된 전체 본문만 출력하세요. 설명 없이 HTML 본문만 출력하세요.`;
+
+    if (feedback) {
+      basePrompt += `\n\n🚨 [중요] 이전 시도가 다음 이유로 실패했습니다:\n"${feedback}"\n\n위 검색어를 최우선으로 추가 삽입하세요.`;
+    }
+
+    return basePrompt;
   }
 
   parseResponse(response, original) {
     if (!response) return original;
 
-    // HTML 태그가 있으면 그대로 사용
+    // 1. JSON 형식 우선 파싱
+    // (LLM이 명시적으로 JSON을 반환했거나, 실수로 JSON으로 감싼 경우 처리)
+    try {
+      // 코드블록 내 JSON 추출
+      const jsonMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
+      const jsonStr = jsonMatch ? jsonMatch[1].trim() : response;
+
+      const parsed = JSON.parse(jsonStr);
+      if (parsed.content) return parsed.content;
+      if (parsed.html_content) return parsed.html_content;
+    } catch {
+      // JSON 파싱 실패 시 HTML 태그 확인으로 넘어감
+    }
+
+    // 2. HTML 태그가 있으면 그대로 사용 (Fallback)
     if (response.includes('<p>') || response.includes('<h2>')) {
       // 마크다운 코드블록 제거
       return response
         .replace(/```html?\s*/gi, '')
         .replace(/```/g, '')
         .trim();
-    }
-
-    // JSON 형식이면 content 추출
-    try {
-      const parsed = JSON.parse(response);
-      if (parsed.content) return parsed.content;
-    } catch {
-      // JSON 아님
     }
 
     // 그 외에는 원본 유지

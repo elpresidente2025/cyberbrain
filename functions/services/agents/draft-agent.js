@@ -53,20 +53,49 @@ class DraftAgent extends BaseAgent {
       category
     });
 
-    console.log(`📝 [DraftAgent] 프롬프트 생성 완료 (${prompt.length}자)`);
+    // 🔄 재시도 로직
+    const MAX_RETRIES = 2;
+    const MIN_LENGTH = 600; // 최소 600자 이상
+    let attempt = 0;
+    let feedback = '';
+    let draft = '';
 
-    // LLM 호출
-    const response = await callGenerativeModel(prompt, 1, 'gemini-2.5-flash', true, 1500);
+    while (attempt <= MAX_RETRIES) {
+      attempt++;
+      console.log(`🔄 [DraftAgent] 시도 ${attempt}/${MAX_RETRIES + 1}`);
 
-    // 응답 파싱
-    let draft = this.parseResponse(response);
+      // 프롬프트 생성 (피드백 포함)
+      let currentPrompt = prompt;
+      if (feedback) {
+        currentPrompt += `\n\n🚨 [중요] 이전 시도가 다음 이유로 반려되었습니다:\n"${feedback}"\n\n위 지적 사항을 반드시 반영하여 다시 작성하세요.`;
+      }
 
-    if (!draft || draft.length < 200) {
-      console.warn('⚠️ [DraftAgent] 초안이 너무 짧음, 원본 응답 사용');
-      draft = response;
+      console.log(`📝 [DraftAgent] 프롬프트 생성 완료 (${currentPrompt.length}자)`);
+
+      // LLM 호출 (JSON 모드 OFF - 일반 텍스트 출력)
+      const response = await callGenerativeModel(currentPrompt, 1, 'gemini-2.5-flash', false, 2000);
+
+      // 응답 파싱
+      draft = this.parseResponse(response);
+
+      // 검증
+      if (draft && draft.length >= MIN_LENGTH) {
+        console.log(`✅ [DraftAgent] 초안 생성 완료 (${draft.length}자)`);
+        break;
+      }
+
+      // 너무 짧으면 재시도
+      console.warn(`⚠️ [DraftAgent] 초안이 너무 짧음 (${draft?.length || 0}/${MIN_LENGTH}자)`);
+      feedback = `초안이 ${draft?.length || 0}자로 너무 짧습니다. 반드시 ${MIN_LENGTH}자 이상, 목표 800~1200자로 상세하게 작성해주세요. 참고자료의 핵심 내용을 충실히 반영하세요.`;
+
+      if (attempt > MAX_RETRIES) {
+        // 마지막 시도에서도 실패하면 경고하고 진행
+        console.warn(`⛔ [DraftAgent] 재시도 초과, 짧은 초안으로 진행 (${draft?.length || 0}자)`);
+        if (!draft || draft.length < 100) {
+          throw new Error(`DraftAgent 초안 생성 실패: 응답이 너무 짧음 (${draft?.length || 0}자)`);
+        }
+      }
     }
-
-    console.log(`✅ [DraftAgent] 초안 생성 완료 (${draft.length}자)`);
 
     return {
       draft,
@@ -110,15 +139,6 @@ ${truncatedSource || '(참고자료 없음 - 주제만으로 작성)'}
 
   parseResponse(response) {
     if (!response) return '';
-
-    // JSON 형식이면 content 추출
-    try {
-      const parsed = JSON.parse(response);
-      if (parsed.content) return parsed.content;
-      if (parsed.draft) return parsed.draft;
-    } catch {
-      // JSON이 아니면 그대로 사용
-    }
 
     // 마크다운 코드블록 제거
     let cleaned = response

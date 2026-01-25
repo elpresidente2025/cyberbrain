@@ -121,6 +121,7 @@ const SIGNATURE_REGEXES = [
 ];
 
 const SUMMARY_HEADING_REGEX = /<h[23][^>]*>[^<]*(요약|정리|결론|마무리|맺음말)[^<]*<\/h[23]>/ig;
+const SUMMARY_HEADING_DETECT_REGEX = /<h[23][^>]*>[^<]*(요약|정리|결론|마무리|맺음말)[^<]*<\/h[23]>/i;
 const SUMMARY_TEXT_REGEX = /(정리하면|요약하면|결론적으로|핵심을 정리하면)/;
 
 /**
@@ -162,7 +163,7 @@ function neutralizePledgeTitle(title) {
  */
 function hasSummarySignal(content) {
   if (!content) return false;
-  return SUMMARY_HEADING_REGEX.test(content) || SUMMARY_TEXT_REGEX.test(content);
+  return SUMMARY_HEADING_DETECT_REGEX.test(content) || SUMMARY_TEXT_REGEX.test(content);
 }
 
 /**
@@ -1175,8 +1176,8 @@ async function expandContentToTarget({
   const deficit = targetWordCount - currentLength;
   console.log(`📊 [EditorAgent] 분량 부족: ${deficit}자 필요 (현재 ${currentLength} / 목표 ${targetWordCount})`);
 
-  // 🔧 [수정] 요약 확장 복구 + 최대 250자 제한
-  const maxExpansion = 250; // 최대 확장 한도
+  // 🔧 [수정] 요약 확장 복구 + 최대 800자 제한
+  const maxExpansion = 800; // 최대 확장 한도
   const actualExpansion = Math.min(deficit, maxExpansion);
 
   if (deficit > maxExpansion) {

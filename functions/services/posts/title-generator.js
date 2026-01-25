@@ -31,7 +31,29 @@ function normalizeSpaces(text) {
 }
 
 function cleanTitleResponse(text) {
-  return String(text || '')
+  const raw = String(text || '').trim();
+
+  // JSON 응답이면 title 키 추출
+  try {
+    const cleaned = raw.replace(/```json\s*/g, '').replace(/```/g, '').trim();
+    if (cleaned.startsWith('{')) {
+      const parsed = JSON.parse(cleaned);
+      if (parsed.title && typeof parsed.title === 'string') {
+        return parsed.title.trim();
+      }
+    }
+  } catch {
+    // JSON 파싱 실패 - 아래 로직으로 진행
+  }
+
+  // 텍스트에서 title 키 추출 시도
+  const titleMatch = raw.match(/"title"\s*:\s*"([^"]+)"/);
+  if (titleMatch) {
+    return titleMatch[1].trim();
+  }
+
+  // 기존 로직: 첫 줄 추출
+  return raw
     .replace(/```json/g, '')
     .replace(/```/g, '')
     .split('\n')[0]
@@ -226,6 +248,20 @@ ${lastValidationError.reason === 'hallucinated_number'
       const titleResponse = await callGenerativeModel(titlePrompt, 1, modelName, false);
       let cleanTitle = normalizeSpaces(cleanTitleResponse(titleResponse));
       cleanTitle = normalizeTitleRegion(cleanTitle, titleScope);
+
+      // 🔒 응답이 콘텐츠처럼 보이면 재시도 (HTML 태그, "여러분", "입니다" 포함 등)
+      const looksLikeContent = cleanTitle.includes('<') ||
+        cleanTitle.includes('여러분') ||
+        cleanTitle.endsWith('입니다') ||
+        cleanTitle.endsWith('습니다') ||
+        cleanTitle.length > 50;
+      if (looksLikeContent) {
+        console.warn(`⚠️ 제목이 콘텐츠처럼 보임 (시도 ${attempt}): "${cleanTitle.substring(0, 50)}..."`);
+        lastValidationError = { reason: 'looks_like_content', message: '제목이 본문처럼 보임' };
+        if (attempt < MAX_RETRIES) continue;
+        // 마지막 시도면 topic 기반 폴백
+        cleanTitle = topic ? `${topic.substring(0, 20)}` : '새 원고';
+      }
 
       // ✅ 검증 단계
       const validation = validateTitle(cleanTitle, fullContent);

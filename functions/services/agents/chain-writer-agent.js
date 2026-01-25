@@ -27,6 +27,10 @@ class ChainWriterAgent extends BaseAgent {
     async execute(context) {
         const { topic, instructions, ragContext, newsContext, userProfile } = context;
 
+        if (!getGenAI()) {
+            throw new Error('Gemini API 키가 설정되지 않았습니다.');
+        }
+
         const plan = await this.createPlan(topic, instructions, ragContext, newsContext, userProfile);
         if (!plan) throw new Error('원고 기획에 실패했습니다.');
 
@@ -173,4 +177,3 @@ JSON 형식으로만 응답: {"keyword1": "첫번째 핵심 주제", "keyword2":
 }
 
 module.exports = { ChainWriterAgent };
-
