@@ -580,7 +580,9 @@ exports.generatePosts = httpWrap(async (req) => {
     await progress.stepGenerating();
 
     // 파이프라인 모드 결정
-    let pipelineRoute = data.pipeline || 'standard';
+    // 🆕 modular 파이프라인: 프롬프트 분산으로 품질 향상
+    let pipelineRoute = data.pipeline || 'modular';
+    console.log('🔧 [DEBUG] 파이프라인 결정:', { requested: data.pipeline, resolved: pipelineRoute });
 
     // 🔒 고품질 모드(highQuality) 권한 체크: 관리자/테스터만 허용
     if (pipelineRoute === 'highQuality' && !isAdmin && !isTester) {

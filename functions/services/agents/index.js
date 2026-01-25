@@ -16,15 +16,27 @@ const { ComplianceAgent } = require('./compliance-agent');
 const { SEOAgent } = require('./seo-agent');
 const { Orchestrator, runAgentPipeline, PIPELINES } = require('./orchestrator');
 
+// 🆕 모듈형 에이전트 (프롬프트 분산)
+const { DraftAgent } = require('./draft-agent');
+const { StructureAgent } = require('./structure-agent');
+const { KeywordInjectorAgent } = require('./keyword-injector-agent');
+const { StyleAgent } = require('./style-agent');
+
 module.exports = {
   // Base
   BaseAgent,
 
-  // Agents
+  // Agents (기존)
   KeywordAgent,
   WriterAgent,
   ComplianceAgent,
   SEOAgent,
+
+  // 🆕 Modular Agents (프롬프트 분산)
+  DraftAgent,
+  StructureAgent,
+  KeywordInjectorAgent,
+  StyleAgent,
 
   // Orchestrator
   Orchestrator,

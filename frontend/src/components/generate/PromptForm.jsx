@@ -195,10 +195,21 @@ export default function PromptForm({
             <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
               참고자료 입력
             </Typography>
-            {/* ✅ 역할 구분 안내 text */}
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-              ℹ️ <strong style={{ color: '#1565c0' }}>첫 번째 = 내 입장/주장 (필수)</strong>, <strong style={{ color: '#2e7d32' }}>두 번째 이후 = 뉴스/데이터</strong> (순서가 중요합니다)
-            </Typography>
+            {/* ✅ 역할 구분 안내 text + 합산 글자수 */}
+            {(() => {
+              const totalLength = instructionsList.reduce((sum, text) => sum + (text?.length || 0), 0);
+              const isOverLimit = totalLength > 4000;
+              return (
+                <>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                    <span style={{ color: isOverLimit ? '#d32f2f' : 'inherit', fontWeight: isOverLimit ? 700 : 400 }}>
+                      합계: {totalLength.toLocaleString()}자
+                      {isOverLimit && ' ⚠️ 4,000자 초과 시 앞부분만 분석됩니다'}
+                    </span>
+                  </Typography>
+                </>
+              );
+            })()}
             <Tooltip title="참고자료 입력창 추가">
               <IconButton
                 size="small"
@@ -245,14 +256,14 @@ export default function PromptForm({
                   required={index === 0}
                   multiline
                   rows={index === 0 ? 4 : 3}
-                  inputProps={{ maxLength: 3000 }}
+                  // 글자수 제한 해제 (백엔드에서 4000자로 잘림)
                   helperText={index === 0
-                    ? `💡 원고의 '논조와 주장'을 결정합니다. 내가 말하고 싶은 핵심 메시지를 입력하세요. | ${instruction?.length || 0}/3000자`
-                    : `📰 원고의 '근거와 팩트'가 됩니다. 언론 기사, 수치, 인용문 등 객관적 정보 입력. | ${instruction?.length || 0}/3000자`
+                    ? `💡 원고의 '논조와 주장'을 결정합니다. 내가 말하고 싶은 핵심 메시지를 입력하세요. | ${(instruction?.length || 0).toLocaleString()}자`
+                    : `📰 원고의 '근거와 팩트'가 됩니다. 언론 기사, 수치, 인용문 등 객관적 정보 입력. | ${(instruction?.length || 0).toLocaleString()}자`
                   }
                   FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
                 />
-                {instructionsList.length > 1 && (
+                {instructionsList.length > 1 && index !== 0 && (
                   <Tooltip title="이 참고자료 삭제">
                     <IconButton
                       size="small"
@@ -331,16 +342,18 @@ export default function PromptForm({
       </Grid>
 
       {/* 검색어 추천 다이얼로그 - 관리자가 활성화한 경우에만 렌더링 */}
-      {config.aiKeywordRecommendationEnabled && (
-        <KeywordExplorerDialog
-          open={keywordDialogOpen}
-          onClose={() => setKeywordDialogOpen(false)}
-          onSelectKeyword={handleKeywordSelect}
-          topic={formData.topic}
-          instructions={instructionsList}
-          user={user}
-        />
-      )}
-    </Paper>
+      {
+        config.aiKeywordRecommendationEnabled && (
+          <KeywordExplorerDialog
+            open={keywordDialogOpen}
+            onClose={() => setKeywordDialogOpen(false)}
+            onSelectKeyword={handleKeywordSelect}
+            topic={formData.topic}
+            instructions={instructionsList}
+            user={user}
+          />
+        )
+      }
+    </Paper >
   );
 }

@@ -110,10 +110,6 @@ class WriterAgent extends BaseAgent {
     // - 키워드: 글의 맥락을 잡기 위한 참고 도구 (템플릿에 전달)
     // - 검색어: SEO를 위해 반드시 삽입해야 하는 필수 요소 (CRITICAL 섹션으로 별도 주입)
 
-    // 🔑 검색어(userKeywords)와 키워드(contextKeywords)는 완전히 다른 용도
-    // - 키워드: 글의 맥락을 잡기 위한 참고 도구 (템플릿에 전달)
-    // - 검색어: SEO를 위해 반드시 삽입해야 하는 필수 요소 (CRITICAL 섹션으로 별도 주입)
-
     // 🌟 [NEW] 문체 분석 프로필 적용 (DB 캐싱 값 우선 + 실시간 Fallback)
     let stylePrompt = '';
 
@@ -427,50 +423,6 @@ ${mustIncludeFromStanceText || '(핵심 문구 추출 실패)'}
       }
     }
 
-    /* ═══════════════════════════════════════════════════════════════
-     * 🔧 [ROLLBACK BACKUP] 기존 Key Facts Anchor 휴리스틱 코드
-     * USE_CONTEXT_ANALYZER를 false로 설정하면 아래 코드가 활성화됨
-     * ═══════════════════════════════════════════════════════════════
-    if ((instructions || newsContext) && !USE_CONTEXT_ANALYZER) {
-      const sourceText = [instructions, newsContext].filter(Boolean).join('\n');
-      
-      const extractKeyFacts = (text) => {
-        if (!text || text.length < 50) return null;
-        const facts = [];
-        const quotes = text.match(/[""][^""]{10,100}[""]|"[^"]{10,100}"/g) || [];
-        if (quotes.length > 0) facts.push(`📝 핵심 발언: ${quotes.slice(0, 2).join(', ')}`);
-        const lawPatterns = text.match(/(?:\d+차\s*)?[가-힣]+(?:\s*[가-힣]+)*(?:법|법안|특검법|특별법|조례|규정|지침)|제\d+[조항호]/g) || [];
-        if (lawPatterns.length > 0) facts.push(`📋 관련 법안: ${[...new Set(lawPatterns)].slice(0, 3).join(', ')}`);
-        const namePatterns = text.match(/[가-힣]{2,4}\s*(?:시장|의원|대표|위원장|장관|총리|대통령|후보|의장|청장|지사|군수|구청장)/g) || [];
-        if (namePatterns.length > 0) facts.push(`👤 주요 인물: ${[...new Set(namePatterns)].slice(0, 4).join(', ')}`);
-        const orgPatterns = text.match(/(?:중수청|중대범죄수사청|국수본|경찰청|검찰청|헌법재판소|대법원|국회|청와대|용산|행안부)/g) || [];
-        if (orgPatterns.length > 0) facts.push(`🏛️ 관련 기관: ${[...new Set(orgPatterns)].slice(0, 3).join(', ')}`);
-        const datePatterns = text.match(/\d{1,2}일|\d{1,2}월\s*\d{1,2}일|지난\s*\d+일|오늘|어제/g) || [];
-        if (datePatterns.length > 0) facts.push(`📅 시점: ${datePatterns[0]}`);
-        const issuePatterns = text.match(/(?:단식|필리버스터|탄핵|계엄|내란|파면|구속|기소|사형|무기징역)/g) || [];
-        if (issuePatterns.length > 0) facts.push(`⚡ 핵심 이슈: ${[...new Set(issuePatterns)].slice(0, 3).join(', ')}`);
-        return facts.length > 0 ? facts : null;
-      };
-      
-      const keyFacts = extractKeyFacts(sourceText);
-      if (keyFacts && keyFacts.length > 0) {
-        promptSections.push(`
-╔═══════════════════════════════════════════════════════════════╗
-║  🎯 [ABSOLUTE PRIORITY] 이 글의 핵심 소재 (반드시 본문에 포함)  ║
-╚═══════════════════════════════════════════════════════════════╝
-
-${keyFacts.join('\n')}
-
-⚠️ 위 팩트들을 본문에서 **반드시 직접 언급**해야 합니다.
-   일반론으로 대체하거나 생략하면 원고 폐기 처리됩니다.
-`);
-        console.log('🎯 [WriterAgent] Key Facts Anchor 주입:', keyFacts);
-      }
-    }
-    * ═══════════════════════════════════════════════════════════════ */
-
-    // ... (중략) ...
-
     // 6.7 경고문 (원외 인사, 가족 상황)
     const warnings = this.buildWarnings(userProfile, authorBio);
     if (warnings) {
@@ -616,49 +568,147 @@ ${mustIncludeFromStanceForSandwich}
 `);
     }
 
+    // 6.10 [PROTOCOL OVERRIDE] JSON 포맷 무시 및 텍스트 프로토콜 강제 (최종 오버라이드)
+    promptSections.push(`
+╔═══════════════════════════════════════════════════════════════╗
+║  🚨 [PROTOCOL OVERRIDE] 출력 형식 변경 (JSON 사용 금지)     ║
+╚═══════════════════════════════════════════════════════════════╝
+
+이전의 모든 "JSON 형식으로 출력하라"는 지시를 무시하십시오.
+긴 글을 안정적으로 작성하기 위해 아래의 **[텍스트 프로토콜]**을 반드시 따라야 합니다.
+
+[출력 형식]
+===TITLE===
+(여기에 제목 작성)
+===CONTENT===
+(여기에 HTML 본문 작성 - <p>, <h2> 등 태그 사용)
+
+[주의사항]
+1. 코드 블록(\`\`\`)이나 JSON({ ... })을 절대 사용하지 마십시오.
+2. 오직 위 구분자(===TITLE===, ===CONTENT===)만 사용하십시오.
+`);
+
     // 최종 프롬프트 조립
     prompt = promptSections.join('\n\n');
 
     console.log(`📝 [WriterAgent] 프롬프트 생성 완료 (${prompt.length} 자, 작법: ${writingMethod}, 섹션: ${promptSections.length}개)`);
 
-    // 9. Gemini 호출
     // 9. Gemini 호출 (사용자 요청: 2.5 Flash Standard 모델 사용)
     const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
-    const result = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.3,  // 0.8→0.5→0.3: 참고자료 준수율 극대화
-        maxOutputTokens: 2500,  // 1700→2500: 2000자 원고 충분 확보
-        responseMimeType: 'application/json'
+    // ═══════════════════════════════════════════════════════════════
+    // 🔄 [NEW] 분량 검증 재시도 루프 (최대 3회, 에러 없음, 항상 반환)
+    // ═══════════════════════════════════════════════════════════════
+    const MIN_CHAR_COUNT = 1500;  // 최소 분량 기준
+    const MAX_ATTEMPTS = 3;
+    let content = null;
+    let title = null;
+    let attemptCount = 0;
+    let lastResponseText = '';
+
+    // [New] 텍스트 프로토콜 파서
+    const parseTextProtocol = (text, fallbackTitle) => {
+      if (!text) return { title: fallbackTitle, content: '' };
+
+      let clean = text.trim();
+      // 마크다운 제거
+      if (clean.startsWith('```')) {
+        clean = clean.replace(/^```(?:html|text)?\s*/i, '').replace(/\s*```$/, '');
       }
-    });
 
-    const responseText = result.response.text();
+      const titleMatch = clean.match(/===TITLE===\s*([\s\S]*?)\s*===CONTENT===/);
+      const contentMatch = clean.match(/===CONTENT===\s*([\s\S]*)/);
 
-    // 10. JSON 파싱
-    let parsedContent;
-    try {
-      parsedContent = JSON.parse(responseText);
-    } catch (parseError) {
-      // JSON 파싱 실패 시 텍스트 그대로 사용
-      console.warn('⚠️ [WriterAgent] JSON 파싱 실패, 텍스트 모드로 전환');
-      parsedContent = {
-        title: `${topic} 관련`,
-        content: responseText
-      };
+      const title = titleMatch ? titleMatch[1].trim() : fallbackTitle;
+
+      let content = '';
+      if (contentMatch) {
+        content = contentMatch[1].trim();
+      } else if (!titleMatch) {
+        // 구분자가 아예 없으면 전체를 본문으로 (단, 제목 포맷이 아니라면)
+        content = clean;
+      }
+
+      return { title, content };
+    };
+
+    while (attemptCount < MAX_ATTEMPTS) {
+      attemptCount++;
+      const isRetry = attemptCount > 1;
+
+      // 재시도 시 분량 강조 프롬프트 추가
+      let currentPrompt = prompt;
+      if (isRetry) {
+        const lengthEnforcement = `
+╔═══════════════════════════════════════════════════════════════╗
+║  🚨 [CRITICAL] 분량 부족으로 재생성 중 (시도 ${attemptCount}/${MAX_ATTEMPTS})    ║
+╚═══════════════════════════════════════════════════════════════╝
+
+⚠️ 이전 응답이 ${content ? content.replace(/<[^>]*>/g, '').length : 0}자로 너무 짧았습니다.
+**반드시 ${MIN_CHAR_COUNT}자 이상** 작성해야 합니다.
+
+[긴급 분량 확보 가이드]:
+1. 각 문단을 **최소 150자 이상**으로 작성
+2. 서론/본론1/본론2/본론3/결론 **5개 섹션 모두** 작성
+3. 구체적인 예시, 숫자, 인용문을 풍부하게 사용
+4. 절대 요약하지 말고 상세하게 서술
+
+`;
+        currentPrompt = lengthEnforcement + prompt;
+      }
+
+      try {
+        const temperature = isRetry ? 0.5 : 0.3;  // 재시도 시 약간 높여서 다양한 결과 유도
+        console.log(`🔄 [WriterAgent] 생성 시도 ${attemptCount}/${MAX_ATTEMPTS} (temperature: ${temperature})`);
+
+        const result = await model.generateContent({
+          contents: [{ role: 'user', parts: [{ text: currentPrompt }] }],
+          generationConfig: {
+            temperature,
+            maxOutputTokens: 8192,  // 4000 -> 8192 (더 긴 출력 허용)
+            responseMimeType: 'text/plain' // [CRITICAL] JSON 강제 해제
+          }
+        });
+
+        lastResponseText = result.response.text();
+        const parsed = parseTextProtocol(lastResponseText, `${topic} 관련`);
+        content = parsed?.content || '';
+        title = parsed?.title || `${topic} 관련`;
+
+        // 분량 검증
+        const charCount = content.replace(/<[^>]*>/g, '').length;
+        console.log(`📊 [WriterAgent] 시도 ${attemptCount} 결과: ${charCount}자`);
+
+        if (charCount >= MIN_CHAR_COUNT) {
+          console.log(`✅ [WriterAgent] 분량 충족! (${charCount}자 >= ${MIN_CHAR_COUNT}자)`);
+          break;  // 성공 - 루프 탈출
+        } else {
+          console.warn(`⚠️ [WriterAgent] 분량 부족 (${charCount}자 < ${MIN_CHAR_COUNT}자), 재시도...`);
+        }
+      } catch (genError) {
+        console.error(`❌ [WriterAgent] 시도 ${attemptCount} 오류:`, genError.message);
+        // 오류 발생해도 계속 시도
+      }
     }
 
-    const content = parsedContent.content || responseText;
-    const title = parsedContent.title || null;
+    // 최종 안전장치: content가 없으면 마지막 응답에서라도 추출
+    if (!content && lastResponseText) {
+      console.warn('⚠️ [WriterAgent] 최종 폴백: 마지막 응답에서 content 추출');
+      const fallback = parseTextProtocol(lastResponseText, `${topic} 관련`);
+      content = fallback?.content || `<p>${topic}에 대한 원고입니다.</p>`;
+      title = fallback?.title || `${topic} 관련`;
+    }
+
+    const finalCharCount = content ? content.replace(/<[^>]*>/g, '').length : 0;
+    console.log(`📝 [WriterAgent] 최종 결과: ${finalCharCount}자 (${attemptCount}회 시도)`);
 
     return {
       content,
       title,
-      wordCount: content.replace(/<[^>]*>/g, '').length,
+      wordCount: finalCharCount,
       writingMethod,
-      contextKeywords: contextKeywordStrings,  // 맥락용 키워드
-      searchTerms: userKeywords,               // SEO용 검색어
+      contextKeywords: contextKeywordStrings,
+      searchTerms: userKeywords,
       // 🎯 수사학 전략 메타데이터 (선호도 학습용)
       // ⚠️ selectedStrategy가 정의되지 않은 경우 fallback 처리
       appliedStrategy: {

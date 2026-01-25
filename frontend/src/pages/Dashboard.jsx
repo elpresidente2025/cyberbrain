@@ -115,7 +115,7 @@ const Dashboard = () => {
         callFunctionWithNaverAuth('getUserPosts')
       ]);
 
-      const postsArray = postsData?.posts || [];
+      const postsArray = postsData?.data?.posts || postsData?.posts || [];
 
       // 사용량 정보 설정
       setUsage(dashboardData.usage || { postsGenerated: 0, monthlyLimit: 50 });

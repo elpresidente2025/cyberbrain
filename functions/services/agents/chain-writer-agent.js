@@ -47,74 +47,67 @@ class ChainWriterAgent extends BaseAgent {
     }
 
     async createPlan(topic, instructions, ragContext, newsContext, userProfile) {
+        // [NEW] 5개 섹션 구조 고정 - LLM 변동성으로 인한 섹션 누락 방지
         const ai = getGenAI();
         const model = ai.getGenerativeModel({ model: this.modelName });
 
-        const prompt = `
-# Role
-당신은 베테랑 정치 연설문 기획자입니다.
-주어진 주제와 참고자료를 분석하여 **가장 논리적이고 설득력 있는 5단 구성**의 원고 설계도를 작성해야 합니다.
-
-╔═══════════════════════════════════════════════════════════════════════╗
-║ 🎭 [CRITICAL] 화자 정체성 - 절대 혼동 금지!                              ║
-╚═══════════════════════════════════════════════════════════════════════╝
-
-**이 원고의 화자는 "${userProfile.name}"입니다.**
-- 참고 자료에 다른 인물(예: 후원회장, 지지자)의 발언이 있더라도, 그 사람이 글을 쓰는 것이 아닙니다.
-- 원고의 1인칭 주체는 오직 "${userProfile.name}"입니다.
-- 타인의 행동/발언은 3인칭으로 인용하세요 (예: "OOO님께서 ~해주셨습니다").
-
-# Input Data
-- **주제**: ${topic}
-- **작성자**: ${userProfile.name} (${userProfile.role || '정치인'})
-- **지시사항**: ${instructions || '(없음)'}
-- **과거 작성 스타일 참고**: ${ragContext || '(없음)'}
-- **참고자료(뉴스)**: ${newsContext || '(없음)'}
-- **사용자 정보**: ${JSON.stringify(userProfile.rhetoricalPreferences || {})}
-
-# Critical Strategy
-1. **소재 발굴**: 입력된 주제(Topic)뿐만 아니라, **참고자료(News)**나 **지시사항(Instructions)**에 숨겨진 연관 공약(예: e스포츠, 의료관광, 기업유치 등)을 적극적으로 찾아내어 배치하십시오. 주제가 "다대포 디즈니랜드"라도, 기사에 "e스포츠"나 "병원" 언급이 있다면 반드시 본론으로 가져와야 합니다.
-2. **5단 구조 엄수**: 반드시 **[서론 - 본론1 - 본론2 - 본론3 - 결론]** 구조여야 합니다. 본론이 3개가 안 되면, 핵심 주제를 세부 측면(예: 경제적 효과 / 일자리 창출 / 관광 파급력)으로 나누어서라도 3개를 채우십시오.
-3. **소제목(H2) AEO 최적화 (핵심)**:
-   - 검색자가 궁금해할 **구체적인 질문**이나 **키워드**를 포함해야 합니다.
-   - **유형 1 (질문형)**: "~란 무엇인가요?", "~ 신청 방법은?" (가장 권장)
-   - **유형 2 (데이터형)**: "~ 5대 핵심 성과", "~ 예산 100억 확보 내역"
-   - **유형 3 (정보형)**: "~ 신청 자격 및 필수 서류"
-   - ❌ "관련 내용", "정책 안내", "이관훈은?" 같은 모호한 제목 절대 금지.
-   - 각 본론의 소제목은 위 규칙을 따라 매력적으로 작성하십시오.
-
-# Structure (5-Step)
-1. **서론**: 인사, 문제 제기, 공감 (독자에게 다가가는 톤)
-2. **본론 1**: 핵심 공약 A (구체적 실행 방안)
-3. **본론 2**: 핵심 공약 B (또는 A의 구체적 기대효과)
-4. **본론 3**: 핵심 공약 C (또는 연관 비전/확장성)
-5. **결론**: 요약, 다짐, 지지 호소 (강력한 마무리)
-
-# Output Format (JSON)
-{
-  "title": "가제 (임시 제목)",
-  "sections": [
-    { "type": "intro", "guide": "서론 작성 가이드 (3문단으로 구성, 구체적인 작성 포인트 나열)" },
-    { "type": "body1", "keyword": "핵심키워드1", "guide": "본론1 상세 가이드 (반드시 다뤄야 할 구체적 내용, 3문단 분량 확보를 위한 세부 지시)" },
-    { "type": "body2", "keyword": "핵심키워드2", "guide": "본론2 상세 가이드 (3문단 분량 확보를 위한 세부 지시)" },
-    { "type": "body3", "keyword": "핵심키워드3", "guide": "본론3 상세 가이드 (3문단 분량 확보를 위한 세부 지시)" },
-    { "type": "outro", "guide": "결론 작성 가이드 (3문단으로 구성, 구체적인 마무리 포인트)" }
-  ]
-}
-`;
-
+        // 키워드 추출만 LLM에게 맡김 (구조는 고정)
+        let keywords = { keyword1: topic, keyword2: topic, keyword3: topic };
         try {
+            const keywordPrompt = `
+주제: "${topic}"
+참고자료: ${newsContext || '(없음)'}
+지시사항: ${instructions || '(없음)'}
+
+위 내용에서 블로그 글의 3개 본론에 사용할 핵심 키워드를 추출하세요.
+JSON 형식으로만 응답: {"keyword1": "첫번째 핵심 주제", "keyword2": "두번째 핵심 주제", "keyword3": "세번째 핵심 주제"}
+`;
             const result = await model.generateContent({
-                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                contents: [{ role: 'user', parts: [{ text: keywordPrompt }] }],
                 generationConfig: { responseMimeType: 'application/json' }
             });
-            const parsedPlan = JSON.parse(result.response.text());
-            console.log('📋 [ChainWriter] 생성된 기획:', JSON.stringify(parsedPlan, null, 2));
-            return parsedPlan;
+            let responseText = result.response.text().trim();
+            if (responseText.startsWith('\`\`\`')) {
+                responseText = responseText.replace(/^\`\`\`(?:json)?\\s*/i, '').replace(/\\s*\`\`\`$/, '');
+            }
+            keywords = JSON.parse(responseText);
+            console.log('🔑 [ChainWriter] 추출된 키워드:', keywords);
         } catch (e) {
-            console.error('❌ [ChainWriter] 기획 실패:', e);
-            return null;
+            console.warn('⚠️ [ChainWriter] 키워드 추출 실패, 기본값 사용:', e.message);
         }
+
+        // 고정된 5개 섹션 구조 반환 (절대 누락되지 않음)
+        const fixedPlan = {
+            title: topic,
+            sections: [
+                {
+                    type: 'intro',
+                    guide: `서론 작성: 1) "${userProfile.name}"의 인사/자기소개(100자), 2) 현 상황의 문제점/공감대 형성(150자), 3) 해결 의지 표명(100자). 총 350자 목표.`
+                },
+                {
+                    type: 'body1',
+                    keyword: keywords.keyword1 || topic,
+                    guide: `본론1 "${keywords.keyword1 || topic}": 1) 현황/배경 설명(150자), 2) 구체적 실행방안/공약(150자), 3) 기대효과(150자). 총 450자 목표.`
+                },
+                {
+                    type: 'body2',
+                    keyword: keywords.keyword2 || topic,
+                    guide: `본론2 "${keywords.keyword2 || topic}": 1) 현황/배경 설명(150자), 2) 구체적 실행방안/공약(150자), 3) 기대효과(150자). 총 450자 목표.`
+                },
+                {
+                    type: 'body3',
+                    keyword: keywords.keyword3 || topic,
+                    guide: `본론3 "${keywords.keyword3 || topic}": 1) 현황/배경 설명(150자), 2) 구체적 실행방안/공약(150자), 3) 기대효과(150자). 총 450자 목표.`
+                },
+                {
+                    type: 'outro',
+                    guide: `결론 작성: 1) 핵심 내용 요약(100자), 2) 미래 비전 제시(150자), 3) 지지 호소/마무리 인사(100자). 총 350자 목표.`
+                }
+            ]
+        };
+
+        console.log('📋 [ChainWriter] 고정 구조 기획 완료:', fixedPlan.sections.length, '개 섹션');
+        return fixedPlan;
     }
 
     async writeSection(sectionPlan, index, topic, userProfile) {
@@ -122,83 +115,47 @@ class ChainWriterAgent extends BaseAgent {
         const model = ai.getGenerativeModel({ model: this.modelName });
 
         const isBody = sectionPlan.type.startsWith('body');
-        // 분량 목표 강화: 본론은 최소 400자 이상, 서론/결론은 250자 이상
-        const minChars = isBody ? 400 : 250;
-        const lengthTarget = isBody ? "500자 이상 (아무리 짧아도 400자는 넘길 것)" : "300자 내외";
+        // 2000자 ±10% 목표 (1800~2200자): 본론 400~500자×3 + 서론/결론 350~400자×2 = 1900~2300자
+        const minChars = isBody ? 400 : 350;
+        const maxChars = isBody ? 500 : 400;
 
         let headerInstruction = '';
         if (sectionPlan.type === 'intro') {
-            headerInstruction = '서론에는 절대 소제목을 달지 마십시오. "존경하는..." 같은 인사말로 바로 시작하십시오. (<p> 태그)';
+            headerInstruction = '서론에는 절대 소제목을 달지 마십시오. "존경하는..." 같은 인사말로 바로 시작하십시오.';
         } else if (sectionPlan.type === 'outro') {
-            headerInstruction = '결론의 시작에는 반드시 **"마무리 인사"** 또는 **"맺음말"** 같은 소제목을 <h2>태그로 작성하십시오.';
+            headerInstruction = '결론의 시작에는 "기대하는 변화" 또는 "맺음말" 같은 소제목을 <h2>태그로 작성하십시오.';
         } else {
-            // 본론 (body)
-            headerInstruction = '가장 먼저 이 문단의 핵심을 꿰뚫는 **매력적인 소제목을 <h2>태그**로 작성하십시오.';
+            headerInstruction = '가장 먼저 이 문단의 핵심을 꿰뚫는 매력적인 소제목을 <h2>태그로 작성하십시오.';
         }
 
-        const prompt = `
-# Role
-당신은 대한민국 최고의 정치 에세이스트이자 파워 블로거입니다.
-단순한 요약가가 아닙니다. 주어진 주제를 **풍부하게 풀어서 설명하고, 살을 붙여 확장하는** 능력이 탁월합니다.
-짧게 쓰는 것은 당신의 자존심이 허락하지 않습니다. **최대한 길고 상세하게** 쓰십시오.
+        const prompt = `당신은 대한민국 최고의 정치 에세이스트입니다.
 
-╔═══════════════════════════════════════════════════════════════════════╗
-║ 🎭 [CRITICAL] 화자 정체성 - 절대 혼동 금지!                              ║
-╚═══════════════════════════════════════════════════════════════════════╝
+[Task]
+지시된 [가이드]에 따라 **정확히 3개의 문단**을 작성하십시오.
 
-**당신은 "${userProfile.name}"입니다. 이 글의 유일한 1인칭 화자입니다.**
-- "저는", "제가"를 사용하여 1인칭으로 작성하세요.
-- 참고 자료에 등장하는 타인(후원회장, 지지자 등)은 3인칭으로 언급하세요.
-- ❌ "후원회장을 맡게 되었습니다" (당신은 후원회장이 아닙니다!)
-- ✅ "OOO님께서 후원회장을 맡아주셨습니다"
+[Context]
+- 작성자: ${userProfile.name}
+- 주제: ${topic}
+- 가이드: ${sectionPlan.guide}
+- 목표 분량: **${minChars}~${maxChars}자**
 
-# Context
-- **작성자**: ${userProfile.name}
-- **주제**: ${topic}
-- **현재 파트**: ${index + 1}번째 파트 (${sectionPlan.type})
-- **가이드**: ${sectionPlan.guide}
-- **핵심 키워드**: ${sectionPlan.keyword || '없음'}
+[CRITICAL] 3-Step Paragraph Template (반드시 준수)
+1. **첫 번째 문단 (<p>)**: 배경, 현황, 또는 공감 유도 (최소 150자)
+2. **두 번째 문단 (<p>)**: 핵심 주장, 대안 제시, 또는 구체적 액션 (최소 150자)
+3. **세 번째 문단 (<p>)**: 기대 효과, 미래 비전, 또는 강력한 호소 (최소 100자)
 
-# Critical Instructions (Absolute Rules)
-1. **[CRITICAL] 분량 강제 (Length Enforcement)**:
-   - 목표 분량: **${lengthTarget}**
-   - **${minChars}자 미만으로 작성하면 실패로 간주됩니다.**
-   - 할 말이 없으면 사례를 들거나, 감정을 묘사하거나, 미래 비전을 구체적으로 서술하여 **무조건 분량을 채우십시오.**
-   - 절대 요약하지 마십시오. 구구절절하게 늘려 쓰십시오.
-
-2. **구조 (Paragraph Structure)**:
-   - 반드시 **3개의 문단(<p> 태그 3개)**으로 나누십시오. 2개도 안 됩니다. 무조건 3개입니다.
-   - 각 문단은 **150자 이상** 꽉 채워 쓰십시오. (단문 나열 금지)
-
-3. **어조**: "존경하는 시민 여러분"에게 말하듯 진솔하고 정중하게 (~합니다). 문장은 간결하면서도 힘이 있어야 합니다.
-
-4. **[CRITICAL] 문투 교정 (자연스러움)**:
-   - **"~하고 있습니다", "~하고자 하고 있습니다" 절대 금지.** (비문 주의)
-   - "~라는 점입니다", "~라고 볼 수 있습니다" 절대 금지.
-   - ❌ "극복해야 하고 있습니다." → ✅ "극복하겠습니다."
-   - ❌ "예상되는 상황입니다." → ✅ "예상됩니다."
-
-5. **키워드 제한 (스팸 방지)**: 핵심 키워드 "${sectionPlan.keyword || ''}"가 있다면 문맥에 맞는 곳에 **딱 1번만** 사용하십시오. 절대 2회 이상 반복하지 마십시오.
-
-6. **태그**: 각 문단은 <p> 태그로 감싸고, 소제목은 <h2> 태그를 쓰십시오. (마크다운 ## 금지)
-7. **${headerInstruction}**
-8. **독립성**: 이 글은 전체 원고의 조각입니다. 인사는 서론이 아니면 절대 하지 말고, 바로 본론으로 들어가십시오.
-
-9. **[CRITICAL] 절대 주석 금지 (No Meta-Commentary)**:
-   - 본문에 '출처 확인이 필요합니다', '정확한 수치는 확인 바랍니다', '참고로', '관련 데이터 출처 확보가 필요합니다'와 같은 **에디터의 주석(Note)이나 메타 발언**을 절대 포함하지 마십시오.
-   - 확신이 없으면 해당 문장을 아예 쓰지 마십시오. 오직 **블로그/칼럼 본문**만 출력하십시오.
-
-# Goal
-이 파트 하나만 읽어도 배가 부를 정도로 **풍성하고 구체적인 내용**을 담으십시오.
-빈약한 문장은 용납되지 않습니다.
-`;
+[Absolute Rules]
+1. **분량**: **공백 포함 ${minChars}자 미만은 실패**입니다. 쓸 말이 없으면 구체적 예시를 들어 채우십시오.
+2. **태그**: 문단마다 <p> 태그 사용. 소제목은 <h2> 사용.
+3. **말투**: "~합니다", "~하겠습니다" (자신감 있고 정중하게).
+4. ${headerInstruction}`;
 
         try {
             const result = await model.generateContent({
                 contents: [{ role: 'user', parts: [{ text: prompt }] }],
                 generationConfig: {
-                    temperature: 0.9,
-                    maxOutputTokens: 2000
+                    temperature: 0.7,
+                    maxOutputTokens: 4000
                 }
             });
             let text = result.response.text().trim();
@@ -216,3 +173,4 @@ class ChainWriterAgent extends BaseAgent {
 }
 
 module.exports = { ChainWriterAgent };
+

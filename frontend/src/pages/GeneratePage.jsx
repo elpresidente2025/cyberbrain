@@ -237,11 +237,17 @@ const GeneratePage = () => {
 
   /** 원고 생성 버튼 클릭 시 실행되는 함수 */
   const handleGenerate = async () => {
-    // 🔴 [FIX] 한글 IME 조합 완료를 위해 약간의 딜레이 추가
-    // '윤석열 사형 구형' 입력 중 버튼 클릭 시 '구형'의 '형'이 조합 중인 상태에서 잘리는 버그 방지
+    // 🔴 [FIX] 한글 IME 조합 완료를 위해 현재 포커스된 요소에서 blur 트리거
+    // 모든 입력 필드(주제, 검색어 등)에서 조합 중인 한글이 있으면 완료시킴
+    const activeElement = document.activeElement;
+    if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+      activeElement.blur();
+    }
+
+    // blur 후 React state 업데이트 대기
     await new Promise(resolve => {
       requestAnimationFrame(() => {
-        setTimeout(resolve, 50);
+        setTimeout(resolve, 100);
       });
     });
 
@@ -254,9 +260,10 @@ const GeneratePage = () => {
 
     // 2. 유효하면 API 호출
     // 🆕 고품질 모드 선택 시 pipeline 파라미터 추가
+    // 기본값은 백엔드에서 'modular'로 설정됨 (프롬프트 분산으로 품질 향상)
     const payload = {
       ...formData,
-      pipeline: useHighQuality ? 'highQuality' : 'standard'
+      ...(useHighQuality && { pipeline: 'highQuality' })  // highQuality만 명시, 나머지는 백엔드 기본값 사용
     };
 
     const result = await generate(payload);

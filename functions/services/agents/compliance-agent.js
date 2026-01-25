@@ -152,18 +152,32 @@ class ComplianceAgent extends BaseAgent {
     const category = context.category || '';
     const subCategory = context.subCategory || '';
 
-    // Writer Agent 결과에서 콘텐츠 가져오기
+    // 콘텐츠 가져오기 (WriterAgent 또는 StyleAgent - modular 파이프라인 지원)
     const writerResult = previousResults.WriterAgent;
-    if (!writerResult?.success || !writerResult?.data?.content) {
-      throw new Error('Writer Agent 결과가 없습니다');
+    const styleResult = previousResults.StyleAgent;
+    const structureResult = previousResults.StructureAgent;
+
+    // 우선순위: WriterAgent → StyleAgent → StructureAgent
+    const contentSource = writerResult?.data?.content || styleResult?.data?.content || structureResult?.data?.content;
+
+    if (!contentSource) {
+      throw new Error('콘텐츠가 없습니다. WriterAgent 또는 StyleAgent가 먼저 실행되어야 합니다.');
     }
 
-    let content = writerResult.data.content;
+    let content = contentSource;
 
-    // 🏷️ TitleAgent 결과가 있으면 우선 사용, 없으면 WriterAgent 제목 사용
+    // 🏷️ 제목 가져오기: TitleAgent → WriterAgent → StyleAgent → StructureAgent
     const titleAgentResult = previousResults.TitleAgent;
-    let title = titleAgentResult?.data?.title || writerResult.data.title || '';
-    console.log(`🏷️ [ComplianceAgent] 제목 소스: ${titleAgentResult?.data?.title ? 'TitleAgent' : 'WriterAgent'} - "${title}"`);
+    let title = titleAgentResult?.data?.title
+      || writerResult?.data?.title
+      || styleResult?.data?.title
+      || structureResult?.data?.title
+      || '';
+    const titleSource = titleAgentResult?.data?.title ? 'TitleAgent'
+      : writerResult?.data?.title ? 'WriterAgent'
+      : styleResult?.data?.title ? 'StyleAgent'
+      : 'StructureAgent';
+    console.log(`🏷️ [ComplianceAgent] 제목 소스: ${titleSource} - "${title}"`);
     const status = userProfile.status || '현역';
     const issues = [];
     const replacements = [];

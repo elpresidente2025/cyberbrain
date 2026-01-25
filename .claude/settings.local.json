@@ -174,7 +174,12 @@
       "Bash(git commit -m \"$\\(cat <<''EOF''\nrefactor: simplify dashboard UI design to avoid AI slop\n\n- Reduce main CTA button size from 100px to 56px\n- Remove gradient backgrounds, use solid colors\n- Remove shimmer animations from header\n- Simplify hover effects \\(remove translateY, scale\\)\n- Unify border-radius tokens with explicit px values\n- Clean up unused random glow color functions\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: prevent hallucinations in manuscript generation\n\n- Add name protection rule to prevent author name mutation\n- Change \"creative expansion allowed\" to \"reference-only expansion\"\n- Remove duplicate reference material injection from templates\n- Move reference materials to end of prompt \\(recency bias\\)\n- Simplify speakerName fallback to ''화자'' instead of extracting from bio\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(npx firebase deploy:*)",
-      "Bash(npm test:*)"
+      "Bash(npm test:*)",
+      "Bash(node --check:*)",
+      "Bash(firebase functions:log --only generatePosts)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: prevent intent reversal in critical writing \\(criticism→cooperation\\)\n\n- EditorAgent: Apply bipartisan filter only for ''bipartisan-cooperation'' category\n- validation.js: Add intent reversal detection \\(criticism vs cooperation context\\)\n- WriterAgent: Add tone warning for critical/rebuttal articles\n- EditorAgent: Generate critical issue when intent reversal is detected\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(cd /d e:ai-secretaryfunctions)",
+      "Bash(node -e \"require\\(''./handlers/posts''\\)\")"
     ]
   },
   "mcpServers": {

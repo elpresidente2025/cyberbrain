@@ -13,11 +13,16 @@
 
 const { KeywordAgent } = require('./keyword-agent');
 const { WriterAgent } = require('./writer-agent');
-const { ChainWriterAgent } = require('./chain-writer-agent'); // 🆕 추가
 const { TitleAgent } = require('./title-agent');
 const { ComplianceAgent } = require('./compliance-agent');
 const { SEOAgent } = require('./seo-agent');
 const { refineWithLLM } = require('../posts/editor-agent');
+
+// 🆕 모듈형 에이전트 (프롬프트 분산)
+const { DraftAgent } = require('./draft-agent');
+const { StructureAgent } = require('./structure-agent');
+const { KeywordInjectorAgent } = require('./keyword-injector-agent');
+const { StyleAgent } = require('./style-agent');
 
 // 품질 기준 상수
 const QUALITY_THRESHOLDS = {
@@ -39,10 +44,12 @@ const PIPELINES = {
     { agent: SEOAgent, name: 'SEOAgent', required: false }
   ],
 
-  // 💎 고품질 파이프라인 (ChainWriterAgent 사용) - A/B 테스트 Group B
+  // 💎 고품질 파이프라인 (modular 에이전트 사용) - 프롬프트 분산으로 안정성 향상
   highQuality: [
-    { agent: KeywordAgent, name: 'KeywordAgent', required: false },
-    { agent: ChainWriterAgent, name: 'WriterAgent', required: true }, // 이름은 WriterAgent로 위장하여 후속 Agent 호환성 유지
+    { agent: DraftAgent, name: 'DraftAgent', required: true },
+    { agent: StructureAgent, name: 'StructureAgent', required: true },
+    { agent: KeywordInjectorAgent, name: 'KeywordInjectorAgent', required: true },
+    { agent: StyleAgent, name: 'StyleAgent', required: true },
     { agent: TitleAgent, name: 'TitleAgent', required: true },
     { agent: ComplianceAgent, name: 'ComplianceAgent', required: true },
     { agent: SEOAgent, name: 'SEOAgent', required: false }
@@ -61,6 +68,18 @@ const PIPELINES = {
 
   // SEO 최적화만 (검수 + SEO)
   seoOptimize: [
+    { agent: ComplianceAgent, name: 'ComplianceAgent', required: true },
+    { agent: SEOAgent, name: 'SEOAgent', required: false }
+  ],
+
+  // 🆕 모듈형 파이프라인: 프롬프트 분산으로 안정성 향상
+  // DraftAgent(초안) → StructureAgent(구조화) → KeywordInjectorAgent(SEO) → StyleAgent(교정) → TitleAgent → ComplianceAgent → SEOAgent
+  modular: [
+    { agent: DraftAgent, name: 'DraftAgent', required: true },
+    { agent: StructureAgent, name: 'StructureAgent', required: true },
+    { agent: KeywordInjectorAgent, name: 'KeywordInjectorAgent', required: true },
+    { agent: StyleAgent, name: 'StyleAgent', required: true },
+    { agent: TitleAgent, name: 'TitleAgent', required: true },
     { agent: ComplianceAgent, name: 'ComplianceAgent', required: true },
     { agent: SEOAgent, name: 'SEOAgent', required: false }
   ]
@@ -624,6 +643,23 @@ class Orchestrator {
       case 'SEOAgent':
         // SEOAgent는 모든 이전 결과 필요 (previousResults에 포함됨)
         break;
+
+      // 🆕 모듈형 파이프라인 에이전트
+      case 'DraftAgent':
+        // DraftAgent는 참고자료(instructions, newsContext)와 userProfile 필요
+        break;
+
+      case 'StructureAgent':
+        // StructureAgent는 DraftAgent 결과 필요 (previousResults에 포함됨)
+        break;
+
+      case 'KeywordInjectorAgent':
+        // KeywordInjectorAgent는 StructureAgent 결과 + userKeywords 필요
+        break;
+
+      case 'StyleAgent':
+        // StyleAgent는 KeywordInjectorAgent 결과 필요
+        break;
     }
 
     return enriched;
@@ -639,17 +675,39 @@ class Orchestrator {
     let finalContent = null;
     let finalTitle = null;
 
-    // SEOAgent → ComplianceAgent → WriterAgent 순으로 fallback
+    // SEOAgent → ComplianceAgent → StyleAgent → WriterAgent 순으로 fallback
     if (this.results.SEOAgent?.success) {
       finalContent = this.results.SEOAgent.data.content;
       finalTitle = this.results.SEOAgent.data.title;
     } else if (this.results.ComplianceAgent?.success) {
       finalContent = this.results.ComplianceAgent.data.content;
       // 🏷️ ComplianceAgent도 제목을 반환하므로 우선 사용 (EditorAgent로 수정된 제목 포함)
-      finalTitle = this.results.ComplianceAgent.data.title || this.results.TitleAgent?.data?.title || this.results.WriterAgent?.data?.title || null;
+      finalTitle = this.results.ComplianceAgent.data.title || this.results.TitleAgent?.data?.title || this.results.WriterAgent?.data?.title || this.results.StructureAgent?.data?.title || null;
+    } else if (this.results.StyleAgent?.success) {
+      // 🆕 모듈형 파이프라인: StyleAgent가 최종 콘텐츠
+      finalContent = this.results.StyleAgent.data.content;
+      finalTitle = this.results.TitleAgent?.data?.title || this.results.StructureAgent?.data?.title;
     } else if (this.results.WriterAgent?.success) {
       finalContent = this.results.WriterAgent.data.content;
-      finalTitle = this.results.TitleAgent?.data?.title || this.results.WriterAgent.data.title;
+
+      // 제목 선택 로직 개선 (TitleAgent vs WriterAgent)
+      const tAgentTitle = this.results.TitleAgent?.data?.title;
+      const wAgentTitle = this.results.WriterAgent.data.title;
+
+      if (tAgentTitle && tAgentTitle.length >= 10) {
+        finalTitle = tAgentTitle;
+      } else if (wAgentTitle && wAgentTitle.length >= 10) {
+        // TitleAgent가 없거나 너무 짧으면 WriterAgent 제목 사용
+        finalTitle = wAgentTitle;
+        console.log(`⚠️ [Orchestrator] TitleAgent 제목이 부실하여("${tAgentTitle}") WriterAgent 제목 사용`);
+      } else {
+        // 둘 다 짧거나 없으면 있는 거 사용 (어차피 ComplianceAgent가 다시 검증함)
+        finalTitle = tAgentTitle || wAgentTitle;
+      }
+    } else if (this.results.StructureAgent?.success) {
+      // 🆕 모듈형 파이프라인 폴백: StructureAgent 결과라도 사용
+      finalContent = this.results.StructureAgent.data.content;
+      finalTitle = this.results.StructureAgent.data.title;
     }
 
     // 메타데이터 수집

@@ -384,14 +384,7 @@ ${newsContext ? `**참고 뉴스**: ${newsContext.substring(0, 500)}...` : ''}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-다음 JSON 형식으로만 응답하세요:
-\`\`\`json
-{
-  "title": "25자 이내 제목",
-  "content": "<p>HTML 형식 본문</p>",
-  "wordCount": ${validTargetCount}
-}
-\`\`\`
+HTML 형식으로 본문을 작성하세요. <p> 태그로 문단을 구성하세요.
 `;
 }
 

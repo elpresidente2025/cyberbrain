@@ -33,6 +33,10 @@ const {
   normalizeNameSpacing
 } = require('../../prompts/guidelines/editorial');
 const { buildNaturalTonePrompt } = require('../../prompts/guidelines/natural-tone');
+const {
+  buildEditorPrompt: buildEditorPromptFromModule,
+  buildExpandPrompt
+} = require('../../prompts/builders/editor-prompts');
 
 const PLEDGE_PATTERNS = [
   /약속드?립니다/,
@@ -433,16 +437,25 @@ function applyHardConstraintsOnly({
 function buildSafeTitle(title, userKeywords = [], seoKeywords = []) {
   const primaryKeyword = userKeywords[0] || (seoKeywords[0]?.keyword || seoKeywords[0] || '');
   let base = neutralizePledgeTitle(title || '');
-  if (!base || base.length < 5) {
+
+  // 🚨 [FIX] 제목이 키워드와 똑같으면(예: "박형준 시장") 불충분한 것으로 간주하고 확장
+  const isIdenticalToKeyword = primaryKeyword && base.replace(/\s+/g, '') === primaryKeyword.replace(/\s+/g, '');
+
+  if (!base || base.length < 5 || isIdenticalToKeyword) {
     base = primaryKeyword ? `${primaryKeyword} 현안 진단` : '현안 진단 보고';
   }
+
   if (primaryKeyword && !base.includes(primaryKeyword)) {
     base = `${primaryKeyword} ${base}`.trim();
   }
+
   base = normalizeSpaces(base);
-  if (base.length < 18) {
-    base = normalizeSpaces(`${base} 핵심 점검`);
+
+  // 18자 미만이면 "핵심 점검" 등 추가하여 풍성하게 만듦
+  if (base.length < 15) {
+    base = normalizeSpaces(`${base} 핵심 분석`);
   }
+
   return trimTitleToLimit(base, primaryKeyword);
 }
 
@@ -450,32 +463,44 @@ function trimTitleToLimit(title, primaryKeyword, limit = 25) {
   const normalized = normalizeSpaces(title);
   if (normalized.length <= limit) return normalized;
 
+  // 1. 구분자 기준으로 자르기 (가장 깔끔)
   const separatorRegex = /\s*[-–—:|·,]\s*/;
   if (separatorRegex.test(normalized)) {
     const parts = normalized.split(separatorRegex).map((part) => part.trim()).filter(Boolean);
-    if (parts.length > 0 && parts[0].length <= limit) {
-      return parts[0];
+    // 첫 부분만 썼을 때 너무 짧으면(5자 미만) 두 번째 부분까지 붙여봄
+    if (parts.length > 0) {
+      if (parts[0].length > 5 && parts[0].length <= limit) {
+        return parts[0];
+      }
+      // 앞부분이 너무 짧으면 합쳐서 시도
+      const combined = `${parts[0]} ${parts[1] || ''}`.trim();
+      if (combined.length <= limit) return combined;
     }
   }
 
+  // 2. 단어 단위로 뒤에서부터 줄이기
   const words = normalized.split(' ').filter(Boolean);
   while (words.length > 1 && words.join(' ').length > limit) {
     words.pop();
   }
-  const compact = normalizeSpaces(words.join(' '));
-  if (compact.length <= limit) return compact;
 
+  const compact = normalizeSpaces(words.join(' '));
+  if (compact.length <= limit && compact.length >= 5) return compact;
+
+  // 3. 최후의 수단: Fallback 후보군
   const candidates = [];
   if (primaryKeyword) {
+    // 🚨 [FIX] 키워드 단독 사용(예: "박형준 시장")은 제외하여 반복 방지
     candidates.push(`${primaryKeyword} 현안 진단`);
-    candidates.push(`${primaryKeyword} 현안`);
-    candidates.push(`${primaryKeyword} 진단`);
-    candidates.push(primaryKeyword);
+    candidates.push(`${primaryKeyword} 이슈 분석`);
+    candidates.push(`${primaryKeyword} 리포트`);
+    // candidates.push(primaryKeyword); // ❌ 제거: 키워드만 덜렁 제목으로 나오는 현상 방지
   }
-  candidates.push('현안 진단');
-  candidates.push('현안 점검');
+  candidates.push('주요 현안 긴급 진단'); // 기본값도 좀 더 있어보이게 변경
+  candidates.push('현안 진단 보고');
+
   const fallback = candidates.find((candidate) => candidate && candidate.length <= limit);
-  return fallback || '현안 진단';
+  return fallback || '주요 현안 보고';
 }
 
 function sanitizeTopicForFacts(topic, factAllowlist) {
@@ -955,13 +980,14 @@ async function refineWithLLM({
   console.log(`📝 [EditorAgent] ${issues.length}개 문제 발견, LLM 수정 시작`);
 
   // LLM 프롬프트 생성
-  const prompt = buildEditorPrompt({
+  const prompt = buildEditorPromptFromModule({
     content,
     title,
     issues,
     userKeywords,
     status,
-    targetWordCount
+    targetWordCount,
+    stripHtml  // 유틸 함수 의존성 주입
   });
 
   try {
@@ -1157,32 +1183,11 @@ async function expandContentToTarget({
     console.log(`⚠️ [EditorAgent] 부족분 ${deficit}자 중 ${maxExpansion}자까지만 확장 (할루시네이션 방지)`);
   }
 
-  const naturalToneGuide = buildNaturalTonePrompt({ severity: 'strict' });
-
-  const prompt = `
-당신은 정치 블로그 원고 작성 전문가입니다.
-현재 원고의 분량이 부족하여, 독자에게 깊은 울림을 줄 수 있는 **마무리 문단**을 추가하려 합니다.
-아래 [본문]의 맥락을 이어받아, **정확히 ${actualExpansion}자** 분량으로 자연스럽게 작성해 주십시오.
-
-[지시사항]
-1. **분량 엄수**: 반드시 **${actualExpansion}자** 내외로 작성.
-2. **위치**: 본문 맨 마지막(결론부)에 자연스럽게 이어집니다.
-3. **톤앤매너 (매우 중요)**:
-${naturalToneGuide}
-   - 블로그 이웃에게 말하듯 부드럽고 호소력 짙은 문체. ("~합니다", "~하겠습니다", "~함께 나아갑시다")
-
-4. **내용**:
-   - 기계적인 요약보다는 **미래지향적인 다짐**이나 **독자의 동참을 호소**하는 감성적인 내용으로 채우세요.
-   - 새로운 사실(수치, 정책명)을 지어내지 말고, 본문의 흐름을 감성적으로 마무리하세요.
-5. **형식**: <p> 태그 하나로 감싸서 작성.
-
-[본문]
-${body}
-
-다음 JSON 형식으로만 응답하세요:
-{
-  "summaryBlock": "<p>...작성된 문단...</p>"
-}`;
+  const prompt = buildExpandPrompt({
+    body,
+    actualExpansion,
+    naturalToneGuide: buildNaturalTonePrompt({ severity: 'strict' })
+  });
 
   try {
     const response = await callGenerativeModel(prompt, 1, modelName, true);
@@ -1218,133 +1223,12 @@ ${body}
   }
 }
 
-/**
- * EditorAgent용 프롬프트 생성
- */
-function buildEditorPrompt({ content, title, issues, userKeywords, status, targetWordCount }) {
-  const issuesList = issues.map((issue, idx) =>
-    `${idx + 1}. [${issue.severity.toUpperCase()}] ${issue.description}\n   → ${issue.instruction}`
-  ).join('\n\n');
+// ============================================================================
+// [MIGRATED] buildEditorPrompt 함수가 prompts/builders/editor-prompts.js로 이동됨
+// 이 함수는 buildEditorPromptFromModule로 import되어 사용됩니다.
+// 이전 코드: 1205-1331줄 (약 127줄) 삭제
+// ============================================================================
 
-  const statusNote = (status === '준비' || status === '현역')
-    ? `\n⚠️ 작성자 상태: ${status} (예비후보 등록 전) - "~하겠습니다" 같은 공약성 표현 금지`
-    : '';
-
-  const hasLengthIssue = issues.some((issue) => issue.type === 'content_length');
-  const currentLength = stripHtml(content || '').replace(/\s/g, '').length;
-  const maxTarget = typeof targetWordCount === 'number' ? Math.round(targetWordCount * 1.2) : null;
-
-  const lengthGuideline = hasLengthIssue && typeof targetWordCount === 'number'
-    ? `\n📏 분량 목표: ${targetWordCount}~${maxTarget}자(공백 제외), 현재 ${currentLength}자\n- 새 주제/추신 추가 금지\n- 기존 문단의 근거를 구체화해 분량을 맞출 것\n🚨 [CRITICAL] 문단 복사 붙여넣기 절대 금지! 동일한 문단이 2번 이상 등장하면 원고 폐기됩니다.`
-    : '';
-
-  const titleGuideline = `
-4. [CRITICAL] 제목 규칙:
-   - "XXX 님의 공지", "XXX 후보의 약속" 같은 제목 절대 금지.
-   - **"[지역명] 키워드"** 같은 기계적인 대괄호 형식을 **절대 사용하지 마세요.**
-   - **"부산 경제, 확실하게 살리겠습니다 - 국비 5천억 확보"** 처럼 자연스러운 헤드라인 형태로 작성하세요.
-   - 지역명은 문맥상 자연스럽게 녹여내되, 제목 앞머리에 말머리처럼 '[부산]'을 붙이는 행위를 금지합니다.`;
-
-  const repetitionInstruction = issues.some(i => i.type === 'repetition')
-    ? `\n\n🚨 [반복 서술 감지됨] 동일한 문장이나 표현을 반복하지 마십시오. 같은 내용을 말하더라도 반드시 다른 단어와 문장 구조를 사용해야 합니다.`
-    : '';
-
-  const keywordVariationGuide = `
-   - **[키워드 변형 허용]**: 조사나 어미가 붙은 형태(예: "부산의", "경제는")나 복합 명사(예: "부산경제", "부산 경제")도 키워드 사용으로 인정합니다. 억지로 분리하거나 정확히 일치시키려 하지 마세요.`;
-
-  const naturalToneGuide = buildNaturalTonePrompt({ severity: 'strict' });
-
-  const structureGuideline = `
-╔═══════════════════════════════════════════════════════════════╗
-║  🚨 [CRITICAL] 5단 구조 유지 필수 (황금 비율)                 ║
-╚═══════════════════════════════════════════════════════════════╝
-1. 전체 구조: **[서론] - [본론1] - [본론2] - [본론3] - [결론]** (총 5개 섹션 유지)
-2. 문단 규칙: **각 섹션은 반드시 3개의 문단**으로 구성하세요. (총 15문단)
-3. 길이 규칙: **한 문단은 100~150자** 내외로 유연하게 쓰세요.
-4. 소제목(H2) 규칙:
-   - ❌ **서론**: 소제목 절대 금지 (인사말로 시작)
-   - ✅ **본론1~3, 결론**: 각 섹션 시작 부분에 반드시 **뉴스 헤드라인형 소제목** 삽입
-   - 예: <h2>이관훈 배우, 부산 방문</h2>
-5. 편집/수정 시 이 **섹션-문단 구조를 절대 깨지 마세요.** 내용이 늘어나거나 줄어들어도 이 비율을 유지해야 합니다.
-`;
-
-  return `당신은 정치 원고 편집 전문가입니다. 아래 원고에서 발견된 문제들을 수정해주세요.
-
-[수정이 필요한 문제들]
-${issuesList}
-${statusNote}
-${structureGuideline}
-${lengthGuideline}
-${titleGuideline}
-
-[원본 제목]
-${title}
-
-[원본 본문]
-${content}
-
-[필수 포함 키워드]
-${userKeywords.join(', ') || '(없음)'}
-
-  [수정 지침 (매우 중요)]
-  1. **[CRITICAL] 말투 강제 교정 (AI 투 제거)**:
-${naturalToneGuide}
-     - **본인에 대한 서술에 추측성 어미 금지**: "저는 ~일 것입니다" (본인 이야기를 남처럼 쓰지 말 것) -> "저는 ~생각합니다/판단합니다"
-
-  2. **[CRITICAL] 할루시네이션(거짓 정보) 방지**:
-     - ❌ **없는 정책 창작 금지**: 원문에 없는 구체적인 정책명(예: "링 프로그램", "청년희망적금")이나 수치(예: "5천억", "10만 개")를 절대 지어내지 마세요.
-     - ✅ **방향성 제시**: 구체적인 팩트가 없다면 "지원이 필요합니다", "방안을 모색하겠습니다"와 같이 **방향성 위주로** 서술하세요. 질문형 소제목에 답할 팩트가 없으면 당위성으로 답변하세요.
-
-  3. **[구조 및 서식 (AEO 최적화 소제목)]**:
-     - 소제목(H2)은 검색 사용자가 궁금해하는 **구체적인 질문**이나 **데이터 기반 정보** 형태로 작성하세요. (15~25자 권장)
-     - **✅ 좋은 예시 (따라 할 것)**:
-       - "청년 기본소득, **신청 방법은 무엇인가요?**" (질문형+키워드 전진배치)
-       - "부산 의료 관광 **클러스터 3대 핵심 전략**" (구체적 수치)
-       - "이관훈 후원회장 **위촉 배경과 역할은?**" (구체적 질문)
-       - "기존 정책 vs 신규 공약 **차이점 분석**" (비교형)
-     - **❌ 나쁜 예시 (절대 금지 - 무조건 수정)**:
-       - "관련 내용", "정책 안내" (너무 짧고 모호함)
-       - "이관훈은?", "부산은?" (단순 명사/질문 → 구체적으로 서술어 포함할 것)
-     - 소제목 텍스트는 반드시 **<h2> 태그**로 감싸세요.
-     - 문단은 3줄~4줄 정도로 호흡을 짧게 끊어 가독성을 높이세요.
-
-  4. **[검색어/SEO]**:
-     - 키워드는 문맥에 맞게 자연스럽게 녹이되, 전체 글에서 **4~6회**까지만 사용하세요.
-     - **[CRITICAL]** 제공된 검색어를 단 한 글자도 바꾸지 말고 그대로 사용해야 합니다 (패러프레이즈 금지).
-     - 숫자나 통계는 원문에 있는 것만 정확히 인용하세요.
-
-  5. **[CRITICAL] 글의 품질 향상 (중복·과장·논리 비약 제거)**:
-     - **중복 표현 제거**: 같은 의미를 짧은 구간에 반복 서술하지 마세요.
-       ❌ 나쁜 예: "충분히 가능합니다. ... 디즈니랜드 한국 유치는 현실적인 목표입니다."
-       ✅ 좋은 예: "충분히 실현 가능한 비전임을 확신합니다." (하나로 통합)
-
-     - **과장된 수사 완화**: "압도적", "판을 뒤집다", "대혁신" 등은 최대 1~2회만 사용하세요.
-       ❌ 나쁜 예: "판을 완전히 뒤집어 놓을", "압도적인 교통", "압도적인 IP"
-       ✅ 좋은 예: "근본적으로 혁신할", "뛰어난 교통", "강력한 IP"
-
-     - **논리적 비약 방지**: A→B 유추가 억지스러우면 제거하거나 연결고리 추가
-       ❌ 나쁜 예: "넷플릭스가 성공했으니 디즈니랜드도 성공한다"
-       ✅ 좋은 예: "과거 대형 투자 프로젝트들도 초기엔 회의적이었지만..."
-
-     - **섹션 간 연결 강화**: 디즈니랜드→AI 비전 전환 시 "이와 함께", "동시에" 등으로 자연스럽게 연결
-
-     - **호칭 문법 교정**: 지역명을 직접 호칭하는 문법 오류를 수정하세요.
-       ❌ 나쁜 예: "존경하는 부산광역시 여러분", "사랑하는 서울 여러분"
-       ✅ 좋은 예: "존경하는 부산광역시민 여러분", "사랑하는 서울시민 여러분"
-       (장소가 아닌 사람을 호칭해야 합니다)
-
-  6. **[최소한의 수정 원칙]**:
-     - 위 문제들이 없는 문장은 원문의 맛을 살려 그대로 두세요.
-     - 선거법 위반 표현만 완곡하게 다듬으세요.
-${repetitionInstruction}
-${keywordVariationGuide}
-다음 JSON 형식으로만 응답하세요:
-{
-  "title": "수정된 제목",
-  "content": "수정된 본문 (HTML) - h2, h3, p 태그 구조 준수",
-  "editSummary": ["~라는 점입니다 말투 수정", "소제목 태그 적용"]
-}`;
-}
 
 /**
  * 한글 받침 유무 판별

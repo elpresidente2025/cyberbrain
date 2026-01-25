@@ -415,7 +415,18 @@ function validateTitleQuality(title, userKeywords = [], content = '', options = 
     hasNumbers: false
   };
 
-  // 1. 길이 검증 (25자 초과 = 네이버에서 잘림)
+  // 1-1. 길이 검증 (너무 짧은 제목 방지)
+  // [NEW] "박형준 시장" 처럼 키워드+직함만 있는 제목 방지
+  if (title.length < 10) {
+    issues.push({
+      type: 'title_too_short',
+      severity: 'critical',
+      description: `제목이 너무 짧음 (${title.length}자)`,
+      instruction: '10자 이상으로 구체적인 내용을 포함하여 작성하세요. 단순 키워드 나열 금지.'
+    });
+  }
+
+  // 1-2. 길이 검증 (네이버 View 최적화)
   if (title.length > 25) {
     issues.push({
       type: 'title_length',
@@ -425,7 +436,7 @@ function validateTitleQuality(title, userKeywords = [], content = '', options = 
     });
   }
 
-  // 2. 키워드 위치 검증 (핵심 키워드가 앞쪽 8자 내에 없으면)
+  // 2. 키워드 위치 및 단순 반복 검증
   if (userKeywords && userKeywords.length > 0) {
     const primaryKw = userKeywords[0];
     const kwIndex = title.indexOf(primaryKw);
@@ -444,6 +455,19 @@ function validateTitleQuality(title, userKeywords = [], content = '', options = 
         severity: 'medium',
         description: `키워드 "${primaryKw}" 위치 ${kwIndex}자 → 너무 뒤쪽`,
         instruction: '핵심 키워드는 제목 앞쪽 8자 이내에 배치하세요 (앞쪽 1/3 법칙).'
+      });
+    }
+
+    // [NEW] 제목이 키워드와 거의 동일한 경우 차단 (예: 키워드 "박형준" -> 제목 "박형준 시장")
+    // 공백 제거 후 비교, 길이가 키워드 + 4자 이내면 의심
+    const cleanTitle = title.replace(/\s+/g, '');
+    const cleanKw = primaryKw.replace(/\s+/g, '');
+    if (cleanTitle.includes(cleanKw) && cleanTitle.length <= cleanKw.length + 4) {
+      issues.push({
+        type: 'title_too_generic',
+        severity: 'critical',
+        description: '제목이 키워드와 너무 유사함 (단순 명사형)',
+        instruction: '서술어인 "현안 진단", "핵심 분석", "이슈 점검" 등을 반드시 포함하여 구체화하세요.'
       });
     }
   }
