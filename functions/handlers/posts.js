@@ -255,7 +255,8 @@ exports.generatePosts = httpWrap(async (req) => {
 
   // 데이터 검증
   const topic = data.prompt || data.topic || '';
-  const category = data.category || '';
+  // 카테고리가 없으면 기본값 사용 (AI가 자동 분류하므로 필수가 아님)
+  const category = data.category || 'daily-communication';
   const modelName = data.modelName || 'gemini-2.5-flash';
 
   // 카테고리별 최소 분량 설정 (블로그 원고 기준)
@@ -281,9 +282,7 @@ exports.generatePosts = httpWrap(async (req) => {
     throw new HttpsError('invalid-argument', '주제를 입력해주세요.');
   }
 
-  if (!category || typeof category !== 'string' || category.trim().length === 0) {
-    throw new HttpsError('invalid-argument', '카테고리를 선택해주세요.');
-  }
+  // 카테고리 검증 제거 - AI가 자동 분류
 
   // 🔔 진행 상황 추적 시작
   // 🔧 프론트엔드에서 전달받은 progressSessionId 사용 (실시간 동기화)
