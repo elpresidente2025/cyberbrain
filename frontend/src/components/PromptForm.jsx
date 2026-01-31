@@ -1,13 +1,8 @@
 import React from 'react';
-import { 
-  Box, 
-  TextField, 
-  Button, 
-  Stack, 
-  FormControl, 
-  InputLabel, 
-  Select, 
-  MenuItem,
+import {
+  Box,
+  TextField,
+  Stack,
   Typography,
   Chip,
   Alert,
@@ -15,38 +10,24 @@ import {
   Divider
 } from '@mui/material';
 import { useAuth } from '../hooks/useAuth';
-import { CATEGORIES, CATEGORY_DESCRIPTIONS } from '../constants/formConstants';
 import { LoadingButton } from './loading';
 
 /**
  * @description AI 포스트 생성을 위한 프롬프트 입력 폼 컴포넌트
+ * 카테고리는 AI가 주제를 분석하여 자동 결정합니다.
  */
-const PromptForm = ({ 
-  category = '일반', 
-  setCategory, 
-  subCategory = '', 
-  setSubCategory,
-  prompt = '', 
-  setPrompt, 
-  keywords = '', 
-  setKeywords, 
-  onGenerate, 
-  isLoading = false, 
+const PromptForm = ({
+  prompt = '',
+  setPrompt,
+  keywords = '',
+  setKeywords,
+  onGenerate,
+  isLoading = false,
   isGenerated = false,
   validation = {}
 }) => {
-  
-  // 🔧 수정: 올바른 구조로 변경
+
   const { user } = useAuth();
-  
-  // 카테고리 변경 시 세부 카테고리 초기화
-  const handleCategoryChange = (event) => {
-    const newCategory = event.target.value;
-    setCategory(newCategory);
-    if (setSubCategory) {
-      setSubCategory(''); // 세부 카테고리 초기화
-    }
-  };
 
   // 폼 제출 핸들러
   const handleFormSubmit = (event) => {
@@ -87,12 +68,12 @@ const PromptForm = ({
       <Typography variant="h6" gutterBottom sx={{ color: 'black' }}>
         📝 AI 원고 생성
       </Typography>
-      
+
       {/* 사용자 정보 표시 */}
       {user && (
         <Alert severity="info" sx={{ mb: 2 }}>
           <Typography variant="body2" sx={{ color: 'black' }}>
-            <strong>{user.name || '이름 없음'}</strong> 
+            <strong>{user.name || '이름 없음'}</strong>
             {user.position && ` (${user.position})`}
             {regionInfo && ` | ${regionInfo}`}
           </Typography>
@@ -101,53 +82,7 @@ const PromptForm = ({
 
       <Box component="form" onSubmit={handleFormSubmit}>
         <Stack spacing={3}>
-          {/* 카테고리 선택 */}
-          <FormControl fullWidth>
-            <InputLabel>카테고리</InputLabel>
-            <Select
-              value={category}
-              label="카테고리"
-              onChange={handleCategoryChange}
-              disabled={isLoading}
-            >
-              {Object.keys(CATEGORIES).map((cat) => (
-                <MenuItem key={cat} value={cat}>
-                  {cat}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
-          {/* 세부 카테고리 선택 */}
-          {CATEGORIES[category] && CATEGORIES[category].length > 0 && (
-            <FormControl fullWidth>
-              <InputLabel>세부 카테고리</InputLabel>
-              <Select
-                value={subCategory}
-                label="세부 카테고리"
-                onChange={(e) => setSubCategory(e.target.value)}
-                disabled={isLoading}
-              >
-                <MenuItem value="">
-                  <em>선택 안함</em>
-                </MenuItem>
-                {CATEGORIES[category].map((subCat) => (
-                  <MenuItem key={subCat} value={subCat}>
-                    {subCat}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
-
-          {/* 카테고리 설명 */}
-          {CATEGORY_DESCRIPTIONS[category] && (
-            <Alert severity="info">
-              <Typography variant="body2" sx={{ color: 'black' }}>
-                {CATEGORY_DESCRIPTIONS[category]}
-              </Typography>
-            </Alert>
-          )}
+          {/* 카테고리 선택 UI 제거 - AI가 주제를 분석하여 자동 결정 */}
 
           {/* 주제 입력 */}
           <TextField
@@ -186,10 +121,10 @@ const PromptForm = ({
               </Typography>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                 {keywords.split(',').map((keyword, index) => (
-                  <Chip 
-                    key={index} 
-                    label={keyword.trim()} 
-                    size="small" 
+                  <Chip
+                    key={index}
+                    label={keyword.trim()}
+                    size="small"
                     variant="outlined"
                   />
                 ))}

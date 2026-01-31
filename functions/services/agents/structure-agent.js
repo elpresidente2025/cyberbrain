@@ -20,6 +20,9 @@ const { extractStyleFromText } = require('../../utils/style-analyzer');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { getGeminiApiKey } = require('../../common/secrets');
 
+// ✅ 주제 기반 자동 분류
+const { classifyTopic } = require('../posts/topic-classifier');
+
 // ✅ 선거법 규칙 import
 const { getElectionStage } = require('../../prompts/guidelines/legal');
 
@@ -99,11 +102,20 @@ class StructureAgent extends BaseAgent {
       memoryContext = ''
     } = context;
 
-    console.log(`🚀 [StructureAgent] 시작 - 카테고리: ${category}, 주제: ${topic}`);
+    console.log(`🚀 [StructureAgent] 시작 - 카테고리: ${category || '(자동)'}, 주제: ${topic}`);
 
-    // 1. 작법 결정
-    const writingMethod = resolveWritingMethod(category, subCategory);
-    console.log(`✍️ [StructureAgent] 작법 선택: ${writingMethod}`);
+    // 1. 작법 결정 (카테고리 없으면 자동 분류)
+    let writingMethod;
+    if (category && category !== 'auto') {
+      // 기존 로직: 명시적 카테고리 사용
+      writingMethod = resolveWritingMethod(category, subCategory);
+      console.log(`✍️ [StructureAgent] 작법 선택 (카테고리 기반): ${writingMethod}`);
+    } else {
+      // 🆕 자동 분류: 주제 분석으로 작법 결정
+      const classification = await classifyTopic(topic);
+      writingMethod = classification.writingMethod;
+      console.log(`🤖 [StructureAgent] 작법 자동 추론: ${writingMethod} (신뢰도: ${classification.confidence}, 소스: ${classification.source})`);
+    }
 
     // 2. 저자 정보 구성 (WriterAgent 로직 이관)
     const authorBio = this.buildAuthorBio(userProfile);
@@ -269,7 +281,35 @@ ${sourceText.substring(0, 4000)}
       familyStatus: userProfile.familyStatus || ''
     });
 
-    // 3. ContextAnalyzer 결과 주입 (입장문 필수 포함 등)
+    // 3. 🔴 [CRITICAL FIX] 참고자료 원문 주입 (2026-01-29)
+    // 템플릿 빌더가 참고자료를 프롬프트에 삽입하지 않아 AI가 무시하는 버그 수정
+    const sourceText = [instructions, newsContext].filter(Boolean).join('\n\n---\n\n');
+    let referenceMaterialsSection = '';
+    if (sourceText && sourceText.trim().length > 0) {
+      referenceMaterialsSection = `
+╔═══════════════════════════════════════════════════════════════╗
+║  📚 [1차 자료] 참고자료 - 원고의 핵심 소스                     ║
+╚═══════════════════════════════════════════════════════════════╝
+
+⚠️ **[CRITICAL] 아래 참고자료가 이 원고의 1차 자료(Primary Source)입니다.**
+- 첫 번째 자료: 작성자의 입장문/페이스북 글 (핵심 논조와 주장)
+- 이후 자료: 뉴스/데이터 (근거, 팩트, 배경 정보)
+
+**[참고자료 원문]**
+${sourceText.substring(0, 6000)}
+
+🚨 **[자료 우선순위 규칙]**
+1. **1차 자료 (필수 반영)**: 위 참고자료의 핵심 내용, 팩트, 발언, 수치를 반드시 본문에 포함하세요.
+2. **보조 자료 (분량 보충용)**: 사용자 프로필(Bio)은 화자 정체성과 어조 참고용이며, 분량이 부족할 때만 활용하세요.
+3. **창작 금지**: 참고자료에 없는 팩트, 수치, 발언을 창작하지 마세요.
+4. **주제 유지**: 참고자료의 주제를 벗어나 사용자 프로필의 다른 정책/공약으로 대체하지 마세요.
+`;
+      console.log('📚 [StructureAgent] 참고자료 주입 완료:', sourceText.length, '자');
+    } else {
+      console.warn('⚠️ [StructureAgent] 참고자료 없음 - 사용자 프로필만으로 생성');
+    }
+
+    // 4. ContextAnalyzer 결과 주입 (입장문 필수 포함 등)
     let contextInjection = '';
     if (contextAnalysis) {
       const stancePhrases = (contextAnalysis.mustIncludeFromStance || [])
@@ -336,11 +376,13 @@ ${stancePhrases || '(없음)'}
 5. **JSON 출력**: 결과는 반드시 JSON 포맷이어야 합니다.
 `;
 
-    // 5. 최종 조립
+    // 6. 최종 조립
     return `
 ${templatePrompt}
 
 ${partyStanceGuide ? partyStanceGuide : ''}
+
+${referenceMaterialsSection}
 
 ${contextInjection}
 
