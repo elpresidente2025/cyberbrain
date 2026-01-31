@@ -1,0 +1,99 @@
+{
+    "description": "XML 구조화 프롬프팅 테스트용 샘플 페이로드",
+    "notes": "이 JSON을 사용하여 원고 생성 API를 테스트할 수 있습니다.",
+    "testCases": [
+        {
+            "name": "비판적 글쓰기 테스트",
+            "endpoint": "/generatePost",
+            "payload": {
+                "topic": "2차 특검법 국회 통과의 의미",
+                "category": "정치현안",
+                "subCategory": "법률/제도",
+                "userKeywords": [
+                    "2차 특검법",
+                    "국회 본회의"
+                ],
+                "userProfile": {
+                    "name": "홍길동",
+                    "partyName": "더불어민주당",
+                    "customTitle": "OO구 지역위원장",
+                    "regionMetro": "부산광역시",
+                    "regionLocal": "해운대구",
+                    "status": "준비",
+                    "bio": "20년간 시민운동에 헌신해온 정치 신인"
+                },
+                "instructions": "12월 3일 비상계엄 사태에 대한 진상규명을 촉구하는 논조로 작성해주세요.",
+                "newsContext": "2차 특검법이 국회 본회의를 통과했다. 야당 의원들은 신속한 진상규명을 요구하고 있다.",
+                "targetWordCount": 2000
+            },
+            "expectedOutputFormat": {
+                "title": "<title>태그로 감싸진 제목",
+                "content": "<content>태그로 감싸진 HTML 본문",
+                "hashtags": "<hashtags>태그로 감싸진 해시태그 목록"
+            }
+        },
+        {
+            "name": "정책 제안 테스트",
+            "endpoint": "/generatePost",
+            "payload": {
+                "topic": "청년 일자리 창출을 위한 지역 산업 활성화 방안",
+                "category": "정책비전",
+                "subCategory": "경제/일자리",
+                "userKeywords": [
+                    "청년 일자리",
+                    "지역 경제"
+                ],
+                "userProfile": {
+                    "name": "김철수",
+                    "partyName": "더불어민주당",
+                    "customTitle": "OO시 국회의원",
+                    "regionMetro": "인천광역시",
+                    "status": "현역"
+                },
+                "instructions": "지역 중소기업과 스타트업 육성을 통한 청년 고용 확대 방안을 제시해주세요.",
+                "targetWordCount": 2000
+            }
+        },
+        {
+            "name": "일상 소통 테스트",
+            "endpoint": "/generatePost",
+            "payload": {
+                "topic": "설 명절 연휴를 맞아 인사드립니다",
+                "category": "일상소통",
+                "subCategory": "명절/기념일",
+                "userProfile": {
+                    "name": "이영희",
+                    "partyName": "더불어민주당",
+                    "customTitle": "OO구 예비후보"
+                },
+                "targetWordCount": 1500
+            }
+        }
+    ],
+    "apiTestCommand": {
+        "description": "Firebase Functions 로컬 에뮬레이터로 테스트하는 방법",
+        "steps": [
+            "1. cd e:\\ai-secretary\\functions",
+            "2. firebase emulators:start --only functions",
+            "3. 별도 터미널에서 curl 또는 Postman으로 요청 전송"
+        ],
+        "curlExample": "curl -X POST http://localhost:5001/[PROJECT_ID]/us-central1/generatePost -H 'Content-Type: application/json' -d @sample-payload.json"
+    },
+    "xmlParserTestCommand": {
+        "description": "xml-parser 단위 테스트 실행 방법",
+        "command": "cd e:\\ai-secretary\\functions && node tests/xml-parser.test.js"
+    },
+    "expectedXmlOutput": {
+        "sampleAIResponse": "물론입니다. 아래는 요청하신 원고입니다.\n\n<title>2차 특검법 통과, 정의 실현의 첫걸음</title>\n\n<content>\n<p>존경하는 시민 여러분, 더불어민주당 홍길동입니다.</p>\n<h2>왜 2차 특검법이 필요한가</h2>\n<p>지난 12월 3일 비상계엄 사태의 진상을 규명해야 합니다.</p>\n</content>\n\n<hashtags>\n#2차특검법\n#국회본회의\n#정의실현\n</hashtags>",
+        "parsedResult": {
+            "title": "2차 특검법 통과, 정의 실현의 첫걸음",
+            "content": "<p>존경하는 시민 여러분, 더불어민주당 홍길동입니다.</p><h2>왜 2차 특검법이 필요한가</h2><p>지난 12월 3일 비상계엄 사태의 진상을 규명해야 합니다.</p>",
+            "hashtags": [
+                "#2차특검법",
+                "#국회본회의",
+                "#정의실현"
+            ],
+            "parseMethod": "xml"
+        }
+    }
+}

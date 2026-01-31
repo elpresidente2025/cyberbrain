@@ -134,6 +134,27 @@ ${keywordsSection}${hintsSection}
 
 [최종 임무]
 위 '글쓰기 설계도'와 모든 규칙을 준수하여, 주어진 [기본 정보]와 [배경 정보]를 바탕으로 진솔하고 울림 있으며 완성도 높은 SNS 원고를 작성하라.
+
+<output_format>
+**[CRITICAL] 출력 시 반드시 아래 XML 태그 형식을 사용하라:**
+
+<title>
+[여기에 제목 작성 - 25자 이내, 감성적이고 공감가는 제목]
+</title>
+
+<content>
+[여기에 HTML 본문 작성 - p, h2, strong 등 태그 사용]
+</content>
+
+<hashtags>
+[여기에 해시태그 작성 - 콤마 또는 줄바꿈으로 구분, 3~5개]
+</hashtags>
+
+⚠️ 주의사항:
+- 반드시 위 세 개의 태그로 감싸서 출력할 것
+- 태그 외부에는 어떤 설명도 작성하지 말 것
+- 마크다운 코드블록(\`\`\`) 사용 금지
+</output_format>
 `;
 
   return prompt.trim();
