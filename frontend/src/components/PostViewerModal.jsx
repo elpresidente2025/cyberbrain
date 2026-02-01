@@ -8,9 +8,11 @@ import {
   Button,
   Box,
   Typography,
+  TextField,
   useTheme
 } from '@mui/material';
-import { ContentCopy, Transform, Publish } from '@mui/icons-material';
+import { ContentCopy, Transform, Publish, Link } from '@mui/icons-material';
+import { callFunctionWithNaverAuth } from '../services/firebaseService';
 import { NotificationSnackbar, useNotification } from './ui';
 import { useAuth } from '../hooks/useAuth';
 import { transitions } from '../theme/tokens';
@@ -30,6 +32,19 @@ function formatDate(iso) {
     return `${y}-${m}-${day} ${hh}:${mm}`;
   } catch {
     return '-';
+  }
+}
+
+function isNaverBlogUrl(value = '') {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = new URL(trimmed);
+    const hostname = parsed.hostname.toLowerCase();
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    return hostname === 'blog.naver.com' || hostname.endsWith('.blog.naver.com');
+  } catch {
+    return false;
   }
 }
 
@@ -72,6 +87,10 @@ export default function PostViewerModal({
   // 🆕 내장형 SNS 모달 상태
   const [snsOpen, setSnsOpen] = useState(false);
 
+  // 🆕 발행 다이얼로그 상태
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false);
+  const [publishUrl, setPublishUrl] = useState('');
+
   // 권한 체크: 관리자 또는 테스터만 SNS 사용 가능
   const canUseSNS = useMemo(() => {
     return user?.role === 'admin' || user?.isAdmin === true || user?.isTester === true;
@@ -104,13 +123,39 @@ export default function PostViewerModal({
     }
   };
 
-  // 🆕 발행 핸들러 (내장) - 발행 URL이 있으면 링크 표시, 없으면 안내
+  // 🆕 발행 핸들러 (내장) - 발행 URL이 있으면 링크 표시, 없으면 다이얼로그 오픈
   const handlePublishClick = (e) => {
     e.stopPropagation();
     if (post?.publishUrl) {
       window.open(post.publishUrl, '_blank');
     } else {
-      showNotification('발행 URL이 등록되지 않았습니다. 내 원고 목록에서 등록해주세요.', 'info');
+      setPublishUrl('');
+      setPublishDialogOpen(true);
+    }
+  };
+
+  // 🆕 발행 URL 제출 핸들러
+  const handlePublishSubmit = async () => {
+    const normalizedUrl = publishUrl.trim();
+    if (!normalizedUrl) {
+      showNotification('발행 URL을 입력해주세요.', 'error');
+      return;
+    }
+    if (!isNaverBlogUrl(normalizedUrl)) {
+      showNotification('네이버 블로그 URL만 입력할 수 있습니다.', 'error');
+      return;
+    }
+    try {
+      await callFunctionWithNaverAuth('publishPost', {
+        postId: post.id,
+        publishUrl: normalizedUrl
+      });
+      post.publishUrl = normalizedUrl;
+      post.status = 'published';
+      setPublishDialogOpen(false);
+      showNotification('발행 등록이 완료되었습니다.', 'success');
+    } catch (err) {
+      showNotification('발행 등록에 실패했습니다.', 'error');
     }
   };
 
@@ -228,6 +273,50 @@ export default function PostViewerModal({
         onClose={() => setSnsOpen(false)}
         post={post}
       />
+
+      {/* 🆕 발행 URL 입력 다이얼로그 */}
+      <Dialog
+        open={publishDialogOpen}
+        onClose={() => setPublishDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        slotProps={{ backdrop: { 'aria-hidden': false } }}
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Publish sx={{ color: theme.palette.primary.main }} />
+          원고 발행 등록
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            실제 발행한 네이버 블로그 주소를 입력해주세요.
+          </Typography>
+          <Typography variant="h6" sx={{ mb: 1, fontWeight: 600 }}>
+            "{post?.title || '원고 제목'}"
+          </Typography>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="발행 URL"
+            placeholder="https://blog.naver.com/아이디/게시글"
+            fullWidth
+            variant="outlined"
+            value={publishUrl}
+            onChange={(e) => setPublishUrl(e.target.value)}
+            InputProps={{ startAdornment: <Link sx={{ color: 'text.secondary', mr: 1 }} /> }}
+            helperText="네이버 블로그 URL만 입력할 수 있습니다."
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPublishDialogOpen(false)} color="inherit">취소</Button>
+          <Button
+            onClick={handlePublishSubmit}
+            variant="contained"
+            disabled={!isNaverBlogUrl(publishUrl)}
+          >
+            발행 완료
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* 복사 알림 스낵바 */}
       <NotificationSnackbar
