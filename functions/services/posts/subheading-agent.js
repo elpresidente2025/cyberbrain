@@ -100,7 +100,7 @@ function getSubheadingStyle(category, subCategory = '') {
  * 사용자 제공 가이드라인(유형 1~5) 완벽 준수
  * 🔑 [방안 3] 카테고리별 스타일 분기 추가
  */
-async function generateAeoSubheadings({ sections, modelName = 'gemini-1.5-flash', fullName, fullRegion, category = '', subCategory = '' }) {
+async function generateAeoSubheadings({ sections, modelName = 'gemini-2.5-flash-preview-05-20', fullName, fullRegion, category = '', subCategory = '' }) {
   if (!sections || sections.length === 0) return null;
 
   // 1. 단락 전처리
