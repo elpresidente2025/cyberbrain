@@ -103,7 +103,18 @@
         ".git",
         "firebase-debug.log",
         "firebase-debug.*.log",
-        "*.local"
+        "*.local",
+        "python"
+      ]
+    },
+    {
+      "source": "functions/python",
+      "codebase": "python-rag",
+      "runtime": "python312",
+      "ignore": [
+        "__pycache__",
+        ".git",
+        "*.pyc"
       ]
     }
   ],

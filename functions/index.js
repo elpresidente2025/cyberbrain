@@ -261,3 +261,12 @@ try {
 } catch (e) {
   console.warn('[index] test-utils handler warning:', e?.message);
 }
+
+// Add Multimodal handlers (테스터 전용 - 카드뉴스, 숏폼, 지식 그래프)
+try {
+  const multimodalHandlers = require('./handlers/multimodal');
+  Object.assign(exports, multimodalHandlers);
+} catch (e) {
+  console.warn('[index] multimodal handler warning:', e?.message);
+}
+

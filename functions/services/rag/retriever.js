@@ -239,11 +239,13 @@ function formatChunksForPrompt(chunks, options = {}) {
 /**
  * 통합 RAG 컨텍스트 생성
  * 검색 + 재순위 + 포맷을 한 번에 수행
+ * 테스터: Python LightRAG 사용, 일반 사용자: 기존 Firestore 벡터 검색
  *
  * @param {string} uid - 사용자 UID
  * @param {string} topic - 원고 주제
  * @param {string} category - 원고 카테고리
  * @param {Object} options - 옵션
+ * @param {boolean} options.isTester - 테스터 여부 (테스터만 Python RAG 사용)
  * @returns {Promise<string>} - 프롬프트에 삽입할 RAG 컨텍스트
  */
 async function generateRagContext(uid, topic, category, options = {}) {
@@ -251,6 +253,35 @@ async function generateRagContext(uid, topic, category, options = {}) {
     return '';
   }
 
+  const { isTester = false } = options;
+  const PYTHON_RAG_URL = process.env.PYTHON_RAG_URL;
+
+  // 🔒 테스터 전용: Python LightRAG 서비스 사용
+  if (isTester && PYTHON_RAG_URL) {
+    try {
+      console.log(`🧪 [테스터] Python RAG 서비스 호출: ${uid}`);
+
+      const response = await fetch(`${PYTHON_RAG_URL}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: uid, query: topic, top_k: 7 })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.context && data.context.length > 0) {
+          console.log(`✅ [테스터] Python RAG 컨텍스트 사용: ${data.context.length}자`);
+          return data.context;
+        }
+      }
+      console.warn('⚠️ Python RAG 응답 없음 - Firestore 폴백');
+    } catch (error) {
+      console.warn(`⚠️ Python RAG 호출 실패 - Firestore 폴백:`, error.message);
+      logError('generateRagContext', 'Python RAG 호출 실패', { uid, error: error.message });
+    }
+  }
+
+  // 일반 사용자 또는 폴백: 기존 Firestore 벡터 검색
   try {
     // 1. 관련 청크 검색
     const chunks = await retrieveRelevantChunks(uid, topic, options);

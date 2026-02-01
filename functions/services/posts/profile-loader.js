@@ -138,11 +138,12 @@ async function loadUserProfile(uid, category, topic, options = {}) {
           await indexOnDemand(uid, bioDoc.data());
         }
 
-        // RAG 검색 실행
-        ragContext = await generateRagContext(uid, topic, category, { topK: 7 });
+        // RAG 검색 실행 (테스터는 Python RAG 서비스 사용)
+        const isTester = userProfile.isTester === true;
+        ragContext = await generateRagContext(uid, topic, category, { topK: 7, isTester });
 
         if (ragContext) {
-          console.log(`✅ RAG 컨텍스트 로드 완료: ${ragContext.length}자`);
+          console.log(`✅ RAG 컨텍스트 로드 완료: ${ragContext.length}자 ${isTester ? '(Python RAG)' : '(Firestore)'}`);
         }
       } catch (ragError) {
         console.warn('⚠️ RAG 컨텍스트 로드 실패 (무시하고 계속):', ragError.message);

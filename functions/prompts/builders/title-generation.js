@@ -462,76 +462,79 @@ function buildTitlePrompt({ contentPreview, backgroundText, topic, fullName, key
     ? keywords.filter(k => !userKeywords?.includes(k)).slice(0, 3).join(', ')
     : '';
 
-  return `당신은 네이버 블로그 제목 전문가입니다. 아래 규칙을 엄격히 따라 제목을 생성하세요.
+  return `<title_generation_prompt>
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📏 절대 규칙 (위반 시 즉시 실패)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• **20자 이상 35자 이하** (필수!)
-• 말줄임표("...") 절대 금지 - 내용을 자르지 말 것
-• 핵심 키워드를 앞 10자에 배치 (필수!)
-• 작성 후 반드시 글자 수 확인!
+<role>네이버 블로그 제목 전문가</role>
+
+<rules priority="critical">
+  <rule id="length">20-35자 (필수)</rule>
+  <rule id="no_ellipsis">말줄임표("...") 절대 금지</rule>
+  <rule id="keyword_position">핵심 키워드를 앞 10자에 배치</rule>
+  <rule id="no_greeting">인사말/서술형 제목 절대 금지</rule>
+</rules>
+
+<forbidden_patterns priority="critical">
+  <pattern type="greeting">존경하는, 안녕하십니까, 안녕하세요, 여러분</pattern>
+  <pattern type="ending">~입니다, ~습니다, ~습니까, ~니다</pattern>
+  <pattern type="content_start">본문 첫 문장을 제목으로 사용</pattern>
+  <example bad="true">존경하는 부산 시민 여러분, 안녕하십니까</example>
+  <example bad="true">오늘 중요한 말씀을 드리고자 합니다</example>
+</forbidden_patterns>
+
 ${electionCompliance}
 ${keywordStrategy}
 ${numberValidation.instruction}
 ${regionScopeInstruction}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 감지된 콘텐츠 유형: ${primaryType.name}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-**사용 시점**: ${primaryType.when}
-**제목 패턴**: ${primaryType.pattern}
-**네이버 최적화**: ${primaryType.naverTip}
+<content_type detected="${primaryType.id}">
+  <name>${primaryType.name}</name>
+  <when>${primaryType.when}</when>
+  <pattern>${primaryType.pattern}</pattern>
+  <naver_tip>${primaryType.naverTip}</naver_tip>
+</content_type>
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ 좋은 예시 (이 패턴을 따라하세요)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<examples type="good">
 ${goodExamples}
+</examples>
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-❌ 나쁜 예시 → ✅ 수정 방법
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<examples type="bad">
 ${badExamples}
+</examples>
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📝 본문 정보
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-**주제**: ${topic}
-**작성자**: ${fullName}
+<input>
+  <topic>${topic}</topic>
+  <author>${fullName}</author>
+  <content_preview>${String(contentPreview || '').substring(0, 800)}</content_preview>
+  <background>${backgroundText ? backgroundText.substring(0, 300) : '(없음)'}</background>
+</input>
 
-**본문 미리보기**:
-${String(contentPreview || '').substring(0, 800)}
+<topic_priority priority="highest">
+  <instruction>주제가 제목의 가장 중요한 참고 요소입니다</instruction>
+  <rules>
+    <rule>주제에 명시된 핵심 요소(인물, 행동, 대비)를 반드시 제목에 반영</rule>
+    <rule>Few-Shot 예시는 스타일/패턴 참고용일 뿐, 주제를 대체하면 안 됨</rule>
+    <rule>주제와 무관한 본문 내용(경제, AI 등)을 제목으로 쓰지 말 것</rule>
+  </rules>
+  <example>
+    <topic>尹 사형 구형, 조경태 칭찬하고 박형준 질타</topic>
+    <good>尹 사형 구형, 조경태 칭찬·박형준 질타하는 이재성</good>
+    <bad reason="주제 이탈">부산 AI 예산 103억, 경제 혁신 이끈다</bad>
+  </example>
+</topic_priority>
 
-**배경정보**:
-${backgroundText ? backgroundText.substring(0, 300) : '(없음)'}
+<output_rules>
+  <rule>20-35자 (위반 시 재생성)</rule>
+  <rule>말줄임표 절대 금지</rule>
+  <rule>핵심 키워드 앞 10자 배치</rule>
+  <rule>본문에 실제 등장하는 숫자만 사용</rule>
+  <rule>콤마, 콜론, 물음표는 자연스럽게 사용 가능</rule>
+  <rule>"~에 대한", "~관련" 불필요 표현 제거</rule>
+  <rule>키워드 최대 3개 (2개 최적)</rule>
+</output_rules>
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 [최우선] 주제 기반 제목 생성 원칙
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ 사용자가 입력한 **"주제"가 제목의 가장 중요한 참고 요소**입니다!
+<output_format>순수한 제목 텍스트만. 따옴표, 설명, 글자수 표시 없이.</output_format>
 
-[규칙]
-1. 주제에 명시된 핵심 요소(인물, 행동, 대비)를 반드시 제목에 반영
-2. Few-Shot 예시는 스타일/패턴 참고용일 뿐, 주제를 대체하면 안 됨
-3. 주제와 무관한 본문 내용(경제, AI 등)을 제목으로 쓰지 말 것
-
-예시:
-• 주제: "尹 사형 구형, 조경태 칭찬하고 박형준 질타"
-  → ✅ "尹 사형 구형, 조경태 칭찬·박형준 질타하는 이재성"
-  → ❌ "부산 AI 예산 103억, 경제 혁신 이끈다" (주제 이탈!)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🚨 최종 출력 규칙 (필수!)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. **20자 이상 35자 이하** (필수! 위반 시 재생성)
-2. **말줄임표("...") 절대 금지** (내용 자르기 금지)
-3. **핵심 키워드 앞 10자 배치** (필수!)
-4. **본문에 실제 등장하는 숫자만 사용** (없으면 생략, 절대 만들어내지 말 것!)
-5. 콤마(,), 콜론(:), 물음표(?)는 자연스럽게 사용 가능
-6. "~에 대한", "~관련" 불필요 표현 제거
-7. 키워드 최대 3개 (2개 최적)
-
-**출력**: 순수한 제목 텍스트만. 따옴표, 설명, 글자수 표시 없이.
+</title_generation_prompt>
 
 제목:`;
 }
@@ -1082,6 +1085,12 @@ ${lastAttempt.suggestions.map(s => `• ${s}`).join('\n')}
 
   // 최대 시도 후 최고 점수 버전 반환
   console.warn(`⚠️ [TitleGen] ${maxAttempts}회 시도 후 최고 점수 버전 반환 (점수: ${bestScore})`);
+
+  // [수정] 점수가 너무 낮으면(인사말 등) 아예 실패 처리 (빈 제목 반환)
+  if (bestScore < 30) {
+    console.error(`🚨 [TitleGen] 최종 점수(${bestScore})가 기준(30) 미달 - 저품질 제목 폐기: "${bestTitle}"`);
+    bestTitle = ''; // 빈 문자열 반환 -> Orchestrator에서 제목 없음 처리됨
+  }
 
   if (onProgress) {
     onProgress({ attempt: maxAttempts, maxAttempts, status: 'best_effort', score: bestScore });

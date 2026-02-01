@@ -298,11 +298,18 @@ ${sourceText.substring(0, 4000)}
 **[참고자료 원문]**
 ${sourceText.substring(0, 6000)}
 
-🚨 **[자료 우선순위 규칙]**
-1. **1차 자료 (필수 반영)**: 위 참고자료의 핵심 내용, 팩트, 발언, 수치를 반드시 본문에 포함하세요.
-2. **보조 자료 (분량 보충용)**: 사용자 프로필(Bio)은 화자 정체성과 어조 참고용이며, 분량이 부족할 때만 활용하세요.
-3. **창작 금지**: 참고자료에 없는 팩트, 수치, 발언을 창작하지 마세요.
-4. **주제 유지**: 참고자료의 주제를 벗어나 사용자 프로필의 다른 정책/공약으로 대체하지 마세요.
+🚨 **[자료 처리 규칙 - 중요]**
+1. **정보 추출**: 참고자료에서 핵심 팩트, 수치, 논점만 추출하세요.
+2. **재작성 필수 (CRITICAL)**: 추출한 정보를 **반드시 새로운 문장으로 다시 작성**하세요. 참고자료의 문장을 그대로 복사하지 마세요.
+3. **구어체 → 문어체 변환**: 인터뷰/대화체 자료의 경우, 구어체 표현("그래서요", "거예요", "~하거든요" 등)을 문어체로 변환하세요.
+4. **창작 금지**: 참고자료에 없는 팩트, 수치를 창작하지 마세요.
+5. **주제 유지**: 참고자료의 주제를 벗어나지 마세요.
+6. **보조 자료**: 사용자 프로필(Bio)은 화자 정체성과 어조 참고용이며, 분량이 부족할 때만 활용하세요.
+
+❌ **금지 예시**:
+- 참고자료: "정확하게 얘기를 하면 그래서 창의적이고 정말 압도적인..."
+- ❌ 잘못된 사용: "정확하게 얘기를 하면 그래서 창의적이고..." (복붙)
+- ✅ 올바른 사용: "창의적이고 압도적인 콘텐츠 기반 전략이 핵심입니다." (재작성)
 `;
       console.log('📚 [StructureAgent] 참고자료 주입 완료:', sourceText.length, '자');
     } else {
@@ -317,13 +324,13 @@ ${sourceText.substring(0, 6000)}
 
       contextInjection = `
 ╔═══════════════════════════════════════════════════════════════╗
-║  🔴 [MANDATORY] 입장문 핵심 문구 반영 (절대 누락 금지)        ║
+║  🔴 [MANDATORY] 입장문 핵심 논점 반영 (절대 누락 금지)        ║
 ╚═══════════════════════════════════════════════════════════════╝
-아래 문장들은 작성자의 입장이 담긴 핵심 문구입니다. **반드시 본문에 원문 그대로 또는 핵심을 살려 포함하십시오.**
+아래는 작성자의 핵심 입장입니다. **핵심 의미를 살려 새로운 문장으로 재작성**하여 본문에 포함하세요. 원문을 그대로 복사하지 마세요.
 
 ${stancePhrases || '(없음)'}
 
-⚠️ 위 문구가 포함되지 않으면 원고 생성은 실패로 간주됩니다.
+⚠️ 위 논점이 포함되지 않으면 원고 생성은 실패로 간주됩니다.
 `;
     }
 
@@ -391,7 +398,7 @@ ${structureEnforcement}
 [출력 형식 (JSON Only)]
 \`\`\`json
 {
-  "title": "25자 이내의 매력적인 제목",
+  "title": "(제목 미정)",
   "content": "<p>서론 문단 1...</p><p>서론 문단 2...</p>...<h2>본론1 소제목</h2><p>본론1 문단 1...</p>..."
 }
 \`\`\`
@@ -479,9 +486,35 @@ ${structureEnforcement}
     } catch (e) {
       // JSON 파싱 실패 시 HTML 추출 시도
       console.warn('⚠️ [StructureAgent] JSON 파싱 실패, HTML 직접 추출 시도');
-      const contentMatch = text.match(/<p>[\s\S]*<\/p>/);
-      const content = contentMatch ? contentMatch[0] : text;
-      return { content, title: '' };
+
+      // 🔧 FIX: 모든 <p>와 <h2> 태그를 포함한 전체 HTML 블록 추출
+      // 기존: /<p>[\s\S]*<\/p>/ → 첫 <p>~첫 </p>만 추출 (버그)
+      // 수정: 모든 HTML 태그 (<p>, <h2>) 범위를 찾아서 전체 추출
+
+      // 방법 1: 첫 <p> 또는 <h2>부터 마지막 </p> 또는 </h2>까지 추출
+      const htmlBlockMatch = text.match(/<(?:p|h[23])[^>]*>[\s\S]*<\/(?:p|h[23])>/i);
+
+      if (htmlBlockMatch) {
+        // 첫 매칭 시작점부터 마지막 </p> 또는 </h2>까지 추출
+        const firstTagIndex = text.search(/<(?:p|h[23])[^>]*>/i);
+        const lastClosingIndex = Math.max(
+          text.lastIndexOf('</p>'),
+          text.lastIndexOf('</h2>'),
+          text.lastIndexOf('</h3>')
+        );
+
+        if (firstTagIndex !== -1 && lastClosingIndex !== -1) {
+          // 마지막 닫는 태그 뒤까지 포함
+          const closingTagLength = text.substring(lastClosingIndex).match(/^<\/[^>]+>/)?.[0]?.length || 4;
+          const content = text.substring(firstTagIndex, lastClosingIndex + closingTagLength);
+          console.log(`📄 [StructureAgent] HTML 직접 추출 완료: ${content.length}자`);
+          return { content, title: '' };
+        }
+      }
+
+      // 방법 2: 매칭 실패 시 전체 텍스트 반환 (최후의 수단)
+      console.warn('⚠️ [StructureAgent] HTML 태그를 찾을 수 없음, 전체 텍스트 반환');
+      return { content: text, title: '' };
     }
   }
 }
