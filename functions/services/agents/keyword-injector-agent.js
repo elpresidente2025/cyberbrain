@@ -3,11 +3,12 @@
 /**
  * KeywordInjectorAgent - 검색어를 본문에 4~6회 자연스럽게 삽입
  *
- * 역할: StructureAgent의 구조화된 본문에 SEO 검색어 삽입
- * 프롬프트 크기: ~6,000자
+ * 🔧 v2: 원본 보존 방식으로 재설계
+ * - LLM은 삽입할 문장과 위치만 JSON으로 반환
+ * - 코드에서 원본에 직접 삽입 → 원본 100% 보존
  *
  * 입력: 구조화된 본문(content), 검색어(userKeywords)
- * 출력: 검색어가 삽입된 본문
+ * 출력: 검색어가 삽입된 본문 (원본 구조 유지)
  */
 
 const { BaseAgent } = require('./base');
@@ -42,12 +43,8 @@ class KeywordInjectorAgent extends BaseAgent {
       return { content, title, keywordCounts: {} };
     }
 
-    // 🔄 재시도 로직 설정
-    const MAX_RETRIES = 2; // 총 3회 시도
-    let attempt = 0;
-    let feedback = '';
-    let currentContent = content;
-    let currentCounts = this.countKeywords(currentContent, userKeywords);
+    // 현재 키워드 카운트
+    let currentCounts = this.countKeywords(content, userKeywords);
 
     // 초기 상태 체크: 이미 충분하면 바로 리턴
     if (this.validateInjection(userKeywords, currentCounts).passed) {
@@ -55,13 +52,23 @@ class KeywordInjectorAgent extends BaseAgent {
       return { content, title, keywordCounts: currentCounts };
     }
 
+    // 문단 파싱
+    const paragraphs = this.parseParagraphs(content);
+    console.log(`📊 [KeywordInjectorAgent] 문단 ${paragraphs.length}개 파싱 완료`);
+
+    // 🔄 재시도 로직
+    const MAX_RETRIES = 2;
+    let attempt = 0;
+    let currentContent = content;
+    let feedback = '';
+
     while (attempt <= MAX_RETRIES) {
       attempt++;
       console.log(`🔄 [KeywordInjectorAgent] 시도 ${attempt}/${MAX_RETRIES + 1}`);
 
-      // 프롬프트 생성 (피드백 포함)
+      // 프롬프트 생성 (삽입 위치/문장만 요청)
       const prompt = this.buildPrompt({
-        content: currentContent,
+        paragraphs,
         userKeywords,
         currentCounts,
         feedback
@@ -69,42 +76,179 @@ class KeywordInjectorAgent extends BaseAgent {
 
       console.log(`📝 [KeywordInjectorAgent] 프롬프트 생성 완료 (${prompt.length}자)`);
 
-      // LLM 호출 (JSON 모드 OFF - HTML 직접 출력)
-      const response = await callGenerativeModel(prompt, 1, 'gemini-2.5-flash', false, 4000);
+      // LLM 호출 (JSON 모드)
+      const response = await callGenerativeModel(prompt, 1, 'gemini-2.5-flash', true, 2000);
 
-      // 응답 파싱
-      const injected = this.parseResponse(response, currentContent);
+      // 삽입 지시 파싱
+      const insertions = this.parseInsertions(response);
 
-      // 삽입 후 검증
-      const newCounts = this.countKeywords(injected, userKeywords);
+      if (!insertions || insertions.length === 0) {
+        console.warn('⚠️ [KeywordInjectorAgent] 삽입 지시 파싱 실패');
+        feedback = '삽입할 문장을 JSON 형식으로 정확히 반환해주세요.';
+        continue;
+      }
+
+      console.log(`📌 [KeywordInjectorAgent] 삽입 지시 ${insertions.length}개 수신`);
+
+      // 원본에 직접 삽입
+      currentContent = this.applyInsertions(content, insertions);
+
+      // 검증
+      const newCounts = this.countKeywords(currentContent, userKeywords);
       const validation = this.validateInjection(userKeywords, newCounts);
 
       if (validation.passed) {
         console.log(`✅ [KeywordInjectorAgent] 검색어 삽입 성공:`, newCounts);
         return {
-          content: injected,
+          content: currentContent,
           title,
           keywordCounts: newCounts,
           sourceText
         };
       }
 
-      // 검증 실패 처리
+      // 검증 실패
       console.warn(`⚠️ [KeywordInjectorAgent] 검증 실패 (${validation.reason})`);
-      feedback = validation.feedback; // 피드백 저장
-      currentContent = content;       // 원본 내용을 다시 넣는게 나을까? 아니면 부분 성공한걸 쓸까? -> 부분 성공한 걸 쓰면 문맥이 꼬일 수 있음. 원본 재시도 추천.
+      feedback = validation.feedback;
+      currentCounts = newCounts;
 
-      // 만약 2번 실패했다면, 그냥 현재 결과라도 반환 (무한 루프 방지 및 부분 성공 인정)
       if (attempt > MAX_RETRIES) {
-        console.warn('⛔ [KeywordInjectorAgent] 재시도 횟수 초과 - 최선 결과 반환');
+        console.warn('⛔ [KeywordInjectorAgent] 재시도 횟수 초과 - 현재 결과 반환');
         return {
-          content: injected, // 실패했더라도 시도한 결과물 반환
+          content: currentContent,
           title,
           keywordCounts: newCounts,
           sourceText
         };
       }
     }
+
+    // fallback: 원본 반환
+    return { content, title, keywordCounts: currentCounts, sourceText };
+  }
+
+  /**
+   * HTML 본문에서 문단 추출
+   */
+  parseParagraphs(content) {
+    const paragraphs = [];
+    const regex = /<(p|h2)[^>]*>([\s\S]*?)<\/\1>/gi;
+    let match;
+    let index = 0;
+
+    while ((match = regex.exec(content)) !== null) {
+      paragraphs.push({
+        index,
+        tag: match[1].toLowerCase(),
+        content: match[2].replace(/<[^>]*>/g, '').trim(),
+        fullMatch: match[0]
+      });
+      index++;
+    }
+
+    return paragraphs;
+  }
+
+  /**
+   * 삽입 지시 프롬프트 생성
+   */
+  buildPrompt({ paragraphs, userKeywords, currentCounts, feedback }) {
+    const keywordStatus = userKeywords.map(kw => {
+      const current = currentCounts[kw] || 0;
+      const needed = Math.max(0, 4 - current);
+      return `- "${kw}": 현재 ${current}회, 추가 필요 ${needed}회`;
+    }).join('\n');
+
+    const paragraphList = paragraphs.map((p, i) =>
+      `[${i}] <${p.tag}> ${p.content.substring(0, 80)}${p.content.length > 80 ? '...' : ''}`
+    ).join('\n');
+
+    let prompt = `검색어를 본문에 삽입할 위치와 문장을 지정하세요.
+
+## 검색어 현황
+${keywordStatus}
+
+## 본문 문단 목록
+${paragraphList}
+
+## 규칙
+1. 각 검색어가 총 4~6회 등장하도록 삽입 문장 생성
+2. 검색어는 **원문 그대로** 사용 (띄어쓰기, 조사 변경 금지)
+3. 삽입 위치는 문단 번호로 지정 (해당 문단 뒤에 새 <p> 추가)
+4. 자연스러운 문장으로 작성
+
+## 출력 형식 (JSON)
+{
+  "insertions": [
+    { "after": 0, "sentence": "검색어가 포함된 새 문장" },
+    { "after": 2, "sentence": "검색어가 포함된 새 문장" }
+  ]
+}`;
+
+    if (feedback) {
+      prompt += `\n\n🚨 이전 시도 실패: ${feedback}`;
+    }
+
+    return prompt;
+  }
+
+  /**
+   * LLM 응답에서 삽입 지시 파싱
+   */
+  parseInsertions(response) {
+    if (!response) return null;
+
+    try {
+      // JSON 파싱
+      let jsonStr = response;
+
+      // 코드블록 제거
+      const codeBlockMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (codeBlockMatch) {
+        jsonStr = codeBlockMatch[1].trim();
+      }
+
+      const parsed = JSON.parse(jsonStr);
+      return parsed.insertions || parsed.insert || [];
+    } catch (e) {
+      console.error('⚠️ [KeywordInjectorAgent] JSON 파싱 실패:', e.message);
+      return null;
+    }
+  }
+
+  /**
+   * 원본에 삽입 적용
+   */
+  applyInsertions(content, insertions) {
+    if (!insertions || insertions.length === 0) return content;
+
+    // 문단 위치 찾기
+    const paragraphPositions = [];
+    const regex = /<\/(p|h2)>/gi;
+    let match;
+
+    while ((match = regex.exec(content)) !== null) {
+      paragraphPositions.push({
+        index: paragraphPositions.length,
+        endPos: match.index + match[0].length
+      });
+    }
+
+    // 뒤에서부터 삽입 (위치 변경 방지)
+    const sortedInsertions = [...insertions].sort((a, b) => b.after - a.after);
+    let result = content;
+
+    for (const ins of sortedInsertions) {
+      const afterIdx = ins.after;
+      if (afterIdx < 0 || afterIdx >= paragraphPositions.length) continue;
+
+      const insertPos = paragraphPositions[afterIdx].endPos;
+      const newParagraph = `\n<p>${ins.sentence}</p>`;
+
+      result = result.slice(0, insertPos) + newParagraph + result.slice(insertPos);
+    }
+
+    return result;
   }
 
   validateInjection(keywords, counts) {
@@ -114,83 +258,12 @@ class KeywordInjectorAgent extends BaseAgent {
       return { passed: true };
     }
 
-    // 실패 사유 상세화
     const feedbackList = missing.map(kw => `"${kw}" (${counts[kw] || 0}/4회)`);
     return {
       passed: false,
       reason: `검색어 미달: ${missing.length}개`,
-      feedback: `다음 검색어의 삽입 횟수가 부족합니다. 더 적극적으로 본문에 삽입해주세요: ${feedbackList.join(', ')}`
+      feedback: `다음 검색어 삽입 부족: ${feedbackList.join(', ')}`
     };
-  }
-
-  buildPrompt({ content, userKeywords, currentCounts, feedback }) {
-    const keywordList = userKeywords.map(kw =>
-      `- "${kw}": 현재 ${currentCounts[kw] || 0}회 → 목표 4~6회`
-    ).join('\n');
-
-    let basePrompt = `당신은 SEO 전문가입니다. 본문에 검색어를 자연스럽게 삽입하세요.
-
-## 삽입할 검색어
-${keywordList}
-
-## 현재 본문
-${content}
-
-## 규칙
-
-1. **각 검색어를 4~6회** 본문에 삽입하세요.
-2. **검색어 원문 그대로** 사용하세요.
-   - ✅ "부산 디즈니랜드 유치" → 그대로 사용
-   - ❌ "부산에 디즈니랜드를 유치" → 변형 금지!
-3. **분산 배치**:
-   - 서론: 1~2회
-   - 본론들: 각 1회씩
-   - 결론: 1회
-4. **자연스러운 문맥**에서 삽입하세요.
-   - 기존 문장에 녹여 넣거나
-   - 새로운 문장을 추가하거나
-5. **같은 문단에 2회 이상 반복 금지**
-6. **HTML 구조 유지** (<h2>, <p> 태그 보존)
-
-## 출력 형식
-검색어가 삽입된 전체 본문만 출력하세요. 설명 없이 HTML 본문만 출력하세요.`;
-
-    if (feedback) {
-      basePrompt += `\n\n🚨 [중요] 이전 시도가 다음 이유로 실패했습니다:\n"${feedback}"\n\n위 검색어를 최우선으로 추가 삽입하세요.`;
-    }
-
-    return basePrompt;
-  }
-
-  parseResponse(response, original) {
-    if (!response) return original;
-
-    // 1. JSON 형식 우선 파싱
-    // (LLM이 명시적으로 JSON을 반환했거나, 실수로 JSON으로 감싼 경우 처리)
-    try {
-      // 코드블록 내 JSON 추출
-      const jsonMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
-      const jsonStr = jsonMatch ? jsonMatch[1].trim() : response;
-
-      const parsed = JSON.parse(jsonStr);
-      if (parsed.content) return parsed.content;
-      if (parsed.html_content) return parsed.html_content;
-    } catch {
-      // JSON 파싱 실패 시 HTML 태그 확인으로 넘어감
-    }
-
-    // 2. HTML 태그가 있으면 그대로 사용 (Fallback)
-    if (response.includes('<p>') || response.includes('<h2>')) {
-      // 마크다운 코드블록 제거
-      return response
-        .replace(/```html?\s*/gi, '')
-        .replace(/```/g, '')
-        .trim();
-    }
-
-    // 그 외에는 원본 유지
-    console.warn('⚠️ [KeywordInjectorAgent] 파싱 실패, 원본 유지');
-    return original;
   }
 
   countKeywords(content, keywords) {
