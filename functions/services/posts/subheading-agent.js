@@ -100,7 +100,7 @@ function getSubheadingStyle(category, subCategory = '') {
  * 사용자 제공 가이드라인(유형 1~5) 완벽 준수
  * 🔑 [방안 3] 카테고리별 스타일 분기 추가
  */
-async function generateAeoSubheadings({ sections, modelName = 'gemini-2.0-flash', fullName, fullRegion, category = '', subCategory = '' }) {
+async function generateAeoSubheadings({ sections, modelName = 'gemini-1.5-flash', fullName, fullRegion, category = '', subCategory = '' }) {
   if (!sections || sections.length === 0) return null;
 
   // 1. 단락 전처리
@@ -260,43 +260,57 @@ ${cleanedSections.map((sec, i) => `[Paragraph ${i + 1}]\n${sec.substring(0, 400)
   console.log(`📝 [SubheadingAgent] 소제목 생성 시작 (category=${category}, style=${styleConfig.style}, sections=${cleanedSections.length})`);
 
   const ai = getGenAI();
-  if (!ai) return fallbacks(cleanedSections, fullRegion);
-
-  const model = ai.getGenerativeModel({ model: modelName }); // gemini-2.0-flash 권장
-
-  try {
-    const result = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: 'application/json'
-      }
-    });
-
-    const parsed = JSON.parse(result.response.text());
-
-    if (Array.isArray(parsed?.headings)) {
-      const processedHeadings = parsed.headings.map((h) => {
-        let heading = String(h).trim().replace(/^["']|["']$/g, '');
-        // 혹시라도 너무 길면 자르기 (28자)
-        if (heading.length > 28) heading = heading.substring(0, 27) + '...';
-        return heading;
-      });
-      console.log(`✅ [SubheadingAgent] 소제목 생성 완료 (style=${styleConfig.style}):`, processedHeadings);
-      return processedHeadings;
-    }
-
-  } catch (error) {
-    console.error('⚠️ [SubheadingAgent] LLM Error:', error.message);
+  if (!ai) {
+    throw new Error('[SubheadingAgent] Gemini API 키가 설정되지 않았습니다. 소제목 생성 불가.');
   }
 
-  console.warn(`⚠️ [SubheadingAgent] LLM 실패, fallback 사용 (category=${category})`);
-  return fallbacks(cleanedSections, fullRegion);
+  const model = ai.getGenerativeModel({ model: modelName }); // gemini-2.5-flash 사용
+
+  // 재시도 로직 (최대 3회)
+  const MAX_RETRIES = 3;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: 'application/json'
+        }
+      });
+
+      const parsed = JSON.parse(result.response.text());
+
+      if (Array.isArray(parsed?.headings)) {
+        const processedHeadings = parsed.headings.map((h) => {
+          let heading = String(h).trim().replace(/^["']|["']$/g, '');
+          // 혹시라도 너무 길면 자르기 (28자)
+          if (heading.length > 28) heading = heading.substring(0, 27) + '...';
+          return heading;
+        });
+        console.log(`✅ [SubheadingAgent] 소제목 생성 완료 (model=${modelName}, style=${styleConfig.style}, attempt=${attempt}):`, processedHeadings);
+        return processedHeadings;
+      } else {
+        throw new Error('응답에 headings 배열이 없습니다.');
+      }
+
+    } catch (error) {
+      lastError = error;
+      // [상세 로그] 에러 객체 전체와 메시지 출력
+      console.error(`⚠️ [SubheadingAgent] LLM 시도 ${attempt}/${MAX_RETRIES} 실패 (model=${modelName}):`, error);
+      console.error(`   - Error Message: ${error.message}`);
+      if (error.response) console.error(`   - Response: ${JSON.stringify(error.response)}`);
+
+      // 마지막 시도가 아니면 잠시 대기 후 재시도
+      if (attempt < MAX_RETRIES) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+  }
+
+  throw new Error(`[SubheadingAgent] LLM ${MAX_RETRIES}회 시도 후 최종 실패 (category=${category}). 마지막 에러: ${lastError?.message || 'unknown'}`);
 }
 
-function fallbacks(sections, region) {
-  const safeRegion = region || '지역';
-  return sections.map(() => `${safeRegion}의 주요 비전과 과제`); // 안전한 기본값
-}
 
 /**
  * [Main Entry] HTML 컨텐츠 통째로 받아서 H2 태그만 AEO 스타일로 교체
