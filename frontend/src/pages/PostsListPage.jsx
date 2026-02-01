@@ -110,7 +110,10 @@ function isNaverBlogUrl(value = '') {
 // 🗓️ 캘린더 뷰 컴포넌트
 function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish }) {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(null); // 선택된 날짜
+  // 오늘 날짜를 기본값으로 설정
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
+  const [selectedDate, setSelectedDate] = useState(todayKey);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -178,9 +181,7 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
               <Grid item xs={12 / 7} key={day}>
                 <Box
                   onClick={() => {
-                    if (dayPosts.length > 0) {
-                      setSelectedDate(isSelected ? null : dateKey);
-                    }
+                    setSelectedDate(isSelected ? null : dateKey);
                   }}
                   sx={{
                     border: `1px solid ${theme.palette.divider}`,
@@ -192,11 +193,11 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 0.5,
-                    cursor: dayPosts.length > 0 ? 'pointer' : 'default',
+                    cursor: 'pointer',
                     transition: 'all 0.2s',
-                    '&:hover': dayPosts.length > 0 ? {
+                    '&:hover': {
                       bgcolor: isToday ? 'primary.main' : 'action.hover'
-                    } : {}
+                    }
                   }}
                 >
                   <Typography
@@ -244,9 +245,18 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
       {/* 선택된 날짜의 포스트 카드 표시 */}
       {selectedDate && (() => {
         const selectedPosts = postsByDate[selectedDate] || [];
-        if (selectedPosts.length === 0) return null;
-
         const [y, m, d] = selectedDate.split('-');
+
+        // 원고가 없는 경우 메시지 표시
+        if (selectedPosts.length === 0) {
+          return (
+            <Box sx={{ mt: 3 }}>
+              <Alert severity="info" sx={{ justifyContent: 'center' }}>
+                {parseInt(m, 10)}월 {parseInt(d, 10)}일의 원고가 없습니다.
+              </Alert>
+            </Box>
+          );
+        }
         const formattedDate = `${y}.${String(m).padStart(2, '0')}.${String(d).padStart(2, '0')}`;
 
         return (
