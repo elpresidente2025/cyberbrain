@@ -632,8 +632,15 @@ ${newsQuotesText}
     // userProfile.regionLocal이 없고 regionMetro만 있으면 광역으로 간주하는 로직 활용 가능하나,
     // 여기서는 직책명으로 1차 필터링. "부산광역시장" 등.
 
-    // 더 정확한 판단: targetElection.position이 명확하지 않을 수 있으므로
-    // "시장"이 포함되면서 "구청장", "군수", "의원"이 아닌 경우로 좁힘, 혹은 userProfile.regionLocal이 비어있는지 확인.
+    // [추가] Bio 인용구 보존 법칙 (사용자 요청)
+    if (authorBio && authorBio.includes('"')) {
+      warnings.push(`
+🚨 [CRITICAL] Bio 인용구 보존 법칙:
+- 작성자 정보(Bio)에 있는 **큰따옴표(" ")로 묶인 문장**은 사용자의 핵심 서사(Narrative)이므로, 금지어나 민감한 단어(예: 국회의원)가 포함되어 있더라도 **절대 수정/삭제/검열하지 말고 원문 그대로 인용**하십시오.
+- AI가 임의로 "이재성 했을 텐데"처럼 이름을 넣어 문장을 망치지 마십시오. 원문 그대로 "국회의원 했을 텐데"라고 써야 합니다.
+`.trim());
+    }
+
     const isGuGun = position.includes('구청장') || position.includes('군수') || position.includes('기초의원');
 
     if (isMetro && !isGuGun) {

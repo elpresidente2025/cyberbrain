@@ -335,6 +335,29 @@ ${stancePhrases || '(없음)'}
     }
 
     // 4. 구조 강제 프롬프트 (핵심)
+    // [추가] Bio 인용구 보존 및 원외 인사 경고 (사용자 요청)
+    let bioIntegrityWarning = '';
+
+    // 원외 인사 경고 생성
+    const nonLawmakerWarning = generateNonLawmakerWarning({
+      isCurrentLawmaker: this.isCurrentLawmaker(userProfile),
+      politicalExperience: userProfile.politicalExperience,
+      authorBio
+    });
+
+    if (nonLawmakerWarning) {
+      bioIntegrityWarning += nonLawmakerWarning + '\n\n';
+    }
+
+    // Bio 인용구 보존 법칙
+    if (authorBio && authorBio.includes('"')) {
+      bioIntegrityWarning += `
+🚨 [CRITICAL] Bio 인용구 보존 법칙:
+- 작성자 정보(Bio)에 있는 **큰따옴표(" ")로 묶인 문장**은 사용자의 핵심 서사(Narrative)이므로, 금지어(예: 국회의원)가 포함되어 있더라도 **절대 수정/삭제/검열하지 말고 원문 그대로 인용**하십시오.
+- AI가 임의로 "이재성 했을 텐데"처럼 이름을 넣어 문장을 망치지 마십시오. 원문 그대로 "국회의원 했을 텐데"라고 써야 합니다.
+`;
+    }
+
     const structureEnforcement = `
 ╔═══════════════════════════════════════════════════════════════╗
 ║  🏗️ [ABSOLUTE STRUCTURE] 15문단 구조 강제 (매우 중요)        ║
