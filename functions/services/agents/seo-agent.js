@@ -98,6 +98,7 @@ class SEOAgent extends BaseAgent {
     const complianceResult = previousResults.ComplianceAgent;
     const keywordResult = previousResults.KeywordAgent;
     const writerResult = previousResults.WriterAgent;
+    const titleAgentResult = previousResults.TitleAgent;  // 🔧 TitleAgent 결과 참조
 
     if (!complianceResult?.success || !complianceResult?.data?.content) {
       throw new Error('Compliance Agent 결과가 없습니다');
@@ -106,10 +107,18 @@ class SEOAgent extends BaseAgent {
     let content = complianceResult.data.content;
     const keywords = keywordResult?.data?.keywords || [];
     const primaryKeyword = keywordResult?.data?.primary || (keywords[0]?.keyword || keywords[0] || '');
-    const writerTitle = writerResult?.data?.title || null;
+
+    // 🔧 [FIX] TitleAgent → ComplianceAgent → WriterAgent 순으로 제목 가져오기
+    // modular 파이프라인에는 WriterAgent가 없으므로 TitleAgent를 우선 참조
+    const existingTitle = titleAgentResult?.data?.title
+      || complianceResult?.data?.title
+      || writerResult?.data?.title
+      || null;
+
+    console.log(`🏷️ [SEOAgent] 제목 소스: ${titleAgentResult?.data?.title ? 'TitleAgent' : complianceResult?.data?.title ? 'ComplianceAgent' : writerResult?.data?.title ? 'WriterAgent' : 'none'} - "${existingTitle}"`);
 
     // 1. 제목 최적화 (25자 이내, 키워드 포함)
-    const title = this.optimizeTitle(content, primaryKeyword, userProfile, writerTitle);
+    const title = this.optimizeTitle(content, primaryKeyword, userProfile, existingTitle);
 
     // 2. 메타 설명 생성 (160자 이내)
     const metaDescription = this.generateMetaDescription(content, keywords);

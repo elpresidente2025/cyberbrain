@@ -702,39 +702,41 @@ class Orchestrator {
     let finalContent = null;
     let finalTitle = null;
 
-    // SEOAgent → ComplianceAgent → StyleAgent → WriterAgent 순으로 fallback
+    // 🚨 [CRITICAL] TitleAgent 제목 강제 사용 - fallback 없음
+    const titleAgentResult = this.results.TitleAgent?.data?.title;
+    const titleAgentValid = titleAgentResult && titleAgentResult.length >= 15;
+
+    if (titleAgentValid) {
+      finalTitle = titleAgentResult;
+      console.log(`✅ [Orchestrator] TitleAgent 제목 사용: "${finalTitle}"`);
+    } else {
+      // TitleAgent 실패 시 경고 로그 (fallback 없음)
+      console.error(`🚨 [Orchestrator] TitleAgent 제목 없음 또는 부실("${titleAgentResult}") - 제목 누락!`);
+      finalTitle = null; // 빈 제목 - ComplianceAgent에서 재생성 필요
+    }
+
+    // SEOAgent → ComplianceAgent → StyleAgent → WriterAgent 순으로 콘텐츠 선택
     if (this.results.SEOAgent?.success) {
       finalContent = this.results.SEOAgent.data.content;
-      finalTitle = this.results.SEOAgent.data.title;
+      // 🔧 [FIX] TitleAgent 제목이 유효하면 SEOAgent 제목으로 덮어쓰지 않음
+      // SEOAgent는 TitleAgent 제목을 참조하여 SEO 최적화만 수행
+      if (!titleAgentValid && this.results.SEOAgent.data.title) {
+        finalTitle = this.results.SEOAgent.data.title;
+        console.log(`⚠️ [Orchestrator] TitleAgent 제목 없음 → SEOAgent 제목 사용: "${finalTitle}"`);
+      }
     } else if (this.results.ComplianceAgent?.success) {
       finalContent = this.results.ComplianceAgent.data.content;
-      // 🏷️ ComplianceAgent도 제목을 반환하므로 우선 사용 (EditorAgent로 수정된 제목 포함)
-      finalTitle = this.results.ComplianceAgent.data.title || this.results.TitleAgent?.data?.title || this.results.WriterAgent?.data?.title || this.results.StructureAgent?.data?.title || null;
+      // 🔧 [FIX] TitleAgent 제목이 유효하면 ComplianceAgent 제목으로 덮어쓰지 않음
+      if (!titleAgentValid && this.results.ComplianceAgent.data.title) {
+        finalTitle = this.results.ComplianceAgent.data.title;
+        console.log(`⚠️ [Orchestrator] TitleAgent 제목 없음 → ComplianceAgent 제목 사용: "${finalTitle}"`);
+      }
     } else if (this.results.StyleAgent?.success) {
-      // 🆕 모듈형 파이프라인: StyleAgent가 최종 콘텐츠
       finalContent = this.results.StyleAgent.data.content;
-      finalTitle = this.results.TitleAgent?.data?.title || this.results.StructureAgent?.data?.title;
     } else if (this.results.WriterAgent?.success) {
       finalContent = this.results.WriterAgent.data.content;
-
-      // 제목 선택 로직 개선 (TitleAgent vs WriterAgent)
-      const tAgentTitle = this.results.TitleAgent?.data?.title;
-      const wAgentTitle = this.results.WriterAgent.data.title;
-
-      if (tAgentTitle && tAgentTitle.length >= 10) {
-        finalTitle = tAgentTitle;
-      } else if (wAgentTitle && wAgentTitle.length >= 10) {
-        // TitleAgent가 없거나 너무 짧으면 WriterAgent 제목 사용
-        finalTitle = wAgentTitle;
-        console.log(`⚠️ [Orchestrator] TitleAgent 제목이 부실하여("${tAgentTitle}") WriterAgent 제목 사용`);
-      } else {
-        // 둘 다 짧거나 없으면 있는 거 사용 (어차피 ComplianceAgent가 다시 검증함)
-        finalTitle = tAgentTitle || wAgentTitle;
-      }
     } else if (this.results.StructureAgent?.success) {
-      // 🆕 모듈형 파이프라인 폴백: StructureAgent 결과라도 사용
       finalContent = this.results.StructureAgent.data.content;
-      finalTitle = this.results.StructureAgent.data.title;
     }
 
     // 메타데이터 수집

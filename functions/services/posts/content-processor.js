@@ -457,10 +457,10 @@ function getBodyHeadingTexts(category, subCategory, count) {
 
 function getConclusionHeadingText(category, subCategory) {
   if (category === 'activity-report') {
-    return '앞으로의 다짐';
+    return '저의 다짐입니다';
   }
   if (category === 'daily-communication') {
-    return '함께 만들어갈 미래';
+    return '시민과 함께 가겠다';
   }
   if (category === 'policy-proposal') {
     return '기대하는 변화';
@@ -840,14 +840,22 @@ function processGeneratedContent({
   displayTitle,
   isCurrentLawmaker,
   category,
-  subCategory
+  subCategory,
+  skipHeadingOptimization = false  // 🔧 SubheadingAgent가 이미 실행된 경우 소제목 재구성 스킵
 }) {
   console.log('🔩 후처리 시작 - 필수 정보 강제 삽입');
 
   if (!content) return content;
 
   let fixedContent = ensureParagraphTags(content);
-  fixedContent = ensureSectionHeadings(fixedContent, { category, subCategory });
+
+  // 🔧 [FIX] SubheadingAgent가 이미 소제목을 최적화한 경우 ensureSectionHeadings 스킵
+  // ensureSectionHeadings는 fallback 소제목으로 재구성하므로 SubheadingAgent 결과를 덮어씀
+  if (!skipHeadingOptimization) {
+    fixedContent = ensureSectionHeadings(fixedContent, { category, subCategory });
+  } else {
+    console.log('⏭️ [content-processor] 소제목 재구성 스킵 (SubheadingAgent 결과 유지)');
+  }
 
   // 🔥 원외 인사의 경우 강력한 "의원" 표현 제거
   if (isCurrentLawmaker === false) {

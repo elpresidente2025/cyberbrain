@@ -689,7 +689,8 @@ exports.generatePosts = httpWrap(async (req) => {
           displayTitle,
           isCurrentLawmaker,
           category,
-          subCategory: data.subCategory || ''
+          subCategory: data.subCategory || '',
+          skipHeadingOptimization: true  // 🔧 SubheadingAgent가 이미 소제목 최적화 완료
         });
         stopPostProcess();
       }
