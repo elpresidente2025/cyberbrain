@@ -166,7 +166,7 @@ export default function PostViewerModal({
         onClose={onClose}
         fullWidth
         maxWidth="md"
-        slotProps={{ backdrop: { 'aria-hidden': false } }}
+        disableEnforceFocus
         PaperProps={{
           sx: {
             transition: `transform ${transitions.normal} ${transitions.easing.easeOut}, opacity ${transitions.normal} ${transitions.easing.easeOut}`
@@ -280,7 +280,7 @@ export default function PostViewerModal({
         onClose={() => setPublishDialogOpen(false)}
         maxWidth="sm"
         fullWidth
-        slotProps={{ backdrop: { 'aria-hidden': false } }}
+        disableEnforceFocus
       >
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Publish sx={{ color: theme.palette.primary.main }} />

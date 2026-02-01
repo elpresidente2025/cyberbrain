@@ -538,7 +538,7 @@ export default function PostsListPage() {
           post={viewerPost}
         />
 
-        <Dialog open={publishDialogOpen} onClose={closePublishDialog} maxWidth="sm" fullWidth slotProps={{ backdrop: { 'aria-hidden': false } }}>
+        <Dialog open={publishDialogOpen} onClose={closePublishDialog} maxWidth="sm" fullWidth disableEnforceFocus>
           <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.xs}px` }}>
             <Publish sx={{ color: theme.palette.ui?.header || colors.brand.primary }} />
             원고 발행 등록
