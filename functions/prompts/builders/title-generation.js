@@ -3,7 +3,7 @@
  * 네이버 블로그 제목 생성 프롬프트 (7가지 콘텐츠 구조 기반)
  *
  * 핵심 원칙:
- * - 25자 이내 (네이버 검색결과 최적화)
+ * - 35자 이내 (네이버 검색결과 최적화)
  * - 콘텐츠 구조(유형) 기반 분류 (도메인 X)
  * - AEO(AI 검색) 최적화
  * - 선거법 준수
@@ -18,6 +18,32 @@ const { getElectionStage } = require('../guidelines/election-rules');
 // ============================================================================
 
 const TITLE_TYPES = {
+  // 유형 0: 서사적 긴장감 (Narrative Hook) - 일상 소통 기본값
+  VIRAL_HOOK: {
+    id: 'VIRAL_HOOK',
+    name: '서사적 긴장감 (Narrative Hook)',
+    when: '독자의 호기심을 유발하되, 구체적 사실 기반의 서사적 긴장감으로 클릭을 유도할 때 (기본값)',
+    pattern: '정보 격차(Information Gap) 구조: 구체적 팩트 + 미완결 서사 or 의외의 대비',
+    naverTip: '제목이 "답"이 아니라 "질문"을 남길 때 CTR이 가장 높음',
+    principle: '【서사적 긴장감의 3원칙】\n'
+      + '1. 미완결 서사: 이야기를 시작하되 결말을 제목에 넣지 마라 ("~꺼낸 카드는", "~의 선택")\n'
+      + '2. 의외의 대비: 서로 어울리지 않는 두 사실을 나란히 놓아라 ("부두 노동자 막내에서 부산시장 후보까지")\n'
+      + '3. 구체적 미스터리: 구체적 팩트로 신뢰를 주되, 핵심 답은 감춰라\n'
+      + '※ 핵심: 제목은 "답"이 아니라 "질문"을 남겨야 한다. 선언("~바꾼다", "~이끈다")은 긴장감을 죽인다.',
+    good: [
+      { title: '부산 경제 0.7%, 왜 이 남자가 뛰어들었나', chars: 21, analysis: '구체적 수치 + 미완결 질문' },
+      { title: 'AI 국비 전패한 부산, 이재성이 꺼낸 카드는', chars: 22, analysis: '사실 + 미완결' },
+      { title: '부두 노동자 막내에서 부산시장 후보까지', chars: 19, analysis: '극적 대비(서사 아크)' },
+      { title: '부산 지방선거, 이재성이 경제에 거는 한 수', chars: 22, analysis: '키워드 + 미완결' },
+      { title: '부산 청년이 떠나는 도시, 이재성의 답은', chars: 19, analysis: '문제 제기 + 미완결' }
+    ],
+    bad: [
+      { title: '부산 지방선거, AI 전문가 이재성이 경제를 바꾼다', problem: '선언형 — 답을 다 알려줌', fix: '부산 경제 0.7%, 왜 이 남자가 뛰어들었나' },
+      { title: '이재성 부산 지방선거, AI 3대 강국?', problem: '키워드 나열 — 문장 아님', fix: 'AI 국비 전패한 부산, 이재성이 꺼낸 카드는' },
+      { title: '결국 터질 게 터졌습니다... 충격적 현실', problem: '낚시 자극 — 구체성 없음', fix: '부산 경제 0.7%, 왜 이 남자가 뛰어들었나' }
+    ]
+  },
+
   // 유형 1: 구체적 데이터 기반 (성과 보고)
   DATA_BASED: {
     id: 'DATA_BASED',
@@ -26,11 +52,11 @@ const TITLE_TYPES = {
     pattern: '숫자 2개 이상 + 핵심 키워드',
     naverTip: '"억 원", "명", "%" 등 구체적 단위가 있으면 AI 브리핑 인용률 ↑',
     good: [
-      { title: '청년 일자리 274명 창출, 지원금 85억 달성', chars: 22, analysis: '숫자 2개(274명, 85억) + 키워드 명확' },
-      { title: '주택 234가구 리모델링 지원 완료', chars: 17, analysis: '구체적 수량 + 결과 명시' },
-      { title: '노후 산업단지 재생, 국비 120억 확보', chars: 19, analysis: '사업명 + 금액 + 결과' },
-      { title: '교통 신호등 15곳 개선, 사고율 40% 감소', chars: 21, analysis: '시설(15곳) + 효과(40%)' },
-      { title: '2025년 상반기 민원 처리 3일 이내 달성', chars: 21, analysis: '시간 명시 + 구체적 기준' }
+      { title: '청년 일자리 274명 창출, 지원금 85억', chars: 18, analysis: '숫자 2개 + 키워드' },
+      { title: '주택 234가구 리모델링 지원 완료', chars: 14, analysis: '수량 + 결과' },
+      { title: '노후 산단 재생, 국비 120억 확보', chars: 16, analysis: '사업 + 금액' },
+      { title: '신호등 15곳 개선, 사고율 40% 감소', chars: 17, analysis: '시설 + 효과' },
+      { title: '상반기 민원 처리 3일 이내 달성', chars: 15, analysis: '기간 + 기준' }
     ],
     bad: [
       { title: '좋은 성과 거뒀습니다', problem: '구체적 정보 전무', fix: '주택 234가구 지원 완료' },
@@ -47,11 +73,11 @@ const TITLE_TYPES = {
     pattern: '"어떻게", "무엇을", "왜", "얼마" + 질문형',
     naverTip: '질문형으로 시작하면 AI 브리핑 선택률 3배↑',
     good: [
-      { title: '분당구 청년 주거, 월세 지원 얼마까지?', chars: 19, analysis: '지역명 + 질문형' },
-      { title: '성남 교통 체증, 어떻게 풀까?', chars: 15, analysis: '지역 + 문제 + 질문' },
-      { title: '어르신 일자리, 어떤 프로그램 있나?', chars: 18, analysis: '대상 + 정책 + 질문' },
-      { title: '2025년 보육료, 지원 기준 바뀌었나?', chars: 19, analysis: '정책명 + 질문형 + 변화 암시' },
-      { title: '전세 사기, 피해 보상은 어떻게?', chars: 16, analysis: '사회문제 + 해결책 질문' }
+      { title: '분당구 청년 주거, 월세 지원 얼마?', chars: 15, analysis: '지역 + 질문형' },
+      { title: '성남 교통 체증, 어떻게 풀까?', chars: 13, analysis: '지역 + 질문' },
+      { title: '어르신 일자리, 어떤 프로그램?', chars: 14, analysis: '대상 + 질문' },
+      { title: '2025년 보육료, 지원 기준 바뀌었나?', chars: 18, analysis: '정책 + 질문' },
+      { title: '주민 민원, 실제로 언제 해결돼요?', chars: 16, analysis: '문제 + 질문' }
     ],
     bad: [
       { title: '정책에 대해 설명드립니다', problem: '질문형 아님, 모호', fix: '청년 지원 정책, 무엇이 달라졌나?' },
@@ -69,10 +95,10 @@ const TITLE_TYPES = {
     naverTip: '"→", "달라졌다", "개선" 등이 검색 알고리즘 선호',
     good: [
       { title: '민원 처리 14일→3일, 5배 빨라졌어요', chars: 19, analysis: '수치 변화 + 효과' },
-      { title: '청년 기본소득 월 30만→50만원 확대', chars: 19, analysis: '정책명 + 수치 대비' },
-      { title: '교통 사고율, 전년 대비 40% 감소', chars: 18, analysis: '지표 + 비교 기준 + 수치' },
-      { title: '쓰레기 처리 비용 99억→65억 절감', chars: 18, analysis: '구체적 절감액' },
-      { title: '주차장 부족 지역, 12개월 만에 해결', chars: 18, analysis: '문제 + 기간 + 결과' }
+      { title: '청년 기본소득 월 30만→50만원 확대', chars: 18, analysis: '정책 + 수치 대비' },
+      { title: '교통 사고율, 전년 대비 40% 감소', chars: 16, analysis: '지표 + 비교' },
+      { title: '쓰레기 비용 99억→65억, 절감 실현', chars: 17, analysis: '절감액' },
+      { title: '주차장 부족, 12개월 만에 해결', chars: 14, analysis: '문제 + 기간' }
     ],
     bad: [
       { title: '이전보다 나아졌어요', problem: '"이전" 모호', fix: '민원 처리 14일→3일 개선' },
@@ -89,16 +115,16 @@ const TITLE_TYPES = {
     pattern: '행정구역명(동 단위) + 정책 + 숫자',
     naverTip: '동단위 키워드는 경쟁도 낮아 상위노출 유리',
     good: [
-      { title: '분당구 정자동 도시가스, 기금 70억 확보', chars: 21, analysis: '지역명(동) + 정책 + 숫자' },
-      { title: '수지구 풍덕천동 학교 신설, 9월 개교', chars: 19, analysis: '지역명(동) + 사업명 + 일정' },
-      { title: '성남시 중원구 보육료, 월 15만원 추가', chars: 20, analysis: '행정구역 + 정책 + 지원액' },
-      { title: '용인시 기흥구 요양원, 신청 마감 1주', chars: 19, analysis: '지역명 + 시설 + 긴급성' },
-      { title: '영통구 광교동 교통, 6개월간 35% 개선', chars: 21, analysis: '지역명 + 지표 + 기간 + 효과' }
+      { title: '분당 정자동 도시가스, 기금 70억 확보', chars: 19, analysis: '지역 + 정책 + 숫자' },
+      { title: '수지 풍덕천동 학교 신설, 9월 개교', chars: 17, analysis: '지역 + 사업 + 일정' },
+      { title: '성남 중원구 보육료, 월 15만원 추가', chars: 17, analysis: '행정구역 + 정책' },
+      { title: '용인 기흥구 요양원, 신청 마감 1주', chars: 17, analysis: '지역 + 긴급성' },
+      { title: '영통 광교동 교통, 6개월 35% 개선', chars: 17, analysis: '지역 + 효과' }
     ],
     bad: [
-      { title: '우리 지역을 위해 노력합니다', problem: '지역명 없음', fix: '분당구 정자동 도시가스 70억' },
-      { title: '지역 정책 안내', problem: '어느 지역? 어떤 정책?', fix: '성남시 중원구 보육료 월 15만원' },
-      { title: '동네 주차장 문제', problem: '지역명·해결책 부재', fix: '분당구 정자동 주차장 50면 추가' }
+      { title: '우리 지역을 위해 노력합니다', problem: '지역명 없음', fix: '분당 정자동 도시가스 70억' },
+      { title: '지역 정책 안내', problem: '어느 지역? 어떤 정책?', fix: '성남 중원구 보육료 월 15만원' },
+      { title: '동네 주차장 문제', problem: '지역명·해결책 부재', fix: '분당 정자동 주차장 50면 추가' }
     ]
   },
 
@@ -110,11 +136,11 @@ const TITLE_TYPES = {
     pattern: '"법안", "조례", "제도" + 핵심 내용',
     naverTip: '전문 용어로 E-E-A-T 강조, 일반인도 검색하는 키워드',
     good: [
-      { title: '청년 기본소득법 발의, 월 50만원 지원안', chars: 20, analysis: '법안명 + 정책내용 + 금액' },
-      { title: '주차장 설치 의무 조례 개정 추진', chars: 17, analysis: '조례명 + 동작(개정)' },
-      { title: '전세 사기 피해자 보호법, 핵심 3가지', chars: 19, analysis: '법안명 + 요약 포인트' },
-      { title: '야간 상점 CCTV 의무화 조례안 통과', chars: 18, analysis: '정책내용 + 조례형태 + 결과' },
-      { title: '자영업자 신용대출, 금리 인하 정책 추진', chars: 20, analysis: '대상 + 정책 + 구체성' }
+      { title: '청년 기본소득법 발의, 월 50만원', chars: 16, analysis: '법안 + 금액' },
+      { title: '주차장 설치 의무 조례 개정 추진', chars: 15, analysis: '조례 + 동작' },
+      { title: '전세 사기 피해자 보호법, 핵심 3가지', chars: 17, analysis: '법안 + 요약' },
+      { title: '야간 상점 CCTV 의무화 조례안 통과', chars: 17, analysis: '정책 + 결과' },
+      { title: '자영업자 신용대출, 금리 인하 추진', chars: 17, analysis: '대상 + 정책' }
     ],
     bad: [
       { title: '법안을 발의했습니다', problem: '"법안" 모호', fix: '청년 기본소득법 발의, 월 50만원' },
@@ -131,11 +157,11 @@ const TITLE_TYPES = {
     pattern: '"2025년", "상반기", "월간" + 형식(보고서/리포트)',
     naverTip: '시간 명시가 검색 신선도 신호로 작용',
     good: [
-      { title: '2025년 상반기 의정 보고서, 5대 성과', chars: 20, analysis: '시간 명시 + 형식 + 성과수' },
-      { title: '6월 민원 처리 리포트, 1,234건 해결', chars: 20, analysis: '월명 + 형식 + 구체적 수치' },
-      { title: '2025년 1분기 예산 집행 현황 공개', chars: 19, analysis: '기간 + 항목명 + 공개 신호' },
-      { title: '상반기 주민 의견 분석, 88건 반영 추진', chars: 20, analysis: '기간 + 활동 + 숫자' },
-      { title: '월간 의정 뉴스레터 (7월호) 배포', chars: 18, analysis: '시간 명시 + 형식명' }
+      { title: '2025 상반기 의정 보고서, 5대 성과', chars: 18, analysis: '시간 + 형식 + 성과' },
+      { title: '6월 민원 처리 리포트, 1,234건 해결', chars: 19, analysis: '월 + 수치' },
+      { title: '2025 1분기 예산 집행 현황 공개', chars: 17, analysis: '기간 + 항목' },
+      { title: '상반기 주민 의견 분석, 88건 반영', chars: 17, analysis: '기간 + 숫자' },
+      { title: '월간 의정 뉴스레터 (7월호) 배포', chars: 17, analysis: '시간 + 형식' }
     ],
     bad: [
       { title: '보고서를 올립니다', problem: '시간 미명시', fix: '2025년 상반기 의정 보고서' },
@@ -144,24 +170,45 @@ const TITLE_TYPES = {
     ]
   },
 
-  // 유형 7: 정계 이슈·분석 (국가 정책·거시) - 논평/시사 글
+  // 유형 7: 정계 이슈·분석 (국가 정책·거시) - 질문형 분석
   ISSUE_ANALYSIS: {
     id: 'ISSUE_ANALYSIS',
     name: '정계 이슈·분석',
-    when: '정계 이슈, 국가 정책 논평, 제도 개혁 분석, 다른 정치인 논평 시',
-    pattern: '이슈명 + 화자 관점 + 인용문 스타일',
-    naverTip: '작성자(화자) 이름을 제목에 포함하면 개인 브랜딩 + SEO 효과',
+    when: '정계 이슈, 국가 정책 분석, 제도 개혁 논의 시',
+    pattern: '이슈명 + 질문형 또는 대안 제시',
+    naverTip: '질문형(?)으로 끝내면 AI 브리핑 선택률 증가',
     good: [
-      { title: '윤석열 사형 구형, 이재성이 본 조경태의 소신', chars: 23, analysis: '이슈 + 화자 관점 + 대상' },
-      { title: '이재성 \'헌법 앞에 여야 없다\' 조경태 소신 논평', chars: 24, analysis: '화자 + 인용문 + 대상' },
-      { title: '조경태 칭찬한 이재성, 윤석열 사형 구형 논평', chars: 23, analysis: '관계 + 화자 + 이슈' },
-      { title: '윤석열 사형 구형? 이재성 \'조경태 소신에 박수\'', chars: 25, analysis: '물음표 + 화자 인용' },
-      { title: '박형준 침묵 vs 조경태 소신, 이재성의 평가', chars: 23, analysis: '대비 구조 + 화자 관점' }
+      { title: '지방 분권 개혁, 실제로 뭐가 달라질까?', chars: 18, analysis: '이슈 + 질문형' },
+      { title: '정치 자금 투명성, 어떻게 개선할까?', chars: 18, analysis: '이슈 + 질문형' },
+      { title: '양극화 문제, 4대 대안 제시', chars: 14, analysis: '이슈 + 대안 수' },
+      { title: '교육 격차, 재정 투자로 뭐가 달라질까?', chars: 19, analysis: '이슈 + 해결책 + 질문' },
+      { title: '선거 제도 개혁, 왜 시급한가?', chars: 15, analysis: '이슈 + 당위성 질문' }
     ],
     bad: [
-      { title: '윤석열 사형 구형 발언, 조경태 의원 칭찬', problem: '화자 누락, 밋밋함', fix: '윤석열 사형 구형, 이재성이 본 조경태의 소신' },
-      { title: '정치인 발언에 대한 논평', problem: '누가? 무슨 발언?', fix: '이재성 \'헌법 앞에 여야 없다\' 조경태 논평' },
-      { title: '조경태 의원 관련 글', problem: '구체적 행동 부재', fix: '조경태 칭찬한 이재성, 윤석열 사형 구형 논평' }
+      { title: '정치 현실에 대해 생각해 봅시다', problem: '모호함, 구체성 없음', fix: '지방 분권 개혁, 실제로 뭐가 달라질까?' },
+      { title: '문제가 많습니다', problem: '어떤 문제?', fix: '양극화 문제, 4대 대안 제시' },
+      { title: '제도를 개선해야 합니다', problem: '어떤 제도?', fix: '선거 제도 개혁, 왜 시급한가?' }
+    ]
+  },
+
+  // 유형 8: 논평/화자 관점 (다른 정치인 평가)
+  COMMENTARY: {
+    id: 'COMMENTARY',
+    name: '논평/화자 관점',
+    when: '다른 정치인 논평, 인물 평가, 정치적 입장 표명 시',
+    pattern: '화자 + 관점 표현 + 대상/이슈',
+    naverTip: '화자 이름을 앞에 배치하면 개인 브랜딩 + SEO 효과',
+    good: [
+      { title: '박형준 역부족? 이재성이 본 부산 경제', chars: 19, analysis: '대상 + 질문 + 화자 관점' },
+      { title: '조경태 칭찬한 이재성, 尹 사형 논평', chars: 18, analysis: '관계 + 화자 + 이슈' },
+      { title: '이재성 "박형준, 경제 성적 낙제점"', chars: 18, analysis: '화자 + 인용문' },
+      { title: '이재성이 본 조경태의 소신 있는 발언', chars: 18, analysis: '화자 관점 + 대상 + 평가' },
+      { title: '박형준 침묵 vs 조경태 소신, 이재성 평가', chars: 21, analysis: '대비 구조 + 화자' }
+    ],
+    bad: [
+      { title: '윤석열 사형 구형 발언, 조경태 의원 칭찬', problem: '화자 누락', fix: '조경태 칭찬한 이재성, 尹 사형 논평' },
+      { title: '정치인 발언에 대한 논평', problem: '누가? 무슨 발언?', fix: '이재성 "박형준, 경제 성적 낙제점"' },
+      { title: '박형준 시장 경제 발전 역부족? 이재성, 부산 0.7% 성장률 지적', problem: '너무 김 (36자), 정보 과다', fix: '박형준 역부족? 이재성이 본 부산 경제' }
     ]
   }
 };
@@ -188,6 +235,9 @@ function detectContentType(contentPreview, category) {
   // 🔴 [Phase 1] 정규식 강화: 띄어쓰기 없이도 인식
   const hasLocalTerms = /[가-힣]+(동|구|군|시|읍|면|리)(?:[가-힣]|\s|,|$)/.test(contentPreview);
   const hasIssueTerms = /개혁|분권|양극화|격차|투명성|문제점|대안/.test(text);
+  // 🆕 논평/화자 관점 감지 (다른 정치인 평가)
+  const hasCommentaryTerms = /칭찬|질타|비판|논평|평가|소신|침묵|역부족|낙제|심판/.test(text);
+  const hasPoliticianNames = /박형준|조경태|윤석열|이재명|한동훈/.test(contentPreview);
 
   // 우선순위 기반 유형 결정
   if (hasTimeTerms && (text.includes('보고') || text.includes('리포트') || text.includes('현황'))) {
@@ -195,6 +245,10 @@ function detectContentType(contentPreview, category) {
   }
   if (hasLegalTerms) {
     return 'EXPERT_KNOWLEDGE';
+  }
+  // 🆕 논평/화자 관점 우선 감지 (다른 정치인 이름 + 평가 표현)
+  if (hasCommentaryTerms && hasPoliticianNames) {
+    return 'COMMENTARY';
   }
   if (hasComparison && hasNumbers) {
     return 'COMPARISON';
@@ -218,10 +272,11 @@ function detectContentType(contentPreview, category) {
     'policy-proposal': 'EXPERT_KNOWLEDGE',
     'local-issues': 'LOCAL_FOCUSED',
     'current-affairs': 'ISSUE_ANALYSIS',
-    'daily-communication': 'QUESTION_ANSWER'
+    'daily-communication': 'VIRAL_HOOK',
+    'bipartisan-cooperation': 'COMMENTARY'  // 🆕 초당적 협력 → 논평 유형
   };
 
-  return categoryMapping[category] || 'DATA_BASED';
+  return categoryMapping[category] || 'VIRAL_HOOK';
 }
 
 // ============================================================================
@@ -345,7 +400,7 @@ const KEYWORD_POSITION_GUIDE = {
     example: '"월 50만원", "주거·일자리"'
   },
   end: {
-    range: '18-25자',
+    range: '18-35자',
     weight: '60%',
     use: '행동 유도, 긴급성, 신뢰성 신호',
     example: '"신청 마감 3일 전", "5대 성과"'
@@ -383,7 +438,7 @@ function getKeywordStrategyInstruction(userKeywords, keywords) {
 
 📍 **위치별 배치 전략**
 ┌─────────────────────────────────────────────┐
-│ [0-8자]     │ [9-17자]      │ [18-25자]   │
+│ [0-8자]     │ [9-20자]      │ [21-35자]   │
 │ 지역/정책명  │ 수치/LSI     │ 행동/긴급성  │
 │ 가중치 100% │ 가중치 80%   │ 가중치 60%  │
 └─────────────────────────────────────────────┘
@@ -467,18 +522,21 @@ function buildTitlePrompt({ contentPreview, backgroundText, topic, fullName, key
 <role>네이버 블로그 제목 전문가</role>
 
 <rules priority="critical">
-  <rule id="length">20-35자 (필수)</rule>
+  <rule id="length_max">🚨 35자 이내 (네이버 검색결과 잘림 방지) - 절대 초과 금지!</rule>
+  <rule id="length_optimal">18-30자 권장 (클릭률 최고 구간)</rule>
   <rule id="no_ellipsis">말줄임표("...") 절대 금지</rule>
-  <rule id="keyword_position">핵심 키워드를 앞 10자에 배치</rule>
+  <rule id="keyword_position">핵심 키워드를 앞 8자에 배치</rule>
   <rule id="no_greeting">인사말/서술형 제목 절대 금지</rule>
+  <rule id="info_limit">정보 요소 3개 이하 (과다 정보 금지)</rule>
 </rules>
 
 <forbidden_patterns priority="critical">
   <pattern type="greeting">존경하는, 안녕하십니까, 안녕하세요, 여러분</pattern>
   <pattern type="ending">~입니다, ~습니다, ~습니까, ~니다</pattern>
   <pattern type="content_start">본문 첫 문장을 제목으로 사용</pattern>
+  <pattern type="too_long">35자 초과 제목</pattern>
   <example bad="true">존경하는 부산 시민 여러분, 안녕하십니까</example>
-  <example bad="true">오늘 중요한 말씀을 드리고자 합니다</example>
+  <example bad="true">박형준 시장 경제 발전 역부족? 이재성, 부산 0.7% 성장률 지적하며 AI 강국 대안 제시 (40자, 정보 과다)</example>
 </forbidden_patterns>
 
 ${electionCompliance}
@@ -523,13 +581,13 @@ ${badExamples}
 </topic_priority>
 
 <output_rules>
-  <rule>20-35자 (위반 시 재생성)</rule>
+  <rule>🚨 35자 이내 필수 (초과 시 검색결과 잘림)</rule>
+  <rule>18-30자 권장 (클릭률 최고)</rule>
   <rule>말줄임표 절대 금지</rule>
-  <rule>핵심 키워드 앞 10자 배치</rule>
+  <rule>핵심 키워드 앞 8자 배치</rule>
   <rule>본문에 실제 등장하는 숫자만 사용</rule>
-  <rule>콤마, 콜론, 물음표는 자연스럽게 사용 가능</rule>
+  <rule>정보 요소 3개 이하 (과다 정보 = 긴 제목)</rule>
   <rule>"~에 대한", "~관련" 불필요 표현 제거</rule>
-  <rule>키워드 최대 3개 (2개 최적)</rule>
 </output_rules>
 
 <output_format>순수한 제목 텍스트만. 따옴표, 설명, 글자수 표시 없이.</output_format>
@@ -580,46 +638,50 @@ function buildTitlePromptWithType(typeId, params) {
 function getTitleGuidelineForTemplate(userKeywords = [], options = {}) {
   const { authorName = '', category = '' } = options;
   const primaryKw = userKeywords[0] || '';
-  const isIssueCategory = ['current-affairs', 'bipartisan-cooperation'].includes(category);
+  const isCommentaryCategory = ['current-affairs', 'bipartisan-cooperation'].includes(category);
 
   return `
 ╔═══════════════════════════════════════════════════════════════╗
-║  🚨 제목 품질 조건 - 3단계 규칙 체계                              ║
+║  🚨 제목 품질 조건 - 네이버 블로그 최적화                          ║
 ╚═══════════════════════════════════════════════════════════════╝
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🔴 【필수】 위반 시 재생성 (MUST)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. 25자 이내 (네이버 검색결과에서 잘림 방지)
-2. 숫자는 본문에 실제 등장한 것만 사용 (날조 금지!)
-3. 사실과 다른 표현 금지 (본문에 없는 행동/발언 작성 금지)
-4. 주제와 무관한 내용 금지 (입력된 주제 핵심 요소 반영 필수)
+1. **35자 이내** (네이버 검색결과 35자 초과 시 잘림!)
+2. 숫자는 본문에 실제 등장한 것만 사용 (날조 금지)
+3. 주제 핵심 요소 반영 필수
+4. 말줄임표("...") 절대 금지
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🟡 【권장】 품질 향상 (SHOULD)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. ${primaryKw ? `키워드 "${primaryKw}"를 제목 앞 8자 안에 배치` : '핵심 키워드를 제목 앞 8자 안에 배치'}
-2. 15-22자 길이 (클릭률 최고 구간)
+1. **18-30자** (클릭률 최고 구간)
+2. ${primaryKw ? `키워드 "${primaryKw}"를 제목 앞 8자 안에 배치` : '핵심 키워드를 제목 앞 8자 안에 배치'}
 3. 구체적 숫자 포함 (274명, 85억 등)
-${isIssueCategory ? `4. 화자 이름 포함 (예: "${authorName || '이재성'}이 본", "${authorName || '이재성'} '...'")` : ''}
+${isCommentaryCategory ? `4. 화자 연결 패턴: "${authorName || '이재성'}이 본", "칭찬한 ${authorName || '이재성'}"` : ''}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🟢 【선택】 차별화 (COULD)
+🟢 【선택】 서사적 긴장감 (COULD)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. 물음표(?) 활용 - 호기심 자극
-2. 대비 구조 (A vs B, 전→후)
-3. 인용문 스타일 ('...')
+1. 미완결 문장 ("~꺼낸 카드는", "~의 답은") - 정보 격차
+2. 의외의 대비 ("A에서 B까지") - 서사 아크
+3. "왜" 질문 구조 - 원인 궁금증
+※ 선언형("~바꾼다", "~이끈다")은 긴장감을 죽이므로 지양
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 임팩트 제목 패턴 (높은 클릭률)
+🎯 좋은 제목 예시 (18-30자)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ "부산 경제 0.7%, 왜 이 남자가 뛰어들었나" (21자)
+✅ "AI 국비 전패한 부산, ${authorName || '이재성'}이 꺼낸 카드는" (22자)
+✅ "부두 노동자 막내에서 부산시장 후보까지" (19자)
+✅ "부산 지방선거, ${authorName || '이재성'}이 경제에 거는 한 수" (22자)
+✅ "부산 청년이 떠나는 도시, ${authorName || '이재성'}의 답은" (19자)
 
-✅ 화자 관점: "○○이 본 ~~" → "${authorName || '이재성'}이 본 조경태의 소신"
-✅ 인용문형: "○○ '인용' ~~" → "${authorName || '이재성'} '헌법 앞에 여야 없다'"
-✅ 대비 구조: "A vs B" → "박형준 침묵 vs 조경태 소신"
-✅ 관계 강조: "A 칭찬한 B" → "조경태 칭찬한 ${authorName || '이재성'}"
-
-❌ 밋밋한 제목은 클릭률이 떨어집니다!
+❌ 나쁜 제목 예시:
+• "부산 지방선거, AI 전문가 ${authorName || '이재성'}이 경제를 바꾼다" (선언형 — 답을 다 알려줌)
+• "${authorName || '이재성'} 부산 지방선거, AI 3대 강국?" (키워드 나열 — 문장 아님)
+• "결국 터졌습니다... 충격적 현실" (낚시 자극 — 구체성 없음)
 `;
 }
 
@@ -733,7 +795,7 @@ function extractTopicKeywords(topic) {
  * 제목 품질을 6가지 기준으로 평가하여 점수 산출
  * 
  * 평가 기준:
- * 1. 길이 적합성 (15-25자)
+ * 1. 길이 적합성 (18-35자)
  * 2. 키워드 위치 (앞 8자)
  * 3. 숫자 포함 여부
  * 4. 주제 일치도
@@ -793,29 +855,29 @@ function calculateTitleQualityScore(title, params = {}) {
     const suggestions = [];
     const titleLength = title.length;
 
-    // 🚨 [HARD FAIL] 글자수 범위 (15자 미만 또는 40자 초과 시 실패)
-    if (titleLength < 15 || titleLength > 40) {
+    // 🚨 [HARD FAIL] 글자수 범위 (12자 미만 또는 35자 초과 시 실패)
+    // 네이버 검색결과 35자 초과 시 잘림
+    if (titleLength < 12 || titleLength > 35) {
       return {
         score: 0,
-        breakdown: { length: { score: 0, max: 100, status: '실패', reason: `${titleLength}자 (20-35자 필요)` } },
+        breakdown: { length: { score: 0, max: 100, status: '실패', reason: `${titleLength}자 (18-35자 필요)` } },
         passed: false,
-        suggestions: [`제목이 ${titleLength}자입니다. 20-35자 범위로 작성하세요.`]
+        suggestions: [`제목이 ${titleLength}자입니다. 18-35자 범위로 작성하세요. (35자 초과 시 검색결과 잘림)`]
       };
     }
 
-    // 1. 길이 점수 (최대 20점) - 기준: 20-35자
-    if (titleLength >= 20 && titleLength <= 35) {
-      breakdown.length = { score: 20, max: 20, status: '적정' };
-    } else if (titleLength >= 15 && titleLength <= 40) {
-      breakdown.length = { score: 10, max: 20, status: '경계' };
-      if (titleLength < 20) {
-        suggestions.push(`제목이 ${titleLength}자입니다. 20자 이상 권장.`);
-      } else {
-        suggestions.push(`제목이 ${titleLength}자입니다. 35자 이하 권장.`);
-      }
+    // 1. 길이 점수 (최대 20점) - 기준: 18-30자 최적, 31-35자 허용
+    if (titleLength >= 18 && titleLength <= 30) {
+      breakdown.length = { score: 20, max: 20, status: '최적' };
+    } else if (titleLength >= 12 && titleLength < 18) {
+      breakdown.length = { score: 12, max: 20, status: '짧음' };
+      suggestions.push(`제목이 ${titleLength}자입니다. 18자 이상 권장.`);
+    } else if (titleLength > 30 && titleLength <= 35) {
+      breakdown.length = { score: 12, max: 20, status: '경계' };
+      suggestions.push(`제목이 ${titleLength}자입니다. 30자 이하가 클릭률 최고.`);
     } else {
       breakdown.length = { score: 0, max: 20, status: '부적정' };
-      suggestions.push(`제목이 ${titleLength}자입니다. 20-35자 범위로 작성하세요.`);
+      suggestions.push(`제목이 ${titleLength}자입니다. 18-30자 범위로 작성하세요.`);
     }
 
     // 2. 키워드 위치 점수 (최대 20점) - 복수 키워드 지원, 앞 10자 기준
@@ -889,7 +951,24 @@ function calculateTitleQualityScore(title, params = {}) {
     // 5. 화자 포함 점수 (최대 10점) - 논평/시사 글
     if (authorName) {
       if (title.includes(authorName)) {
-        breakdown.authorIncluded = { score: 10, max: 10, status: '포함' };
+        // 🆕 화자 연결 패턴 보너스 체크 ("이 본", "가 본", "의 평가", "칭찬한", "질타한" 등)
+        const speakerPatterns = [
+          new RegExp(`${authorName}이 본`),
+          new RegExp(`${authorName}가 본`),
+          new RegExp(`${authorName}의 평가`),
+          new RegExp(`${authorName}의 시각`),
+          new RegExp(`칭찬한 ${authorName}`),
+          new RegExp(`질타한 ${authorName}`),
+          new RegExp(`${authorName} ['"\`]`)  // 인용문 패턴
+        ];
+        const hasSpeakerPattern = speakerPatterns.some(p => p.test(title));
+
+        if (hasSpeakerPattern) {
+          breakdown.authorIncluded = { score: 10, max: 10, status: '패턴 적용', pattern: true };
+        } else {
+          breakdown.authorIncluded = { score: 6, max: 10, status: '단순 포함' };
+          suggestions.push(`"${authorName}이 본", "칭찬한 ${authorName}" 등 관계형 표현 권장.`);
+        }
       } else {
         breakdown.authorIncluded = { score: 0, max: 10, status: '미포함' };
         suggestions.push(`화자 "${authorName}"를 제목에 포함하면 브랜딩에 도움됩니다.`);
@@ -898,14 +977,18 @@ function calculateTitleQualityScore(title, params = {}) {
       breakdown.authorIncluded = { score: 5, max: 10, status: '해당없음' };
     }
 
-    // 6. 임팩트 요소 점수 (최대 10점)
+    // 6. 임팩트 요소 점수 (최대 10점) - 서사적 긴장감 패턴 포함
     let impactScore = 0;
     const impactFeatures = [];
 
-    if (title.includes('?')) { impactScore += 3; impactFeatures.push('물음표'); }
+    if (title.includes('?') || title.endsWith('나') || title.endsWith('까')) { impactScore += 3; impactFeatures.push('질문/미완결'); }
     if (/'.*'/.test(title) || /".*"/.test(title)) { impactScore += 3; impactFeatures.push('인용문'); }
     if (/vs|\bvs\b|→|대비/.test(title)) { impactScore += 2; impactFeatures.push('대비구조'); }
     if (/이 본|가 본/.test(title)) { impactScore += 2; impactFeatures.push('관점표현'); }
+    // 서사적 긴장감 패턴
+    if (/(은|는|카드는|답은|선택|한 수|이유)$/.test(title)) { impactScore += 3; impactFeatures.push('미완결서사'); }
+    if (/에서.*까지/.test(title)) { impactScore += 2; impactFeatures.push('서사아크'); }
+    if (/왜\s|어떻게\s/.test(title)) { impactScore += 2; impactFeatures.push('원인질문'); }
 
     breakdown.impact = {
       score: Math.min(impactScore, 10),
@@ -1087,8 +1170,12 @@ ${lastAttempt.suggestions.map(s => `• ${s}`).join('\n')}
   console.warn(`⚠️ [TitleGen] ${maxAttempts}회 시도 후 최고 점수 버전 반환 (점수: ${bestScore})`);
 
   // [수정] 점수가 너무 낮으면(인사말 등) 아예 실패 처리 (빈 제목 반환)
-  if (bestScore < 30) {
-    console.error(`🚨 [TitleGen] 최종 점수(${bestScore})가 기준(30) 미달 - 저품질 제목 폐기: "${bestTitle}"`);
+  // 또는 35자 초과면 강제 실패
+  if (bestScore < 30 || (bestTitle && bestTitle.length > 35)) {
+    const reason = bestTitle && bestTitle.length > 35
+      ? `35자 초과 (${bestTitle.length}자)`
+      : `점수 미달 (${bestScore}점)`;
+    console.error(`🚨 [TitleGen] ${reason} - 저품질 제목 폐기: "${bestTitle}"`);
     bestTitle = ''; // 빈 문자열 반환 -> Orchestrator에서 제목 없음 처리됨
   }
 
