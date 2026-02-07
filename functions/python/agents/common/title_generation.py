@@ -20,11 +20,11 @@ TITLE_TYPES = {
             '3. 구체적 미스터리: 구체적 팩트로 신뢰를 주되, 핵심 답은 감춰라 ("AI 국비 전패한 부산, 이재성이 꺼낸 카드는")\n'
             '※ 핵심: 제목은 "답"이 아니라 "질문"을 남겨야 한다. 선언("~바꾼다", "~이끈다")은 긴장감을 죽인다.',
         'good': [
-            {'title': '부산 경제 0.7%, 왜 이 남자가 뛰어들었나', 'chars': 21, 'analysis': '구체적 수치 + 미완결 질문(왜?) → 인물과 문제 사이 정보 격차'},
-            {'title': 'AI 국비 전패한 부산, 이재성이 꺼낸 카드는', 'chars': 22, 'analysis': '패배 사실(구체적) + 미완결("카드는") → 해법이 궁금해짐'},
-            {'title': '부두 노동자 막내에서 부산시장 후보까지', 'chars': 19, 'analysis': '극적 대비(출발점 vs 도착점) → 서사 아크 자체가 훅'},
-            {'title': '부산 지방선거, 이재성이 경제에 거는 한 수', 'chars': 22, 'analysis': '키워드 자연 포함 + 미완결("한 수") → 구체적 전략이 궁금'},
-            {'title': '부산 청년이 떠나는 도시, 이재성의 답은', 'chars': 19, 'analysis': '문제 제기(청년 이탈) + 미완결("답은") → 해법 궁금'}
+            {'title': '부산 경제 0.7%, 왜 이 남자가 뛰어들었나', 'chars': 21, 'analysis': '구체적 수치 + 미완결 질문(왜?) → 정보 격차'},
+            {'title': '부두 노동자 막내에서 부산시장 후보까지', 'chars': 19, 'analysis': '극적 대비(출발점 vs 도착점) → 서사 아크'},
+            {'title': '부산 지방선거, 원칙과 품격으로 승부하는 이재성의 선택', 'chars': 27, 'analysis': '가치 제시 + 미완결("선택") → 어떤 선택인지 궁금'},
+            {'title': '부산 청년이 떠나는 도시, 이재성의 답은', 'chars': 19, 'analysis': '문제 제기 + 미완결("답은") → 해법 궁금'},
+            {'title': '부산 지방선거, 이재성에게 후원이 몰리는 이유', 'chars': 23, 'analysis': '현상 + 미완결("이유") → 왜인지 궁금'}
         ],
         'bad': [
             {'title': '부산 지방선거, AI 전문가 이재성이 경제를 바꾼다', 'problem': '선언형 — 답을 다 알려줘서 클릭할 이유 없음', 'fix': '부산 경제 0.7%, 왜 이 남자가 뛰어들었나'},
@@ -474,6 +474,20 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 {keyword_strategy}
 {number_validation['instruction']}
 {region_scope_instruction}
+
+<topic_priority priority="highest">
+  <instruction>주제(topic)가 제목의 가장 중요한 참고 요소입니다</instruction>
+  <rules>
+    <rule>주제에 명시된 핵심 요소(인물, 행동, 감성, 요청)를 반드시 제목에 반영</rule>
+    <rule>Few-Shot 예시는 스타일/패턴 참고용일 뿐, 주제를 대체하면 안 됨</rule>
+    <rule>주제와 무관한 본문 내용(경제, AI 등)을 제목으로 쓰지 말 것</rule>
+  </rules>
+  <example>
+    <topic>원칙과 품격, 부산시장 예비후보 이재성 후원</topic>
+    <good>부산 지방선거, 원칙과 품격으로 승부하는 이재성의 선택</good>
+    <bad reason="주제 이탈">부산 경제 0.7%, 이재성이 꺼낸 AI 카드는</bad>
+  </example>
+</topic_priority>
 
 <output_rules>
   <rule>🚨 35자 이내 필수</rule>
