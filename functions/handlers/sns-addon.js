@@ -7,6 +7,7 @@ const { admin, db } = require('../utils/firebaseAdmin');
 const { callGenerativeModel } = require('../services/gemini');
 const { buildFactAllowlist, findUnsupportedNumericTokens } = require('../utils/fact-guard');
 const { buildSNSPrompt, SNS_LIMITS } = require('../prompts/builders/sns-conversion');
+const { rankAndSelect } = require('../services/sns-ranker');
 
 // Base62 definition for shortener
 const CHARS = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -171,7 +172,7 @@ async function applyThreadCtaToLastPost(posts, blogUrl, platform, platformConfig
   if (lastContent.includes(normalizedUrl)) return posts;
 
   const separator = lastContent ? '\n' : '';
-  let nextContent = `${lastContent}${separator}${ctaText}`.trim();
+  const nextContent = `${lastContent}${separator}${ctaText}`.trim();
 
   return posts.map((post, index) => {
     if (index !== lastIndex) return post;
@@ -323,55 +324,37 @@ exports.convertToSNS = wrap(async (req) => {
         ? Math.min(platformConfig.minLength, cleanedOriginalLength)
         : 0;
 
-      console.log(`🔄 ${platform} 변환 시작 - 모델: ${selectedModel}`);
+      console.log(`🔄 ${platform} 변환 시작 (2단계 랭킹)`);
 
-      // 최대 2번 시도 (병렬 처리에서는 속도 우선)
       let convertedResult = null;
-      let fallbackThreadResult = null;
-      let threadTargetPostCount = null;
-      const maxAttempts = 2; // 병렬 처리에서는 2번으로 줄여서 전체 시간 단축
 
-      for (let attempt = 1; attempt <= maxAttempts && !convertedResult; attempt++) {
-        console.log(`🔄 ${platform} 시도 ${attempt}/${maxAttempts}...`);
+      try {
+        // ── Stage 1: 프롬프트 생성 & 2단계 랭킹 (Light → Heavy) ──
+        const snsPrompt = buildSNSPrompt(
+          originalContent, platform, platformConfig, postKeywords, userInfo,
+          { blogUrl, category: postData.category || '', subCategory: postData.subCategory || '' }
+        );
 
-        try {
-          const snsPrompt = buildSNSPrompt(
-            originalContent,
-            platform,
-            platformConfig,
-            postKeywords,
-            userInfo,
-            {
-              targetPostCount: threadTargetPostCount,
-              blogUrl: blogUrl,
-              category: postData.category || '',
-              subCategory: postData.subCategory || ''
-            }
-          );
+        // 🚀 Twitter Light→Heavy Ranker 패턴: flash-lite×3 병렬 → flash 스코어링
+        const { text: convertedText, ranking } = await Promise.race([
+          rankAndSelect(snsPrompt, platform, cleanedOriginalContent, { platformConfig, userInfo }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('랭킹 파이프라인 타임아웃 (60초)')), 60000)
+          )
+        ]);
 
-          // Gemini API로 변환 실행 (타임아웃 추가)
-          const convertedText = await Promise.race([
-            callGenerativeModel(snsPrompt, 1, selectedModel),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('AI 호출 타임아웃 (30초)')), 30000)
-            )
-          ]);
+        console.log(`🏆 ${platform} 랭킹 결과:`, {
+          candidatesEvaluated: ranking.rankings?.length || 0,
+          bestIndex: ranking.bestIndex,
+          reason: ranking.reason,
+          length: convertedText?.length || 0,
+          preview: convertedText?.substring(0, 100) + '...'
+        });
 
-          console.log(`📝 ${platform} 원본 응답 (시도 ${attempt}):`, {
-            length: convertedText?.length || 0,
-            preview: convertedText?.substring(0, 100) + '...',
-            hasJSON: /\{[\s\S]*\}/.test(convertedText || '')
-          });
-
-          if (!convertedText || convertedText.trim().length === 0) {
-            console.warn(`⚠️ ${platform} 시도 ${attempt}: 빈 응답`);
-            continue;
-          }
-
-          // 결과 파싱
+        // ── Stage 2: 파싱 & 검증 ──
+        if (convertedText && convertedText.trim().length > 0) {
           const parsedResult = parseConvertedContent(convertedText, platform, platformConfig);
 
-          // 타래 형식 검증 (X, Threads)
           if (parsedResult.isThread) {
             const unsupportedNumbers = collectUnsupportedNumbersFromPosts(parsedResult.posts, factAllowlist);
             if (unsupportedNumbers.length > 0) {
@@ -381,60 +364,66 @@ exports.convertToSNS = wrap(async (req) => {
             const minPosts = threadConstraints?.minPosts || 3;
             const hasValidPosts = Array.isArray(parsedResult.posts) && parsedResult.posts.length >= minPosts;
             const hasHashtags = Array.isArray(parsedResult.hashtags) && parsedResult.hashtags.length > 0;
-
-            // X 플랫폼은 1개 게시물만 허용
             const isValidX = platform === 'x' && Array.isArray(parsedResult.posts) && parsedResult.posts.length === 1;
 
             if (hasValidPosts || isValidX) {
-              const threadResult = {
+              let threadResult = {
                 isThread: true,
                 posts: parsedResult.posts,
                 hashtags: hasHashtags ? parsedResult.hashtags : generateDefaultHashtags(platform),
                 totalWordCount: parsedResult.totalWordCount,
                 postCount: parsedResult.postCount
               };
-              // X 플랫폼은 1-2개 게시물이 목표이므로 길이 조정 로직 스킵
+
+              // ── Stage 3: 타래 길이 조정 (필요 시 targetPostCount로 단일 재생성) ──
               const lengthAdjustment = (platform !== 'x' && threadConstraints)
-                ? getThreadLengthAdjustment(
-                  threadResult.posts,
-                  threadConstraints.minLengthPerPost,
-                  threadConstraints.minPosts
-                )
+                ? getThreadLengthAdjustment(threadResult.posts, threadConstraints.minLengthPerPost, threadConstraints.minPosts)
                 : null;
 
-              if (lengthAdjustment && attempt < maxAttempts) {
-                if (!fallbackThreadResult) {
-                  fallbackThreadResult = threadResult;
-                }
-                threadTargetPostCount = lengthAdjustment.targetPostCount;
-                console.log(`🔄 ${platform} 게시물 길이 부족, ${threadTargetPostCount}개로 재요청`, {
+              if (lengthAdjustment) {
+                console.log(`🔄 ${platform} 게시물 길이 부족, ${lengthAdjustment.targetPostCount}개로 재생성`, {
                   averageLength: lengthAdjustment.stats.averageLength,
-                  shortCount: lengthAdjustment.stats.shortCount,
-                  postCount: threadResult.posts.length
+                  shortCount: lengthAdjustment.stats.shortCount
                 });
-                continue;
+
+                const refinedPrompt = buildSNSPrompt(
+                  originalContent, platform, platformConfig, postKeywords, userInfo,
+                  { targetPostCount: lengthAdjustment.targetPostCount, blogUrl, category: postData.category || '', subCategory: postData.subCategory || '' }
+                );
+                const refinedText = await Promise.race([
+                  callGenerativeModel(refinedPrompt, 1, selectedModel),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('재생성 타임아웃')), 30000))
+                ]).catch(() => null);
+
+                if (refinedText) {
+                  const refinedParsed = parseConvertedContent(refinedText, platform, platformConfig);
+                  if (refinedParsed.isThread && Array.isArray(refinedParsed.posts) && refinedParsed.posts.length >= minPosts) {
+                    threadResult = {
+                      isThread: true,
+                      posts: refinedParsed.posts,
+                      hashtags: (Array.isArray(refinedParsed.hashtags) && refinedParsed.hashtags.length > 0)
+                        ? refinedParsed.hashtags : threadResult.hashtags,
+                      totalWordCount: refinedParsed.totalWordCount,
+                      postCount: refinedParsed.postCount
+                    };
+                  }
+                }
+                // 재생성 실패 시 원래 threadResult 유지
               }
 
-              if (lengthAdjustment && fallbackThreadResult) {
-                convertedResult = fallbackThreadResult;
-              } else {
-                convertedResult = threadResult;
-              }
-
-              console.log(`✅ ${platform} 타래 시도 ${attempt} 성공:`, {
+              convertedResult = threadResult;
+              console.log(`✅ ${platform} 타래 성공:`, {
                 postCount: convertedResult.postCount,
                 totalWordCount: convertedResult.totalWordCount,
                 hashtagCount: convertedResult.hashtags.length
               });
             } else {
-              console.warn(`⚠️ ${platform} 시도 ${attempt}: 타래 게시물 수 부족`);
+              console.warn(`⚠️ ${platform}: 타래 게시물 수 부족`);
             }
           }
           // 단일 게시물 형식 검증 (Facebook/Instagram)
           else {
             const content = (parsedResult.content || '').trim();
-            const hasContent = content.length > 20;
-            const hasHashtags = Array.isArray(parsedResult.hashtags) && parsedResult.hashtags.length > 0;
             const contentLength = countWithoutSpace(content);
             const meetsMinLength = minimumContentLength === 0 || contentLength >= minimumContentLength;
             const unsupportedNumbers = collectUnsupportedNumbers(content, factAllowlist);
@@ -442,104 +431,53 @@ exports.convertToSNS = wrap(async (req) => {
               console.warn('⚠️ [FactGuard] ' + platform + ' 출처 미확인 수치: ' + unsupportedNumbers.join(', ') + ' (배경자료에 없는 수치)');
             }
 
-            if (hasContent && meetsMinLength) {
+            if (content.length > 20 && meetsMinLength) {
               convertedResult = {
                 isThread: false,
-                content: content,
-                hashtags: hasHashtags ? parsedResult.hashtags : generateDefaultHashtags(platform)
+                content,
+                hashtags: (Array.isArray(parsedResult.hashtags) && parsedResult.hashtags.length > 0)
+                  ? parsedResult.hashtags : generateDefaultHashtags(platform)
               };
-
-              console.log(`✅ ${platform} 단일 시도 ${attempt} 성공:`, {
-                contentLength: countWithoutSpace(convertedResult.content),
-                hashtagCount: convertedResult.hashtags.length
-              });
+              console.log(`✅ ${platform} 단일 성공: ${contentLength}자`);
             } else {
-              if (hasContent && !meetsMinLength && attempt < maxAttempts) {
-                console.warn(`⚠️ ${platform} 시도 ${attempt}: 콘텐츠 길이 부족 (${contentLength}자 < ${minimumContentLength}자), 재시도`);
-                continue;
-              }
-              console.warn(`⚠️ ${platform} 시도 ${attempt}: 콘텐츠가 너무 짧음`);
+              console.warn(`⚠️ ${platform}: 콘텐츠 길이 부족 (${contentLength}자)`);
             }
           }
+        }
+      } catch (error) {
+        console.error(`❌ ${platform} 랭킹 파이프라인 오류:`, error.message);
+      }
 
-          // 최종 시도에서도 실패하면 기본 콘텐츠 생성
-          if (!convertedResult && attempt === maxAttempts) {
-            if (platform === 'facebook-instagram') {
-              const fallbackBase = cleanedOriginalContent || `${userInfo.name}입니다. 원고 내용을 공유드립니다.`;
-              const fallbackContent = enforceLength(fallbackBase, platform, platformConfig);
-              convertedResult = {
-                isThread: false,
-                content: fallbackContent,
-                hashtags: generateDefaultHashtags(platform)
-              };
-            } else {
-              // X는 1-2개 헤드라인, Threads는 기본 타래 생성
-              if (platform === 'x') {
-                convertedResult = {
-                  isThread: true,
-                  posts: [
-                    { order: 1, content: `${userInfo.name}입니다.\n원고 내용을 공유드립니다.`, wordCount: 20 }
-                  ],
-                  hashtags: generateDefaultHashtags(platform),
-                  totalWordCount: 20,
-                  postCount: 1
-                };
-              } else {
-                // Threads 기본 타래
-                convertedResult = {
-                  isThread: true,
-                  posts: [
-                    { order: 1, content: `${userInfo.name}입니다.`, wordCount: 10 },
-                    { order: 2, content: originalContent.substring(0, 100), wordCount: 50 },
-                    { order: 3, content: '앞으로도 소통하겠습니다.', wordCount: 12 }
-                  ],
-                  hashtags: generateDefaultHashtags(platform),
-                  totalWordCount: 72,
-                  postCount: 3
-                };
-              }
-            }
-          }
-
-        } catch (error) {
-          console.error(`❌ ${platform} 시도 ${attempt} 오류:`, error.message);
-          if (attempt === maxAttempts) {
-            // 최종적으로 실패하면 기본 콘텐츠 반환
-            if (platform === 'facebook-instagram') {
-              const fallbackBase = cleanedOriginalContent || `${userInfo.name}입니다. 원고 내용을 공유드립니다.`;
-              const fallbackContent = enforceLength(fallbackBase, platform, platformConfig);
-              convertedResult = {
-                isThread: false,
-                content: fallbackContent,
-                hashtags: generateDefaultHashtags(platform)
-              };
-            } else {
-              // X는 1개 헤드라인, Threads는 기본 타래
-              if (platform === 'x') {
-                convertedResult = {
-                  isThread: true,
-                  posts: [
-                    { order: 1, content: `${userInfo.name}입니다.\n원고 내용을 공유드립니다.`, wordCount: 20 }
-                  ],
-                  hashtags: generateDefaultHashtags(platform),
-                  totalWordCount: 20,
-                  postCount: 1
-                };
-              } else {
-                convertedResult = {
-                  isThread: true,
-                  posts: [
-                    { order: 1, content: `${userInfo.name}입니다.`, wordCount: 10 },
-                    { order: 2, content: '원고 내용을 공유드립니다.', wordCount: 12 },
-                    { order: 3, content: '앞으로도 소통하겠습니다.', wordCount: 12 }
-                  ],
-                  hashtags: generateDefaultHashtags(platform),
-                  totalWordCount: 34,
-                  postCount: 3
-                };
-              }
-            }
-          }
+      // ── Fallback: 랭킹+검증 모두 실패 시 기본 콘텐츠 ──
+      if (!convertedResult) {
+        console.warn(`⚠️ ${platform} fallback 콘텐츠 생성`);
+        if (platform === 'facebook-instagram') {
+          const fallbackBase = cleanedOriginalContent || `${userInfo.name}입니다. 원고 내용을 공유드립니다.`;
+          convertedResult = {
+            isThread: false,
+            content: enforceLength(fallbackBase, platform, platformConfig),
+            hashtags: generateDefaultHashtags(platform)
+          };
+        } else if (platform === 'x') {
+          convertedResult = {
+            isThread: true,
+            posts: [{ order: 1, content: `${userInfo.name}입니다.\n원고 내용을 공유드립니다.`, wordCount: 20 }],
+            hashtags: generateDefaultHashtags(platform),
+            totalWordCount: 20,
+            postCount: 1
+          };
+        } else {
+          convertedResult = {
+            isThread: true,
+            posts: [
+              { order: 1, content: `${userInfo.name}입니다.`, wordCount: 10 },
+              { order: 2, content: originalContent.substring(0, 100), wordCount: 50 },
+              { order: 3, content: '앞으로도 소통하겠습니다.', wordCount: 12 }
+            ],
+            hashtags: generateDefaultHashtags(platform),
+            totalWordCount: 72,
+            postCount: 3
+          };
         }
       }
 

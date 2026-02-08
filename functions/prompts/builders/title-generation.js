@@ -25,22 +25,27 @@ const TITLE_TYPES = {
     when: '독자의 호기심을 유발하되, 구체적 사실 기반의 서사적 긴장감으로 클릭을 유도할 때 (기본값)',
     pattern: '정보 격차(Information Gap) 구조: 구체적 팩트 + 미완결 서사 or 의외의 대비',
     naverTip: '제목이 "답"이 아니라 "질문"을 남길 때 CTR이 가장 높음',
-    principle: '【서사적 긴장감의 3원칙】\n'
-      + '1. 미완결 서사: 이야기를 시작하되 결말을 제목에 넣지 마라 ("~꺼낸 카드는", "~의 선택")\n'
-      + '2. 의외의 대비: 서로 어울리지 않는 두 사실을 나란히 놓아라 ("부두 노동자 막내에서 부산시장 후보까지")\n'
-      + '3. 구체적 미스터리: 구체적 팩트로 신뢰를 주되, 핵심 답은 감춰라\n'
-      + '※ 핵심: 제목은 "답"이 아니라 "질문"을 남겨야 한다. 선언("~바꾼다", "~이끈다")은 긴장감을 죽인다.',
+    principle: '【좋은 제목의 판단 기준】\n'
+      + '- 읽었을 때 "그래서 어떻게 됐지?" 또는 "왜?"라는 생각이 드는가?\n'
+      + '- 정보 요소가 3개 이하인가? (과밀 = 읽히지 않음)\n'
+      + '- 기법 하나만 자연스럽게 녹아 있는가? (기법 2개 이상 = 억지)\n'
+      + '\n'
+      + '【안티패턴: 이렇게 하면 안 된다】\n'
+      + '- ❌ 아무 문장 끝에 "~의 선택은?" 붙이기 (형식만 미완결, 내용은 공허)\n'
+      + '- ❌ 키워드 4개 이상 욱여넣기 (읽는 순간 피로)\n'
+      + '- ❌ 예시 제목의 어미만 복사하기 (패턴 모방 ≠ 긴장감)',
     good: [
-      { title: '부산 경제 0.7%, 왜 이 남자가 뛰어들었나', chars: 21, analysis: '구체적 수치 + 미완결 질문' },
-      { title: '부두 노동자 막내에서 부산시장 후보까지', chars: 19, analysis: '극적 대비(서사 아크)' },
-      { title: '부산 지방선거, 원칙과 품격으로 승부하는 이재성의 선택', chars: 27, analysis: '가치 제시 + 미완결' },
-      { title: '부산 청년이 떠나는 도시, 이재성의 답은', chars: 19, analysis: '문제 제기 + 미완결' },
-      { title: '부산 지방선거, 이재성에게 후원이 몰리는 이유', chars: 23, analysis: '현상 + 미완결("이유")' }
+      { title: '부산 지방선거, 왜 이 남자가 뛰어들었나', chars: 20, analysis: '왜 질문형 — 미완결 질문' },
+      { title: '부산 지방선거에 뛰어든 부두 노동자의 아들', chars: 21, analysis: '서사 아크 — 출신 서사' },
+      { title: '부산 지방선거, 이재성은 왜 다른가', chars: 17, analysis: '간결 도발형 — 짧고 강렬' },
+      { title: '부산 지방선거, 10만 청년이 떠난 도시의 반란', chars: 22, analysis: '수치+사건형 — 팩트 충격' },
+      { title: '부산 지방선거, 원칙만으로 이길 수 있을까', chars: 20, analysis: '도발적 질문 — 가치 논쟁' }
     ],
     bad: [
-      { title: '부산 지방선거, AI 전문가 이재성이 경제를 바꾼다', problem: '선언형 — 답을 다 알려줌', fix: '부산 경제 0.7%, 왜 이 남자가 뛰어들었나' },
-      { title: '이재성 부산 지방선거, AI 3대 강국?', problem: '키워드 나열 — 문장 아님', fix: 'AI 국비 전패한 부산, 이재성이 꺼낸 카드는' },
-      { title: '결국 터질 게 터졌습니다... 충격적 현실', problem: '낚시 자극 — 구체성 없음', fix: '부산 경제 0.7%, 왜 이 남자가 뛰어들었나' }
+      { title: '부산 지방선거, AI 전문가 이재성이 경제를 바꾼다', problem: '선언형 — 답을 다 알려줌', fix: '부산 지방선거, 왜 이 남자가 뛰어들었나' },
+      { title: '이재성 부산 지방선거, AI 3대 강국?', problem: '키워드 나열 — 문장 아님', fix: '부산 지방선거, 이재성은 왜 다른가' },
+      { title: '결국 터질 게 터졌습니다... 충격적 현실', problem: '낚시 자극 — 구체성 없음', fix: '부산 지방선거, 10만 청년이 떠난 도시의 반란' },
+      { title: '부산 지방선거, 이재명 2호 이재성 원칙 내건 그의 선택은', problem: '기계적 모방 — 요소 과밀 + 형식적 꼬리', fix: '부산 지방선거, 이재성은 왜 다른가' }
     ]
   },
 
@@ -525,9 +530,10 @@ function buildTitlePrompt({ contentPreview, backgroundText, topic, fullName, key
   <rule id="length_max">🚨 35자 이내 (네이버 검색결과 잘림 방지) - 절대 초과 금지!</rule>
   <rule id="length_optimal">18-30자 권장 (클릭률 최고 구간)</rule>
   <rule id="no_ellipsis">말줄임표("...") 절대 금지</rule>
-  <rule id="keyword_position">핵심 키워드를 앞 8자에 배치</rule>
+  <rule id="keyword_position">핵심 키워드를 앞 8자에 배치. 키워드 직후에 반드시 구분자(쉼표, 물음표, 조사+쉼표)를 넣어라. ✅ "부산 지방선거, 왜~" ✅ "부산 지방선거에 뛰어든~" ❌ "부산 지방선거 이재성" (네이버가 하나의 키워드로 인식)</rule>
   <rule id="no_greeting">인사말/서술형 제목 절대 금지</rule>
-  <rule id="info_limit">정보 요소 3개 이하 (과다 정보 금지)</rule>
+  <rule id="info_density">제목에 담는 정보 요소는 최대 3개. SEO 키워드는 1개로 카운트. "부산 지방선거, 왜 이 남자가 뛰어들었나" = 2개 OK. "부산 지방선거 이재명 2호 이재성 원칙 선택" = 5개 NG.</rule>
+  <rule id="narrative_tension">읽은 뒤 "그래서?" "왜?"가 떠오르는 제목이 좋다. 기법을 억지로 넣지 말고 자연스러운 호기심을 만들어라. 선언형 종결("~바꾼다") 금지.</rule>
 </rules>
 
 <forbidden_patterns priority="critical">
@@ -567,16 +573,17 @@ ${badExamples}
 </input>
 
 <topic_priority priority="highest">
-  <instruction>주제가 제목의 가장 중요한 참고 요소입니다</instruction>
+  <instruction>🚨 제목의 방향은 반드시 주제(topic)를 따라야 합니다. 본문 내용이 아무리 많아도 topic이 절대 우선.</instruction>
   <rules>
-    <rule>주제에 명시된 핵심 요소(인물, 행동, 대비)를 반드시 제목에 반영</rule>
-    <rule>Few-Shot 예시는 스타일/패턴 참고용일 뿐, 주제를 대체하면 안 됨</rule>
-    <rule>주제와 무관한 본문 내용(경제, AI 등)을 제목으로 쓰지 말 것</rule>
+    <rule>주제가 "후원"이면 제목도 후원/응원/함께에 관한 것이어야 함 — 경제/AI/정책으로 빠지면 안 됨</rule>
+    <rule>주제가 "원칙"이면 제목도 원칙/품격에 관한 것이어야 함</rule>
+    <rule>본문(content_preview)은 배경 정보일 뿐, 제목 방향을 결정하지 않음</rule>
+    <rule>주제 키워드를 전부 넣을 필요는 없지만, 주제의 핵심 행동/요청은 반드시 반영</rule>
   </rules>
   <example>
-    <topic>尹 사형 구형, 조경태 칭찬하고 박형준 질타</topic>
-    <good>尹 사형 구형, 조경태 칭찬·박형준 질타하는 이재성</good>
-    <bad reason="주제 이탈">부산 AI 예산 103억, 경제 혁신 이끈다</bad>
+    <topic>원칙과 품격, 부산시장 예비후보 이재성 후원</topic>
+    <good>부산 지방선거, 이재성에게 힘을 보태는 방법</good>
+    <bad reason="주제 이탈 — 후원이 주제인데 경제로 빠짐">부산 지방선거, 경제 0.7% 늪에서 이재성이 꺼낸 비책은</bad>
   </example>
 </topic_priority>
 
@@ -664,17 +671,16 @@ ${isCommentaryCategory ? `4. 화자 연결 패턴: "${authorName || '이재성'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🟢 【선택】 서사적 긴장감 (COULD)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. 미완결 문장 ("~꺼낸 카드는", "~의 답은") - 정보 격차
-2. 의외의 대비 ("A에서 B까지") - 서사 아크
-3. "왜" 질문 구조 - 원인 궁금증
-※ 선언형("~바꾼다", "~이끈다")은 긴장감을 죽이므로 지양
+읽은 뒤 "그래서?" "왜?"가 떠오르는 제목이 좋다.
+기법을 억지로 넣지 말고 자연스러운 호기심을 만들 것.
+선언형("~바꾼다", "~이끈다") 금지. 정보 요소 3개 이하.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 좋은 제목 예시 (18-30자)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ "부산 경제 0.7%, 왜 이 남자가 뛰어들었나" (21자)
-✅ "AI 국비 전패한 부산, ${authorName || '이재성'}이 꺼낸 카드는" (22자)
-✅ "부두 노동자 막내에서 부산시장 후보까지" (19자)
+✅ "부산 지방선거, 왜 이 남자가 뛰어들었나" (20자)
+✅ "부산 지방선거에 뛰어든 부두 노동자의 아들" (21자)
+✅ "부산 지방선거, ${authorName || '이재성'}은 왜 다른가" (17자)
 ✅ "부산 지방선거, ${authorName || '이재성'}이 경제에 거는 한 수" (22자)
 ✅ "부산 청년이 떠나는 도시, ${authorName || '이재성'}의 답은" (19자)
 
@@ -894,8 +900,31 @@ function calculateTitleQualityScore(title, params = {}) {
       const frontKeyword = keywordPositions.find(kp => kp.inFront10)?.keyword || '';
       const anyKeyword = keywordPositions.find(kp => kp.index >= 0)?.keyword || '';
 
+      // 키워드 뒤 구분자 검증: 쉼표, 물음표, 조사 등으로 분리되어야 함
+      const delimiters = new Set([',', '?', '!', '.', '에', '의', '을', '를', '은', '는', '이', '가', ':']);
+      let kwDelimiterOk = true;
+      for (const kp of keywordPositions) {
+        if (kp.index >= 0) {
+          const endPos = kp.index + kp.keyword.length;
+          if (endPos < title.length) {
+            const nextChar = title[endPos];
+            if (!delimiters.has(nextChar) && nextChar !== ' ') {
+              kwDelimiterOk = false;
+            } else if (nextChar === ' ' && endPos + 1 < title.length) {
+              const afterSpace = title.charCodeAt(endPos + 1);
+              if (afterSpace >= 0xAC00 && afterSpace <= 0xD7A3) kwDelimiterOk = false;
+            }
+          }
+        }
+      }
+
       if (anyInFront10) {
-        breakdown.keywordPosition = { score: 20, max: 20, status: '최적', keyword: frontKeyword };
+        const score = kwDelimiterOk ? 20 : 15;
+        const status = kwDelimiterOk ? '최적' : '최적(구분자 부족)';
+        breakdown.keywordPosition = { score, max: 20, status, keyword: frontKeyword };
+        if (!kwDelimiterOk) {
+          suggestions.push(`키워드 "${frontKeyword}" 뒤에 쉼표나 조사를 넣어 다음 단어와 분리하세요. (예: "부산 지방선거, ~")`);
+        }
       } else if (anyInTitle) {
         breakdown.keywordPosition = { score: 12, max: 20, status: '포함됨', keyword: anyKeyword };
         suggestions.push(`키워드 "${anyKeyword}"를 제목 앞쪽(10자 내)으로 이동하면 SEO 효과 증가.`);
@@ -986,9 +1015,12 @@ function calculateTitleQualityScore(title, params = {}) {
     if (/vs|\bvs\b|→|대비/.test(title)) { impactScore += 2; impactFeatures.push('대비구조'); }
     if (/이 본|가 본/.test(title)) { impactScore += 2; impactFeatures.push('관점표현'); }
     // 서사적 긴장감 패턴
-    if (/(은|는|카드는|답은|선택|한 수|이유)$/.test(title)) { impactScore += 3; impactFeatures.push('미완결서사'); }
+    if (/(은|는|카드는|답은|선택|한 수|이유)$/.test(title)) { impactScore += 2; impactFeatures.push('미완결서사'); }
     if (/에서.*까지/.test(title)) { impactScore += 2; impactFeatures.push('서사아크'); }
     if (/왜\s|어떻게\s/.test(title)) { impactScore += 2; impactFeatures.push('원인질문'); }
+    // 정보 과밀 패널티: 실질 요소(2글자 이상)가 7개 이상이면 감점
+    const substantiveElements = (title.match(/[가-힣A-Za-z0-9]{2,}/g) || []);
+    if (substantiveElements.length >= 7) { impactScore -= 2; impactFeatures.push('정보과밀(-2)'); }
 
     breakdown.impact = {
       score: Math.min(impactScore, 10),
