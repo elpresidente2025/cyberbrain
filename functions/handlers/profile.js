@@ -124,9 +124,11 @@ exports.updateProfile = wrap(async (req) => {
     // 개인화 정보 필드들
     'ageDecade', 'ageDetail', 'familyStatus', 'backgroundCareer',
     'localConnection', 'politicalExperience', 'committees', 'customCommittees',
-    'constituencyType', 'twitterPremium', 'gender',
+    'constituencyType', 'gender',
     // 슬로건
-    'slogan', 'sloganEnabled'
+    'slogan', 'sloganEnabled',
+    // 후원 안내
+    'donationInfo', 'donationEnabled'
   ];
   const sanitized = {};
   for (const k of allowed) if (profileData[k] !== undefined) sanitized[k] = profileData[k];

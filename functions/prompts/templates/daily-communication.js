@@ -89,6 +89,18 @@ ${personalizedHints}
 - 이름: ${speakerName} (서론 1회, 결론 1회만 사용)
 - 글의 주제: "${topic}"
 - 목표 분량: ${targetWordCount || 2000}자 (공백 제외)
+- 절대 화자가 되어서는 안 되는 인물: ${options.negativePersona ? `"${options.negativePersona}"` : '참고자료에 등장하는 타인들'}
+
+╔═══════════════════════════════════════════════════════════════════════╗
+║ 🚫 [CRITICAL] 부정 정체성(Negative Identity) 제약 - 절대 어김 금지          ║
+║ 경고: 위반 시 시스템이 강제로 답변을 차단하고 처음부터 다시 생성합니다.            ║
+╚═══════════════════════════════════════════════════════════════════════╝
+1. 당신은 절대 **${options.negativePersona || '상대방'}**이 아닙니다.
+2. ❌ 금지: "저는 ${options.negativePersona || '박형준'}으로서..." (절대 금지!!)
+3. ❌ 금지: "저 ${options.negativePersona || '박형준'} 시장은..." (절대 금지!!)
+4. 글 도중에 문맥이 바뀌더라도, 당신은 끝까지 **"${speakerName}"**의 정체성을 유지해야 합니다.
+5. **${options.negativePersona || '상대방'}**을 언급할 때는 반드시 **"그는", "상대방은", "${options.negativePersona || '박 시장'}께서는"**과 같이 철저히 **3인칭**으로만 지칭하십시오.
+
 ${keywordsSection}${hintsSection}
 [글쓰기 설계도]
 너는 아래 3가지 부품을 조립하여 하나의 완성된 글을 만들어야 한다.

@@ -114,7 +114,13 @@
       "ignore": [
         "__pycache__",
         ".git",
-        "*.pyc"
+        "*.pyc",
+        "venv",
+        "tests",
+        "prototypes",
+        "lightrag_test_data",
+        "*.log",
+        ".env"
       ]
     }
   ],

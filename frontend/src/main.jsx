@@ -14,6 +14,8 @@ import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AdminRoute from './components/AdminRoute.jsx';
 import ProfileRequiredRoute from './components/ProfileRequiredRoute.jsx';
 import './index.css';
+// 새 디자인 시스템 토큰 로드
+import './design-system/tokens.css';
 
 // 임시 조치: lazy loading 제거하고 직접 import
 import HomePage from './pages/HomePage.jsx';

@@ -174,7 +174,7 @@ AI가 학습합니다. 점점 닮아갑니다.
   return (
     <Box sx={{
       minHeight: '100vh',
-      bgcolor: '#ffffff', // 🇨🇭 스위스 화이트
+      bgcolor: 'var(--color-background)',
       position: 'relative'
     }}>
       {/* 로그인 버튼 */}
@@ -187,14 +187,14 @@ AI가 학습합니다. 점점 닮아갑니다.
           <Button
             onClick={() => navigate('/login')}
             sx={{
-              color: '#152484', // 🇨🇭 네이비
+              color: 'var(--color-primary)',
               fontSize: '1rem',
               fontWeight: 600,
               textTransform: 'none',
               px: 3,
               py: 1,
               '&:hover': {
-                bgcolor: 'rgba(21, 36, 132, 0.04)'
+                bgcolor: 'var(--color-primary-lighter)'
               }
             }}
           >
@@ -227,7 +227,7 @@ AI가 학습합니다. 점점 닮아갑니다.
               fontWeight: 700,
               fontSize: { xs: '2.5rem', md: '4.5rem' },
               mb: 4,
-              color: '#000000 !important', // 🇨🇭 순수 검정
+              color: 'var(--color-text-primary)',
               letterSpacing: '-0.02em',
               lineHeight: 1.1,
               wordBreak: 'keep-all'
@@ -240,7 +240,7 @@ AI가 학습합니다. 점점 닮아갑니다.
             variant="h5"
             sx={{
               mb: 8,
-              color: '#333333 !important', // 🇨🇭 다크 그레이
+              color: 'var(--color-text-secondary)',
               fontWeight: 400,
               fontSize: { xs: '1.5rem', md: '2rem' },
               lineHeight: 1.6,
@@ -256,26 +256,25 @@ AI가 학습합니다. 점점 닮아갑니다.
               size="large"
               onClick={() => navigate('/login')}
               sx={{
-                // 🇨🇭 네이비 버튼
-                bgcolor: '#152484',
-                color: '#ffffff',
+                bgcolor: 'var(--color-primary)',
+                color: 'var(--color-text-inverse)',
                 fontSize: { xs: '1.1rem', sm: '1.3rem', md: '1.75rem' },
                 fontWeight: 700,
                 px: { xs: 4, sm: 6, md: 8 },
                 py: { xs: 2, sm: 2.5, md: 3 },
-                borderRadius: '8px',
-                boxShadow: '0 2px 8px rgba(21, 36, 132, 0.15)',
+                borderRadius: 'var(--radius-md)',
+                boxShadow: 'var(--shadow-md)',
                 textTransform: 'none',
+                transition: 'all var(--transition-normal)',
                 '&:hover': {
-                  bgcolor: '#0f1a5f',
-                  boxShadow: '0 4px 12px rgba(21, 36, 132, 0.25)'
+                  bgcolor: 'var(--color-primary-hover)',
+                  boxShadow: 'var(--shadow-glow-primary)'
                 },
                 '&:active': {
-                  transform: 'scale(0.98)',
-                  boxShadow: '0 1px 4px rgba(21, 36, 132, 0.2)'
+                  transform: 'scale(0.98)'
                 },
                 '&:focus-visible': {
-                  outline: '2px solid #ffffff',
+                  outline: '2px solid var(--color-text-inverse)',
                   outlineOffset: '2px'
                 }
               }}
@@ -288,29 +287,28 @@ AI가 학습합니다. 점점 닮아갑니다.
               size="large"
               onClick={() => window.scrollTo({ top: window.innerHeight, behavior: 'smooth' })}
               sx={{
-                // 🇨🇭 네이비 테두리
-                color: '#152484',
-                borderColor: '#152484',
+                color: 'var(--color-primary)',
+                borderColor: 'var(--color-primary)',
                 borderWidth: 2,
                 fontSize: { xs: '1rem', sm: '1.2rem', md: '1.5rem' },
                 fontWeight: 600,
                 px: { xs: 3, sm: 4, md: 6 },
                 py: { xs: 1.5, sm: 2, md: 3 },
-                borderRadius: '8px',
-                boxShadow: '0 2px 8px rgba(21, 36, 132, 0.1)',
+                borderRadius: 'var(--radius-md)',
+                boxShadow: 'var(--shadow-sm)',
                 textTransform: 'none',
+                transition: 'all var(--transition-normal)',
                 '&:hover': {
                   borderWidth: 2,
-                  borderColor: '#152484',
-                  bgcolor: 'rgba(21, 36, 132, 0.04)',
-                  boxShadow: '0 4px 12px rgba(21, 36, 132, 0.2)'
+                  borderColor: 'var(--color-primary)',
+                  bgcolor: 'var(--color-primary-lighter)',
+                  boxShadow: 'var(--shadow-md)'
                 },
                 '&:active': {
-                  transform: 'scale(0.98)',
-                  boxShadow: '0 1px 4px rgba(21, 36, 132, 0.15)'
+                  transform: 'scale(0.98)'
                 },
                 '&:focus-visible': {
-                  outline: '2px solid #152484',
+                  outline: '2px solid var(--color-primary)',
                   outlineOffset: '2px'
                 }
               }}
@@ -351,20 +349,19 @@ AI가 학습합니다. 점점 닮아갑니다.
                     textAlign: 'center',
                     p: { xs: 1, sm: 1.5, md: 3 },
                     height: '100%',
-                    borderRadius: 0,
-                    // 🇨🇭 화이트 카드 + 미니멀 테두리
-                    bgcolor: '#ffffff',
-                    border: '1px solid #e0e0e0',
+                    borderRadius: 'var(--radius-lg)',
+                    bgcolor: 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
                     boxShadow: 'none',
-                    transition: 'all 0.2s ease',
+                    transition: 'all var(--transition-normal)',
                     cursor: 'pointer',
                     '&:hover, &:focus': {
-                      borderColor: '#152484',
+                      borderColor: 'var(--color-primary)',
                       transform: 'translateY(-4px)',
-                      boxShadow: '0 4px 12px rgba(21, 36, 132, 0.08)'
+                      boxShadow: 'var(--shadow-lg)'
                     },
                     '&:focus-visible': {
-                      outline: '2px solid #152484',
+                      outline: '2px solid var(--color-primary)',
                       outlineOffset: '2px'
                     }
                   }}
@@ -382,9 +379,8 @@ AI가 학습합니다. 점점 닮아갑니다.
                         display: 'flex',
                         justifyContent: 'center',
                         alignItems: 'center',
-                        // 🇨🇭 네이비 아이콘
                         '& .MuiSvgIcon-root': {
-                          color: '#152484',
+                          color: 'var(--color-primary)',
                           fontSize: { xs: 40, sm: 50, md: 64 }
                         }
                       }}>
@@ -396,7 +392,7 @@ AI가 학습합니다. 점점 닮아갑니다.
                       sx={{
                         fontWeight: 700,
                         mb: 1.5,
-                        color: '#000000 !important',
+                        color: 'var(--color-text-primary)',
                         fontSize: { xs: '1rem', sm: '1.3rem', md: '1.8rem', lg: '2rem' },
                         lineHeight: 1.3,
                         wordBreak: 'keep-all'
@@ -407,7 +403,7 @@ AI가 학습합니다. 점점 닮아갑니다.
                     <Typography
                       variant="body1"
                       sx={{
-                        color: '#666666 !important',
+                        color: 'var(--color-text-secondary)',
                         fontSize: { xs: '0.8rem', sm: '0.9rem', md: '1rem', lg: '1.1rem' },
                         fontWeight: 400,
                         lineHeight: 1.5,
@@ -434,7 +430,7 @@ AI가 학습합니다. 점점 닮아갑니다.
         aria-describedby="feature-dialog-description"
         sx={{
           '& .MuiDialog-paper': {
-            borderRadius: 0, // 🇨🇭 스위스 스타일: 각진 모서리
+            borderRadius: 'var(--radius-lg)',
             p: 2
           }
         }}
@@ -449,7 +445,7 @@ AI가 학습합니다. 점점 닮아갑니다.
               }}>
                 {/* 아이콘 재사용 (크기 키움) */}
                 {React.cloneElement(selectedFeature.icon, {
-                  sx: { fontSize: 80, color: '#152484' }
+                  sx: { fontSize: 80, color: 'var(--color-primary)' }
                 })}
               </Box>
               <Typography
@@ -458,7 +454,7 @@ AI가 학습합니다. 점점 닮아갑니다.
                 sx={{
                   fontWeight: 700,
                   mb: 3,
-                  color: '#000000',
+                  color: 'var(--color-text-primary)',
                   wordBreak: 'keep-all'
                 }}
               >
@@ -468,9 +464,9 @@ AI가 학습합니다. 점점 닮아갑니다.
                 id="feature-dialog-description"
                 variant="body1"
                 sx={{
-                  color: '#444444',
+                  color: 'var(--color-text-secondary)',
                   lineHeight: 1.8,
-                  whiteSpace: 'pre-line', // 줄바꿈 반영
+                  whiteSpace: 'pre-line',
                   wordBreak: 'keep-all',
                   fontSize: '1.1rem'
                 }}
@@ -484,13 +480,13 @@ AI가 학습합니다. 점점 닮아갑니다.
                 variant="outlined"
                 size="large"
                 sx={{
-                  color: '#152484',
-                  borderColor: '#152484',
-                  borderRadius: 0,
+                  color: 'var(--color-primary)',
+                  borderColor: 'var(--color-primary)',
+                  borderRadius: 'var(--radius-md)',
                   px: 4,
                   '&:hover': {
-                    borderColor: '#152484',
-                    bgcolor: 'rgba(21, 36, 132, 0.04)'
+                    borderColor: 'var(--color-primary)',
+                    bgcolor: 'var(--color-primary-lighter)'
                   }
                 }}
               >
@@ -514,7 +510,7 @@ AI가 학습합니다. 점점 닮아갑니다.
               fontWeight: 700,
               mb: 8,
               textAlign: 'center',
-              color: '#000000 !important', // 🇨🇭 검정
+              color: 'var(--color-text-primary)',
               fontSize: { xs: '2.5rem', md: '3rem' },
               letterSpacing: '-0.02em'
             }}
@@ -530,39 +526,38 @@ AI가 학습합니다. 점점 닮아갑니다.
               elevation={0}
               sx={{
                 mb: 2,
-                borderRadius: 0,
-                // 🇨🇭 화이트 배경 + 심플 테두리
-                bgcolor: '#ffffff',
-                border: '1px solid #e0e0e0',
-                borderTop: expandedFAQ === faq.id ? '2px solid #152484' : '1px solid #e0e0e0',
+                borderRadius: 'var(--radius-md)',
+                bgcolor: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderTop: expandedFAQ === faq.id ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
                 boxShadow: 'none',
-                transition: 'all 0.2s ease',
+                transition: 'all var(--transition-normal)',
                 '&:before': { display: 'none' },
                 '&:first-of-type': {
-                  borderRadius: 0
+                  borderRadius: 'var(--radius-md)'
                 },
                 '&:last-of-type': {
-                  borderRadius: 0
+                  borderRadius: 'var(--radius-md)'
                 },
                 '&.Mui-expanded': {
                   margin: '0 0 16px 0'
                 },
                 '&:hover': {
-                  borderColor: '#152484'
+                  borderColor: 'var(--color-primary)'
                 }
               }}
             >
               <AccordionSummary
-                expandIcon={<ExpandMore sx={{ color: '#152484' }} />}
+                expandIcon={<ExpandMore sx={{ color: 'var(--color-primary)' }} />}
                 sx={{ py: 3, px: 4 }}
               >
-                <Typography sx={{ fontWeight: 600, fontSize: '1.25rem', color: '#000000 !important' }}>
+                <Typography sx={{ fontWeight: 600, fontSize: '1.25rem', color: 'var(--color-text-primary)' }}>
                   {faq.question}
                 </Typography>
               </AccordionSummary>
-              <AccordionDetails sx={{ px: 4, py: 3, bgcolor: '#fafafa' }}>
+              <AccordionDetails sx={{ px: 4, py: 3, bgcolor: 'var(--color-surface)' }}>
                 <Typography sx={{
-                  color: '#333333 !important',
+                  color: 'var(--color-text-secondary)',
                   fontSize: '1.125rem',
                   lineHeight: 1.8
                 }}>
@@ -578,22 +573,23 @@ AI가 학습합니다. 점점 닮아갑니다.
               size="large"
               onClick={() => setShowAllFAQs(!showAllFAQs)}
               sx={{
-                color: '#152484',
-                borderColor: '#152484',
+                color: 'var(--color-primary)',
+                borderColor: 'var(--color-primary)',
                 borderWidth: 2,
                 fontSize: '1.125rem',
                 fontWeight: 600,
                 px: 6,
                 py: 2,
-                borderRadius: 0,
+                borderRadius: 'var(--radius-md)',
                 textTransform: 'none',
+                transition: 'all var(--transition-normal)',
                 '&:hover': {
                   borderWidth: 2,
-                  borderColor: '#152484',
-                  bgcolor: 'rgba(21, 36, 132, 0.04)'
+                  borderColor: 'var(--color-primary)',
+                  bgcolor: 'var(--color-primary-lighter)'
                 },
                 '&:focus-visible': {
-                  outline: '2px solid #152484',
+                  outline: '2px solid var(--color-primary)',
                   outlineOffset: '2px'
                 }
               }}
@@ -618,11 +614,10 @@ AI가 학습합니다. 점점 닮아갑니다.
             sx={{
               textAlign: 'center',
               p: { xs: 4, sm: 6, md: 8 },
-              borderRadius: 0,
-              // 🇨🇭 화이트 카드 + 네이비 강조
-              bgcolor: '#ffffff',
-              border: '3px solid #152484',
-              boxShadow: 'none'
+              borderRadius: 'var(--radius-lg)',
+              bgcolor: 'var(--color-surface)',
+              border: '3px solid var(--color-primary)',
+              boxShadow: 'var(--shadow-lg)'
             }}
           >
             <CardContent>
@@ -632,7 +627,7 @@ AI가 학습합니다. 점점 닮아갑니다.
                   component="div"
                   sx={{
                     fontWeight: 700,
-                    color: '#152484 !important',
+                    color: 'var(--color-primary)',
                     fontSize: { xs: '2.5rem', sm: '3.5rem', md: '5rem', lg: '6rem' },
                     letterSpacing: '-0.03em',
                     lineHeight: 1,
@@ -643,7 +638,7 @@ AI가 학습합니다. 점점 닮아갑니다.
                 </Typography>
                 <Typography
                   sx={{
-                    color: '#666666 !important',
+                    color: 'var(--color-text-secondary)',
                     fontSize: '1.25rem',
                     fontWeight: 400
                   }}
@@ -657,24 +652,24 @@ AI가 학습합니다. 점점 닮아갑니다.
                 fullWidth
                 onClick={() => navigate('/login')}
                 sx={{
-                  bgcolor: '#152484',
-                  color: '#ffffff',
+                  bgcolor: 'var(--color-primary)',
+                  color: 'var(--color-text-inverse)',
                   fontSize: { xs: '1rem', sm: '1.2rem', md: '1.5rem' },
                   fontWeight: 700,
                   py: { xs: 2, sm: 2.5, md: 3 },
-                  borderRadius: '8px',
-                  boxShadow: '0 2px 8px rgba(21, 36, 132, 0.15)',
+                  borderRadius: 'var(--radius-md)',
+                  boxShadow: 'var(--shadow-md)',
                   textTransform: 'none',
+                  transition: 'all var(--transition-normal)',
                   '&:hover': {
-                    bgcolor: '#0f1a5f',
-                    boxShadow: '0 4px 12px rgba(21, 36, 132, 0.25)'
+                    bgcolor: 'var(--color-primary-hover)',
+                    boxShadow: 'var(--shadow-glow-primary)'
                   },
                   '&:active': {
-                    transform: 'scale(0.98)',
-                    boxShadow: '0 1px 4px rgba(21, 36, 132, 0.2)'
+                    transform: 'scale(0.98)'
                   },
                   '&:focus-visible': {
-                    outline: '2px solid #ffffff',
+                    outline: '2px solid var(--color-text-inverse)',
                     outlineOffset: '2px'
                   }
                 }}
@@ -692,12 +687,11 @@ AI가 학습합니다. 점점 닮아갑니다.
         sx={{
           py: 6,
           px: 2,
-          // 🇨🇭 라이트 그레이 배경
-          bgcolor: '#f5f5f5',
-          color: '#666666 !important',
+          bgcolor: 'var(--color-surface)',
+          color: 'var(--color-text-secondary)',
           textAlign: 'center',
           mt: 12,
-          borderTop: '1px solid #e0e0e0'
+          borderTop: '1px solid var(--color-border)'
         }}
       >
         <Typography variant="body2" sx={{ lineHeight: 2, fontSize: '0.95rem' }}>

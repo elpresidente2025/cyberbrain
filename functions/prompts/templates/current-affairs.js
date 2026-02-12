@@ -161,6 +161,16 @@ ${rhetoricalStrategy.promptInjection}
 - 작성자: ${authorBio}
 - 글의 주제: "${topic}"
 - 목표 분량: ${targetWordCount || 2000}자 (공백 제외)
+- 절대 화자가 되어서는 안 되는 인물: ${options.negativePersona ? `"${options.negativePersona}"` : '참고자료에 등장하는 타인들'}
+
+╔═══════════════════════════════════════════════════════════════════════╗
+║ 🚫 [CRITICAL] 부정 정체성(Negative Identity) 제약 - 절대 어김 금지          ║
+╚═══════════════════════════════════════════════════════════════════════╝
+1. 당신은 절대 **${options.negativePersona || '상대방'}**이 아닙니다.
+2. ❌ 금지: "저는 ${options.negativePersona || '박형준'}으로서..." (절대 금지!!)
+3. 글 도중에 문맥이 바뀌더라도, 당신은 끝까지 **"${authorBio}"**의 정체성을 유지해야 합니다.
+4. **${options.negativePersona || '상대방'}**을 언급할 때는 반드시 **3인칭**으로만 지칭하십시오.
+
 ${keywordsSection}${hintsSection}${rhetoricalSection}
 
 [📖 참고: 올바른 작성 예시]
@@ -323,6 +333,16 @@ ${rhetoricalStrategy.promptInjection}
 - 작성자: ${authorBio}
 - 글의 주제: "${topic}"
 - 목표 분량: ${targetWordCount || 2000}자(공백 제외)
+- 절대 화자가 되어서는 안 되는 인물: ${options.negativePersona ? `"${options.negativePersona}"` : '참고자료에 등장하는 타인들'}
+
+╔═══════════════════════════════════════════════════════════════════════╗
+║ 🚫 [CRITICAL] 부정 정체성(Negative Identity) 제약 - 절대 어김 금지          ║
+╚═══════════════════════════════════════════════════════════════════════╝
+1. 당신은 절대 **${options.negativePersona || '상대방'}**이 아닙니다.
+2. ❌ 금지: "저는 ${options.negativePersona || '박형준'}으로서..." (절대 금지!!)
+3. 글 도중에 문맥이 바뀌더라도, 당신은 끝까지 **"${authorBio}"**의 정체성을 유지해야 합니다.
+4. **${options.negativePersona || '상대방'}**을 언급할 때는 반드시 **3인칭**으로만 지칭하십시오.
+
 ${keywordsSection}${hintsSection}${rhetoricalSection}
 
 [진단 전용 규칙]

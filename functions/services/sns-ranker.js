@@ -6,21 +6,39 @@
  * - Heavy Ranker: flash로 최적 후보 선택 (참여도 예측 스코어링)
  *
  * 참고: Twitter/X의 Light Ranker → Heavy Ranker 아키텍처를 SNS 변환에 적용
+ *
+ * 비용 참고: flash-lite x3 (병렬) + flash x1 (스코어링) = 4 API 호출/플랫폼
+ *           기존 flash x2 (순차 retry) 대비 토큰 소비 증가, 품질 상한선 상승
  */
 
 'use strict';
 
 const { callGenerativeModel } = require('./gemini');
 
-// 랭킹 설정
-const RANKER_CONFIG = {
+// 랭킹 설정 (불변)
+const RANKER_CONFIG = Object.freeze({
   candidateCount: 3,              // Light Ranker 후보 수
   lightModel: 'gemini-2.5-flash-lite', // 빠르고 저렴한 모델
   heavyModel: 'gemini-2.5-flash',      // 정밀 평가 모델
   lightTimeoutMs: 20000,          // Light Ranker 개별 타임아웃
   heavyTimeoutMs: 15000,          // Heavy Ranker 타임아웃
   minCandidates: 2,               // 최소 유효 후보 수 (이하면 fallback)
-};
+});
+
+/**
+ * Promise에 타임아웃을 적용 (timer leak 방지)
+ * @param {Promise} promise - 원본 Promise
+ * @param {number} ms - 타임아웃 (ms)
+ * @param {string} message - 타임아웃 에러 메시지
+ * @returns {Promise}
+ */
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 /**
  * Light Ranker: 빠르게 N개 후보를 병렬 생성
@@ -34,13 +52,12 @@ const RANKER_CONFIG = {
  */
 async function lightRank(prompt, candidateCount = RANKER_CONFIG.candidateCount) {
   const tasks = Array.from({ length: candidateCount }, () =>
-    Promise.race([
-      callGenerativeModel(prompt, 1, RANKER_CONFIG.lightModel),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Light Ranker 타임아웃')), RANKER_CONFIG.lightTimeoutMs)
-      ),
-    ]).catch((err) => {
-      console.warn('⚡ Light Ranker 후보 생성 실패:', err.message);
+    withTimeout(
+      callGenerativeModel(prompt, 1, RANKER_CONFIG.lightModel, true, 25000, { temperature: 0.8 }),
+      RANKER_CONFIG.lightTimeoutMs,
+      'Light Ranker 타임아웃'
+    ).catch((err) => {
+      console.warn('Light Ranker 후보 생성 실패:', err.message);
       return null;
     })
   );
@@ -99,26 +116,28 @@ ${originalSummary}
 **후보들:**
 ${candidateBlocks}
 
-**평가 기준 (각 20점, 총 100점):**
+**평가 기준 (가중치 차등, 총 100점):**
 
-1. **임팩트 (Hook Quality)** - 타임라인에서 스크롤을 멈추게 하는 힘
+1. **임팩트 (Hook Quality)** [25점] - 타임라인에서 스크롤을 멈추게 하는 힘
    - 첫 문장이 관심을 끄는가?
-   - 감성적 훅, 질문, 수치 등 임팩트 요소가 있는가?
+   - 감성적 훅, 질문, 수치, 서사적 대비 등 임팩트 요소가 있는가?
+   - 개인 서사나 극적인 숫자 대비가 활용되었는가?
 
-2. **참여 예측 (Engagement Prediction)** - 좋아요/RT/댓글 유도력
+2. **참여 예측 (Engagement Prediction)** [25점] - 좋아요/RT/댓글 유도력
    - 공감을 유도하는 요소가 있는가?
    - CTA(행동 유도)가 자연스러운가?
    - 공유하고 싶은 내용인가?
+   - 작성자의 핵심 주제(topic)에 담긴 CTA가 보존되었는가?
 
-3. **정보 밀도 (Information Density)** - 글자당 전달 정보량
+3. **정보 밀도 (Information Density)** [20점] - 글자당 전달 정보량
    - 불필요한 수식어 없이 핵심이 전달되는가?
    - 구체적 수치, 고유명사, 사실이 포함되어 있는가?
 
-4. **형식 준수 (Format Compliance)** - ${platformName} 플랫폼 규격 적합도
+4. **형식 준수 (Format Compliance)** [15점] - ${platformName} 플랫폼 규격 적합도
    - JSON 형식이 올바른가?
    - 글자수 제한을 준수하는가?${platformConfig?.hashtagLimit ? `\n   - 해시태그 ${platformConfig.hashtagLimit}개 이내인가?` : ''}
 
-5. **원본 충실도 (Source Fidelity)** - 원본 메시지 보존도
+5. **원본 충실도 (Source Fidelity)** [15점] - 원본 메시지 보존도
    - 원본의 핵심 메시지가 정확히 전달되는가?
    - 원본에 없는 내용이 추가되지 않았는가?
    - 정치적 입장과 논조가 보존되었는가?
@@ -129,15 +148,15 @@ ${candidateBlocks}
     {
       "candidateIndex": 0,
       "scores": {
-        "hookQuality": 17,
-        "engagementPrediction": 15,
+        "hookQuality": 22,
+        "engagementPrediction": 20,
         "informationDensity": 18,
-        "formatCompliance": 20,
-        "sourceFidelity": 19
+        "formatCompliance": 14,
+        "sourceFidelity": 13
       },
-      "totalScore": 89,
-      "strengths": "구체적 수치 활용, 강력한 훅",
-      "weaknesses": "CTA 부족"
+      "totalScore": 87,
+      "strengths": "서사적 대비 활용, 주제 CTA 보존",
+      "weaknesses": "글자수 약간 초과"
     }
   ],
   "bestIndex": 0,
@@ -174,12 +193,11 @@ async function heavyRank(candidates, platform, originalContent, context = {}) {
   try {
     const scoringPrompt = buildScoringPrompt(candidates, platform, originalContent, context);
 
-    const rawResult = await Promise.race([
+    const rawResult = await withTimeout(
       callGenerativeModel(scoringPrompt, 1, RANKER_CONFIG.heavyModel, true, 4096),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Heavy Ranker 타임아웃')), RANKER_CONFIG.heavyTimeoutMs)
-      ),
-    ]);
+      RANKER_CONFIG.heavyTimeoutMs,
+      'Heavy Ranker 타임아웃'
+    );
 
     const parsed = parseHeavyRankResult(rawResult, candidates.length);
 
@@ -213,13 +231,26 @@ async function heavyRank(candidates, platform, originalContent, context = {}) {
  */
 function parseHeavyRankResult(rawResult, candidateCount) {
   try {
-    const jsonMatch = rawResult.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    // 균형 잡힌 JSON 추출 (greedy regex 대신 depth 기반 파싱)
+    const jsonStr = extractFirstBalancedJson(rawResult);
+    if (!jsonStr) {
       throw new Error('JSON 형식 없음');
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
-    const bestIndex = parsed.bestIndex;
+    const parsed = JSON.parse(jsonStr);
+    let bestIndex = parsed.bestIndex;
+
+    // bestIndex 교차 검증: rankings의 최고 점수 후보와 일치하는지 확인
+    const rankings = Array.isArray(parsed.rankings) ? parsed.rankings : [];
+    if (rankings.length > 0) {
+      const highestScored = rankings.reduce((a, b) =>
+        (a.totalScore || 0) >= (b.totalScore || 0) ? a : b
+      );
+      if (typeof highestScored.candidateIndex === 'number' && highestScored.candidateIndex !== bestIndex) {
+        console.warn(`bestIndex(${bestIndex})와 최고점수 후보(${highestScored.candidateIndex}) 불일치, 최고점수 기준 보정`);
+        bestIndex = highestScored.candidateIndex;
+      }
+    }
 
     if (typeof bestIndex !== 'number' || bestIndex < 0 || bestIndex >= candidateCount) {
       throw new Error(`유효하지 않은 bestIndex: ${bestIndex}`);
@@ -227,17 +258,41 @@ function parseHeavyRankResult(rawResult, candidateCount) {
 
     return {
       bestIndex,
-      rankings: Array.isArray(parsed.rankings) ? parsed.rankings : [],
+      rankings,
       reason: parsed.reason || '이유 미제공',
     };
   } catch (err) {
-    console.warn('🏆 Heavy Ranker 파싱 실패:', err.message);
+    console.warn('Heavy Ranker 파싱 실패:', err.message);
     return {
       bestIndex: 0,
       rankings: [],
       reason: `파싱 실패 (${err.message}), 첫 번째 후보 fallback`,
     };
   }
+}
+
+/**
+ * 첫 번째 균형 잡힌 JSON 객체를 추출 (greedy regex 문제 방지)
+ * @param {string} text - 원본 텍스트
+ * @returns {string|null} JSON 문자열 또는 null
+ */
+function extractFirstBalancedJson(text) {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\') { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') depth--;
+    if (depth === 0) return text.substring(start, i + 1);
+  }
+  return null;
 }
 
 /**
@@ -266,12 +321,24 @@ async function rankAndSelect(prompt, platform, originalContent, options = {}) {
   const candidates = await lightRank(prompt, candidateCount);
 
   if (candidates.length === 0) {
-    console.warn('⚡ Light Ranker 전체 실패, 기본 모델로 단일 생성 fallback');
-    const fallbackText = await callGenerativeModel(prompt, 2, RANKER_CONFIG.heavyModel);
-    return {
-      text: fallbackText,
-      ranking: { bestIndex: 0, rankings: [], reason: 'Light Ranker 전체 실패, 단일 생성 fallback' },
-    };
+    console.warn('Light Ranker 전체 실패, 기본 모델로 단일 생성 fallback');
+    try {
+      const fallbackText = await withTimeout(
+        callGenerativeModel(prompt, 1, RANKER_CONFIG.heavyModel),
+        25000,
+        'Fallback 단일 생성 타임아웃 (25초)'
+      );
+      return {
+        text: fallbackText,
+        ranking: { bestIndex: 0, rankings: [], reason: 'Light Ranker 전체 실패, 단일 생성 fallback' },
+      };
+    } catch (err) {
+      console.error('Fallback 생성도 실패:', err.message);
+      return {
+        text: null,
+        ranking: { bestIndex: -1, rankings: [], reason: 'Light + Fallback 모두 실패' },
+      };
+    }
   }
 
   if (candidates.length < RANKER_CONFIG.minCandidates) {
@@ -303,5 +370,7 @@ module.exports = {
   lightRank,
   heavyRank,
   buildScoringPrompt,
+  withTimeout,
+  extractFirstBalancedJson,
   RANKER_CONFIG,
 };

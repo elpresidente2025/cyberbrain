@@ -197,7 +197,10 @@ async function loadUserProfile(uid, category, topic, options = {}) {
     isTester: userProfile.isTester === true,
     // 🎯 슬로건 정보
     slogan: userProfile.slogan || '',
-    sloganEnabled: userProfile.sloganEnabled || false
+    sloganEnabled: userProfile.sloganEnabled || false,
+    // 💰 후원 안내
+    donationInfo: userProfile.donationInfo || '',
+    donationEnabled: userProfile.donationEnabled || false
   };
 }
 

@@ -1,0 +1,76 @@
+from typing import Optional, Dict
+
+def generate_non_lawmaker_warning(is_current_lawmaker: bool, political_experience: str, author_bio: str) -> str:
+    # If currently a lawmaker or not a "political rookie", no warning needed.
+    # Note: JS logic was: if (isCurrentLawmaker !== false || politicalExperience !== '정치 신인') return '';
+    # This implies: if (isCurrentLawmaker is true OR isn't explicitly false OR experience isn't rookie) -> return empty
+    # Wait, the JS logic: `isCurrentLawmaker !== false` means if it's true or undefined (if default is true?), it returns empty.
+    # Actually, usually `isCurrentLawmaker` would be boolean.
+    # If `isCurrentLawmaker` is True, return empty.
+    # If `politicalExperience` is NOT '정치 신인', return empty.
+    
+    if is_current_lawmaker or political_experience != '정치 신인':
+        return ''
+
+    return f"""
+╔═══════════════════════════════════════════════════════════════╗
+║  🚫 작성자 신분 설정 (원고에 명시 금지)                          ║
+╚═══════════════════════════════════════════════════════════════╝
+
+작성자: {author_bio}
+(이 정보는 글쓰기 톤 설정용입니다. 원고 본문에 절대 노출하지 마세요.)
+
+[절대 금지 사항]
+❌ "지역구 의원", "지역구 국회의원", "의정활동", "국회 활동", "의원 경력" 등 국회의원 전용 표현 일체
+❌ "256명의 국회의원 중..." 같은 맥락에서 본인을 의원으로 암시하거나 동일시하는 표현
+❌ **"지역구" 표현 절대 금지** - "지역구 발전", "지역구 주민", "지역구 현안" 등 모두 불가
+   (이유: "지역구"는 국회의원 전용 용어. 광역/기초지자체장은 사용 불가)
+   → 대체 표현: "우리 지역", "이 지역", 광역지자체명(부산, 경남 등) 또는 기초지자체명 사용
+
+[원고에 절대 포함하지 말 것]
+❌ "저는 정치 신인입니다만", "저는 국회의원이 아닙니다만" 등 신분 고백
+❌ "시민의 입장에서", "지역 주민의 한 사람으로서" 같은 화자 위치 명시
+❌ "광역자치단체장 준비 중", "시장 준비 중" 등 준비 상태 언급
+❌ "저는 OO 준비 중입니다", "OO을 준비하고 있는 홍길동입니다" 같은 자기소개
+❌ 위 작성자 정보를 원고 본문에 그대로 복사하는 행위
+
+[예외 규칙 (중요)]
+✅ Bio(작성자 정보) 내에 **큰따옴표(" ")로 묶인 문장**은 주변의 평가나 특정 에피소드를 인용한 것이므로, 금지어가 포함되어 있더라도 **절대 수정하거나 검열하지 말고 그대로 사용**하십시오.
+   - 예: "그 스펙이면 벌써 국회의원 했을 텐데" (그대로 유지)
+   - 예: "왜 사서 고생하노" (그대로 유지)
+
+[작성 가이드]
+✅ 작성자의 실제 직위(지역위원장 등)를 사용하세요
+✅ 지역 활동, 준비 과정, 정책 연구, 주민과의 소통 등을 중심으로 작성
+✅ "OO시민", "OO구 주민" 등 지역명 + 시민/주민 표현 사용 (사용자의 실제 지역에 맞게)
+
+→ 작성자 신분은 글의 톤과 시점을 결정하는 태그입니다.
+→ 원고는 자연스럽게 해당 위치에서 말하듯 작성하되, 신분 자체를 언급하지 마세요.
+"""
+
+def generate_family_status_warning(family_status: str) -> str:
+    if not family_status:
+        return ''
+
+    # Warning only for '기혼(자녀 없음)' or '미혼'
+    if family_status in ['기혼(자녀 없음)', '미혼']:
+        return f"""
+╔═══════════════════════════════════════════════════════════════╗
+║  ⚠️  가족 상황 확인 - 절대 준수 필수! ⚠️                        ║
+╚═══════════════════════════════════════════════════════════════╝
+
+** 작성자는 자녀가 없습니다 **
+
+가족 상황: {family_status}
+
+[절대 금지 사항]
+❌ "자녀", "아이", "아들", "딸" 등 자녀 관련 표현 절대 금지
+❌ "자녀 양육", "육아", "자녀 교육", "부모로서" 등의 표현 절대 금지
+❌ "아버지로서", "어머니로서" 등 부모 정체성 표현 절대 금지
+❌ 자녀가 있다고 가정하거나 암시하는 어떠한 내용도 금지
+
+[작성 가이드]
+✅ 작성자의 실제 가족 상황에 맞는 내용만 작성
+✅ 개인적 경험을 언급할 때도 자녀 관련 내용은 절대 포함하지 말 것
+"""
+    return ''

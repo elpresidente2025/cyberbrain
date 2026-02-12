@@ -530,7 +530,7 @@ function buildCompliantDraft({
     '영향과 과제를 구분해 추가로 확인할 지점을 정리합니다.'
   ];
 
-  let content = [
+  const content = [
     `<p>${paragraphs[0]}</p>`,
     '<h2>현안 개요</h2>',
     `<p>${paragraphs[1]}</p>`,

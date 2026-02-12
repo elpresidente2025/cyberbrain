@@ -319,7 +319,7 @@ const naverCompleteRegistration = onRequest({ region: 'asia-northeast3', cors: t
     };
 
     // 선택 필드 추가
-    const optionalFields = ['ageDecade', 'ageDetail', 'familyStatus', 'backgroundCareer', 'localConnection', 'politicalExperience', 'committees', 'customCommittees', 'constituencyType', 'twitterPremium'];
+    const optionalFields = ['ageDecade', 'ageDetail', 'familyStatus', 'backgroundCareer', 'localConnection', 'politicalExperience', 'committees', 'customCommittees', 'constituencyType'];
     for (const field of optionalFields) {
       if (profileData[field] !== undefined) {
         doc[field] = profileData[field];

@@ -214,10 +214,10 @@ export default function PostViewerModal({
           </Box>
         </DialogContent>
         <Box sx={{ px: 3, py: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
-          {/* 🆕 제목 길이 경고 (25자 초과 시) */}
-          {post?.title && post.title.length > 25 && (
+          {/* 🆕 제목 길이 경고 (35자 초과 시) */}
+          {post?.title && post.title.length > 35 && (
             <Typography variant="body2" color="error" sx={{ textAlign: 'left', fontWeight: 'bold', mb: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              ⚠️ 제목이 깁니다. 25자 내외로 적절히 수정해 주세요.
+              ⚠️ 제목이 깁니다. 35자 내외로 적절히 수정해 주세요.
             </Typography>
           )}
           <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'left' }}>

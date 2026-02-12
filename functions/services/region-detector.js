@@ -198,8 +198,8 @@ async function validateTopicRegion(userRegionLocal, userRegionMetro, topic, targ
   try {
     // 목표 선거가 있으면 해당 직책/지역 기준, 없으면 현재 직책/지역 기준
     const effectivePosition = targetElection?.position || position;
-    let effectiveRegionLocal = targetElection?.regionLocal || userRegionLocal;
-    let effectiveRegionMetro = targetElection?.regionMetro || userRegionMetro;
+    const effectiveRegionLocal = targetElection?.regionLocal || userRegionLocal;
+    const effectiveRegionMetro = targetElection?.regionMetro || userRegionMetro;
 
     console.log('🎯 지역 검증 기준:', {
       effectivePosition,

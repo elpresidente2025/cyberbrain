@@ -1,8 +1,38 @@
 'use strict';
 
+/**
+ * functions/services/agents/title-agent.js
+ *
+ * 통합된 TitleAgent - 제목 생성 + 검증 + SEO 최적화
+ * (prompts/builders/title-generation.js 활용)
+ *
+ * 핵심 원칙:
+ * - 25자 이내 (네이버 검색결과 최적화)
+ * - 콘텐츠 구조(유형) 기반 분류
+ * - AEO(AI 검색) 최적화
+ * - 선거법 준수
+ */
+
 const { BaseAgent } = require('./base');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { getGeminiApiKey } = require('../../common/secrets');
+
+// ✅ Shared Logic Import
+const {
+    generateAndValidateTitle,
+    // Exports for backward compatibility if needed
+    buildTitlePrompt,
+    buildTitlePromptWithType,
+    detectContentType,
+    TITLE_TYPES,
+    KEYWORD_POSITION_GUIDE,
+    getElectionComplianceInstruction,
+    getKeywordStrategyInstruction,
+    getTitleGuidelineForTemplate,
+    extractNumbersFromContent,
+    validateThemeAndContent,
+    calculateTitleQualityScore
+} = require('../../prompts/builders/title-generation');
 
 let genAI = null;
 function getGenAI() {
@@ -14,8 +44,9 @@ function getGenAI() {
     return genAI;
 }
 
-// 🆕 title-generation.js의 고급 로직 사용
-const { generateAndValidateTitle } = require('../../prompts/builders/title-generation');
+// ============================================================================
+// TitleAgent Class
+// ============================================================================
 
 class TitleAgent extends BaseAgent {
     constructor() {
@@ -32,7 +63,7 @@ class TitleAgent extends BaseAgent {
             userProfile,
             userKeywords = [],
             extractedKeywords = [],
-            topic = '',  // 🆕 사용자가 입력한 주제
+            topic = '',
             category = '',
             subCategory = ''
         } = context;
@@ -51,8 +82,8 @@ class TitleAgent extends BaseAgent {
         }
 
         const content = contentSource;
-        const status = userProfile?.status || '준비'; // 준비/현역/예비후보
-        const authorName = userProfile.name || '이재성';
+        const status = userProfile?.status || '준비';
+        const authorName = userProfile?.name || '이재성';
 
         // 사용자 키워드와 추출된 키워드 병합
         const allKeywords = [
@@ -60,7 +91,7 @@ class TitleAgent extends BaseAgent {
             ...(extractedKeywords || []).map(k => k.keyword || k)
         ].filter(Boolean);
 
-        // 배경 정보 추출 (뉴스, 지시사항 등)
+        // 배경 정보 추출
         const backgroundText = [
             context.instructions,
             context.newsContext
@@ -71,8 +102,7 @@ class TitleAgent extends BaseAgent {
             console.log(`🏷️ [TitleAgent] 기존 제목 참고 (미사용): "${titleSource}"`);
         }
 
-        // 🟢 [Refactored] generateAndValidateTitle 사용
-        // LLM 호출 함수 (generateAndValidateTitle 내부에서 사용)
+        // LLM 호출 함수
         const generateFn = async (prompt) => {
             const ai = getGenAI();
             if (!ai) throw new Error('Gemini API 키가 설정되지 않았습니다');
@@ -81,46 +111,42 @@ class TitleAgent extends BaseAgent {
             const result = await model.generateContent({
                 contents: [{ role: 'user', parts: [{ text: prompt }] }],
                 generationConfig: {
-                    temperature: 0.8, // 창의성 위해 약간 높임
+                    temperature: 0.8,
                     maxOutputTokens: 1000
-                    // JSON 모드 사용 안 함 (generateAndValidateTitle이 텍스트 파싱 처리)
                 }
             });
             const text = result.response.text();
 
-            // JSON 파싱 (title-generation.js는 순수 제목 텍스트 반환을 기대하므로 파싱 필요)
             try {
-                // 마크다운 코드 블록 제거
                 const cleanText = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
                 const parsed = JSON.parse(cleanText);
                 return parsed.title || cleanText;
             } catch (e) {
-                // JSON이 아니면 텍스트에서 제목 추출 시도 (Title: "...")
                 const match = text.match(/제목:\s*"([^"]+)"/);
                 if (match) return match[1];
-                return text.trim(); // 최후의 수단: 전체 텍스트
+                return text.trim();
             }
         };
 
         // 파라미터 구성
         const params = {
-            contentPreview: content.substring(0, 3000), // 본문 미리보기
-            backgroundText, // 뉴스/지시사항 배경 정보
+            contentPreview: content.substring(0, 3000),
+            backgroundText,
             topic,
             fullName: authorName,
-            keywords: allKeywords, // 병합된 전체 키워드
+            keywords: allKeywords,
             userKeywords,
             category,
             subCategory,
             status,
-            titleScope: context.titleScope || null, // 지역 스코프 (광역/기초)
+            titleScope: context.titleScope || null,
             _forcedType: null
         };
 
-        // 제목 생성 및 검증 실행 (자동 재시도 포함)
+        // 제목 생성 및 검증 실행 (Builder의 generateAndValidateTitle 사용)
         const result = await generateAndValidateTitle(generateFn, params, {
-            minScore: 70,    // 70점 이상 통과
-            maxAttempts: 3,  // 최대 3회 시도
+            minScore: 70,
+            maxAttempts: 3,
             onProgress: ({ attempt, score }) => {
                 console.log(`🔄 [TitleAgent] 생성 시도 ${attempt} (현재 점수: ${score || 0})`);
             }
@@ -138,4 +164,23 @@ class TitleAgent extends BaseAgent {
     }
 }
 
-module.exports = { TitleAgent };
+// ============================================================================
+// Exports
+// ============================================================================
+
+module.exports = {
+    TitleAgent,
+    // 외부에서 사용하는 함수들 (하위 호환성 유지)
+    buildTitlePrompt,
+    buildTitlePromptWithType,
+    detectContentType,
+    TITLE_TYPES,
+    KEYWORD_POSITION_GUIDE,
+    getElectionComplianceInstruction,
+    getKeywordStrategyInstruction,
+    getTitleGuidelineForTemplate,
+    extractNumbersFromContent,
+    validateThemeAndContent,
+    calculateTitleQualityScore,
+    generateAndValidateTitle
+};

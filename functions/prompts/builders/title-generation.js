@@ -413,6 +413,18 @@ const KEYWORD_POSITION_GUIDE = {
 };
 
 /**
+ * 두 키워드가 유사한지 판별 (공통 어절이 있는지)
+ * 예: "서면 영광도서", "부산 영광도서" → 공통 "영광도서" → 유사
+ * 예: "계양산 러브버그 방역", "계양구청" → 공통 없음 → 독립
+ */
+function areKeywordsSimilar(kw1, kw2) {
+  if (!kw1 || !kw2) return false;
+  const words1 = kw1.split(/\s+/);
+  const words2 = kw2.split(/\s+/);
+  return words1.some(w => words2.includes(w) && w.length >= 2);
+}
+
+/**
  * 키워드 삽입 전략 지시문 생성
  */
 function getKeywordStrategyInstruction(userKeywords, keywords) {
@@ -421,6 +433,36 @@ function getKeywordStrategyInstruction(userKeywords, keywords) {
   const secondaryKw = hasUserKeywords
     ? (userKeywords[1] || keywords?.[0] || '')
     : (keywords?.[1] || '');
+
+  // 두 키워드 간 유사/독립 판별
+  const hasTwoKeywords = primaryKw && secondaryKw && primaryKw !== secondaryKw;
+  const similar = hasTwoKeywords && areKeywordsSimilar(primaryKw, secondaryKw);
+
+  let titleKeywordRule = '';
+  if (hasTwoKeywords) {
+    if (similar) {
+      // 유사 키워드: 제목은 1번 키워드로 시작, 2번 키워드는 어절 해체하여 배치
+      const kw2Words = secondaryKw.split(/\s+/);
+      const kw1Words = primaryKw.split(/\s+/);
+      const uniqueWords = kw2Words.filter(w => !kw1Words.includes(w));
+      titleKeywordRule = `
+📌 **제목 키워드 배치 규칙 (유사 키워드)**
+두 검색어("${primaryKw}", "${secondaryKw}")가 공통 어절을 공유하므로:
+• 제목은 반드시 "${primaryKw}"로 시작
+• "${secondaryKw}"는 어절 단위로 해체하여 자연스럽게 배치 (${uniqueWords.length > 0 ? `"${uniqueWords.join('", "')}"를 제목 뒤쪽에 녹여넣기` : '공통 어절로 자동 충족'})
+• 예시: "${primaryKw}, <보고있나, ${uniqueWords[0] || secondaryKw.split(/\s+/)[0]}> 출판기념회에 초대합니다"
+`;
+    } else {
+      // 독립 키워드: 제목은 1번 키워드로 시작, 2번 키워드는 뒤에 배치
+      titleKeywordRule = `
+📌 **제목 키워드 배치 규칙 (독립 키워드)**
+두 검색어("${primaryKw}", "${secondaryKw}")가 독립적이므로:
+• 제목은 반드시 "${primaryKw}"로 시작
+• "${secondaryKw}"는 제목 뒤쪽에 자연스럽게 배치
+• 예시: "${primaryKw}, 확장 공사에 ${secondaryKw} 적극 구제 촉구"
+`;
+    }
+  }
 
   return `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -433,13 +475,10 @@ function getKeywordStrategyInstruction(userKeywords, keywords) {
 
 ❌ "우리 지역 청년들을 위한 청년 기본소득"
 ✅ "청년 기본소득, 분당구 월 50만원 지원"
-
+${titleKeywordRule}
 📊 **키워드 밀도: 최소 1개, 최대 3개**
 • 최적: 2개 (가장 자연스럽고 효과적)
 • 4개 이상: 스팸으로 판단, CTR 감소
-
-✅ "분당구 청년 기본소득, 월 50만원" (2개: 분당구, 청년 기본소득)
-❌ "분당구 정자동 청년 기본소득 월 50만원 지원" (4개, 어색)
 
 📍 **위치별 배치 전략**
 ┌─────────────────────────────────────────────┐
@@ -449,7 +488,7 @@ function getKeywordStrategyInstruction(userKeywords, keywords) {
 └─────────────────────────────────────────────┘
 
 ${primaryKw ? `**1순위 키워드**: "${primaryKw}" → 제목 앞 8자 이내 배치` : ''}
-${secondaryKw ? `**2순위 키워드**: "${secondaryKw}" → 제목 중앙 배치` : ''}
+${secondaryKw ? `**2순위 키워드**: "${secondaryKw}" → ${similar ? '어절 해체하여 자연 배치' : '제목 뒤쪽 배치'}` : ''}
 
 🔄 **동의어 활용** (반복 방지)
 • 지원 → 지원금, 보조금, 혜택
@@ -918,15 +957,54 @@ function calculateTitleQualityScore(title, params = {}) {
         }
       }
 
+      // 듀얼 키워드 배치 검증: 1번 키워드가 제목 시작에 있는지
+      let dualKwBonus = 0;
+      let dualKwPenalty = 0;
+      if (userKeywords.length >= 2) {
+        const kw1 = userKeywords[0];
+        const kw1Idx = title.indexOf(kw1);
+        const kw1StartsTitle = kw1Idx >= 0 && kw1Idx <= 2; // 제목 맨 앞(0~2자 내)
+        if (kw1StartsTitle) {
+          dualKwBonus = 3; // 1번 키워드가 제목 시작 → 보너스
+        } else if (kw1Idx >= 0) {
+          dualKwPenalty = 0; // 포함은 되어 있으나 앞쪽 아님 → 감점 없음 (이미 위치 점수로 반영)
+        } else {
+          dualKwPenalty = 5; // 1번 키워드 미포함 → 감점
+          suggestions.push(`1순위 키워드 "${kw1}"가 제목에 없습니다. 제목 시작 부분에 배치하세요.`);
+        }
+
+        // 2번 키워드: 유사 키워드면 어절 해체 충족 여부, 독립 키워드면 포함 여부
+        const kw2 = userKeywords[1];
+        const similar = areKeywordsSimilar(kw1, kw2);
+        if (similar) {
+          // 유사 키워드: 2번 키워드의 고유 어절이 제목에 있으면 OK
+          const kw2Words = kw2.split(/\s+/);
+          const kw1Words = kw1.split(/\s+/);
+          const uniqueWords = kw2Words.filter(w => !kw1Words.includes(w) && w.length >= 2);
+          const hasUniqueWord = uniqueWords.length === 0 || uniqueWords.some(w => title.includes(w));
+          if (!hasUniqueWord) {
+            dualKwPenalty += 3;
+            suggestions.push(`2순위 키워드 "${kw2}"의 고유 어절(${uniqueWords.join(', ')})이 제목에 없습니다.`);
+          }
+        } else {
+          // 독립 키워드: 제목에 포함되어야 함
+          if (!title.includes(kw2)) {
+            dualKwPenalty += 3;
+            suggestions.push(`2순위 키워드 "${kw2}"가 제목에 포함되지 않았습니다.`);
+          }
+        }
+      }
+
       if (anyInFront10) {
-        const score = kwDelimiterOk ? 20 : 15;
+        const score = Math.min(20, Math.max(0, (kwDelimiterOk ? 20 : 15) + dualKwBonus - dualKwPenalty));
         const status = kwDelimiterOk ? '최적' : '최적(구분자 부족)';
         breakdown.keywordPosition = { score, max: 20, status, keyword: frontKeyword };
         if (!kwDelimiterOk) {
           suggestions.push(`키워드 "${frontKeyword}" 뒤에 쉼표나 조사를 넣어 다음 단어와 분리하세요. (예: "부산 지방선거, ~")`);
         }
       } else if (anyInTitle) {
-        breakdown.keywordPosition = { score: 12, max: 20, status: '포함됨', keyword: anyKeyword };
+        const score = Math.max(0, 12 - dualKwPenalty);
+        breakdown.keywordPosition = { score, max: 20, status: '포함됨', keyword: anyKeyword };
         suggestions.push(`키워드 "${anyKeyword}"를 제목 앞쪽(10자 내)으로 이동하면 SEO 효과 증가.`);
       } else {
         breakdown.keywordPosition = { score: 0, max: 20, status: '없음', keywords: userKeywords };
@@ -1238,6 +1316,7 @@ module.exports = {
   KEYWORD_POSITION_GUIDE,
   getElectionComplianceInstruction,
   getKeywordStrategyInstruction,
+  areKeywordsSimilar,
   // 📌 템플릿 주입용
   getTitleGuidelineForTemplate,
   // 🔴 Phase 1: 숫자 검증

@@ -15,8 +15,8 @@ const COLLECTION_NAME = 'party_stances';
 
 // 캐싱 (메모리 내) - 콜드 스타트 시에만 DB 조회, 이후 재사용 (선택 사항)
 // 현재는 실시간성이 중요하므로 캐싱하지 않거나 짧게 유지
-let stanceCache = null;
-let lastCacheTime = 0;
+const stanceCache = null;
+const lastCacheTime = 0;
 const CACHE_TTL = 60 * 1000; // 1분
 
 /**

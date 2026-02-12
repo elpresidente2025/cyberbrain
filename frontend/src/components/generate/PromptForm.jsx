@@ -33,6 +33,9 @@ export default function PromptForm({
   // 키워드 탐색 다이얼로그 상태
   const [keywordDialogOpen, setKeywordDialogOpen] = useState(false);
 
+  // 키워드 경고 메시지 상태
+  const [keywordWarning, setKeywordWarning] = useState(null);
+
   // 참고자료 목록 상태 관리
   const [instructionsList, setInstructionsList] = useState(() => {
     // formData.instructions가 배열이면 그대로 사용, 아니면 문자열을 배열로 변환
@@ -255,13 +258,33 @@ export default function PromptForm({
               fullWidth
               size={formSize}
               label="노출 희망 검색어 (선택사항)"
-              placeholder="쉼표(,)로 구분하여 입력하세요"
+              placeholder="검색어는 최대 2개만 입력하세요"
               value={formData.keywords || ''}
-              onChange={handleInputChange('keywords')}
+              onChange={(e) => {
+                let value = e.target.value;
+                // 쉼표 개수 확인 (2개 이상 입력 시 차단 및 잘라내기)
+                const commas = value.match(/,/g);
+                if (commas && commas.length >= 2) {
+                  // 2번째 쉼표 위치 찾기
+                  const secondCommaIndex = value.indexOf(',', value.indexOf(',') + 1);
+                  if (secondCommaIndex !== -1) {
+                    // 2번째 쉼표까지만 남기고 뒷부분 제거
+                    value = value.substring(0, secondCommaIndex + 1);
+
+                    // 경고 메시지 표시 (이미 표시 중이 아닐 때만)
+                    if (!keywordWarning) {
+                      setKeywordWarning("검색어는 최대 2개까지만 입력 가능합니다.");
+                      setTimeout(() => setKeywordWarning(null), 3000);
+                    }
+                  }
+                }
+                onChange({ keywords: value });
+              }}
               onBlur={handleInputBlur('keywords')}
               disabled={disabled}
-              helperText="예: 성수역 3번 출구, 울산대 대학로, 계양IC 정체 등"
-              FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
+              helperText={keywordWarning || "쉼표(,)로 구분하여 입력하세요. (예: 성수역 3번 출구, 울산대 대학로)"}
+              error={!!keywordWarning}
+              FormHelperTextProps={{ sx: { color: keywordWarning ? 'error.main' : 'text.secondary', fontWeight: keywordWarning ? 600 : 400 } }}
             />
             {/* AI 검색어 추천 버튼 - 관리자가 활성화한 경우에만 표시 */}
             {config.aiKeywordRecommendationEnabled && (

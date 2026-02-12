@@ -1,0 +1,18 @@
+# Firebase Functions - Python (LightRAG)
+# 배포 빌드 안정화를 위해 버전 고정(Resolver backtracking 최소화)
+
+functions-framework==3.10.0
+firebase-admin==7.1.0
+firebase-functions==0.5.0
+google-genai[aiohttp]==1.63.0
+google-cloud-tasks==2.21.0
+requests==2.32.5
+lightrag-hku==1.4.9.11
+networkx==3.6.1
+tenacity==9.1.2
+lxml==6.0.2
+google-auth==2.48.0
+langgraph==1.0.8
+langchain==1.2.10
+beautifulsoup4==4.14.3
+google-generativeai==0.8.6

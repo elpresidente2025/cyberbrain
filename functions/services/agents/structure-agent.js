@@ -165,12 +165,15 @@ class StructureAgent extends BaseAgent {
         currentPrompt += `\n\n🚨 [중요] 이전 시도가 다음 이유로 반려되었습니다:\n"${feedback}"\n\n위 지적 사항을 반드시 반영하여, 15문단 구조를 완벽히 준수하여 다시 작성하십시오.`;
       }
 
-      // LLM 호출 (JSON 모드 사용)
-      const response = await callGenerativeModel(currentPrompt, 1, 'gemini-2.5-flash', true, 8192);
+      // LLM 호출 (JSON 모드 OFF - 긴 텍스트 생성 안정성 확보)
+      const response = await callGenerativeModel(currentPrompt, 1, 'gemini-2.5-flash', false, 8192);
+
+      // 🔧 [DEBUG] LLM 원본 응답 로깅 (240자 원인 파악용)
+      console.log(`📥 [StructureAgent] LLM 원본 응답 (${response?.length || 0}자):`, response?.substring(0, 500) + (response?.length > 500 ? '...' : ''));
 
       // 응답 파싱
       const structured = this.parseResponse(response);
-      let content = normalizeArtifacts(structured.content);
+      const content = normalizeArtifacts(structured.content);
       let title = normalizeArtifacts(structured.title || '');
 
       // 출력 검증
@@ -220,8 +223,13 @@ class StructureAgent extends BaseAgent {
 
 분석 목표:
 1. 글쓴이의 **입장과 논조** 추출
-2. 반드시 인용해야 할 **입장문 핵심 문구** 추출 (최우선)
+2. 반드시 인용해야 할 **핵심 공약/정책/주장** 추출 (최우선)
 3. 뉴스에서 **팩트와 발언** 추출
+
+⚠️ **mustIncludeFromStance 추출 규칙**:
+- 각 항목은 **15자 이상의 완전한 문장**이어야 합니다
+- 우선순위: (1) 구체적 공약/정책명, (2) 수치/일정 포함 문장, (3) 핵심 논리/비유, (4) 격언형/수사적 문장
+- ❌ "e스포츠", "디즈니" 같은 단어만 추출 금지
 
 [참고자료]
 ${sourceText.substring(0, 4000)}
@@ -231,7 +239,7 @@ ${sourceText.substring(0, 4000)}
   "issueScope": "이슈 범위 (CENTRAL_ISSUE / LOCAL_ISSUE 등)",
   "responsibilityTarget": "비판/요구 대상 주체",
   "expectedTone": "글의 예상 논조 (비판/지지/분석 등)",
-  "mustIncludeFromStance": ["입장문(첫번째 자료)에서 추출한 가장 강력한 문장 2~3개 (원문 그대로)"],
+  "mustIncludeFromStance": ["입장문의 핵심 공약/정책/주장 (15자 이상 완전한 문장)", "최대 5개까지"],
   "mustIncludeFacts": ["뉴스에서 추출한 구체적 팩트 5개"],
   "newsQuotes": ["뉴스 주요 발언 3개"]
 }`;
@@ -248,6 +256,21 @@ ${sourceText.substring(0, 4000)}
       const analysis = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(text);
 
       console.log('✅ [StructureAgent] ContextAnalyzer 완료:', analysis.issueScope);
+
+      // [필터링 적용] WriterAgent와 동일한 로직
+      if (analysis.mustIncludeFromStance && Array.isArray(analysis.mustIncludeFromStance)) {
+        analysis.mustIncludeFromStance = analysis.mustIncludeFromStance.filter(phrase => {
+          if (!phrase || typeof phrase !== 'string') return false;
+          const trimmed = phrase.trim();
+          if (trimmed.startsWith('⚠️')) return false;
+          if (trimmed.startsWith('우선순위:')) return false;
+          if (trimmed.startsWith('예시 패턴:')) return false;
+          if (trimmed.startsWith('→ 실제')) return false;
+          if (trimmed.length < 5) return false; // 5자 미만 제외
+          return true;
+        });
+      }
+
       return analysis;
     } catch (e) {
       console.warn('⚠️ [StructureAgent] ContextAnalyzer 실패 (무시):', e.message);
@@ -319,18 +342,26 @@ ${sourceText.substring(0, 6000)}
     // 4. ContextAnalyzer 결과 주입 (입장문 필수 포함 등)
     let contextInjection = '';
     if (contextAnalysis) {
-      const stancePhrases = (contextAnalysis.mustIncludeFromStance || [])
-        .map(p => `- "${p}"`).join('\n');
+      const stanceList = contextAnalysis.mustIncludeFromStance || [];
+      const stancePhrases = stanceList.map((p, i) => `${i + 1}. "${p}"`).join('\n');
+      const stanceCount = stanceList.length;
 
       contextInjection = `
 ╔═══════════════════════════════════════════════════════════════╗
-║  🔴 [MANDATORY] 입장문 핵심 논점 반영 (절대 누락 금지)        ║
+║  🔴 [MANDATORY] 핵심 공약/주장별 본론 분리 (절대 합치지 말 것) ║
 ╚═══════════════════════════════════════════════════════════════╝
-아래는 작성자의 핵심 입장입니다. **핵심 의미를 살려 새로운 문장으로 재작성**하여 본문에 포함하세요. 원문을 그대로 복사하지 마세요.
+
+아래는 작성자의 핵심 공약/주장 **${stanceCount}개**입니다.
+**각 항목을 반드시 별도의 본론 섹션으로 작성**하세요. 두 개 이상을 하나의 본론에 합치면 실패입니다.
 
 ${stancePhrases || '(없음)'}
 
-⚠️ 위 논점이 포함되지 않으면 원고 생성은 실패로 간주됩니다.
+📌 **본론 구조 지시**:
+- 위 ${stanceCount}개 공약 → **본론 ${stanceCount}개** (각각 별도 h2 소제목)
+- 예: "서울대병원 유치"와 "e스포츠 박물관"은 별도 본론
+- 공약 외 현황분석/경쟁구도 등은 도입부나 결론에 배치
+
+⚠️ 공약이 누락되거나 합쳐지면 원고 생성은 실패로 간주됩니다.
 `;
     }
 
@@ -360,49 +391,41 @@ ${stancePhrases || '(없음)'}
 
     const structureEnforcement = `
 ╔═══════════════════════════════════════════════════════════════╗
-║  🏗️ [ABSOLUTE STRUCTURE] 15문단 구조 강제 (매우 중요)        ║
+║  🏗️ [STRUCTURE] 유연한 본론 구조 (내용 중심)                 ║
 ╚═══════════════════════════════════════════════════════════════╝
 
-당신은 위에서 제시된 **[화법과 스타일]**을 유지하되, 
-반드시 아래의 **[5단 구조, 총 15문단]** 틀에 맞춰 내용을 배치해야 합니다.
+당신은 위에서 제시된 **[화법과 스타일]**을 유지하되,
+아래의 구조 틀에 맞춰 내용을 배치해야 합니다.
 
-**목표 분량: 총 ${targetWordCount}자 내외 (±10%) 필수**
-- **최소 ${Math.floor(targetWordCount * 0.9)}자 ~ 최대 ${Math.floor(targetWordCount * 1.1)}자**를 반드시 준수하십시오.
-- 너무 짧거나(요약X) 너무 길어지지(장황X) 않도록 각 문단의 길이를 조절하십시오. 
-- 각 문단은 평균 130~150자 내외가 적당합니다.
+**분량 원칙**:
+- 각 문단은 **120~150자** 범위로 작성하십시오.
+- 분량보다 **내용의 완결성**이 우선입니다. 참고자료의 핵심 공약/주장을 빠짐없이 다루십시오.
+- 동어반복으로 분량을 늘리지 마십시오.
 
-### 필수 구조 (총 15개의 <p> 문단)
+### 구조 (도입 + 본론 3~5개 + 결말)
 
 1. **도입부** (3문단):
-   - 문단 1: 인사 및 화자 소개 ("저는...") - 200자 이상
-   - 문단 2: 이슈의 배경 및 현황 - 200자 이상
-   - 문단 3: 문제 제기 및 집필 의도 - 200자 이상
+   - 문단 1: 인사 및 화자 소개 ("저는...")
+   - 문단 2: 이슈의 배경 및 현황
+   - 문단 3: 문제 제기 및 집필 의도
 
-2. **본론1** (3문단) - 소제목(<h2>) 필수:
-   - 문단 1: 첫 번째 핵심 논점/주장 제시 - 200자 이상
-   - 문단 2: 구체적 근거/사례/데이터 (뉴스 팩트 활용) - 200자 이상
-   - 문단 3: 소결 및 의미 부여 - 200자 이상
+2. **본론** (3~5개 섹션, 각 2~3문단) - 각 섹션에 소제목(<h2>) 필수:
+   - ⚠️ **참고자료에서 추출된 핵심 공약/정책/주장의 수에 따라 본론 섹션 수를 결정**하십시오.
+   - 공약이 3개면 본론 3개, 공약이 5개면 본론 5개.
+   - 각 본론 섹션은: (1) 핵심 주장 제시, (2) 구체적 근거/사례, (3) 기대 효과 또는 소결
+   - **추출된 공약/주장은 반드시 별도의 본론 섹션으로 다뤄야 합니다. 하나도 빠뜨리지 마십시오.**
 
-3. **본론2** (3문단) - 소제목(<h2>) 필수:
-   - 문단 1: 두 번째 핵심 논점/주장 - 200자 이상
-   - 문단 2: 심층 분석 또는 반론 제기 - 200자 이상
-   - 문단 3: 논리적 확장 - 200자 이상
-
-4. **본론3** (3문단) - 소제목(<h2>) 필수:
-   - 문단 1: 세 번째 핵심 논점/해결책 제안 - 200자 이상
-   - 문단 2: 구체적 실행 방안 또는 공약 연결 - 200자 이상
-   - 문단 3: 기대 효과 - 200자 이상
-
-5. **결말부** (3문단) - 소제목(<h2>) 필수:
-   - 문단 1: 전체 내용 요약 및 핵심 메시지 재강조 - 200자 이상
-   - 문단 2: 미래 비전 제시 - 200자 이상
-   - 문단 3: 강력한 호소 및 마무리 인사 - 200자 이상
+3. **결말부** (3문단) - 소제목(<h2>) 필수:
+   - 문단 1: 전체 내용 요약 및 핵심 메시지 재강조
+   - 문단 2: 미래 비전 제시
+   - 문단 3: 강력한 호소 및 마무리 인사
 
 ⚠️ **[제약 조건 - 위반 시 실패]**
 1. **요약 금지**: 짤막한 요약글이 아니라, 호흡이 긴 에세이/칼럼 형식이어야 합니다.
 2. **반복 금지**: 같은 문장을 반복하지 마십시오.
 3. **HTML 태그**: 문단은 <p>...</p>, 소제목은 <h2>...</h2>만 사용하십시오.
-4. **문단 수 준수**: 각 섹션은 정확히 3개의 문단이어야 합니다 (총 15개).
+4. **공약별 본론 분리 필수**: 서로 다른 공약/정책은 절대 하나의 본론에 합치지 마십시오.
+   예: "서울대병원"과 "e스포츠 박물관"은 각각 별도 본론 섹션이어야 합니다.
 5. **JSON 출력**: 결과는 반드시 JSON 포맷이어야 합니다.
 `;
 
@@ -415,6 +438,8 @@ ${partyStanceGuide ? partyStanceGuide : ''}
 ${referenceMaterialsSection}
 
 ${contextInjection}
+
+${bioIntegrityWarning}
 
 ${structureEnforcement}
 
@@ -497,13 +522,15 @@ ${structureEnforcement}
     if (!response) return { content: '', title: '' };
 
     // 코드블록 제거
-    let text = response.replace(/```(?:json)?\s*([\s\S]*?)```/g, '$1').trim();
+    const text = response.replace(/```(?:json)?\s*([\s\S]*?)```/g, '$1').trim();
 
     try {
       // JSON 파싱 시도
       const parsed = JSON.parse(text);
+      const content = parsed.content || parsed.body || '';
+      console.log(`✅ [StructureAgent] JSON 파싱 성공: content=${content.length}자, title="${parsed.title || '(없음)'}"`);
       return {
-        content: parsed.content || parsed.body || '',
+        content,
         title: parsed.title || ''
       };
     } catch (e) {

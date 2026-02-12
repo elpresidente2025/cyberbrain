@@ -176,8 +176,12 @@ const createCustomTheme = (isDarkMode) => createTheme({
       styleOverrides: {
         root: ({ ownerState }) => ({
           // Paper 내부의 Typography 색상 - 다크모드 대응
-          '.MuiPaper-root &': {
+          // [data-force-light] 영역은 항상 흰색 유지 (그래디언트 배경용)
+          '.MuiPaper-root &:not([data-force-light] *)': {
             color: isDarkMode ? '#ffffff' : '#000000',
+          },
+          '[data-force-light] &': {
+            color: '#ffffff',
           },
           // Alert 내부의 Typography 색상 - 다크모드 대응
           '.MuiAlert-root &': {

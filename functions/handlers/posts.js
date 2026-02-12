@@ -84,6 +84,12 @@ function insertSlogan(content, slogan) {
 }
 
 
+function insertDonationInfo(content, info) {
+  if (!content || !info) return content;
+  const html = `<p style="text-align: center; font-size: 0.9em; color: #666; margin: 1em 0;">${info.trim().replace(/\n/g, '<br>')}</p>`;
+  return `${content.trim()}\n${html}`;
+}
+
 function escapeRegExp(text) {
   return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -327,7 +333,9 @@ exports.generatePosts = httpWrap(async (req) => {
       isAdmin,
       isTester,
       slogan,             // 🎯 슬로건
-      sloganEnabled       // 🎯 슬로건 활성화 여부
+      sloganEnabled,      // 🎯 슬로건 활성화 여부
+      donationInfo,       // 💰 후원 안내
+      donationEnabled     // 💰 후원 안내 활성화 여부
     } = await loadUserProfile(uid, category, topic, { strictSourceOnly });
     stopProfile();
 
@@ -559,6 +567,18 @@ exports.generatePosts = httpWrap(async (req) => {
       .filter(s => s && s.trim())  // 빈 결과 제거
       .join('\n\n');
 
+    // 🔑 [NEW] 입장문(심층 주제)과 뉴스/데이터 분리
+    // instructions[0] = 입장문 (글의 뼈대, 핵심 주장)
+    // instructions[1+] = 뉴스/데이터 (팩트, 근거)
+    const stanceText = Array.isArray(data.instructions) && data.instructions[0]
+      ? String(data.instructions[0]).trim()
+      : (typeof data.instructions === 'string' ? data.instructions.trim() : '');
+    const newsDataTexts = Array.isArray(data.instructions) && data.instructions.length > 1
+      ? data.instructions.slice(1).filter(Boolean).map(t => String(t).trim())
+      : [];
+    const newsDataText = newsDataTexts.join('\n\n');
+    console.log(`📊 [분리 처리] 입장문: ${stanceText.length}자, 뉴스/데이터: ${newsDataText.length}자 (${newsDataTexts.length}개)`);
+
     const factAllowlist = buildFactAllowlist([
       sanitizedTopic,
       ...referenceTexts,
@@ -594,8 +614,8 @@ exports.generatePosts = httpWrap(async (req) => {
     // 🔍 디버그: newsContext 값 확인
     const resolvedNewsContext = strictSourceOnly && data.instructions
       ? (Array.isArray(data.instructions)
-          ? data.instructions.filter(item => item && String(item).trim()).join('\n\n')
-          : String(data.instructions).trim())
+        ? data.instructions.filter(item => item && String(item).trim()).join('\n\n')
+        : String(data.instructions).trim())
       : safeNewsContext;
 
     console.log('🔍 [DEBUG] 참고자료 전달 현황:', {
@@ -612,36 +632,163 @@ exports.generatePosts = httpWrap(async (req) => {
     });
 
     try {
-      const multiAgentResult = await generateWithMultiAgent({
-        topic: sanitizedTopic,
-        category,
-        subCategory: data.subCategory || '',
-        userProfile: {
-          ...userProfile,
-          status: currentStatus,
-          isCurrentLawmaker,
-          politicalExperience,
-          familyStatus
-        },
-        memoryContext: safeMemoryContext,
-        ragContext: safeRagContext,  // 🔍 RAG 컨텍스트 추가 (과거 글 스타일 학습)
-        instructions: instructionPayload,
-        // 🔧 핵심 수정: strictSourceOnly 모드에서는 사용자 입력(instructions)을 newsContext로 전달
-        newsContext: resolvedNewsContext,
-        regionHint,
-        keywords: backgroundKeywords,
-        userKeywords,  // 🔑 사용자 직접 입력 키워드 (최우선)
-        factAllowlist,
-        targetWordCount,
-        attemptNumber: session.attempts,  // 🎯 현재 시도 번호 (수사학 전략 변형용)
-        rhetoricalPreferences: userProfile.rhetoricalPreferences || {},  // 🎯 수사학 전략 선호도
-        pipeline: pipelineRoute  // 🆕 파이프라인 전달 (highQuality 지원)
-      });
-      stopMultiAgentGenerate();
+      // multiAgentResult를 if/else 바깥에서도 접근할 수 있도록 선언
+      let multiAgentResult = null;
 
-      generatedContent = multiAgentResult.content;
-      generatedTitle = multiAgentResult.title;
-      multiAgentMetadata = multiAgentResult.metadata;
+      // 🐍 [PYTHON STEP FUNCTIONS] 테스터는 파이썬 Step Functions 파이프라인 사용
+      // 새로운 분산 파이프라인: /pipeline_start → (자동 체이닝) → /pipeline_status 폴링
+      if (isTester && process.env.PYTHON_RAG_URL) {
+        console.log('🚀 [Tester] Step Functions 파이프라인으로 원고 생성을 시작합니다.');
+
+        const pythonBaseUrl = process.env.PYTHON_RAG_URL.replace('/rag_search', '');
+
+        // 1단계: 파이프라인 시작 (job_id 발급)
+        const startResponse = await fetch(`${pythonBaseUrl}/pipeline_start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: sanitizedTopic,
+            category,
+            keywords: backgroundKeywords,
+            pipeline: 'modular',
+            instructions: instructionPayload,
+            stanceText,      // 🔑 [NEW] 입장문 (심층 주제, 글의 뼈대)
+            newsDataText,    // 🔑 [NEW] 뉴스/데이터 (팩트, 근거)
+            newsContext: resolvedNewsContext,
+            targetWordCount,
+            user: {
+              name: fullName,
+              position: effectivePosition,
+              regionLocal: userProfile.regionLocal || '',
+              regionMetro: userProfile.regionMetro || '',
+              status: currentStatus,
+              politicalExperience,
+              isCurrentLawmaker
+            }
+          })
+        });
+
+        if (!startResponse.ok) {
+          const errText = await startResponse.text();
+          throw new Error(`Python pipeline start failed (${startResponse.status}): ${errText}`);
+        }
+
+        const startData = await startResponse.json();
+        const jobId = startData.jobId;
+        console.log(`📋 [Tester] 파이프라인 Job 시작됨: ${jobId}`);
+
+        // 2단계: 폴링으로 완료 대기
+        const MAX_POLL_TIME_MS = 10 * 60 * 1000; // 최대 10분으로 증가
+        const POLL_INTERVAL_MS = 3000;           // 3초마다 확인
+        const pollStartTime = Date.now();
+
+        let pipelineResult = null;
+        while (Date.now() - pollStartTime < MAX_POLL_TIME_MS) {
+          await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+
+          const statusResponse = await fetch(`${pythonBaseUrl}/pipeline_status?jobId=${jobId}`);
+          if (!statusResponse.ok) {
+            console.warn(`⚠️ [Tester] 상태 조회 실패, 재시도...`);
+            continue;
+          }
+
+          const STEP_NAME_MAPPING = {
+            'StructureAgent': '구조 설계 및 초안 작성 중',
+            'KeywordInjectorAgent': '키워드 최적화 및 삽입 중',
+            'StyleAgent': '문체 및 톤앤매너 보정 중',
+            'TitleAgent': '제목 생성 및 최적화 중',
+            'ComplianceAgent': '선거법 위반 여부 검토 중',
+            'SEOAgent': '검색 노출 최적화(SEO) 중',
+            'WriterAgent': '본문 작성 중',
+            'DraftAgent': '초안 작성 중'
+          };
+
+          const statusData = await statusResponse.json();
+          const { status, currentStep, totalSteps, currentStepName, progress: prog } = statusData;
+
+          console.log(`📊 [Tester] Job ${jobId}: ${currentStepName} (${prog?.percentage || 0}%)`);
+
+          // 프론트엔드 진행률 업데이트
+          const currentPercentage = Math.round(30 + (prog?.percentage || 0) * 0.5); // 30~80% 범위
+
+          // 한글 단계명 매핑 (없으면 영문 그대로)
+          const friendlyStepName = STEP_NAME_MAPPING[currentStepName] || `${currentStepName} 진행 중`;
+
+          await progress.update(3, currentPercentage, friendlyStepName);
+
+          if (status === 'completed') {
+            pipelineResult = statusData.result;
+            console.log('✅ [Tester] Step Functions 파이프라인 완료');
+            break;
+          }
+
+          if (status === 'failed') {
+            throw new Error(`Pipeline failed at step ${statusData.error?.step}: ${statusData.error?.message}`);
+          }
+        }
+
+        if (!pipelineResult) {
+          throw new Error('Pipeline timeout: 5분 내에 완료되지 않았습니다.');
+        }
+
+        // 파이썬 결과를 Node.js 구조로 매핑
+        multiAgentResult = {
+          content: pipelineResult.content,
+          title: pipelineResult.title,
+          metadata: {
+            pipeline: 'python-step-functions',
+            jobId,
+            writingMethod: pipelineResult.writingMethod,
+            keywordCounts: pipelineResult.keywordCounts,
+            compliancePassed: pipelineResult.compliancePassed,
+            seoPassed: pipelineResult.seoPassed
+          },
+          wordCount: pipelineResult.content?.replace(/<[^>]*>/g, '').length || 0,
+          appliedStrategy: pipelineResult.writingMethod || 'modular'
+        };
+        stopMultiAgentGenerate();
+
+        generatedContent = multiAgentResult.content;
+        generatedTitle = multiAgentResult.title;
+        multiAgentMetadata = multiAgentResult.metadata;
+
+        console.log('✅ [Tester] Step Functions 원고 생성 완료', {
+          jobId,
+          wordCount: multiAgentResult.wordCount
+        });
+
+      } else {
+        // ⚡ 기존 Node.js 파이프라인
+        multiAgentResult = await generateWithMultiAgent({
+          topic: sanitizedTopic,
+          category,
+          subCategory: data.subCategory || '',
+          userProfile: {
+            ...userProfile,
+            status: currentStatus,
+            isCurrentLawmaker,
+            politicalExperience,
+            familyStatus
+          },
+          memoryContext: safeMemoryContext,
+          ragContext: safeRagContext,
+          instructions: instructionPayload,
+          newsContext: resolvedNewsContext,
+          regionHint,
+          keywords: backgroundKeywords,
+          userKeywords,
+          factAllowlist,
+          targetWordCount,
+          attemptNumber: session.attempts,
+          rhetoricalPreferences: userProfile.rhetoricalPreferences || {},
+          pipeline: pipelineRoute
+        });
+        stopMultiAgentGenerate();
+
+        generatedContent = multiAgentResult.content;
+        generatedTitle = multiAgentResult.title;
+        multiAgentMetadata = multiAgentResult.metadata;
+      }
 
       // 🌟 [SubheadingAgent] 소제목 최적화 (AEO 가이드 적용)
       generatedContent = await optimizeHeadingsInContent({
@@ -913,7 +1060,9 @@ exports.generatePosts = httpWrap(async (req) => {
       }
     }
 
-    if (generatedContent) {
+    // 🔧 [FIX] Multi-Agent 파이프라인 결과는 이미 최적화되었으므로 레거시 후처리 스킵
+    // 중복 실행 시 SubheadingAgent 결과가 fallback 소제목으로 덮어써지는 문제 발생
+    if (generatedContent && !isMultiAgent) {
       let normalizedContent = ensureParagraphTags(generatedContent);
       normalizedContent = stripGeneratedSlogan(normalizedContent, slogan);
       const blocks = extractContentBlocks(normalizedContent);
@@ -982,15 +1131,33 @@ exports.generatePosts = httpWrap(async (req) => {
         && data.subCategory === 'current_affairs_diagnosis';
       generatedContent = trimTrailingDiagnostics(generatedContent, { allowDiagnosticTail });
       generatedContent = trimAfterClosing(generatedContent);
-      if (sloganEnabled && slogan && slogan.trim()) {
-        generatedContent = insertSlogan(generatedContent, slogan);
-      }
     }
 
-    // 글자수 계산
+    // 🔧 [FIX] Multi-Agent 파이프라인 결과에도 메타데이터 제거 적용
+    // Python 백엔드 또는 LLM이 생성한 "검색어 삽입 횟수", "생성 시간" 등 아티팩트 정리
+    if (generatedContent && isMultiAgent) {
+      generatedContent = cleanupPostContent(generatedContent);
+      generatedContent = stripGeneratedSlogan(generatedContent, slogan);
+      const allowDiagnosticTail = category === 'current-affairs'
+        && data.subCategory === 'current_affairs_diagnosis';
+      generatedContent = trimTrailingDiagnostics(generatedContent, { allowDiagnosticTail });
+      generatedContent = trimAfterClosing(generatedContent);
+      console.log('✅ [Multi-Agent] 메타데이터 제거 완료');
+    }
+
+    // 글자수 계산 (슬로건/후원 안내 삽입 전에 계산하여 본문만 카운트)
     const wordCount = generatedContent
       ? generatedContent.replace(/<[^>]*>/g, '').length
       : 0;
+
+    // 후원 안내 삽입 (글자수 계산 후)
+    if (donationEnabled && donationInfo && donationInfo.trim()) {
+      generatedContent = insertDonationInfo(generatedContent, donationInfo);
+    }
+    // 슬로건 삽입 (후원 안내 아래)
+    if (sloganEnabled && slogan && slogan.trim()) {
+      generatedContent = insertSlogan(generatedContent, slogan);
+    }
 
     // 응답 데이터 구성
     const draftData = {

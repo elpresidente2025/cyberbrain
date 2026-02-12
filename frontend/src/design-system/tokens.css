@@ -1,0 +1,223 @@
+/* 
+ * Design System Tokens
+ * CSS Variables 기반 디자인 토큰
+ * 
+ * 사용법: var(--color-primary), var(--spacing-md) 등
+ */
+
+:root {
+  /* ===========================
+   * 색상 토큰 (Colors)
+   * =========================== */
+
+  /* 브랜드 컬러 - 원래 네이비 유지 + 입체감 강화 */
+  --color-primary: #152484;
+  --color-primary-hover: #1e3a8a;
+  --color-primary-light: rgba(21, 36, 132, 0.15);
+  --color-primary-lighter: rgba(21, 36, 132, 0.06);
+  --color-primary-dark: #0f1a5c;
+  --color-secondary: #0ea5e9;
+  /* Sky Blue */
+
+  /* 그라데이션 - 네이비 기반 */
+  --gradient-primary: linear-gradient(135deg, #152484 0%, #1e40af 50%, #3b82f6 100%);
+  --gradient-primary-dark: linear-gradient(135deg, #0f1a5c 0%, #152484 100%);
+  --gradient-surface: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  --gradient-glass: linear-gradient(145deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.05) 100%);
+  --gradient-card: linear-gradient(145deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.9) 100%);
+
+  /* 글로우 효과 */
+  --shadow-glow-primary: 0 0 20px rgba(21, 36, 132, 0.4), 0 4px 12px rgba(21, 36, 132, 0.25);
+  --shadow-glow-accent: 0 0 15px rgba(0, 212, 255, 0.5);
+
+  --color-accent: #00d4ff;
+  --color-accent-glow: rgba(0, 212, 255, 0.6);
+
+  --color-gold: #f8c023;
+  --color-gold-light: rgba(248, 192, 35, 0.15);
+
+  /* 시맨틱 컬러 */
+  --color-success: #10b981;
+  --color-success-light: rgba(16, 185, 129, 0.1);
+  --color-warning: #f59e0b;
+  --color-warning-light: rgba(245, 158, 11, 0.1);
+  --color-error: #ef4444;
+  --color-error-light: rgba(239, 68, 68, 0.1);
+  --color-info: #3b82f6;
+  --color-info-light: rgba(59, 130, 246, 0.1);
+
+  /* 중립 컬러 (Light Mode) */
+  --color-background: #ffffff;
+  --color-surface: #f8fafc;
+  --color-surface-elevated: #ffffff;
+  --color-border: #e2e8f0;
+  --color-border-light: #f1f5f9;
+  --color-divider: #e2e8f0;
+
+  /* 텍스트 컬러 (Light Mode) */
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #94a3b8;
+  --color-text-inverse: #ffffff;
+
+  /* ===========================
+   * 간격 토큰 (Spacing)
+   * 4px 배수 체계
+   * =========================== */
+  --spacing-xxs: 4px;
+  --spacing-xs: 8px;
+  --spacing-sm: 12px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-2xl: 48px;
+  --spacing-3xl: 64px;
+  --spacing-4xl: 96px;
+
+  /* ===========================
+   * 테두리 반경 (Border Radius)
+   * =========================== */
+  --radius-none: 0;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  /* ===========================
+   * 타이포그래피 (Typography)
+   * =========================== */
+  --font-family-sans: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --font-family-mono: "SF Mono", "Monaco", "Inconsolata", "Fira Mono", monospace;
+
+  /* 폰트 크기 */
+  --font-size-xs: 0.75rem;
+  /* 12px */
+  --font-size-sm: 0.875rem;
+  /* 14px */
+  --font-size-base: 1rem;
+  /* 16px */
+  --font-size-lg: 1.125rem;
+  /* 18px */
+  --font-size-xl: 1.25rem;
+  /* 20px */
+  --font-size-2xl: 1.5rem;
+  /* 24px */
+  --font-size-3xl: 1.875rem;
+  /* 30px */
+  --font-size-4xl: 2.25rem;
+  /* 36px */
+  --font-size-5xl: 3rem;
+  /* 48px */
+  --font-size-6xl: 3.75rem;
+  /* 60px */
+
+  /* 폰트 웨이트 */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* 라인 높이 */
+  --line-height-tight: 1.25;
+  --line-height-snug: 1.375;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+
+  /* ===========================
+   * 그림자 (Shadows)
+   * =========================== */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  --shadow-glow-primary: 0 0 20px rgba(21, 36, 132, 0.3);
+  --shadow-glow-accent: 0 0 20px rgba(0, 212, 255, 0.3);
+
+  /* Glassmorphism 효과 */
+  --glass-background: rgba(255, 255, 255, 0.8);
+  --glass-border: rgba(255, 255, 255, 0.2);
+  --glass-blur: blur(12px);
+
+  /* ===========================
+   * 트랜지션 (Transitions)
+   * =========================== */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+  --transition-slow: 350ms ease;
+  --transition-colors: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
+
+  /* ===========================
+   * Z-Index 레이어
+   * =========================== */
+  --z-base: 0;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-fixed: 300;
+  --z-modal-backdrop: 400;
+  --z-modal: 500;
+  --z-popover: 600;
+  --z-tooltip: 700;
+}
+
+/* ===========================
+ * 다크 모드 토큰
+ * =========================== */
+[data-theme="dark"],
+.dark,
+.dark-mode {
+  /* 배경 컬러 */
+  --color-background: #0a0a0f;
+  --color-surface: #111118;
+  --color-surface-elevated: #1a1a24;
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-border-light: rgba(255, 255, 255, 0.05);
+  --color-divider: rgba(255, 255, 255, 0.08);
+
+  /* 텍스트 컬러 */
+  --color-text-primary: rgba(255, 255, 255, 0.95);
+  --color-text-secondary: rgba(255, 255, 255, 0.7);
+  --color-text-tertiary: rgba(255, 255, 255, 0.5);
+  --color-text-inverse: #0f172a;
+
+  /* 그림자 */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+
+  /* Glassmorphism */
+  --glass-background: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.1);
+}
+
+/* ===========================
+ * 유틸리티 클래스
+ * =========================== */
+
+/* 글래스모피즘 카드 */
+.glass-card {
+  background: var(--glass-background);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+}
+
+/* 그라데이션 텍스트 */
+.gradient-text {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* 글로우 효과 */
+.glow-primary {
+  box-shadow: var(--shadow-glow-primary);
+}
+
+.glow-accent {
+  box-shadow: var(--shadow-glow-accent);
+}

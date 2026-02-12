@@ -51,7 +51,7 @@ exports.indexPastPosts = httpWrap(async (req) => {
         console.log(`📚 [Indexing] 총 ${posts.length}개 원고 조회됨`);
 
         // 2. 청킹 및 임베딩 준비
-        let allChunks = [];
+        const allChunks = [];
 
         for (const post of posts) {
             if (!post.content || post.content.length < 50) continue;

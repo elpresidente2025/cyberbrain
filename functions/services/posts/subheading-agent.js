@@ -347,7 +347,7 @@ async function optimizeHeadingsInContent({ content, fullName, fullRegion }) {
   }
 
   // 4. 교체 (String Reconstruction)
-  let parts = [];
+  const parts = [];
   let lastIndex = 0;
 
   matches.forEach((match, i) => {

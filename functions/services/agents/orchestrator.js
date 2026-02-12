@@ -137,7 +137,7 @@ class Orchestrator {
     console.log(`🎭 [Orchestrator] Agent 순서: ${pipeline.map(p => p.name).join(' → ')}`);
 
     // 초기 컨텍스트 설정
-    let currentContext = {
+    const currentContext = {
       ...context,
       previousResults: {}
     };
@@ -230,7 +230,7 @@ class Orchestrator {
    * ComplianceAgent가 통과해도 SEO가 실패면 EditorAgent로 개선
    */
   async ensureQualityThreshold(context) {
-    let seoResult = this.results.SEOAgent?.data;
+    const seoResult = this.results.SEOAgent?.data;
     let complianceResult = this.results.ComplianceAgent?.data;
 
     if (!seoResult || !complianceResult) return;

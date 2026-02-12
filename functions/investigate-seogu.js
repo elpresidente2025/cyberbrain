@@ -35,7 +35,7 @@ async function investigateAll() {
 
   // 2. 광역의원 선거구에서 서구 검색
   console.log('2️⃣ 광역의원 선거구(sgTypecode=5) 전체 조회...');
-  let allMetro = [];
+  const allMetro = [];
   for (let page = 1; page <= 10; page++) {
     const res = await axios.get(`${BASE_URL}/getCommonSggCodeList`, {
       params: {

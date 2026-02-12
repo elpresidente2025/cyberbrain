@@ -27,7 +27,7 @@ async function checkUserData(searchName) {
   // 이름으로 사용자 검색
   const usersSnapshot = await db.collection('users').get();
 
-  let foundUsers = [];
+  const foundUsers = [];
   usersSnapshot.forEach(doc => {
     const data = doc.data();
     if (data.name && data.name.includes(searchName)) {

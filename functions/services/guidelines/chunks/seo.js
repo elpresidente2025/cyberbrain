@@ -38,17 +38,19 @@ const SEO_CHUNKS = [
     priority: 'HIGH',
     applies_to: { category: ['all'] },
     keywords: ['키워드', '검색어', 'SEO', '노출'],
-    instruction: '키워드를 본문 400자당 1회, 도입-본론-결론에 분산 배치',
-    forbidden: ['키워드 스터핑', '동일 문단 2회 반복'],
+    instruction: '키워드 2개 기준: 각 3~4회, 총합 7~8회. 15문단 기준 약 2문단당 1개 꼴로 분산 배치',
+    forbidden: ['키워드 스터핑', '동일 문단 2회 반복', '같은 키워드 연속 문단 배치'],
     examples: [
-      { bad: '청년일자리 청년일자리 청년일자리', good: '청년 일자리 정책이 중요합니다... (400자 후) 청년 일자리 확대를 위해...' },
+      { bad: '청년일자리 청년일자리 청년일자리', good: '청년 일자리 정책이 중요합니다... (2문단 후) 청년 일자리 확대를 위해...' },
       { bad: '키워드만 나열', good: '문장 내 자연스럽게 삽입' }
     ],
     details: {
-      interval: 400,
+      perKeyword: { min: 3, max: 4 },
+      totalTarget: { min: 7, max: 8 },
+      rhythm: '약 2문단당 1개 꼴 (15문단 기준)',
       positions: {
         intro: '첫 2문단에 1회',
-        body: '본론에 분산',
+        body: '본론에 분산 (2문단 간격 권장)',
         conclusion: '마지막 2문단에 1회'
       },
       methods: [
@@ -94,11 +96,11 @@ const SEO_CHUNKS = [
     priority: 'MEDIUM',
     applies_to: { category: ['all'] },
     keywords: ['구조', '소제목', '문단', 'HTML'],
-    instruction: 'H2 2~3개, H3 3~5개로 구조화, 문단은 150~250자',
+    instruction: 'H2 2~3개, H3 3~5개로 구조화, 문단은 120~150자',
     forbidden: [],
     examples: [
       { bad: '소제목 없이 긴 텍스트', good: '<h2>첫 번째 주제</h2><p>내용...</p>' },
-      { bad: '한 문단에 500자', good: '150~250자 단위로 문단 분리' }
+      { bad: '한 문단에 500자', good: '120~150자 단위로 문단 분리' }
     ],
     details: {
       headings: {
@@ -107,7 +109,7 @@ const SEO_CHUNKS = [
       },
       paragraphs: {
         count: '10-15개',
-        length: '150-250자',
+        length: '120-150자',
         rule: '한 문단 하나의 주제'
       }
     }
@@ -118,25 +120,20 @@ const SEO_CHUNKS = [
  * 키워드 배치 계산
  */
 function calculateKeywordDistribution(targetWordCount, keywordCount) {
-  const interval = 400;
-  const minInsertions = Math.max(2, Math.floor(targetWordCount / interval));
+  // 키워드 2개 기준: 각 3~4회, 총합 7~8회 (15문단 기준 약 2문단당 1개)
+  const perKeyword = keywordCount >= 2 ? 3 : 5;
+  const maxPerKeyword = perKeyword + 1;
 
-  let distribution;
-  if (minInsertions <= 2) {
-    distribution = { intro: 1, body: 1, conclusion: 0 };
-  } else if (minInsertions <= 4) {
-    distribution = { intro: 1, body: 2, conclusion: 1 };
-  } else {
-    const intro = Math.ceil(minInsertions * 0.25);
-    const conclusion = Math.ceil(minInsertions * 0.25);
-    const body = minInsertions - intro - conclusion;
-    distribution = { intro, body, conclusion };
-  }
+  const distribution = perKeyword <= 3
+    ? { intro: 1, body: 1, conclusion: 1 }
+    : { intro: 1, body: Math.max(1, perKeyword - 2), conclusion: 1 };
 
   return {
-    perKeyword: minInsertions,
+    perKeyword,
+    maxPerKeyword,
     distribution,
-    total: minInsertions * keywordCount
+    total: perKeyword * keywordCount,
+    totalMax: maxPerKeyword * keywordCount
   };
 }
 
@@ -151,10 +148,11 @@ function buildSEOGuideline(keywords = [], targetWordCount = 2000) {
 
   if (keywords.length > 0) {
     const dist = calculateKeywordDistribution(targetWordCount, keywords.length);
-    text += `[키워드] ${keywords.join(', ')} → 각 ${dist.perKeyword}회 삽입\n`;
+    text += `[키워드] ${keywords.join(', ')} → 각 ${dist.perKeyword}~${dist.maxPerKeyword}회, 총 ${dist.total}~${dist.totalMax}회\n`;
     text += `  - 도입부: ${dist.distribution.intro}회\n`;
     text += `  - 본론: ${dist.distribution.body}회\n`;
     text += `  - 결론: ${dist.distribution.conclusion}회\n`;
+    text += `  - 배치 리듬: 약 2문단당 1개 꼴\n`;
   }
 
   return text;

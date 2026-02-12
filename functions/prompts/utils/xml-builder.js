@@ -133,7 +133,7 @@ ${stancePhrasesXml || '    <phrase>(핵심 문구 추출 실패)</phrase>'}
  */
 function buildScopeWarningSection(analysis) {
   if (analysis.issueScope !== 'CENTRAL_ISSUE' &&
-      analysis.issueScope !== 'CENTRAL_ISSUE_WITH_LOCAL_IMPACT') {
+    analysis.issueScope !== 'CENTRAL_ISSUE_WITH_LOCAL_IMPACT') {
     return '';
   }
 
@@ -294,24 +294,24 @@ function buildWritingRulesSection(authorName, targetWordCount) {
  * 참고자료 섹션
  */
 function buildReferenceSection(instructions, newsContext) {
-  return `<reference priority="absolute">
-  <description>아래 참고자료가 글의 유일한 주제입니다. 이 내용을 중심으로만 작성하십시오.</description>
+  return `<section type="external-data" priority="background">
+  <description>분석 및 비판의 대상이 되는 외부 데이터입니다. 이 내용은 당신의 '생각'이 아니라, 당신이 '보고 있는 자료'입니다.</description>
 
   <user-instructions>
 ${instructions || '(없음)'}
   </user-instructions>
 
-  <news-context>
+  <external-context type="news/fact">
 ${newsContext || '(없음)'}
-  </news-context>
+  </external-context>
 
-  <usage-rules>
-    <rule type="must">최소 3개 이상의 구체적 팩트(인물명, 발언 인용, 법안명, 날짜 등)를 본문에 인용</rule>
-    <rule type="must">참고자료에 인용문이 있다면 원문 그대로 본문에 녹여내기</rule>
-    <rule type="must">입장문이 있다면 핵심 메시지와 논리 구조를 그대로 반영</rule>
-    <rule type="must-not">참고자료의 핵심 논지를 무시하고 일반론으로 대체 (원고 폐기)</rule>
-  </usage-rules>
-</reference>`;
+  <usage-protocol>
+    <rule type="must">위 자료를 '나(화자)'의 경험담으로 쓰지 마십시오. 이것은 '남(타인)'의 이야기입니다.</rule>
+    <rule type="must">자료에 등장하는 인물, 사건, 발언을 제3자의 관점에서 관찰하고 논평하십시오.</rule>
+    <rule type="must">최소 3개 이상의 구체적 팩트(인물명, 발언 인용 등)를 근거로 활용하십시오.</rule>
+    <rule type="must">입장문이 있다면 그 논리 구조를 벤치마킹하되, 화자 정체성은 유지하십시오.</rule>
+  </usage-protocol>
+</section>`;
 }
 
 /**

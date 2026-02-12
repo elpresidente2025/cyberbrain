@@ -59,6 +59,7 @@ exports.saveSelectedPost = httpWrap(async (req) => {
     const postData = {
       userId: uid,
       title: data.title,
+      topic: data.topic || '',
       content: data.content,
       category: data.category || '일반',
       subCategory: data.subCategory || '',

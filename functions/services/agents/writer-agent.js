@@ -179,7 +179,13 @@ class WriterAgent extends BaseAgent {
       isCurrentLawmaker: this.isCurrentLawmaker(userProfile),
       politicalExperience: userProfile.politicalExperience || '정치 신인',
       // 가족 상황 (자녀 환각 방지)
-      familyStatus: userProfile.familyStatus || ''
+      // 원외 인사 판단용
+      isCurrentLawmaker: this.isCurrentLawmaker(userProfile),
+      politicalExperience: userProfile.politicalExperience || '정치 신인',
+      // 가족 상황 (자녀 환각 방지)
+      familyStatus: userProfile.familyStatus || '',
+      // 🚨 [CRITICAL] 정체성 혼동 방지를 위한 '상대방' 정보 전달
+      negativePersona: previousResults?.WriterAgent?._opponentName || context._opponentName || null
     });
 
     // 5.5 당론 가이드 조회 (비동기)
@@ -242,17 +248,22 @@ ${authorName || '(미상)'}
   ],
   "authorRole": "글 작성자(${authorName || '화자'})가 이 상황에서 취해야 할 입장과 역할 (첫 번째 자료 기반)",
   "expectedTone": "이 글의 예상 논조 (반박/지지/분석/비판/호소 중 택1)",
+  "opponentName": "글쓴이가 비판하거나 대립각을 세우는 대상의 이름 (예: '박형준'). 없다면 null",
   "mustIncludeFacts": ["뉴스에서 추출한 반드시 언급해야 할 구체적 팩트 5개 (정식 법안명, 날짜, 장소, 구체적 수치 등) - 모호한 표현 금지"],
   "newsQuotes": ["뉴스에 등장하는 핵심 인물들의 발언을 '참고용'으로 추출 (3개 이상). 예: 박형준 시장의 '신공안 통치' 발언 등"],
-  "mustIncludeFromStance": ["입장문에서 추출한 핵심 문장 1", "입장문에서 추출한 핵심 문장 2"],
+  "mustIncludeFromStance": ["입장문의 핵심 공약/정책/주장 (15자 이상 완전한 문장)", "최대 5개까지"],
   "contextWarning": "맥락 오해 방지를 위한 주의사항 (예: 2차 특검법은 중앙 이슈이므로 부산시 의혹으로 축소 해석하지 말 것)"
 }
 
 **[CRITICAL] mustIncludeFromStance 추출 가이드**:
-- 입장문(첫 번째 자료)에서 가장 인상적이고 강력한 문장 2~3개를 **원문 그대로** 복사하세요.
-- 우선순위: (1) 격언형 문장 (~하면 ~없다), (2) 반어법/수사적 질문, (3) 대구법 문장, (4) 핵심 비판 문장
-- 예시: "당당하면 피할 이유 없다", "'신공안 통치'라는 프레이밍 자체가 진실 규명 회피"
-- ⚠️ 지시문이 아닌 **실제 입장문에서 추출한 원문**을 넣으세요!`;
+- 입장문(첫 번째 자료)에서 **반드시 원고에 포함해야 할 핵심 내용** 3~5개를 추출하세요.
+- 각 항목은 **15자 이상의 완전한 문장**이어야 합니다. 단어나 짧은 구절은 안 됩니다.
+- 우선순위:
+  (1) **구체적 공약/정책명** (예: "다대포 디즈니랜드 유치", "서울대병원 부산 유치")
+  (2) **수치/일정이 포함된 문장** (예: "7월 1일부터 바로 가동", "연간 천만 명 관광객")
+  (3) **핵심 논리/비유** (예: "완판된 아파트 사업과 같다")
+  (4) 격언형/수사적 문장
+- ⚠️ "e스포츠", "디즈니" 같은 **단어만 추출하면 안 됩니다**. 반드시 문장으로 추출하세요.`;
 
           const contextModel = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
           const contextResult = await contextModel.generateContent({
@@ -294,7 +305,7 @@ ${authorName || '(미상)'}
               if (trimmed.startsWith('우선순위:')) return false;
               if (trimmed.startsWith('예시 패턴:')) return false;
               if (trimmed.startsWith('→ 실제')) return false;
-              if (trimmed.length < 10) return false; // 너무 짧은 것도 제외
+              if (trimmed.length < 5) return false; // 너무 짧은 것 제외 (안전망)
               return true;
             });
 
@@ -324,8 +335,11 @@ ${newsQuotesText}
             // context에 responsibilityTarget 저장 (EditorAgent에서 검증용)
             const expectedTone = contextAnalysis.expectedTone || '';
             const responsibilityTarget = contextAnalysis.responsibilityTarget || '';
+            const opponentName = contextAnalysis.opponentName || null; // 🔍 비판 대상(부정 페르소나) 식별
+
             context._responsibilityTarget = responsibilityTarget;
             context._expectedTone = expectedTone;
+            context._opponentName = opponentName;
 
             // XML 구조로 맥락 분석 섹션 생성
             const contextXml = buildContextAnalysisSection(contextAnalysis, authorName);
@@ -369,32 +383,50 @@ ${newsQuotesText}
     }
 
     // 6.7.5 [CRITICAL] 당론 가이드 (본문 템플릿보다 우선 적용)
+    // 6.7.5 [CRITICAL] 당론 가이드 (본문 템플릿보다 우선 적용)
     if (partyStanceGuide) {
       promptSections.push(partyStanceGuide);
       console.log(`🏛️ [WriterAgent] 당론 가이드 주입 완료`);
     }
 
-    // 6.8 본문 템플릿 (기본)
-    promptSections.push(prompt);
-
-    // 6.9 [최우선 반영] 사용자 특별 지시사항 & 뉴스 기사 (Override Rule)
-    // 템플릿이나 페르소나보다 이 내용이 가장 최신이고 중요함을 강조
+    // 6.7.6 [REORDERED] 참고자료 & 지시사항 (템플릿보다 먼저 주입하여 '데이터'로 인식시킴)
     if (instructions || newsContext) {
       // XML 구조로 스타일 가이드 및 작성 규칙 생성
       const styleGuideXml = buildStyleGuideSection(stylePrompt, authorName, targetWordCount);
       const writingRulesXml = buildWritingRulesSection(authorName, targetWordCount);
       const referenceXml = buildReferenceSection(instructions, newsContext);
 
+      // 참고자료 먼저 삽입 (배경 데이터)
+      promptSections.push(referenceXml);
+
+      // 가이드 삽입
       promptSections.push(styleGuideXml);
       promptSections.push(writingRulesXml);
-      promptSections.push(referenceXml);
     }
+
+    // 6.8 [REORDERED] 본문 템플릿 (정체성 & 작성 지침 포함 - 참고자료 뒤에 와야 Authority 가짐)
+    promptSections.push(prompt);
 
     // 🥪 Sandwich 패턴: 프롬프트 맨 뒤에 입장문 핵심 문구 다시 강조
     if (mustIncludeFromStanceForSandwich) {
       const sandwichXml = buildSandwichReminderSection(mustIncludeFromStanceForSandwich);
       if (sandwichXml) promptSections.push(sandwichXml);
     }
+
+    // 🔐 [NEW] Final Identity Lock (최종 정체성 잠금장치)
+    // 아무리 위에서 흔들려도 마지막에 "넌 누구다"라고 박아버림
+    const identityLock = `
+<identity-lock priority="override">
+  <status>FINAL_CHECK</status>
+  <who-am-i>${authorName} (${userProfile.position || '정치인'})</who-am-i>
+  <who-is-opponent>${context._opponentName || '참고자료의 인물들'}</who-is-opponent>
+  <instruction>
+    직전의 참고자료에 몰입하지 마십시오. 당신은 비판하는 주체이지, 비판 대상이 아닙니다.
+    반드시 "저는 ${authorName}입니다"라는 자각을 유지하며 글을 마무리하십시오.
+  </instruction>
+</identity-lock>
+`;
+    promptSections.push(identityLock);
 
     // 6.10 [PROTOCOL OVERRIDE] JSON 포맷 무시 및 텍스트 프로토콜 강제 (최종 오버라이드)
     promptSections.push(buildOutputProtocolSection());

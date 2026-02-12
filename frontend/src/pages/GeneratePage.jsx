@@ -48,22 +48,54 @@ const DraftGrid = React.lazy(() => import('../components/generate/DraftGrid'));
 const PreviewPane = React.lazy(() => import('../components/generate/PreviewPane'));
 
 // 🔄 로딩 오버레이 컴포넌트 (텍스트 순환 애니메이션)
-const LOADING_MESSAGES = [
+// 🔄 로딩 오버레이 컴포넌트 (텍스트 순환 애니메이션)
+// 단계별 순환 메시지 정의
+const STEP_MESSAGES = {
+  // 1. 구조 설계 (가장 오래 걸림)
+  '구조 설계 및 초안 작성 중': [
+    '근거와 구조를 정돈 중...',
+    '주요 포인트 정리 중...',
+    '문단 구성 조율 중...',
+    '전체 개요를 잡는 중...'
+  ],
+  // 2. 본문 작성 (가장 텍스트 많음)
+  '본문 작성 중': [
+    '상세 내용을 글로 풀어내는 중...',
+    '원고 초안 정리 중...',
+    '핵심 메시지 다듬는 중...',
+    '맥락을 반영해 문장을 다듬는 중...'
+  ],
+  '초안 작성 중': [
+    '상세 내용을 글로 풀어내는 중...',
+    '원고 초안 정리 중...',
+    '핵심 메시지 다듬는 중...',
+    '맥락을 반영해 문장을 다듬는 중...'
+  ],
+  // 3. SEO 최적화 (후반 작업)
+  '검색 노출 최적화(SEO) 중': [
+    '표현을 자연스럽게 다듬는 중...',
+    '읽기 쉬운 문장으로 변환 중...',
+    '문장 흐름 정리 중...',
+    '완성도를 높이는 중...',
+    '읽기 편한 문장으로 고치는 중...'
+  ]
+};
+
+// 기본 메시지 (초기 로딩 등)
+const DEFAULT_MESSAGES = [
   'AI가 원고를 생성하고 있습니다...',
-  '원고 초안 정리 중...',
-  '핵심 메시지 다듬는 중...',
-  '문장 흐름 정리 중...',
-  '근거와 구조를 정돈 중...',
-  '표현을 자연스럽게 다듬는 중...',
-  '읽기 쉬운 문장으로 변환 중...',
-  '주요 포인트 정리 중...',
-  '문단 구성 조율 중...',
-  '맥락을 반영해 문장을 다듬는 중...',
-  '완성도를 높이는 중...'
+  '잠시만 기다려 주세요...'
 ];
 
 const LoadingOverlayWithRotatingText = React.memo(({ loading, progress }) => {
   const [messageIndex, setMessageIndex] = React.useState(0);
+
+  // 현재 단계에 맞는 메시지 목록 찾기
+  // progress.message가 STEP_MESSAGES의 키와 일치하면 해당 목록 사용
+  // 일치하지 않으면 (예: '준비 중...', '완료') 해당 메시지를 단독으로 보여줌 (순환 X)
+  const currentStepMessage = progress?.message;
+  const targetMessages = STEP_MESSAGES[currentStepMessage] || DEFAULT_MESSAGES;
+  const isRotatingStep = !!STEP_MESSAGES[currentStepMessage];
 
   React.useEffect(() => {
     if (!loading) {
@@ -71,14 +103,33 @@ const LoadingOverlayWithRotatingText = React.memo(({ loading, progress }) => {
       return;
     }
 
+    // 단계가 변경되면 인덱스 초기화
+    setMessageIndex(0);
+  }, [loading, currentStepMessage]); // currentStepMessage 변경 시 초기화
+
+  React.useEffect(() => {
+    if (!loading || !isRotatingStep) return;
+
     const intervalId = setInterval(() => {
-      setMessageIndex(prev => (prev + 1) % LOADING_MESSAGES.length);
+      setMessageIndex(prev => (prev + 1) % targetMessages.length);
     }, 2500); // 2.5초마다 변경
 
     return () => clearInterval(intervalId);
-  }, [loading]);
+  }, [loading, isRotatingStep, targetMessages.length]);
 
-  const displayMessage = progress?.message || LOADING_MESSAGES[messageIndex];
+  // 표시할 메시지 결정 로직:
+  // 1. 순환 단계인 경우: targetMessages[index]
+  // 2. 순환 단계가 아닌 경우 (예: 준비 중): progress.message 그대로 표시
+  // 3. progress 자체가 없는 경우: DEFAULT_MESSAGES[index]
+  let displayMessage;
+
+  if (currentStepMessage && !isRotatingStep) {
+    displayMessage = currentStepMessage;
+  } else if (isRotatingStep) {
+    displayMessage = targetMessages[messageIndex];
+  } else {
+    displayMessage = DEFAULT_MESSAGES[messageIndex % DEFAULT_MESSAGES.length];
+  }
 
   return (
     <Backdrop

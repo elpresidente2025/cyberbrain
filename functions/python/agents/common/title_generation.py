@@ -318,18 +318,61 @@ def get_election_compliance_instruction(status: str) -> str:
         logger.error(f'Error in get_election_compliance_instruction: {e}')
         return ''
 
+def are_keywords_similar(kw1: str, kw2: str) -> bool:
+    """
+    두 키워드가 유사한지 판별 (공통 어절이 있는지)
+    예: "서면 영광도서", "부산 영광도서" → 공통 "영광도서" → 유사
+    예: "계양산 러브버그 방역", "계양구청" → 공통 없음 → 독립
+    """
+    if not kw1 or not kw2:
+        return False
+    words1 = kw1.split()
+    words2 = kw2.split()
+    return any(w in words2 and len(w) >= 2 for w in words1)
+
 def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[str]) -> str:
     try:
         has_user_keywords = bool(user_keywords)
         primary_kw = user_keywords[0] if has_user_keywords else (keywords[0] if keywords else '')
         secondary_kw = (user_keywords[1] if len(user_keywords) > 1 else (keywords[0] if keywords else '')) if has_user_keywords else (keywords[1] if len(keywords) > 1 else '')
-        
+
+        # 두 키워드 간 유사/독립 판별
+        has_two_keywords = bool(primary_kw and secondary_kw and primary_kw != secondary_kw)
+        similar = has_two_keywords and are_keywords_similar(primary_kw, secondary_kw)
+
+        title_keyword_rule = ""
+        if has_two_keywords:
+            if similar:
+                # 유사 키워드: 제목은 1번 키워드로 시작, 2번 키워드는 어절 해체하여 배치
+                kw2_words = secondary_kw.split()
+                kw1_words = primary_kw.split()
+                unique_words = [w for w in kw2_words if w not in kw1_words]
+                unique_hint = f'"{", ".join(unique_words)}"를 제목 뒤쪽에 녹여넣기' if unique_words else '공통 어절로 자동 충족'
+                example_word = unique_words[0] if unique_words else kw2_words[0]
+                title_keyword_rule = f"""
+📌 **제목 키워드 배치 규칙 (유사 키워드)**
+두 검색어("{primary_kw}", "{secondary_kw}")가 공통 어절을 공유하므로:
+• 제목은 반드시 "{primary_kw}"로 시작
+• "{secondary_kw}"는 어절 단위로 해체하여 자연스럽게 배치 ({unique_hint})
+• 예시: "{primary_kw}, <보고있나, {example_word}> 출판기념회에 초대합니다"
+"""
+            else:
+                # 독립 키워드: 제목은 1번 키워드로 시작, 2번 키워드는 뒤에 배치
+                title_keyword_rule = f"""
+📌 **제목 키워드 배치 규칙 (독립 키워드)**
+두 검색어("{primary_kw}", "{secondary_kw}")가 독립적이므로:
+• 제목은 반드시 "{primary_kw}"로 시작
+• "{secondary_kw}"는 제목 뒤쪽에 자연스럽게 배치
+• 예시: "{primary_kw}, 확장 공사에 {secondary_kw} 적극 구제 촉구"
+"""
+
         kw_instruction = ""
         if primary_kw:
-            kw_instruction += f"**1순위 키워드**: \"{primary_kw}\" → 제목 앞 8자 이내 배치 권장 (필수 아님, 자연스러움 우선)\\n"
+            kw_instruction += f"**1순위 키워드**: \"{primary_kw}\" → 제목 앞 8자 이내 배치 권장 (필수 아님, 자연스러움 우선)\n"
         if secondary_kw:
-            kw_instruction += f"**2순위 키워드**: \"{secondary_kw}\" → 제목 중앙 배치\\n"
-            
+            placement = '어절 해체하여 자연 배치' if similar else '제목 뒤쪽 배치'
+            kw_instruction += f"**2순위 키워드**: \"{secondary_kw}\" → {placement}\n"
+
         return f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🔑 SEO 키워드 삽입 전략
@@ -348,13 +391,10 @@ def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[st
 ✅ "부산 지방선거, 왜 이 남자가" → 키워드 = "부산 지방선거"
 ✅ "부산 지방선거에 뛰어든 부두 노동자" → 키워드 = "부산 지방선거"
 ❌ "부산 지방선거 이재성 원칙" → 키워드 = "부산 지방선거 이재성 원칙"(잘못 인식)
-
+{title_keyword_rule}
 📊 **키워드 밀도: 최소 1개, 최대 3개**
 • 최적: 2개 (가장 자연스럽고 효과적)
 • 4개 이상: 스팸으로 판단, CTR 감소
-
-✅ "분당구 청년 기본소득, 월 50만원" (2개: 분당구, 청년 기본소득)
-❌ "분당구 정자동 청년 기본소득 월 50만원 지원" (4개, 어색)
 
 📍 **위치별 배치 전략**
 ┌─────────────────────────────────────────────┐
@@ -679,20 +719,50 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
                         if end_pos + 1 < len(title) and '\uac00' <= title[end_pos + 1] <= '\ud7a3':
                             kw_delimiter_ok = False
 
+        # 듀얼 키워드 배치 검증: 1번 키워드가 제목 시작에 있는지
+        dual_kw_bonus = 0
+        dual_kw_penalty = 0
+        if len(user_keywords) >= 2:
+            kw1 = user_keywords[0]
+            kw1_idx = title.find(kw1)
+            kw1_starts_title = 0 <= kw1_idx <= 2  # 제목 맨 앞(0~2자 내)
+            if kw1_starts_title:
+                dual_kw_bonus = 3
+            elif kw1_idx < 0:
+                dual_kw_penalty = 5
+                suggestions.append(f'1순위 키워드 "{kw1}"가 제목에 없습니다. 제목 시작 부분에 배치하세요.')
+
+            # 2번 키워드: 유사면 어절 해체 충족, 독립이면 포함 여부
+            kw2 = user_keywords[1]
+            similar = are_keywords_similar(kw1, kw2)
+            if similar:
+                kw2_words = kw2.split()
+                kw1_words = kw1.split()
+                unique_words = [w for w in kw2_words if w not in kw1_words and len(w) >= 2]
+                has_unique = len(unique_words) == 0 or any(w in title for w in unique_words)
+                if not has_unique:
+                    dual_kw_penalty += 3
+                    suggestions.append(f'2순위 키워드 "{kw2}"의 고유 어절({", ".join(unique_words)})이 제목에 없습니다.')
+            else:
+                if kw2 not in title:
+                    dual_kw_penalty += 3
+                    suggestions.append(f'2순위 키워드 "{kw2}"가 제목에 포함되지 않았습니다.')
+
         if any_in_front10:
-            score = 20 if kw_delimiter_ok else 15
+            score = min(20, max(0, (20 if kw_delimiter_ok else 15) + dual_kw_bonus - dual_kw_penalty))
             status = '최적' if kw_delimiter_ok else '최적(구분자 부족)'
             breakdown['keywordPosition'] = {'score': score, 'max': 20, 'status': status, 'keyword': front_keyword}
             if not kw_delimiter_ok:
                 suggestions.append(f'키워드 "{front_keyword}" 뒤에 쉼표나 조사를 넣어 다음 단어와 분리하세요. (예: "부산 지방선거, ~")')
         elif any_in_title:
-            breakdown['keywordPosition'] = {'score': 12, 'max': 20, 'status': '포함됨', 'keyword': any_keyword}
+            score = max(0, 12 - dual_kw_penalty)
+            breakdown['keywordPosition'] = {'score': score, 'max': 20, 'status': '포함됨', 'keyword': any_keyword}
             suggestions.append(f'키워드 "{any_keyword}"를 제목 앞쪽(10자 내)으로 이동하면 SEO 효과 증가.')
         else:
-                breakdown['keywordPosition'] = {'score': 0, 'max': 20, 'status': '없음'}
-                suggestions.append(f'키워드 중 하나라도 제목에 포함하세요: {", ".join(user_keywords[:2])}')
+            breakdown['keywordPosition'] = {'score': 0, 'max': 20, 'status': '없음'}
+            suggestions.append(f'키워드 중 하나라도 제목에 포함하세요: {", ".join(user_keywords[:2])}')
     else:
-             breakdown['keywordPosition'] = {'score': 10, 'max': 20, 'status': '키워드없음'}
+        breakdown['keywordPosition'] = {'score': 10, 'max': 20, 'status': '키워드없음'}
              
     # 3. Numbers Score (Max 15)
     has_numbers = bool(re.search(r'\d+(?:억|만원|%|명|건|가구|곳)?', title))

@@ -50,7 +50,6 @@
 | `committees` | array | 소속 위원회 목록 | ['교육위원회'] |
 | `customCommittees` | array | 직접 입력한 위원회명 | ['특별위원회'] |
 | `constituencyType` | string | 선거구 유형 | |
-| `twitterPremium` | boolean | X 프리미엄 구독 여부 | true/false |
 | `customTitle` | string | 준비 상태일 때 사용할 직위 | |
 
 #### 구독 관련 필드

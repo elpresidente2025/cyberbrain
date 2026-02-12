@@ -141,7 +141,7 @@ ${truncatedSource || '(참고자료 없음 - 주제만으로 작성)'}
     if (!response) return '';
 
     // 마크다운 코드블록 제거
-    let cleaned = response
+    const cleaned = response
       .replace(/```[\s\S]*?```/g, '')
       .replace(/`/g, '')
       .trim();

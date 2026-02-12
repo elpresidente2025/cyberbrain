@@ -142,8 +142,7 @@ function RegisterPage() {
               politicalExperience: formData.politicalExperience,
               committees: formData.committees,
               customCommittees: formData.customCommittees,
-              constituencyType: formData.constituencyType,
-              twitterPremium: formData.twitterPremium
+              constituencyType: formData.constituencyType
             }
           })
         });

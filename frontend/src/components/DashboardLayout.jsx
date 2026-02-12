@@ -41,8 +41,8 @@ const DashboardLayout = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Design tokens
-  const headerBgColor = theme.palette.ui?.header || '#152484';
+  // Design tokens - CSS Variables 사용
+  const headerBgColor = 'var(--color-primary)';
 
   const handleLogout = async () => await logout();
   const handleLogoClick = () => navigate('/dashboard');
@@ -54,7 +54,7 @@ const DashboardLayout = ({ children }) => {
 
   // 자기소개가 없는 사용자는 제한된 메뉴만 표시
   const menuItems = [];
-  
+
   if (hasBio || isAdmin) {
     // 자기소개가 있거나 관리자인 경우 전체 메뉴 표시
     menuItems.push(
@@ -66,13 +66,13 @@ const DashboardLayout = ({ children }) => {
 
   // 소개 페이지는 항상 표시
   menuItems.push({ text: '소개', icon: <Info />, path: '/about' });
-  
+
   // 프로필과 결제는 항상 표시
   menuItems.push(
     { text: '프로필 수정', icon: <Settings />, path: '/profile' },
     { text: '인증 및 결제', icon: <CreditCard />, path: '/billing' }
   );
-  
+
   if (isAdmin) {
     menuItems.push({ text: '관리', icon: <AdminPanelSettings />, path: '/admin' });
   }
@@ -93,11 +93,11 @@ const DashboardLayout = ({ children }) => {
         position="fixed"
         elevation={0}
         sx={{
-          bgcolor: isDarkMode ? 'rgba(21, 36, 132, 0.95)' : 'rgba(21, 36, 132, 0.98)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          borderBottom: `1px solid ${isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.2)'}`,
-          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+          bgcolor: isDarkMode ? 'rgba(21, 36, 132, 0.95)' : 'var(--color-primary)',
+          backdropFilter: 'var(--glass-blur)',
+          WebkitBackdropFilter: 'var(--glass-blur)',
+          borderBottom: '1px solid var(--color-border)',
+          boxShadow: 'var(--shadow-md)',
           top: 0,
           zIndex: (t) => t.zIndex.appBar + 1,
           borderRadius: 0,
@@ -135,9 +135,10 @@ const DashboardLayout = ({ children }) => {
                     startIcon={item.icon}
                     onClick={() => handleNavigate(item.path)}
                     sx={{
-                      color: 'white',
-                      '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' },
-                      ...(isCurrentPath(item.path) && { bgcolor: 'rgba(255,255,255,0.2)', fontWeight: 'bold' })
+                      color: 'var(--color-text-inverse)',
+                      transition: 'all var(--transition-fast)',
+                      '&:hover': { bgcolor: 'var(--color-primary-light)' },
+                      ...(isCurrentPath(item.path) && { bgcolor: 'var(--color-primary-light)', fontWeight: 'bold' })
                     }}
                   >
                     {item.text}
@@ -146,10 +147,10 @@ const DashboardLayout = ({ children }) => {
               </Box>
 
               {/* 다크모드 토글 버튼 */}
-              <IconButton 
-                color="inherit" 
+              <IconButton
+                color="inherit"
                 onClick={toggleTheme}
-                sx={{ color: 'white', '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' }, mr: 1 }}
+                sx={{ color: 'var(--color-text-inverse)', '&:hover': { bgcolor: 'var(--color-primary-light)' }, mr: 1 }}
               >
                 {isDarkMode ? <LightMode /> : <DarkMode />}
               </IconButton>
@@ -158,7 +159,7 @@ const DashboardLayout = ({ children }) => {
                 color="inherit"
                 startIcon={<Logout />}
                 onClick={handleLogout}
-                sx={{ color: 'white', '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' } }}
+                sx={{ color: 'var(--color-text-inverse)', '&:hover': { bgcolor: 'var(--color-primary-light)' } }}
               >
                 로그아웃
               </Button>
@@ -200,9 +201,8 @@ const DashboardLayout = ({ children }) => {
         sx={{
           py: 2,
           px: 2,
-          bgcolor: headerBgColor,
-          borderTop: '1px solid',
-          borderColor: 'divider',
+          bgcolor: 'var(--color-primary)',
+          borderTop: '1px solid var(--color-border)',
           textAlign: 'center',
           position: 'relative',
           mt: 'auto',
@@ -219,7 +219,7 @@ const DashboardLayout = ({ children }) => {
           }
         }}
       >
-        <Typography variant="caption" sx={{ lineHeight: 1.6, color: 'white', position: 'relative', zIndex: 2 }}>
+        <Typography variant="caption" sx={{ lineHeight: 1.6, color: 'var(--color-text-inverse)', position: 'relative', zIndex: 2 }}>
           사이버브레인 | 사업자등록번호: 256-24-02174 | 통신판매업신고번호: (비움)<br />
           대표: 강정구 | 인천광역시 계양구 용종로 124, 학마을한진아파트 139동 1504호 | 대표번호: 010-4885-6206<br />
           Copyright 2025. CyberBrain. All Rights Reserved.

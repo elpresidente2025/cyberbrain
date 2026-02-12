@@ -78,12 +78,20 @@ function cleanHTMLContent(originalContent) {
  * - 해시태그: 3-5개, 캡션 본문에 포함 (댓글X)
  * - CTA: 댓글/저장 유도로 알고리즘 신호 강화
  */
-function buildFacebookInstagramPrompt(cleanContent, platformConfig, userInfo) {
+function buildFacebookInstagramPrompt(cleanContent, platformConfig, userInfo, options = {}) {
   const charsPerLine = platformConfig.charsPerLine || 22;
+  const topic = options.topic || '';
+  const title = options.title || '';
   const naturalToneGuide = buildSNSNaturalToneGuide();
 
-  return `아래는 ${userInfo.name} ${userInfo.position}이 작성한 블로그 원고입니다. 이를 Instagram 캡션으로 변환해주세요.
+  // 주제/제목 컨텍스트 블록
+  const topicBlock = topic
+    ? `\n**[최우선] 작성자가 전달하고자 하는 핵심 주제:**\n"${topic}"\n→ 이 주제의 핵심 메시지와 CTA(행동 유도)를 반드시 보존하세요. 주제에 담긴 어조와 의도가 캡션에 살아있어야 합니다.\n`
+    : '';
+  const titleBlock = title ? `**원고 제목:** ${title}\n` : '';
 
+  return `아래는 ${userInfo.name} ${userInfo.position}이 작성한 블로그 원고입니다. 이를 Instagram 캡션으로 변환해주세요.
+${topicBlock}${titleBlock}
 **원본 블로그 원고:**
 ${cleanContent}
 
@@ -190,6 +198,8 @@ function buildXPrompt(cleanContent, platformConfig, userInfo, options = {}) {
   const blogUrl = options.blogUrl || '';
   const category = options.category || '';
   const subCategory = options.subCategory || '';
+  const topic = options.topic || '';
+  const title = options.title || '';
   const naturalToneGuide = buildSNSNaturalToneGuide();
 
   // 카테고리 기반 스타일 결정
@@ -220,8 +230,14 @@ function buildXPrompt(cleanContent, platformConfig, userInfo, options = {}) {
 - 역사적/제도적 맥락 강조
 - 마무리: 공식 직함 또는 각오 표명`;
 
-  return `아래는 ${userInfo.name} ${userInfo.position}이 작성한 블로그 원고입니다. 이를 X(트위터) 임팩트 헤드라인으로 변환해주세요.
+  // 주제/제목 컨텍스트 블록
+  const topicBlock = topic
+    ? `\n**[최우선] 작성자가 전달하고자 하는 핵심 주제:**\n"${topic}"\n→ 이 주제의 핵심 메시지와 CTA(행동 유도)를 반드시 보존하세요. 주제에 담긴 어조와 의도가 게시물에 살아있어야 합니다.\n`
+    : '';
+  const titleBlock = title ? `**원고 제목:** ${title}\n` : '';
 
+  return `아래는 ${userInfo.name} ${userInfo.position}이 작성한 블로그 원고입니다. 이를 X(트위터) 임팩트 헤드라인으로 변환해주세요.
+${topicBlock}${titleBlock}
 **원본 블로그 원고:**
 ${cleanContent}
 
@@ -243,6 +259,8 @@ ${styleGuide}
 - **수치/규모**: 팬 수, 예산, 일자리 수 등 구체적 숫자
 - **실질적 혜택**: 누구에게 어떤 이득? (예: "청년 일자리", "관광객 유치")
 - **감성적 훅**: 질문, 공감, 기억 환기 (예: "기억하시나요?", "함께했던 그 순간")
+- **서사적 대비(Narrative Tension)**: 출신↔현재, 위기↔비전, 숫자↔숫자 등 극적인 간극
+  (예: "부두 노동자의 아들 → AI 전문가", "경남 420억 vs 부산 103억")
 
 **[STEP 2] 게시물 구조:**
 - 감성적 훅 또는 핵심 메시지로 시작
@@ -404,10 +422,18 @@ function buildThreadsPrompt(cleanContent, platformConfig, userInfo, options = {}
     ? `**게시물 수는 ${targetPostCount}개로 맞춰주세요.**`
     : `**게시물 수는 원문 분량에 맞게 ${minPosts}~${maxPosts}개 중에서 선택해주세요.**`;
   const blogUrl = options.blogUrl || '';
+  const topic = options.topic || '';
+  const title = options.title || '';
   const naturalToneGuide = buildSNSNaturalToneGuide();
 
-  return `아래는 ${userInfo.name} ${userInfo.position}이 작성한 블로그 원고입니다. 이를 Threads 타래(thread)로 변환해주세요.
+  // 주제/제목 컨텍스트 블록
+  const topicBlock = topic
+    ? `\n**[최우선] 작성자가 전달하고자 하는 핵심 주제:**\n"${topic}"\n→ 이 주제의 핵심 메시지와 CTA(행동 유도)를 반드시 보존하세요. 주제에 담긴 어조와 의도가 타래 전체에 살아있어야 합니다.\n`
+    : '';
+  const titleBlock = title ? `**원고 제목:** ${title}\n` : '';
 
+  return `아래는 ${userInfo.name} ${userInfo.position}이 작성한 블로그 원고입니다. 이를 Threads 타래(thread)로 변환해주세요.
+${topicBlock}${titleBlock}
 **원본 블로그 원고:**
 ${cleanContent}
 
@@ -583,7 +609,7 @@ function buildSNSPrompt(originalContent, platform, platformConfig, postKeywords 
 
   // Facebook/Instagram은 단일 게시물
   if (platform === 'facebook-instagram') {
-    return buildFacebookInstagramPrompt(cleanContent, platformConfig, userInfo);
+    return buildFacebookInstagramPrompt(cleanContent, platformConfig, userInfo, options);
   }
 
   // X와 Threads는 타래 구조 (통일)

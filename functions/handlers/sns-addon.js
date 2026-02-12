@@ -7,7 +7,7 @@ const { admin, db } = require('../utils/firebaseAdmin');
 const { callGenerativeModel } = require('../services/gemini');
 const { buildFactAllowlist, findUnsupportedNumericTokens } = require('../utils/fact-guard');
 const { buildSNSPrompt, SNS_LIMITS } = require('../prompts/builders/sns-conversion');
-const { rankAndSelect } = require('../services/sns-ranker');
+const { rankAndSelect, withTimeout, extractFirstBalancedJson } = require('../services/sns-ranker');
 
 // Base62 definition for shortener
 const CHARS = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -186,22 +186,6 @@ async function applyThreadCtaToLastPost(posts, blogUrl, platform, platformConfig
 
 // SNS 플랫폼별 제한사항은 prompts/builders/sns-conversion.js에서 import
 
-/**
- * 사용자 프로필에 따른 X(트위터) 글자수 제한 반환
- * @param {Object} userProfile - 사용자 프로필 정보
- * @param {number} originalLength - 원본 글자수 (공백 제외)
- * @returns {Object} X 플랫폼 제한 정보
- */
-function getXLimits(userProfile, originalLength = 0) {
-  const isPremium = userProfile.twitterPremium === '구독';
-  const premiumLimit = isPremium ? Math.min(originalLength, 25000) : 250; // 원본 글자수를 넘지 않음
-  return {
-    maxLength: premiumLimit,
-    recommendedLength: premiumLimit,
-    hashtagLimit: 2
-  };
-}
-
 
 /**
  * SNS 변환 테스트 함수
@@ -303,18 +287,18 @@ exports.convertToSNS = wrap(async (req) => {
     // 각 플랫폼별로 병렬 처리로 변환 (재시도 로직 포함)
     console.log(`🚀 ${platforms.length}개 플랫폼 병렬 변환 시작`);
 
-    // 원본 글자수 계산 (공백 제외)
-    const originalLength = countWithoutSpace(originalContent);
     const cleanedOriginalContent = cleanContent(originalContent || '');
     const cleanedOriginalLength = countWithoutSpace(cleanedOriginalContent);
     const factAllowlist = buildFactAllowlist([originalContent]);
 
-    const platformPromises = platforms.map(async (platform) => {
-      // X(트위터)는 사용자 프리미엄 구독 여부에 따라 동적 제한 적용
+    const platformPromises = platforms.map(async (platform, platformIndex) => {
+      // 플랫폼 간 2초 스태거링: 동시 9개 API 호출(3플랫폼x3후보) 방지
+      if (platformIndex > 0) {
+        await new Promise(resolve => setTimeout(resolve, platformIndex * 2000));
+      }
+
       const baseConfig = SNS_LIMITS[platform];
-      const platformConfig = platform === 'x'
-        ? { ...baseConfig, ...getXLimits(userData, originalLength) }
-        : baseConfig;
+      const platformConfig = baseConfig;
       const threadConstraints = platformConfig.isThread ? {
         minPosts: baseConfig.minPosts || 3,
         maxPosts: baseConfig.maxPosts || 7,
@@ -324,7 +308,7 @@ exports.convertToSNS = wrap(async (req) => {
         ? Math.min(platformConfig.minLength, cleanedOriginalLength)
         : 0;
 
-      console.log(`🔄 ${platform} 변환 시작 (2단계 랭킹)`);
+      console.log(`🔄 ${platform} 변환 시작 (2단계 랭킹, 스태거 ${platformIndex * 2}초)`);
 
       let convertedResult = null;
 
@@ -332,16 +316,16 @@ exports.convertToSNS = wrap(async (req) => {
         // ── Stage 1: 프롬프트 생성 & 2단계 랭킹 (Light → Heavy) ──
         const snsPrompt = buildSNSPrompt(
           originalContent, platform, platformConfig, postKeywords, userInfo,
-          { blogUrl, category: postData.category || '', subCategory: postData.subCategory || '' }
+          { blogUrl, category: postData.category || '', subCategory: postData.subCategory || '',
+            topic: postData.topic || '', title: postData.title || '' }
         );
 
-        // 🚀 Twitter Light→Heavy Ranker 패턴: flash-lite×3 병렬 → flash 스코어링
-        const { text: convertedText, ranking } = await Promise.race([
+        // Twitter Light→Heavy Ranker 패턴: flash-lite x3 병렬 → flash 스코어링
+        const { text: convertedText, ranking } = await withTimeout(
           rankAndSelect(snsPrompt, platform, cleanedOriginalContent, { platformConfig, userInfo }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('랭킹 파이프라인 타임아웃 (60초)')), 60000)
-          )
-        ]);
+          60000,
+          '랭킹 파이프라인 타임아웃 (60초)'
+        );
 
         console.log(`🏆 ${platform} 랭킹 결과:`, {
           candidatesEvaluated: ranking.rankings?.length || 0,
@@ -388,12 +372,14 @@ exports.convertToSNS = wrap(async (req) => {
 
                 const refinedPrompt = buildSNSPrompt(
                   originalContent, platform, platformConfig, postKeywords, userInfo,
-                  { targetPostCount: lengthAdjustment.targetPostCount, blogUrl, category: postData.category || '', subCategory: postData.subCategory || '' }
+                  { targetPostCount: lengthAdjustment.targetPostCount, blogUrl, category: postData.category || '', subCategory: postData.subCategory || '',
+                    topic: postData.topic || '', title: postData.title || '' }
                 );
-                const refinedText = await Promise.race([
+                const refinedText = await withTimeout(
                   callGenerativeModel(refinedPrompt, 1, selectedModel),
-                  new Promise((_, reject) => setTimeout(() => reject(new Error('재생성 타임아웃')), 30000))
-                ]).catch(() => null);
+                  30000,
+                  '재생성 타임아웃'
+                ).catch(() => null);
 
                 if (refinedText) {
                   const refinedParsed = parseConvertedContent(refinedText, platform, platformConfig);
@@ -813,10 +799,10 @@ function parseConvertedContent(rawContent, platform, platformConfig = null) {
  */
 function tryParseJSON(rawContent, platform) {
   try {
-    const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return { success: false };
+    const jsonStr = extractFirstBalancedJson(rawContent);
+    if (!jsonStr) return { success: false };
 
-    const parsed = JSON.parse(jsonMatch[0]);
+    const parsed = JSON.parse(jsonStr);
     console.log(`🔍 ${platform} JSON 구조:`, Object.keys(parsed));
 
     let content = '';

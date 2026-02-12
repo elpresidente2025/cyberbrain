@@ -66,7 +66,7 @@ function getUserFriendlyErrorMessage(error) {
  * @param {boolean} useJsonMode - JSON 형식 응답 강제 (기본값: true)
  * @returns {Promise<string>} - AI가 생성한 텍스트
  */
-async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.5-flash', useJsonMode = true, maxTokens = 25000) {
+async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.5-flash', useJsonMode = true, maxTokens = 25000, options = {}) {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
     logError('callGenerativeModel', 'Gemini API 키가 설정되지 않았습니다.');
@@ -79,7 +79,7 @@ async function callGenerativeModel(prompt, retries = 3, modelName = 'gemini-2.5-
   const supportsJsonMode = modelName.startsWith('gemini-2.');
 
   const generationConfig = {
-    temperature: 0.25, // 정치인 원고: 지시 준수율 최우선 (중언부언 방지)
+    temperature: options.temperature ?? 0.25, // 기본 0.25, 호출자가 override 가능 (예: Light Ranker 0.8)
     topK: 20,          // 선택지 축소로 더 보수적인 생성
     topP: 0.80,        // 확률 분포 축소로 규칙 준수 강화
     maxOutputTokens: maxTokens, // 사용자 지정 토큰 제한 적용

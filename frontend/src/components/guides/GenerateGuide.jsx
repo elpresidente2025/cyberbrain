@@ -15,40 +15,38 @@ const GenerateGuide = () => {
   const steps = [
     {
       title: '1. 주제 입력하기',
-      description: '대시보드에서 "새 원고 생성" 버튼을 클릭하세요.',
+      description: '작성하려는 원고의 핵심 내용을 한 문장으로 요약해 주세요.',
       examples: [
         { bad: '❌ 나쁜 예: "교통 문제"', color: '#d22730' },
-        { good: '⭐ 좋은 예: "○○동 스쿨존 신호등 설치 건의"', color: '#4caf50' },
-        { good: '⭐ 좋은 예: "청년 월세 지원 조례 발의 계획"', color: '#4caf50' }
+        { good: '⭐ 좋은 예: "성수동 학교 앞 스쿨존 과속단속 카메라 설치 건의"', color: '#4caf50' }
       ]
     },
     {
-      title: '2. 카테고리 선택',
-      description: '글의 목적에 맞게 선택하세요',
-      categories: [
-        '일상 소통: 인사말, 안부 전하기',
-        '정책 제안: 새로운 정책이나 법안 제안',
-        '의정활동 보고: 현장 방문, 회의 참석 후기',
-        '시사 분석: 뉴스나 사회 이슈에 대한 의견',
-        '지역 현안: 우리 지역 문제 해결방안'
-      ]
-    },
-    {
-      title: '3. 참고자료 추가 (선택)',
-      description: '더 정확한 글을 원한다면',
+      title: '2. 참고자료 입력 (필수/선택)',
+      description: 'AI가 글을 쓸 때 참고할 구체적인 정보를 제공합니다.',
       tips: [
-        '관련 뉴스 기사 링크나 내용',
-        '정부 발표자료, 통계 수치',
-        '현장에서 확인한 내용',
-        '주민 건의사항'
+        '① 내 입장/페이스북 글: 나의 주장이나 논조가 담긴 글을 첫 번째 칸에 입력하세요.',
+        '② 뉴스/데이터: 기사 링크(URL)는 분석되지 않습니다. 본문 텍스트를 직접 복사해서 붙여넣으세요.'
       ]
     },
     {
-      title: '4. 생성 완료',
-      description: '1-2분 후 완성된 원고를 확인하세요',
+      title: '3. 노출 희망 검색어 (핵심)',
+      description: '네이버 검색 상위 노출을 위해 가장 중요한 단계입니다.',
+      examples: [
+        { bad: '❌ 욕심 부린 예: "전현희, 성동구, 유세, 반응, 후기..." (노출 안 됨)', color: '#d22730' },
+        { good: '⭐ 효과적인 예: "성수동 카페거리 유세"', color: '#4caf50' }
+      ],
+      tips: [
+        '검색어는 최대 2개까지만 입력 가능합니다. (3개 이상 입력 시 자동 차단)',
+        '지역명 + 현안 (예: "왕십리역 출구 에스컬레이터") 조합이 가장 효과적입니다.'
+      ]
+    },
+    {
+      title: '4. 생성 및 발행',
+      description: '나머지는 AI 비서가 알아서 처리합니다.',
       features: [
-        '마음에 들지 않으면 재생성 가능 (최대 3회)',
-        '복사하기로 SNS에 바로 사용'
+        '생성된 원고는 반드시 사용자가 최종 검수 후 발행하세요.',
+        '하루 3회 이상 발행 시 스팸으로 분류될 수 있으니 주의하세요.'
       ]
     }
   ];
@@ -70,12 +68,12 @@ const GenerateGuide = () => {
           <Typography variant="body2" sx={{ mb: 2 }}>
             {step.description}
           </Typography>
-          
+
           {step.examples && (
             <Box sx={{ mb: 2 }}>
               {step.examples.map((example, exIndex) => (
-                <Typography key={exIndex} variant="body2" sx={{ 
-                  color: example.color, 
+                <Typography key={exIndex} variant="body2" sx={{
+                  color: example.color,
                   fontWeight: 500,
                   mb: 0.5
                 }}>
@@ -84,7 +82,7 @@ const GenerateGuide = () => {
               ))}
             </Box>
           )}
-          
+
           {step.categories && (
             <List dense>
               {step.categories.map((category, catIndex) => (
@@ -97,7 +95,7 @@ const GenerateGuide = () => {
               ))}
             </List>
           )}
-          
+
           {step.tips && (
             <List dense>
               {step.tips.map((tip, tipIndex) => (
@@ -110,16 +108,16 @@ const GenerateGuide = () => {
               ))}
             </List>
           )}
-          
+
           {step.features && (
             <List dense>
               {step.features.map((feature, fIndex) => (
                 <ListItem key={fIndex} sx={{ py: 0.5 }}>
                   <ListItemIcon sx={{ minWidth: 24 }}>
-                    <CheckCircleOutline sx={{ 
-                fontSize: 16, 
-                color: theme.palette.mode === 'dark' ? '#ffab40' : '#ff9800' 
-              }} />
+                    <CheckCircleOutline sx={{
+                      fontSize: 16,
+                      color: theme.palette.mode === 'dark' ? '#ffab40' : '#ff9800'
+                    }} />
                   </ListItemIcon>
                   <ListItemText primary={feature} primaryTypographyProps={{ variant: 'body2' }} />
                 </ListItem>
@@ -137,49 +135,49 @@ const GenerateGuide = () => {
         borderRadius: 1,
         border: theme.palette.mode === 'dark' ? '1px solid rgba(255, 152, 0, 0.3)' : '1px solid #ffb74d'
       }}>
-        <Typography variant="h6" sx={{ 
-          fontWeight: 600, 
-          mb: 2, 
-          color: theme.palette.mode === 'dark' ? '#ffab40' : '#e65100', 
-          display: 'flex', 
-          alignItems: 'center' 
+        <Typography variant="h6" sx={{
+          fontWeight: 600,
+          mb: 2,
+          color: theme.palette.mode === 'dark' ? '#ffab40' : '#e65100',
+          display: 'flex',
+          alignItems: 'center'
         }}>
           ⚠️ 블로그 발행 시 주의사항
         </Typography>
         <List dense>
           <ListItem sx={{ py: 0.5 }}>
             <ListItemIcon sx={{ minWidth: 24 }}>
-              <CheckCircleOutline sx={{ 
-                fontSize: 16, 
-                color: theme.palette.mode === 'dark' ? '#ffab40' : '#ff9800' 
+              <CheckCircleOutline sx={{
+                fontSize: 16,
+                color: theme.palette.mode === 'dark' ? '#ffab40' : '#ff9800'
               }} />
             </ListItemIcon>
-            <ListItemText 
-              primary="하루 3회 초과 발행 시 네이버 블로그에서 스팸 블로그로 분류될 수 있습니다" 
+            <ListItemText
+              primary="하루 3회 초과 발행 시 네이버 블로그에서 스팸 블로그로 분류될 수 있습니다"
               primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
             />
           </ListItem>
           <ListItem sx={{ py: 0.5 }}>
             <ListItemIcon sx={{ minWidth: 24 }}>
-              <CheckCircleOutline sx={{ 
-                fontSize: 16, 
-                color: theme.palette.mode === 'dark' ? '#ffab40' : '#ff9800' 
+              <CheckCircleOutline sx={{
+                fontSize: 16,
+                color: theme.palette.mode === 'dark' ? '#ffab40' : '#ff9800'
               }} />
             </ListItemIcon>
-            <ListItemText 
-              primary="생성된 원고는 반드시 사용자가 최종 검수 및 수정 후 발행하세요" 
+            <ListItemText
+              primary="생성된 원고는 반드시 사용자가 최종 검수 및 수정 후 발행하세요"
               primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
             />
           </ListItem>
           <ListItem sx={{ py: 0.5 }}>
             <ListItemIcon sx={{ minWidth: 24 }}>
-              <CheckCircleOutline sx={{ 
-                fontSize: 16, 
-                color: theme.palette.mode === 'dark' ? '#ffab40' : '#ff9800' 
+              <CheckCircleOutline sx={{
+                fontSize: 16,
+                color: theme.palette.mode === 'dark' ? '#ffab40' : '#ff9800'
               }} />
             </ListItemIcon>
-            <ListItemText 
-              primary="적절한 간격(최소 3시간 이상 권장)을 두고 발행하여 자연스러운 블로그 운영을 유지하세요" 
+            <ListItemText
+              primary="적절한 간격(최소 3시간 이상 권장)을 두고 발행하여 자연스러운 블로그 운영을 유지하세요"
               primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
             />
           </ListItem>

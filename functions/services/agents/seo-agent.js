@@ -104,7 +104,7 @@ class SEOAgent extends BaseAgent {
       throw new Error('Compliance Agent 결과가 없습니다');
     }
 
-    let content = complianceResult.data.content;
+    const content = complianceResult.data.content;
     const keywords = keywordResult?.data?.keywords || [];
     const primaryKeyword = keywordResult?.data?.primary || (keywords[0]?.keyword || keywords[0] || '');
 
@@ -360,13 +360,13 @@ class SEOAgent extends BaseAgent {
   }
 
   /**
-   * 사용자 검색어(userKeywords) 절대 횟수 검증
-   * - 키워드 밀도(%)가 아닌 절대 횟수로 검증
-   * - 부족/과다 모두 critical 오류
+   * 사용자 검색어(userKeywords) 검증 (400자당 1개 기준)
+   * - 실제 글자수 기반으로 적정 횟수 계산
+   * - 부족/과다 모두 오류
    *
    * @param {string} content - HTML 본문
    * @param {Array<string>} userKeywords - 사용자가 입력한 검색어 목록
-   * @param {number} targetWordCount - 목표 글자수
+   * @param {number} targetWordCount - 목표 글자수 (사용 안 함, 실제 글자수로 계산)
    * @returns {Object} 검증 결과 { passed, issues, details }
    */
   validateUserKeywords(content, userKeywords, targetWordCount = 2000) {
@@ -377,21 +377,31 @@ class SEOAgent extends BaseAgent {
       return { passed: true, issues: [], details: {} };
     }
 
-    const plainText = content.replace(/<[^>]*>/g, ' ').toLowerCase();
-    const minRequired = 4; // 항상 4회
-    const maxAllowed = 6;  // 항상 6회
+    const plainText = content.replace(/<[^>]*>/g, ' ');
+    const actualLength = plainText.replace(/\s+/g, '').length; // 공백 제외 글자수
 
-    console.log(`🔍 [SEOAgent] 검색어 검증 시작: ${userKeywords.length}개, 범위 ${minRequired}~${maxAllowed}회`);
+    // 키워드 2개 기준: 각 3~4회, 총합 7~8회 (15문단 기준 약 2문단당 1회)
+    const kwCount = userKeywords.length || 1;
+    const minRequired = kwCount >= 2 ? 3 : 5;
+    const maxAllowed = minRequired + 1; // 3→4, 5→6
+    const idealCount = minRequired;
+
+    console.log(`🔍 [SEOAgent] 검색어 검증 시작: ${userKeywords.length}개`);
+    console.log(`📏 [SEOAgent] 글자수: ${actualLength}자, 적정 횟수: 각 ${minRequired}~${maxAllowed}회 (총합 ${minRequired * kwCount}~${maxAllowed * kwCount}회)`);
+
+    const plainTextLower = plainText.toLowerCase();
 
     for (const keyword of userKeywords) {
       const regex = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-      const matches = plainText.match(regex);
+      const matches = plainTextLower.match(regex);
       const count = matches ? matches.length : 0;
 
       details[keyword] = {
         count,
+        idealCount,
         minRequired,
         maxAllowed,
+        actualLength,
         status: count < minRequired ? 'insufficient' : (count > maxAllowed ? 'spam_risk' : 'valid')
       };
 
@@ -400,10 +410,10 @@ class SEOAgent extends BaseAgent {
         const missing = minRequired - count;
         issues.push({
           id: 'user_keyword_insufficient',
-          severity: 'critical',
-          message: `검색어 "${keyword}" 부족: ${count}회 (최소 ${minRequired}회 필요) - SEO 효과 없음`,
-          description: `검색어 "${keyword}" 부족: 현재 ${count}회 (최소 ${minRequired}회 필요)`,
-          instruction: `문맥에 맞게 "${keyword}"를 ${missing}회 더 추가하여, 최소 ${minRequired}회 이상 사용하세요.`
+          severity: 'warning',
+          message: `검색어 "${keyword}" 부족: ${count}회 (적정 ${idealCount}회, 최소 ${minRequired}회)`,
+          description: `검색어 "${keyword}" 부족: 현재 ${count}회 (${actualLength}자 기준 적정 ${idealCount}회)`,
+          instruction: `문맥에 맞게 "${keyword}"를 ${missing}회 더 추가하세요.`
         });
         console.warn(`⚠️ [SEOAgent] 검색어 부족: "${keyword}" ${count}회 < ${minRequired}회`);
       }
@@ -413,17 +423,17 @@ class SEOAgent extends BaseAgent {
         const excess = count - maxAllowed;
         issues.push({
           id: 'user_keyword_spam_risk',
-          severity: 'critical',
-          message: `검색어 "${keyword}" 과다: ${count}회 (최대 ${maxAllowed}회) - 네이버 스팸 차단 위험 🚨`,
-          description: `검색어 "${keyword}" 과다: ${count}회 사용됨 (허용 범위: ${maxAllowed}회 이하)`,
-          instruction: `문맥상 불필요한 "${keyword}"를 ${excess}회 삭제하여, 전체 사용 횟수를 ${maxAllowed}회 이하로 줄이세요.`
+          severity: 'warning',
+          message: `검색어 "${keyword}" 과다: ${count}회 (적정 ${idealCount}회, 최대 ${maxAllowed}회)`,
+          description: `검색어 "${keyword}" 과다: ${count}회 (${actualLength}자 기준 최대 ${maxAllowed}회)`,
+          instruction: `"${keyword}"를 ${excess}회 줄여 ${maxAllowed}회 이하로 맞추세요.`
         });
-        console.error(`🚨 [SEOAgent] 스팸 위험: "${keyword}" ${count}회 > ${maxAllowed}회`);
+        console.warn(`⚠️ [SEOAgent] 검색어 과다: "${keyword}" ${count}회 > ${maxAllowed}회`);
       }
 
       // 정상 범위
       if (count >= minRequired && count <= maxAllowed) {
-        console.log(`✅ [SEOAgent] 검색어 적정: "${keyword}" ${count}회 (범위: ${minRequired}~${maxAllowed}회)`);
+        console.log(`✅ [SEOAgent] 검색어 적정: "${keyword}" ${count}회 (적정 ${idealCount}회, 범위 ${minRequired}~${maxAllowed}회)`);
       }
     }
 

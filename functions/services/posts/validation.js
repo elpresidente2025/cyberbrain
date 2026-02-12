@@ -295,6 +295,112 @@ function detectSentenceRepetition(content) {
 }
 
 /**
+ * 3어절 이상 동일 구문 반복 검출
+ * 원고 전체에서 3어절 이상 구문이 3회 이상 등장하면 실패
+ *
+ * @param {string} content - 검증할 HTML 콘텐츠
+ * @returns {Object} { passed: boolean, repeatedPhrases: string[] }
+ */
+function detectPhraseRepetition(content) {
+  const plainText = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  const words = plainText.split(/\s+/).filter(w => w.length > 0);
+  const phraseCount = {};
+
+  // 3어절~6어절 슬라이딩 윈도우
+  for (let n = 3; n <= 6; n++) {
+    for (let i = 0; i <= words.length - n; i++) {
+      const phrase = words.slice(i, i + n).join(' ');
+      // 10자 미만 구문은 무시 (너무 일반적인 표현 제외)
+      if (phrase.length < 10) continue;
+      phraseCount[phrase] = (phraseCount[phrase] || 0) + 1;
+    }
+  }
+
+  // 하위 구문 중복 제거: 더 긴 구문에 포함된 짧은 구문은 제외
+  const repeatedPhrases = [];
+  const overLimitPhrases = Object.entries(phraseCount)
+    .filter(([, count]) => count >= 3)
+    .sort((a, b) => b[0].length - a[0].length); // 긴 구문 우선
+
+  const alreadyCovered = new Set();
+  for (const [phrase, count] of overLimitPhrases) {
+    // 이미 더 긴 구문에 포함된 경우 스킵
+    let covered = false;
+    for (const existing of alreadyCovered) {
+      if (existing.includes(phrase)) {
+        covered = true;
+        break;
+      }
+    }
+    if (covered) continue;
+
+    alreadyCovered.add(phrase);
+    repeatedPhrases.push(`"${phrase.substring(0, 40)}${phrase.length > 40 ? '...' : ''}" (${count}회 반복)`);
+  }
+
+  return {
+    passed: repeatedPhrases.length === 0,
+    repeatedPhrases
+  };
+}
+
+/**
+ * Jaccard 유사도 기반 유사 문장 검출
+ * 표현만 바꾼 거의 동일한 문장 쌍을 검출
+ *
+ * @param {string} content - 검증할 HTML 콘텐츠
+ * @param {number} threshold - Jaccard 유사도 임계값 (기본 0.6 = 60%)
+ * @returns {Object} { passed: boolean, similarPairs: Array<{a, b, similarity}> }
+ */
+function detectNearDuplicateSentences(content, threshold = 0.6) {
+  const plainText = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  const sentences = plainText
+    .split(/(?<=[.?!])\s+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 25); // 25자 이상 문장만
+
+  // 각 문장을 어절 집합으로 변환 (2자 이상만)
+  const wordSets = sentences.map(s => {
+    const words = s.replace(/[.?!,]/g, '').split(/\s+/).filter(w => w.length >= 2);
+    return new Set(words);
+  });
+
+  const similarPairs = [];
+
+  for (let i = 0; i < sentences.length; i++) {
+    for (let j = i + 1; j < sentences.length; j++) {
+      const setA = wordSets[i];
+      const setB = wordSets[j];
+      if (setA.size < 3 || setB.size < 3) continue;
+
+      // Jaccard similarity = |A ∩ B| / |A ∪ B|
+      let intersection = 0;
+      for (const w of setA) {
+        if (setB.has(w)) intersection++;
+      }
+      const union = setA.size + setB.size - intersection;
+      const similarity = union > 0 ? intersection / union : 0;
+
+      if (similarity >= threshold) {
+        // 완전 동일 문장은 detectSentenceRepetition이 처리하므로 스킵
+        if (similarity >= 0.95) continue;
+
+        similarPairs.push({
+          a: sentences[i].substring(0, 50) + (sentences[i].length > 50 ? '...' : ''),
+          b: sentences[j].substring(0, 50) + (sentences[j].length > 50 ? '...' : ''),
+          similarity: Math.round(similarity * 100)
+        });
+      }
+    }
+  }
+
+  return {
+    passed: similarPairs.length === 0,
+    similarPairs
+  };
+}
+
+/**
  * 선거법 위반 검출 (공약성 표현)
  * 사용자 상태가 '준비' 또는 '현역'일 때 ~하겠습니다 표현 검출
  *
@@ -569,6 +675,22 @@ function runHeuristicValidationSync(content, status, title = '', options = {}) {
     issues.push(`⚠️ 문장 반복 감지: ${repetitionResult.repeatedSentences.join(', ')}`);
   }
 
+  // 1-b. 3어절 이상 구문 반복 검출
+  const phraseResult = detectPhraseRepetition(content);
+  if (!phraseResult.passed) {
+    issues.push(`⚠️ 구문 반복 감지: ${phraseResult.repeatedPhrases.join(', ')}`);
+  }
+
+  // 1-c. 유사 문장 검출
+  const nearDupResult = detectNearDuplicateSentences(content);
+  if (!nearDupResult.passed) {
+    const dupSummary = nearDupResult.similarPairs
+      .slice(0, 3)
+      .map(p => `"${p.a}" ≈ "${p.b}" (${p.similarity}%)`)
+      .join(', ');
+    issues.push(`⚠️ 유사 문장 감지: ${dupSummary}`);
+  }
+
   // 2. 선거법 위반 검출 (레거시 블랙리스트)
   const electionResult = detectElectionLawViolation(content, status, title);
   if (!electionResult.passed) {
@@ -613,6 +735,22 @@ async function runHeuristicValidation(content, status, title = '', options = {})
   const repetitionResult = detectSentenceRepetition(content);
   if (!repetitionResult.passed) {
     issues.push(`⚠️ 문장 반복 감지: ${repetitionResult.repeatedSentences.join(', ')}`);
+  }
+
+  // 1-b. 3어절 이상 구문 반복 검출
+  const phraseResult = detectPhraseRepetition(content);
+  if (!phraseResult.passed) {
+    issues.push(`⚠️ 구문 반복 감지: ${phraseResult.repeatedPhrases.join(', ')}`);
+  }
+
+  // 1-c. 유사 문장 검출 (Jaccard 유사도 60% 이상)
+  const nearDupResult = detectNearDuplicateSentences(content);
+  if (!nearDupResult.passed) {
+    const dupSummary = nearDupResult.similarPairs
+      .slice(0, 3) // 최대 3쌍만 표시
+      .map(p => `"${p.a}" ≈ "${p.b}" (${p.similarity}%)`)
+      .join(', ');
+    issues.push(`⚠️ 유사 문장 감지: ${dupSummary}`);
   }
 
   // 2. 선거법 위반 검출
@@ -1032,9 +1170,10 @@ function validateKeywordInsertion(content, userKeywords = [], autoKeywords = [],
   const plainText = content.replace(/<[^>]*>/g, '').replace(/\s/g, '');
   const actualWordCount = plainText.length;
 
-  // 사용자 입력 키워드: 300~400자당 1회 (사용자 제안: 총 4~6회 적당)
-  const userMinCount = 4;
-  const userMaxCount = 6;
+  // 사용자 입력 키워드: 키워드 2개 기준 각 3~4회, 총합 7~8회
+  const kwCount = userKeywords.length || 1;
+  const userMinCount = kwCount >= 2 ? 3 : 5;
+  const userMaxCount = userMinCount + 1; // 3→4, 5→6
 
   // 자동 추출 키워드: 최소 1회만 (완화)
   const autoMinCount = 1;
@@ -1371,6 +1510,8 @@ module.exports = {
   evaluateQualityWithLLM,
   // 개별 검증 함수도 export (테스트용)
   detectSentenceRepetition,
+  detectPhraseRepetition,
+  detectNearDuplicateSentences,
   detectElectionLawViolation,
   detectElectionLawViolationHybrid,  // v3 하이브리드
   runHeuristicValidation,            // async (기본 LLM 사용)

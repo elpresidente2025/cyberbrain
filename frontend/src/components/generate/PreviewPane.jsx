@@ -206,12 +206,12 @@ export default function PreviewPane({ draft }) {
                     const backendValidation = draft.keywordValidation?.[stat.keyword];
                     const isValid = backendValidation
                       ? backendValidation.status === 'valid'
-                      : stat.count >= Math.floor(characterCount / 400); // fallback
+                      : stat.count >= Math.max(3, Math.floor(characterCount / 400)); // fallback: 400자당 1회, 최소 3
                     const statusLabel = backendValidation
                       ? (backendValidation.status === 'insufficient' ? ' (부족)'
                         : backendValidation.status === 'spam_risk' ? ' (과다)'
                           : '')
-                      : (stat.count < Math.floor(characterCount / 400) ? ' (부족)' : '');
+                      : (stat.count < Math.max(3, Math.floor(characterCount / 400)) ? ' (부족)' : '');
 
                     return (
                       <Typography

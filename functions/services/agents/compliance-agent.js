@@ -168,7 +168,7 @@ class ComplianceAgent extends BaseAgent {
 
     // 🏷️ 제목 가져오기: TitleAgent → WriterAgent → StyleAgent → StructureAgent
     const titleAgentResult = previousResults.TitleAgent;
-    let title = titleAgentResult?.data?.title
+    const title = titleAgentResult?.data?.title
       || writerResult?.data?.title
       || styleResult?.data?.title
       || structureResult?.data?.title
