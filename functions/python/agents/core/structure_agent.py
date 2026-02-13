@@ -57,10 +57,28 @@ def normalize_artifacts(text: str) -> str:
     cleaned = re.sub(r'^\s*["“]', '', cleaned)
     cleaned = re.sub(r'["”]\s*$', '', cleaned)
     
-    # Remove metadata lines if any (Robust Regex)
-    # Catch '카테고리:', '검색어...', '생성 시간:' and everything after them until end of string
-    # We use [\s\S]* to match all characters including newlines
-    cleaned = re.sub(r'(\**카테고리\**|\**검색어 삽입 횟수\**|\**생성 시간\**):[\s\S]*$', '', cleaned).strip()
+    # Remove trailing metadata block only when marker appears near the tail as a standalone line.
+    # (Do not truncate normal body text that happens to include "카테고리:" in a sentence.)
+    lines = cleaned.splitlines()
+    metadata_line_re = re.compile(
+        r'^\s*\*{0,2}(카테고리|검색어 삽입 횟수|생성 시간)\*{0,2}\s*:\s*',
+        re.IGNORECASE,
+    )
+    tail_cut_index = None
+    if lines:
+        tail_window_start = max(0, len(lines) - 8)
+        for i in range(tail_window_start, len(lines)):
+            line = lines[i].strip()
+            if not line:
+                continue
+            # HTML line은 본문일 가능성이 높으므로 metadata 시작점으로 보지 않음
+            if '<' in line and '>' in line:
+                continue
+            if metadata_line_re.match(line):
+                tail_cut_index = i
+                break
+    if tail_cut_index is not None:
+        cleaned = "\n".join(lines[:tail_cut_index]).strip()
     
     cleaned = re.sub(r'"content"\s*:\s*', '', cleaned)
     
@@ -329,6 +347,12 @@ class StructureAgent(Agent):
                 title = normalize_artifacts(structured['title'])
                 last_content = content
                 last_title = title
+
+                # 파싱/정리 과정에서 본문이 비정상적으로 축약된 경우 재시도 유도.
+                # (예: 메타데이터 절단 오탐, 블록 파싱 실패)
+                plain_len = len(strip_html(content))
+                if plain_len < 120 and len(str(response or "")) > 1000:
+                    raise Exception(f"파싱 비정상 축약 감지 ({plain_len}자)")
 
                 validation = self.validate_output(content, length_spec)
 
