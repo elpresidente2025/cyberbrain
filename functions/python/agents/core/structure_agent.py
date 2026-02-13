@@ -358,20 +358,34 @@ class StructureAgent(Agent):
                 last_error = error_msg  # 예외 메시지 저장
 
             if attempt > max_retries:
-                # 엄격 기준은 유지하되, 분량 부족일 때만 1회 보강 재작성 시도
-                if validation.get('code') == 'LENGTH_SHORT' and last_content:
-                    recovered = await self.recover_length_shortfall(
+                # 엄격 기준은 유지하되, 구조/분량 검증 실패 시 1회 보강 재작성 시도
+                recoverable_codes = {
+                    'LENGTH_SHORT',
+                    'H2_SHORT',
+                    'H2_LONG',
+                    'H2_MALFORMED',
+                    'P_SHORT',
+                    'P_LONG',
+                    'P_MALFORMED',
+                    'TAG_DISALLOWED',
+                    'TEMPLATE_ECHO',
+                }
+                if validation.get('code') in recoverable_codes and last_content:
+                    recovered = await self.recover_structural_shortfall(
                         content=last_content,
                         title=last_title or (topic[:20] if topic else '새 원고'),
                         topic=topic,
                         length_spec=length_spec,
+                        failed_code=str(validation.get('code') or ''),
+                        failed_reason=str(validation.get('reason') or ''),
+                        failed_feedback=str(validation.get('feedback') or ''),
                     )
                     if recovered:
                         recovered_content, recovered_title = recovered
                         recovered_validation = self.validate_output(recovered_content, length_spec)
                         if recovered_validation.get('passed'):
                             print(
-                                f"✅ [StructureAgent] 분량 보강 복구 성공: "
+                                f"✅ [StructureAgent] 구조/분량 보강 복구 성공: "
                                 f"{len(strip_html(recovered_content))}자"
                             )
                             return {
@@ -484,6 +498,81 @@ class StructureAgent(Agent):
             return recovered_content, recovered_title
         except Exception as e:
             print(f"⚠️ [StructureAgent] 분량 보강 복구 실패: {str(e)}")
+            return None
+
+    async def recover_structural_shortfall(
+        self,
+        *,
+        content: str,
+        title: str,
+        topic: str,
+        length_spec: Dict[str, int],
+        failed_code: str,
+        failed_reason: str,
+        failed_feedback: str,
+    ) -> Optional[Tuple[str, str]]:
+        from ..common.gemini_client import generate_content_async
+
+        current_len = len(strip_html(content))
+        min_len = int(length_spec.get('min_chars', 0))
+        max_len = int(length_spec.get('max_chars', 0))
+        expected_h2 = int(length_spec.get('expected_h2', 0))
+        total_sections = int(length_spec.get('total_sections', 5))
+        min_p = total_sections * 2
+        max_p = total_sections * 4
+
+        prompt = f"""
+당신은 엄격한 편집자입니다. 아래 원고는 구조/형식 검증에 실패했습니다.
+규칙을 단 하나도 완화하지 말고, 실패 사유를 반드시 해결한 최종본으로 재작성하십시오.
+
+[실패 정보]
+- code: {failed_code}
+- reason: {failed_reason}
+- feedback: {failed_feedback}
+
+[목표 제약]
+- 현재 분량: {current_len}자
+- 최종 분량: {min_len}~{max_len}자
+- <h2> 개수: 정확히 {expected_h2}개
+- <p> 개수: {min_p}~{max_p}개
+
+[절대 규칙]
+1) 허용 태그는 <h2>, <p>만 사용.
+2) 모든 <h2>, <p> 태그는 정확히 열고 닫을 것.
+3) 본문에는 예시 플레이스홀더([제목], [내용], [구체적 대안] 등)를 절대 남기지 말 것.
+4) 기존 핵심 의미/사실은 유지하되, 형식과 구조를 완전하게 교정할 것.
+5) 분량 부족이면 구체 근거를 보강하고, 분량 초과면 중복을 압축할 것.
+6) 최종 응답은 반드시 아래 XML 태그만 출력할 것.
+
+[주제]
+{topic}
+
+[원고 원문]
+<title>{title}</title>
+<content>
+{content}
+</content>
+
+[출력 형식]
+<title>...</title>
+<content>...</content>
+"""
+
+        try:
+            response_text = await generate_content_async(
+                prompt,
+                model_name=self.model_name,
+                temperature=0.0,
+                max_output_tokens=4096,
+            )
+            parsed = self.parse_response(response_text)
+            recovered_content = normalize_html_structure_tags(normalize_artifacts(parsed.get('content', '')))
+            recovered_title = normalize_artifacts(parsed.get('title', '')) or title
+            if not recovered_content:
+                return None
+            return recovered_content, recovered_title
+        except Exception as e:
+            print(f"⚠️ [StructureAgent] 구조/분량 보강 복구 실패: {str(e)}")
             return None
 
     async def run_context_analyzer(self, stance_text: str, news_data_text: str, author_name: str) -> Optional[Dict]:
