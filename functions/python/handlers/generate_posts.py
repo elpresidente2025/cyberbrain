@@ -421,13 +421,19 @@ def _extract_stance_count(pipeline_result: Dict[str, Any]) -> int:
     return len([item for item in must_include if item])
 
 
-def _validate_keyword_gate(keyword_validation: Dict[str, Any]) -> tuple[bool, str]:
+def _validate_keyword_gate(keyword_validation: Dict[str, Any], user_keywords: list[str]) -> tuple[bool, str]:
+    normalized_user_keywords = [str(item).strip() for item in (user_keywords or []) if str(item).strip()]
+    if not normalized_user_keywords:
+        return True, ""
+
     if not isinstance(keyword_validation, dict) or not keyword_validation:
         return False, "키워드 검증 결과가 없습니다."
 
     failures: list[str] = []
-    for keyword, info in keyword_validation.items():
+    for keyword in normalized_user_keywords:
+        info = keyword_validation.get(keyword)
         if not isinstance(info, dict):
+            failures.append(f"\"{keyword}\" 검증 정보 없음")
             continue
         status = str(info.get("status") or "").strip().lower()
         count = _to_int(info.get("count"), 0)
@@ -525,7 +531,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             "internal",
             f"최종 원고 분량 부족 ({word_count}자 < {min_required_chars}자)",
         )
-    keyword_gate_ok, keyword_gate_msg = _validate_keyword_gate(keyword_validation)
+    keyword_gate_ok, keyword_gate_msg = _validate_keyword_gate(keyword_validation, user_keywords)
     if not keyword_gate_ok:
         raise ApiError(
             "internal",
