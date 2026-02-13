@@ -421,6 +421,28 @@ def _extract_stance_count(pipeline_result: Dict[str, Any]) -> int:
     return len([item for item in must_include if item])
 
 
+def _validate_keyword_gate(keyword_validation: Dict[str, Any]) -> tuple[bool, str]:
+    if not isinstance(keyword_validation, dict) or not keyword_validation:
+        return False, "키워드 검증 결과가 없습니다."
+
+    failures: list[str] = []
+    for keyword, info in keyword_validation.items():
+        if not isinstance(info, dict):
+            continue
+        status = str(info.get("status") or "").strip().lower()
+        count = _to_int(info.get("count"), 0)
+        expected = _to_int(info.get("expected"), 0)
+        max_count = _to_int(info.get("max"), 0)
+        if status == "insufficient":
+            failures.append(f"\"{keyword}\" 부족 ({count}/{expected})")
+        elif status == "spam_risk":
+            failures.append(f"\"{keyword}\" 과다 ({count}/{max_count})")
+
+    if failures:
+        return False, "; ".join(failures)
+    return True, ""
+
+
 def _choose_pipeline_route(raw_route: Any, *, is_admin: bool, is_tester: bool) -> str:
     route = str(raw_route or "modular").strip() or "modular"
     if route == "highQuality":
@@ -502,6 +524,12 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         raise ApiError(
             "internal",
             f"최종 원고 분량 부족 ({word_count}자 < {min_required_chars}자)",
+        )
+    keyword_gate_ok, keyword_gate_msg = _validate_keyword_gate(keyword_validation)
+    if not keyword_gate_ok:
+        raise ApiError(
+            "internal",
+            f"키워드 기준 미충족: {keyword_gate_msg}",
         )
 
     # 생성 성공 후 attempts / 사용량 업데이트
