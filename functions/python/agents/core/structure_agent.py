@@ -46,7 +46,12 @@ def normalize_artifacts(text: str) -> str:
     if not text:
         return ''
     cleaned = text.strip()
-    cleaned = re.sub(r'```[\s\S]*?```', '', cleaned).strip()
+    # 코드펜스가 감싸져 온 경우 본문을 보존한 채 펜스만 제거
+    cleaned = re.sub(
+        r'```(?:[\w.+-]+)?\s*([\s\S]*?)\s*```',
+        lambda m: m.group(1).strip(),
+        cleaned,
+    ).strip()
     cleaned = re.sub(r'^\s*\\"', '', cleaned)
     cleaned = re.sub(r'\\"?\s*$', '', cleaned)
     cleaned = re.sub(r'^\s*["“]', '', cleaned)
@@ -60,6 +65,53 @@ def normalize_artifacts(text: str) -> str:
     cleaned = re.sub(r'"content"\s*:\s*', '', cleaned)
     
     return cleaned.strip()
+
+
+def normalize_html_structure_tags(text: str) -> str:
+    """기본 구조 태그를 표준 형태로 정규화한다.
+
+    엄격 기준은 유지하되, 모델이 생성한 부가 속성/대소문자 차이로
+    구조 검증이 오탐으로 실패하는 상황을 줄인다.
+    """
+    if not text:
+        return ''
+    normalized = text
+    normalized = re.sub(r'<\s*h2\b[^>]*>', '<h2>', normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r'<\s*/\s*h2\s*>', '</h2>', normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r'<\s*p\b[^>]*>', '<p>', normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r'<\s*/\s*p\s*>', '</p>', normalized, flags=re.IGNORECASE)
+    return normalized
+
+
+def is_example_like_block(text: str) -> bool:
+    """예시/템플릿 블록 여부를 판정한다.
+
+    규칙 완화가 아니라, 모델이 프롬프트 예시를 그대로 재출력한 블록을
+    본문 후보에서 제외하기 위한 방어 로직이다.
+    """
+    if not text:
+        return True
+    lowered = text.lower()
+    placeholder_count = len(re.findall(r'\[[^\]\n]{1,40}\]', text))
+    marker_count = sum(
+        1
+        for marker in (
+            'sample_output',
+            'reference_example',
+            'placeholder',
+            '예시',
+            '샘플',
+            '여기에',
+            '작성',
+        )
+        if marker in lowered
+    )
+    plain_len = len(strip_html(text))
+    return (
+        placeholder_count >= 2
+        or ('<![cdata[' in lowered and plain_len < 900)
+        or (marker_count >= 1 and plain_len < 900)
+    )
 
 
 def normalize_context_text(value: Any, *, sep: str = "\n\n") -> str:
@@ -157,7 +209,8 @@ class StructureAgent(Agent):
         if code in {'H2_SHORT', 'H2_LONG'}:
             return (
                 f"섹션 구조를 정확히 맞추십시오: 도입 1 + 본론 {body_sections} + 결론 1. "
-                f"<h2>는 본론과 결론에만 사용하여 총 {expected_h2}개로 작성하십시오."
+                f"<h2>는 본론과 결론에만 사용하여 총 {expected_h2}개로 작성하십시오. "
+                f"소제목 태그는 속성 없이 반드시 <h2>텍스트</h2> 형식만 허용됩니다."
             )
 
         if code in {'P_SHORT', 'P_LONG'}:
@@ -270,6 +323,7 @@ class StructureAgent(Agent):
 
                 structured = self.parse_response(response)
                 content = normalize_artifacts(structured['content'])
+                content = normalize_html_structure_tags(content)
                 title = normalize_artifacts(structured['title'])
 
                 validation = self.validate_output(content, length_spec)
@@ -314,7 +368,7 @@ class StructureAgent(Agent):
             response_text = await generate_content_async(
                 prompt,
                 model_name=self.model_name,
-                temperature=0.25,  # Node.js parity: 0.25 for strict instruction adherence
+                temperature=0.1,  # 구조 준수율을 높이기 위해 변동성 축소
                 max_output_tokens=4096
             )
 
@@ -834,20 +888,58 @@ class StructureAgent(Agent):
         
         # XML Tag Extraction
         try:
-            # Title extraction
-            title_match = re.search(r'<title>(.*?)</title>', response, re.DOTALL | re.IGNORECASE)
-            title = title_match.group(1).strip() if title_match else ''
-            
+            # Title extraction (여러 블록이 있을 때는 마지막 유효 블록 우선)
+            title_blocks = [
+                (m.group(1) or "").strip()
+                for m in re.finditer(r'<title>(.*?)</title>', response, re.DOTALL | re.IGNORECASE)
+            ]
+            title = next((t for t in reversed(title_blocks) if t), '')
+
             # Content extraction
-            content_match = re.search(r'<content>(.*?)</content>', response, re.DOTALL | re.IGNORECASE)
-            content = content_match.group(1).strip() if content_match else ''
+            content_blocks = [
+                (m.group(1) or "").strip()
+                for m in re.finditer(r'<content>(.*?)</content>', response, re.DOTALL | re.IGNORECASE)
+            ]
+            content = ''
+            if content_blocks:
+                # 1) 예시/템플릿 블록 제거 2) 구조 밀도 + 길이로 본문 블록 선택
+                candidates = []
+                for idx, block in enumerate(content_blocks):
+                    normalized = normalize_html_structure_tags(normalize_artifacts(block))
+                    tag_density = len(re.findall(r'<(?:h2|p)\b', normalized, re.IGNORECASE))
+                    plain_len = len(strip_html(normalized))
+                    candidates.append(
+                        {
+                            'index': idx,
+                            'content': normalized,
+                            'tag_density': tag_density,
+                            'plain_len': plain_len,
+                            'is_example': is_example_like_block(normalized),
+                        }
+                    )
+
+                real_candidates = [c for c in candidates if not c['is_example']]
+                pool = real_candidates if real_candidates else candidates
+                selected = max(
+                    pool,
+                    key=lambda c: (c['tag_density'], c['plain_len'], c['index']),
+                )
+                content = selected['content'].strip()
+
+                # 선택된 content 인덱스와 같은 title이 있으면 우선 사용
+                selected_idx = selected['index']
+                if selected_idx < len(title_blocks):
+                    aligned_title = (title_blocks[selected_idx] or '').strip()
+                    if aligned_title:
+                        title = aligned_title
             
             if not content:
                 # Fallback: try to find just HTML tags if XML tags are missing
                 print('⚠️ [StructureAgent] XML 태그 누락, HTML 직접 추출 시도')
-                html_block_match = re.search(r'<(?:p|h[23])[^>]*>[\s\S]*<\/(?:p|h[23])>', response, re.IGNORECASE)
-                if html_block_match:
-                    content = html_block_match.group(0)
+                html_blocks = re.findall(r'<(?:p|h[23])\b[^>]*>[\s\S]*?</(?:p|h[23])>', response, re.IGNORECASE)
+                if html_blocks:
+                    # 단일 태그 조각 여러 개를 하나로 이어 최대한 본문을 복구
+                    content = "\n".join(html_blocks)
                 else:
                     content = response # 최후단: 전체 텍스트
             
@@ -881,6 +973,15 @@ class StructureAgent(Agent):
         per_section_max = length_spec['per_section_max']
         total_sections = length_spec['total_sections']
 
+        placeholder_count = len(re.findall(r'\[[^\]\n]{1,40}\]', content))
+        if placeholder_count >= 2:
+            return {
+                'passed': False,
+                'code': 'TEMPLATE_ECHO',
+                'reason': f"예시/플레이스홀더 잔존 ({placeholder_count}개)",
+                'feedback': '예시 문구([제목], [구체적 내용] 등)를 모두 제거하고 실제 본문으로 작성하십시오.'
+            }
+
         if plain_length < min_length:
             deficit = min_length - plain_length
             return {
@@ -905,8 +1006,28 @@ class StructureAgent(Agent):
                     f"중복 문장과 장황한 수식어를 제거하십시오."
                 )
             }
-        
-        h2_count = len(re.findall(r'<h2>', content, re.IGNORECASE))
+
+        # 허용 태그는 h2/p만 사용해야 하므로, 기타 heading 태그는 즉시 반려.
+        disallowed_heading_count = len(re.findall(r'<h(?!2\b)[1-6]\b[^>]*>', content, re.IGNORECASE))
+        if disallowed_heading_count > 0:
+            return {
+                'passed': False,
+                'code': 'TAG_DISALLOWED',
+                'reason': f"허용되지 않은 heading 태그 사용 (h2 외 {disallowed_heading_count}개)",
+                'feedback': '소제목은 <h2>만 사용하고, <h1>/<h3> 등 다른 heading 태그는 제거하십시오.'
+            }
+
+        h2_open_tags = re.findall(r'<h2\b[^>]*>', content, re.IGNORECASE)
+        h2_close_tags = re.findall(r'</h2\s*>', content, re.IGNORECASE)
+        h2_count = len(h2_open_tags)
+        if h2_count != len(h2_close_tags):
+            return {
+                'passed': False,
+                'code': 'H2_MALFORMED',
+                'reason': f"h2 태그 짝 불일치 (열림 {h2_count}개, 닫힘 {len(h2_close_tags)}개)",
+                'feedback': '모든 소제목은 <h2>...</h2> 형태로 정확히 닫아 주십시오.'
+            }
+
         if h2_count < expected_h2:
             return {
                 'passed': False,
@@ -929,7 +1050,17 @@ class StructureAgent(Agent):
                 )
             }
 
-        p_count = len(re.findall(r'<p>', content, re.IGNORECASE))
+        p_open_tags = re.findall(r'<p\b[^>]*>', content, re.IGNORECASE)
+        p_close_tags = re.findall(r'</p\s*>', content, re.IGNORECASE)
+        p_count = len(p_open_tags)
+        if p_count != len(p_close_tags):
+            return {
+                'passed': False,
+                'code': 'P_MALFORMED',
+                'reason': f"p 태그 짝 불일치 (열림 {p_count}개, 닫힘 {len(p_close_tags)}개)",
+                'feedback': '모든 문단은 <p>...</p> 형태로 정확히 닫아 주십시오.'
+            }
+
         expected_min_p = total_sections * 2
         expected_max_p = total_sections * 4
         

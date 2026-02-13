@@ -11,6 +11,7 @@ import json
 import logging
 import re
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -36,6 +37,21 @@ CATEGORY_MIN_WORD_COUNT = {
     "activity-report": 2000,
     "current-affairs": 2000,
     "daily-communication": 2000,
+}
+
+# 프론트 로딩 오버레이가 순환 메시지를 출력하는 기준 키.
+LOADING_STAGE_STRUCTURE = "구조 설계 및 초안 작성 중"
+LOADING_STAGE_BODY = "본문 작성 중"
+LOADING_STAGE_SEO = "검색 노출 최적화(SEO) 중"
+
+_STEP_NAME_TO_LOADING_STAGE = {
+    "structureagent": LOADING_STAGE_STRUCTURE,
+    "writeragent": LOADING_STAGE_STRUCTURE,
+    "keywordinjectoragent": LOADING_STAGE_BODY,
+    "styleagent": LOADING_STAGE_BODY,
+    "complianceagent": LOADING_STAGE_BODY,
+    "seoagent": LOADING_STAGE_SEO,
+    "titleagent": LOADING_STAGE_SEO,
 }
 
 
@@ -77,7 +93,8 @@ class ProgressTracker:
         self.update(2, 25, "자료 수집 중...")
 
     def step_generating(self) -> None:
-        self.update(3, 50, "AI 원고 작성 중...")
+        # 프론트 STEP_MESSAGES 키와 동일한 값으로 고정해 랜덤 순환을 활성화한다.
+        self.update(3, 50, LOADING_STAGE_STRUCTURE)
 
     def step_validating(self) -> None:
         self.update(4, 80, "품질 검증 중...")
@@ -110,6 +127,36 @@ def _safe_dict(value: Any) -> Dict[str, Any]:
     if isinstance(value, dict):
         return value
     return {}
+
+
+def _normalize_step_name(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, Iterable) and not isinstance(value, (bytes, bytearray)):
+        return " ".join(str(item).strip() for item in value if str(item).strip())
+    return str(value).strip()
+
+
+def _to_loading_stage_message(raw_step_name: Any) -> str:
+    step_name = _normalize_step_name(raw_step_name)
+    normalized = re.sub(r"\s+", "", step_name).lower()
+    if not normalized:
+        return LOADING_STAGE_BODY
+
+    stage_message = _STEP_NAME_TO_LOADING_STAGE.get(normalized)
+    if stage_message:
+        return stage_message
+
+    # step 명칭이 일부 변경되어도 키워드 기반으로 프론트 단계와 동기화한다.
+    if "seo" in normalized or "title" in normalized:
+        return LOADING_STAGE_SEO
+    if "structure" in normalized or "writer" in normalized:
+        return LOADING_STAGE_STRUCTURE
+    if "keyword" in normalized or "style" in normalized or "compliance" in normalized:
+        return LOADING_STAGE_BODY
+    return LOADING_STAGE_BODY
 
 
 def _to_int(value: Any, default: int) -> int:
@@ -307,11 +354,11 @@ def _poll_pipeline(job_id: str, progress: ProgressTracker) -> Dict[str, Any]:
         percentage = round((completed_steps / max(total_steps, 1)) * 100, 1)
         current_step_index = str(job_data.get("currentStep", 0))
         current_step_obj = _safe_dict(steps.get(current_step_index))
-        current_step_name = str(current_step_obj.get("name") or "파이프라인")
+        current_step_name = _normalize_step_name(current_step_obj.get("name") or "파이프라인")
 
         if status == "running":
             current_percentage = int(round(30 + percentage * 0.5))
-            message = f"{current_step_name} 실행 중..."
+            message = _to_loading_stage_message(current_step_name)
             if message != last_message:
                 progress.update(3, current_percentage, message)
                 last_message = message
@@ -521,4 +568,3 @@ def handle_generate_posts(req: https_fn.CallableRequest) -> Dict[str, Any]:
         if progress:
             progress.error(str(exc))
         raise https_fn.HttpsError("internal", f"원고 생성에 실패했습니다: {exc}") from exc
-
