@@ -3,7 +3,7 @@ import re
 import json
 import logging
 import time
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 # API Call Timeout (seconds)
 LLM_CALL_TIMEOUT = 120  # 2분 타임아웃
@@ -304,6 +304,8 @@ class StructureAgent(Agent):
         retry_directive = ''
         validation = {}
         last_error = None  # 마지막 예외 추적
+        last_content = ''
+        last_title = ''
 
         while attempt <= max_retries:
             attempt += 1
@@ -325,6 +327,8 @@ class StructureAgent(Agent):
                 content = normalize_artifacts(structured['content'])
                 content = normalize_html_structure_tags(content)
                 title = normalize_artifacts(structured['title'])
+                last_content = content
+                last_title = title
 
                 validation = self.validate_output(content, length_spec)
 
@@ -354,6 +358,30 @@ class StructureAgent(Agent):
                 last_error = error_msg  # 예외 메시지 저장
 
             if attempt > max_retries:
+                # 엄격 기준은 유지하되, 분량 부족일 때만 1회 보강 재작성 시도
+                if validation.get('code') == 'LENGTH_SHORT' and last_content:
+                    recovered = await self.recover_length_shortfall(
+                        content=last_content,
+                        title=last_title or (topic[:20] if topic else '새 원고'),
+                        topic=topic,
+                        length_spec=length_spec,
+                    )
+                    if recovered:
+                        recovered_content, recovered_title = recovered
+                        recovered_validation = self.validate_output(recovered_content, length_spec)
+                        if recovered_validation.get('passed'):
+                            print(
+                                f"✅ [StructureAgent] 분량 보강 복구 성공: "
+                                f"{len(strip_html(recovered_content))}자"
+                            )
+                            return {
+                                'content': recovered_content,
+                                'title': recovered_title or (topic[:20] if topic else '새 원고'),
+                                'writingMethod': writing_method,
+                                'contextAnalysis': context_analysis
+                            }
+                        validation = recovered_validation
+
                 # 마지막 에러가 예외면 그 메시지 사용, 아니면 검증 실패 이유 사용
                 final_reason = last_error or validation.get('reason', '알 수 없는 오류')
                 raise Exception(f"StructureAgent 실패 ({max_retries}회 재시도 후): {final_reason}")
@@ -386,6 +414,77 @@ class StructureAgent(Agent):
             if 'timeout' in error_msg.lower() or 'deadline' in error_msg.lower():
                 raise Exception(f"LLM 호출 타임아웃 ({elapsed:.1f}초). Gemini API가 응답하지 않습니다.")
             raise
+
+    async def recover_length_shortfall(
+        self,
+        *,
+        content: str,
+        title: str,
+        topic: str,
+        length_spec: Dict[str, int],
+    ) -> Optional[Tuple[str, str]]:
+        current_len = len(strip_html(content))
+        min_len = int(length_spec.get('min_chars', 0))
+        max_len = int(length_spec.get('max_chars', 0))
+        expected_h2 = int(length_spec.get('expected_h2', 0))
+
+        # 지나치게 짧은 경우는 보강보다 근본 재작성이 필요하므로 스킵.
+        if min_len <= 0 or current_len < int(min_len * 0.75):
+            return None
+
+        from ..common.gemini_client import generate_content_async
+
+        gap = max(0, min_len - current_len)
+        prompt = f"""
+당신은 엄격한 편집자입니다. 아래 원고는 구조는 대체로 맞지만 분량이 부족합니다.
+규칙을 완화하지 말고, 기존 의미를 유지하면서 내용을 보강해 최소 분량을 충족시키십시오.
+
+[목표]
+- 현재 분량: {current_len}자
+- 최소 분량: {min_len}자
+- 최대 분량: {max_len}자
+- 보강 필요량: 최소 {gap}자
+- <h2> 개수는 정확히 {expected_h2}개 유지
+
+[절대 규칙]
+1) 기존 <h2> 제목은 삭제/변경하지 말 것.
+2) <h2> 개수는 정확히 {expected_h2}개 유지할 것.
+3) 문단은 <p>...</p>만 사용하고 모든 태그를 정확히 닫을 것.
+4) 기존 사실/주장을 왜곡하거나 새 사실을 지어내지 말 것.
+5) 장황한 반복 금지. 각 단락은 새로운 근거나 설명을 추가할 것.
+6) 최종 분량이 {min_len}~{max_len}자 범위를 반드시 충족할 것.
+
+[주제]
+{topic}
+
+[원고 원문]
+<title>{title}</title>
+<content>
+{content}
+</content>
+
+[출력 형식]
+아래 XML 태그만 출력:
+<title>...</title>
+<content>...</content>
+"""
+
+        try:
+            response_text = await generate_content_async(
+                prompt,
+                model_name=self.model_name,
+                temperature=0.0,
+                max_output_tokens=4096,
+            )
+            parsed = self.parse_response(response_text)
+            recovered_content = normalize_html_structure_tags(normalize_artifacts(parsed.get('content', '')))
+            recovered_title = normalize_artifacts(parsed.get('title', '')) or title
+            if not recovered_content:
+                return None
+            return recovered_content, recovered_title
+        except Exception as e:
+            print(f"⚠️ [StructureAgent] 분량 보강 복구 실패: {str(e)}")
+            return None
 
     async def run_context_analyzer(self, stance_text: str, news_data_text: str, author_name: str) -> Optional[Dict]:
         from ..common.gemini_client import generate_content_async
