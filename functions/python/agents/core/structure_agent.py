@@ -316,7 +316,8 @@ class StructureAgent(Agent):
         print(f"📝 [StructureAgent] 프롬프트 생성 완료 ({len(prompt)}자)")
 
         # 6. Retry Loop (검증 로직 엄격하게 복구, 대신 프롬프트를 강화하여 성공률 제고)
-        max_retries = 2
+        # LLM short-response variance mitigation: allow one more base retry.
+        max_retries = 3
         attempt = 0
         feedback = ''
         retry_directive = ''
@@ -382,6 +383,31 @@ class StructureAgent(Agent):
                 last_error = error_msg  # 예외 메시지 저장
 
             if attempt > max_retries:
+                if validation.get('code') == 'LENGTH_SHORT' and last_content:
+                    recovered = await self.recover_length_shortfall(
+                        content=last_content,
+                        title=last_title or (topic[:20] if topic else '새 원고'),
+                        topic=topic,
+                        length_spec=length_spec,
+                    )
+                    if recovered:
+                        recovered_content, recovered_title = recovered
+                        recovered_validation = self.validate_output(recovered_content, length_spec)
+                        if recovered_validation.get('passed'):
+                            print(
+                                f"✅ [StructureAgent] 분량 보강 복구 성공: "
+                                f"{len(strip_html(recovered_content))}자"
+                            )
+                            return {
+                                'content': recovered_content,
+                                'title': recovered_title or (topic[:20] if topic else '새 원고'),
+                                'writingMethod': writing_method,
+                                'contextAnalysis': context_analysis
+                            }
+                        validation = recovered_validation
+                        last_content = recovered_content
+                        last_title = recovered_title or last_title
+
                 # 엄격 기준은 유지하되, 구조/분량 검증 실패 시 1회 보강 재작성 시도
                 recoverable_codes = {
                     'LENGTH_SHORT',
@@ -466,16 +492,47 @@ class StructureAgent(Agent):
         max_len = int(length_spec.get('max_chars', 0))
         expected_h2 = int(length_spec.get('expected_h2', 0))
 
-        # 지나치게 짧은 경우는 보강보다 근본 재작성이 필요하므로 스킵.
-        if min_len <= 0 or current_len < int(min_len * 0.75):
+        if min_len <= 0:
             return None
 
         from ..common.gemini_client import generate_content_async
 
         gap = max(0, min_len - current_len)
-        prompt = f"""
-당신은 엄격한 편집자입니다. 아래 원고는 구조는 대체로 맞지만 분량이 부족합니다.
-규칙을 완화하지 말고, 기존 의미를 유지하면서 내용을 보강해 최소 분량을 충족시키십시오.
+        rewrite_mode = current_len < int(min_len * 0.6)
+
+        if rewrite_mode:
+            prompt = f"""
+당신은 엄격한 한국어 정치 에디터입니다. 현재 초안은 분량이 지나치게 짧아(현재 {current_len}자)
+단순 보강이 아니라 완전 재작성 모드로 작성해야 합니다.
+
+[목표]
+- 최소 분량: {min_len}자
+- 최대 분량: {max_len}자
+- <h2> 개수: 정확히 {expected_h2}개
+
+[필수 규칙]
+1) 최종 결과는 완성형 본문이어야 하며, 개요/요약/예시 금지.
+2) 태그는 <h2>, <p>만 사용.
+3) 도입 1 + 본론/결론 구조를 유지하고 분량을 충족.
+4) XML 태그 외 설명문 금지.
+
+[주제]
+{topic}
+
+[참고 초안 - 사실/맥락 참고용]
+<title>{title}</title>
+<content>
+{content}
+</content>
+
+[출력 형식]
+<title>...</title>
+<content>...</content>
+"""
+        else:
+            prompt = f"""
+당신은 엄격한 한국어 정치 에디터입니다. 아래 원고는 구조는 대체로 맞지만 분량이 부족합니다.
+규칙은 완화하지 말고, 기존 흐름을 유지하면서 내용만 보강해 최소 분량을 충족시키세요.
 
 [목표]
 - 현재 분량: {current_len}자
@@ -484,13 +541,13 @@ class StructureAgent(Agent):
 - 보강 필요량: 최소 {gap}자
 - <h2> 개수는 정확히 {expected_h2}개 유지
 
-[절대 규칙]
-1) 기존 <h2> 제목은 삭제/변경하지 말 것.
-2) <h2> 개수는 정확히 {expected_h2}개 유지할 것.
-3) 문단은 <p>...</p>만 사용하고 모든 태그를 정확히 닫을 것.
-4) 기존 사실/주장을 왜곡하거나 새 사실을 지어내지 말 것.
-5) 장황한 반복 금지. 각 단락은 새로운 근거나 설명을 추가할 것.
-6) 최종 분량이 {min_len}~{max_len}자 범위를 반드시 충족할 것.
+[필수 규칙]
+1) 기존 <h2> 제목은 삭제/변경하지 말 것
+2) <h2> 개수는 정확히 {expected_h2}개 유지할 것
+3) 문단은 <p>...</p>만 사용하고 모든 태그를 정확히 닫을 것
+4) 기존 사실/주장을 삭제하거나 왜곡하지 말 것
+5) 중복/반복 금지. 각 단락은 새로운 근거/설명으로 보강할 것
+6) 최종 분량은 {min_len}~{max_len}자 범위를 반드시 충족할 것
 
 [주제]
 {topic}
