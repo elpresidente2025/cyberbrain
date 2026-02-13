@@ -195,7 +195,19 @@
       "Bash(find:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat\\(posts\\): auto-select today''s date and show empty message\n\n- PostsListPage 진입 시 오늘 날짜 자동 선택\n- 해당 날짜에 원고 없으면 \"MM월 DD일의 원고가 없습니다\" 메시지 표시\n- 모든 날짜 클릭 가능하도록 수정\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfix\\(viewer\\): add publish URL input dialog to PostViewerModal\n\n- 발행 버튼 클릭 시 URL 입력 다이얼로그 표시\n- 네이버 블로그 URL 유효성 검사 추가\n- 발행 등록 API 연동\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nrefactor\\(subheading\\): remove fallback and enforce LLM generation\n\n- Remove fallbacks\\(\\) function entirely\n- Throw error when Gemini API key is missing\n- Increase retry attempts from 2 to 3\n- Throw error on final failure instead of returning fallback\n- Change default model to gemini-1.5-flash\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nrefactor\\(subheading\\): remove fallback and enforce LLM generation\n\n- Remove fallbacks\\(\\) function entirely\n- Throw error when Gemini API key is missing\n- Increase retry attempts from 2 to 3\n- Throw error on final failure instead of returning fallback\n- Change default model to gemini-1.5-flash\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(gcloud functions logs read:*)",
+      "Bash(python -c \"\nimport requests\nimport json\n\nurl = ''https://asia-northeast3-ai-secretary-6e9c8.cloudfunctions.net/generate_post''\npayload = {\n    ''topic'': ''테스트 주제'',\n    ''category'': ''activity-report'',\n    ''keywords'': [''테스트''],\n    ''user'': {''name'': ''테스터'', ''status'': ''active''}\n}\n\ntry:\n    response = requests.post\\(url, json=payload, timeout=120\\)\n    print\\(f''Status: {response.status_code}''\\)\n    print\\(f''Response: {response.text[:500]}...'' if len\\(response.text\\) > 500 else f''Response: {response.text}''\\)\nexcept Exception as e:\n    print\\(f''Error: {e}''\\)\n\")",
+      "mcp__claude_ai_Hugging_Face__hf_doc_search",
+      "Bash(python -m py_compile:*)",
+      "Bash(python -c:*)",
+      "Bash(pip show:*)",
+      "Bash(venvScriptspip install:*)",
+      "Bash(./venv/Scripts/pip.exe install:*)",
+      "Bash(git reset:*)",
+      "Bash(npx firebase deploy --force)",
+      "Bash(gh repo view:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: 반복 방지 검증 강화 및 키워드 삽입 규칙 개편\n\n- 키워드 삽입: 400자÷1 공식 → 키워드 2개 기준 각 3~4회/총 7~8회로 변경\n- 듀얼 키워드 제목 배치: 유사 키워드\\(어절 해체\\) / 독립 키워드\\(뒤쪽 배치\\) 분기\n- 반복 금지 프롬프트: CTA 도입·결론만 허용, 3어절 구문 2회 제한, 톤 키워드 1~2회\n- 후처리 검증: detectPhraseRepetition \\(3어절 빈도\\), detectNearDuplicateSentences \\(Jaccard 유사도 60%\\)\n- Python SEO agent에도 동일 검증 로직 반영\n- 프론트엔드 리팩토링: Dashboard, Billing, Profile 컴포넌트 분리\n- Python 파이프라인 추가 \\(agents, handlers, services\\)\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   },
   "mcpServers": {

@@ -204,14 +204,33 @@ export default function PreviewPane({ draft }) {
                   {keywordStats.map((stat, index) => {
                     // 🔑 백엔드 검증 결과 우선 사용
                     const backendValidation = draft.keywordValidation?.[stat.keyword];
-                    const isValid = backendValidation
-                      ? backendValidation.status === 'valid'
-                      : stat.count >= Math.max(3, Math.floor(characterCount / 400)); // fallback: 400자당 1회, 최소 3
-                    const statusLabel = backendValidation
-                      ? (backendValidation.status === 'insufficient' ? ' (부족)'
-                        : backendValidation.status === 'spam_risk' ? ' (과다)'
-                          : '')
-                      : (stat.count < Math.max(3, Math.floor(characterCount / 400)) ? ' (부족)' : '');
+                    const fallbackMinCount = keywordStats.length >= 2 ? 3 : 5;
+                    const fallbackMaxCount = fallbackMinCount + 1;
+
+                    const parsedMin = Number(backendValidation?.expected);
+                    const parsedMax = Number(backendValidation?.max);
+                    const minCount = Number.isFinite(parsedMin) && parsedMin > 0
+                      ? parsedMin
+                      : fallbackMinCount;
+                    const maxCount = Number.isFinite(parsedMax) && parsedMax >= minCount
+                      ? parsedMax
+                      : fallbackMaxCount;
+
+                    let validationStatus = backendValidation?.status;
+                    if (!['valid', 'insufficient', 'spam_risk'].includes(validationStatus)) {
+                      if (stat.count < minCount) {
+                        validationStatus = 'insufficient';
+                      } else if (stat.count > maxCount) {
+                        validationStatus = 'spam_risk';
+                      } else {
+                        validationStatus = 'valid';
+                      }
+                    }
+
+                    const isValid = validationStatus === 'valid';
+                    const statusLabel = validationStatus === 'insufficient'
+                      ? ' (\uBD80\uC871)'
+                      : (validationStatus === 'spam_risk' ? ' (\uACFC\uB2E4)' : '');
 
                     return (
                       <Typography
