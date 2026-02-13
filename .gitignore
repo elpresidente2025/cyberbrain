@@ -75,3 +75,36 @@ fix-user-*.md
 functions/delete_cache.js
 functions/restore_admin.js
 .claude/settings.local.json
+
+# Codex / Claude local artifacts
+.agent/
+.claude/agents/
+.claude/commands/
+.claude/hooks/
+.claude/rules/
+.claude/skills/
+.claude_backup/
+
+# Local debug logs and scratch files
+blind_test_log*.txt
+blind_test_results/
+deploy_debug.txt
+firebase_logs*.txt
+verify_*.txt
+repro_*.js
+tmp_callable_test.json
+
+# Local Python scratch/test artifacts
+functions/key.txt
+functions/python/lightrag_test_data/
+functions/python/generate_graph_viz.py
+functions/python/reproduce_issue.py
+functions/python/reproduce_log*.txt
+functions/python/run_blind_test.py
+functions/python/test_fact_guard.py
+functions/python/test_log*.txt
+functions/python/test_payload.json
+functions/python/test_request.py
+functions/python/test_trace.py
+functions/python/verify_pipeline.py
+functions/python/verify_pipeline_modules.py
