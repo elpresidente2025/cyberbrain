@@ -370,6 +370,11 @@ async def validate_numeric_context(sentence: str, token: str, allowlist: Dict[st
         # Clean markdown
         text = re.sub(r'```(?:json)?\s*([\s\S]*?)```', r'\1', response_text).strip()
         data = json.loads(text)
+        
+        # Defense: If response is a list, take the first element (common LLM hallucination in JSON format)
+        if isinstance(data, list) and len(data) > 0:
+            data = data[0]
+            
         return data
     except Exception as e:
         logger.warning(f"⚠️ [FactGuard] LLM 검증 실패: {e}")

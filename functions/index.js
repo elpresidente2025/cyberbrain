@@ -40,21 +40,6 @@ try {
   console.warn('[index] profile handler warning:', e?.message);
 }
 
-// Add getUserPosts handler
-try {
-  const postsUserHandler = require('./handlers/posts-getUserPosts');
-  Object.assign(exports, postsUserHandler);
-} catch (e) {
-  console.warn('[index] posts-getUserPosts handler warning:', e?.message);
-}
-
-// Add getPost handler
-try {
-  const postHandler = require('./handlers/posts-getPost');
-  Object.assign(exports, postHandler);
-} catch (e) {
-  console.warn('[index] posts-getPost handler warning:', e?.message);
-}
 
 // Add emergency admin restore handler
 try {
@@ -152,14 +137,6 @@ try {
   console.warn('[index] publishing handler warning:', e?.message);
 }
 
-// Add posts handlers (full version with advanced prompt system)
-try {
-  const postsHandlers = require('./handlers/posts');
-  Object.assign(exports, postsHandlers);
-} catch (e) {
-  console.warn('[index] posts handler warning:', e?.message);
-}
-
 // Add SNS addon handlers
 try {
   const snsAddonHandlers = require('./handlers/sns-addon');
@@ -216,13 +193,6 @@ try {
   console.warn('[index] admin-users handler warning:', e?.message);
 }
 
-// CRUD handlers (onCall with Firebase Auth)
-try {
-  const crudHandlers = require('./handlers/posts/crud-handlers');
-  Object.assign(exports, crudHandlers);
-} catch (e) {
-  console.warn('[index] crud-handlers warning:', e?.message);
-}
 // Add user style trigger (Firestore)
 try {
   const userStyleHandler = require('./handlers/user-style-trigger');

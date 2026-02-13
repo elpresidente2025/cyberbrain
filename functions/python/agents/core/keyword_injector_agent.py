@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Optional
 logger = logging.getLogger(__name__)
 
 from ..base_agent import Agent
+from services.posts.validation import count_keyword_coverage, validate_keyword_insertion
 
 class KeywordInjectorAgent(Agent):
     def __init__(self, name: str = 'KeywordInjectorAgent', options: Optional[Dict[str, Any]] = None):
@@ -14,12 +15,34 @@ class KeywordInjectorAgent(Agent):
         self._client = get_client()
         self.model_name = DEFAULT_MODEL
 
-    def get_min_target(self, content: str, section_count: int) -> int:
-        """글자수 기반 최소 키워드 삽입 목표 계산 (400자당 1회, 최소 3)"""
-        plain_text = re.sub(r'<[^>]*>', '', content).replace('\s', '')
-        char_count = len(plain_text)
-        length_based = max(3, char_count // 400)
-        return max(section_count, length_based)
+    def get_min_target(self, keyword_count: int) -> int:
+        """검증 규칙과 동일한 사용자 키워드 최소 등장 횟수."""
+        return 3 if keyword_count >= 2 else 5
+
+    def _extract_keyword_counts(self, keyword_result: Dict[str, Any], keywords: List[str]) -> Dict[str, int]:
+        details = (keyword_result.get('details') or {}).get('keywords') or {}
+        counts: Dict[str, int] = {}
+        for kw in keywords:
+            info = details.get(kw) or {}
+            counts[kw] = int(info.get('coverage') or info.get('count') or 0)
+        return counts
+
+    def _build_keyword_feedback(self, keyword_result: Dict[str, Any], extra_feedback: str = '') -> str:
+        details = (keyword_result.get('details') or {}).get('keywords') or {}
+        issues: List[str] = []
+        for keyword, info in details.items():
+            if not isinstance(info, dict):
+                continue
+            current = int(info.get('coverage') or info.get('count') or 0)
+            expected = int(info.get('expected') or 0)
+            max_allowed = int(info.get('max') or 9999)
+            if current < expected:
+                issues.append(f"\"{keyword}\" 부족: {current}/{expected}")
+            elif current > max_allowed:
+                issues.append(f"\"{keyword}\" 과다: {current}/{max_allowed}")
+        if extra_feedback:
+            issues.append(extra_feedback)
+        return ", ".join(issues) if issues else "키워드 기준에 맞게 조정하세요."
 
     async def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
         previous_results = context.get('previousResults', {})
@@ -33,6 +56,10 @@ class KeywordInjectorAgent(Agent):
         )
         if isinstance(user_keywords, str):
             user_keywords = [user_keywords] if user_keywords.strip() else []
+        auto_keywords = context.get('autoKeywords') or []
+        if not isinstance(auto_keywords, list):
+            auto_keywords = []
+        target_word_count = context.get('targetWordCount')
 
         structure_result = previous_results.get('StructureAgent', {})
         content = structure_result.get('content') if structure_result else None
@@ -55,17 +82,30 @@ class KeywordInjectorAgent(Agent):
         print(f"📊 [KeywordInjectorAgent] 섹션 {len(sections)}개 파싱 완료")
 
         # 최소 삽입 목표 계산
-        min_target = self.get_min_target(content, len(sections))
-        print(f"📊 [KeywordInjectorAgent] 최소 삽입 목표: {min_target}회 (섹션 {len(sections)}개)")
+        min_target = self.get_min_target(len(user_keywords))
+        max_target = min_target + 1
+        print(f"📊 [KeywordInjectorAgent] 키워드 목표: {min_target}~{max_target}회")
 
         section_counts = self.count_keywords_per_section(sections, user_keywords)
-        total_counts = self.count_keywords(content, user_keywords)
+        initial_keyword_result = validate_keyword_insertion(
+            content,
+            user_keywords,
+            auto_keywords,
+            target_word_count,
+        )
+        total_counts = self._extract_keyword_counts(initial_keyword_result, user_keywords)
 
         print(f"📊 [KeywordInjectorAgent] 초기 상태: sections={len(sections)}, totalCounts={total_counts}")
 
-        # Validation Check (per-section minimum + total minimum)
-        validation = self.validate_section_balance(section_counts, user_keywords, min_target)
-        if validation['passed']:
+        # Validation Check (검증 모듈과 동일 기준)
+        validation = self.validate_section_balance(
+            section_counts,
+            user_keywords,
+            min_target=min_target,
+            max_target=max_target,
+            auto_keywords=auto_keywords,
+        )
+        if initial_keyword_result.get('valid') and validation['passed']:
             print('✅ [KeywordInjectorAgent] 초기 상태부터 키워드 완벽 균형')
             return {'content': content, 'title': title, 'keywordCounts': total_counts}
 
@@ -73,7 +113,7 @@ class KeywordInjectorAgent(Agent):
         max_retries = 2
         attempt = 0
         current_content = content
-        feedback = ''
+        feedback = self._build_keyword_feedback(initial_keyword_result, validation.get('feedback', ''))
 
         while attempt <= max_retries:
             attempt += 1
@@ -85,7 +125,8 @@ class KeywordInjectorAgent(Agent):
                 'sectionCounts': section_counts,
                 'feedback': feedback,
                 'contextAnalysis': context_analysis,
-                'minTarget': min_target
+                'minTarget': min_target,
+                'maxTarget': max_target,
             })
 
             # Logging prompt length only
@@ -111,16 +152,27 @@ class KeywordInjectorAgent(Agent):
 
                 print(f"📋 [KeywordInjectorAgent] {len(instructions)}개 지시 파싱됨")
 
-                current_content = self.apply_instructions(content, sections, instructions)
+                current_content = self.apply_instructions(current_content, sections, instructions)
 
                 # Re-parse and validate
                 new_sections = self.parse_sections(current_content)
                 new_section_counts = self.count_keywords_per_section(new_sections, user_keywords)
-                new_total_counts = self.count_keywords(current_content, user_keywords)
+                new_keyword_result = validate_keyword_insertion(
+                    current_content,
+                    user_keywords,
+                    auto_keywords,
+                    target_word_count,
+                )
+                new_total_counts = self._extract_keyword_counts(new_keyword_result, user_keywords)
+                validation = self.validate_section_balance(
+                    new_section_counts,
+                    user_keywords,
+                    min_target=min_target,
+                    max_target=max_target,
+                    auto_keywords=auto_keywords,
+                )
 
-                validation = self.validate_section_balance(new_section_counts, user_keywords, min_target)
-
-                if validation['passed']:
+                if new_keyword_result.get('valid') and validation['passed']:
                     print(f"✅ [KeywordInjectorAgent] 키워드 균형 달성: {new_total_counts}")
                     return {
                         'content': current_content,
@@ -128,7 +180,7 @@ class KeywordInjectorAgent(Agent):
                         'keywordCounts': new_total_counts
                     }
 
-                feedback = validation['feedback']
+                feedback = self._build_keyword_feedback(new_keyword_result, validation.get('feedback', ''))
                 print(f"⚠️ [KeywordInjectorAgent] 검증 실패: {feedback}")
 
                 if attempt > max_retries:
@@ -192,44 +244,43 @@ class KeywordInjectorAgent(Agent):
         result = []
         for section in sections:
             counts = {}
-            # Strip tags for accurate counting
-            plain_text = re.sub(r'<[^>]*>', ' ', section['content']).lower()
             for kw in keywords:
-                pattern = re.escape(kw)
-                counts[kw] = len(re.findall(pattern, plain_text, re.IGNORECASE))
+                counts[kw] = count_keyword_coverage(section['content'], kw)
             result.append({'type': section['type'], 'counts': counts})
         return result
 
     def count_keywords(self, content: str, keywords: List[str]) -> Dict[str, int]:
         counts = {}
-        plain_text = re.sub(r'<[^>]*>', ' ', content).lower()
         for kw in keywords:
-            pattern = re.escape(kw)
-            counts[kw] = len(re.findall(pattern, plain_text, re.IGNORECASE))
+            counts[kw] = count_keyword_coverage(content, kw)
         return counts
 
-    def validate_section_balance(self, section_counts: List[Dict], keywords: List[str], min_target: Optional[int] = None) -> Dict:
+    def validate_section_balance(
+        self,
+        section_counts: List[Dict],
+        keywords: List[str],
+        min_target: Optional[int] = None,
+        max_target: Optional[int] = None,
+        auto_keywords: Optional[List[str]] = None,
+    ) -> Dict:
         issues = []
+        auto_keyword_set = set(auto_keywords or [])
 
         for kw in keywords:
             total_kw_count = sum(sc['counts'].get(kw, 0) for sc in section_counts)
 
-            # 1) 각 섹션에 최소 1회
-            for i, sc in enumerate(section_counts):
-                count = sc['counts'].get(kw, 0)
-                if count == 0:
-                    issues.append(f"섹션 {i} ({sc['type']})에 \"{kw}\" 없음 (1회 삽입 필요)")
+            if kw in auto_keyword_set:
+                if total_kw_count < 1:
+                    issues.append(f"전체 \"{kw}\" 0회 (자동 키워드 최소 1회 필요)")
+                continue
 
-            # 2) 전체 합계가 min_target 이상
-            if min_target and total_kw_count < min_target:
+            if min_target is not None and total_kw_count < min_target:
                 deficit = min_target - total_kw_count
                 issues.append(f"전체 \"{kw}\" {total_kw_count}회 (최소 {min_target}회 필요, {deficit}회 추가 필요)")
 
-            # 3) 한 섹션에 3회 이상이면 과다 (2회까지 허용)
-            for i, sc in enumerate(section_counts):
-                count = sc['counts'].get(kw, 0)
-                if count > 2:
-                    issues.append(f"섹션 {i} ({sc['type']})에 \"{kw}\" {count}회 (과다, 삭제 필요)")
+            if max_target is not None and total_kw_count > max_target:
+                excess = total_kw_count - max_target
+                issues.append(f"전체 \"{kw}\" {total_kw_count}회 (최대 {max_target}회 허용, {excess}회 삭제 필요)")
 
         if not issues:
             return {'passed': True}
@@ -247,6 +298,7 @@ class KeywordInjectorAgent(Agent):
         feedback = params.get('feedback', '')
         context_analysis = params.get('contextAnalysis') or {}
         min_target = params.get('minTarget', len(sections))
+        max_target = params.get('maxTarget', min_target + 1)
 
         # Section Status
         section_status_lines = []
@@ -262,20 +314,14 @@ class KeywordInjectorAgent(Agent):
 
         # Problems
         problems = []
-        for i, sc in enumerate(section_counts):
-            for kw in user_keywords:
-                count = sc['counts'].get(kw, 0)
-                if count == 0:
-                    problems.append(f"섹션 {i} ({sc['type']}): \"{kw}\" 0회 → 1회 삽입 필요")
-                elif count > 2:
-                    problems.append(f"섹션 {i} ({sc['type']}): \"{kw}\" {count}회 → 삭제 필요")
-
-        # Total deficit
         for kw in user_keywords:
             total = kw_totals[kw]
             if total < min_target:
                 deficit = min_target - total
                 problems.append(f"전체 \"{kw}\": {total}회 → {deficit}회 추가 삽입 필요 (목표 {min_target}회)")
+            elif total > max_target:
+                excess = total - max_target
+                problems.append(f"전체 \"{kw}\": {total}회 → {excess}회 삭제 필요 (최대 {max_target}회)")
         
         tone_instruction = ""
         responsibility_target = context_analysis.get('responsibilityTarget')
@@ -309,7 +355,7 @@ class KeywordInjectorAgent(Agent):
 {preview_text[:12000]}
 """
 
-        prompt = f"""검색어가 전체 {min_target}회 이상, 각 섹션에 최소 1회 등장하도록 새 문장을 생성하거나 기존 문장을 수정해야 합니다.
+        prompt = f"""검색어가 전체 {min_target}~{max_target}회 범위에 들어오도록 새 문장을 생성하거나 기존 문장을 수정해야 합니다.
 {context_preview}
 
 ## 검색어
@@ -324,8 +370,8 @@ class KeywordInjectorAgent(Agent):
 
 ## 규칙
 1. ⚠️ **[CRITICAL] 맥락 일치**: 위 '전체 원고 내용'을 읽고, 해당 섹션의 내용과 자연스럽게 이어지는 문장을 작성하십시오. '뜬금없는 문장'을 절대 금지합니다.
-2. **각 섹션 최소 1회**: 검색어가 0회인 섹션에 반드시 삽입
-3. **전체 합계 {min_target}회 이상**: 부족하면 긴 섹션에 추가 삽입 (한 섹션 최대 2회)
+2. **전체 합계 우선**: 키워드별 총합을 반드시 {min_target}~{max_target}회로 맞추십시오.
+3. **부족 시 배치**: 현재 0회인 섹션 또는 맥락이 맞는 긴 섹션부터 우선 삽입하십시오.
 4. **검색어 원문 유지**: "{user_keywords[0] if user_keywords else ''}" 형태 그대로 사용
 5. **짧은 한 문장만 생성**: 30자~50자 내외의 **자연스러운 한 문장**만 생성 (문단 전체 생성 금지)
 6. **사실 관계 주의**: 원고에 없는 내용을 날조하지 마십시오. (예: 대통령 호칭, 가짜 공약 등 금지)

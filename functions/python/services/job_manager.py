@@ -181,17 +181,56 @@ class JobManager:
     def _create_initial_context(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """초기 context 생성"""
         user_profile = input_data.get("userProfile", {})
+        if not isinstance(user_profile, dict):
+            user_profile = {}
+        keywords = input_data.get("keywords", [])
+        if not isinstance(keywords, list):
+            keywords = []
+        user_keywords = input_data.get("userKeywords", keywords)
+        if not isinstance(user_keywords, list):
+            user_keywords = keywords
+        auto_keywords = input_data.get("autoKeywords", [])
+        if not isinstance(auto_keywords, list):
+            auto_keywords = []
+
+        slogan = str(input_data.get("slogan") or user_profile.get("slogan") or "")
+        slogan_enabled = bool(
+            input_data.get("sloganEnabled") is True
+            or user_profile.get("sloganEnabled") is True
+        )
+        donation_info = str(input_data.get("donationInfo") or user_profile.get("donationInfo") or "")
+        donation_enabled = bool(
+            input_data.get("donationEnabled") is True
+            or user_profile.get("donationEnabled") is True
+        )
+
         return {
+            "uid": input_data.get("uid", ""),
             "topic": input_data.get("topic"),
             "category": input_data.get("category", "activity-report"),
-            "keywords": input_data.get("keywords", []),
-            "userKeywords": input_data.get("keywords", []),
+            "subCategory": input_data.get("subCategory", ""),
+            "keywords": keywords,
+            "userKeywords": user_keywords,
+            "autoKeywords": auto_keywords,
             "userProfile": user_profile,
             "author": user_profile,  # 일부 에이전트는 'author' 키 사용
             "status": user_profile.get("status", "active"),
             "instructions": input_data.get("instructions", ""),
+            "stanceText": input_data.get("stanceText", ""),
+            "newsDataText": input_data.get("newsDataText", ""),
             "newsContext": input_data.get("newsContext", ""),
+            "ragContext": input_data.get("ragContext", ""),
+            "memoryContext": input_data.get("memoryContext", ""),
+            "personalizedHints": input_data.get("personalizedHints", ""),
+            "styleHints": input_data.get("styleHints", {}),
+            "styleGuide": input_data.get("styleGuide", ""),
+            "styleFingerprint": input_data.get("styleFingerprint", {}),
             "background": input_data.get("background", ""),
             "references": input_data.get("references", []),
-            "targetWordCount": input_data.get("targetWordCount", 2000)
+            "factAllowlist": input_data.get("factAllowlist", []),
+            "targetWordCount": input_data.get("targetWordCount", 2000),
+            "slogan": slogan,
+            "sloganEnabled": slogan_enabled,
+            "donationInfo": donation_info,
+            "donationEnabled": donation_enabled,
         }

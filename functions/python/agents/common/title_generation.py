@@ -271,16 +271,15 @@ def extract_numbers_from_content(content: str) -> Dict[str, Any]:
             formatted_numbers += f' (외 {len(numbers) - 10}개)'
             
         instruction = f"""
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔴 【숫자 제약】본문에 등장하는 숫자만 사용 가능!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-✅ 사용 가능 숫자: {formatted_numbers}
-❌ 위 목록에 없는 숫자는 절대 제목에 넣지 마세요!
-
-예시:
-• 본문에 "274명"이 있으면 → "청년 일자리 274명" ✅
-• 본문에 "85억"이 없는데 → "지원금 85억" ❌ (날조!)
+<number_validation priority="critical">
+  <description>본문에 등장하는 숫자만 사용 가능</description>
+  <allowed_numbers>{formatted_numbers}</allowed_numbers>
+  <rule type="must-not">위 목록에 없는 숫자는 절대 제목에 넣지 마세요</rule>
+  <examples>
+    <good>본문에 "274명"이 있으면 "청년 일자리 274명"</good>
+    <bad reason="날조">본문에 "85억"이 없는데 "지원금 85억"</bad>
+  </examples>
+</number_validation>
 """
         return {'numbers': numbers, 'instruction': instruction}
     except Exception as e:
@@ -295,24 +294,24 @@ def get_election_compliance_instruction(status: str) -> str:
         if not is_pre_candidate: return ''
         
         return f"""
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ 선거법 준수 (현재 상태: {status} - 예비후보 등록 이전)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-❌ 절대 금지 표현:
-• "약속", "공약", "약속드립니다"
-• "당선되면", "당선 후"
-• "~하겠습니다" (공약성 미래 약속)
-• "지지해 주십시오"
-
-✅ 허용 표현:
-• "정책 방향", "정책 제시", "비전 공유"
-• "연구하겠습니다", "노력하겠습니다"
-• "추진", "추구", "검토"
-
-예시:
-❌ "청년 기본소득, 꼭 약속드리겠습니다"
-✅ "청년 기본소득, 정책 방향 제시"
+<election_compliance status="{status}" stage="pre-candidate" priority="critical">
+  <description>선거법 준수 (현재 상태: {status} - 예비후보 등록 이전)</description>
+  <banned_expressions>
+    <expression>"약속", "공약", "약속드립니다"</expression>
+    <expression>"당선되면", "당선 후"</expression>
+    <expression>"~하겠습니다" (공약성 미래 약속)</expression>
+    <expression>"지지해 주십시오"</expression>
+  </banned_expressions>
+  <allowed_expressions>
+    <expression>"정책 방향", "정책 제시", "비전 공유"</expression>
+    <expression>"연구하겠습니다", "노력하겠습니다"</expression>
+    <expression>"추진", "추구", "검토"</expression>
+  </allowed_expressions>
+  <examples>
+    <bad>"청년 기본소득, 꼭 약속드리겠습니다"</bad>
+    <good>"청년 기본소득, 정책 방향 제시"</good>
+  </examples>
+</election_compliance>
 """
     except Exception as e:
         logger.error(f'Error in get_election_compliance_instruction: {e}')
@@ -343,71 +342,80 @@ def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[st
         title_keyword_rule = ""
         if has_two_keywords:
             if similar:
-                # 유사 키워드: 제목은 1번 키워드로 시작, 2번 키워드는 어절 해체하여 배치
                 kw2_words = secondary_kw.split()
                 kw1_words = primary_kw.split()
                 unique_words = [w for w in kw2_words if w not in kw1_words]
                 unique_hint = f'"{", ".join(unique_words)}"를 제목 뒤쪽에 녹여넣기' if unique_words else '공통 어절로 자동 충족'
                 example_word = unique_words[0] if unique_words else kw2_words[0]
                 title_keyword_rule = f"""
-📌 **제목 키워드 배치 규칙 (유사 키워드)**
-두 검색어("{primary_kw}", "{secondary_kw}")가 공통 어절을 공유하므로:
-• 제목은 반드시 "{primary_kw}"로 시작
-• "{secondary_kw}"는 어절 단위로 해체하여 자연스럽게 배치 ({unique_hint})
-• 예시: "{primary_kw}, <보고있나, {example_word}> 출판기념회에 초대합니다"
+<keyword_placement type="similar">
+  <description>두 검색어("{primary_kw}", "{secondary_kw}")가 공통 어절을 공유</description>
+  <rule type="must">제목은 반드시 "{primary_kw}"로 시작</rule>
+  <rule type="must">"{secondary_kw}"는 어절 단위로 해체하여 자연스럽게 배치 ({unique_hint})</rule>
+  <example>"{primary_kw}, 보고있나, {example_word} 출판기념회에 초대합니다"</example>
+</keyword_placement>
 """
             else:
-                # 독립 키워드: 제목은 1번 키워드로 시작, 2번 키워드는 뒤에 배치
                 title_keyword_rule = f"""
-📌 **제목 키워드 배치 규칙 (독립 키워드)**
-두 검색어("{primary_kw}", "{secondary_kw}")가 독립적이므로:
-• 제목은 반드시 "{primary_kw}"로 시작
-• "{secondary_kw}"는 제목 뒤쪽에 자연스럽게 배치
-• 예시: "{primary_kw}, 확장 공사에 {secondary_kw} 적극 구제 촉구"
+<keyword_placement type="independent">
+  <description>두 검색어("{primary_kw}", "{secondary_kw}")가 독립적</description>
+  <rule type="must">제목은 반드시 "{primary_kw}"로 시작</rule>
+  <rule type="must">"{secondary_kw}"는 제목 뒤쪽에 자연스럽게 배치</rule>
+  <example>"{primary_kw}, 확장 공사에 {secondary_kw} 적극 구제 촉구"</example>
+</keyword_placement>
 """
 
-        kw_instruction = ""
+        kw_instructions = []
         if primary_kw:
-            kw_instruction += f"**1순위 키워드**: \"{primary_kw}\" → 제목 앞 8자 이내 배치 권장 (필수 아님, 자연스러움 우선)\n"
+            kw_instructions.append(f'  <keyword priority="1" value="{primary_kw}">제목 앞 8자 이내 배치 권장 (필수 아님, 자연스러움 우선)</keyword>')
         if secondary_kw:
             placement = '어절 해체하여 자연 배치' if similar else '제목 뒤쪽 배치'
-            kw_instruction += f"**2순위 키워드**: \"{secondary_kw}\" → {placement}\n"
+            kw_instructions.append(f'  <keyword priority="2" value="{secondary_kw}">{placement}</keyword>')
+        kw_instruction_xml = '\n'.join(kw_instructions)
 
         return f"""
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔑 SEO 키워드 삽입 전략
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<seo_keyword_strategy>
 
-📍 **앞쪽 1/3 법칙** (가장 중요!)
-네이버는 제목 앞 8-10자를 가장 중요하게 평가합니다.
-→ 핵심 키워드는 제목 시작 부분 배치를 권장하나, **강렬한 카피(Viral Hook)**를 위해 문장 중간에 자연스럽게 녹여도 됩니다.
+<front_third_rule priority="highest">
+  <description>네이버는 제목 앞 8-10자를 가장 중요하게 평가합니다. 핵심 키워드는 제목 시작 부분 배치를 권장하나, 강렬한 카피(Viral Hook)를 위해 문장 중간에 자연스럽게 녹여도 됩니다.</description>
+  <examples>
+    <bad>"우리 지역 청년들을 위한 청년 기본소득"</bad>
+    <good>"청년 기본소득, 분당구 월 50만원 지원"</good>
+  </examples>
+</front_third_rule>
 
-❌ "우리 지역 청년들을 위한 청년 기본소득"
-✅ "청년 기본소득, 분당구 월 50만원 지원"
-
-🚨 **키워드 구분자 필수** (매우 중요!)
-키워드 직후에 쉼표(,) 또는 조사(에, 의, 에서 등)를 넣어 다음 단어와 분리하세요.
-네이버는 공백만으로는 키워드 경계를 인식하지 못합니다.
-✅ "부산 지방선거, 왜 이 남자가" → 키워드 = "부산 지방선거"
-✅ "부산 지방선거에 뛰어든 부두 노동자" → 키워드 = "부산 지방선거"
-❌ "부산 지방선거 이재성 원칙" → 키워드 = "부산 지방선거 이재성 원칙"(잘못 인식)
+<keyword_separator priority="critical">
+  <description>키워드 직후에 쉼표(,) 또는 조사(에, 의, 에서 등)를 넣어 다음 단어와 분리하세요. 네이버는 공백만으로는 키워드 경계를 인식하지 못합니다.</description>
+  <examples>
+    <good reason="키워드=부산 지방선거">"부산 지방선거, 왜 이 남자가"</good>
+    <good reason="키워드=부산 지방선거">"부산 지방선거에 뛰어든 부두 노동자"</good>
+    <bad reason="잘못 인식: 부산 지방선거 이재성 원칙">"부산 지방선거 이재성 원칙"</bad>
+  </examples>
+</keyword_separator>
 {title_keyword_rule}
-📊 **키워드 밀도: 최소 1개, 최대 3개**
-• 최적: 2개 (가장 자연스럽고 효과적)
-• 4개 이상: 스팸으로 판단, CTR 감소
+<keyword_density>
+  <optimal count="2">가장 자연스럽고 효과적</optimal>
+  <max count="3"/>
+  <warning>4개 이상: 스팸으로 판단, CTR 감소</warning>
+</keyword_density>
 
-📍 **위치별 배치 전략**
-┌─────────────────────────────────────────────┐
-│ [0-8자]     │ [9-20자]      │ [21-35자]   │
-│ 지역/정책명  │ 수치/LSI     │ 행동/긴급성  │
-│ 가중치 100% │ 가중치 80%   │ 가중치 60%  │
-└─────────────────────────────────────────────┘
+<position_strategy>
+  <zone range="0-8자" weight="100%" use="지역명, 정책명, 핵심 주제"/>
+  <zone range="9-20자" weight="80%" use="수치, LSI 키워드"/>
+  <zone range="21-35자" weight="60%" use="행동 유도, 긴급성"/>
+</position_strategy>
 
-{kw_instruction}
-🔄 **동의어 활용** (반복 방지)
-• 지원 → 지원금, 보조금, 혜택
-• 문제 → 현안, 과제, 어려움
-• 해결 → 개선, 완화, 해소
+<keyword_priority>
+{kw_instruction_xml}
+</keyword_priority>
+
+<synonym_guide description="반복 방지">
+  <synonym from="지원" to="지원금, 보조금, 혜택"/>
+  <synonym from="문제" to="현안, 과제, 어려움"/>
+  <synonym from="해결" to="개선, 완화, 해소"/>
+</synonym_guide>
+
+</seo_keyword_strategy>
 """
     except Exception as e:
         logger.error(f'Error in get_keyword_strategy_instruction: {e}')

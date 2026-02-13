@@ -96,6 +96,89 @@ def saveSelectedPost(req: https_fn.CallableRequest) -> dict:
     return handle_save_selected_post_call(req)
 
 
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=540,
+    secrets=["GEMINI_API_KEY", "LANGCHAIN_API_KEY"]
+)
+def generatePosts(req: https_fn.CallableRequest) -> dict:
+    """원고 생성 (onCall, JS generatePosts 대체)."""
+    from handlers.generate_posts import handle_generate_posts
+    return handle_generate_posts(req)
+
+
+# ============================================================
+# Posts CRUD / Usage / Indexing Endpoints
+# ============================================================
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=300,
+)
+def getUserPosts(req: https_fn.CallableRequest) -> dict:
+    """Get user posts (legacy callable compatibility)."""
+    from handlers.posts import handle_get_user_posts_call
+    return handle_get_user_posts_call(req)
+
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=300,
+)
+def getPost(req: https_fn.CallableRequest) -> dict:
+    """Get a single post (legacy callable compatibility)."""
+    from handlers.posts import handle_get_post_call
+    return handle_get_post_call(req)
+
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=300,
+)
+def updatePost(req: https_fn.CallableRequest) -> dict:
+    """Update a post (legacy callable compatibility)."""
+    from handlers.posts import handle_update_post_call
+    return handle_update_post_call(req)
+
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=300,
+)
+def deletePost(req: https_fn.CallableRequest) -> dict:
+    """Delete a post (legacy callable compatibility)."""
+    from handlers.posts import handle_delete_post_call
+    return handle_delete_post_call(req)
+
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=300,
+)
+def checkUsageLimit(req: https_fn.CallableRequest) -> dict:
+    """Check monthly usage limit (legacy callable compatibility)."""
+    from handlers.posts import handle_check_usage_limit_call
+    return handle_check_usage_limit_call(req)
+
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=540,
+    secrets=["GEMINI_API_KEY"]
+)
+def indexPastPosts(req: https_fn.CallableRequest) -> dict:
+    """Index past posts for RAG (legacy callable compatibility)."""
+    from handlers.posts import handle_index_past_posts_call
+    return handle_index_past_posts_call(req)
+
+
 
 
 

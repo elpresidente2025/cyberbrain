@@ -61,6 +61,22 @@ def normalize_artifacts(text: str) -> str:
     
     return cleaned.strip()
 
+
+def normalize_context_text(value: Any, *, sep: str = "\n\n") -> str:
+    """list/tuple 중첩 입력까지 안전하게 문자열로 정규화."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (list, tuple, set)):
+        parts: List[str] = []
+        for item in value:
+            normalized = normalize_context_text(item, sep=sep)
+            if normalized:
+                parts.append(normalized)
+        return sep.join(parts)
+    return str(value).strip()
+
 from ..base_agent import Agent
 
 class StructureAgent(Agent):
@@ -78,6 +94,82 @@ class StructureAgent(Agent):
         else:
             print(f"⚠️ [StructureAgent] Gemini 클라이언트 초기화 실패")
 
+    def _sanitize_target_word_count(self, target_word_count: Any) -> int:
+        try:
+            parsed = int(float(target_word_count))
+        except (TypeError, ValueError):
+            return 2000
+        return max(1600, min(parsed, 3200))
+
+    def _build_length_spec(self, target_word_count: Any, stance_count: int = 0) -> Dict[str, int]:
+        target_chars = self._sanitize_target_word_count(target_word_count)
+
+        # 섹션당 400자 내외를 기준으로 5~7섹션 계획
+        total_sections = round(target_chars / 400)
+        total_sections = max(5, min(7, total_sections))
+        if stance_count > 0:
+            total_sections = max(total_sections, min(7, stance_count + 2))
+
+        body_sections = total_sections - 2
+        per_section_recommended = max(360, min(420, round(target_chars / total_sections)))
+        per_section_min = max(320, per_section_recommended - 50)
+        per_section_max = min(460, per_section_recommended + 50)
+
+        min_chars = max(int(target_chars * 0.88), total_sections * per_section_min)
+        max_chars = min(int(target_chars * 1.18), total_sections * per_section_max)
+        if max_chars <= min_chars:
+            max_chars = min_chars + 180
+
+        return {
+            'target_chars': target_chars,
+            'body_sections': body_sections,
+            'total_sections': total_sections,
+            'per_section_min': per_section_min,
+            'per_section_max': per_section_max,
+            'per_section_recommended': per_section_recommended,
+            'min_chars': min_chars,
+            'max_chars': max_chars,
+            'expected_h2': total_sections - 1
+        }
+
+    def _build_retry_directive(self, validation: Dict[str, Any], length_spec: Dict[str, int]) -> str:
+        code = validation.get('code')
+        total_sections = length_spec['total_sections']
+        body_sections = length_spec['body_sections']
+        min_chars = length_spec['min_chars']
+        max_chars = length_spec['max_chars']
+        per_section_recommended = length_spec['per_section_recommended']
+        expected_h2 = length_spec['expected_h2']
+
+        if code == 'LENGTH_SHORT':
+            return (
+                f"재작성 시 총 분량을 {min_chars}~{max_chars}자로 맞추십시오. "
+                f"총 섹션은 도입 1 + 본론 {body_sections} + 결론 1(총 {total_sections})로 유지하고, "
+                f"섹션당 {per_section_recommended}자 내외로 보강하십시오."
+            )
+
+        if code == 'LENGTH_LONG':
+            return (
+                f"재작성 시 총 분량을 {max_chars}자 이하로 압축하십시오(절대 초과 금지). "
+                f"중복 문장, 수식어, 유사 사례를 제거하고 섹션당 {per_section_recommended}자 내외로 간결하게 작성하십시오."
+            )
+
+        if code in {'H2_SHORT', 'H2_LONG'}:
+            return (
+                f"섹션 구조를 정확히 맞추십시오: 도입 1 + 본론 {body_sections} + 결론 1. "
+                f"<h2>는 본론과 결론에만 사용하여 총 {expected_h2}개로 작성하십시오."
+            )
+
+        if code in {'P_SHORT', 'P_LONG'}:
+            return (
+                f"문단 수를 조정하십시오. 총 {total_sections}개 섹션 기준으로 문단은 2~3개씩 유지하고, "
+                f"군더더기 없는 문장으로 길이 범위({min_chars}~{max_chars}자)를 지키십시오."
+            )
+
+        return (
+            f"총 {total_sections}개 섹션 구조와 분량 범위({min_chars}~{max_chars}자)를 정확히 준수하여 재작성하십시오."
+        )
+
     async def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
         topic = context.get('topic', '')
         user_profile = context.get('userProfile', {})
@@ -86,14 +178,14 @@ class StructureAgent(Agent):
             user_profile = {}
         category = context.get('category', '')
         sub_category = context.get('subCategory', '')
-        instructions = context.get('instructions', '')
-        news_context = context.get('newsContext', '')
+        instructions = normalize_context_text(context.get('instructions', ''))
+        news_context = normalize_context_text(context.get('newsContext', ''))
         # 🔑 [NEW] 입장문과 뉴스/데이터 분리
-        stance_text = context.get('stanceText', '')
-        news_data_text = context.get('newsDataText', '')
+        stance_text = normalize_context_text(context.get('stanceText', ''))
+        news_data_text = normalize_context_text(context.get('newsDataText', ''))
         target_word_count = context.get('targetWordCount', 2000)
         user_keywords = context.get('userKeywords', [])
-        memory_context = context.get('memoryContext', '')
+        memory_context = normalize_context_text(context.get('memoryContext', ''), sep="\n")
 
         print(f"🚀 [StructureAgent] 시작 - 카테고리: {category or '(자동)'}, 주제: {topic}")
         print(f"📊 [StructureAgent] 입장문: {len(stance_text)}자, 뉴스/데이터: {len(news_data_text)}자")
@@ -124,6 +216,13 @@ class StructureAgent(Agent):
             news_data_text or news_context,  # 뉴스 데이터 우선, 없으면 기존 newsContext 사용
             author_name
         )
+        stance_count = len(context_analysis.get('mustIncludeFromStance', [])) if context_analysis else 0
+        length_spec = self._build_length_spec(target_word_count, stance_count)
+        print(
+            f"📏 [StructureAgent] 분량 계획: {length_spec['total_sections']}섹션, "
+            f"{length_spec['min_chars']}~{length_spec['max_chars']}자 "
+            f"(섹션당 {length_spec['per_section_recommended']}자)"
+        )
 
         # 5. Build Prompt
         prompt = self.build_prompt({
@@ -139,7 +238,8 @@ class StructureAgent(Agent):
             'contextAnalysis': context_analysis,
             'userProfile': user_profile,
             'memoryContext': memory_context,
-            'userKeywords': user_keywords
+            'userKeywords': user_keywords,
+            'lengthSpec': length_spec
         })
 
         print(f"📝 [StructureAgent] 프롬프트 생성 완료 ({len(prompt)}자)")
@@ -148,6 +248,7 @@ class StructureAgent(Agent):
         max_retries = 2
         attempt = 0
         feedback = ''
+        retry_directive = ''
         validation = {}
         last_error = None  # 마지막 예외 추적
 
@@ -157,7 +258,11 @@ class StructureAgent(Agent):
 
             current_prompt = prompt
             if feedback:
-                current_prompt += f"\n\n🚨 [중요 - 재작성 지시] 이전 작성본이 다음 이유로 반려되었습니다:\n\"{feedback}\"\n\n특히 **분량 부족**이 문제라면, 각 본론 섹션의 **사례와 근거**를 대폭 보강하여 무조건 **지정된 분량(2000자 이상)**을 넘기십시오. 요약하지 말고 상세히 서술하십시오."
+                retry_block = f"\n\n{retry_directive}" if retry_directive else ""
+                current_prompt += (
+                    f"\n\n🚨 [중요 - 재작성 지시] 이전 작성본이 다음 이유로 반려되었습니다:\n"
+                    f"\"{feedback}\"{retry_block}"
+                )
 
             try:
                 response = await self.call_llm(current_prompt)
@@ -167,10 +272,7 @@ class StructureAgent(Agent):
                 content = normalize_artifacts(structured['content'])
                 title = normalize_artifacts(structured['title'])
 
-                content = normalize_artifacts(structured['content'])
-                title = normalize_artifacts(structured['title'])
-
-                validation = self.validate_output(content, target_word_count)
+                validation = self.validate_output(content, length_spec)
 
                 if validation['passed']:
                     print(f"✅ [StructureAgent] 검증 통과: {len(strip_html(content))}자")
@@ -187,12 +289,14 @@ class StructureAgent(Agent):
 
                 print(f"⚠️ [StructureAgent] 검증 실패: {validation['reason']}")
                 feedback = validation['feedback']
+                retry_directive = self._build_retry_directive(validation, length_spec)
                 last_error = None  # 검증 실패는 예외가 아님
 
             except Exception as e:
                 error_msg = str(e)
                 print(f"❌ [StructureAgent] 에러 발생: {error_msg}")
                 feedback = error_msg
+                retry_directive = ''
                 last_error = error_msg  # 예외 메시지 저장
 
             if attempt > max_retries:
@@ -211,7 +315,7 @@ class StructureAgent(Agent):
                 prompt,
                 model_name=self.model_name,
                 temperature=0.25,  # Node.js parity: 0.25 for strict instruction adherence
-                max_output_tokens=8192
+                max_output_tokens=4096
             )
 
             elapsed = time.time() - start_time
@@ -376,7 +480,9 @@ class StructureAgent(Agent):
         })
 
         # Reference Materials Section
-        source_text = "\n\n---\n\n".join(filter(None, [params.get('instructions'), params.get('newsContext')]))
+        instructions_text = normalize_context_text(params.get('instructions'))
+        news_context_text = normalize_context_text(params.get('newsContext'))
+        source_text = "\n\n---\n\n".join(filter(None, [instructions_text, news_context_text]))
         ref_section = ""
         if source_text.strip():
             ref_section = f"""
@@ -449,7 +555,7 @@ class StructureAgent(Agent):
 
 📌 **작성 지침**:
 1. 위 {stance_count}개 주제를 각각 **별도의 본론 섹션(H2)**으로 구성하십시오.
-2. 각 섹션 작성 시, 위에서 설계된 [Why], [How], [Effect] 내용을 빠짐없이 서술하여 분량을 확보하고 논리를 완성하십시오.
+2. 각 섹션 작성 시, 위에서 설계된 [Why], [How], [Effect]를 핵심 위주로 반영해 논리를 완성하십시오.
 3. **[How] 단계**에서 당신의 Bio(경력)를 근거로 활용하여 전문성을 드러내십시오.
 """
 
@@ -577,18 +683,25 @@ class StructureAgent(Agent):
         if context_analysis:
             stance_count = len(context_analysis.get('mustIncludeFromStance', []))
 
-        # 본론 섹션 수 결정: 무조건 3개로 고정 (사용자 요청 5단 구조 준수: 도입-본론1-본론2-본론3-결론)
-        # 내용이 많아도 3개로 압축해야 분량(2000~2500자)을 맞출 수 있음.
-        body_section_count = 3
-        total_section_count = body_section_count + 2  # 도입부 + 결론부
-        min_total_chars = total_section_count * 350  # 섹션당 최소 350자
-        max_total_chars = total_section_count * 450  # 섹션당 최대 450자
+        length_spec = params.get('lengthSpec') or self._build_length_spec(
+            params.get('targetWordCount', 2000),
+            stance_count
+        )
+        body_section_count = length_spec['body_sections']
+        total_section_count = length_spec['total_sections']
+        min_total_chars = length_spec['min_chars']
+        max_total_chars = length_spec['max_chars']
+        per_section_min = length_spec['per_section_min']
+        per_section_max = length_spec['per_section_max']
+        per_section_recommended = length_spec['per_section_recommended']
         
         # 동적 본론 구조 문자열 생성
         body_structure_lines = []
         for i in range(1, body_section_count + 1):
-            body_structure_lines.append(f"{i+1}. 본론 {i} (1섹션, 3문단, 350~450자) - HTML <h2> 소제목 필수")
-        body_structure_str = "\\n".join(body_structure_lines)
+            body_structure_lines.append(
+                f"{i+1}. 본론 {i} (1섹션, 2~3문단, {per_section_min}~{per_section_max}자) - HTML <h2> 소제목 필수"
+            )
+        body_structure_str = "\n".join(body_structure_lines)
         
         # 지역 정보 추출 - 범용성 확보 및 동적 변수
         region_metro = user_profile.get('regionMetro', '')
@@ -602,28 +715,28 @@ class StructureAgent(Agent):
   <strategy>E-A-T (전문성-권위-신뢰) 전략으로 작성</strategy>
 
   <volume warning="위반 시 시스템 오류">
-    <per_section min="350" max="450" recommended="400"/>
-    <paragraphs_per_section>3개 문단, 문단당 3~4문장</paragraphs_per_section>
+    <per_section min="{per_section_min}" max="{per_section_max}" recommended="{per_section_recommended}"/>
+    <paragraphs_per_section>2~3개 문단, 문단당 2~4문장으로 핵심 위주 서술</paragraphs_per_section>
     <total sections="{total_section_count}" min="{min_total_chars}" max="{max_total_chars}"/>
-    <caution>내용이 아무리 좋아도 섹션당 450자 초과 금지. 길어지면 과감히 요약.</caution>
+    <caution>총 분량 상한을 넘기지 않도록 중복 문장과 장황한 수식어를 제거하고, 근거 중심으로 간결하게 작성하십시오.</caution>
   </volume>
 
   <expansion_guide name="섹션별 작성 4단계">
-    각 본론 섹션을 아래 흐름으로 전개하되, 각 단계를 1~2문장으로 짧게 작성 (장황한 서술 금지)
-    <step name="Why" sentences="1">시민 고충 진단</step>
-    <step name="How+Expertise" sentences="2">해결책 + Bio 인용 [전문성]</step>
-    <step name="Authority" sentences="1">실행 능력 증명 [권위]</step>
-    <step name="Effect+Trust" sentences="2">변화될 {user_region}의 모습 + 진정성 [신뢰]</step>
+    각 본론 섹션을 아래 흐름으로 밀도 있게 전개하십시오.
+    <step name="Why" sentences="1~2">시민들이 겪는 실제 불편함과 현장의 고충을 구체적으로 진단</step>
+    <step name="How+Expertise" sentences="2">실현 가능한 해결책 제시 및 본인의 Bio(경력)를 인용하여 전문성 강조</step>
+    <step name="Authority" sentences="1">과거 성과나 네트워크를 바탕으로 실행 능력을 증명</step>
+    <step name="Effect+Trust" sentences="1~2">변화될 {user_region}의 미래 청사진을 명확히 제시</step>
   </expansion_guide>
 
   <sections total="{total_section_count}">
-    <intro paragraphs="3" chars="400" heading="없음">
+    <intro paragraphs="2~3" chars="{per_section_recommended}" heading="없음">
       <p>1문단: 인삿말 (&lt;p&gt;안녕하세요, OOO입니다.&lt;/p&gt;)</p>
       <p>2문단: 주제 도입 및 배경 설명</p>
       <p>3문단: 글의 방향성 제시</p>
     </intro>
     {body_structure_str}
-    <conclusion order="{total_section_count}" paragraphs="3" chars="400" heading="h2 필수"/>
+    <conclusion order="{total_section_count}" paragraphs="2~3" chars="{per_section_recommended}" heading="h2 필수"/>
   </sections>
 
   <h2_strategy name="소제목 작성 전략 (AEO+SEO)">
@@ -640,7 +753,7 @@ class StructureAgent(Agent):
     <rule id="no_slogan_repeat" severity="critical">입장문의 맺음말/슬로건을 각 섹션 끝마다 반복 금지. 모든 호소와 다짐은 맨 마지막 결론부에만.</rule>
     <rule id="sentence_completion">문장은 올바른 종결 어미(~입니다, ~합니다, ~시오)로 끝내야 함. 고의적 오타/잘린 문장 금지.</rule>
     <rule id="keyword_per_section">각 섹션마다 키워드 1개 이상 포함</rule>
-    <rule id="separate_pledges">본론 1, 2, 3은 각각 다른 주제/공약을 다룰 것</rule>
+    <rule id="separate_pledges">각 본론 섹션은 서로 다른 주제/공약을 다룰 것</rule>
     <rule id="verb_diversity" severity="critical">같은 동사(예: "던지면서")를 원고 전체에서 3회 이상 사용 금지. 동의어 교체: 제시하며, 약속하며, 열며, 보여드리며 등.</rule>
     <rule id="slogan_once">캐치프레이즈("청년이 돌아오는 부산")나 비유("아시아의 싱가포르")는 결론부 1회만. 다른 섹션에서는 변형 사용.</rule>
     <rule id="natural_keyword">키워드만으로 구성된 단독 문장 금지. 앞 문단과 연결어로 이어서 자연스럽게 배치.</rule>
@@ -745,57 +858,101 @@ class StructureAgent(Agent):
             print(f"⚠️ [StructureAgent] 파싱 에러: {str(e)}")
             return {'content': response, 'title': ''}
 
-    def validate_output(self, content: str, target_word_count: int) -> Dict:
+    def validate_output(self, content: str, target_word_count: Any, stance_count: int = 0) -> Dict:
         if not content:
-            return {'passed': False, 'reason': '내용 없음', 'feedback': '내용이 비어있습니다.'}
+            return {
+                'passed': False,
+                'code': 'EMPTY_CONTENT',
+                'reason': '내용 없음',
+                'feedback': '내용이 비어있습니다.'
+            }
         
         plain_length = len(strip_html(content))
-        
-        # 분량 규칙: 5~7섹션 × (350~450)자 = 1750~3150자
-        # 동적 구조에 맞춰 여유있게 설정
-        min_length = 1750  # 5섹션 × 350자
-        max_length = 3150  # 7섹션 × 450자
+
+        if isinstance(target_word_count, dict):
+            length_spec = target_word_count
+        else:
+            length_spec = self._build_length_spec(target_word_count, stance_count)
+
+        min_length = length_spec['min_chars']
+        max_length = length_spec['max_chars']
+        expected_h2 = length_spec['expected_h2']
+        per_section_recommended = length_spec['per_section_recommended']
+        per_section_max = length_spec['per_section_max']
+        total_sections = length_spec['total_sections']
 
         if plain_length < min_length:
             deficit = min_length - plain_length
             return {
                 'passed': False,
+                'code': 'LENGTH_SHORT',
                 'reason': f"분량 부족 ({plain_length}자 < {min_length}자)",
-                'feedback': f"현재 분량({plain_length}자)이 최소 기준({min_length}자)보다 {deficit}자 부족합니다. 각 섹션을 400자 안팎으로 작성하고, 문단당 120~150자를 유지하십시오."
+                'feedback': (
+                    f"현재 분량({plain_length}자)이 최소 기준({min_length}자)보다 {deficit}자 부족합니다. "
+                    f"섹션당 {per_section_recommended}자 안팎으로 구체 사례를 보강하되, 총 분량은 {max_length}자를 넘기지 마십시오."
+                )
             }
         
         if plain_length > max_length:
             excess = plain_length - max_length
             return {
                 'passed': False,
+                'code': 'LENGTH_LONG',
                 'reason': f"분량 초과 ({plain_length}자 > {max_length}자)",
-                'feedback': f"현재 분량({plain_length}자)이 최대 기준({max_length}자)을 {excess}자 초과했습니다. 각 섹션을 400자 안팎으로 압축하고, 불필요한 반복이나 사족을 제거하십시오. 7개 섹션을 넘기지 마십시오."
+                'feedback': (
+                    f"현재 분량({plain_length}자)이 최대 기준({max_length}자)을 {excess}자 초과했습니다. "
+                    f"각 섹션을 {per_section_recommended}자 안팎(최대 {per_section_max}자)으로 압축하고, "
+                    f"중복 문장과 장황한 수식어를 제거하십시오."
+                )
             }
         
         h2_count = len(re.findall(r'<h2>', content, re.IGNORECASE))
-        if h2_count < 4:
+        if h2_count < expected_h2:
             return {
                 'passed': False,
-                'reason': f"소제목 부족 (현재 {h2_count}개)",
-                'feedback': "소제목(<h2>)이 부족합니다. 반드시 4개 이상의 소제목(본론 3개 + 결론 1개 등)을 포함해야 합니다."
+                'code': 'H2_SHORT',
+                'reason': f"소제목 부족 (현재 {h2_count}개, 목표 {expected_h2}개)",
+                'feedback': (
+                    f"소제목(<h2>)이 부족합니다. 도입을 제외한 본론+결론 기준으로 정확히 {expected_h2}개의 "
+                    f"<h2>를 작성하십시오."
+                )
             }
         
-        if h2_count > 6:
+        if h2_count > expected_h2:
             return {
                 'passed': False,
-                'reason': f"소제목 과다 (현재 {h2_count}개)",
-                'feedback': "소제목(<h2>)이 너무 많습니다. 최대 6개(본론 5개 + 결론 1개)를 넘기지 마십시오."
+                'code': 'H2_LONG',
+                'reason': f"소제목 과다 (현재 {h2_count}개, 목표 {expected_h2}개)",
+                'feedback': (
+                    f"소제목(<h2>)이 너무 많습니다. 도입을 제외한 본론+결론 소제목 수를 정확히 {expected_h2}개로 "
+                    f"맞추십시오."
+                )
             }
 
         p_count = len(re.findall(r'<p>', content, re.IGNORECASE))
-        expected_min_p = (h2_count + 1) * 3  # 도입부 포함, 섹션당 3문단
-        expected_max_p = (h2_count + 1) * 4  # 여유분
+        expected_min_p = total_sections * 2
+        expected_max_p = total_sections * 4
         
         if p_count < expected_min_p:
              return {
                 'passed': False,
+                'code': 'P_SHORT',
                 'reason': f"문단 수 부족 (현재 {p_count}개, 필요 {expected_min_p}개 이상)",
-                'feedback': f"문단 수가 너무 적습니다. {h2_count + 1}개 섹션에 대해 섹션당 3개 문단씩 총 {expected_min_p}개 이상 필요합니다."
+                'feedback': (
+                    f"문단 수가 너무 적습니다. 총 {total_sections}개 섹션 기준으로 최소 {expected_min_p}개 "
+                    f"문단(섹션당 2개 이상)이 필요합니다."
+                )
+            }
+
+        if p_count > expected_max_p:
+            return {
+                'passed': False,
+                'code': 'P_LONG',
+                'reason': f"문단 수 과다 (현재 {p_count}개, 최대 {expected_max_p}개)",
+                'feedback': (
+                    f"문단 수가 너무 많습니다. 총 {total_sections}개 섹션 기준으로 {expected_max_p}개 이하로 줄이고, "
+                    f"문단을 합쳐 중복 설명을 압축하십시오."
+                )
             }
 
         return {'passed': True}
