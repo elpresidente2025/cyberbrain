@@ -398,6 +398,29 @@ def _target_word_count(data: Dict[str, Any], category: str) -> int:
     return max(requested, minimum)
 
 
+def _calc_min_required_chars(target_word_count: int, stance_count: int = 0) -> int:
+    # StructureAgent._build_length_spec와 동일 기준(완화 아님)
+    target_chars = max(1600, min(int(target_word_count), 3200))
+    total_sections = round(target_chars / 400)
+    total_sections = max(5, min(7, total_sections))
+    if stance_count > 0:
+        total_sections = max(total_sections, min(7, stance_count + 2))
+
+    per_section_recommended = max(360, min(420, round(target_chars / total_sections)))
+    per_section_min = max(320, per_section_recommended - 50)
+    return max(int(target_chars * 0.88), total_sections * per_section_min)
+
+
+def _extract_stance_count(pipeline_result: Dict[str, Any]) -> int:
+    context_analysis = pipeline_result.get("contextAnalysis")
+    if not isinstance(context_analysis, dict):
+        return 0
+    must_include = context_analysis.get("mustIncludeFromStance")
+    if not isinstance(must_include, list):
+        return 0
+    return len([item for item in must_include if item])
+
+
 def _choose_pipeline_route(raw_route: Any, *, is_admin: bool, is_tester: bool) -> str:
     route = str(raw_route or "modular").strip() or "modular"
     if route == "highQuality":
@@ -473,6 +496,13 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     writing_method = str(pipeline_result.get("writingMethod") or pipeline_route or "modular")
     keyword_counts = pipeline_result.get("keywordCounts") if isinstance(pipeline_result.get("keywordCounts"), dict) else {}
     word_count = _to_int(pipeline_result.get("wordCount"), len(_strip_html(generated_content)))
+    stance_count = _extract_stance_count(pipeline_result)
+    min_required_chars = _calc_min_required_chars(target_word_count, stance_count)
+    if word_count < min_required_chars:
+        raise ApiError(
+            "internal",
+            f"최종 원고 분량 부족 ({word_count}자 < {min_required_chars}자)",
+        )
 
     # 생성 성공 후 attempts / 사용량 업데이트
     session = increment_session_attempts(uid, session, is_admin=is_admin, is_tester=is_tester)
