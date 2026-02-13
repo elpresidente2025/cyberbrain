@@ -351,7 +351,7 @@ class StructureAgent(Agent):
                 # 파싱/정리 과정에서 본문이 비정상적으로 축약된 경우 재시도 유도.
                 # (예: 메타데이터 절단 오탐, 블록 파싱 실패)
                 plain_len = len(strip_html(content))
-                if plain_len < 120 and len(str(response or "")) > 1000:
+                if plain_len < 400 and len(str(response or "")) > 1000:
                     raise Exception(f"파싱 비정상 축약 감지 ({plain_len}자)")
 
                 validation = self.validate_output(content, length_spec)
@@ -1132,9 +1132,20 @@ class StructureAgent(Agent):
 
                 real_candidates = [c for c in candidates if not c['is_example']]
                 pool = real_candidates if real_candidates else candidates
+
+                # Prefer substantial body text first, then structure density.
+                # This prevents short outline/sample blocks from being selected
+                # over the actual long-form draft.
+                max_plain_len = max((c['plain_len'] for c in pool), default=0)
+                min_plain_threshold = max(300, int(max_plain_len * 0.45))
+                length_filtered_pool = [
+                    c for c in pool
+                    if c['plain_len'] >= min_plain_threshold
+                ]
+                selection_pool = length_filtered_pool if length_filtered_pool else pool
                 selected = max(
-                    pool,
-                    key=lambda c: (c['tag_density'], c['plain_len'], c['index']),
+                    selection_pool,
+                    key=lambda c: (c['plain_len'], c['tag_density'], c['index']),
                 )
                 content = selected['content'].strip()
 
