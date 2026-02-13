@@ -50,62 +50,68 @@ def build_activity_report_prompt(options: dict) -> str:
     if keywords:
         keywords_list = ", ".join(keywords)
         keywords_section = f"""
-[맥락 키워드 (참고용 - 삽입 강제 아님)]
+<context_keywords usage="참고용 - 삽입 강제 아님">
 {keywords_list}
-→ 이 키워드들을 참고하여 글의 방향과 맥락을 잡으세요. 억지로 삽입할 필요 없습니다.
+이 키워드들을 참고하여 글의 방향과 맥락을 잡으세요. 억지로 삽입할 필요 없습니다.
+</context_keywords>
 """
-    
+
     hints_section = ""
     if personalized_hints:
         hints_section = f"""
-[개인화 가이드]
+<personalization_guide>
 {personalized_hints}
+</personalization_guide>
 """
 
     prompt = f"""
-# 전자두뇌비서관 - 의정활동 보고 원고 생성
+<task type="의정활동 보고" system="전자두뇌비서관">
 
-[기본 정보]
-- 작성자: {author_bio}
-- 글의 주제: "{topic}"
-- 목표 분량: {target_word_count or 2000}자 (공백 제외)
+<basic_info>
+  <author>{author_bio}</author>
+  <topic>{topic}</topic>
+  <target_length unit="자(공백 제외)">{target_word_count or 2000}</target_length>
+</basic_info>
+
 {keywords_section}{hints_section}
-[글쓰기 설계도]
-너는 아래 3가지 부품을 조립하여, 매우 명확하고 신뢰감 있는 글을 만들어야 한다.
 
-1.  **전체 뼈대 (보고 구조): {declarative_structure.name}**
-    - 지시사항: {declarative_structure.instruction}
+<writing_blueprint description="글쓰기 설계도 - 3가지 부품을 조립하여 명확하고 신뢰감 있는 글 생성">
+  <component id="structure" name="전체 뼈대 (보고 구조): {declarative_structure.name}">
+    {declarative_structure.instruction}
+  </component>
+  <component id="tactic" name="핵심 기술 (표현 전술): {rhetorical_tactic.name}">
+    {rhetorical_tactic.instruction}
+  </component>
+  <component id="vocabulary" name="표현 방식 (어휘 모듈): {vocabulary_module.name}">
+    <theme>{vocabulary_module.thematic_guidance}</theme>
+    위 어휘 테마에 맞는 단어와 표현을 사용하여 글 전체의 톤앤매너를 형성하라.
+  </component>
+</writing_blueprint>
 
-2.  **핵심 기술 (표현 전술): {rhetorical_tactic.name}**
-    - 지시사항: {rhetorical_tactic.instruction}
+<output_format_rules>
+  <rule id="html">p 태그로 문단 구성, h2/h3 태그로 소제목, ul/ol 태그로 목록, strong 태그로 강조. CSS 인라인 스타일 절대 금지. 마크다운 형식 절대 금지 - 반드시 HTML 태그만 사용</rule>
+  <rule id="tone">반드시 존댓말 사용 ("~입니다", "~합니다"). "저는", "제가" 사용. 서민적이고 친근한 어조 유지</rule>
+</output_format_rules>
 
-3.  **표현 방식 (어휘 모듈): {vocabulary_module.name}**
-    - 어휘 테마: {vocabulary_module.thematic_guidance}
-    - 지시사항: 위 '어휘 테마'에 맞는 단어와 표현을 사용하여 글 전체의 톤앤매너를 형성하라.
+<quality_verification description="품질 검증 필수사항">
+  <rule id="sentence_completeness">모든 문장이 완전한 구조를 갖추고 있는지 확인. "주민여하여" (X) → "주민 여러분께서" (O)</rule>
+  <rule id="particles">조사 누락 절대 금지. "주민소리에" (X) → "주민들의 소리에" (O)</rule>
+  <rule id="specificity">괄호 안 예시가 아닌 실제 구체적 내용으로 작성. "(구체적 사례)" (X) → "지난 10월 12일 시흥시 체육관에서 열린" (O)</rule>
+  <rule id="logical_flow">도입-전개-결론의 자연스러운 흐름 구성</rule>
+  <rule id="style_consistency">존댓말 통일 및 어색한 표현 제거</rule>
+  <rule id="actual_content">모든 괄호 표현 제거하고 실제 구체적인 문장으로 작성</rule>
+  <rule id="no_repetition">동일하거나 유사한 문장, 문단 반복 금지. 각 문장과 문단은 새로운 정보나 관점을 제공</rule>
+  <rule id="structure_integrity">마무리 인사 후에는 절대로 본문이 다시 시작되지 않아야 함</rule>
+  <rule id="no_section_conclusion" priority="critical">본론 섹션별 미니결론(요약/다짐) 절대 금지. 각 본론(H2) 섹션은 팩트나 주장으로 담백하게 끝내야 하며, "앞으로 ~하겠습니다", "기대됩니다", "노력하겠습니다" 등의 맺음말은 오직 글의 맨 마지막 결론 섹션에만 작성</rule>
+</quality_verification>
 
-[📝 출력 형식 및 품질 기준]
-- **HTML 가이드라인**: <p> 태그로 문단 구성, <h2>/<h3> 태그로 소제목, <ul>/<ol> 태그로 목록, <strong> 태그로 강조. CSS 인라인 스타일 절대 금지. **마크다운 형식(**, *, #, - 등) 절대 금지 - 반드시 HTML 태그만 사용**
-- **톤앤매너**: 반드시 존댓말 사용 ("~입니다", "~합니다"). "저는", "제가" 사용. 서민적이고 친근한 어조 유지
-
-[🔍 품질 검증 필수사항]
-다음 항목들을 반드시 확인하여 작성하라:
-1. **문장 완결성**: 모든 문장이 완전한 구조를 갖추고 있는지 확인. 예시: "주민여하여" (X) → "주민 여러분께서" (O)
-2. **조사/어미 검증**: "주민소리에" 같은 조사 누락 절대 금지. 예시: "주민소리에" (X) → "주민들의 소리에" (O)
-3. **구체성 확보**: 괄호 안 예시가 아닌 실제 구체적 내용으로 작성. 예시: "(구체적 사례)" (X) → "지난 10월 12일 시흥시 체육관에서 열린" (O)
-4. **논리적 연결**: 도입-전개-결론의 자연스러운 흐름 구성
-5. **문체 일관성**: 존댓말 통일 및 어색한 표현 제거
-6. **실제 내용 작성**: 모든 괄호 표현 제거하고 실제 구체적인 문장으로 작성
-7. **반복 금지**: 동일하거나 유사한 문장, 문단을 절대 반복하지 말 것. 각 문장과 문단은 새로운 정보나 관점을 제공해야 함
-8. **구조 일관성**: 마무리 인사("감사합니다", "~드림" 등) 후에는 절대로 본문이 다시 시작되지 않아야 함. 마무리는 글의 완전한 종결을 의미함
-9. **[CRITICAL] 본론 섹션별 미니결론(요약/다짐) 절대 금지**: 각 본론(H2) 섹션은 팩트나 주장으로 담백하게 끝내야 하며, **"앞으로 ~하겠습니다", "기대됩니다", "노력하겠습니다"** 등의 맺음말을 **절대** 쓰지 마십시오. 모든 다짐과 종합 결론은 오직 글의 맨 마지막 **[결론]** 섹션에만 작성하십시오.
-
-
-[최종 임무]
-위 '글쓰기 설계도'와 모든 규칙을 준수하여, 주어진 [기본 정보]와 [배경 정보]를 바탕으로 신뢰도 높고 완성도 있는 의정활동 보고 원고를 작성하라.
-**[필수 키워드]에 명시된 모든 키워드를 원고에 자연스럽게 포함시켜야 한다.**
+<final_mission>
+위 글쓰기 설계도와 모든 규칙을 준수하여, 주어진 기본 정보와 배경 정보를 바탕으로 신뢰도 높고 완성도 있는 의정활동 보고 원고를 작성하라.
+필수 키워드에 명시된 모든 키워드를 원고에 자연스럽게 포함시켜야 한다.
+</final_mission>
 
 <output_format>
-**[CRITICAL] 출력 시 반드시 아래 XML 태그 형식을 사용하라:**
+출력 시 반드시 아래 XML 태그 형식을 사용하라:
 
 <title>
 [여기에 제목 작성 - 25자 이내, 숫자 포함 권장]
@@ -119,10 +125,12 @@ def build_activity_report_prompt(options: dict) -> str:
 [여기에 해시태그 작성 - 콤마 또는 줄바꿈으로 구분, 3~5개]
 </hashtags>
 
-⚠️ 주의사항:
+주의사항:
 - 반드시 위 세 개의 태그로 감싸서 출력할 것
 - 태그 외부에는 어떤 설명도 작성하지 말 것
-- 마크다운 코드블록(\`\`\`) 사용 금지
+- 마크다운 코드블록 사용 금지
 </output_format>
+
+</task>
 """
     return prompt.strip()

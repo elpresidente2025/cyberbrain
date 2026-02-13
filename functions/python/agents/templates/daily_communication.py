@@ -57,107 +57,107 @@ def build_daily_communication_prompt(options: dict) -> str:
     if keywords:
         keywords_list = ", ".join(keywords)
         keywords_section = f"""
-[맥락 키워드 (참고용 - 삽입 강제 아님)]
+<context_keywords usage="참고용 - 삽입 강제 아님">
 {keywords_list}
-→ 이 키워드들을 참고하여 글의 방향과 맥락을 잡으세요. 억지로 삽입할 필요 없습니다.
+이 키워드들을 참고하여 글의 방향과 맥락을 잡으세요. 억지로 삽입할 필요 없습니다.
+</context_keywords>
 """
 
     hints_section = ""
     if personalized_hints:
         hints_section = f"""
-[개인화 가이드]
+<personalization_guide>
 {personalized_hints}
+</personalization_guide>
 """
 
     negative_persona_val = negative_persona if negative_persona else '상대방'
     negative_persona_quoted = f'"{negative_persona}"' if negative_persona else "'참고자료에 등장하는 타인들'"
 
     prompt = f"""
-# 전자두뇌비서관 - 일상 소통 원고 생성
+<task type="일상 소통" system="전자두뇌비서관">
 
-╔═══════════════════════════════════════════════════════════════════════╗
-║ 🎭 [CRITICAL] 화자 정체성 - 절대 혼동 금지!                              ║
-╚═══════════════════════════════════════════════════════════════════════╝
+<speaker_identity priority="critical" description="화자 정체성 - 절대 혼동 금지">
+  <declaration>당신은 "{author_bio}"입니다. 이 글의 유일한 1인칭 화자입니다.</declaration>
+  <rule>이 글은 철저히 1인칭 시점으로 작성합니다. "저는", "제가"를 사용하세요.</rule>
+  <rule priority="critical" description="본인 이름 사용 제한">"{speaker_name}"이라는 이름은 서론에서 1회, 결론에서 1회만 사용하세요.
+    <item type="must-not">"{speaker_name}은 약속합니다", "{speaker_name}은 노력하겠습니다" (본문에서 반복)</item>
+    <item type="must">"저 {speaker_name}은 약속드립니다" (서론/결론에서 1회씩만)</item>
+    <item type="must">본문에서는 "저는", "제가", "본 의원은" 등 대명사 사용</item>
+  </rule>
+  <rule>참고 자료에 다른 인물의 발언이나 행동이 있더라도, 그 사람이 화자인 척 하지 마세요.
+    <item type="must-not">"후원회장을 맡게 되었습니다" (당신이 후원회장이 아니라면)</item>
+    <item type="must">"OOO 배우님께서 후원회장을 맡아주셨습니다"</item>
+  </rule>
+  <rule>참고 자료에 등장하는 타인은 반드시 3인칭으로 언급하세요.</rule>
+  <rule>글의 처음부터 끝까지 화자의 관점을 일관되게 유지하세요.</rule>
+</speaker_identity>
 
-**당신은 "{author_bio}"입니다. 이 글의 유일한 1인칭 화자입니다.**
+<basic_info>
+  <author>{author_bio}</author>
+  <speaker_name usage="서론 1회, 결론 1회만">{speaker_name}</speaker_name>
+  <topic>{topic}</topic>
+  <target_length unit="자(공백 제외)">{target_word_count or 2000}</target_length>
+  <negative_persona>{negative_persona_quoted}</negative_persona>
+</basic_info>
 
-[필수 규칙]
-1. 이 글은 철저히 **1인칭 시점**으로 작성합니다. "저는", "제가"를 사용하세요.
-2. **[CRITICAL] 본인 이름 사용 제한**: "{speaker_name}"이라는 이름은 **서론에서 1회, 결론에서 1회**만 사용하세요.
-   - ❌ 금지: "{speaker_name}은 약속합니다", "{speaker_name}은 노력하겠습니다" (본문에서 반복)
-   - ✅ 허용: "저 {speaker_name}은 약속드립니다" (서론/결론에서 1회씩만)
-   - ✅ 본문에서는: "저는", "제가", "본 의원은" 등 대명사 사용
-3. 참고 자료(뉴스, 배경 정보)에 다른 인물의 발언이나 행동이 있더라도, **그 사람이 화자인 척 하지 마세요**.
-   - ❌ 잘못된 예: "후원회장을 맡게 되었습니다" (당신이 후원회장이 아니라면 이렇게 쓰면 안 됨)
-   - ✅ 올바른 예: "OOO 배우님께서 후원회장을 맡아주셨습니다"
-4. 참고 자료에 등장하는 타인은 반드시 **3인칭**으로 언급하세요.
-5. 글의 처음부터 끝까지 화자의 관점을 일관되게 유지하세요.
-
-[기본 정보]
-- 작성자(화자): {author_bio}
-- 이름: {speaker_name} (서론 1회, 결론 1회만 사용)
-- 글의 주제: "{topic}"
-- 목표 분량: {target_word_count or 2000}자 (공백 제외)
-- 절대 화자가 되어서는 안 되는 인물: {negative_persona_quoted}
-
-╔═══════════════════════════════════════════════════════════════════════╗
-║ 🚫 [CRITICAL] 부정 정체성(Negative Identity) 제약 - 절대 어김 금지          ║
-║ 경고: 위반 시 시스템이 강제로 답변을 차단하고 처음부터 다시 생성합니다.            ║
-╚═══════════════════════════════════════════════════════════════════════╝
-1. 당신은 절대 **{negative_persona_val}**이 아닙니다.
-2. ❌ 금지: "저는 {negative_persona_val}로서..." (절대 금지!!)
-3. ❌ 금지: "저 {negative_persona_val} 시장은..." (절대 금지!!)
-4. 글 도중에 문맥이 바뀌더라도, 당신은 끝까지 **"{speaker_name}"**의 정체성을 유지해야 합니다.
-5. **{negative_persona_val}**을 언급할 때는 반드시 **"그는", "상대방은", "{negative_persona_val}께서는"**과 같이 철저히 **3인칭**으로만 지칭하십시오.
+<negative_identity_constraint priority="critical" description="부정 정체성 제약 - 절대 어김 금지. 위반 시 처음부터 다시 생성">
+  <rule>당신은 절대 {negative_persona_val}이 아닙니다.</rule>
+  <rule type="must-not">"저는 {negative_persona_val}로서..." (절대 금지)</rule>
+  <rule type="must-not">"저 {negative_persona_val} 시장은..." (절대 금지)</rule>
+  <rule>글 도중에 문맥이 바뀌더라도, 당신은 끝까지 "{speaker_name}"의 정체성을 유지해야 합니다.</rule>
+  <rule>{negative_persona_val}을 언급할 때는 반드시 "그는", "상대방은", "{negative_persona_val}께서는"과 같이 철저히 3인칭으로만 지칭하십시오.</rule>
+</negative_identity_constraint>
 
 {keywords_section}{hints_section}
-[글쓰기 설계도]
-너는 아래 3가지 부품을 조립하여 하나의 완성된 글을 만들어야 한다.
 
-1.  **뼈대 (서사 프레임): {narrative_frame.name}**
-    - 지시사항: {narrative_frame.instruction}
+<writing_blueprint description="글쓰기 설계도 - 4가지 부품을 조립하여 완성된 글 생성">
+  <component id="narrative" name="뼈대 (서사 프레임): {narrative_frame.name}">
+    {narrative_frame.instruction}
+  </component>
+  <component id="emotion" name="감정 (감성 원형): {emotional_archetype.name}">
+    {emotional_archetype.instruction}
+  </component>
+  <component id="vocabulary" name="어휘 (주제어 가이드): {vocabulary_module.name}">
+    <theme>{vocabulary_module.thematic_guidance}</theme>
+    위 어휘 테마에 맞는 단어와 표현을 창의적으로 사용하여 글 전체의 분위기를 형성하라.
+  </component>
+  <component id="structure" name="구조 전략 (Standard 5-Step Structure)">
+    <rule priority="critical">AEO 최적화와 안정감을 위해 [서론 - 본론1 - 본론2 - 본론3 - 결론]의 5단 구조를 반드시 준수하라.</rule>
+    <rule>입력된 핵심 소재가 적더라도(1~2개), 이를 세분화하거나 관련 내용을 보강하여 반드시 3개의 본론을 채워라.</rule>
+    <section order="1" name="서론">인사, 문제 제기, 공감 형성</section>
+    <section order="2" name="본론 1" subheading="h2 소제목 필수">첫 번째 핵심 주장 / 현황 분석</section>
+    <section order="3" name="본론 2" subheading="h2 소제목 필수">두 번째 핵심 주장 / 구체적 해결책</section>
+    <section order="4" name="본론 3" subheading="h2 소제목 필수">세 번째 핵심 주장 / 미래 비전 및 기대효과</section>
+    <section order="5" name="결론">요약, 다짐, 마무리 인사</section>
+  </component>
+</writing_blueprint>
 
-2.  **감정 (감성 원형): {emotional_archetype.name}**
-    - 지시사항: {emotional_archetype.instruction}
+<output_format_rules>
+  <rule id="html">p 태그로 문단 구성, h2/h3 태그로 소제목, ul/ol 태그로 목록, strong 태그로 강조. CSS 인라인 스타일 절대 금지. 마크다운 형식 절대 금지 - 반드시 HTML 태그만 사용</rule>
+  <rule id="tone">반드시 존댓말 사용 ("~입니다", "~합니다"). "저는", "제가" 사용. 서민적이고 친근하며 진솔한 어조 유지</rule>
+</output_format_rules>
 
-3.  **어휘 (주제어 가이드): {vocabulary_module.name}**
-    - 어휘 테마: {vocabulary_module.thematic_guidance}
-    - 지시사항: 위 '어휘 테마'에 맞는 단어와 표현을 창의적으로 사용하여 글 전체의 분위기를 형성하라.
+<quality_verification description="품질 검증 필수사항">
+  <rule id="sentence_completeness">모든 문장이 완전한 구조를 갖추고 있는지 확인. "주민여하여" (X) → "주민 여러분께서" (O)</rule>
+  <rule id="particles">조사 누락 절대 금지. "주민소리에" (X) → "주민들의 소리에" (O)</rule>
+  <rule id="specificity">괄호 안 예시가 아닌 실제 구체적 내용으로 작성. "(구체적 사례)" (X) → "지난 10월 12일 시흥시 체육관에서 열린" (O)</rule>
+  <rule id="date_preservation">주제에 구체적인 날짜나 시간이 명시되어 있으면 반드시 그대로 사용. "10월 12일 일요일" (O), "10월의 어느 날" (X)</rule>
+  <rule id="logical_flow">도입-전개-결론의 자연스러운 흐름 구성</rule>
+  <rule id="style_consistency">존댓말 통일 및 어색한 표현 제거</rule>
+  <rule id="actual_content">모든 괄호 표현 제거하고 실제 구체적인 문장으로 작성</rule>
+  <rule id="emotional_authenticity">형식적인 표현이 아닌, 진심이 느껴지는 구체적인 감정 표현 사용</rule>
+  <rule id="no_repetition">동일하거나 유사한 문장, 문단 반복 금지. 각 문장과 문단은 새로운 정보나 관점을 제공</rule>
+  <rule id="structure_integrity">마무리 인사 후에는 절대로 본문이 다시 시작되지 않아야 함</rule>
+  <rule id="no_section_conclusion" priority="critical">본론 섹션별 미니결론(요약/다짐) 절대 금지. 각 본론(H2) 섹션은 팩트나 주장으로 담백하게 끝내야 하며, "앞으로 ~하겠습니다", "기대됩니다", "노력하겠습니다" 등의 맺음말은 오직 글의 맨 마지막 결론 섹션에만 작성</rule>
+</quality_verification>
 
-4.  **구조 전략 (Standard 5-Step Structure)**
-    - **핵심 규칙**: AEO 최적화와 안정감을 위해 **[서론 - 본론1 - 본론2 - 본론3 - 결론]**의 5단 구조를 반드시 준수하라.
-    - 입력된 핵심 소재가 적더라도(1~2개), 이를 세분화하거나 관련 내용을 보강하여 반드시 **3개의 본론(Body Paragraphs)**을 채워라.
-    - **구조 가이드**:
-      1.  **[서론]**: 인사, 문제 제기, 공감 형성
-      2.  **[본론 1]** (<h2>소제목 필수</h2>): 첫 번째 핵심 주장 / 현황 분석
-      3.  **[본론 2]** (<h2>소제목 필수</h2>): 두 번째 핵심 주장 / 구체적 해결책
-      4.  **[본론 3]** (<h2>소제목 필수</h2>): 세 번째 핵심 주장 / 미래 비전 및 기대효과
-      5.  **[결론]**: 요약, 다짐, 마무리 인사
-
-[📝 출력 형식 및 품질 기준]
-- **HTML 가이드라인**: <p> 태그로 문단 구성, <h2>/<h3> 태그로 소제목, <ul>/<ol> 태그로 목록, <strong> 태그로 강조. CSS 인라인 스타일 절대 금지. **마크다운 형식(**, *, #, - 등) 절대 금지 - 반드시 HTML 태그만 사용**
-- **톤앤매너**: 반드시 존댓말 사용 ("~입니다", "~합니다"). "저는", "제가" 사용. 서민적이고 친근하며 진솔한 어조 유지
-
-[🔍 품질 검증 필수사항]
-다음 항목들을 반드시 확인하여 작성하라:
-1. **문장 완결성**: 모든 문장이 완전한 구조를 갖추고 있는지 확인. 예시: "주민여하여" (X) → "주민 여러분께서" (O)
-2. **조사/어미 검증**: "주민소리에" 같은 조사 누락 절대 금지. 예시: "주민소리에" (X) → "주민들의 소리에" (O)
-3. **구체성 확보**: 괄호 안 예시가 아닌 실제 구체적 내용으로 작성. 예시: "(구체적 사례)" (X) → "지난 10월 12일 시흥시 체육관에서 열린" (O)
-4. **날짜/시간 정보 보존**: 주제에 구체적인 날짜나 시간이 명시되어 있으면 반드시 그대로 사용할 것. "10월 12일 일요일" (O), "10월의 어느 날" (X)
-5. **논리적 연결**: 도입-전개-결론의 자연스러운 흐름 구성
-6. **문체 일관성**: 존댓말 통일 및 어색한 표현 제거
-7. **실제 내용 작성**: 모든 괄호 표현 제거하고 실제 구체적인 문장으로 작성
-8. **감정 진정성**: 형식적인 표현이 아닌, 진심이 느껴지는 구체적인 감정 표현 사용
-9. **반복 금지**: 동일하거나 유사한 문장, 문단을 절대 반복하지 말 것. 각 문장과 문단은 새로운 정보나 관점을 제공해야 함
-10. **구조 일관성**: 마무리 인사("감사합니다", "~드림" 등) 후에는 절대로 본문이 다시 시작되지 않아야 함. 마무리는 글의 완전한 종결을 의미함
-11. **[CRITICAL] 본론 섹션별 미니결론(요약/다짐) 절대 금지**: 각 본론(H2) 섹션은 팩트나 주장으로 담백하게 끝내야 하며, **"앞으로 ~하겠습니다", "기대됩니다", "노력하겠습니다"** 등의 맺음말을 **절대** 쓰지 마십시오. 모든 다짐과 종합 결론은 오직 글의 맨 마지막 **[결론]** 섹션에만 작성하십시오.
-
-
-[최종 임무]
-위 '글쓰기 설계도'와 모든 규칙을 준수하여, 주어진 [기본 정보]와 [배경 정보]를 바탕으로 진솔하고 울림 있으며 완성도 높은 SNS 원고를 작성하라.
+<final_mission>
+위 글쓰기 설계도와 모든 규칙을 준수하여, 주어진 기본 정보와 배경 정보를 바탕으로 진솔하고 울림 있으며 완성도 높은 SNS 원고를 작성하라.
+</final_mission>
 
 <output_format>
-**[CRITICAL] 출력 시 반드시 아래 XML 태그 형식을 사용하라:**
+출력 시 반드시 아래 XML 태그 형식을 사용하라:
 
 <title>
 [여기에 제목 작성 - 25자 이내, 감성적이고 공감가는 제목]
@@ -171,10 +171,12 @@ def build_daily_communication_prompt(options: dict) -> str:
 [여기에 해시태그 작성 - 콤마 또는 줄바꿈으로 구분, 3~5개]
 </hashtags>
 
-⚠️ 주의사항:
+주의사항:
 - 반드시 위 세 개의 태그로 감싸서 출력할 것
 - 태그 외부에는 어떤 설명도 작성하지 말 것
-- 마크다운 코드블록(```) 사용 금지
+- 마크다운 코드블록 사용 금지
 </output_format>
+
+</task>
 """
     return prompt.strip()

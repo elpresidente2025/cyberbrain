@@ -158,66 +158,72 @@ ELECTION_EXPRESSION_RULES = {
         },
         # 프롬프트에 주입할 지시문
         "promptInstruction": """
-[⚠️ 선거법 준수 - 예비후보 등록 이전 단계]
-현재 상태에서는 선거법상 다음 표현을 사용할 수 없습니다.
+<election_compliance stage="STAGE_1" label="예비후보 등록 이전 단계" priority="critical">
+  <summary>현재 상태에서는 선거법상 아래 표현을 사용할 수 없습니다.</summary>
 
-** 🔴 CRITICAL - 형사처벌 대상 **
-❌ 기부행위 금지 (제85조 6항): "상품권 지급", "선물 제공", "00만원 드리겠습니다"
-❌ 허위사실공표 (제250조): 출처 없는 통계/수치 주장, 확인 안 된 사실
-❌ 후보자비방 (제251조): "~라는 소문", "~라고 들었습니다" 형태의 간접사실 적시
+  <criminal_risks priority="critical">
+    <risk law="제85조 6항">기부행위 금지: "상품권 지급", "선물 제공", "00만원 드리겠습니다"</risk>
+    <risk law="제250조">허위사실공표 금지: 출처 없는 통계/수치 주장, 확인 안 된 사실</risk>
+    <risk law="제251조">후보자비방 금지: "~라는 소문", "~라고 들었습니다" 형태의 간접사실 적시</risk>
+  </criminal_risks>
 
-** 절대 금지 표현 **
-❌ "공약", "공약을 발표합니다", "○번째 공약"
-❌ "약속드립니다", "약속하겠습니다", "반드시 실현하겠습니다"
-❌ "당선되면 ○○하겠습니다", "당선 후에"
-❌ "지지해 주십시오", "함께해 주십시오", "선택해 주십시오"
-❌ "투표해 주십시오", "지지를 부탁드립니다"
-❌ "다음 선거에서", "2026년 지방선거에서", "재선을 위해"
-❌ "예비후보", "후보", "출마 예정자"
-❌ "바꿉니다", "만듭니다", "해결합니다" (단정적 공약 표현)
-❌ "~하겠습니다" 형태의 모든 공약성 표현
+  <forbidden_expressions>
+    <item>"공약", "공약을 발표합니다", "○번째 공약"</item>
+    <item>"약속드립니다", "약속하겠습니다", "반드시 실현하겠습니다"</item>
+    <item>"당선되면 ○○하겠습니다", "당선 후에"</item>
+    <item>"지지해 주십시오", "함께해 주십시오", "선택해 주십시오"</item>
+    <item>"투표해 주십시오", "지지를 부탁드립니다"</item>
+    <item>"다음 선거에서", "2026년 지방선거에서", "재선을 위해"</item>
+    <item>"예비후보", "후보", "출마 예정자"</item>
+    <item>"바꿉니다", "만듭니다", "해결합니다" 같은 단정적 공약 표현</item>
+    <item>"~하겠습니다" 형태의 모든 공약성 표현</item>
+  </forbidden_expressions>
 
-** 대체 표현 가이드 **
-✅ "공약" → "정책 방향", "비전", "정책 제안"
-✅ "당선되면" → "이 정책이 실현된다면"
-✅ "지지 부탁" → "관심 부탁드립니다"
-✅ "바꾸겠습니다" → "변화가 필요합니다", "개선을 제안합니다"
-✅ "맡겨주십시오" → "관심 가져 주십시오"
+  <replacement_guide>
+    <mapping><from>공약</from><to>정책 방향, 비전, 정책 제안</to></mapping>
+    <mapping><from>당선되면</from><to>이 정책이 실현된다면</to></mapping>
+    <mapping><from>지지 부탁</from><to>관심 부탁드립니다</to></mapping>
+    <mapping><from>바꾸겠습니다</from><to>변화가 필요합니다, 개선을 제안합니다</to></mapping>
+    <mapping><from>맡겨주십시오</from><to>관심 가져 주십시오</to></mapping>
+  </replacement_guide>
 
-** "약속" 표현 대체 가이드 (중요!) **
-"약속드립니다", "약속하겠습니다" 등의 표현은 사용하지 마세요.
-대신 문맥에 맞게 중립적인 방향 제시 표현을 사용하세요:
-- "~을 약속드립니다" → "~을 검토해 보겠습니다", "~이 필요합니다"
-- "~할 것을 약속드립니다" → "~을 살펴보겠습니다", "~을 제안합니다"
-- "반드시 ~하겠다고 약속드립니다" → "~을 계속 점검해 보겠습니다"
+  <promise_rewrite_guide priority="high">
+    <rule>"약속드립니다", "약속하겠습니다" 등의 표현은 사용하지 않는다.</rule>
+    <example><from>~을 약속드립니다</from><to>~을 검토해 보겠습니다, ~이 필요합니다</to></example>
+    <example><from>~할 것을 약속드립니다</from><to>~을 살펴보겠습니다, ~을 제안합니다</to></example>
+    <example><from>반드시 ~하겠다고 약속드립니다</from><to>~을 계속 점검해 보겠습니다</to></example>
+  </promise_rewrite_guide>
 
-** 수치/통계 사용 시 필수 **
-✅ 반드시 출처 명시: "[출처: 통계청 2024]", "[출처: 부산시 자료]"
-❌ 출처 없는 수치 사용 금지
+  <statistics_rule priority="high">
+    <must>수치/통계에는 반드시 출처 명시: [출처: 통계청 2024], [출처: 부산시 자료]</must>
+    <must-not>출처 없는 수치 사용</must-not>
+  </statistics_rule>
 
-** [CRITICAL] 금지어 회피 꼼수 절대 금지 **
-❌ 금지어를 사용하기 위해 고의로 오타를 내거나 문장을 자르는 행위 절대 금지.
-   - 예: "맡겨주십시" (X), "약속하겠습" (X), "투표해주십" (X)
-✅ 반드시 완성된 문장과 올바른 종결 어미를 사용하고, 금지어는 '허용된 대체 표현'으로 의미만 전달하십시오.
+  <evasion_guard priority="critical">
+    <must-not>금지어를 쓰기 위해 고의로 오타를 내거나 문장을 자르는 행위</must-not>
+    <example><bad>맡겨주십시, 약속하겠습, 투표해주십</bad></example>
+    <must>완성된 문장과 올바른 종결 어미를 사용하고, 금지어는 허용된 대체 표현으로 의미만 전달</must>
+  </evasion_guard>
 
-** 사용 가능한 표현 예시 **
-"정책 방향을 제안합니다"
-"비전을 공유드립니다"
-"이런 방향의 정책을 연구하고 있습니다"
-"논의를 이어갑니다"
+  <allowed_expression_examples>
+    <item>정책 방향을 제안합니다</item>
+    <item>비전을 공유드립니다</item>
+    <item>이런 방향의 정책을 연구하고 있습니다</item>
+    <item>논의를 이어갑니다</item>
+  </allowed_expression_examples>
 
-⚠️ **[중요] 단순 단어 치환 금지 (조사 중복 방지)**
-- "부산을 만들겠습니다" → "부산을 을 제안합니다" (X) 처럼 조사가 중복되지 않게 주의하세요.
-- 문장 전체의 구조를 바꿔서 자연스럽게 수정해야 합니다.
-- 예: "플랫폼을 구축하겠습니다" → "플랫폼 구축을 제안합니다" (O)
+  <grammar_notice priority="high">
+    <rule>단순 단어 치환으로 조사가 중복되지 않게 주의한다.</rule>
+    <example><bad>부산을 만들겠습니다 → 부산을 을 제안합니다</bad><good>플랫폼을 구축하겠습니다 → 플랫폼 구축을 제안합니다</good></example>
+    <rule>문장 전체 구조를 바꿔 자연스럽게 수정한다.</rule>
+  </grammar_notice>
 
-** ✅ 후원 관련 정보 보존 (정치자금법상 합법) **
-후원회 계좌 안내는 정치자금법에 따라 합법이므로 다음 정보는 그대로 사용 가능합니다:
-- 후원회 계좌번호, 예금주, 문자 연락처
-- 후원금 영수증 발급 안내
-- "함께해 주십시오" 표현 (후원 요청 맥락에서 허용)
-- "지금 바로 함께할 수 있습니다" 등 참여 유도 문구
-⚠️ 단, "투표해 주십시오", "지지해 주십시오"는 여전히 금지입니다.
+  <donation_context_exception>
+    <rule>후원회 계좌 안내는 정치자금법상 합법이므로 계좌번호/예금주/문자 연락처/영수증 안내는 유지 가능</rule>
+    <rule>"함께해 주십시오"는 후원 요청 맥락에서 허용</rule>
+    <rule>단, "투표해 주십시오", "지지해 주십시오"는 여전히 금지</rule>
+  </donation_context_exception>
+</election_compliance>
 """
     },
 
@@ -238,11 +244,22 @@ ELECTION_EXPRESSION_RULES = {
             '저를 선택해 주십시오': '의견을 부탁드립니다',
         },
         "promptInstruction": """
-[선거법 준수 - 예비후보 단계]
-예비후보 단계에서도 공약성 표현과 선거운동성 요청은 사용하지 않습니다.
-
-✅ 사용 가능: "정책 방향", "비전 공유", "검토해 보겠습니다", "필요합니다"
-❌ 사용 금지: "공약", "약속드립니다", "당선되면", "지지해 주십시오", "투표해 주십시오"
+<election_compliance stage="STAGE_2" label="예비후보 단계" priority="high">
+  <summary>예비후보 단계에서도 공약성 표현과 선거운동성 요청은 사용하지 않는다.</summary>
+  <allowed_expressions>
+    <item>정책 방향</item>
+    <item>비전 공유</item>
+    <item>검토해 보겠습니다</item>
+    <item>필요합니다</item>
+  </allowed_expressions>
+  <forbidden_expressions>
+    <item>공약</item>
+    <item>약속드립니다</item>
+    <item>당선되면</item>
+    <item>지지해 주십시오</item>
+    <item>투표해 주십시오</item>
+  </forbidden_expressions>
+</election_compliance>
 """
     },
 
@@ -260,9 +277,13 @@ ELECTION_EXPRESSION_RULES = {
         },
         "replacements": {},
         "promptInstruction": """
-[선거법 준수 - 정식 후보 단계]
-대부분의 선거운동 표현이 가능합니다.
-❌ 금지: 금품/향응 제공 암시, 허위사실 유포
+<election_compliance stage="STAGE_3" label="정식 후보 단계">
+  <summary>정식 후보 단계에서는 대부분의 선거운동 표현이 가능하다.</summary>
+  <forbidden_expressions priority="critical">
+    <item>금품/향응 제공 암시</item>
+    <item>허위사실 유포</item>
+  </forbidden_expressions>
+</election_compliance>
 """
     }
 }
