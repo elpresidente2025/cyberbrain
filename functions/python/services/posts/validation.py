@@ -1,4 +1,4 @@
-"""원고 품질/선거법/키워드 휴리스틱 검증 모듈.
+﻿"""원고 품질/선거법/키워드 휴리스틱 검증 모듈.
 
 Node.js `functions/services/posts/validation.js`의 핵심 검증 로직 포팅.
 """
@@ -6,9 +6,9 @@ Node.js `functions/services/posts/validation.js`의 핵심 검증 로직 포팅.
 from __future__ import annotations
 
 import json
-import html
 import logging
 import re
+from datetime import date, datetime
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence
 
 from agents.common.election_rules import get_election_stage
@@ -18,8 +18,34 @@ from agents.common.legal import ViolationDetector
 from .corrector import apply_corrections, summarize_violations
 from .critic import has_hard_violations, run_critic_review, summarize_guidelines
 from .generation_stages import GENERATION_STAGES, create_progress_state, create_retry_message
+from .keyword_insertion_policy import (
+    LOCATION_CONTEXT_TOKENS,
+    SENTENCE_FOCUS_TOKENS,
+    UNSAFE_LOCATION_ATTACH_TOKENS,
+    UNSAFE_LOCATION_CONTEXT_TOKENS,
+    is_location_context_text as _policy_is_location_context_text,
+    is_greeting_sentence as _policy_is_greeting_sentence,
+    is_terminal_sentence as _policy_is_terminal_sentence,
+    is_unsafe_location_context as _policy_is_unsafe_location_context,
+    normalize_plain as _policy_normalize_plain,
+)
 
 logger = logging.getLogger(__name__)
+
+WEEKDAY_SHORT_TOKENS = ("월", "화", "수", "목", "금", "토", "일")
+WEEKDAY_FULL_TOKENS = tuple(f"{token}요일" for token in WEEKDAY_SHORT_TOKENS)
+WEEKDAY_TOKEN_PATTERN = r"(?:월|화|수|목|금|토|일)(?:요일)?"
+DATE_WEEKDAY_PATTERN = re.compile(
+    rf"(?:(?P<year>\d{{4}})\s*년\s*)?"
+    rf"(?P<month>\d{{1,2}})\s*월\s*"
+    rf"(?P<day>\d{{1,2}})\s*일"
+    rf"\s*"
+    rf"(?:"
+    rf"(?P<open>[\(\[])\s*(?P<weekday_bracket>{WEEKDAY_TOKEN_PATTERN})\s*(?P<close>[\)\]])"
+    rf"|"
+    rf"(?P<weekday_text>{'|'.join(WEEKDAY_FULL_TOKENS)})"
+    rf")"
+)
 
 
 # ============================================================================
@@ -63,6 +89,214 @@ EXPLICIT_PLEDGE_PATTERNS: List[re.Pattern[str]] = [
 
 def _strip_html(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", text or "")).strip()
+
+
+def _normalize_weekday_token(token: str) -> str:
+    raw = str(token or "").strip()
+    if raw.endswith("요일"):
+        raw = raw[:-2]
+    return raw if raw in WEEKDAY_SHORT_TOKENS else ""
+
+
+def _resolve_year_hint(year_hint: Any) -> Optional[int]:
+    if isinstance(year_hint, int):
+        return year_hint if 1900 <= year_hint <= 9999 else None
+    if isinstance(year_hint, (datetime, date)):
+        return int(year_hint.year)
+    if year_hint is None:
+        return None
+    text = str(year_hint).strip()
+    if not text:
+        return None
+    match = re.search(r"(19|20)\d{2}", text)
+    if not match:
+        return None
+    return int(match.group(0))
+
+
+def _weekday_short_from_date(target_date: date) -> str:
+    return WEEKDAY_SHORT_TOKENS[target_date.weekday()]
+
+
+def _render_weekday_for_style(short_token: str, original_token: str) -> str:
+    original = str(original_token or "").strip()
+    if original.endswith("요일"):
+        return f"{short_token}요일"
+    return short_token
+
+
+def extract_date_weekday_pairs(text: str) -> List[Dict[str, Any]]:
+    source = str(text or "")
+    if not source:
+        return []
+
+    pairs: List[Dict[str, Any]] = []
+    for match in DATE_WEEKDAY_PATTERN.finditer(source):
+        year_raw = match.group("year")
+        month_raw = match.group("month")
+        day_raw = match.group("day")
+        weekday_token = match.group("weekday_bracket") or match.group("weekday_text") or ""
+        if not weekday_token:
+            continue
+
+        token_group = "weekday_bracket" if match.group("weekday_bracket") else "weekday_text"
+        token_start = match.start(token_group)
+        token_end = match.end(token_group)
+
+        try:
+            month = int(month_raw)
+            day = int(day_raw)
+        except Exception:
+            continue
+
+        pairs.append(
+            {
+                "raw": match.group(0),
+                "start": match.start(),
+                "end": match.end(),
+                "tokenStart": token_start,
+                "tokenEnd": token_end,
+                "year": int(year_raw) if year_raw else None,
+                "month": month,
+                "day": day,
+                "weekdayToken": weekday_token,
+                "weekdayShort": _normalize_weekday_token(weekday_token),
+            }
+        )
+
+    return pairs
+
+
+def validate_date_weekday_pairs(text: str, year_hint: Any = None) -> Dict[str, Any]:
+    source = str(text or "")
+    pairs = extract_date_weekday_pairs(source)
+    if not pairs:
+        return {"passed": True, "issues": [], "pairs": [], "checkedCount": 0}
+
+    issues: List[Dict[str, Any]] = []
+    hint_year = _resolve_year_hint(year_hint)
+    fallback_year = hint_year or int(datetime.now().year)
+
+    for pair in pairs:
+        month = int(pair.get("month") or 0)
+        day = int(pair.get("day") or 0)
+        resolved_year = int(pair.get("year") or fallback_year)
+        weekday_token = str(pair.get("weekdayToken") or "")
+        weekday_short = str(pair.get("weekdayShort") or "")
+        date_label = (
+            f"{resolved_year}년 {month}월 {day}일"
+            if pair.get("year")
+            else f"{month}월 {day}일"
+        )
+
+        try:
+            target_date = date(resolved_year, month, day)
+        except ValueError:
+            issues.append(
+                {
+                    "type": "invalid_date",
+                    "dateText": date_label,
+                    "resolvedYear": resolved_year,
+                    "weekdayToken": weekday_token,
+                    "message": f"유효하지 않은 날짜입니다: {date_label}",
+                    "start": pair.get("start"),
+                    "end": pair.get("end"),
+                    "tokenStart": pair.get("tokenStart"),
+                    "tokenEnd": pair.get("tokenEnd"),
+                }
+            )
+            continue
+
+        expected_short = _weekday_short_from_date(target_date)
+        if weekday_short != expected_short:
+            expected_token = _render_weekday_for_style(expected_short, weekday_token)
+            issues.append(
+                {
+                    "type": "date_weekday_mismatch",
+                    "dateText": date_label,
+                    "resolvedYear": resolved_year,
+                    "expectedWeekday": expected_token,
+                    "expectedWeekdayShort": expected_short,
+                    "foundWeekday": weekday_token,
+                    "message": f"{date_label}의 실제 요일은 {expected_token}입니다.",
+                    "start": pair.get("start"),
+                    "end": pair.get("end"),
+                    "tokenStart": pair.get("tokenStart"),
+                    "tokenEnd": pair.get("tokenEnd"),
+                }
+            )
+
+    return {
+        "passed": len(issues) == 0,
+        "issues": issues,
+        "pairs": pairs,
+        "checkedCount": len(pairs),
+        "yearHint": hint_year,
+    }
+
+
+def repair_date_weekday_pairs(text: str, year_hint: Any = None) -> Dict[str, Any]:
+    source = str(text or "")
+    if not source:
+        return {
+            "text": source,
+            "edited": False,
+            "changes": [],
+            "validation": {"passed": True, "issues": [], "pairs": [], "checkedCount": 0},
+        }
+
+    validation = validate_date_weekday_pairs(source, year_hint=year_hint)
+    issues = validation.get("issues") if isinstance(validation, dict) else []
+    if not isinstance(issues, list):
+        issues = []
+
+    replacements: List[Dict[str, Any]] = []
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+        if str(issue.get("type") or "") != "date_weekday_mismatch":
+            continue
+        token_start = issue.get("tokenStart")
+        token_end = issue.get("tokenEnd")
+        expected = str(issue.get("expectedWeekday") or "").strip()
+        found = str(issue.get("foundWeekday") or "").strip()
+        if not isinstance(token_start, int) or not isinstance(token_end, int):
+            continue
+        if token_start < 0 or token_end <= token_start:
+            continue
+        if not expected or expected == found:
+            continue
+        replacements.append(
+            {
+                "start": token_start,
+                "end": token_end,
+                "from": found,
+                "to": expected,
+                "dateText": str(issue.get("dateText") or "").strip(),
+                "resolvedYear": issue.get("resolvedYear"),
+            }
+        )
+
+    if not replacements:
+        return {
+            "text": source,
+            "edited": False,
+            "changes": [],
+            "validation": validation,
+        }
+
+    repaired = source
+    for item in sorted(replacements, key=lambda x: int(x["start"]), reverse=True):
+        start = int(item["start"])
+        end = int(item["end"])
+        repaired = repaired[:start] + str(item["to"]) + repaired[end:]
+
+    return {
+        "text": repaired,
+        "edited": repaired != source,
+        "changes": replacements,
+        "validation": validate_date_weekday_pairs(repaired, year_hint=year_hint),
+    }
 
 
 def extract_sentences(text: str) -> List[str]:
@@ -320,13 +554,281 @@ def detect_phrase_repetition(content: str) -> Dict[str, Any]:
 
     covered: set[str] = set()
     repeated_phrases: list[str] = []
+    raw_repeated_phrases: list[Dict[str, Any]] = []
     for phrase, count in over_limit:
         if any(existing.find(phrase) >= 0 for existing in covered):
             continue
         covered.add(phrase)
         repeated_phrases.append(f"\"{phrase[:40]}{'...' if len(phrase) > 40 else ''}\" ({count}회 반복)")
+        raw_repeated_phrases.append({"phrase": phrase, "count": count})
 
-    return {"passed": len(repeated_phrases) == 0, "repeatedPhrases": repeated_phrases}
+    return {
+        "passed": len(repeated_phrases) == 0,
+        "repeatedPhrases": repeated_phrases,
+        "rawRepeatedPhrases": raw_repeated_phrases,
+    }
+
+
+def _replace_repetition_tail(
+    content: str,
+    pattern: re.Pattern[str],
+    *,
+    keep: int = 2,
+) -> tuple[str, int]:
+    """패턴 반복이 keep회를 초과하면 뒤에서부터 변형 치환한다."""
+    matches = list(pattern.finditer(content or ""))
+    if len(matches) <= keep:
+        return str(content or ""), 0
+
+    working = str(content or "")
+    replaced = 0
+    to_replace = list(reversed(matches[keep:]))
+    for idx, match in enumerate(to_replace):
+        phrase = match.group(0)
+        time_match = re.search(r"(오전|오후)\s*\d{1,2}\s*시(?:\s*\d{1,2}\s*분)?", phrase)
+        time_token = time_match.group(0) if time_match else "해당 시간"
+        location_match = re.search(r"(서면|부산)\s*영광도서", phrase)
+        location_token = location_match.group(0) if location_match else "행사 현장"
+        replacement = (
+            f"행사 당일 {time_token}, {location_token} 현장에서"
+            if idx == 0
+            else "행사 당일 현장에서"
+        )
+        start, end = match.span()
+        working = working[:start] + replacement + working[end:]
+        replaced += 1
+
+    return working, replaced
+
+
+def _replace_location_postposition_repetition(
+    content: str,
+    pattern: re.Pattern[str],
+    *,
+    keep: int = 2,
+) -> tuple[str, int]:
+    """장소+조사(…영광도서에서) 반복을 변형해 동일 n-gram을 줄인다."""
+    matches = list(pattern.finditer(content or ""))
+    if len(matches) <= keep:
+        return str(content or ""), 0
+
+    working = str(content or "")
+    replaced = 0
+    suffixes = ("현장에서", "행사장에서", "공간에서")
+    to_replace = list(reversed(matches[keep:]))
+
+    for idx, match in enumerate(to_replace):
+        phrase = match.group(0)
+        city_match = re.search(r"(서면|부산)\s*영광도서", phrase, re.IGNORECASE)
+        location_token = f"{city_match.group(1)} 영광도서" if city_match else "행사 현장"
+        replacement = f"{location_token} {suffixes[idx % len(suffixes)]}"
+        start, end = match.span()
+        working = working[:start] + replacement + working[end:]
+        replaced += 1
+
+    return working, replaced
+
+
+def _replace_anchor_phrase_repetition(
+    content: str,
+    pattern: re.Pattern[str],
+    replacements: Sequence[str],
+    *,
+    keep: int = 2,
+) -> tuple[str, int]:
+    """앵커 구문 반복이 keep회를 초과하면 뒤에서부터 유의어로 치환한다."""
+    matches = list(pattern.finditer(content or ""))
+    if len(matches) <= keep:
+        return str(content or ""), 0
+
+    replacement_pool = [item for item in (replacements or []) if str(item).strip()]
+    if not replacement_pool:
+        return str(content or ""), 0
+
+    working = str(content or "")
+    replaced = 0
+    to_replace = list(reversed(matches[keep:]))
+    for idx, match in enumerate(to_replace):
+        replacement = replacement_pool[idx % len(replacement_pool)]
+        start, end = match.span()
+        working = working[:start] + replacement + working[end:]
+        replaced += 1
+
+    return working, replaced
+
+
+def _dedupe_repeated_sentences_in_paragraphs(
+    content: str,
+    *,
+    min_sentence_len: int = 20,
+    keep: int = 1,
+) -> tuple[str, int]:
+    """문단 단위로 긴 문장 중복을 제거해 반복 게이트 실패를 완화한다."""
+    raw_content = str(content or "")
+    if not raw_content:
+        return raw_content, 0
+
+    seen: Dict[str, int] = {}
+    removed = 0
+
+    def replace_paragraph(match: re.Match[str]) -> str:
+        nonlocal removed
+        inner = str(match.group(1) or "")
+        plain_inner = re.sub(r"<[^>]*>", " ", inner)
+        plain_inner = re.sub(r"\s+", " ", plain_inner).strip()
+        if not plain_inner:
+            return ""
+
+        sentences = [
+            sentence.strip()
+            for sentence in re.findall(r"[^.!?。]+[.!?。]?", plain_inner)
+            if sentence and sentence.strip()
+        ]
+        if not sentences:
+            return match.group(0)
+
+        kept: list[str] = []
+        for sentence in sentences:
+            normalized = re.sub(r"\s+", " ", sentence).strip()
+            if len(normalized) < min_sentence_len:
+                kept.append(normalized)
+                continue
+
+            key = re.sub(r"\s+", "", normalized).lower()
+            count = seen.get(key, 0)
+            if count >= keep:
+                removed += 1
+                continue
+            seen[key] = count + 1
+            kept.append(normalized)
+
+        if not kept:
+            return ""
+        return f"<p>{' '.join(kept).strip()}</p>"
+
+    updated = re.sub(
+        r"<p\b[^>]*>([\s\S]*?)</p\s*>",
+        replace_paragraph,
+        raw_content,
+        flags=re.IGNORECASE,
+    )
+    updated = re.sub(r"\n{3,}", "\n\n", updated).strip()
+    return updated, removed
+
+
+def enforce_repetition_requirements(content: str) -> Dict[str, Any]:
+    """반복 품질 위반을 최소 보정으로 완화한다.
+
+    현재는 행사 일시+장소 결합 구문, 장소+조사 반복, 상투 앵커 구문을 우선적으로 줄인다.
+    """
+    base = str(content or "")
+    working = base
+    actions: list[Dict[str, Any]] = []
+
+    event_datetime_location_pattern = re.compile(
+        r"\d{1,2}\s*월\s*\d{1,2}\s*일(?:\([^)]+\))?\s*"
+        r"(?:오전|오후)\s*\d{1,2}\s*시(?:\s*\d{1,2}\s*분)?\s*,?\s*"
+        r"(?:서면|부산)(?:\s*영광도서)?\s*에서",
+        re.IGNORECASE,
+    )
+    working, replaced = _replace_repetition_tail(working, event_datetime_location_pattern, keep=2)
+    if replaced > 0:
+        actions.append(
+            {
+                "type": "event_datetime_phrase_dedupe",
+                "replaced": replaced,
+                "keep": 2,
+            }
+        )
+
+    location_postposition_pattern = re.compile(
+        r"(?:서면|부산)\s*영광도서\s*에서",
+        re.IGNORECASE,
+    )
+    working, location_replaced = _replace_location_postposition_repetition(
+        working,
+        location_postposition_pattern,
+        keep=2,
+    )
+    if location_replaced > 0:
+        actions.append(
+            {
+                "type": "location_postposition_dedupe",
+                "replaced": location_replaced,
+                "keep": 2,
+            }
+        )
+
+    anchor_phrase_rules = [
+        {
+            "name": "부산항 부두 노동자의",
+            "pattern": re.compile(r"부산항\s*부두\s*노동자의", re.IGNORECASE),
+            "replacements": ("부산항 노동자 가정의", "부산항 현장 노동자 집안의"),
+        },
+        {
+            "name": "시민 여러분과 함께",
+            "pattern": re.compile(r"시민\s*여러분과\s*함께", re.IGNORECASE),
+            "replacements": ("시민과 함께", "여러분과 함께", "지역사회와 함께"),
+        },
+    ]
+    for rule in anchor_phrase_rules:
+        working, anchor_replaced = _replace_anchor_phrase_repetition(
+            working,
+            rule["pattern"],
+            rule["replacements"],
+            keep=2,
+        )
+        if anchor_replaced > 0:
+            actions.append(
+                {
+                    "type": "anchor_phrase_dedupe",
+                    "phrase": rule["name"],
+                    "replaced": anchor_replaced,
+                    "keep": 2,
+                }
+            )
+
+    working, sentence_removed = _dedupe_repeated_sentences_in_paragraphs(
+        working,
+        min_sentence_len=20,
+        keep=1,
+    )
+    if sentence_removed > 0:
+        actions.append(
+            {
+                "type": "sentence_dedupe",
+                "removed": sentence_removed,
+                "keep": 1,
+            }
+        )
+
+    sentence_result = detect_sentence_repetition(working)
+    phrase_result = detect_phrase_repetition(working)
+    near_dup_result = detect_near_duplicate_sentences(working)
+    issues: list[str] = []
+    if not sentence_result.get("passed", True):
+        issues.append(f"⚠️ 문장 반복 감지: {', '.join(sentence_result.get('repeatedSentences', []))}")
+    if not phrase_result.get("passed", True):
+        issues.append(f"⚠️ 구문 반복 감지: {', '.join(phrase_result.get('repeatedPhrases', []))}")
+    if not near_dup_result.get("passed", True):
+        summary = ", ".join(
+            f"\"{pair['a']}\" ≈ \"{pair['b']}\" ({pair['similarity']}%)"
+            for pair in (near_dup_result.get("similarPairs") or [])[:3]
+        )
+        issues.append(f"⚠️ 유사 문장 감지: {summary}")
+
+    return {
+        "content": working,
+        "edited": working != base,
+        "actions": actions,
+        "passed": len(issues) == 0,
+        "issues": issues,
+        "details": {
+            "repetition": sentence_result,
+            "phrase": phrase_result,
+            "nearDuplicate": near_dup_result,
+        },
+    }
 
 
 def detect_near_duplicate_sentences(content: str, threshold: float = 0.6) -> Dict[str, Any]:
@@ -453,7 +955,7 @@ def validate_title_quality(
     issues: list[Dict[str, Any]] = []
     details: Dict[str, Any] = {
         "length": len(title),
-        "maxLength": 25,
+        "maxLength": 35,
         "keywordPosition": None,
         "abstractExpressions": [],
         "hasNumbers": False,
@@ -469,13 +971,13 @@ def validate_title_quality(
             }
         )
 
-    if len(title) > 25:
+    if len(title) > 35:
         issues.append(
             {
                 "type": "title_length",
                 "severity": "critical",
-                "description": f"제목 {len(title)}자 → 25자 초과 (네이버에서 잘림)",
-                "instruction": "25자 이내로 줄이세요. 불필요한 조사, 부제목(:, -) 제거.",
+                "description": f"제목 {len(title)}자 → 35자 초과 (네이버에서 잘림)",
+                "instruction": "35자 이내로 줄이세요. 불필요한 조사, 부제목(:, -) 제거.",
             }
         )
 
@@ -1045,14 +1547,35 @@ def _select_keyword_section_indexes(
         return []
 
     indexed = list(enumerate(sections))
-    ranked = sorted(
-        indexed,
-        key=lambda item: (
-            count_keyword_coverage(str(item[1].get("content") or ""), keyword),
-            _section_priority(str(item[1].get("type") or "")),
-            item[0],
-        ),
-    )
+
+    def _location_section_penalty(section_content: str) -> int:
+        plain = re.sub(r"<[^>]*>", " ", str(section_content or ""))
+        plain = re.sub(r"\s+", " ", plain).strip()
+        if _is_event_context_text(plain, keyword=keyword):
+            return 0
+        if _is_unsafe_location_context(plain):
+            return 2
+        return 1
+
+    if _is_location_keyword(keyword):
+        ranked = sorted(
+            indexed,
+            key=lambda item: (
+                count_keyword_occurrences(str(item[1].get("content") or ""), keyword),
+                _location_section_penalty(str(item[1].get("content") or "")),
+                _section_priority(str(item[1].get("type") or "")),
+                item[0],
+            ),
+        )
+    else:
+        ranked = sorted(
+            indexed,
+            key=lambda item: (
+                count_keyword_occurrences(str(item[1].get("content") or ""), keyword),
+                _section_priority(str(item[1].get("type") or "")),
+                item[0],
+            ),
+        )
     if not ranked:
         return []
 
@@ -1069,37 +1592,300 @@ def _select_keyword_section_indexes(
     return chosen[:needed]
 
 
-def _build_keyword_enforcement_sentence(keyword: str, section_type: str, variant_index: int = 0) -> str:
-    safe_kw = html.escape(str(keyword or "").strip())
-    section_key = "single"
-    if section_type == "intro":
-        section_key = "intro"
-    elif section_type == "conclusion":
-        section_key = "conclusion"
-    elif section_type.startswith("body"):
-        section_key = "body"
+def _is_location_keyword(keyword: str) -> bool:
+    normalized = str(keyword or "").strip()
+    if not normalized:
+        return False
+    location_tokens = (
+        "영광도서",
+        "도서관",
+        "광장",
+        "센터",
+        "공원",
+        "시청",
+        "구청",
+        "동",
+    )
+    return any(token in normalized for token in location_tokens)
 
-    templates = {
-        "intro": [
-            "{kw} 이슈는 시민 생활과 맞닿은 핵심 현안입니다.",
-            "지금 {kw} 의제는 현장에서 체감도가 높은 문제입니다.",
-        ],
-        "body": [
-            "{kw} 문제는 현장 사례와 데이터로 함께 점검해야 합니다.",
-            "{kw} 관련 쟁점은 생활 불편과 정책 효과를 함께 봐야 합니다.",
-        ],
-        "conclusion": [
-            "끝으로 {kw} 과제는 지속적인 점검과 실행이 필요합니다.",
-            "{kw} 의제는 마지막까지 책임 있게 확인해야 할 사안입니다.",
-        ],
-        "single": [
-            "{kw} 이슈는 지금 가장 우선적으로 점검해야 할 과제입니다.",
-            "{kw} 관련 논점은 사실과 현장 중심으로 계속 살펴봐야 합니다.",
-        ],
-    }
-    options = templates.get(section_key, templates["single"])
-    template = options[variant_index % len(options)]
-    return template.format(kw=safe_kw)
+
+LOCATION_EVENT_CONTEXT_TOKENS = LOCATION_CONTEXT_TOKENS
+LOCATION_UNSAFE_CONTEXT_TOKENS = UNSAFE_LOCATION_CONTEXT_TOKENS
+LOCATION_UNSAFE_ATTACH_TOKENS = UNSAFE_LOCATION_ATTACH_TOKENS
+
+
+def _is_event_context_text(text: str, keyword: str = "") -> bool:
+    return _policy_is_location_context_text(text, keyword=keyword)
+
+
+def _is_unsafe_location_context(text: str) -> bool:
+    return _policy_is_unsafe_location_context(text)
+
+
+def _is_non_editable_sentence(text: str) -> bool:
+    normalized = _policy_normalize_plain(text)
+    if not normalized:
+        return True
+    if _policy_is_greeting_sentence(normalized):
+        return True
+    if _policy_is_terminal_sentence(normalized):
+        return True
+    return False
+
+
+def _is_unnatural_location_phrase(text: str, keyword: str) -> bool:
+    normalized = re.sub(r"\s+", " ", str(text or "")).strip()
+    normalized_keyword = str(keyword or "").strip()
+    if not normalized or not normalized_keyword or not _is_location_keyword(normalized_keyword):
+        return False
+    if _is_event_context_text(normalized, keyword=normalized_keyword):
+        return False
+
+    token_pattern = "|".join(re.escape(token) for token in LOCATION_UNSAFE_ATTACH_TOKENS)
+    around_kw = re.compile(
+        rf"(?:{re.escape(normalized_keyword)}\s*(?:{token_pattern})|(?:{token_pattern})\s*{re.escape(normalized_keyword)})",
+        re.IGNORECASE,
+    )
+    return bool(around_kw.search(normalized))
+
+
+def _try_contextual_location_replacement(section_html: str, keyword: str) -> tuple[str, bool]:
+    raw_section = str(section_html or "")
+    normalized_keyword = str(keyword or "").strip()
+    if not raw_section or not normalized_keyword:
+        return raw_section, False
+
+    plain_section = _policy_normalize_plain(raw_section)
+    if not _is_event_context_text(plain_section, keyword=normalized_keyword):
+        return raw_section, False
+
+    before_count = count_keyword_occurrences(raw_section, normalized_keyword)
+    area_match = re.match(r"(서면|부산)\s*", normalized_keyword)
+    area = area_match.group(1) if area_match else ""
+
+    substitutions: List[tuple[str, str]] = []
+    if area:
+        substitutions.extend(
+            [
+                (rf"{re.escape(area)}\s*영광도서\s*현장에서", f"{normalized_keyword} 현장에서"),
+                (rf"{re.escape(area)}\s*영광도서\s*에서", f"{normalized_keyword}에서"),
+                (rf"{re.escape(area)}\s*영광도서", normalized_keyword),
+            ]
+        )
+    substitutions.extend(
+        [
+            (r"영광도서\s*현장에서", f"{normalized_keyword} 현장에서"),
+            (r"영광도서\s*에서", f"{normalized_keyword}에서"),
+            (r"영광도서", normalized_keyword),
+        ]
+    )
+
+    paragraph_matches = list(re.finditer(r"<p\b[^>]*>([\s\S]*?)</p\s*>", raw_section, re.IGNORECASE))
+    if not paragraph_matches:
+        return raw_section, False
+
+    for paragraph_match in paragraph_matches:
+        paragraph_inner = str(paragraph_match.group(1) or "")
+        paragraph_plain = _policy_normalize_plain(paragraph_inner)
+        if not paragraph_plain:
+            continue
+        if not _is_event_context_text(paragraph_plain, keyword=normalized_keyword):
+            continue
+        if _is_unsafe_location_context(paragraph_plain):
+            continue
+        if _is_non_editable_sentence(paragraph_plain):
+            continue
+
+        for pattern, replacement in substitutions:
+            updated_inner, changed = re.subn(
+                pattern,
+                replacement,
+                paragraph_inner,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+            if changed <= 0:
+                continue
+            candidate = (
+                raw_section[: paragraph_match.start(1)]
+                + updated_inner
+                + raw_section[paragraph_match.end(1) :]
+            )
+            if _is_unnatural_location_phrase(candidate, normalized_keyword):
+                continue
+            after_count = count_keyword_occurrences(candidate, normalized_keyword)
+            if after_count > before_count:
+                return candidate, True
+
+    return raw_section, False
+
+
+def _rewrite_sentence_with_keyword(sentence: str, keyword: str, variant_index: int = 0) -> str:
+    _ = variant_index
+    normalized_sentence = re.sub(r"\s+", " ", str(sentence or "")).strip()
+    normalized_keyword = str(keyword or "").strip()
+    if not normalized_sentence or not normalized_keyword:
+        return normalized_sentence
+    if normalized_keyword in normalized_sentence:
+        return normalized_sentence
+
+    if _is_location_keyword(normalized_keyword):
+        # 위치 키워드는 일반 명사 앞 강제 삽입 시 비문이 잘 발생하므로,
+        # 문장 리라이트 경로를 비활성화하고
+        # 1) 문맥 치환, 2) 행사형 보강 문장 경로만 사용한다.
+        return normalized_sentence
+
+    anchor_tokens = (
+        "출판기념회",
+        "행사",
+        "일정",
+        "현장",
+        "참여",
+        "소통",
+        "대화",
+        "문제",
+        "과제",
+        "쟁점",
+        "해법",
+        "계획",
+        "설명",
+        "논의",
+        "비전",
+        "해법",
+    )
+
+    for token in anchor_tokens:
+        if token in normalized_sentence:
+            rewritten = normalized_sentence.replace(token, f"{normalized_keyword} {token}", 1)
+            if _is_unnatural_location_phrase(rewritten, normalized_keyword):
+                continue
+            return rewritten
+
+    # 템플릿형 접두/접속 문장은 사용하지 않는다 (자연 문장 유지)
+    return normalized_sentence
+
+
+def _inject_keyword_into_section(
+    section_html: str,
+    keyword: str,
+    section_type: str,
+    variant_index: int = 0,
+) -> tuple[str, bool, str]:
+    raw_section = str(section_html or "")
+    normalized_keyword = str(keyword or "").strip()
+    if not raw_section or not normalized_keyword:
+        return raw_section, False, ""
+
+    before_count = count_keyword_occurrences(raw_section, normalized_keyword)
+    if _is_location_keyword(normalized_keyword):
+        replaced_section, replaced = _try_contextual_location_replacement(raw_section, normalized_keyword)
+        if replaced:
+            return replaced_section, True, f"{normalized_keyword} (문맥 치환)"
+
+    paragraph_matches = list(re.finditer(r"<p\b[^>]*>([\s\S]*?)</p\s*>", raw_section, re.IGNORECASE))
+    if not paragraph_matches:
+        # 섹션 구조가 없으면 무리한 템플릿 보정 없이 통과시킨다.
+        return raw_section, False, ""
+
+    if str(section_type or "").startswith("body"):
+        paragraph_indexes = list(range(len(paragraph_matches)))
+    elif section_type == "conclusion":
+        paragraph_indexes = list(reversed(range(len(paragraph_matches))))
+    else:
+        paragraph_indexes = list(range(len(paragraph_matches)))
+
+    focus_tokens = SENTENCE_FOCUS_TOKENS
+
+    for paragraph_index in paragraph_indexes:
+        paragraph_match = paragraph_matches[paragraph_index]
+        paragraph_inner = str(paragraph_match.group(1) or "")
+        sentence_matches = list(re.finditer(r"[^.!?。]+[.!?。]?", paragraph_inner))
+        if not sentence_matches:
+            continue
+
+        ranked_sentences = sorted(
+            sentence_matches,
+            key=lambda m: (
+                0
+                if any(token in re.sub(r"\s+", " ", m.group(0)).strip() for token in focus_tokens)
+                else 1,
+                -len(re.sub(r"\s+", " ", m.group(0)).strip()),
+            ),
+        )
+
+        for sentence_match in ranked_sentences:
+            original_sentence = re.sub(r"\s+", " ", sentence_match.group(0)).strip()
+            if not original_sentence:
+                continue
+            if len(original_sentence) < 14:
+                continue
+            if _is_non_editable_sentence(original_sentence):
+                continue
+            if _is_location_keyword(normalized_keyword):
+                if not _is_event_context_text(original_sentence, keyword=normalized_keyword):
+                    continue
+                if _is_unsafe_location_context(original_sentence):
+                    continue
+            if "존경하는" in original_sentence and "안녕하십니까" in original_sentence:
+                continue
+            rewritten_sentence = _rewrite_sentence_with_keyword(
+                original_sentence,
+                normalized_keyword,
+                variant_index,
+            )
+            if not rewritten_sentence or rewritten_sentence == original_sentence:
+                continue
+
+            sentence_start = sentence_match.start()
+            sentence_end = sentence_match.end()
+            updated_inner = (
+                paragraph_inner[:sentence_start]
+                + rewritten_sentence
+                + paragraph_inner[sentence_end:]
+            )
+            candidate = (
+                raw_section[: paragraph_match.start(1)]
+                + updated_inner
+                + raw_section[paragraph_match.end(1) :]
+            )
+            if count_keyword_occurrences(candidate, normalized_keyword) > before_count:
+                return candidate, True, rewritten_sentence
+
+    # 신규 문장 보강 없이, 기존 문맥 리라이트가 불가능하면 실패를 반환한다.
+    return raw_section, False, ""
+
+
+def _replace_last_keyword_occurrences(
+    content: str,
+    keyword: str,
+    remove_count: int,
+) -> tuple[str, int]:
+    """정확 일치 기준 과다 키워드를 뒤에서부터 치환해 개수를 줄인다."""
+    if not content or not keyword or remove_count <= 0:
+        return str(content or ""), 0
+
+    escaped = re.escape(str(keyword))
+    matches = list(re.finditer(escaped, str(content)))
+    if not matches:
+        return str(content), 0
+
+    replacements_needed = min(remove_count, len(matches))
+    variants = build_keyword_variants(keyword)
+    fallback_token = "이 사안"
+    replacement_pool = variants if variants else [fallback_token]
+
+    working = str(content)
+    replaced = 0
+    # 뒤에서부터 치환해 인덱스 어긋남을 방지한다.
+    for idx, match in enumerate(reversed(matches[-replacements_needed:])):
+        replacement = replacement_pool[idx % len(replacement_pool)]
+        start, end = match.span()
+        if start < 0 or end > len(working) or start >= end:
+            continue
+        working = working[:start] + replacement + working[end:]
+        replaced += 1
+
+    return working, replaced
 
 
 def enforce_keyword_requirements(
@@ -1135,6 +1921,7 @@ def enforce_keyword_requirements(
         }
 
     insertions: list[Dict[str, Any]] = []
+    reductions: list[Dict[str, Any]] = []
     per_keyword_insertions: Dict[str, int] = {}
     current_result = initial_result
 
@@ -1144,14 +1931,56 @@ def enforce_keyword_requirements(
         if not details or not sections:
             break
 
+        adjusted_for_excess = False
+        for keyword in user_keywords:
+            keyword_info = details.get(keyword) or {}
+            current_count = int(keyword_info.get("count") or keyword_info.get("coverage") or 0)
+            max_allowed = int(keyword_info.get("max") or _keyword_user_threshold(user_keywords)[1])
+            excess = max(0, current_count - max_allowed)
+            if excess <= 0:
+                continue
+
+            updated_content, replaced_count = _replace_last_keyword_occurrences(
+                working_content,
+                keyword,
+                excess,
+            )
+            if replaced_count <= 0:
+                continue
+
+            adjusted_for_excess = True
+            working_content = updated_content
+            reductions.append(
+                {
+                    "keyword": keyword,
+                    "excess": excess,
+                    "replaced": replaced_count,
+                    "targetMax": max_allowed,
+                }
+            )
+
+        if adjusted_for_excess:
+            current_result = validate_keyword_insertion(
+                working_content,
+                user_keywords,
+                auto_keywords,
+                target_word_count,
+            )
+            if current_result.get("valid"):
+                break
+            details = (current_result.get("details") or {}).get("keywords") or {}
+            sections = _parse_keyword_sections(working_content)
+            if not details or not sections:
+                break
+
         insertion_plan: Dict[int, List[Dict[str, Any]]] = {}
         needs_fix = False
 
         for keyword in [*user_keywords, *auto_keywords]:
             keyword_info = details.get(keyword) or {}
             expected = int(keyword_info.get("expected") or (1 if keyword in auto_keywords else _keyword_user_threshold(user_keywords)[0]))
-            coverage = int(keyword_info.get("coverage") or 0)
-            deficit = max(0, expected - coverage)
+            current_count = int(keyword_info.get("count") or keyword_info.get("coverage") or 0)
+            deficit = max(0, expected - current_count)
             if deficit <= 0:
                 continue
 
@@ -1162,30 +1991,53 @@ def enforce_keyword_requirements(
                     continue
                 section = sections[section_idx]
                 variant_index = per_keyword_insertions.get(keyword, 0)
-                sentence = _build_keyword_enforcement_sentence(
-                    keyword,
-                    str(section.get("type") or ""),
-                    variant_index,
-                )
                 per_keyword_insertions[keyword] = variant_index + 1
-                end_index = int(section.get("endIndex") or 0)
-                insertion_plan.setdefault(end_index, []).append(
+                insertion_plan.setdefault(section_idx, []).append(
                     {
                         "keyword": keyword,
                         "section": section_idx,
                         "sectionType": section.get("type"),
-                        "sentence": sentence,
+                        "variantIndex": variant_index,
                     }
                 )
 
         if not needs_fix or not insertion_plan:
             break
 
-        for position in sorted(insertion_plan.keys(), reverse=True):
-            payload = insertion_plan[position]
-            paragraphs = "".join(f"\n<p>{item['sentence']}</p>" for item in payload)
-            working_content = working_content[:position] + paragraphs + working_content[position:]
-            insertions.extend(payload)
+        applied_in_iteration = 0
+        for section_idx in sorted(insertion_plan.keys(), reverse=True):
+            if section_idx < 0 or section_idx >= len(sections):
+                continue
+            section = sections[section_idx]
+            start_index = int(section.get("startIndex") or 0)
+            end_index = int(section.get("endIndex") or 0)
+            if end_index < start_index:
+                continue
+
+            payload = insertion_plan[section_idx]
+            section_content = working_content[start_index:end_index]
+            applied_payload: list[Dict[str, Any]] = []
+            for item in payload:
+                updated_section, edited, applied_sentence = _inject_keyword_into_section(
+                    section_content,
+                    str(item.get("keyword") or ""),
+                    str(item.get("sectionType") or ""),
+                    int(item.get("variantIndex") or 0),
+                )
+                if not edited:
+                    continue
+                section_content = updated_section
+                item["sentence"] = applied_sentence
+                item["strategy"] = "contextual_section_rewrite"
+                applied_payload.append(item)
+                applied_in_iteration += 1
+            if not applied_payload:
+                continue
+            working_content = working_content[:start_index] + section_content + working_content[end_index:]
+            insertions.extend(applied_payload)
+
+        if applied_in_iteration <= 0:
+            break
 
         current_result = validate_keyword_insertion(
             working_content,
@@ -1200,6 +2052,7 @@ def enforce_keyword_requirements(
         "content": working_content,
         "edited": working_content != str(content or ""),
         "insertions": insertions,
+        "reductions": reductions,
         "keywordResult": current_result,
     }
 
@@ -1249,11 +2102,12 @@ def validate_keyword_insertion(
     for keyword in user_keywords:
         exact_count = count_keyword_occurrences(content, keyword)
         coverage_count = count_keyword_coverage(content, keyword)
-        is_under_min = coverage_count < user_min_count
-        is_over_max = exact_count > user_max_count or coverage_count > user_max_count
+        # 사용자 입력 키워드는 "정확 일치" 기준으로 검증한다.
+        is_under_min = exact_count < user_min_count
+        is_over_max = exact_count > user_max_count
         is_valid = (not is_under_min) and (not is_over_max)
         results[keyword] = {
-            "count": coverage_count,
+            "count": exact_count,
             "exactCount": exact_count,
             "coverage": coverage_count,
             "expected": user_min_count,
@@ -1541,6 +2395,9 @@ detectSentenceRepetition = detect_sentence_repetition
 detectPhraseRepetition = detect_phrase_repetition
 detectNearDuplicateSentences = detect_near_duplicate_sentences
 detectElectionLawViolation = detect_election_law_violation
+extractDateWeekdayPairs = extract_date_weekday_pairs
+validateDateWeekdayPairs = validate_date_weekday_pairs
+repairDateWeekdayPairs = repair_date_weekday_pairs
 validateTitleQuality = validate_title_quality
 runHeuristicValidationSync = run_heuristic_validation_sync
 runHeuristicValidation = run_heuristic_validation
@@ -1555,6 +2412,7 @@ countKeywordCoverage = count_keyword_coverage
 buildFallbackDraft = build_fallback_draft
 validateKeywordInsertion = validate_keyword_insertion
 enforceKeywordRequirements = enforce_keyword_requirements
+enforceRepetitionRequirements = enforce_repetition_requirements
 validateAndRetry = validate_and_retry
 evaluateQualityWithLLM = evaluate_quality_with_llm
 
@@ -1574,6 +2432,9 @@ __all__ = [
     "detect_phrase_repetition",
     "detect_near_duplicate_sentences",
     "detect_election_law_violation",
+    "extract_date_weekday_pairs",
+    "validate_date_weekday_pairs",
+    "repair_date_weekday_pairs",
     "validate_title_quality",
     "run_heuristic_validation_sync",
     "run_heuristic_validation",
@@ -1588,6 +2449,8 @@ __all__ = [
     "build_fallback_draft",
     "validate_keyword_insertion",
     "enforce_keyword_requirements",
+    "enforce_repetition_requirements",
     "validate_and_retry",
     "evaluate_quality_with_llm",
 ]
+

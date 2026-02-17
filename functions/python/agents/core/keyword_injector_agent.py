@@ -6,7 +6,12 @@ from typing import List, Dict, Any, Optional
 logger = logging.getLogger(__name__)
 
 from ..base_agent import Agent
-from services.posts.validation import count_keyword_coverage, validate_keyword_insertion
+from services.posts.validation import (
+    count_keyword_occurrences,
+    enforce_keyword_requirements,
+    validate_keyword_insertion,
+)
+from services.posts.keyword_insertion_policy import build_keyword_injection_policy_lines
 
 class KeywordInjectorAgent(Agent):
     def __init__(self, name: str = 'KeywordInjectorAgent', options: Optional[Dict[str, Any]] = None):
@@ -24,7 +29,7 @@ class KeywordInjectorAgent(Agent):
         counts: Dict[str, int] = {}
         for kw in keywords:
             info = details.get(kw) or {}
-            counts[kw] = int(info.get('coverage') or info.get('count') or 0)
+            counts[kw] = int(info.get('count') or info.get('coverage') or 0)
         return counts
 
     def _build_keyword_feedback(self, keyword_result: Dict[str, Any], extra_feedback: str = '') -> str:
@@ -44,10 +49,46 @@ class KeywordInjectorAgent(Agent):
             issues.append(extra_feedback)
         return ", ".join(issues) if issues else "키워드 기준에 맞게 조정하세요."
 
+    def _finalize_keyword_result(
+        self,
+        *,
+        content: str,
+        title: str,
+        user_keywords: List[str],
+        auto_keywords: List[str],
+        target_word_count: Any,
+        mode: str,
+        note: str = "",
+    ) -> Dict[str, Any]:
+        final_keyword_result = validate_keyword_insertion(
+            content,
+            user_keywords,
+            auto_keywords,
+            target_word_count,
+        )
+        final_counts = self._extract_keyword_counts(final_keyword_result, user_keywords)
+        passed = bool(final_keyword_result.get('valid'))
+        if passed:
+            print(f"[KeywordInjectorAgent] 키워드 기준 충족({mode}): {final_counts}")
+        else:
+            print(f"[KeywordInjectorAgent][WARN] 키워드 기준 미충족({mode}) - 베스트 에포트 진행: {final_counts}")
+
+        return {
+            'content': content,
+            'title': title,
+            'keywordCounts': final_counts,
+            'keywordValidation': final_keyword_result,
+            'keywordInjector': {
+                'passed': passed,
+                'mode': mode,
+                'note': note,
+            },
+        }
+
     async def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
         previous_results = context.get('previousResults', {})
 
-        # 🔧 키워드 fallback
+        # 키워드 fallback
         user_keywords = (
             context.get('userKeywords') or
             context.get('keywords') or
@@ -74,17 +115,17 @@ class KeywordInjectorAgent(Agent):
         context_analysis = structure_result.get('contextAnalysis')
 
         if not user_keywords:
-            print('⏭️ [KeywordInjectorAgent] 검색어 없음 - 스킵')
+            print('[KeywordInjectorAgent] 검색어 없음 - 스킵')
             return {'content': content, 'title': title, 'keywordCounts': {}}
 
         # Parse Sections
         sections = self.parse_sections(content)
-        print(f"📊 [KeywordInjectorAgent] 섹션 {len(sections)}개 파싱 완료")
+        print(f"[KeywordInjectorAgent] 섹션 {len(sections)}개 파싱 완료")
 
         # 최소 삽입 목표 계산
         min_target = self.get_min_target(len(user_keywords))
         max_target = min_target + 1
-        print(f"📊 [KeywordInjectorAgent] 키워드 목표: {min_target}~{max_target}회")
+        print(f"[KeywordInjectorAgent] 키워드 목표: {min_target}~{max_target}회")
 
         section_counts = self.count_keywords_per_section(sections, user_keywords)
         initial_keyword_result = validate_keyword_insertion(
@@ -95,7 +136,7 @@ class KeywordInjectorAgent(Agent):
         )
         total_counts = self._extract_keyword_counts(initial_keyword_result, user_keywords)
 
-        print(f"📊 [KeywordInjectorAgent] 초기 상태: sections={len(sections)}, totalCounts={total_counts}")
+        print(f"[KeywordInjectorAgent] 초기 상태: sections={len(sections)}, totalCounts={total_counts}")
 
         # Validation Check (검증 모듈과 동일 기준)
         validation = self.validate_section_balance(
@@ -106,8 +147,15 @@ class KeywordInjectorAgent(Agent):
             auto_keywords=auto_keywords,
         )
         if initial_keyword_result.get('valid') and validation['passed']:
-            print('✅ [KeywordInjectorAgent] 초기 상태부터 키워드 완벽 균형')
-            return {'content': content, 'title': title, 'keywordCounts': total_counts}
+            print('[KeywordInjectorAgent] 초기 상태부터 키워드 균형 달성')
+            return self._finalize_keyword_result(
+                content=content,
+                title=title,
+                user_keywords=user_keywords,
+                auto_keywords=auto_keywords,
+                target_word_count=target_word_count,
+                mode='initial-pass',
+            )
 
         # Retry Loop
         max_retries = 2
@@ -115,9 +163,10 @@ class KeywordInjectorAgent(Agent):
         current_content = content
         feedback = self._build_keyword_feedback(initial_keyword_result, validation.get('feedback', ''))
 
+        last_error = ""
         while attempt <= max_retries:
             attempt += 1
-            print(f"🔄 [KeywordInjectorAgent] 시도 {attempt}/{max_retries + 1}")
+            print(f"[KeywordInjectorAgent] 시도 {attempt}/{max_retries + 1}")
 
             prompt = self.build_prompt({
                 'sections': sections,
@@ -130,7 +179,7 @@ class KeywordInjectorAgent(Agent):
             })
 
             # Logging prompt length only
-            print(f"📝 [KeywordInjectorAgent] 프롬프트 생성 완료 ({len(prompt)}자)")
+            print(f"[KeywordInjectorAgent] 프롬프트 생성 완료 ({len(prompt)}자)")
 
             try:
                 from ..common.gemini_client import generate_content_async
@@ -146,11 +195,11 @@ class KeywordInjectorAgent(Agent):
                 instructions = self.parse_instructions(response_text)
 
                 if not instructions:
-                    print('⚠️ [KeywordInjectorAgent] 유효한 지시 없음 - 재시도')
+                    print("[KeywordInjectorAgent] 유효한 지시가 없어 재시도합니다")
                     feedback = '유효한 삽입/삭제 지시가 없었습니다. 다시 시도하세요.'
                     continue
 
-                print(f"📋 [KeywordInjectorAgent] {len(instructions)}개 지시 파싱됨")
+                print(f"[KeywordInjectorAgent] 지시 {len(instructions)}개 파싱")
 
                 current_content = self.apply_instructions(current_content, sections, instructions)
 
@@ -173,23 +222,22 @@ class KeywordInjectorAgent(Agent):
                 )
 
                 if new_keyword_result.get('valid') and validation['passed']:
-                    print(f"✅ [KeywordInjectorAgent] 키워드 균형 달성: {new_total_counts}")
-                    return {
-                        'content': current_content,
-                        'title': title,
-                        'keywordCounts': new_total_counts
-                    }
+                    print(f"[KeywordInjectorAgent] 키워드 균형 달성: {new_total_counts}")
+                    return self._finalize_keyword_result(
+                        content=current_content,
+                        title=title,
+                        user_keywords=user_keywords,
+                        auto_keywords=auto_keywords,
+                        target_word_count=target_word_count,
+                        mode='llm-retry',
+                    )
 
                 feedback = self._build_keyword_feedback(new_keyword_result, validation.get('feedback', ''))
-                print(f"⚠️ [KeywordInjectorAgent] 검증 실패: {feedback}")
+                print(f"[KeywordInjectorAgent][WARN] 검증 실패: {feedback}")
 
                 if attempt > max_retries:
-                    print('⛔ [KeywordInjectorAgent] 재시도 횟수 초과 - 현재 결과 반환')
-                    return {
-                        'content': current_content,
-                        'title': title,
-                        'keywordCounts': new_total_counts
-                    }
+                    last_error = feedback
+                    break
 
                 # Update loop state (best effort chain)
                 content = current_content
@@ -197,12 +245,53 @@ class KeywordInjectorAgent(Agent):
                 section_counts = new_section_counts
 
             except Exception as e:
-                print(f"❌ [KeywordInjectorAgent] 에러 발생: {str(e)}")
+                print(f"[KeywordInjectorAgent][ERROR] 에러 발생: {str(e)}")
                 feedback = str(e)
                 if attempt > max_retries:
-                    return {'content': current_content, 'title': title, 'keywordCounts': {}}
+                    last_error = feedback
+                    break
 
-        return {'content': content, 'title': title, 'keywordCounts': total_counts}
+        # 하드 실패 대신 마지막 자동 보정(enforce_keyword_requirements) 1회 실행 후 베스트에포트 반환.
+        enforcement = enforce_keyword_requirements(
+            current_content,
+            user_keywords=user_keywords,
+            auto_keywords=auto_keywords,
+            target_word_count=target_word_count,
+            max_iterations=3,
+        )
+        repaired_content = str(enforcement.get('content') or current_content)
+        repaired_result = validate_keyword_insertion(
+            repaired_content,
+            user_keywords,
+            auto_keywords,
+            target_word_count,
+        )
+        if repaired_result.get('valid'):
+            return self._finalize_keyword_result(
+                content=repaired_content,
+                title=title,
+                user_keywords=user_keywords,
+                auto_keywords=auto_keywords,
+                target_word_count=target_word_count,
+                mode='deterministic-repair',
+                note='LLM retry 미충족 후 enforce_keyword_requirements로 보정',
+            )
+
+        note_parts = []
+        if last_error:
+            note_parts.append(f"lastError={last_error}")
+        if feedback:
+            note_parts.append(f"feedback={feedback}")
+        note = " | ".join(note_parts) if note_parts else "키워드 기준 미충족 상태로 베스트에포트 반환"
+        return self._finalize_keyword_result(
+            content=repaired_content,
+            title=title,
+            user_keywords=user_keywords,
+            auto_keywords=auto_keywords,
+            target_word_count=target_word_count,
+            mode='best-effort',
+            note=note,
+        )
 
     def parse_sections(self, content: str) -> List[Dict]:
         sections = []
@@ -245,14 +334,14 @@ class KeywordInjectorAgent(Agent):
         for section in sections:
             counts = {}
             for kw in keywords:
-                counts[kw] = count_keyword_coverage(section['content'], kw)
+                counts[kw] = count_keyword_occurrences(section['content'], kw)
             result.append({'type': section['type'], 'counts': counts})
         return result
 
     def count_keywords(self, content: str, keywords: List[str]) -> Dict[str, int]:
         counts = {}
         for kw in keywords:
-            counts[kw] = count_keyword_coverage(content, kw)
+            counts[kw] = count_keyword_occurrences(content, kw)
         return counts
 
     def validate_section_balance(
@@ -300,165 +389,298 @@ class KeywordInjectorAgent(Agent):
         min_target = params.get('minTarget', len(sections))
         max_target = params.get('maxTarget', min_target + 1)
 
-        # Section Status
         section_status_lines = []
         for i, sc in enumerate(section_counts):
             kw_info = ", ".join([f"{kw}: {sc['counts'].get(kw, 0)}회" for kw in user_keywords])
             section_status_lines.append(f"[섹션 {i}] {sc['type']}: {kw_info}")
         section_status = "\n".join(section_status_lines)
 
-        # Per-keyword totals
-        kw_totals = {}
+        kw_totals: Dict[str, int] = {}
         for kw in user_keywords:
             kw_totals[kw] = sum(sc['counts'].get(kw, 0) for sc in section_counts)
 
-        # Problems
         problems = []
         for kw in user_keywords:
             total = kw_totals[kw]
             if total < min_target:
                 deficit = min_target - total
-                problems.append(f"전체 \"{kw}\": {total}회 → {deficit}회 추가 삽입 필요 (목표 {min_target}회)")
+                problems.append(f"전체 \"{kw}\": {total}회 -> {deficit}회 추가 필요 (목표 {min_target}회)")
             elif total > max_target:
                 excess = total - max_target
-                problems.append(f"전체 \"{kw}\": {total}회 → {excess}회 삭제 필요 (최대 {max_target}회)")
-        
+                problems.append(f"전체 \"{kw}\": {total}회 -> {excess}회 삭제 필요 (최대 {max_target}회)")
+
         tone_instruction = ""
         responsibility_target = context_analysis.get('responsibilityTarget')
         expected_tone = context_analysis.get('expectedTone')
-        
         if responsibility_target and expected_tone:
-            critical_keywords = [kw for kw in user_keywords if responsibility_target in kw or kw in responsibility_target]
-            if critical_keywords:
-                tone_instruction = f"""
-## ⚠️ 톤 지시 (필수)
-이 원고의 논조: "{expected_tone}"
-비판/요구 대상: "{responsibility_target}"
-→ "{', '.join(critical_keywords)}" 키워드는 **{expected_tone}적 맥락**으로 작성할 것
-→ 절대 우호적/존경하는 표현 금지 (예: "존경", "감사", "성과", "노력" 등)"""
+            tone_instruction = (
+                "\n## 톤 지시\n"
+                f"- 글 톤: \"{expected_tone}\"\n"
+                f"- 비판/문제 제기 대상: \"{responsibility_target}\"\n"
+                "- 감정적 과장 없이, 사실 중심의 표현을 사용하세요.\n"
+            )
 
-        # [CRITICAL UPDATE] Full Context Preview
-        # Join all sections to provide full context
         context_preview = ""
-        if sections and len(sections) > 0:
-            preview_text = " ".join([s['content'] for s in sections])
-            # Strip tags for readability but keep structure roughly? 
-            # Actually LLM reads HTML fine. Let's keep it simple or strip.
-            # Stripping tags is better for token efficiency, assuming textual flow.
-            preview_text = re.sub(r'<[^>]*>', '', preview_text)
-            preview_text = re.sub(r'\s+', ' ', preview_text).strip()
-            
-            # Use a much larger limit or no limit (Gemini Flash has huge context)
-            # 10,000 chars should cover any normal generated post.
-            context_preview = f"""
-## 전체 원고 내용 (반드시 읽고 맥락에 맞게 작성할 것)
-{preview_text[:12000]}
-"""
+        if sections:
+            preview_lines = []
+            for idx, sec in enumerate(sections):
+                plain = re.sub(r'<[^>]*>', ' ', sec.get('content', ''))
+                plain = re.sub(r'\s+', ' ', plain).strip()
+                preview_lines.append(f"[섹션 {idx}] {plain[:900]}")
+            context_preview = "\n".join(preview_lines)
+        policy_lines = build_keyword_injection_policy_lines()
+        policy_text = "\n".join([f"{idx + 1}. {line}" for idx, line in enumerate(policy_lines)])
 
-        prompt = f"""검색어가 전체 {min_target}~{max_target}회 범위에 들어오도록 새 문장을 생성하거나 기존 문장을 수정해야 합니다.
-{context_preview}
+        prompt = f"""검색어가 전체 {min_target}~{max_target}회 범위에 들어오도록 기존 원고를 최소 수정하세요.
 
 ## 검색어
-{chr(10).join([f'- "{kw}" (현재 {kw_totals.get(kw, 0)}회, 목표 {min_target}회 이상)' for kw in user_keywords])}
+{chr(10).join([f'- "{kw}" (현재 {kw_totals.get(kw, 0)}회)' for kw in user_keywords])}
 
-## 현재 섹션별 현황
+## 섹션별 현황
 {section_status}
 
 ## 필요한 조정
 {chr(10).join(problems) if problems else '조정 불필요'}
 {tone_instruction}
 
-## 규칙
-1. ⚠️ **[CRITICAL] 맥락 일치**: 위 '전체 원고 내용'을 읽고, 해당 섹션의 내용과 자연스럽게 이어지는 문장을 작성하십시오. '뜬금없는 문장'을 절대 금지합니다.
-2. **전체 합계 우선**: 키워드별 총합을 반드시 {min_target}~{max_target}회로 맞추십시오.
-3. **부족 시 배치**: 현재 0회인 섹션 또는 맥락이 맞는 긴 섹션부터 우선 삽입하십시오.
-4. **검색어 원문 유지**: "{user_keywords[0] if user_keywords else ''}" 형태 그대로 사용
-5. **짧은 한 문장만 생성**: 30자~50자 내외의 **자연스러운 한 문장**만 생성 (문단 전체 생성 금지)
-6. **사실 관계 주의**: 원고에 없는 내용을 날조하지 마십시오. (예: 대통령 호칭, 가짜 공약 등 금지)
-7. **위치 지정**: 섹션 번호와 동작(insert/delete) 명시
+## 전체 문맥(요약)
+{context_preview}
 
-## 출력 형식 (JSON)
-{{"instructions":[{{"section":0,"action":"insert","sentence":"맥락에 맞는 자연스러운 문장"}}]}}
+## 편집 원칙
+{policy_text}
 
-⚠️ 조정이 필요 없으면: {{"instructions":[]}}
-⚠️ sentence는 50자 이내, 줄바꿈 금지"""
+## Action 스키마
+- replace: {{"section": 0, "action": "replace", "target": "원문 일부", "replacement": "치환 문구"}}
+- insert: {{"section": 0, "action": "insert", "anchor": "기준 구절", "sentence": "삽입 문장"}}
+- delete: {{"section": 0, "action": "delete", "target": "삭제 구절"}}
+
+## 출력 형식 (JSON only)
+{{"instructions":[{{"section":0,"action":"replace","target":"원문 일부","replacement":"치환 문구"}}]}}
+
+수정이 필요 없으면 {{"instructions":[]}}"""
 
         if feedback:
-            prompt += f"\n\n🚨 이전 시도 실패: {feedback}"
-        
+            prompt += f"\n\n이전 시도 실패 피드백: {feedback}"
+
         return prompt
 
     def parse_instructions(self, response: str) -> List[Dict]:
         if not response:
             return []
-        
+
         try:
             text = re.sub(r'```(?:json)?\s*([\s\S]*?)```', r'\1', response).strip()
             text = re.sub(r'[\r\n]+', ' ', text)
-            
+
             json_match = re.search(r'\{[\s\S]*\}', text)
             if json_match:
                 text = json_match.group(0)
-            
+
             parsed = json.loads(text)
             instructions = parsed.get('instructions', [])
-            
+            if not isinstance(instructions, list):
+                return []
+
             validated = []
             for ins in instructions:
-                if ins.get('action') != 'insert' or not ins.get('sentence'):
-                    validated.append(ins)
+                if not isinstance(ins, dict):
                     continue
 
-                sentence = ins['sentence'].strip()
-                if len(sentence) > 300: # Increased limit slightly as we allow slightly longer context
-                    print(f"⚠️ [KeywordInjectorAgent] 문장 너무 김 ({len(sentence)}자)")
-                    # but maybe allow it if context insists? No, keep it checks.
-                    # Strict limit 200 is safer to prevent rambling.
-                    if len(sentence) > 200:
-                         print("   -> 200자 초과로 거부")
-                         continue
-                
-                # Filter '...' pattern
-                if '...' in sentence and sentence.find('...') < len(sentence) - 5:
-                     continue
-                
-                # Filter greeting duplication
-                if '존경하는' in sentence and '안녕하십니까' in sentence:
-                     print(f"⚠️ [KeywordInjectorAgent] 인사말 복사 감지 - 거부")
-                     continue
+                section = ins.get('section')
+                if not isinstance(section, int):
+                    continue
 
-                validated.append(ins)
-            
+                action = str(ins.get('action') or '').strip().lower()
+
+                if action == 'replace':
+                    target = str(ins.get('target') or '').strip()
+                    replacement = str(ins.get('replacement') or '').strip()
+                    if not target or not replacement or target == replacement:
+                        continue
+                    validated.append({
+                        'section': section,
+                        'action': 'replace',
+                        'target': target,
+                        'replacement': replacement,
+                    })
+                    continue
+
+                if action == 'delete':
+                    target = str(ins.get('target') or '').strip()
+                    if not target:
+                        continue
+                    validated.append({
+                        'section': section,
+                        'action': 'delete',
+                        'target': target,
+                    })
+                    continue
+
+                if action == 'insert':
+                    anchor = str(ins.get('anchor') or '').strip()
+                    sentence = str(ins.get('sentence') or '').strip()
+                    if not anchor or not sentence:
+                        continue
+                    if len(sentence) > 220:
+                        continue
+                    validated.append({
+                        'section': section,
+                        'action': 'insert',
+                        'anchor': anchor,
+                        'sentence': sentence,
+                    })
+
             return validated
-            
+
         except Exception as e:
-            print(f"⚠️ [KeywordInjectorAgent] JSON 파싱 실패: {str(e)}")
+            print(f"[KeywordInjectorAgent] JSON 파싱 실패: {str(e)}")
             return []
+
+    def _replace_first_occurrence(self, text: str, target: str, replacement: str) -> tuple[str, bool]:
+        if target in text:
+            return text.replace(target, replacement, 1), True
+
+        target_tokens = [re.escape(token) for token in re.split(r'\s+', target.strip()) if token]
+        if not target_tokens:
+            return text, False
+
+        pattern = re.compile(r'\s+'.join(target_tokens))
+        if not pattern.search(text):
+            return text, False
+
+        return pattern.sub(replacement, text, count=1), True
+
+    def _delete_first_occurrence(self, text: str, target: str) -> tuple[str, bool]:
+        replaced, changed = self._replace_first_occurrence(text, target, '')
+        if not changed:
+            return text, False
+        replaced = re.sub(r'\s{2,}', ' ', replaced)
+        return replaced, True
+
+    def _insert_after_anchor(self, text: str, anchor: str, sentence: str) -> tuple[str, bool]:
+        idx = text.find(anchor)
+        if idx >= 0:
+            insert_at = idx + len(anchor)
+            separator = '' if (insert_at > 0 and text[insert_at - 1].isspace()) else ' '
+            return text[:insert_at] + separator + sentence + text[insert_at:], True
+
+        anchor_tokens = [re.escape(token) for token in re.split(r'\s+', anchor.strip()) if token]
+        if not anchor_tokens:
+            return text, False
+
+        pattern = re.compile(r'\s+'.join(anchor_tokens))
+        match = pattern.search(text)
+        if not match:
+            return text, False
+
+        insert_at = match.end()
+        separator = '' if (insert_at > 0 and text[insert_at - 1].isspace()) else ' '
+        return text[:insert_at] + separator + sentence + text[insert_at:], True
+
+    def _is_meta_leak_sentence(self, sentence: str) -> bool:
+        normalized = re.sub(r'\s+', ' ', str(sentence or '')).strip()
+        if not normalized:
+            return False
+        leak_patterns = [
+            r'다음은',
+            r'검수',
+            r'수정 지시',
+            r'문제점',
+            r'개선',
+            r'주의사항',
+            r'규칙 설명',
+        ]
+        return any(re.search(pattern, normalized) for pattern in leak_patterns)
+
+    def _strip_meta_leak_sentences(self, content: str) -> str:
+        if not content:
+            return content
+
+        def replace_paragraph(match: re.Match) -> str:
+            inner = str(match.group(1) or '')
+            fragments = re.findall(r'[^.!?。]+[.!?。]?', inner)
+            if not fragments:
+                return match.group(0)
+
+            kept: List[str] = []
+            for fragment in fragments:
+                sentence = re.sub(r'\s+', ' ', fragment).strip()
+                if not sentence:
+                    continue
+                if self._is_meta_leak_sentence(sentence):
+                    continue
+                kept.append(sentence)
+
+            if not kept:
+                return ''
+            return f"<p>{' '.join(kept).strip()}</p>"
+
+        cleaned = re.sub(
+            r'<p\b[^>]*>([\s\S]*?)</p\s*>',
+            replace_paragraph,
+            content,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+        return cleaned.strip()
 
     def apply_instructions(self, content: str, sections: List[Dict], instructions: List[Dict]) -> str:
         if not instructions:
             return content
-        
-        sorted_ins = sorted(instructions, key=lambda x: x.get('section', -1), reverse=True)
-        result = content
-        
-        for ins in sorted_ins:
+
+        grouped: Dict[int, List[Dict[str, Any]]] = {}
+        for ins in instructions:
             section_idx = ins.get('section')
-            if section_idx is None or section_idx < 0 or section_idx >= len(sections):
+            if section_idx is None or not isinstance(section_idx, int):
                 continue
-            
+            grouped.setdefault(section_idx, []).append(ins)
+
+        result = content
+
+        for section_idx in sorted(grouped.keys(), reverse=True):
+            if section_idx < 0 or section_idx >= len(sections):
+                continue
+
             section = sections[section_idx]
-            
-            if ins.get('action') == 'insert' and ins.get('sentence'):
-                # Insert at end of section?
-                # Best place is typically end of section paragraph.
-                insert_pos = section['endIndex']
-                # Add newline <p>sentence</p>
-                new_paragraph = f"\n<p>{ins['sentence']}</p>"
-                result = result[:insert_pos] + new_paragraph + result[insert_pos:]
-                print(f"📝 [KeywordInjectorAgent] 섹션 {section_idx}에 삽입: \"{ins['sentence'][:50]}...\"")
-            
-            elif ins.get('action') == 'delete':
-                print(f"🗑️ [KeywordInjectorAgent] 섹션 {section_idx}에서 삭제 시도 (스킵됨)")
-        
+            start_idx = int(section.get('startIndex') or 0)
+            end_idx = int(section.get('endIndex') or 0)
+            if end_idx < start_idx:
+                continue
+
+            section_html = result[start_idx:end_idx]
+
+            for ins in grouped.get(section_idx, []):
+                action = str(ins.get('action') or '').strip().lower()
+
+                if action == 'replace':
+                    target = str(ins.get('target') or '').strip()
+                    replacement = str(ins.get('replacement') or '').strip()
+                    if not target or not replacement:
+                        continue
+                    section_html, changed = self._replace_first_occurrence(section_html, target, replacement)
+                    if changed:
+                        print(f"[KeywordInjectorAgent] 섹션 {section_idx} 치환 적용")
+                    continue
+
+                if action == 'delete':
+                    target = str(ins.get('target') or '').strip()
+                    if not target:
+                        continue
+                    section_html, changed = self._delete_first_occurrence(section_html, target)
+                    if changed:
+                        print(f"[KeywordInjectorAgent] 섹션 {section_idx} 삭제 적용")
+                    continue
+
+                if action == 'insert':
+                    anchor = str(ins.get('anchor') or '').strip()
+                    sentence = str(ins.get('sentence') or '').strip()
+                    if not anchor or not sentence:
+                        continue
+                    section_html, changed = self._insert_after_anchor(section_html, anchor, sentence)
+                    if changed:
+                        print(f"[KeywordInjectorAgent] 섹션 {section_idx} anchor 삽입 적용")
+                    continue
+
+            result = result[:start_idx] + section_html + result[end_idx:]
+
         return result
