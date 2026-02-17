@@ -1,7 +1,7 @@
 import json
 import logging
 import re
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import time
 
 # Local Imports
@@ -49,6 +49,82 @@ class WriterAgent:
 
     def get_required_context(self) -> List[str]:
         return ['topic', 'category', 'userProfile']
+
+    def _material_key(self, text: Any) -> str:
+        raw = re.sub(r'<[^>]*>', ' ', str(text or ''))
+        raw = re.sub(r'\s+', ' ', raw).strip().lower()
+        raw = re.sub(r'["\'`“”‘’\[\]\(\)<>]', '', raw)
+        raw = re.sub(r'[\s\.,!?;:·~\-_\\/]+', '', raw)
+        return raw
+
+    def _dedupe_material_lists(
+        self,
+        facts: List[str],
+        stances: List[str],
+        quotes: List[str],
+    ) -> Tuple[List[str], List[str], List[str]]:
+        def dedupe(values: List[str], blocked: Optional[set[str]] = None, max_items: int = 8) -> Tuple[List[str], set[str]]:
+            blocked_keys = blocked or set()
+            results: List[str] = []
+            keys: set[str] = set()
+            for item in values:
+                text = re.sub(r'\s+', ' ', str(item or '')).strip()
+                if len(text) < 8:
+                    continue
+                key = self._material_key(text)
+                if not key or key in blocked_keys or key in keys:
+                    continue
+                keys.add(key)
+                results.append(text)
+                if len(results) >= max_items:
+                    break
+            return results, keys
+
+        stance_list, stance_keys = dedupe(stances, max_items=6)
+        fact_list, fact_keys = dedupe(facts, blocked=stance_keys, max_items=8)
+        quote_list, _quote_keys = dedupe(quotes, blocked=stance_keys.union(fact_keys), max_items=8)
+        return fact_list, stance_list, quote_list
+
+    def _build_material_uniqueness_section(
+        self,
+        stances: List[str],
+        facts: List[str],
+        quotes: List[str],
+    ) -> str:
+        cards: List[Tuple[str, str]] = []
+        seen: set[str] = set()
+
+        def add_card(card_type: str, text: str) -> None:
+            normalized = re.sub(r'\s+', ' ', str(text or '')).strip()
+            if len(normalized) < 8:
+                return
+            key = self._material_key(normalized)
+            if not key or key in seen:
+                return
+            seen.add(key)
+            cards.append((card_type, normalized))
+
+        for item in stances:
+            add_card('stance', item)
+        for item in facts:
+            add_card('fact', item)
+        for item in quotes:
+            add_card('quote', item)
+
+        if not cards:
+            return ''
+
+        lines: List[str] = []
+        for idx, (card_type, text) in enumerate(cards[:8]):
+            lines.append(f'  <material id="M{idx + 1}" type="{card_type}">{text}</material>')
+        material_lines = '\n'.join(lines)
+
+        return f"""<material-uniqueness priority="critical">
+  <rule>같은 소재(인용문/일화/근거)를 두 번 이상 반복하지 마세요.</rule>
+  <rule>본론 각 섹션은 서로 다른 소재 카드를 사용하세요.</rule>
+  <rule>각 소재 카드는 원고 전체에서 1회만 사용하세요.</rule>
+{material_lines}
+</material-uniqueness>"""
 
     async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
         # Unpack context
@@ -156,6 +232,7 @@ class WriterAgent:
         # 6. Assemble Prompt Sections
         prompt_sections = []
         must_include_for_sandwich = ''
+        material_uniqueness_section = ''
         
         # 6.1 Context Analyzer
         use_context_analyzer = True
@@ -171,27 +248,48 @@ class WriterAgent:
                     if context_analysis and (context_analysis.get('mainEvent') or context_analysis.get('authorStance')):
                          # Process results
                          facts = context_analysis.get('mustIncludeFacts') or []
-                         must_include_text = '\n'.join([f"{i+1}. {f}" for i, f in enumerate(facts)])
-                         
+
                          raw_stance = context_analysis.get('mustIncludeFromStance') or []
-                         # Filter logic from JS
-                         filtered_stance = [
-                             p for p in raw_stance 
-                             if isinstance(p, str) and len(p.strip()) >= 5 and 
-                             not p.strip().startswith(('⚠️', '우선순위:', '예시 패턴:', '→ 실제'))
-                         ]
-                         
+                         # Filter logic from JS (+ dict 호환)
+                         filtered_stance: List[str] = []
+                         for item in raw_stance:
+                             candidate = ""
+                             if isinstance(item, dict):
+                                 candidate = str(item.get('topic') or '').strip()
+                             elif isinstance(item, str):
+                                 candidate = item.strip()
+
+                             if (
+                                 len(candidate) >= 5
+                                 and not candidate.startswith(('⚠️', '우선순위:', '예시 패턴:', '→ 실제'))
+                             ):
+                                 filtered_stance.append(candidate)
+
+                         news_quotes = context_analysis.get('newsQuotes') or []
+                         facts, filtered_stance, news_quotes = self._dedupe_material_lists(
+                             facts,
+                             filtered_stance,
+                             news_quotes,
+                         )
+                         context_analysis['mustIncludeFacts'] = facts
+                         context_analysis['mustIncludeFromStance'] = filtered_stance
+                         context_analysis['newsQuotes'] = news_quotes
+                         must_include_text = '\n'.join([f"{i+1}. {f}" for i, f in enumerate(facts)])
                          must_include_stance_text = '\n'.join([f'{i+1}. "{f}"' for i, f in enumerate(filtered_stance)])
-                         
+                         news_quotes_text = '\n'.join([f"{i+1}. {q}" for i, q in enumerate(news_quotes)])
+
                          # Save to context for validaiton
                          context['_extractedKeyPhrases'] = filtered_stance
                          context['_responsibilityTarget'] = context_analysis.get('responsibilityTarget')
                          context['_expectedTone'] = context_analysis.get('expectedTone')
                          context['_opponentName'] = context_analysis.get('opponentName')
-                         
-                         news_quotes = context_analysis.get('newsQuotes') or []
-                         news_quotes_text = '\n'.join([f"{i+1}. {q}" for i, q in enumerate(news_quotes)])
-                         
+
+                         material_uniqueness_section = self._build_material_uniqueness_section(
+                             filtered_stance,
+                             facts,
+                             news_quotes,
+                         )
+
                          must_include_for_sandwich = f"""[✅ 입장문 핵심 문구]
 {must_include_stance_text}
 
@@ -208,6 +306,8 @@ class WriterAgent:
                          
                          tone_xml = build_tone_warning_section(context_analysis)
                          if tone_xml: prompt_sections.append(tone_xml)
+                         if material_uniqueness_section:
+                             prompt_sections.append(material_uniqueness_section)
                          
                          logger.info("✅ [WriterAgent] ContextAnalyzer success")
                     else:
@@ -402,11 +502,7 @@ class WriterAgent:
                 trunc = career[:150] + '...' if len(career) > 150 else career
                 additional_info.append(f"[주요 경력] {trunc}")
                 
-        if user_profile.get('slogan'):
-            additional_info.append(f"[슬로건] \"{user_profile['slogan']}\"")
-
-        if user_profile.get('donationInfo'):
-            additional_info.append(f"[후원 안내] \"{user_profile['donationInfo']}\"")
+        # 슬로건/후원 안내는 생성 단계에서 제외하고, 최종 출력 직전에만 부착한다.
 
         if user_profile.get('coreValues'):
             vals = user_profile['coreValues']

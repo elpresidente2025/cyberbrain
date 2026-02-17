@@ -7,6 +7,7 @@ Node `handlers/posts.js`의 generatePosts 엔트리 역할을 Python으로 이�
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -19,10 +20,25 @@ from typing import Any, Dict, Optional
 from firebase_admin import firestore
 from firebase_functions import https_fn
 
+from services.posts.content_processor import cleanup_post_content
 from services.posts.profile_loader import (
     get_or_create_session,
     increment_session_attempts,
     load_user_profile,
+)
+from services.posts.output_formatter import (
+    build_keyword_validation,
+    count_without_space,
+    finalize_output,
+    normalize_ascii_double_quotes,
+    normalize_book_title_notation,
+)
+from services.posts.validation import (
+    enforce_repetition_requirements,
+    enforce_keyword_requirements,
+    repair_date_weekday_pairs,
+    run_heuristic_validation_sync,
+    validate_keyword_insertion,
 )
 
 logger = logging.getLogger(__name__)
@@ -175,8 +191,42 @@ def _to_int(value: Any, default: int) -> int:
         return default
 
 
-def _strip_html(text: str) -> str:
-    return re.sub(r"<[^>]*>", "", str(text or ""))
+def _to_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if not text:
+        return default
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
+def _count_chars_no_space(text: str) -> int:
+    return int(count_without_space(str(text or "")))
+
+
+def _normalize_title_surface_local(title: str) -> str:
+    candidate = re.sub(r"\s+", " ", str(title or "")).strip().strip('"\'')
+    if not candidate:
+        return ""
+    try:
+        from agents.common.title_generation import normalize_title_surface
+
+        normalized = normalize_title_surface(candidate)
+        return str(normalized or "").strip() or candidate
+    except Exception:
+        candidate = re.sub(r"\s+([,.:;!?])", r"\1", candidate)
+        candidate = re.sub(r"\(\s+", "(", candidate)
+        candidate = re.sub(r"\s+\)", ")", candidate)
+        candidate = re.sub(r"\s{2,}", " ", candidate)
+        return candidate.strip(" ,")
 
 
 def _normalize_keywords(raw_keywords: Any) -> list[str]:
@@ -449,6 +499,670 @@ def _validate_keyword_gate(keyword_validation: Dict[str, Any], user_keywords: li
     return True, ""
 
 
+def _extract_tag_text(text: str, tag: str) -> str:
+    if not text:
+        return ""
+    pattern = re.compile(rf"<{tag}\b[^>]*>([\s\S]*?)</{tag}>", re.IGNORECASE)
+    matches = list(pattern.finditer(str(text)))
+    if not matches:
+        return ""
+    return str(matches[-1].group(1) or "").strip()
+
+
+def _run_async_sync(coro):
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        return loop.run_until_complete(coro)
+    finally:
+        try:
+            loop.close()
+        finally:
+            asyncio.set_event_loop(None)
+
+
+def _recover_short_content_once(
+    *,
+    content: str,
+    title: str,
+    topic: str,
+    min_required_chars: int,
+    target_word_count: int,
+    user_keywords: list[str],
+    auto_keywords: list[str],
+) -> Dict[str, Any]:
+    """분량 부족 시 1회 확장 보정."""
+    base_content = str(content or "").strip()
+    base_len = _count_chars_no_space(base_content)
+    if not base_content or base_len >= min_required_chars:
+        return {"content": base_content, "edited": False}
+
+    max_chars = max(int(target_word_count * 1.2), min_required_chars + 220)
+    prompt = f"""
+<length_repair_prompt version="xml-v1">
+  <role>당신은 한국어 정치 콘텐츠 편집자입니다. 본문 의미를 유지한 채 분량만 확장하세요.</role>
+  <goal>
+    <current_chars>{base_len}</current_chars>
+    <min_chars>{min_required_chars}</min_chars>
+    <max_chars>{max_chars}</max_chars>
+  </goal>
+  <rules>
+    <rule order="1">핵심 주장/사실을 삭제하거나 왜곡하지 말 것.</rule>
+    <rule order="2">허용 태그는 &lt;h2&gt;와 &lt;p&gt;만 사용.</rule>
+    <rule order="3">같은 문장/같은 구문 반복으로 분량을 채우지 말 것.</rule>
+    <rule order="4">행사 일시+장소 결합 문구는 2회를 넘기지 말 것.</rule>
+    <rule order="5">키워드 과잉 삽입 금지.</rule>
+  </rules>
+  <topic>{topic}</topic>
+  <title>{title}</title>
+  <keywords>{', '.join(user_keywords)}</keywords>
+  <draft><![CDATA[{base_content}]]></draft>
+  <output_contract>
+    <format>XML</format>
+    <allowed_tags>content</allowed_tags>
+    <example><![CDATA[<content>...HTML 본문...</content>]]></example>
+  </output_contract>
+</length_repair_prompt>
+""".strip()
+
+    try:
+        from agents.common.gemini_client import DEFAULT_MODEL, generate_content_async
+
+        response_text = _run_async_sync(
+            generate_content_async(
+                prompt,
+                model_name=DEFAULT_MODEL,
+                temperature=0.0,
+                max_output_tokens=8192,
+            )
+        )
+    except Exception as exc:
+        logger.warning("분량 자동 보정 호출 실패: %s", exc)
+        return {"content": base_content, "edited": False, "error": str(exc)}
+
+    candidate = _extract_tag_text(response_text, "content") or str(response_text or "").strip()
+    if not candidate:
+        return {"content": base_content, "edited": False}
+
+    candidate_len = _count_chars_no_space(candidate)
+    if candidate_len <= base_len:
+        return {"content": base_content, "edited": False}
+
+    keyword_repair = _repair_keyword_gate_once(
+        content=candidate,
+        user_keywords=user_keywords,
+        auto_keywords=auto_keywords,
+        target_word_count=target_word_count,
+    )
+    repaired_content = str(keyword_repair.get("content") or candidate)
+    keyword_validation = _safe_dict(keyword_repair.get("keywordValidation"))
+    keyword_counts = keyword_repair.get("keywordCounts")
+    if not isinstance(keyword_counts, dict):
+        keyword_counts = {}
+
+    return {
+        "content": repaired_content,
+        "edited": repaired_content != base_content,
+        "keywordValidation": keyword_validation,
+        "keywordCounts": keyword_counts,
+        "before": base_len,
+        "after": _count_chars_no_space(repaired_content),
+    }
+
+
+def _repair_keyword_gate_once(
+    *,
+    content: str,
+    user_keywords: list[str],
+    auto_keywords: list[str],
+    target_word_count: int,
+) -> Dict[str, Any]:
+    """키워드 게이트 실패(부족/과다)를 1회 자동 보정한다."""
+    base_content = str(content or "")
+    enforcement = enforce_keyword_requirements(
+        base_content,
+        user_keywords=user_keywords,
+        auto_keywords=auto_keywords,
+        target_word_count=target_word_count,
+        max_iterations=2,
+    )
+
+    repaired_content = str(enforcement.get("content") or base_content)
+    keyword_result = enforcement.get("keywordResult")
+    if not isinstance(keyword_result, dict):
+        keyword_result = validate_keyword_insertion(
+            repaired_content,
+            user_keywords=user_keywords,
+            auto_keywords=auto_keywords,
+            target_word_count=target_word_count,
+        )
+
+    keyword_validation = build_keyword_validation(keyword_result)
+    keyword_details = (keyword_result.get("details") or {}).get("keywords") or {}
+    keyword_counts = {
+        keyword: int((info or {}).get("coverage") or (info or {}).get("count") or 0)
+        for keyword, info in keyword_details.items()
+        if isinstance(info, dict)
+    }
+    reductions = enforcement.get("reductions") if isinstance(enforcement.get("reductions"), list) else []
+
+    return {
+        "content": repaired_content,
+        "keywordValidation": keyword_validation,
+        "keywordCounts": keyword_counts,
+        "edited": repaired_content != base_content,
+        "reductions": reductions,
+    }
+
+
+def _extract_repetition_gate_issues(heuristic_result: Dict[str, Any]) -> list[str]:
+    issues = heuristic_result.get("issues") if isinstance(heuristic_result, dict) else []
+    if not isinstance(issues, list):
+        return []
+    repetition_keywords = ("문장 반복 감지", "구문 반복 감지", "유사 문장 감지")
+    return [
+        str(item).strip()
+        for item in issues
+        if isinstance(item, str) and any(keyword in item for keyword in repetition_keywords)
+    ]
+
+
+def _extract_legal_gate_issues(heuristic_result: Dict[str, Any]) -> list[str]:
+    issues = heuristic_result.get("issues") if isinstance(heuristic_result, dict) else []
+    if not isinstance(issues, list):
+        return []
+    legal_keywords = ("선거법 위반",)
+    return [
+        str(item).strip()
+        for item in issues
+        if isinstance(item, str) and any(keyword in item for keyword in legal_keywords)
+    ]
+
+
+def _append_quality_warning(warnings: list[str], message: str) -> None:
+    text = str(message or "").strip()
+    if not text:
+        return
+    if text not in warnings:
+        warnings.append(text)
+
+
+def _build_editor_keyword_feedback(
+    keyword_validation: Dict[str, Any],
+    user_keywords: list[str],
+) -> Dict[str, Any]:
+    if not user_keywords:
+        return {"passed": True, "issues": []}
+
+    issues: list[str] = []
+    for keyword in user_keywords:
+        info = keyword_validation.get(keyword) if isinstance(keyword_validation, dict) else None
+        if not isinstance(info, dict):
+            issues.append(f"키워드 \"{keyword}\" 검증 정보가 없습니다.")
+            continue
+
+        status = str(info.get("status") or "").strip().lower()
+        count = _to_int(info.get("count"), 0)
+        expected = _to_int(info.get("expected"), 0)
+        max_count = _to_int(info.get("max"), 0)
+        if status == "insufficient":
+            issues.append(f"키워드 \"{keyword}\"가 부족합니다 ({count}/{expected}).")
+        elif status == "spam_risk":
+            issues.append(f"키워드 \"{keyword}\"가 과다합니다 ({count}/{max_count}).")
+
+    return {"passed": len(issues) == 0, "issues": issues}
+
+
+def _score_title_compliance(
+    *,
+    title: str,
+    topic: str,
+    content: str,
+    user_keywords: list[str],
+    full_name: str,
+    category: str,
+    status: str,
+    context_analysis: Dict[str, Any],
+) -> Dict[str, Any]:
+    candidate = _normalize_title_surface_local(title)
+    if not candidate:
+        return {"passed": False, "score": 0, "reason": "empty"}
+    try:
+        from agents.common.title_generation import calculate_title_quality_score
+
+        result = calculate_title_quality_score(
+            candidate,
+            {
+                "topic": str(topic or ""),
+                "contentPreview": str(content or ""),
+                "userKeywords": list(user_keywords or []),
+                "fullName": str(full_name or ""),
+                "category": str(category or ""),
+                "status": str(status or ""),
+                "contextAnalysis": context_analysis if isinstance(context_analysis, dict) else {},
+            },
+        )
+        score = _to_int(result.get("score"), 0) if isinstance(result, dict) else 0
+        passed = bool(result.get("passed") is True) and score >= 70 if isinstance(result, dict) else False
+        suggestions = result.get("suggestions") if isinstance(result, dict) else []
+        reason = ""
+        if isinstance(suggestions, list) and suggestions:
+            reason = str(suggestions[0] or "").strip()
+        return {
+            "passed": passed,
+            "score": score,
+            "reason": reason,
+        }
+    except Exception as exc:
+        logger.warning("Title compliance scoring failed (non-fatal): %s", exc)
+        return {"passed": True, "score": 0, "reason": "scoring_error"}
+
+
+def _guard_title_after_editor(
+    *,
+    candidate_title: str,
+    fallback_title: str,
+    topic: str,
+    content: str,
+    user_keywords: list[str],
+    full_name: str,
+    category: str,
+    status: str,
+    context_analysis: Dict[str, Any],
+) -> tuple[str, Dict[str, Any]]:
+    candidate = _normalize_title_surface_local(candidate_title)
+    fallback = _normalize_title_surface_local(fallback_title)
+
+    candidate_score = _score_title_compliance(
+        title=candidate,
+        topic=topic,
+        content=content,
+        user_keywords=user_keywords,
+        full_name=full_name,
+        category=category,
+        status=status,
+        context_analysis=context_analysis,
+    )
+    if candidate_score.get("passed"):
+        return candidate, {
+            "accepted": True,
+            "source": "candidate",
+            "score": candidate_score.get("score"),
+            "reason": candidate_score.get("reason"),
+        }
+
+    fallback_score = _score_title_compliance(
+        title=fallback,
+        topic=topic,
+        content=content,
+        user_keywords=user_keywords,
+        full_name=full_name,
+        category=category,
+        status=status,
+        context_analysis=context_analysis,
+    )
+    if fallback and fallback_score.get("passed"):
+        return fallback, {
+            "accepted": False,
+            "source": "fallback",
+            "score": fallback_score.get("score"),
+            "reason": candidate_score.get("reason") or "candidate_failed",
+        }
+
+    if fallback:
+        return fallback, {
+            "accepted": False,
+            "source": "fallback_unverified",
+            "score": fallback_score.get("score"),
+            "reason": candidate_score.get("reason") or "candidate_failed",
+        }
+
+    return candidate, {
+        "accepted": False,
+        "source": "candidate_unverified",
+        "score": candidate_score.get("score"),
+        "reason": candidate_score.get("reason") or "candidate_failed",
+    }
+
+
+def _extract_keyword_counts(keyword_result: Dict[str, Any] | None) -> Dict[str, int]:
+    details = ((keyword_result or {}).get("details") or {}).get("keywords") or {}
+    if not isinstance(details, dict):
+        return {}
+
+    counts: Dict[str, int] = {}
+    for raw_keyword, raw_info in details.items():
+        if not isinstance(raw_info, dict):
+            continue
+
+        keyword = str(raw_keyword or "").strip()
+        if not keyword:
+            continue
+
+        keyword_type = str(raw_info.get("type") or "").strip().lower()
+        exact_count = _to_int(raw_info.get("exactCount"), _to_int(raw_info.get("count"), 0))
+        coverage_count = _to_int(raw_info.get("coverage"), exact_count)
+        counts[keyword] = exact_count if keyword_type == "user" else coverage_count
+
+    return counts
+
+
+def _resolve_output_format_options(
+    *,
+    data: Dict[str, Any],
+    pipeline_result: Dict[str, Any],
+    user_profile: Dict[str, Any],
+    category: str,
+) -> Dict[str, Any]:
+    sub_category = str(
+        pipeline_result.get("subCategory")
+        or data.get("subCategory")
+        or ""
+    )
+    allow_diagnostic_tail = (
+        str(category or "").strip() == "current-affairs"
+        and sub_category == "current_affairs_diagnosis"
+    )
+
+    slogan = str(
+        pipeline_result.get("slogan")
+        or data.get("slogan")
+        or user_profile.get("slogan")
+        or ""
+    )
+    slogan_enabled = bool(
+        pipeline_result.get("sloganEnabled") is True
+        or data.get("sloganEnabled") is True
+        or user_profile.get("sloganEnabled") is True
+    )
+    donation_info = str(
+        pipeline_result.get("donationInfo")
+        or data.get("donationInfo")
+        or user_profile.get("donationInfo")
+        or ""
+    )
+    donation_enabled = bool(
+        pipeline_result.get("donationEnabled") is True
+        or data.get("donationEnabled") is True
+        or user_profile.get("donationEnabled") is True
+    )
+
+    return {
+        "allowDiagnosticTail": allow_diagnostic_tail,
+        "slogan": slogan,
+        "sloganEnabled": slogan_enabled,
+        "donationInfo": donation_info,
+        "donationEnabled": donation_enabled,
+        "topic": str(pipeline_result.get("topic") or data.get("prompt") or data.get("topic") or ""),
+        "bookTitleHint": str(
+            (
+                (_safe_dict(pipeline_result.get("contextAnalysis")).get("mustPreserve") or {})
+                if isinstance(_safe_dict(pipeline_result.get("contextAnalysis")).get("mustPreserve"), dict)
+                else {}
+            ).get("bookTitle")
+            or ""
+        ),
+        "contextAnalysis": _safe_dict(pipeline_result.get("contextAnalysis")),
+        "fullName": str(
+            pipeline_result.get("fullName")
+            or data.get("fullName")
+            or data.get("name")
+            or user_profile.get("fullName")
+            or user_profile.get("name")
+            or ""
+        ).strip(),
+    }
+
+
+def _apply_last_mile_postprocess(
+    *,
+    content: str,
+    target_word_count: int,
+    user_keywords: list[str],
+    auto_keywords: list[str],
+    output_options: Dict[str, Any],
+    fallback_keyword_validation: Dict[str, Any],
+    fallback_keyword_counts: Dict[str, Any],
+) -> Dict[str, Any]:
+    base_content = str(content or "").strip()
+    fallback_counts = (
+        fallback_keyword_counts
+        if isinstance(fallback_keyword_counts, dict)
+        else {}
+    )
+    if not base_content:
+        return {
+            "content": base_content,
+            "wordCount": 0,
+            "keywordValidation": fallback_keyword_validation if isinstance(fallback_keyword_validation, dict) else {},
+            "keywordCounts": fallback_counts,
+            "edited": False,
+            "error": None,
+        }
+
+    try:
+        cleaned = cleanup_post_content(base_content)
+        interim_keyword_result = validate_keyword_insertion(
+            cleaned,
+            user_keywords,
+            auto_keywords,
+            target_word_count,
+        )
+        finalized = finalize_output(
+            cleaned,
+            slogan=str(output_options.get("slogan") or ""),
+            slogan_enabled=bool(output_options.get("sloganEnabled") is True),
+            donation_info=str(output_options.get("donationInfo") or ""),
+            donation_enabled=bool(output_options.get("donationEnabled") is True),
+            allow_diagnostic_tail=bool(output_options.get("allowDiagnosticTail") is True),
+            keyword_result=interim_keyword_result,
+            topic=str(output_options.get("topic") or ""),
+            book_title_hint=str(output_options.get("bookTitleHint") or ""),
+            context_analysis=(
+                output_options.get("contextAnalysis")
+                if isinstance(output_options.get("contextAnalysis"), dict)
+                else None
+            ),
+            full_name=str(output_options.get("fullName") or ""),
+            target_word_count=target_word_count,
+        )
+        finalized_content = str(finalized.get("content") or cleaned).strip()
+
+        final_keyword_result = validate_keyword_insertion(
+            finalized_content,
+            user_keywords,
+            auto_keywords,
+            target_word_count,
+        )
+        final_keyword_validation = build_keyword_validation(final_keyword_result)
+        final_keyword_counts = _extract_keyword_counts(final_keyword_result)
+
+        return {
+            "content": finalized_content,
+            "wordCount": _count_chars_no_space(finalized_content),
+            "keywordValidation": final_keyword_validation,
+            "keywordCounts": final_keyword_counts,
+            "edited": finalized_content != base_content,
+            "error": None,
+        }
+    except Exception as exc:
+        logger.warning("Last-mile cleanup/finalize failed (non-fatal): %s", exc)
+        return {
+            "content": base_content,
+            "wordCount": _count_chars_no_space(base_content),
+            "keywordValidation": fallback_keyword_validation if isinstance(fallback_keyword_validation, dict) else {},
+            "keywordCounts": fallback_counts,
+            "edited": False,
+            "error": str(exc),
+        }
+
+
+def _run_editor_repair_once(
+    *,
+    content: str,
+    title: str,
+    status: str,
+    target_word_count: int,
+    user_keywords: list[str],
+    validation_result: Dict[str, Any],
+    keyword_validation: Dict[str, Any],
+    purpose: str = "repair",
+) -> Dict[str, Any]:
+    """기준 미충족 시 EditorAgent로 1회 교정 시도."""
+    base_content = str(content or "")
+    base_title = str(title or "")
+    keyword_feedback = _build_editor_keyword_feedback(keyword_validation, user_keywords)
+    normalized_purpose = str(purpose or "repair").strip().lower()
+
+    try:
+        from agents.core.editor_agent import EditorAgent
+
+        agent = EditorAgent()
+        editor_input = {
+            "content": base_content,
+            "title": base_title,
+            "validationResult": validation_result if isinstance(validation_result, dict) else {},
+            "keywordResult": keyword_feedback,
+            "keywords": user_keywords,
+            "status": status,
+            "targetWordCount": int(target_word_count or 2000),
+            "polishMode": normalized_purpose == "polish",
+        }
+        result = _run_async_sync(agent.run(editor_input))
+        if not isinstance(result, dict):
+            result = {}
+
+        repaired_content = str(result.get("content") or base_content).strip()
+        repaired_title = str(result.get("title") or base_title).strip() or base_title
+        edit_summary = result.get("editSummary")
+        if not isinstance(edit_summary, list):
+            edit_summary = []
+
+        return {
+            "content": repaired_content,
+            "title": repaired_title,
+            "edited": (repaired_content != base_content) or (repaired_title != base_title),
+            "editSummary": edit_summary,
+            "error": None,
+        }
+    except Exception as exc:
+        logger.warning("EditorAgent auto-repair failed (non-fatal): %s", exc)
+        return {
+            "content": base_content,
+            "title": base_title,
+            "edited": False,
+            "editSummary": [],
+            "error": str(exc),
+        }
+
+
+def _recover_repetition_issues_once(
+    *,
+    content: str,
+    title: str,
+    topic: str,
+    repetition_issues: list[str],
+    min_required_chars: int,
+    target_word_count: int,
+    user_keywords: list[str],
+    auto_keywords: list[str],
+) -> Dict[str, Any]:
+    """반복 품질 실패 시 LLM 재작성으로 1회 자동 교정."""
+    base_content = str(content or "").strip()
+    base_len = _count_chars_no_space(base_content)
+    if not base_content or not repetition_issues:
+        return {"content": base_content, "edited": False}
+
+    issue_lines = "\n".join(f"- {item}" for item in repetition_issues[:4])
+    keyword_text = ", ".join(str(item).strip() for item in user_keywords if str(item).strip())
+    prompt = f"""
+<repetition_repair_prompt version="xml-v1">
+  <role>당신은 한국어 정치 콘텐츠 교열자입니다. 반복 문제만 해결하고 의미/사실은 유지하세요.</role>
+  <goal>
+    <current_chars>{base_len}</current_chars>
+    <min_chars>{min_required_chars}</min_chars>
+    <target_chars>{int(target_word_count * 0.9)}~{int(target_word_count * 1.2)}</target_chars>
+  </goal>
+  <issues>
+{issue_lines}
+  </issues>
+  <rules>
+    <rule order="1">핵심 주장, 일정, 장소, 고유명사, 수치 사실을 삭제/왜곡하지 말 것.</rule>
+    <rule order="2">문장/구문 반복 문제만 해결하고, 동일 어구 연쇄 반복을 피할 것.</rule>
+    <rule order="3">허용 태그는 &lt;h2&gt;, &lt;p&gt;만 사용.</rule>
+    <rule order="4">검증 규칙 설명문(메타 문장)이나 템플릿 문장을 본문에 쓰지 말 것.</rule>
+    <rule order="5">사용자 키워드가 있다면 문맥 안에서 자연스럽게 유지할 것.</rule>
+  </rules>
+  <topic>{topic}</topic>
+  <title>{title}</title>
+  <keywords>{keyword_text}</keywords>
+  <draft><![CDATA[{base_content}]]></draft>
+  <output_contract>
+    <format>XML</format>
+    <allowed_tags>content</allowed_tags>
+    <example><![CDATA[<content>...HTML 본문...</content>]]></example>
+  </output_contract>
+</repetition_repair_prompt>
+""".strip()
+
+    try:
+        from agents.common.gemini_client import DEFAULT_MODEL, generate_content_async
+
+        response_text = _run_async_sync(
+            generate_content_async(
+                prompt,
+                model_name=DEFAULT_MODEL,
+                temperature=0.1,
+                max_output_tokens=8192,
+            )
+        )
+    except Exception as exc:
+        logger.warning("반복 품질 자동 보정 호출 실패: %s", exc)
+        return {"content": base_content, "edited": False, "error": str(exc)}
+
+    candidate = _extract_tag_text(response_text, "content") or str(response_text or "").strip()
+    if not candidate:
+        return {"content": base_content, "edited": False}
+
+    candidate_len = _count_chars_no_space(candidate)
+    if candidate_len < min_required_chars:
+        logger.warning(
+            "반복 품질 자동 보정 결과 분량 미달로 폐기: before=%s after=%s min=%s",
+            base_len,
+            candidate_len,
+            min_required_chars,
+        )
+        return {"content": base_content, "edited": False}
+    if base_len >= 1600 and candidate_len < int(base_len * 0.8):
+        logger.warning(
+            "반복 품질 자동 보정 결과 과축약으로 폐기: before=%s after=%s",
+            base_len,
+            candidate_len,
+        )
+        return {"content": base_content, "edited": False}
+
+    keyword_repair = _repair_keyword_gate_once(
+        content=candidate,
+        user_keywords=user_keywords,
+        auto_keywords=auto_keywords,
+        target_word_count=target_word_count,
+    )
+    repaired_content = str(keyword_repair.get("content") or candidate)
+    keyword_validation = _safe_dict(keyword_repair.get("keywordValidation"))
+    keyword_counts = keyword_repair.get("keywordCounts")
+    if not isinstance(keyword_counts, dict):
+        keyword_counts = {}
+
+    return {
+        "content": repaired_content,
+        "edited": repaired_content != base_content,
+        "keywordValidation": keyword_validation,
+        "keywordCounts": keyword_counts,
+        "before": base_len,
+        "after": _count_chars_no_space(repaired_content),
+    }
+
+
 def _choose_pipeline_route(raw_route: Any, *, is_admin: bool, is_tester: bool) -> str:
     route = str(raw_route or "modular").strip() or "modular"
     if route == "highQuality":
@@ -479,7 +1193,14 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     user_profile = _safe_dict(profile_bundle.get("userProfile"))
     is_admin = bool(profile_bundle.get("isAdmin") is True)
     is_tester = bool(profile_bundle.get("isTester") is True)
+    full_name = str(
+        data.get("fullName")
+        or user_profile.get("fullName")
+        or user_profile.get("name")
+        or ""
+    ).strip()
     daily_limit_warning = _calc_daily_limit_warning(user_profile)
+    editor_polish_enabled = _to_bool(data.get("editorPolish"), True)
 
     requested_session_id = str(data.get("sessionId") or "").strip()
     if not requested_session_id:
@@ -512,30 +1233,659 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
 
     job_id = _call_pipeline_start(start_payload)
     pipeline_result = _poll_pipeline(job_id, progress)
+    output_format_options = _resolve_output_format_options(
+        data=data,
+        pipeline_result=pipeline_result if isinstance(pipeline_result, dict) else {},
+        user_profile=user_profile,
+        category=category,
+    )
 
     generated_content = str(pipeline_result.get("content") or "").strip()
     if not generated_content:
         raise ApiError("internal", "원고 생성 실패 - 콘텐츠가 생성되지 않았습니다.")
 
-    generated_title = str(pipeline_result.get("title") or topic).strip() or topic
+    if not full_name:
+        full_name = str(pipeline_result.get("fullName") or "").strip()
+
+    quality_warnings: list[str] = []
+    generated_title = _normalize_title_surface_local(str(pipeline_result.get("title") or topic)) or topic
     keyword_validation = _safe_dict(pipeline_result.get("keywordValidation"))
     seo_passed = pipeline_result.get("seoPassed")
     compliance_passed = pipeline_result.get("compliancePassed")
     writing_method = str(pipeline_result.get("writingMethod") or pipeline_route or "modular")
+    context_analysis_for_title = _safe_dict(pipeline_result.get("contextAnalysis"))
+    must_preserve_for_title = _safe_dict(context_analysis_for_title.get("mustPreserve"))
+    event_date_hint_for_guard = str(must_preserve_for_title.get("eventDate") or "").strip()
     keyword_counts = pipeline_result.get("keywordCounts") if isinstance(pipeline_result.get("keywordCounts"), dict) else {}
-    word_count = _to_int(pipeline_result.get("wordCount"), len(_strip_html(generated_content)))
+    auto_keywords = _normalize_keywords(pipeline_result.get("autoKeywords"))
+    word_count = _to_int(pipeline_result.get("wordCount"), _count_chars_no_space(generated_content))
     stance_count = _extract_stance_count(pipeline_result)
     min_required_chars = _calc_min_required_chars(target_word_count, stance_count)
+    status_for_validation = str(data.get("status") or user_profile.get("status") or "")
+    title_last_valid = generated_title
+    title_guard_trace: list[Dict[str, Any]] = []
+    date_weekday_guard: Dict[str, Any] = {
+        "applied": False,
+        "yearHint": "",
+        "title": {"edited": False, "changes": [], "issues": []},
+        "content": {"edited": False, "changes": [], "issues": []},
+    }
+    length_repair_applied = False
+    keyword_repair_applied = False
+    repetition_rule_repair_applied = False
+    repetition_llm_repair_applied = False
+    editor_keyword_repair_applied = False
+
+    initial_keyword_gate_ok, initial_keyword_gate_msg = _validate_keyword_gate(keyword_validation, user_keywords)
+    initial_heuristic = run_heuristic_validation_sync(
+        generated_content,
+        status_for_validation,
+        generated_title,
+    )
+    initial_repetition_issues = _extract_repetition_gate_issues(initial_heuristic)
+    initial_legal_issues = _extract_legal_gate_issues(initial_heuristic)
+    initial_length_ok = word_count >= min_required_chars
+    first_pass_failure_reasons: list[str] = []
+    if not initial_length_ok:
+        first_pass_failure_reasons.append("length")
+    if not initial_keyword_gate_ok:
+        first_pass_failure_reasons.append("keyword")
+    if initial_repetition_issues:
+        first_pass_failure_reasons.append("repetition")
+    if initial_legal_issues:
+        first_pass_failure_reasons.append("election_law")
+    first_pass_passed = len(first_pass_failure_reasons) == 0
+
+    logger.info(
+        "분량 게이트 계산: target=%s, stance_count=%s, min_required=%s, actual=%s",
+        target_word_count,
+        stance_count,
+        min_required_chars,
+        word_count,
+    )
+    logger.info(
+        "QUALITY_METRIC generate_posts first_pass=%s reason=%s length_ok=%s keyword_ok=%s repetition=%s legal=%s",
+        int(first_pass_passed),
+        ",".join(first_pass_failure_reasons) if first_pass_failure_reasons else "none",
+        initial_length_ok,
+        initial_keyword_gate_ok,
+        len(initial_repetition_issues),
+        len(initial_legal_issues),
+    )
     if word_count < min_required_chars:
-        raise ApiError(
-            "internal",
-            f"최종 원고 분량 부족 ({word_count}자 < {min_required_chars}자)",
+        length_repair = _recover_short_content_once(
+            content=generated_content,
+            title=generated_title,
+            topic=topic,
+            min_required_chars=min_required_chars,
+            target_word_count=target_word_count,
+            user_keywords=user_keywords,
+            auto_keywords=auto_keywords,
+        )
+        if length_repair.get("edited"):
+            generated_content = str(length_repair.get("content") or generated_content)
+            length_repair_applied = True
+            repaired_keyword_validation = length_repair.get("keywordValidation")
+            if isinstance(repaired_keyword_validation, dict) and repaired_keyword_validation:
+                keyword_validation = repaired_keyword_validation
+            repaired_keyword_counts = length_repair.get("keywordCounts")
+            if isinstance(repaired_keyword_counts, dict) and repaired_keyword_counts:
+                keyword_counts = repaired_keyword_counts
+            word_count = _count_chars_no_space(generated_content)
+            logger.info(
+                "분량 자동 보정 완료: %s자 -> %s자",
+                length_repair.get("before"),
+                length_repair.get("after"),
+            )
+
+    if word_count < min_required_chars:
+        _append_quality_warning(
+            quality_warnings,
+            f"분량 권장치 미달 ({word_count}자 < {min_required_chars}자)",
+        )
+        logger.warning(
+            "Soft gate - length below recommended threshold: actual=%s, min=%s",
+            word_count,
+            min_required_chars,
         )
     keyword_gate_ok, keyword_gate_msg = _validate_keyword_gate(keyword_validation, user_keywords)
     if not keyword_gate_ok:
+        logger.info("키워드 자동 보정 시작: %s", keyword_gate_msg)
+        repaired = _repair_keyword_gate_once(
+            content=generated_content,
+            user_keywords=user_keywords,
+            auto_keywords=auto_keywords,
+            target_word_count=target_word_count,
+        )
+        generated_content = str(repaired.get("content") or generated_content)
+        keyword_repair_applied = bool(repaired.get("edited"))
+        keyword_validation = _safe_dict(repaired.get("keywordValidation"))
+        repaired_counts = repaired.get("keywordCounts")
+        keyword_counts = repaired_counts if isinstance(repaired_counts, dict) else keyword_counts
+        word_count = _count_chars_no_space(generated_content)
+        logger.info(
+            "키워드 자동 보정 완료: edited=%s, reductions=%s, new_word_count=%s",
+            bool(repaired.get("edited")),
+            repaired.get("reductions"),
+            word_count,
+        )
+        keyword_gate_ok, keyword_gate_msg = _validate_keyword_gate(keyword_validation, user_keywords)
+
+    if not keyword_gate_ok:
+        _append_quality_warning(
+            quality_warnings,
+            f"키워드 권장 기준 미충족: {keyword_gate_msg}",
+        )
+        logger.warning("Soft gate - keyword criteria not satisfied: %s", keyword_gate_msg)
+
+    # 최종 반복 품질 게이트: 반복 이슈는 우선 자동 보정하고 경고로 남긴다.
+    heuristic_result = run_heuristic_validation_sync(
+        generated_content,
+        status_for_validation,
+        generated_title,
+    )
+    repetition_issues = _extract_repetition_gate_issues(heuristic_result)
+    if repetition_issues:
+        repetition_fix = enforce_repetition_requirements(generated_content)
+        if repetition_fix.get("edited"):
+            generated_content = str(repetition_fix.get("content") or generated_content)
+            repetition_rule_repair_applied = True
+            word_count = _count_chars_no_space(generated_content)
+            logger.info(
+                "반복 품질 자동 보정 적용: actions=%s, new_word_count=%s",
+                repetition_fix.get("actions"),
+                word_count,
+            )
+
+            post_fix_keyword_result = validate_keyword_insertion(
+                generated_content,
+                user_keywords,
+                auto_keywords,
+                target_word_count,
+            )
+            keyword_validation = build_keyword_validation(post_fix_keyword_result)
+            post_fix_keyword_gate_ok, post_fix_keyword_gate_msg = _validate_keyword_gate(
+                keyword_validation,
+                user_keywords,
+            )
+            if not post_fix_keyword_gate_ok:
+                keyword_repair = _repair_keyword_gate_once(
+                    content=generated_content,
+                    user_keywords=user_keywords,
+                    auto_keywords=auto_keywords,
+                    target_word_count=target_word_count,
+                )
+                generated_content = str(keyword_repair.get("content") or generated_content)
+                keyword_validation = _safe_dict(keyword_repair.get("keywordValidation"))
+                repaired_counts = keyword_repair.get("keywordCounts")
+                keyword_counts = repaired_counts if isinstance(repaired_counts, dict) else keyword_counts
+                word_count = _count_chars_no_space(generated_content)
+                post_fix_keyword_gate_ok, post_fix_keyword_gate_msg = _validate_keyword_gate(
+                    keyword_validation,
+                    user_keywords,
+                )
+                if not post_fix_keyword_gate_ok:
+                    _append_quality_warning(
+                        quality_warnings,
+                        f"키워드 권장 기준 미충족: {post_fix_keyword_gate_msg}",
+                    )
+                    logger.warning(
+                        "Soft gate - keyword criteria still not satisfied after repetition fix: %s",
+                        post_fix_keyword_gate_msg,
+                    )
+
+            heuristic_result = run_heuristic_validation_sync(
+                generated_content,
+                status_for_validation,
+                generated_title,
+            )
+            repetition_issues = _extract_repetition_gate_issues(heuristic_result)
+
+        if repetition_issues:
+            issue_text = "; ".join(repetition_issues[:2])
+            logger.info("반복 품질 LLM 자동 보정 시작: %s", issue_text)
+            repetition_llm_fix = _recover_repetition_issues_once(
+                content=generated_content,
+                title=generated_title,
+                topic=topic,
+                repetition_issues=repetition_issues,
+                min_required_chars=min_required_chars,
+                target_word_count=target_word_count,
+                user_keywords=user_keywords,
+                auto_keywords=auto_keywords,
+            )
+            if repetition_llm_fix.get("edited"):
+                generated_content = str(repetition_llm_fix.get("content") or generated_content)
+                repaired_keyword_validation = repetition_llm_fix.get("keywordValidation")
+                if isinstance(repaired_keyword_validation, dict) and repaired_keyword_validation:
+                    keyword_validation = repaired_keyword_validation
+                repaired_keyword_counts = repetition_llm_fix.get("keywordCounts")
+                if isinstance(repaired_keyword_counts, dict) and repaired_keyword_counts:
+                    keyword_counts = repaired_keyword_counts
+                word_count = _count_chars_no_space(generated_content)
+                repetition_llm_repair_applied = True
+                logger.info(
+                    "반복 품질 LLM 자동 보정 완료: %s자 -> %s자",
+                    repetition_llm_fix.get("before"),
+                    repetition_llm_fix.get("after"),
+                )
+
+                heuristic_result = run_heuristic_validation_sync(
+                    generated_content,
+                    status_for_validation,
+                    generated_title,
+                )
+                repetition_issues = _extract_repetition_gate_issues(heuristic_result)
+
+        if repetition_issues:
+            issue_text = "; ".join(repetition_issues[:2])
+            _append_quality_warning(
+                quality_warnings,
+                f"반복 품질 권장 기준 미충족: {issue_text}",
+            )
+            logger.warning("Soft gate - repetition criteria not satisfied: %s", issue_text)
+
+    # 기준 미충족 시 EditorAgent가 1회 교정하도록 한다.
+    final_heuristic = run_heuristic_validation_sync(
+        generated_content,
+        status_for_validation,
+        generated_title,
+    )
+    legal_issues = _extract_legal_gate_issues(final_heuristic)
+    editor_purpose = "repair" if (quality_warnings or legal_issues) else "polish"
+    editor_auto_repair = {
+        "attempted": False,
+        "applied": False,
+        "purpose": editor_purpose,
+        "summary": [],
+        "error": None,
+    }
+    editor_second_pass = {
+        "attempted": False,
+        "applied": False,
+        "summary": [],
+        "error": None,
+    }
+    last_mile_postprocess_applied = False
+    if quality_warnings or legal_issues or editor_polish_enabled:
+        editor_auto_repair["attempted"] = True
+        editor_fix = _run_editor_repair_once(
+            content=generated_content,
+            title=generated_title,
+            status=status_for_validation,
+            target_word_count=target_word_count,
+            user_keywords=user_keywords,
+            validation_result=final_heuristic,
+            keyword_validation=keyword_validation,
+            purpose=editor_purpose,
+        )
+        editor_auto_repair["error"] = editor_fix.get("error")
+        summary = editor_fix.get("editSummary")
+        if isinstance(summary, list):
+            editor_auto_repair["summary"] = [str(item).strip() for item in summary if str(item).strip()]
+
+        if editor_fix.get("edited"):
+            generated_content = str(editor_fix.get("content") or generated_content)
+            editor_candidate_title = str(editor_fix.get("title") or generated_title).strip() or generated_title
+            guarded_title, guard_info = _guard_title_after_editor(
+                candidate_title=editor_candidate_title,
+                fallback_title=title_last_valid,
+                topic=topic,
+                content=generated_content,
+                user_keywords=user_keywords,
+                full_name=full_name,
+                category=category,
+                status=status_for_validation,
+                context_analysis=context_analysis_for_title,
+            )
+            guard_info["phase"] = "editor_auto_repair"
+            title_guard_trace.append(guard_info)
+            generated_title = guarded_title
+            if guard_info.get("source") == "candidate":
+                title_last_valid = generated_title
+            elif guard_info.get("source") != "candidate":
+                logger.info(
+                    "Title guard replaced editor title (phase=%s, source=%s, reason=%s)",
+                    guard_info.get("phase"),
+                    guard_info.get("source"),
+                    guard_info.get("reason"),
+                )
+            word_count = _count_chars_no_space(generated_content)
+            editor_auto_repair["applied"] = True
+            logger.info("EditorAgent auto-repair applied before final blocker check")
+
+            post_editor_keyword_result = validate_keyword_insertion(
+                generated_content,
+                user_keywords,
+                auto_keywords,
+                target_word_count,
+            )
+            keyword_validation = build_keyword_validation(post_editor_keyword_result)
+            post_editor_keyword_gate_ok, _ = _validate_keyword_gate(
+                keyword_validation,
+                user_keywords,
+            )
+            if not post_editor_keyword_gate_ok:
+                editor_keyword_repair = _repair_keyword_gate_once(
+                    content=generated_content,
+                    user_keywords=user_keywords,
+                    auto_keywords=auto_keywords,
+                    target_word_count=target_word_count,
+                )
+                generated_content = str(editor_keyword_repair.get("content") or generated_content)
+                keyword_validation = _safe_dict(editor_keyword_repair.get("keywordValidation"))
+                repaired_counts = editor_keyword_repair.get("keywordCounts")
+                if isinstance(repaired_counts, dict):
+                    keyword_counts = repaired_counts
+                editor_keyword_repair_applied = bool(editor_keyword_repair.get("edited"))
+                word_count = _count_chars_no_space(generated_content)
+                logger.info(
+                    "Post-editor keyword auto-repair applied: edited=%s",
+                    bool(editor_keyword_repair.get("edited")),
+                )
+
+            final_heuristic = run_heuristic_validation_sync(
+                generated_content,
+                status_for_validation,
+                generated_title,
+            )
+            legal_issues = _extract_legal_gate_issues(final_heuristic)
+
+    # Editor 이후에는 마지막 후처리(cleanup/finalize)를 다시 태운다.
+    before_postprocess_word_count = word_count
+    postprocess_result = _apply_last_mile_postprocess(
+        content=generated_content,
+        target_word_count=target_word_count,
+        user_keywords=user_keywords,
+        auto_keywords=auto_keywords,
+        output_options=output_format_options,
+        fallback_keyword_validation=keyword_validation,
+        fallback_keyword_counts=keyword_counts,
+    )
+    generated_content = str(postprocess_result.get("content") or generated_content)
+    keyword_validation = _safe_dict(postprocess_result.get("keywordValidation"))
+    processed_keyword_counts = postprocess_result.get("keywordCounts")
+    if isinstance(processed_keyword_counts, dict):
+        keyword_counts = processed_keyword_counts
+    word_count = _to_int(postprocess_result.get("wordCount"), _count_chars_no_space(generated_content))
+    if postprocess_result.get("edited"):
+        last_mile_postprocess_applied = True
+        logger.info(
+            "Post-editor cleanup/finalize reapplied: %s -> %s chars",
+            before_postprocess_word_count,
+            word_count,
+        )
+
+    final_heuristic = run_heuristic_validation_sync(
+        generated_content,
+        status_for_validation,
+        generated_title,
+    )
+    legal_issues = _extract_legal_gate_issues(final_heuristic)
+    residual_repetition_issues = _extract_repetition_gate_issues(final_heuristic)
+    if residual_repetition_issues and not legal_issues:
+        editor_second_pass["attempted"] = True
+        logger.info(
+            "EditorAgent second-pass repair triggered: %s",
+            "; ".join(residual_repetition_issues[:2]),
+        )
+        second_editor_fix = _run_editor_repair_once(
+            content=generated_content,
+            title=generated_title,
+            status=status_for_validation,
+            target_word_count=target_word_count,
+            user_keywords=user_keywords,
+            validation_result=final_heuristic,
+            keyword_validation=keyword_validation,
+            purpose="repair",
+        )
+        editor_second_pass["error"] = second_editor_fix.get("error")
+        second_summary = second_editor_fix.get("editSummary")
+        if isinstance(second_summary, list):
+            editor_second_pass["summary"] = [
+                str(item).strip()
+                for item in second_summary
+                if str(item).strip()
+            ]
+
+        if second_editor_fix.get("edited"):
+            generated_content = str(second_editor_fix.get("content") or generated_content)
+            second_editor_candidate_title = str(second_editor_fix.get("title") or generated_title).strip() or generated_title
+            guarded_title, guard_info = _guard_title_after_editor(
+                candidate_title=second_editor_candidate_title,
+                fallback_title=title_last_valid,
+                topic=topic,
+                content=generated_content,
+                user_keywords=user_keywords,
+                full_name=full_name,
+                category=category,
+                status=status_for_validation,
+                context_analysis=context_analysis_for_title,
+            )
+            guard_info["phase"] = "editor_second_pass"
+            title_guard_trace.append(guard_info)
+            generated_title = guarded_title
+            if guard_info.get("source") == "candidate":
+                title_last_valid = generated_title
+            elif guard_info.get("source") != "candidate":
+                logger.info(
+                    "Title guard replaced second-pass editor title (source=%s, reason=%s)",
+                    guard_info.get("source"),
+                    guard_info.get("reason"),
+                )
+            editor_second_pass["applied"] = True
+            logger.info("EditorAgent second-pass repair applied")
+
+            second_postprocess = _apply_last_mile_postprocess(
+                content=generated_content,
+                target_word_count=target_word_count,
+                user_keywords=user_keywords,
+                auto_keywords=auto_keywords,
+                output_options=output_format_options,
+                fallback_keyword_validation=keyword_validation,
+                fallback_keyword_counts=keyword_counts,
+            )
+            generated_content = str(second_postprocess.get("content") or generated_content)
+            keyword_validation = _safe_dict(second_postprocess.get("keywordValidation"))
+            second_keyword_counts = second_postprocess.get("keywordCounts")
+            if isinstance(second_keyword_counts, dict):
+                keyword_counts = second_keyword_counts
+            word_count = _to_int(second_postprocess.get("wordCount"), _count_chars_no_space(generated_content))
+            if second_postprocess.get("edited"):
+                last_mile_postprocess_applied = True
+                logger.info("Post-second-pass cleanup/finalize reapplied")
+
+            second_keyword_gate_ok, _ = _validate_keyword_gate(keyword_validation, user_keywords)
+            if not second_keyword_gate_ok:
+                second_keyword_repair = _repair_keyword_gate_once(
+                    content=generated_content,
+                    user_keywords=user_keywords,
+                    auto_keywords=auto_keywords,
+                    target_word_count=target_word_count,
+                )
+                generated_content = str(second_keyword_repair.get("content") or generated_content)
+                keyword_validation = _safe_dict(second_keyword_repair.get("keywordValidation"))
+                second_repaired_counts = second_keyword_repair.get("keywordCounts")
+                if isinstance(second_repaired_counts, dict):
+                    keyword_counts = second_repaired_counts
+                editor_keyword_repair_applied = bool(second_keyword_repair.get("edited")) or editor_keyword_repair_applied
+                word_count = _count_chars_no_space(generated_content)
+                logger.info(
+                    "Post-second-pass keyword auto-repair applied: edited=%s",
+                    bool(second_keyword_repair.get("edited")),
+                )
+
+            final_heuristic = run_heuristic_validation_sync(
+                generated_content,
+                status_for_validation,
+                generated_title,
+            )
+            legal_issues = _extract_legal_gate_issues(final_heuristic)
+
+    date_year_hint = " ".join(
+        item.strip()
+        for item in [event_date_hint_for_guard, topic]
+        if str(item or "").strip()
+    ).strip()
+    title_date_repair = repair_date_weekday_pairs(
+        generated_title,
+        year_hint=(date_year_hint or None),
+    )
+    title_repaired_text = _normalize_title_surface_local(
+        str(title_date_repair.get("text") or generated_title)
+    )
+    if title_repaired_text:
+        generated_title = title_repaired_text
+
+    content_date_repair = repair_date_weekday_pairs(
+        generated_content,
+        year_hint=(date_year_hint or None),
+    )
+    generated_content = str(content_date_repair.get("text") or generated_content)
+    if content_date_repair.get("edited"):
+        word_count = _count_chars_no_space(generated_content)
+
+    title_validation = (
+        title_date_repair.get("validation")
+        if isinstance(title_date_repair.get("validation"), dict)
+        else {}
+    )
+    content_validation = (
+        content_date_repair.get("validation")
+        if isinstance(content_date_repair.get("validation"), dict)
+        else {}
+    )
+    date_weekday_guard = {
+        "applied": bool(title_date_repair.get("edited") or content_date_repair.get("edited")),
+        "yearHint": date_year_hint,
+        "title": {
+            "edited": bool(title_date_repair.get("edited")),
+            "changes": title_date_repair.get("changes") if isinstance(title_date_repair.get("changes"), list) else [],
+            "issues": title_validation.get("issues") if isinstance(title_validation.get("issues"), list) else [],
+        },
+        "content": {
+            "edited": bool(content_date_repair.get("edited")),
+            "changes": content_date_repair.get("changes") if isinstance(content_date_repair.get("changes"), list) else [],
+            "issues": content_validation.get("issues") if isinstance(content_validation.get("issues"), list) else [],
+        },
+    }
+    if date_weekday_guard.get("applied"):
+        logger.info(
+            "Date-weekday guard applied: title=%s content=%s",
+            bool(date_weekday_guard.get("title", {}).get("edited")),
+            bool(date_weekday_guard.get("content", {}).get("edited")),
+        )
+
+    fallback_title_date_repair = repair_date_weekday_pairs(
+        title_last_valid,
+        year_hint=(date_year_hint or None),
+    )
+    fallback_title_for_guard = _normalize_title_surface_local(
+        str(fallback_title_date_repair.get("text") or title_last_valid)
+    ) or title_last_valid
+
+    final_guarded_title, final_title_guard = _guard_title_after_editor(
+        candidate_title=generated_title,
+        fallback_title=fallback_title_for_guard,
+        topic=topic,
+        content=generated_content,
+        user_keywords=user_keywords,
+        full_name=full_name,
+        category=category,
+        status=status_for_validation,
+        context_analysis=context_analysis_for_title,
+    )
+    final_title_guard["phase"] = "final_output"
+    title_guard_trace.append(final_title_guard)
+    generated_title = final_guarded_title
+    if final_title_guard.get("source") == "candidate":
+        title_last_valid = generated_title
+    elif final_title_guard.get("source") != "candidate":
+        logger.info(
+            "Title guard adjusted final output title (source=%s, reason=%s)",
+            final_title_guard.get("source"),
+            final_title_guard.get("reason"),
+        )
+
+    # 최종 반환 직전 따옴표 표면을 ASCII(U+0022)로 통일한다.
+    generated_title = normalize_ascii_double_quotes(generated_title)
+    generated_content = normalize_ascii_double_quotes(generated_content)
+    generated_title = normalize_book_title_notation(
+        generated_title,
+        topic=topic,
+        context_analysis=context_analysis_for_title,
+        full_name=full_name,
+    )
+    generated_content = normalize_book_title_notation(
+        generated_content,
+        topic=topic,
+        context_analysis=context_analysis_for_title,
+        full_name=full_name,
+    )
+
+    final_heuristic = run_heuristic_validation_sync(
+        generated_content,
+        status_for_validation,
+        generated_title,
+    )
+    legal_issues = _extract_legal_gate_issues(final_heuristic)
+
+    # 최종 경고는 최종 산출물 기준으로 다시 계산한다.
+    quality_warnings = []
+    if date_weekday_guard.get("applied"):
+        _append_quality_warning(
+            quality_warnings,
+            "날짜-요일 불일치가 감지되어 자동 보정되었습니다.",
+        )
+    if final_title_guard.get("source") != "candidate":
+        _append_quality_warning(
+            quality_warnings,
+            "제목 규칙 보정을 위해 자동 롤백이 적용되었습니다.",
+        )
+    if word_count < min_required_chars:
+        _append_quality_warning(
+            quality_warnings,
+            f"분량 권장치 미달 ({word_count}자 < {min_required_chars}자)",
+        )
+    final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(keyword_validation, user_keywords)
+    if not final_keyword_gate_ok:
+        _append_quality_warning(
+            quality_warnings,
+            f"키워드 권장 기준 미충족: {final_keyword_gate_msg}",
+        )
+    final_repetition_issues = _extract_repetition_gate_issues(final_heuristic)
+    if final_repetition_issues:
+        _append_quality_warning(
+            quality_warnings,
+            f"반복 품질 권장 기준 미충족: {'; '.join(final_repetition_issues[:2])}",
+        )
+
+    # 하드 차단은 치명 조건(법적 위반)만 유지한다.
+    if legal_issues:
+        issue_text = "; ".join(legal_issues[:2])
+        logger.warning(
+            "QUALITY_METRIC generate_posts outcome=blocked first_pass=%s blockers=%s warnings=%s repairs=%s",
+            int(first_pass_passed),
+            len(legal_issues),
+            len(quality_warnings),
+            int(
+                any(
+                    [
+                        length_repair_applied,
+                        keyword_repair_applied,
+                        repetition_rule_repair_applied,
+                        repetition_llm_repair_applied,
+                        bool(editor_auto_repair.get("applied")),
+                        bool(editor_second_pass.get("applied")),
+                        editor_keyword_repair_applied,
+                        last_mile_postprocess_applied,
+                    ]
+                )
+            ),
+        )
         raise ApiError(
-            "internal",
-            f"키워드 기준 미충족: {keyword_gate_msg}",
+            "failed-precondition",
+            f"[BLOCKER:ELECTION_LAW] {issue_text}",
         )
 
     # 생성 성공 후 attempts / 사용량 업데이트
@@ -569,8 +1919,31 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             "\n\n⚠️ 하루 3회 이상 원고를 생성하셨습니다. 네이버 블로그 정책상 과도한 발행은 스팸으로 "
             "분류될 수 있으므로, 반드시 마지막 포스팅으로부터 3시간 경과 후 발행해 주세요"
         )
+    if quality_warnings:
+        message += "\n\n⚠️ 자동 품질 보정 후에도 일부 권장 기준이 남아 있으니 발행 전 확인해 주세요."
     if can_regenerate:
         message += f"\n\n💡 마음에 들지 않으시면 재생성을 {max_attempts - attempts_after}회 더 하실 수 있습니다."
+
+    logger.info(
+        "QUALITY_METRIC generate_posts outcome=success first_pass=%s warnings=%s repairs=%s editor_applied=%s",
+        int(first_pass_passed),
+        len(quality_warnings),
+        int(
+            any(
+                [
+                    length_repair_applied,
+                    keyword_repair_applied,
+                    repetition_rule_repair_applied,
+                    repetition_llm_repair_applied,
+                    bool(editor_auto_repair.get("applied")),
+                    bool(editor_second_pass.get("applied")),
+                    editor_keyword_repair_applied,
+                    last_mile_postprocess_applied,
+                ]
+            )
+        ),
+        bool(editor_auto_repair.get("applied")),
+    )
 
     return {
         "success": True,
@@ -602,6 +1975,44 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 "appliedStrategy": writing_method,
                 "keywordCounts": keyword_counts,
                 "wordCount": word_count,
+                "qualityGate": {
+                    "mode": "soft-first",
+                    "hardBlockers": ["ELECTION_LAW"],
+                    "warnings": quality_warnings,
+                    "warningCount": len(quality_warnings),
+                    "titleGuard": {
+                        "applied": any(
+                            str(item.get("source") or "") != "candidate"
+                            for item in title_guard_trace
+                            if isinstance(item, dict)
+                        ),
+                        "trace": title_guard_trace,
+                    },
+                    "dateWeekdayGuard": date_weekday_guard,
+                    "editorPolishEnabled": editor_polish_enabled,
+                    "firstPass": {
+                        "passed": first_pass_passed,
+                        "failureReasons": first_pass_failure_reasons,
+                        "signals": {
+                            "lengthOk": initial_length_ok,
+                            "keywordOk": initial_keyword_gate_ok,
+                            "repetitionIssueCount": len(initial_repetition_issues),
+                            "legalIssueCount": len(initial_legal_issues),
+                            "keywordMessage": initial_keyword_gate_msg if not initial_keyword_gate_ok else "",
+                        },
+                    },
+                    "repairTrace": {
+                        "lengthRepairApplied": length_repair_applied,
+                        "keywordRepairApplied": keyword_repair_applied,
+                        "repetitionRuleRepairApplied": repetition_rule_repair_applied,
+                        "repetitionLlmRepairApplied": repetition_llm_repair_applied,
+                        "editorKeywordRepairApplied": editor_keyword_repair_applied,
+                        "editorSecondPassApplied": bool(editor_second_pass.get("applied")),
+                        "lastMilePostprocessApplied": last_mile_postprocess_applied,
+                    },
+                    "editorAutoRepair": editor_auto_repair,
+                    "editorSecondPass": editor_second_pass,
+                },
             },
             "seo": {
                 "passed": seo_passed,

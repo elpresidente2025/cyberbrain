@@ -163,7 +163,6 @@ def handle_step(req: https_fn.Request) -> https_fn.Response:
                 if updated_context.get("content"):
                     try:
                         from services.posts.validation import (
-                            enforce_keyword_requirements,
                             validate_keyword_insertion,
                         )
 
@@ -174,20 +173,7 @@ def handle_step(req: https_fn.Request) -> https_fn.Response:
                         if not isinstance(auto_keywords, list):
                             auto_keywords = []
 
-                        enforcement_result = enforce_keyword_requirements(
-                            updated_context.get("content", ""),
-                            user_keywords,
-                            auto_keywords,
-                            updated_context.get("targetWordCount"),
-                        )
-                        if enforcement_result.get("edited"):
-                            updated_context["content"] = enforcement_result.get("content", updated_context.get("content", ""))
-                            logger.info(
-                                "Keyword enforcement applied: %s insertions",
-                                len(enforcement_result.get("insertions") or []),
-                            )
-
-                        keyword_result = enforcement_result.get("keywordResult") or validate_keyword_insertion(
+                        keyword_result = validate_keyword_insertion(
                             updated_context.get("content", ""),
                             user_keywords,
                             auto_keywords,
@@ -214,11 +200,19 @@ def handle_step(req: https_fn.Request) -> https_fn.Response:
                 # Final output formatting (Python-native):
                 # - strip generated slogan artifacts
                 # - trim diagnostic tails / content after closing
-                # - append donation info and slogan blocks
+                # - NOTE: 슬로건/후원 안내는 generate_posts 최종 응답 직전에만 부착
                 # - expose wordCount + keywordValidation in final result
                 if updated_context.get("content"):
                     try:
-                        from services.posts.output_formatter import finalize_output
+                        from services.posts.output_formatter import (
+                            build_keyword_validation,
+                            count_without_space,
+                            finalize_output,
+                        )
+                        from services.posts.validation import (
+                            enforce_repetition_requirements,
+                            validate_keyword_insertion,
+                        )
 
                         category = str(updated_context.get("category") or "")
                         sub_category = str(updated_context.get("subCategory") or "")
@@ -227,40 +221,110 @@ def handle_step(req: https_fn.Request) -> https_fn.Response:
                             and sub_category == "current_affairs_diagnosis"
                         )
 
-                        user_profile = updated_context.get("userProfile") or {}
-                        if not isinstance(user_profile, dict):
-                            user_profile = {}
-
-                        slogan = str(updated_context.get("slogan") or user_profile.get("slogan") or "")
-                        slogan_enabled = bool(
-                            updated_context.get("sloganEnabled") is True
-                            or user_profile.get("sloganEnabled") is True
+                        pre_finalize_content = str(updated_context.get("content") or "")
+                        pre_finalize_word_count = int(count_without_space(pre_finalize_content))
+                        context_analysis = (
+                            updated_context.get("contextAnalysis")
+                            if isinstance(updated_context.get("contextAnalysis"), dict)
+                            else {}
                         )
-                        donation_info = str(
-                            updated_context.get("donationInfo") or user_profile.get("donationInfo") or ""
-                        )
-                        donation_enabled = bool(
-                            updated_context.get("donationEnabled") is True
-                            or user_profile.get("donationEnabled") is True
+                        must_preserve = (
+                            context_analysis.get("mustPreserve")
+                            if isinstance(context_analysis.get("mustPreserve"), dict)
+                            else {}
                         )
 
                         final_result = finalize_output(
-                            updated_context.get("content", ""),
-                            slogan=slogan,
-                            slogan_enabled=slogan_enabled,
-                            donation_info=donation_info,
-                            donation_enabled=donation_enabled,
+                            pre_finalize_content,
+                            slogan="",
+                            slogan_enabled=False,
+                            donation_info="",
+                            donation_enabled=False,
                             allow_diagnostic_tail=allow_diagnostic_tail,
                             keyword_result=updated_context.get("keywordResult"),
+                            topic=str(updated_context.get("topic") or ""),
+                            book_title_hint=str(must_preserve.get("bookTitle") or ""),
+                            context_analysis=context_analysis,
+                            full_name=str(updated_context.get("fullName") or ""),
+                            target_word_count=updated_context.get("targetWordCount"),
                         )
 
-                        updated_context["content"] = str(
-                            final_result.get("content") or updated_context.get("content") or ""
+                        post_finalize_content = str(final_result.get("content") or pre_finalize_content)
+                        post_finalize_word_count = int(count_without_space(post_finalize_content))
+                        if (
+                            pre_finalize_word_count >= 1600
+                            and post_finalize_word_count < int(pre_finalize_word_count * 0.75)
+                        ):
+                            ratio = (
+                                post_finalize_word_count / pre_finalize_word_count
+                                if pre_finalize_word_count
+                                else 0.0
+                            )
+                            logger.warning(
+                                "Finalize shrink guard triggered: pre=%s post=%s ratio=%.3f. "
+                                "Rollback to pre-finalize content.",
+                                pre_finalize_word_count,
+                                post_finalize_word_count,
+                                ratio,
+                            )
+                            post_finalize_content = pre_finalize_content
+                            post_finalize_word_count = pre_finalize_word_count
+
+                        logger.info(
+                            "Final formatting length trace: pre=%s post=%s",
+                            pre_finalize_word_count,
+                            post_finalize_word_count,
                         )
-                        updated_context["wordCount"] = int(final_result.get("wordCount") or 0)
-                        updated_context["keywordValidation"] = (
-                            final_result.get("keywordValidation") or {}
+
+                        updated_context["content"] = post_finalize_content
+
+                        repetition_fix_result = enforce_repetition_requirements(updated_context["content"])
+                        if repetition_fix_result.get("edited"):
+                            repetition_candidate = str(
+                                repetition_fix_result.get("content") or updated_context["content"]
+                            )
+                            repetition_candidate_word_count = int(count_without_space(repetition_candidate))
+                            if (
+                                post_finalize_word_count >= 1600
+                                and repetition_candidate_word_count < int(post_finalize_word_count * 0.75)
+                            ):
+                                ratio = (
+                                    repetition_candidate_word_count / post_finalize_word_count
+                                    if post_finalize_word_count
+                                    else 0.0
+                                )
+                                logger.warning(
+                                    "Repetition shrink guard triggered: pre=%s post=%s ratio=%.3f. "
+                                    "Skip repetition auto-fix content replacement.",
+                                    post_finalize_word_count,
+                                    repetition_candidate_word_count,
+                                    ratio,
+                                )
+                            else:
+                                updated_context["content"] = repetition_candidate
+                                post_finalize_word_count = repetition_candidate_word_count
+                                logger.info(
+                                    "Repetition auto-fix applied before final validation: actions=%s, "
+                                    "wordCount=%s",
+                                    repetition_fix_result.get("actions"),
+                                    post_finalize_word_count,
+                                )
+                        user_keywords = updated_context.get("userKeywords") or updated_context.get("keywords") or []
+                        auto_keywords = updated_context.get("autoKeywords") or []
+                        if not isinstance(user_keywords, list):
+                            user_keywords = []
+                        if not isinstance(auto_keywords, list):
+                            auto_keywords = []
+
+                        final_keyword_result = validate_keyword_insertion(
+                            updated_context["content"],
+                            user_keywords,
+                            auto_keywords,
+                            updated_context.get("targetWordCount"),
                         )
+                        updated_context["keywordResult"] = final_keyword_result
+                        updated_context["keywordValidation"] = build_keyword_validation(final_keyword_result)
+                        updated_context["wordCount"] = int(count_without_space(updated_context["content"]))
                         logger.info(
                             "Python final output formatting completed: wordCount=%s, keywordValidation=%s",
                             updated_context["wordCount"],

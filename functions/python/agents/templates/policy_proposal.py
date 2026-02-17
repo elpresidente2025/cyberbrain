@@ -166,7 +166,7 @@ def build_policy_proposal_prompt(options: dict) -> str:
 출력 시 반드시 아래 XML 태그 형식을 사용하라:
 
 <title>
-[여기에 제목 작성 - 25자 이내, 숫자 포함 권장]
+[여기에 제목 작성 - 35자 이내, 숫자 포함 권장]
 </title>
 
 <content>

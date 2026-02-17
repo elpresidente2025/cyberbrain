@@ -9,11 +9,41 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, Dict
 
 from firebase_functions import https_fn
 
 logger = logging.getLogger(__name__)
+
+
+AUTO_KEYWORD_STOPWORDS = {
+    "그래도",
+    "그리고",
+    "그러나",
+    "하지만",
+    "또한",
+    "또",
+    "한편",
+    "아울러",
+    "특히",
+    "먼저",
+    "다만",
+    "결국",
+    "즉",
+    "그래서",
+    "따라서",
+    "이에",
+    "또는",
+    "혹은",
+    "및",
+    "관련",
+    "중심",
+    "중심으로",
+    "관점",
+    "점검",
+    "검토",
+}
 
 
 def _json_response(payload: Dict[str, Any], status: int) -> https_fn.Response:
@@ -132,6 +162,21 @@ def _normalize_reference_list(value: Any) -> list[str]:
     return result
 
 
+def _is_noise_auto_keyword(keyword: str) -> bool:
+    normalized = re.sub(r"\s+", " ", str(keyword or "")).strip()
+    if not normalized:
+        return True
+    lowered = normalized.lower()
+    if lowered in AUTO_KEYWORD_STOPWORDS:
+        return True
+    if len(normalized) <= 1:
+        return True
+    # 조사/접속어 기반 메타 문구는 자동 키워드로 사용하지 않는다.
+    if re.fullmatch(r"(?:그리고|그래서|그러나|하지만|또한|한편|아울러)(?:\s+\w+)?", lowered):
+        return True
+    return False
+
+
 def handle_start(req: https_fn.Request) -> https_fn.Response:
     """
     Start pipeline and return job_id.
@@ -191,14 +236,31 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
             seen_keywords.add(lowered)
             merged_keywords.append(keyword)
 
-        auto_keywords = [kw for kw in merged_keywords if kw not in set(normalized_user_keywords)]
+        user_keyword_set = {kw.lower() for kw in normalized_user_keywords}
+        filtered_out_auto_keywords: list[str] = []
+        filtered_merged_keywords: list[str] = []
+        for keyword in merged_keywords:
+            lowered = keyword.lower()
+            if lowered in user_keyword_set:
+                filtered_merged_keywords.append(keyword)
+                continue
+            if _is_noise_auto_keyword(keyword):
+                filtered_out_auto_keywords.append(keyword)
+                continue
+            filtered_merged_keywords.append(keyword)
+
+        merged_keywords = filtered_merged_keywords
+        auto_keywords = [kw for kw in merged_keywords if kw.lower() not in user_keyword_set]
         logger.info(
-            "Keyword merge completed: user=%s extracted=%s merged=%s auto=%s",
+            "Keyword merge completed: user=%s extracted=%s merged=%s auto=%s filtered=%s",
             len(normalized_user_keywords),
             len(extracted_keywords),
             len(merged_keywords),
             len(auto_keywords),
+            len(filtered_out_auto_keywords),
         )
+        if filtered_out_auto_keywords:
+            logger.info("Filtered noisy auto keywords: %s", filtered_out_auto_keywords[:6])
 
         input_user_profile = {}
         if isinstance(data.get("userProfile"), dict):

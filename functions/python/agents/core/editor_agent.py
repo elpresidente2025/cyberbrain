@@ -50,6 +50,7 @@ class EditorAgent(Agent):
         user_keywords = context.get('keywords', [])
         status = context.get('status', 'active')
         target_word_count = context.get('targetWordCount', 2000)
+        polish_mode = bool(context.get('polishMode') is True)
 
         # 1. Apply Hard Constraints First (Pre-LLM cleanups if any? Node.js does it post-LLM usually, but applyHardConstraintsOnly uses it)
         # We will use LLM first, then apply hard constraints as fallback/final polish.
@@ -62,7 +63,8 @@ class EditorAgent(Agent):
             keyword_result=keyword_result,
             user_keywords=user_keywords,
             status=status,
-            target_word_count=target_word_count
+            target_word_count=target_word_count,
+            polish_mode=polish_mode,
         )
 
         if not self._client:
@@ -99,7 +101,17 @@ class EditorAgent(Agent):
             # Fallback to hard constraints only
             return self.apply_hard_constraints(content, title, user_keywords, status, error=str(e))
 
-    def build_editor_prompt(self, content, title, validation_result, keyword_result, user_keywords, status, target_word_count):
+    def build_editor_prompt(
+        self,
+        content,
+        title,
+        validation_result,
+        keyword_result,
+        user_keywords,
+        status,
+        target_word_count,
+        polish_mode: bool = False,
+    ):
         issues = []
         
         # 1. Validation issues
@@ -124,7 +136,12 @@ class EditorAgent(Agent):
                        issues.append(f"[HIGH] 키워드 문제:\n" + "\n".join([f"   - {i}" for i in kw_issues]))
 
         # Format issues list
-        issues_text = "\n".join([f"{i+1}. {msg}" for i, msg in enumerate(issues)]) if issues else "(없음 - 전반적인 톤앤매너와 구조만 다듬으세요)"
+        if issues:
+            issues_text = "\n".join([f"{i+1}. {msg}" for i, msg in enumerate(issues)])
+        elif polish_mode:
+            issues_text = "(치명 이슈 없음 - 최종 윤문 모드: 가독성/문장 완성도 중심으로 다듬으세요)"
+        else:
+            issues_text = "(없음 - 전반적인 톤앤매너와 구조만 다듬으세요)"
         
         status_note = ""
         if status in ['준비', '현역']:
@@ -153,6 +170,8 @@ class EditorAgent(Agent):
 3. **분량**: 목표 {target_word_count}자 내외 유지
 4. **말투 ( tone)**:
 {natural_tone}
+5. **최종 윤문**: 의미/사실/정치적 입장/수치/고유명사는 유지하고 문장 흐름, 연결어, 호흡만 개선
+6. **과편집 금지**: 원문의 핵심 주장과 논리 순서를 바꾸지 말 것
 
 다음 JSON 형식으로만 응답하세요:
 {{

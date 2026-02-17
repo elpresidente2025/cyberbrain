@@ -112,7 +112,7 @@ def get_title_guideline_for_template(
 </requirements>
 
 <recommendations priority="should" description="품질 향상">
-  <rule id="optimal_length">18-30자 (클릭률 최고 구간)</rule>
+  <rule id="optimal_length">15-30자 (클릭률 최고 구간)</rule>
   <rule id="keyword_position">{f'키워드 "{primary_kw}"를 제목 앞 8자 안에 배치' if primary_kw else '핵심 키워드를 제목 앞 8자 안에 배치'}</rule>
   <rule id="concrete_numbers">구체적 숫자 포함 (274명, 85억 등)</rule>
   {f'<rule id="speaker_pattern">화자 연결 패턴: "{author}이 본", "칭찬한 {author}"</rule>' if is_commentary_category else ''}
@@ -124,7 +124,7 @@ def get_title_guideline_for_template(
   <rule type="must">정보 요소 3개 이하</rule>
 </optional>
 
-<examples type="good" description="18-30자">
+<examples type="good" description="15-30자">
   <example length="20">부산 지방선거, 왜 이 남자가 뛰어들었나</example>
   <example length="21">부산 지방선거에 뛰어든 부두 노동자의 아들</example>
   <example length="17">부산 지방선거, {author}은 왜 다른가</example>
@@ -200,4 +200,3 @@ __all__ = [
     "calculateTitleQualityScore",
     "generateAndValidateTitle",
 ]
-

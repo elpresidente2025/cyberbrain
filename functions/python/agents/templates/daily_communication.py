@@ -160,7 +160,7 @@ def build_daily_communication_prompt(options: dict) -> str:
 출력 시 반드시 아래 XML 태그 형식을 사용하라:
 
 <title>
-[여기에 제목 작성 - 25자 이내, 감성적이고 공감가는 제목]
+[여기에 제목 작성 - 35자 이내, 감성적이고 공감가는 제목]
 </title>
 
 <content>

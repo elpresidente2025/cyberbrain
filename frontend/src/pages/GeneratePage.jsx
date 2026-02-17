@@ -159,7 +159,7 @@ const LoadingOverlayWithRotatingText = React.memo(({ loading, progress }) => {
         {displayMessage}
       </Typography>
       <Typography variant="body2" color="rgba(255, 255, 255, 0.7)">
-        (최대 1~2분 정도 소요될 수 있습니다)
+        (보통 2~5분 소요, 상황에 따라 더 걸릴 수 있습니다)
       </Typography>
     </Backdrop>
   );

@@ -1,11 +1,129 @@
 
+import asyncio
 import re
 import logging
-import json
+from difflib import SequenceMatcher
 from typing import Dict, Any, List, Optional
 from .election_rules import get_election_stage
 
 logger = logging.getLogger(__name__)
+
+TITLE_LENGTH_HARD_MIN = 12
+TITLE_LENGTH_HARD_MAX = 35
+TITLE_LENGTH_OPTIMAL_MIN = 15
+TITLE_LENGTH_OPTIMAL_MAX = 30
+
+EVENT_NAME_MARKERS = (
+    '출판기념회',
+    '간담회',
+    '설명회',
+    '토론회',
+    '기자회견',
+    '세미나',
+    '강연',
+    '북토크',
+    '토크콘서트',
+    '팬미팅',
+)
+
+SLOT_PLACEHOLDER_NAMES = (
+    '지역명', '장소명', '인물명', '행사명', '날짜', '주제명', '정책명', '사업명',
+    '수치', '수량', '금액', '단위', '성과지표', '지원항목', '현안', '민원주제',
+    '이슈명', '정책쟁점', '문제명', '대안수', '이전값', '현재값', '개선폭',
+    '기존안', '개선안', '비용항목', '이전금액', '현재금액', '개관시기', '기간',
+    '개선수치', '법안명', '핵심지원', '조례명', '핵심변경', '숫자', '핵심혜택',
+    '핵심변화', '연도/분기', '보고서명', '핵심성과수', '월/분기', '업무명',
+    '건수', '정기브리핑명', '월호', '핵심주제', '예산항목', '혜택수치', '성과수',
+)
+
+# 사용자 제공 "네이버 블로그 제목 전략 (정치인 특화)"를
+# 고정 문구가 아닌 슬롯 기반 템플릿 few-shot으로 주입한다.
+USER_PROVIDED_TITLE_FEW_SHOT: Dict[str, Dict[str, Any]] = {
+    'DATA_BASED': {
+        'name': '구체적 데이터 기반 (성과 보고)',
+        'templates': [
+            {'template': '[정책명] [수치][단위] 달성, [성과지표] 개선', 'intent': '수치 기반 성과 전달'},
+            {'template': '[사업명] [수량][단위] 지원 완료', 'intent': '완료된 실적 강조'},
+            {'template': '[예산항목] [금액] 확보, [사업명] 추진', 'intent': '예산·집행 신뢰 강화'},
+        ],
+        'bad_to_fix': [
+            {'bad': '좋은 성과 거뒀습니다', 'fix_template': '[사업명] [수량][단위] 지원 완료'},
+            {'bad': '예산 많이 확보했어요', 'fix_template': '[예산항목] [금액] 확보'},
+        ],
+    },
+    'QUESTION_ANSWER': {
+        'name': '질문-해답 구조 (AEO 최적화)',
+        'templates': [
+            {'template': '[지역명] [정책명], [지원항목] 얼마까지?', 'intent': '검색 질문 직접 대응'},
+            {'template': '[지역명] [현안], 어떻게 풀까?', 'intent': '문제-해결 프레이밍'},
+            {'template': '[민원주제], 실제로 언제 해결되나?', 'intent': '실행 시점 궁금증 유도'},
+        ],
+        'bad_to_fix': [
+            {'bad': '정책에 대해 설명드립니다', 'fix_template': '[정책명], 무엇이 달라졌나?'},
+            {'bad': '주거 관련 안내', 'fix_template': '[이슈명], 보상은 어떻게 되나?'},
+        ],
+    },
+    'COMPARISON': {
+        'name': '비교·대조 구조 (성과 증명)',
+        'templates': [
+            {'template': '[지표명] [이전값]→[현재값], [개선폭] 개선', 'intent': '전후 변화 증명'},
+            {'template': '[정책명] [기존안]→[개선안] 확대', 'intent': '정책 업그레이드 강조'},
+            {'template': '[비용항목] [이전금액]→[현재금액], 절감 실현', 'intent': '예산 효율 어필'},
+        ],
+        'bad_to_fix': [
+            {'bad': '이전보다 나아졌어요', 'fix_template': '[지표명] [이전값]→[현재값] 개선'},
+            {'bad': '시간이 단축되었습니다', 'fix_template': '[업무명] [이전기간]→[현재기간] 단축'},
+        ],
+    },
+    'LOCAL_FOCUSED': {
+        'name': '지역 맞춤형 정보 (초지역화)',
+        'templates': [
+            {'template': '[지역명] [정책명], [수치][단위] 지원', 'intent': '지역+정책+수치 결합'},
+            {'template': '[지역명] [사업명], [개관시기] 개시', 'intent': '일정 명확화'},
+            {'template': '[지역명] [현안], [기간]간 [개선수치]% 개선', 'intent': '체감 성과 전달'},
+        ],
+        'bad_to_fix': [
+            {'bad': '우리 지역을 위해 노력합니다', 'fix_template': '[지역명] [사업명] [수치][단위] 확보'},
+            {'bad': '지역 정책 안내', 'fix_template': '[지역명] [정책명] [혜택수치] 지원'},
+        ],
+    },
+    'EXPERT_KNOWLEDGE': {
+        'name': '전문 지식 공유 (법안·조례·정책)',
+        'templates': [
+            {'template': '[법안명] 발의, [핵심지원] 추진', 'intent': '입법 액션 명시'},
+            {'template': '[조례명] 개정, [핵심변경] 반영', 'intent': '제도 변경점 전달'},
+            {'template': '[정책명], 핵심 [숫자]가지 정리', 'intent': '전문 정보 요약'},
+        ],
+        'bad_to_fix': [
+            {'bad': '법안을 발의했습니다', 'fix_template': '[법안명] 발의, [핵심혜택] 반영'},
+            {'bad': '정책을 추진하겠습니다', 'fix_template': '[정책명] [핵심변화] 추진'},
+        ],
+    },
+    'TIME_BASED': {
+        'name': '시간 중심 신뢰성 (정기 보고)',
+        'templates': [
+            {'template': '[연도/분기] [보고서명], [핵심성과수]대 성과', 'intent': '정기성+성과 요약'},
+            {'template': '[월/분기] [업무명] 리포트, [건수]건 처리', 'intent': '월간 실적 신뢰 강화'},
+            {'template': '[정기브리핑명]([월호]), [핵심주제] 공개', 'intent': '정례 커뮤니케이션 고정화'},
+        ],
+        'bad_to_fix': [
+            {'bad': '보고서를 올립니다', 'fix_template': '[연도/분기] [보고서명], [성과수]대 성과'},
+            {'bad': '최근 활동을 정리했습니다', 'fix_template': '[월/분기] [업무명] 리포트, [건수]건 처리'},
+        ],
+    },
+    'ISSUE_ANALYSIS': {
+        'name': '정계 이슈·분석 (국가 정책·거시)',
+        'templates': [
+            {'template': '[이슈명], 실제로 뭐가 달라질까?', 'intent': '변화 궁금증 유도'},
+            {'template': '[정책쟁점], 어떻게 개선할까?', 'intent': '해법 탐색형'},
+            {'template': '[문제명], [대안수]대 대안 제시', 'intent': '분석-대안 구조'},
+        ],
+        'bad_to_fix': [
+            {'bad': '정치 현실에 대해 생각해 봅시다', 'fix_template': '[이슈명], 실제로 뭐가 달라질까?'},
+            {'bad': '문제가 많습니다', 'fix_template': '[문제명], [대안수]대 대안 제시'},
+        ],
+    },
+}
 
 TITLE_TYPES = {
     'VIRAL_HOOK': {
@@ -399,10 +517,10 @@ def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[st
   <warning>4개 이상: 스팸으로 판단, CTR 감소</warning>
 </keyword_density>
 
-<position_strategy>
+  <position_strategy>
   <zone range="0-8자" weight="100%" use="지역명, 정책명, 핵심 주제"/>
-  <zone range="9-20자" weight="80%" use="수치, LSI 키워드"/>
-  <zone range="21-35자" weight="60%" use="행동 유도, 긴급성"/>
+  <zone range="9-{TITLE_LENGTH_OPTIMAL_MAX}자" weight="80%" use="수치, LSI 키워드"/>
+  <zone range="{TITLE_LENGTH_OPTIMAL_MAX + 1}-{TITLE_LENGTH_HARD_MAX}자" weight="60%" use="행동 유도, 긴급성"/>
 </position_strategy>
 
 <keyword_priority>
@@ -421,6 +539,900 @@ def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[st
         logger.error(f'Error in get_keyword_strategy_instruction: {e}')
         return ''
 
+
+def _detect_event_label(topic: str) -> str:
+    for marker in EVENT_NAME_MARKERS:
+        if marker in (topic or ''):
+            return marker
+    return '행사'
+
+
+def _build_few_shot_slot_values(params: Dict[str, Any]) -> Dict[str, str]:
+    topic = str(params.get('topic') or '')
+    content_preview = str(params.get('contentPreview') or '')
+    full_name = str(params.get('fullName') or '').strip()
+    user_keywords = params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else []
+    context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
+    must_preserve = context_analysis.get('mustPreserve') if isinstance(context_analysis.get('mustPreserve'), dict) else {}
+
+    primary_kw = str(user_keywords[0]).strip() if user_keywords else ''
+    location_hint = str(must_preserve.get('eventLocation') or '').strip()
+    date_hint = _extract_date_hint(str(must_preserve.get('eventDate') or '')) or _extract_date_hint(topic)
+    event_label = _detect_event_label(topic)
+    topic_label = _extract_book_title(topic, params) or (topic[:14].strip() if topic else '')
+    numbers = extract_numbers_from_content(content_preview).get('numbers', [])
+    first_number = str(numbers[0]).strip() if numbers else '수치'
+
+    return {
+        '지역명': primary_kw or location_hint or '지역명',
+        '장소명': location_hint or primary_kw or '장소명',
+        '인물명': full_name or '인물명',
+        '행사명': event_label or '행사명',
+        '날짜': date_hint or '날짜',
+        '주제명': topic_label or '주제명',
+        '정책명': topic_label or '정책명',
+        '사업명': topic_label or '사업명',
+        '수치': first_number,
+        '수량': first_number,
+        '금액': first_number,
+        '단위': '명',
+        '성과지표': '개선',
+        '지원항목': '지원',
+        '현안': topic_label or '현안',
+        '민원주제': topic_label or '민원 주제',
+        '이슈명': topic_label or '이슈명',
+        '정책쟁점': topic_label or '정책 쟁점',
+        '문제명': topic_label or '문제명',
+        '대안수': '3',
+        '이전값': '기존 수치',
+        '현재값': '개선 수치',
+        '개선폭': '대폭',
+        '기존안': '기존안',
+        '개선안': '개선안',
+        '비용항목': '운영비',
+        '이전금액': '기존 예산',
+        '현재금액': '절감 예산',
+        '개관시기': '올해 하반기',
+        '기간': '6개월',
+        '개선수치': '35',
+        '법안명': topic_label or '법안명',
+        '핵심지원': '지원 확대',
+        '조례명': topic_label or '조례명',
+        '핵심변경': '핵심 조항',
+        '숫자': '3',
+        '핵심혜택': '핵심 혜택',
+        '핵심변화': '핵심 변화',
+        '연도/분기': '2026년 상반기',
+        '보고서명': '활동 보고서',
+        '핵심성과수': '5',
+        '월/분기': '6월',
+        '업무명': '민원 처리',
+        '건수': '1,234',
+        '정기브리핑명': '월간 브리핑',
+        '월호': '7월호',
+        '핵심주제': topic_label or '핵심 주제',
+        '예산항목': '국비',
+        '혜택수치': '월 15만원',
+        '성과수': '5',
+        '업무': '핵심 업무',
+    }
+
+
+def _render_slot_template(template: str, slot_values: Dict[str, str]) -> str:
+    rendered = str(template or '')
+    for slot_name, slot_value in slot_values.items():
+        rendered = rendered.replace(f'[{slot_name}]', str(slot_value))
+    return re.sub(r'\s+', ' ', rendered).strip()
+
+
+def build_user_provided_few_shot_instruction(type_id: str, params: Optional[Dict[str, Any]] = None) -> str:
+    resolved_type_id = str(type_id or '').strip()
+    few_shot = USER_PROVIDED_TITLE_FEW_SHOT.get(resolved_type_id)
+    if not few_shot:
+        logger.info("[TitleGen] 사용자 few-shot 미정의 타입: %s", resolved_type_id)
+        return ''
+
+    slot_values = _build_few_shot_slot_values(params or {})
+    slot_guide = '\n'.join([
+        f'    <slot name="{k}" value="{v}" />'
+        for k, v in list(slot_values.items())[:12]
+    ])
+
+    template_examples = '\n'.join([
+        f'    <template pattern="{item.get("template", "")}" intent="{item.get("intent", "")}" />'
+        for item in few_shot.get('templates', [])
+        if isinstance(item, dict)
+    ])
+    rendered_examples = '\n'.join([
+        f'    <example>{_render_slot_template(item.get("template", ""), slot_values)}</example>'
+        for item in few_shot.get('templates', [])
+        if isinstance(item, dict)
+    ])
+    bad_examples = '\n'.join([
+        f'    <example bad="{item.get("bad", "")}" fix_template="{item.get("fix_template", "")}" />'
+        for item in few_shot.get('bad_to_fix', [])
+        if isinstance(item, dict)
+    ])
+
+    return f"""
+<user_provided_few_shot priority="high" source="사용자_정치인_7유형_전략">
+  <description>아래 예시는 고정 카피가 아니라 슬롯 기반 템플릿이다. 현재 주제/지역/인물에 맞게 슬롯만 치환해 사용하라.</description>
+  <type requested="{type_id}" resolved="{resolved_type_id}" name="{few_shot.get('name', '')}" />
+  <slot_guide>
+{slot_guide}
+  </slot_guide>
+  <template_examples>
+{template_examples}
+  </template_examples>
+  <rendered_examples>
+{rendered_examples}
+  </rendered_examples>
+  <bad_to_fix_examples>
+{bad_examples}
+  </bad_to_fix_examples>
+</user_provided_few_shot>
+""".strip()
+
+
+def _extract_date_hint(text: str) -> str:
+    if not text:
+        return ''
+    month_day = re.search(r'(\d{1,2}\s*월\s*\d{1,2}\s*일)', text)
+    if month_day:
+        return re.sub(r'\s+', ' ', month_day.group(1)).strip()
+    iso_like = re.search(r'(\d{4}[./-]\d{1,2}[./-]\d{1,2})', text)
+    if iso_like:
+        return iso_like.group(1).strip()
+    return ''
+
+
+def _contains_date_hint(title: str, date_hint: str) -> bool:
+    if not title:
+        return False
+    if date_hint:
+        no_space_title = re.sub(r'\s+', '', title)
+        no_space_hint = re.sub(r'\s+', '', date_hint)
+        if no_space_hint in no_space_title:
+            return True
+        month_day = re.search(r'(\d{1,2})\s*월\s*(\d{1,2})\s*일', date_hint)
+        if month_day:
+            m, d = month_day.group(1), month_day.group(2)
+            if re.search(fr'{m}\s*월\s*{d}\s*일', title):
+                return True
+    return bool(_extract_date_hint(title))
+
+
+def _normalize_digit_token(value: str) -> str:
+    digits = re.sub(r'\D', '', str(value or ''))
+    if not digits:
+        return ''
+    normalized = digits.lstrip('0')
+    return normalized or '0'
+
+
+def _extract_digit_tokens(text: str) -> List[str]:
+    if not text:
+        return []
+    tokens = []
+    seen = set()
+    for match in re.findall(r'\d+', str(text)):
+        normalized = _normalize_digit_token(match)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        tokens.append(normalized)
+    return tokens
+
+
+def _split_hint_tokens(text: str) -> List[str]:
+    if not text:
+        return []
+    clean = re.sub(r'[\(\)\[\]\{\},]', ' ', str(text))
+    tokens = [t.strip() for t in re.split(r'\s+', clean) if t.strip()]
+    result: List[str] = []
+    for token in tokens:
+        if len(token) >= 2:
+            result.append(token)
+    return result
+
+
+BOOK_TITLE_QUOTE_PATTERNS = (
+    ('angle', re.compile(r'<\s*([^<>]{2,80}?)\s*>')),
+    ('double_angle', re.compile(r'《\s*([^《》]{2,80}?)\s*》')),
+    ('single_angle', re.compile(r'〈\s*([^〈〉]{2,80}?)\s*〉')),
+    ('double_quote', re.compile(r'"\s*([^"\n]{2,80}?)\s*"')),
+    ('single_quote', re.compile(r"'\s*([^'\n]{2,80}?)\s*'")),
+    ('curly_double_quote', re.compile(r'“\s*([^”\n]{2,80}?)\s*”')),
+    ('curly_single_quote', re.compile(r'‘\s*([^’\n]{2,80}?)\s*’')),
+    ('corner_quote', re.compile(r'「\s*([^「」]{2,80}?)\s*」')),
+    ('white_corner_quote', re.compile(r'『\s*([^『』]{2,80}?)\s*』')),
+)
+BOOK_TITLE_WRAPPER_PAIRS = (
+    ('<', '>'),
+    ('《', '》'),
+    ('〈', '〉'),
+    ('「', '」'),
+    ('『', '』'),
+    ('"', '"'),
+    ("'", "'"),
+    ('“', '”'),
+    ('‘', '’'),
+)
+BOOK_TITLE_CONTEXT_MARKERS = (
+    '책',
+    '저서',
+    '도서',
+    '신간',
+    '출간',
+    '출판',
+    '북토크',
+    '토크콘서트',
+    '출판행사',
+    '출판기념회',
+    '제목',
+)
+BOOK_TITLE_EVENT_MARKERS = (
+    '출판기념회',
+    '북토크',
+    '토크콘서트',
+    '출판행사',
+    '출간기념',
+)
+BOOK_TITLE_DISALLOWED_TOKENS = (
+    '출판기념회',
+    '북토크',
+    '토크콘서트',
+    '행사',
+    '초대',
+    '안내',
+    '개최',
+)
+BOOK_TITLE_LOCATION_HINTS = (
+    '도서',
+    '센터',
+    '홀',
+    '광장',
+    '시청',
+    '구청',
+)
+BOOK_TITLE_LOCATION_SUFFIXES = (
+    '도서',
+    '센터',
+    '홀',
+    '광장',
+    '시청',
+    '구청',
+)
+
+
+def _normalize_book_title_candidate(text: str) -> str:
+    normalized = str(text or '').strip()
+    if not normalized:
+        return ''
+
+    while True:
+        changed = False
+        for left, right in BOOK_TITLE_WRAPPER_PAIRS:
+            if normalized.startswith(left) and normalized.endswith(right) and len(normalized) > len(left) + len(right):
+                normalized = normalized[len(left):len(normalized) - len(right)].strip()
+                changed = True
+        if not changed:
+            break
+
+    normalized = normalize_title_surface(normalized)
+    normalized = re.sub(r'\s+', ' ', normalized).strip(' ,')
+    normalized = re.sub(r'^[\-–—:;]+', '', normalized).strip()
+    normalized = re.sub(r'[\-–—:;]+$', '', normalized).strip()
+    return normalized
+
+
+def _collect_book_title_candidates(topic: str) -> List[Dict[str, Any]]:
+    text = str(topic or '').strip()
+    if not text:
+        return []
+
+    candidates: List[Dict[str, Any]] = []
+
+    for source, pattern in BOOK_TITLE_QUOTE_PATTERNS:
+        for match in pattern.finditer(text):
+            raw = str(match.group(1) or '').strip()
+            if not raw:
+                continue
+            candidates.append(
+                {
+                    'raw': raw,
+                    'start': int(match.start(1)),
+                    'end': int(match.end(1)),
+                    'source': source,
+                }
+            )
+
+    event_pattern = re.compile(
+        r'([가-힣A-Za-z0-9][^\n]{1,80}?)\s*(?:출판기념회|북토크|토크콘서트|출판행사)'
+    )
+    for match in event_pattern.finditer(text):
+        raw = str(match.group(1) or '').strip()
+        if not raw:
+            continue
+        candidates.append(
+            {
+                'raw': raw,
+                'start': int(match.start(1)),
+                'end': int(match.end(1)),
+                'source': 'event_context',
+            }
+        )
+
+    after_book_pattern = re.compile(
+        r'(?:^|[\s\(\[\{\'"“‘<《])(?:책|저서|도서|신간|작품|제목)\s*(?:(?:은|는|이|가)\s+|[:：]\s*)?([^\n]{2,80})'
+    )
+    for match in after_book_pattern.finditer(text):
+        raw = str(match.group(1) or '').strip()
+        if not raw:
+            continue
+        clipped = re.split(r'(?:출판기념회|북토크|토크콘서트|출판행사|안내|초대|개최|에서|현장)', raw, maxsplit=1)[0].strip()
+        if clipped:
+            candidates.append(
+                {
+                    'raw': clipped,
+                    'start': int(match.start(1)),
+                    'end': int(match.start(1) + len(clipped)),
+                    'source': 'book_context',
+                }
+            )
+
+    return candidates
+
+
+def _score_book_title_candidate(
+    candidate: Dict[str, Any],
+    topic: str,
+    full_name: str,
+) -> int:
+    raw = str(candidate.get('raw') or '')
+    text = _normalize_book_title_candidate(raw)
+    if not text:
+        return -999
+
+    if not re.search(r'[가-힣A-Za-z0-9]', text):
+        return -999
+
+    score = 0
+    source = str(candidate.get('source') or '')
+    start = int(candidate.get('start') or 0)
+    end = int(candidate.get('end') or start)
+    topic_text = str(topic or '')
+
+    if source in {'angle', 'double_angle', 'single_angle', 'double_quote', 'single_quote', 'curly_double_quote', 'curly_single_quote', 'corner_quote', 'white_corner_quote'}:
+        score += 5
+    elif source in {'author_event_context', 'event_context', 'book_context'}:
+        score += 3
+
+    if 4 <= len(text) <= 30:
+        score += 3
+    elif 2 <= len(text) <= 45:
+        score += 1
+    else:
+        score -= 4
+
+    if len(text) <= 3:
+        score -= 5
+
+    for token in BOOK_TITLE_DISALLOWED_TOKENS:
+        if token in text:
+            score -= 8
+
+    if full_name and text == full_name:
+        score -= 8
+
+    if re.fullmatch(r'[\d\s.,:/-]+', text):
+        score -= 6
+    if re.search(r'\d+\s*월(?:\s*\d+\s*일)?', text):
+        score -= 10
+    if any(ch in text for ch in '<>《》〈〉「」『』'):
+        score -= 8
+
+    left_context = topic_text[max(0, start - 22):start]
+    right_context = topic_text[end:min(len(topic_text), end + 22)]
+    around_context = f'{left_context} {right_context}'
+
+    if any(marker in around_context for marker in BOOK_TITLE_CONTEXT_MARKERS):
+        score += 5
+    if any(marker in right_context for marker in BOOK_TITLE_EVENT_MARKERS):
+        score += 4
+    if any(marker in left_context for marker in BOOK_TITLE_EVENT_MARKERS):
+        score += 2
+
+    has_location_hint = any(loc in text for loc in BOOK_TITLE_LOCATION_HINTS)
+    if has_location_hint:
+        score -= 2
+        if source in {'event_context', 'book_context'}:
+            score -= 4
+    if any(text.endswith(suffix) for suffix in BOOK_TITLE_LOCATION_SUFFIXES):
+        score -= 12
+    if source in {'event_context', 'book_context'} and not any(marker in text for marker in BOOK_TITLE_CONTEXT_MARKERS):
+        score -= 3
+
+    if ',' in text or '·' in text:
+        score += 1
+
+    return score
+
+
+def _extract_book_title(topic: str, params: Optional[Dict[str, Any]] = None) -> str:
+    if not topic:
+        return ''
+
+    full_name = ''
+    if isinstance(params, dict):
+        full_name = str(params.get('fullName') or '').strip()
+
+        context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
+        must_preserve = context_analysis.get('mustPreserve') if isinstance(context_analysis.get('mustPreserve'), dict) else {}
+        explicit = _normalize_book_title_candidate(str(must_preserve.get('bookTitle') or ''))
+        if explicit:
+            return explicit
+
+    candidates = _collect_book_title_candidates(topic)
+    if full_name:
+        author_event_pattern = re.compile(
+            rf'{re.escape(full_name)}\s+([^\n]{{2,80}}?)\s*(?:출판기념회|북토크|토크콘서트|출판행사)'
+        )
+        for match in author_event_pattern.finditer(str(topic)):
+            raw = str(match.group(1) or '').strip()
+            if not raw:
+                continue
+            candidates.append(
+                {
+                    'raw': raw,
+                    'start': int(match.start(1)),
+                    'end': int(match.end(1)),
+                    'source': 'author_event_context',
+                }
+            )
+    best_title = ''
+    best_score = -999
+    seen: set[str] = set()
+
+    for candidate in candidates:
+        normalized = _normalize_book_title_candidate(str(candidate.get('raw') or ''))
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+
+        nested_candidates = _collect_book_title_candidates(normalized)
+        nested_title = ''
+        nested_score = -999
+        for nested in nested_candidates:
+            nested_score_candidate = _score_book_title_candidate(nested, normalized, full_name)
+            nested_normalized = _normalize_book_title_candidate(str(nested.get('raw') or ''))
+            if nested_score_candidate > nested_score and nested_normalized:
+                nested_score = nested_score_candidate
+                nested_title = nested_normalized
+
+        score = _score_book_title_candidate(candidate, topic, full_name)
+        title = normalized
+        if nested_title and nested_score > score:
+            score = nested_score
+            title = nested_title
+
+        if score > best_score:
+            best_score = score
+            best_title = title
+
+    if best_score >= 5:
+        if full_name and best_title.startswith(f'{full_name} '):
+            tail = _normalize_book_title_candidate(best_title[len(full_name):])
+            if tail:
+                best_title = tail
+        return best_title
+
+    return ''
+
+
+def normalize_title_surface(title: str) -> str:
+    cleaned = str(title or '').translate(
+        str.maketrans(
+            {
+                '“': '"',
+                '”': '"',
+                '„': '"',
+                '‟': '"',
+            }
+        )
+    )
+    cleaned = cleaned.strip().strip('"\'')
+    if not cleaned:
+        return ''
+
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    cleaned = re.sub(r'\s+([,.:;!?])', r'\1', cleaned)
+    cleaned = re.sub(r'([,.:;!?])(?=[^\s\]\)\}])', r'\1 ', cleaned)
+    cleaned = re.sub(r'\(\s+', '(', cleaned)
+    cleaned = re.sub(r'\s+\)', ')', cleaned)
+    cleaned = re.sub(r'\[\s+', '[', cleaned)
+    cleaned = re.sub(r'\s+\]', ']', cleaned)
+    cleaned = re.sub(r'\s{2,}', ' ', cleaned)
+    cleaned = re.sub(r',(?:\s*,)+', ', ', cleaned)
+    cleaned = re.sub(r'[!?]{2,}', '?', cleaned)
+    return cleaned.strip(' ,')
+
+
+def _fit_title_length(title: str) -> str:
+    if not title:
+        return ''
+    normalized = re.sub(r'\s+', ' ', title).strip()
+    if len(normalized) <= TITLE_LENGTH_HARD_MAX:
+        return normalized
+    compact = normalized.replace(' 핵심 메시지', '').replace(' 핵심', '').replace(' 현장', '')
+    compact = re.sub(r'\s+', ' ', compact).strip()
+    if len(compact) <= TITLE_LENGTH_HARD_MAX:
+        return compact
+    return compact[:TITLE_LENGTH_HARD_MAX].rstrip()
+
+
+def _normalize_generated_title(generated_title: str, params: Dict[str, Any]) -> str:
+    if not generated_title:
+        return ''
+
+    normalized = normalize_title_surface(generated_title)
+    # 도서명 꺾쇠 표기는 유지하되 내부 공백만 정리한다.
+    normalized = re.sub(r'<\s*([^>]+?)\s*>', r'<\1>', normalized)
+    normalized = re.sub(r'《\s*([^》]+?)\s*》', r'《\1》', normalized)
+    normalized = re.sub(r'\s+,', ',', normalized)
+    normalized = re.sub(r',\s*,', ',', normalized)
+    normalized = normalize_title_surface(normalized)
+
+    topic = str(params.get('topic') or '')
+    title_purpose = resolve_title_purpose(topic, params)
+    book_title = _extract_book_title(topic, params) if title_purpose == 'event_announcement' else ''
+    if book_title:
+        # 모델이 빈 꺾쇠(<>, 《》)를 출력한 경우 책 제목을 복원한다.
+        if re.search(r'<\s*>', normalized) and book_title not in normalized:
+            normalized = re.sub(r'<\s*>', f'<{book_title}>', normalized)
+        if re.search(r'《\s*》', normalized) and book_title not in normalized:
+            normalized = re.sub(r'《\s*》', f'《{book_title}》', normalized)
+        normalized = normalize_title_surface(normalized)
+
+    if len(normalized) <= TITLE_LENGTH_HARD_MAX:
+        return normalized
+
+    if title_purpose == 'event_announcement':
+        normalized = re.sub(r'\s{2,}', ' ', normalized).strip(' ,')
+        if len(normalized) <= TITLE_LENGTH_HARD_MAX:
+            return normalized
+
+    return _fit_title_length(normalized)
+
+
+def _normalize_title_for_similarity(title: str) -> str:
+    normalized = str(title or '').lower().strip()
+    normalized = re.sub(r'[\s\W_]+', '', normalized, flags=re.UNICODE)
+    return normalized
+
+
+def _title_similarity(a: str, b: str) -> float:
+    norm_a = _normalize_title_for_similarity(a)
+    norm_b = _normalize_title_for_similarity(b)
+    if not norm_a or not norm_b:
+        return 0.0
+    return SequenceMatcher(None, norm_a, norm_b).ratio()
+
+
+def _build_title_candidate_prompt(
+    base_prompt: str,
+    attempt: int,
+    candidate_index: int,
+    candidate_count: int,
+    disallow_titles: List[str],
+    title_purpose: str,
+) -> str:
+    event_variants = [
+        '일정/장소 전달을 우선하되, 마지막 명사구를 바꿔 새 어감으로 작성',
+        '행동 유도(참여/방문/동행) 중심으로 후킹 단어를 새롭게 선택',
+        '인물/도서/날짜 중 2개를 결합해 현장감 있는 문장으로 구성',
+        '같은 정보라도 어순을 바꿔 다른 리듬으로 작성',
+        '행사 안내 어조를 유지하되 추상 표현 없이 구체 정보 중심으로 작성',
+    ]
+    default_variants = [
+        '질문형 긴장감을 유지하되 핵심 동사를 기존과 다르게 선택',
+        '숫자/팩트 중심으로 간결하게 구성하고 문장 종결을 새롭게 작성',
+        '원인-결과 흐름을 넣어 클릭 이유가 생기게 작성',
+        '핵심 키워드 이후의 어구를 완전히 새롭게 재구성',
+        '정보요소 3개 이내를 지키면서 대비/변화 포인트를 부각',
+    ]
+    variants = event_variants if title_purpose == 'event_announcement' else default_variants
+    variant = variants[(candidate_index - 1) % len(variants)]
+
+    blocked = [f'"{t}"' for t in disallow_titles[-4:] if t]
+    blocked_line = (
+        f"- 다음 제목/문구를 반복하지 마세요: {', '.join(blocked)}"
+        if blocked else
+        "- 직전 시도와 동일한 문구/어순 반복 금지"
+    )
+
+    return f"""{base_prompt}
+
+<diversity_hint attempt="{attempt}" candidate="{candidate_index}/{candidate_count}">
+- 이번 후보의 초점: {variant}
+{blocked_line}
+- 1순위 키워드 시작 규칙은 반드시 지키되, 그 뒤 문장은 새롭게 작성
+</diversity_hint>
+"""
+
+
+def _compute_similarity_penalty(
+    title: str,
+    previous_titles: List[str],
+    threshold: float,
+    max_penalty: int,
+) -> Dict[str, Any]:
+    if not title or not previous_titles or max_penalty <= 0:
+        return {'penalty': 0, 'maxSimilarity': 0.0, 'against': ''}
+
+    best_similarity = 0.0
+    against = ''
+    for prev in previous_titles:
+        if not prev:
+            continue
+        similarity = _title_similarity(title, prev)
+        if similarity > best_similarity:
+            best_similarity = similarity
+            against = prev
+
+    if best_similarity < threshold:
+        return {'penalty': 0, 'maxSimilarity': round(best_similarity, 3), 'against': against}
+
+    span = max(0.01, 1.0 - threshold)
+    ratio = (best_similarity - threshold) / span
+    penalty = max(1, min(max_penalty, int(round(ratio * max_penalty))))
+    return {'penalty': penalty, 'maxSimilarity': round(best_similarity, 3), 'against': against}
+
+
+def resolve_title_purpose(topic: str, params: Dict[str, Any]) -> str:
+    event_markers = EVENT_NAME_MARKERS + (
+        '행사',
+        '개최',
+        '열리는',
+        '열립니다',
+        '초대',
+        '참석',
+    )
+    if any(marker in (topic or '') for marker in event_markers):
+        return 'event_announcement'
+
+    context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
+    intent = str(context_analysis.get('intent') or '').strip()
+    if intent:
+        return intent
+    return ''
+
+
+def build_event_title_policy_instruction(params: Dict[str, Any]) -> str:
+    topic = str(params.get('topic') or '')
+    context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
+    user_keywords = params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else []
+
+    must_preserve = context_analysis.get('mustPreserve') if isinstance(context_analysis.get('mustPreserve'), dict) else {}
+    event_date = str(must_preserve.get('eventDate') or '').strip()
+    event_location = str(must_preserve.get('eventLocation') or '').strip()
+    date_hint = _extract_date_hint(event_date) or _extract_date_hint(topic)
+    location_hint = event_location or (user_keywords[0] if user_keywords else '')
+    keyword_line = ', '.join([str(k).strip() for k in user_keywords[:2] if str(k).strip()]) or '핵심 장소 키워드'
+    event_name_hint = _detect_event_label(topic)
+
+    return f"""
+<title_goal purpose="event_announcement" priority="critical">
+  <rule>제목은 행사 안내/초대 목적이 즉시 드러나야 합니다.</rule>
+  <rule>추측형/논쟁형/공격형 문구(예: 진짜 속내, 왜 왔냐, 답할까?)와 물음표(?)는 금지합니다.</rule>
+  <rule>제목에는 안내형 표현(안내, 초대, 개최, 열립니다, 행사) 또는 행사명("{event_name_hint}")을 포함하십시오.</rule>
+  <rule>제목에는 안전한 후킹 단어를 1개 이상 포함하십시오: 현장, 직접, 일정, 안내, 초대, 만남, 참석</rule>
+  <rule>추상 카피(예: "핵심 대화 공개", "핵심 메시지 공개")만 단독으로 쓰지 말고 날짜/인물/책제목 같은 고유 정보를 포함하십시오.</rule>
+  <rule>가능하면 날짜와 장소를 포함하십시오. 날짜 힌트: {date_hint or '(없음)'} / 장소 힌트: {location_hint or '(없음)'}</rule>
+  <rule>SEO 검색어는 제목 앞부분에서 자연스럽게 사용하십시오: {keyword_line}</rule>
+</title_goal>
+""".strip()
+
+
+def validate_event_announcement_title(title: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    cleaned = (title or '').strip()
+    if not cleaned:
+        return {'passed': False, 'reason': '제목이 비어 있습니다.'}
+
+    topic = str(params.get('topic') or '')
+    context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
+    user_keywords = params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else []
+
+    banned_phrases = (
+        '진짜 속내',
+        '왜 왔냐',
+        '답할까',
+        '속내는',
+        '의혹',
+        '논란',
+    )
+    if any(phrase in cleaned for phrase in banned_phrases) or '?' in cleaned:
+        return {
+            'passed': False,
+            'reason': (
+                "행사 안내 목적과 맞지 않는 제목 톤입니다. 추측형/논쟁형 표현과 물음표를 제거하고 "
+                "'안내/초대/개최/행사명' 같은 안내형 표현을 사용하세요."
+            ),
+        }
+
+    vague_phrases = (
+        '핵심 대화 공개',
+        '핵심 메시지 공개',
+        '핵심 메시지 현장 공개',
+    )
+    if any(phrase in cleaned for phrase in vague_phrases):
+        return {
+            'passed': False,
+            'reason': "추상 문구 중심 제목입니다. 날짜/인물/책제목 등 행사 고유 정보를 포함하세요.",
+        }
+
+    event_tokens = ('안내', '초대', '개최', '열립니다', '행사') + EVENT_NAME_MARKERS
+    if not any(token in cleaned for token in event_tokens):
+        return {
+            'passed': False,
+            'reason': "행사 안내 목적이 제목에 드러나지 않습니다. 안내/초대/개최/행사명을 포함하세요.",
+        }
+
+    hook_tokens = ('현장', '직접', '일정', '안내', '초대', '만남', '참석')
+    if not any(token in cleaned for token in hook_tokens):
+        return {
+            'passed': False,
+            'reason': (
+                "후킹 요소가 부족합니다. '현장/직접/일정/안내/초대/만남/참석' 중 "
+                "하나 이상을 제목에 포함하세요."
+            ),
+        }
+
+    normalized_keywords = [str(k).strip() for k in user_keywords if str(k).strip()]
+    primary_keyword = normalized_keywords[0] if normalized_keywords else ''
+    if primary_keyword and primary_keyword not in cleaned:
+        return {
+            'passed': False,
+            'reason': f'1순위 검색어 "{primary_keyword}"가 제목에 없습니다.',
+        }
+
+    must_preserve = context_analysis.get('mustPreserve') if isinstance(context_analysis.get('mustPreserve'), dict) else {}
+    event_date = str(must_preserve.get('eventDate') or '').strip()
+    date_hint = _extract_date_hint(event_date) or _extract_date_hint(topic)
+    if date_hint and not _contains_date_hint(cleaned, date_hint):
+        return {
+            'passed': False,
+            'reason': f'행사 날짜 정보가 제목에 없습니다. 예: {date_hint}',
+        }
+
+    try:
+        from services.posts.validation import validate_date_weekday_pairs
+
+        date_weekday_result = validate_date_weekday_pairs(
+            cleaned,
+            year_hint=f"{event_date} {topic}".strip(),
+        )
+    except Exception:
+        date_weekday_result = {'passed': True, 'issues': []}
+    if isinstance(date_weekday_result, dict) and not date_weekday_result.get('passed', True):
+        issues = date_weekday_result.get('issues') if isinstance(date_weekday_result.get('issues'), list) else []
+        mismatch = next(
+            (
+                item for item in issues
+                if isinstance(item, dict) and str(item.get('type') or '') == 'date_weekday_mismatch'
+            ),
+            None,
+        )
+        if mismatch:
+            date_text = str(mismatch.get('dateText') or '').strip()
+            expected = str(mismatch.get('expectedWeekday') or '').strip()
+            found = str(mismatch.get('foundWeekday') or '').strip()
+            if date_text and expected:
+                return {
+                    'passed': False,
+                    'reason': f'날짜-요일이 불일치합니다. {date_text}은 {expected}입니다(입력: {found}).',
+                }
+
+    book_title = _extract_book_title(topic, params)
+    full_name = str(params.get('fullName') or '').strip()
+
+    anchor_tokens: List[str] = []
+    anchor_tokens.extend(_split_hint_tokens(date_hint))
+    anchor_tokens.extend(_split_hint_tokens(book_title))
+    if full_name:
+        anchor_tokens.append(full_name)
+    deduped_anchor_tokens: List[str] = []
+    seen_anchor_tokens = set()
+    for token in anchor_tokens:
+        normalized = str(token).strip()
+        if not normalized:
+            continue
+        if normalized in seen_anchor_tokens:
+            continue
+        seen_anchor_tokens.add(normalized)
+        deduped_anchor_tokens.append(normalized)
+    if deduped_anchor_tokens and not any(token in cleaned for token in deduped_anchor_tokens):
+        return {
+            'passed': False,
+            'reason': (
+                "행사 고유 정보가 부족합니다. 날짜/인물명/도서명 중 최소 1개를 제목에 포함하세요."
+            ),
+        }
+
+    is_book_event = any(marker in topic for marker in ('출판기념회', '북토크', '토크콘서트'))
+    if is_book_event and book_title:
+        book_tokens = _split_hint_tokens(book_title)
+        if book_tokens and not any(token in cleaned for token in book_tokens):
+            return {
+                'passed': False,
+                'reason': f'출판 행사 제목은 도서명 단서가 필요합니다. 예: {book_title}',
+            }
+
+    if full_name and full_name not in cleaned:
+        return {
+            'passed': False,
+            'reason': f'행사 안내 제목에는 인물명("{full_name}")을 포함하세요.',
+        }
+
+    event_location = str(must_preserve.get('eventLocation') or '').strip()
+    location_tokens = _split_hint_tokens(event_location)
+    if location_tokens and not any(token in cleaned for token in location_tokens):
+        return {'passed': False, 'reason': f'행사 장소 정보가 제목에 없습니다. 예: {event_location}'}
+
+    return {'passed': True}
+
+
+def _build_event_title_prompt(params: Dict[str, Any]) -> str:
+    topic = str(params.get('topic') or '')
+    full_name = str(params.get('fullName') or '').strip()
+    content_preview = str(params.get('contentPreview') or '')
+    user_keywords = params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else []
+    context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
+    must_preserve = context_analysis.get('mustPreserve') if isinstance(context_analysis.get('mustPreserve'), dict) else {}
+
+    primary_keyword = str(user_keywords[0]).strip() if user_keywords else ''
+    event_date = str(must_preserve.get('eventDate') or '').strip()
+    date_hint = _extract_date_hint(event_date) or _extract_date_hint(topic)
+    event_location = str(must_preserve.get('eventLocation') or '').strip() or primary_keyword
+    event_label = _detect_event_label(topic)
+    book_title = _extract_book_title(topic, params)
+    is_book_event = any(marker in topic for marker in ('출판기념회', '북토크', '토크콘서트'))
+    hook_words = "현장, 직접, 일정, 안내, 초대, 만남, 참석"
+    number_validation = extract_numbers_from_content(content_preview)
+
+    return f"""<event_title_prompt priority="critical">
+<role>당신은 행사 안내형 블로그 제목 에디터입니다. 목적 적합성과 규칙 준수를 최우선으로 합니다.</role>
+
+<input>
+  <topic>{topic}</topic>
+  <author>{full_name or '(없음)'}</author>
+  <primary_keyword>{primary_keyword or '(없음)'}</primary_keyword>
+  <date_hint>{date_hint or '(없음)'}</date_hint>
+  <location_hint>{event_location or '(없음)'}</location_hint>
+  <book_title>{book_title or '(없음)'}</book_title>
+  <event_label>{event_label}</event_label>
+  <content_preview>{content_preview[:500]}</content_preview>
+</input>
+
+<hard_rules>
+  <rule>제목 길이는 {TITLE_LENGTH_HARD_MIN}-{TITLE_LENGTH_HARD_MAX}자.</rule>
+  <rule>물음표(?)와 추측/논쟁형 어투 금지.</rule>
+  <rule>안내 목적이 즉시 드러나도록 "{event_label}" 또는 "안내/초대/개최/행사" 포함.</rule>
+  <rule>후킹 단어 1개 이상 포함: {hook_words}.</rule>
+  <rule>1순위 검색어가 있으면 반드시 포함: "{primary_keyword or '(없음)'}".</rule>
+  <rule>날짜 힌트가 있으면 반드시 포함: "{date_hint or '(없음)'}".</rule>
+  <rule>인물명이 있으면 반드시 포함: "{full_name or '(없음)'}".</rule>
+  <rule>도서 행사({is_book_event})이고 도서명이 있으면 도서명 단서를 포함: "{book_title or '(없음)'}".</rule>
+  <rule>장소 힌트가 있으면 가능한 한 포함: "{event_location or '(없음)'}".</rule>
+</hard_rules>
+
+{number_validation.get('instruction', '')}
+
+<output_format>
+  순수한 제목 한 줄만 출력. 따옴표, 부연설명, 번호, 마크다운 금지.
+</output_format>
+</event_title_prompt>"""
+
 def build_title_prompt(params: Dict[str, Any]) -> str:
     # No try/except blocking logic here. Let it propagate.
     content_preview = params.get('contentPreview', '')
@@ -434,6 +1446,10 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     title_scope = params.get('titleScope', {})
     forced_type = params.get('_forcedType')
     stance_text = params.get('stanceText', '')  # 🔑 [NEW] 입장문
+    title_purpose = resolve_title_purpose(topic, params)
+    if title_purpose == 'event_announcement':
+        return _build_event_title_prompt(params)
+    event_title_policy = build_event_title_policy_instruction(params) if title_purpose == 'event_announcement' else ''
     
     avoid_local_in_title = bool(title_scope and title_scope.get('avoidLocalInTitle'))
     detected_type_id = None
@@ -443,7 +1459,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     else:
         detected_type_id = detect_content_type(content_preview, category)
         if avoid_local_in_title and detected_type_id == 'LOCAL_FOCUSED':
-            detected_type_id = 'ISSUES_ANALYSIS' # Fallback
+            detected_type_id = 'ISSUE_ANALYSIS' # avoidLocalInTitle 정책 적용
             
     primary_type = TITLE_TYPES.get(detected_type_id) or TITLE_TYPES['DATA_BASED']
     # If default was chosen but really we want Viral Hook for general cases:
@@ -453,6 +1469,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     number_validation = extract_numbers_from_content(content_preview)
     election_compliance = get_election_compliance_instruction(status)
     keyword_strategy = get_keyword_strategy_instruction(user_keywords, keywords)
+    user_few_shot = build_user_provided_few_shot_instruction(primary_type['id'], params)
     
     region_scope_instruction = ""
     if avoid_local_in_title:
@@ -472,13 +1489,9 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     for i, ex in enumerate(primary_type['bad']):
         bad_lines.append(f"{i+1}. ❌ \"{ex['title']}\"\n   문제: {ex.get('problem', '')}\n   ✅ 수정: \"{ex.get('fix', '')}\"")
     bad_examples = "\n\n".join(bad_lines)
-    
+
     primary_kw_str = user_keywords[0] if user_keywords else '(없음)'
-    
-    return f"""<title_generation_prompt>
-
-<role>네이버 블로그 제목 전문가 (클릭률 1위 카피라이터)</role>
-
+    objective_block = """
 <objective>
 아래 내용을 분석하여, **독자가 클릭하지 않고는 못 배기는 서사적 긴장감이 있는 블로그 제목**을 작성하십시오.
 
@@ -494,6 +1507,52 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 - 키워드만 나열하고 문장을 완성하지 않는 것
 - 과도한 자극("충격", "경악", "결국 터졌다")
 </objective>
+""".strip()
+    style_ban_rule = '"발표", "개최", "참석" 등 보도자료 스타일 금지'
+    keyword_position_rule = (
+        f'핵심 키워드 "{primary_kw_str}" 반드시 포함. 키워드 직후에 반드시 구분자(쉼표, 물음표, 조사+쉼표)를 넣어라. '
+        '✅ "부산 지방선거, 왜~" ✅ "부산 지방선거에 뛰어든~" ❌ "부산 지방선거 이재성" '
+        '(네이버가 하나의 키워드로 인식)'
+    )
+
+    if title_purpose == 'event_announcement':
+        event_label = _detect_event_label(topic)
+        objective_block = f"""
+<objective>
+아래 내용을 분석하여, **행사 안내 목적이 분명하면서도 클릭하고 싶어지는 제목**을 작성하십시오.
+
+【핵심 원칙: 목적 적합성 우선】
+- 제목은 먼저 "이 글이 행사 안내/초대"라는 점이 즉시 드러나야 합니다.
+- 그 다음에 후킹을 얹습니다. 안내 목적을 흐리면 실패입니다.
+
+【허용】
+- 안내형 표현: "안내", "초대", "개최", "열립니다", "행사명"
+- 날짜/장소/행사명을 자연스럽게 포함한 제목
+- 안전한 후킹 단어: "현장", "직접", "일정", "안내", "초대", "만남", "참석"
+- 추상 문구("핵심 대화 공개", "핵심 메시지 공개") 단독 사용 금지
+
+【권장 공식】
+- [메인 SEO 키워드] + [날짜/장소] + [후킹 단어] + [[행사명]/안내]
+- 예: "[장소명], [날짜] [{event_label}] 안내"
+
+【금지】
+- 추측형/논쟁형/공격형 표현: "진짜 속내", "왜 왔냐", "답할까"
+- 물음표(?) 기반 도발형 제목
+- 과도한 자극("충격", "경악", "결국 터졌다")
+</objective>
+""".strip()
+        style_ban_rule = '행사 안내 목적을 흐리는 논쟁형/도발형 카피 금지 (추측·공격·선동 어투 금지)'
+        keyword_position_rule = (
+            f'핵심 키워드 "{primary_kw_str}" 반드시 포함. 키워드 직후에는 쉼표(,) 또는 조사(에/의/에서 등)를 사용해 분리하세요. '
+            '✅ "[장소명], [날짜] [행사명] 안내" ✅ "[장소명]에서 열리는 [행사명] 안내" '
+            '❌ "[장소명] [인물명] [행사명]"'
+        )
+    
+    return f"""<title_generation_prompt>
+
+<role>네이버 블로그 제목 전문가 (클릭률 1위 카피라이터)</role>
+
+{objective_block}
 
 <content_type detected="{primary_type['id']}">
   <name>{primary_type['name']}</name>
@@ -520,17 +1579,21 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 {bad_examples}
 </examples>
 
+{user_few_shot}
+
 <rules priority="critical">
-  <rule id="length_max">🚨 35자 이내 (네이버 검색결과 잘림 방지) - 절대 초과 금지!</rule>
-  <rule id="length_optimal">18-30자 권장 (클릭률 최고 구간)
+  <rule id="length_max">🚨 {TITLE_LENGTH_HARD_MAX}자 이내 (네이버 검색결과 잘림 방지) - 절대 초과 금지!</rule>
+  <rule id="length_optimal">{TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자 권장 (클릭률 최고 구간)</rule>
+  <rule id="no_slot_placeholder">슬롯 플레이스홀더([행사명], [지역명], [정책명] 등)를 제목에 그대로 출력하지 마세요.</rule>
   <rule id="no_ellipsis">말줄임표("...") 절대 금지</rule>
-  <rule id="keyword_position">핵심 키워드 "{primary_kw_str}" 반드시 포함. 키워드 직후에 반드시 구분자(쉼표, 물음표, 조사+쉼표)를 넣어라. ✅ "부산 지방선거, 왜~" ✅ "부산 지방선거에 뛰어든~" ❌ "부산 지방선거 이재성" (네이버가 하나의 키워드로 인식)</rule>
+  <rule id="keyword_position">{keyword_position_rule}</rule>
   <rule id="no_greeting">인사말("안녕하세요"), 서술형 어미("~입니다") 절대 금지</rule>
-  <rule id="style_ban">"발표", "개최", "참석" 등 보도자료 스타일 금지</rule>
+  <rule id="style_ban">{style_ban_rule}</rule>
   <rule id="narrative_tension">읽은 뒤 "그래서?" "왜?"가 떠오르는 제목이 좋다. 기법을 억지로 넣지 말고 자연스러운 호기심을 만들어라. 선언형 종결("~바꾼다") 금지. 정보 요소 3개 이하.</rule>
   <rule id="info_density">제목에 담는 정보 요소는 최대 3개. SEO 키워드는 1개로 카운트. 요소: SEO키워드, 인명, 수치, 정책명, 수식어. "부산 지방선거, 왜 이 남자가 뛰어들었나" = 2개 OK. "부산 지방선거 이재명 2호 이재성 원칙 선택" = 5개 NG.</rule>
 </rules>
 
+{event_title_policy}
 {election_compliance}
 {keyword_strategy}
 {number_validation['instruction']}
@@ -552,8 +1615,9 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 </topic_priority>
 
 <output_rules>
-  <rule>🚨 35자 이내 필수</rule>
-  <rule>18-30자 권장</rule>
+  <rule>🚨 {TITLE_LENGTH_HARD_MAX}자 이내 필수</rule>
+  <rule>{TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자 권장</rule>
+  <rule>슬롯 플레이스홀더([행사명] 등) 출력 금지</rule>
   <rule>말줄임표 금지</rule>
   <rule>핵심 키워드 포함</rule>
   <rule>본문에 실제 등장하는 숫자만 사용</rule>
@@ -642,9 +1706,12 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
         return {'score': 0, 'breakdown': {}, 'passed': False, 'suggestions': ['제목이 없습니다']}
         
     # 0. Critical Failure Checks
+    has_html_tag = bool(re.search(r'<\s*/?\s*[a-zA-Z][^>]*>', title))
+    has_slot_placeholder = any(f'[{name}]' in title for name in SLOT_PLACEHOLDER_NAMES)
     looks_like_content = (
         '여러분' in title or
-        '<' in title or
+        has_html_tag or
+        has_slot_placeholder or
         title.endswith('입니다') or
         title.endswith('습니다') or
         title.endswith('습니까') or
@@ -653,7 +1720,12 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
     )
     
     if looks_like_content:
-        reason = '호칭("여러분") 포함' if '여러분' in title else ('HTML 태그 포함' if '<' in title else ('50자 초과' if len(title) > 50 else '서술형 종결어미'))
+        reason = (
+            '호칭("여러분") 포함' if '여러분' in title else
+            ('HTML 태그 포함' if has_html_tag else
+             ('슬롯 플레이스홀더 포함' if has_slot_placeholder else
+              ('50자 초과' if len(title) > 50 else '서술형 종결어미')))
+        )
         return {
             'score': 0,
             'breakdown': {'contentPattern': {'score': 0, 'max': 100, 'status': '실패', 'reason': reason}},
@@ -668,32 +1740,65 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
             'passed': False,
             'suggestions': ['말줄임표("...") 사용 금지. 내용을 자르지 말고 완결된 제목을 작성하세요.']
         }
+
+    title_purpose = resolve_title_purpose(topic, params)
+    if title_purpose == 'event_announcement':
+        event_validation = validate_event_announcement_title(title, params)
+        if not event_validation.get('passed'):
+            return {
+                'score': 0,
+                'breakdown': {
+                    'eventPurpose': {
+                        'score': 0,
+                        'max': 100,
+                        'status': '실패',
+                        'reason': str(event_validation.get('reason') or '행사 안내 목적 불일치')
+                    }
+                },
+                'passed': False,
+                'suggestions': [str(event_validation.get('reason') or '행사 안내 목적에 맞게 제목을 다시 작성하세요.')]
+            }
+
+    event_anchor_context: Dict[str, Any] = {
+        'dateHint': '',
+        'bookTitle': '',
+        'authorName': '',
+    }
+    if title_purpose == 'event_announcement':
+        context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
+        must_preserve = context_analysis.get('mustPreserve') if isinstance(context_analysis.get('mustPreserve'), dict) else {}
+        event_date = str(must_preserve.get('eventDate') or '').strip()
+        event_anchor_context = {
+            'dateHint': _extract_date_hint(event_date) or _extract_date_hint(topic),
+            'bookTitle': _extract_book_title(topic, params),
+            'authorName': str(author_name or '').strip(),
+        }
         
     breakdown = {}
     suggestions = []
     title_length = len(title)
     
     # Hard fail length check
-    if title_length < 12 or title_length > 35:
+    if title_length < TITLE_LENGTH_HARD_MIN or title_length > TITLE_LENGTH_HARD_MAX:
              return {
             'score': 0,
-            'breakdown': {'length': {'score': 0, 'max': 100, 'status': '실패', 'reason': f'{title_length}자 (18-35자 필요)'}},
+            'breakdown': {'length': {'score': 0, 'max': 100, 'status': '실패', 'reason': f'{title_length}자 ({TITLE_LENGTH_HARD_MIN}-{TITLE_LENGTH_HARD_MAX}자 필요)'}},
             'passed': False,
-            'suggestions': [f'제목이 {title_length}자입니다. 18-35자 범위로 작성하세요.']
+            'suggestions': [f'제목이 {title_length}자입니다. {TITLE_LENGTH_HARD_MIN}-{TITLE_LENGTH_HARD_MAX}자 범위로 작성하세요.']
         }
 
     # 1. Length Score (Max 20)
-    if 18 <= title_length <= 30:
+    if TITLE_LENGTH_OPTIMAL_MIN <= title_length <= TITLE_LENGTH_OPTIMAL_MAX:
         breakdown['length'] = {'score': 20, 'max': 20, 'status': '최적'}
-    elif 12 <= title_length < 18:
+    elif TITLE_LENGTH_HARD_MIN <= title_length < TITLE_LENGTH_OPTIMAL_MIN:
         breakdown['length'] = {'score': 12, 'max': 20, 'status': '짧음'}
-        suggestions.append(f'제목이 {title_length}자입니다. 18자 이상 권장.')
-    elif 30 < title_length <= 35:
+        suggestions.append(f'제목이 {title_length}자입니다. {TITLE_LENGTH_OPTIMAL_MIN}자 이상 권장.')
+    elif TITLE_LENGTH_OPTIMAL_MAX < title_length <= TITLE_LENGTH_HARD_MAX:
         breakdown['length'] = {'score': 12, 'max': 20, 'status': '경계'}
-        suggestions.append(f'제목이 {title_length}자입니다. 30자 이하가 클릭률 최고.')
+        suggestions.append(f'제목이 {title_length}자입니다. {TITLE_LENGTH_OPTIMAL_MAX}자 이하가 클릭률 최고.')
     else:
         breakdown['length'] = {'score': 0, 'max': 20, 'status': '부적정'}
-        suggestions.append(f'제목이 {title_length}자입니다. 18-30자 범위로 작성하세요.')
+        suggestions.append(f'제목이 {title_length}자입니다. {TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자 범위로 작성하세요.')
         
     # 2. Keyword Position (Max 20)
     if user_keywords:
@@ -777,18 +1882,33 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
     if has_numbers:
         content_numbers_res = extract_numbers_from_content(content)
         safe_content_numbers = content_numbers_res.get('numbers', [])
-        
+        content_number_tokens = [_normalize_digit_token(c_num) for c_num in safe_content_numbers]
+
+        allowed_event_tokens: set[str] = set()
+        if title_purpose == 'event_announcement':
+            allowed_event_tokens.update(_extract_digit_tokens(topic))
+            allowed_event_tokens.update(_extract_digit_tokens(event_anchor_context.get('dateHint', '')))
+
         title_numbers = re.findall(r'\d+(?:억|만원|%|명|건|가구|곳)?', title)
-        
+
         # Check if all title numbers exist in content (fuzzy match)
         all_valid = True
         for t_num in title_numbers:
-            t_val = re.sub(r'[^\d]', '', t_num)
+            t_val = _normalize_digit_token(t_num)
+            if not t_val:
+                continue
+
             # Check if t_val exists inside any content number OR any content number exists inside t_val
-            if not any(t_val in re.sub(r'[^\d]', '', c_num) or re.sub(r'[^\d]', '', c_num) in t_val for c_num in safe_content_numbers):
+            in_content = any(
+                t_val in c_token or c_token in t_val
+                for c_token in content_number_tokens
+                if c_token
+            )
+            in_event_hint = t_val in allowed_event_tokens
+            if not in_content and not in_event_hint:
                 all_valid = False
                 break
-        
+
         if all_valid:
                 breakdown['numbers'] = {'score': 15, 'max': 15, 'status': '검증됨'}
         else:
@@ -825,12 +1945,46 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
                 breakdown['authorIncluded'] = {'score': 10, 'max': 10, 'status': '패턴 적용'}
             else:
                 breakdown['authorIncluded'] = {'score': 6, 'max': 10, 'status': '단순 포함'}
-                suggestions.append(f'"{author_name}이 본", "칭찬한 {author_name}" 등 관계형 표현 권장.')
+                if title_purpose != 'event_announcement':
+                    suggestions.append(f'"{author_name}이 본", "칭찬한 {author_name}" 등 관계형 표현 권장.')
         else:
-            breakdown['authorIncluded'] = {'score': 0, 'max': 10, 'status': '미포함'}
-            suggestions.append(f'화자 "{author_name}"를 제목에 포함하면 브랜딩에 도움됩니다.')
+            # 행사 안내형 제목은 인물명 누락을 치명 감점으로 보지 않는다.
+            if title_purpose == 'event_announcement':
+                breakdown['authorIncluded'] = {'score': 6, 'max': 10, 'status': '행사형 예외'}
+            else:
+                breakdown['authorIncluded'] = {'score': 0, 'max': 10, 'status': '미포함'}
+                suggestions.append(f'화자 "{author_name}"를 제목에 포함하면 브랜딩에 도움됩니다.')
     else:
         breakdown['authorIncluded'] = {'score': 5, 'max': 10, 'status': '해당없음'}
+
+    # 행사형 제목은 고유 앵커(날짜/인물명/도서명)를 가산해
+    # 사용자 few-shot 기반의 구체 제목이 점수에서 불리하지 않도록 보정한다.
+    if title_purpose == 'event_announcement':
+        anchor_score = 0
+        matched_anchors: List[str] = []
+        date_hint = str(event_anchor_context.get('dateHint') or '')
+        if date_hint and _contains_date_hint(title, date_hint):
+            anchor_score += 4
+            matched_anchors.append('date')
+        book_title = str(event_anchor_context.get('bookTitle') or '').strip()
+        if book_title:
+            book_tokens = _split_hint_tokens(book_title)
+            if book_tokens and any(token in title for token in book_tokens):
+                anchor_score += 3
+                matched_anchors.append('book')
+        author_hint = str(event_anchor_context.get('authorName') or '').strip()
+        if author_hint and author_hint in title:
+            anchor_score += 3
+            matched_anchors.append('author')
+
+        breakdown['eventAnchors'] = {
+            'score': min(anchor_score, 10),
+            'max': 10,
+            'status': '충분' if anchor_score >= 6 else ('보통' if anchor_score >= 3 else '부족'),
+            'matched': matched_anchors,
+        }
+        if anchor_score == 0:
+            suggestions.append('행사 고유 정보(날짜/인물명/도서명)를 1개 이상 넣으면 품질 점수가 상승합니다.')
 
     # 6. Impact (Max 10) - 서사적 긴장감 패턴 포함
     impact_score = 0
@@ -863,6 +2017,10 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
     if len(substantive_elements) >= 7:
         impact_score -= 2
         impact_features.append('정보과밀(-2)')
+    if title_purpose == 'event_announcement':
+        if any(token in title for token in ('현장', '직접', '일정', '안내', '초대', '만남', '참석')):
+            impact_score += 3
+            impact_features.append('행사형후킹')
         
     breakdown['impact'] = {
         'score': min(impact_score, 10),
@@ -888,21 +2046,41 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
     }
 
 async def generate_and_validate_title(generate_fn, params: Dict[str, Any], options: Dict[str, Any] = {}) -> Dict[str, Any]:
-    min_score = options.get('minScore', 70)
-    max_attempts = options.get('maxAttempts', 3)
+    min_score = int(options.get('minScore', 70))
+    max_attempts = int(options.get('maxAttempts', 3))
+    candidate_count = max(1, int(options.get('candidateCount', 5)))
+    similarity_threshold = float(options.get('similarityThreshold', 0.78))
+    similarity_threshold = min(max(similarity_threshold, 0.50), 0.95)
+    max_similarity_penalty = max(0, int(options.get('maxSimilarityPenalty', 18)))
     on_progress = options.get('onProgress')
-    
+
+    option_recent_titles = options.get('recentTitles') if isinstance(options.get('recentTitles'), list) else []
+    param_recent_titles = params.get('recentTitles') if isinstance(params.get('recentTitles'), list) else []
+    recent_titles: List[str] = []
+    seen_recent_titles = set()
+    for value in option_recent_titles + param_recent_titles:
+        title = str(value or '').strip()
+        if not title or title in seen_recent_titles:
+            continue
+        seen_recent_titles.add(title)
+        recent_titles.append(title)
+
     history = []
     best_title = ''
-    best_score = 0
+    best_score = -1
     best_result = None
-    
+    title_purpose = resolve_title_purpose(str(params.get('topic') or ''), params)
+
     for attempt in range(1, max_attempts + 1):
         if on_progress:
-            on_progress({'attempt': attempt, 'maxAttempts': max_attempts, 'status': 'generating'})
-            
+            on_progress({
+                'attempt': attempt,
+                'maxAttempts': max_attempts,
+                'status': 'generating',
+                'candidateCount': candidate_count
+            })
+
         # 1. Prompt generation
-        # Allow build_title_prompt to throw -> fails whole process
         prompt = ""
         if attempt == 1 or not history:
             prompt = build_title_prompt(params)
@@ -921,58 +2099,195 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
 
 """
             prompt = feedback_prompt + build_title_prompt(params)
-            
-        # 2. Generation
-        # Allow generate_fn to throw (e.g. timeout) -> fails whole process
-        generated_title = await generate_fn(prompt)
-        generated_title = generated_title.strip().strip('"\'')
-            
-        if not generated_title:
-            continue
-            
-        # 3. Score
-        # Allow calculate_title_quality_score to throw -> fails whole process
-        score_result = calculate_title_quality_score(generated_title, params)
-        
-        history.append({
-            'attempt': attempt,
-            'title': generated_title,
-            'score': score_result['score'],
-            'suggestions': score_result.get('suggestions', []),
-            'breakdown': score_result.get('breakdown', {})
-        })
-        
-        if score_result['score'] > best_score:
-            best_score = score_result['score']
-            best_title = generated_title
-            best_result = score_result
-            
-        if score_result['score'] >= min_score:
-            if on_progress:
-                 on_progress({'attempt': attempt, 'maxAttempts': max_attempts, 'status': 'passed', 'score': score_result['score']})
-            
-            return {
+
+        disallow_titles = list(recent_titles)
+        disallow_titles.extend([
+            str(item.get('title') or '').strip()
+            for item in history
+            if isinstance(item, dict) and str(item.get('title') or '').strip()
+        ])
+
+        candidate_prompts = [
+            _build_title_candidate_prompt(
+                prompt,
+                attempt,
+                idx + 1,
+                candidate_count,
+                disallow_titles,
+                title_purpose,
+            )
+            for idx in range(candidate_count)
+        ]
+
+        # 2. Multi-candidate generation
+        if candidate_count == 1:
+            responses = [await generate_fn(candidate_prompts[0])]
+        else:
+            responses = await asyncio.gather(
+                *[generate_fn(candidate_prompt) for candidate_prompt in candidate_prompts],
+                return_exceptions=True,
+            )
+
+        generation_errors: List[str] = []
+        candidate_results: List[Dict[str, Any]] = []
+        for idx, response in enumerate(responses, start=1):
+            if isinstance(response, Exception):
+                err = str(response)
+                generation_errors.append(err)
+                logger.warning("[TitleGen] 후보 %s 생성 실패 (attempt=%s): %s", idx, attempt, err)
+                continue
+
+            raw_generated_title = str(response or '').strip().strip('"\'')
+            generated_title = _normalize_generated_title(raw_generated_title, params)
+            if raw_generated_title != generated_title:
+                logger.info(
+                    "[TitleGen] 제목 정규화 적용(후보 %s): raw=\"%s\" -> normalized=\"%s\"",
+                    idx,
+                    raw_generated_title,
+                    generated_title,
+                )
+
+            if not generated_title:
+                continue
+
+            score_result = calculate_title_quality_score(generated_title, params)
+            similarity_meta = _compute_similarity_penalty(
+                generated_title,
+                disallow_titles,
+                threshold=similarity_threshold,
+                max_penalty=max_similarity_penalty,
+            )
+            adjusted_score = max(0, int(score_result.get('score', 0)) - int(similarity_meta.get('penalty', 0)))
+
+            candidate_results.append({
+                'candidateIndex': idx,
                 'title': generated_title,
-                'score': score_result['score'],
+                'rawTitle': raw_generated_title,
+                'baseScore': int(score_result.get('score', 0)),
+                'adjustedScore': adjusted_score,
+                'scoreResult': score_result,
+                'similarityMeta': similarity_meta,
+            })
+
+        if not candidate_results:
+            if generation_errors and len(generation_errors) == len(candidate_prompts):
+                raise RuntimeError(
+                    f"[TitleGen] 제목 생성 실패: attempt {attempt}에서 후보 {candidate_count}개 생성이 모두 실패했습니다. "
+                    f"첫 오류: {generation_errors[0]}"
+                )
+
+            history.append({
+                'attempt': attempt,
+                'title': '',
+                'score': 0,
+                'suggestions': ['후보 제목이 모두 비어 있습니다. 프롬프트 또는 모델 응답을 확인하세요.'],
+                'breakdown': {'empty': {'score': 0, 'max': 100, 'status': '실패'}},
+                'candidateCount': candidate_count,
+            })
+            continue
+
+        selected = max(
+            candidate_results,
+            key=lambda item: (item.get('adjustedScore', 0), item.get('baseScore', 0)),
+        )
+        selected_score_result = selected.get('scoreResult', {})
+        selected_similarity = selected.get('similarityMeta', {})
+        selected_suggestions = list(selected_score_result.get('suggestions', []))
+        if int(selected_similarity.get('penalty', 0)) > 0:
+            selected_suggestions.append(
+                f"이전 제목과 유사도 {selected_similarity.get('maxSimilarity', 0)}로 "
+                f"{selected_similarity.get('penalty', 0)}점 감점"
+            )
+
+        selected_breakdown = dict(selected_score_result.get('breakdown', {}))
+        selected_breakdown['diversityPenalty'] = {
+            'score': int(selected_similarity.get('penalty', 0)),
+            'max': max_similarity_penalty,
+            'status': '적용' if int(selected_similarity.get('penalty', 0)) > 0 else '없음',
+            'similarity': selected_similarity.get('maxSimilarity', 0),
+            'against': selected_similarity.get('against', ''),
+        }
+
+        history_item = {
+            'attempt': attempt,
+            'title': selected.get('title', ''),
+            'score': selected.get('adjustedScore', 0),
+            'baseScore': selected.get('baseScore', 0),
+            'candidateCount': candidate_count,
+            'selectedCandidate': selected.get('candidateIndex', 1),
+            'similarityPenalty': int(selected_similarity.get('penalty', 0)),
+            'similarity': selected_similarity.get('maxSimilarity', 0),
+            'suggestions': selected_suggestions[:4],
+            'breakdown': selected_breakdown,
+        }
+        if selected.get('rawTitle') != selected.get('title'):
+            history_item['rawTitle'] = selected.get('rawTitle', '')
+        history.append(history_item)
+
+        current_score = int(selected.get('adjustedScore', 0))
+        if best_result is None or current_score > best_score:
+            best_score = current_score
+            best_title = str(selected.get('title') or '')
+            best_result = history_item
+
+        if current_score >= min_score:
+            if on_progress:
+                on_progress({
+                    'attempt': attempt,
+                    'maxAttempts': max_attempts,
+                    'status': 'passed',
+                    'score': current_score,
+                    'baseScore': selected.get('baseScore', 0),
+                    'candidateCount': candidate_count
+                })
+
+            return {
+                'title': selected.get('title', ''),
+                'score': current_score,
+                'baseScore': selected.get('baseScore', 0),
+                'similarityPenalty': int(selected_similarity.get('penalty', 0)),
                 'attempts': attempt,
                 'passed': True,
                 'history': history,
-                'breakdown': score_result.get('breakdown', {})
+                'breakdown': selected_breakdown,
             }
-            
-    # Fallback checking
-    if best_score < 30 or (best_title and len(best_title) > 35):
-        logger.error(f"🚨 [TitleGen] 점수 미달 ({best_score}점) - 저품질 제목 리턴")
-        # best_title might be empty if all failed
-        
+
     if on_progress:
-        on_progress({'attempt': max_attempts, 'maxAttempts': max_attempts, 'status': 'best_effort', 'score': best_score})
-        
-    return {
-        'title': best_title,
-        'score': best_score,
-        'attempts': max_attempts,
-        'passed': best_score >= min_score,
-        'history': history,
-        'breakdown': best_result.get('breakdown', {}) if best_result else {}
-    }
+        on_progress({
+            'attempt': max_attempts,
+            'maxAttempts': max_attempts,
+            'status': 'failed',
+            'score': max(best_score, 0),
+            'candidateCount': candidate_count
+        })
+
+    if best_result is None:
+        raise RuntimeError(
+            f"[TitleGen] 제목 생성 실패: {max_attempts}회 시도 모두 유효한 제목을 생성하지 못했습니다."
+        )
+
+    if title_purpose == 'event_announcement':
+        logger.warning(
+            "[TitleGen] event_announcement soft-accept: score=%s < minScore=%s, title=%s",
+            best_score,
+            min_score,
+            best_title,
+        )
+        return {
+            'title': best_title,
+            'score': max(best_score, 0),
+            'baseScore': int(best_result.get('baseScore', max(best_score, 0))),
+            'similarityPenalty': int(best_result.get('similarityPenalty', 0)),
+            'attempts': max_attempts,
+            'passed': False,
+            'softAccepted': True,
+            'history': history,
+            'breakdown': dict(best_result.get('breakdown', {})),
+        }
+
+    best_suggestions = best_result.get('suggestions', []) if isinstance(best_result, dict) else []
+    suggestion_text = ', '.join(best_suggestions) if best_suggestions else '없음'
+    raise RuntimeError(
+        f"[TitleGen] 제목 생성 실패: 최소 점수 {min_score}점 미달 "
+        f"(최고 {best_score}점, 제목: \"{best_title}\"). 개선 힌트: {suggestion_text}"
+    )

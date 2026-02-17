@@ -276,11 +276,11 @@ class ComplianceAgent(Agent):
                 })
 
         # 제목 길이 검사
-        if len(title) > 30:
+        if len(title) > 35:
             issues.append({
                 'type': 'TITLE_LENGTH',
                 'severity': 'medium',
-                'message': f'제목이 너무 깁니다 ({len(title)}자 > 30자)',
+                'message': f'제목이 너무 깁니다 ({len(title)}자 > 35자)',
                 'location': 'title'
             })
 
