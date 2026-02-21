@@ -84,19 +84,24 @@ class StructureAgent(Agent):
             return 2000
         return max(1600, min(parsed, 3200))
 
-    def _build_length_spec(self, target_word_count: Any, stance_count: int = 0) -> Dict[str, int]:
+    def _build_length_spec(self, target_word_count: Any, stance_count: int = 0, *, reference_text_len: int = 0) -> Dict[str, int]:
         target_chars = self._sanitize_target_word_count(target_word_count)
 
-        # 섹션당 400자 내외를 기준으로 5~7섹션 계획
-        total_sections = round(target_chars / 400)
+        # 섹션당 350자 내외를 기준으로 5~7섹션 계획
+        total_sections = round(target_chars / 350)
         total_sections = max(5, min(7, total_sections))
         if stance_count > 0:
             total_sections = max(total_sections, min(7, stance_count + 2))
+        # 참고자료가 풍부하면 섹션 수 상향
+        if reference_text_len > 1200:
+            total_sections = max(total_sections, 6)
+        if reference_text_len > 2000:
+            total_sections = min(7, total_sections + 1)
 
         body_sections = total_sections - 2
-        per_section_recommended = max(360, min(420, round(target_chars / total_sections)))
-        per_section_min = max(320, per_section_recommended - 50)
-        per_section_max = min(460, per_section_recommended + 50)
+        per_section_recommended = max(330, min(380, round(target_chars / total_sections)))
+        per_section_min = max(280, per_section_recommended - 50)
+        per_section_max = min(430, per_section_recommended + 50)
 
         min_chars = max(int(target_chars * 0.88), total_sections * per_section_min)
         # 상한은 기본 분량(2000자 기준)에서 3000자까지 허용하도록 고정 캡을 둔다.
@@ -118,7 +123,8 @@ class StructureAgent(Agent):
             'per_section_recommended': per_section_recommended,
             'min_chars': min_chars,
             'max_chars': max_chars,
-            'expected_h2': total_sections - 1
+            'expected_h2': total_sections - 1,
+            'paragraphs_per_section': 3
         }
 
     def _is_low_context_input(
@@ -734,8 +740,17 @@ class StructureAgent(Agent):
                     event_date_hint = str(must_preserve.get('eventDate') or '').strip()
                     event_location_hint = str(must_preserve.get('eventLocation') or '').strip()
 
+        reference_text_len = (
+            len(strip_html(stance_text))
+            + len(strip_html(news_data_text))
+            + len(strip_html(instructions))
+        )
         stance_count = len(context_analysis.get('mustIncludeFromStance', [])) if context_analysis else 0
-        length_spec = self._build_length_spec(target_word_count, stance_count)
+        length_spec = self._build_length_spec(
+            target_word_count,
+            stance_count,
+            reference_text_len=reference_text_len,
+        )
         print(
             f"📏 [StructureAgent] 분량 계획: {length_spec['total_sections']}섹션, "
             f"{length_spec['min_chars']}~{length_spec['max_chars']}자 "
@@ -1547,7 +1562,7 @@ class StructureAgent(Agent):
 
   <volume warning="위반 시 시스템 오류">
     <per_section min="{per_section_min}" max="{per_section_max}" recommended="{per_section_recommended}"/>
-    <paragraphs_per_section>2~3개 문단, 문단당 2~4문장으로 핵심 위주 서술</paragraphs_per_section>
+    <paragraphs_per_section>3개 문단, 문단당 110~130자</paragraphs_per_section>
     <total sections="{total_section_count}" min="{min_total_chars}" max="{max_total_chars}"/>
     <caution>총 분량 상한을 넘기지 않도록 중복 문장과 장황한 수식어를 제거하고, 근거 중심으로 간결하게 작성하십시오.</caution>
   </volume>

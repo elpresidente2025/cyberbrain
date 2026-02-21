@@ -168,8 +168,6 @@ class ContentValidator:
         for h2_text in h2_texts:
             if len(h2_text) > 25:
                 return {'passed': False, 'code': 'H2_TEXT_LONG', 'reason': "h2 텍스트 길이 초과", 'feedback': f'h2 텍스트가 25자를 초과했습니다: "{h2_text}"'}
-            if re.search(r'(합니다|입니다|됩니다|겠습니다|했습니다|봅니다|까요)\s*$', h2_text):
-                return {'passed': False, 'code': 'H2_TEXT_PREDICATE', 'reason': "h2 텍스트가 서술어로 종료됨", 'feedback': f'서술어를 제거하십시오: "{h2_text}"'}
             if re.search(r'(위한|향한|만드는|통한|대한)(\s|$)', h2_text):
                 return {'passed': False, 'code': 'H2_TEXT_MODIFIER', 'reason': "h2 금지된 수식어", 'feedback': f'금지 수식어(위한/향한/만드는/통한/대한)를 제거하십시오: "{h2_text}"'}
 
@@ -183,8 +181,9 @@ class ContentValidator:
 
         for section_index, section_content in enumerate(section_blocks, start=1):
             section_p_count = len(re.findall(r'<p\b[^>]*>[\s\S]*?</p\s*>', section_content, re.IGNORECASE))
-            if section_p_count < 2 or section_p_count > 4:
-                return {'passed': False, 'code': 'SECTION_P_COUNT', 'reason': f"섹션 {section_index} 문단 수 위반", 'feedback': f"섹션 {section_index}의 <p> 개수는 2~4개여야 합니다."}
+            min_p = 1 if section_index == 1 else 2
+            if section_p_count < min_p or section_p_count > 4:
+                return {'passed': False, 'code': 'SECTION_P_COUNT', 'reason': f"섹션 {section_index} 문단 수 위반", 'feedback': f"섹션 {section_index}의 <p> 개수는 {min_p}~4개여야 합니다."}
             section_plain_length = len(strip_html(section_content))
             if section_plain_length < 200 or section_plain_length > 500:
                 return {'passed': False, 'code': 'SECTION_LENGTH', 'reason': f"섹션 {section_index} 글자 수 위반", 'feedback': f"섹션 {section_index}의 글자 수는 200~500자여야 합니다."}
