@@ -15,6 +15,10 @@ from agents.templates.sns_conversion import (
     build_x_prompt as _build_x_prompt,
 )
 
+X_TARGET_AVG_NON_SPACE = 111
+X_MIN_NON_SPACE = 60
+THREADS_MIN_NON_SPACE = 120
+
 
 SNS_LIMITS: Dict[str, Dict[str, Any]] = {
     "facebook-instagram": {
@@ -27,9 +31,9 @@ SNS_LIMITS: Dict[str, Dict[str, Any]] = {
         "isThread": False,
     },
     "x": {
-        "maxLengthPerPost": 160,
-        "minLengthPerPost": 130,
-        "recommendedMinLength": 130,
+        "maxLengthPerPost": X_TARGET_AVG_NON_SPACE,
+        "minLengthPerPost": X_MIN_NON_SPACE,
+        "recommendedMinLength": X_TARGET_AVG_NON_SPACE,
         "hashtagLimit": 2,
         "charsPerLine": 32,
         "name": "X(Twitter)",
@@ -39,7 +43,7 @@ SNS_LIMITS: Dict[str, Dict[str, Any]] = {
     },
     "threads": {
         "maxLengthPerPost": 350,
-        "minLengthPerPost": 250,
+        "minLengthPerPost": THREADS_MIN_NON_SPACE,
         "recommendedMinLength": 250,
         "hashtagLimit": 3,
         "charsPerLine": 27,
@@ -173,7 +177,7 @@ def build_thread_prompt(
     hashtag_limit = int(platform_config.get("hashtagLimit", 3))
     min_posts = int(platform_config.get("minPosts", 3))
     max_posts = int(platform_config.get("maxPosts", 7))
-    min_len = int(platform_config.get("minLengthPerPost", 130))
+    min_len = int(platform_config.get("minLengthPerPost", X_MIN_NON_SPACE))
     max_len = int(platform_config.get("maxLengthPerPost", platform_config.get("maxLength", 250)))
 
     return f"""아래는 {user_info.get('name', '정치인')} {user_info.get('position', '의원')}이 작성한 블로그 원고입니다. 이를 {platform_name} 타래(thread)로 변환해주세요.
@@ -182,7 +186,7 @@ def build_thread_prompt(
 {clean_content}
 
 **타래 구조 ({min_posts}-{max_posts}개 게시물)**
-- 각 게시물은 {min_len}-{max_len}자 권장
+- 각 게시물은 최대 {max_len}자, 분량 억지 확장 금지
 - 1번: 훅/핵심 메시지
 - 2~(마지막-1): 배경/핵심/근거
 - 마지막: 마무리 + 해시태그 {hashtag_limit}개
@@ -246,4 +250,3 @@ __all__ = [
     "buildThreadPrompt",
     "cleanHTMLContent",
 ]
-

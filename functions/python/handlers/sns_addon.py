@@ -51,6 +51,49 @@ SOURCE_STOPWORDS: Set[str] = {
     "대한민국",
 }
 
+# 사용자 제공 예시 원고 평균(공백 제외 약 111자) 기반 X 길이 정책
+X_TARGET_AVG_NON_SPACE = 111
+X_MIN_NON_SPACE = 60
+
+SIGNATURE_MODE_VALUES = {"auto", "always", "never"}
+SIGNATURE_AUTO_HINTS = (
+    "출마",
+    "선거",
+    "추모",
+    "애도",
+    "감사",
+    "명절",
+    "회의",
+    "국정",
+    "정부",
+    "발표",
+    "성명",
+    "입장",
+    "보고",
+    "다짐",
+)
+GENERIC_SIGNATURE_NAMES = {"정치인", "작성자", "사용자", "후보", "의원"}
+GENERIC_SIGNATURE_TITLES = {"정치인", "작성자", "사용자"}
+
+SOURCE_TYPE_ALIASES = {
+    "position_statement": "position_statement",
+    "statement": "position_statement",
+    "stance": "position_statement",
+    "입장문": "position_statement",
+    "내 입장문": "position_statement",
+    "facebook_post": "facebook_post",
+    "facebook": "facebook_post",
+    "fb": "facebook_post",
+    "페이스북": "facebook_post",
+    "페이스북 글": "facebook_post",
+    "blog_draft": "blog_draft",
+    "blog_post": "blog_draft",
+    "blog": "blog_draft",
+    "블로그": "blog_draft",
+    "블로그 원고": "blog_draft",
+    "원고": "blog_draft",
+}
+
 
 class ApiError(Exception):
     def __init__(self, status: int, code: str, message: str):
@@ -150,6 +193,213 @@ def normalize_blog_url(url: Any) -> str:
     if not trimmed or trimmed in {"undefined", "null"}:
         return ""
     return trimmed
+
+
+def normalize_source_type(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return "blog_draft"
+    return SOURCE_TYPE_ALIASES.get(normalized, "blog_draft")
+
+
+def resolve_source_content(post_data: Dict[str, Any]) -> Dict[str, str]:
+    data = post_data or {}
+    content = str(data.get("content") or "").strip()
+    candidate_keys = (
+        "sourceInput",
+        "sourceContent",
+        "originalContent",
+        "inputContent",
+        "rawContent",
+        "sourceText",
+    )
+    source_input = ""
+    for key in candidate_keys:
+        value = str(data.get(key) or "").strip()
+        if value:
+            source_input = value
+            break
+
+    source_type_keys = (
+        "sourceType",
+        "inputType",
+        "contentType",
+        "writingSource",
+        "sourceMode",
+    )
+    source_type = "blog_draft"
+    for key in source_type_keys:
+        value = str(data.get(key) or "").strip()
+        if value:
+            source_type = normalize_source_type(value)
+            break
+
+    resolved = source_input or content
+    return {"content": resolved, "sourceType": source_type}
+
+
+def normalize_signature_mode(value: Any) -> str:
+    mode = str(value or "").strip().lower()
+    return mode if mode in SIGNATURE_MODE_VALUES else "auto"
+
+
+def build_profile_signature(user_profile: Dict[str, Any], user_info: Dict[str, Any]) -> str:
+    profile = user_profile or {}
+    _ = user_info  # 프로필 기반(2순위)만 사용
+
+    name = str(
+        profile.get("name")
+        or profile.get("fullName")
+        or profile.get("displayName")
+        or ""
+    ).strip()
+    title = str(profile.get("customTitle") or profile.get("position") or "").strip()
+
+    if not name or name in GENERIC_SIGNATURE_NAMES:
+        return ""
+    if title in GENERIC_SIGNATURE_TITLES:
+        title = ""
+
+    if title and name:
+        if name in title:
+            return title
+        if title in name:
+            return name
+        return f"{title} {name}".strip()
+    return name
+
+
+def should_attach_signature_auto(
+    signature_mode: str,
+    signature_text: str,
+    post_data: Dict[str, Any],
+    source_text: str,
+) -> bool:
+    signature = str(signature_text or "").strip()
+    if not signature:
+        return False
+
+    mode = normalize_signature_mode(signature_mode)
+    if mode == "never":
+        return False
+    if mode == "always":
+        return True
+
+    metadata_text = " ".join(
+        str(post_data.get(key) or "")
+        for key in ("category", "subCategory", "topic", "title")
+    )
+    sample_source = str(source_text or "")[:1500]
+    text = f"{metadata_text}\n{sample_source}".lower()
+    return any(token in text for token in SIGNATURE_AUTO_HINTS)
+
+
+def inject_signature_line(content: str, signature_text: str) -> str:
+    text = str(content or "").strip()
+    signature = str(signature_text or "").strip()
+    if not text or not signature:
+        return text or signature
+    if signature in text:
+        return text
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return signature
+
+    url_start = next((idx for idx, line in enumerate(lines) if has_url(line)), len(lines))
+    before_url = lines[:url_start]
+    after_url = lines[url_start:]
+
+    hashtag_start = next((idx for idx, line in enumerate(before_url) if line.startswith("#")), len(before_url))
+    body_lines = before_url[:hashtag_start]
+    hashtag_lines = before_url[hashtag_start:]
+
+    if body_lines and body_lines[-1] != signature:
+        body_lines.append(signature)
+    elif not body_lines:
+        body_lines = [signature]
+
+    merged = body_lines + hashtag_lines + after_url
+    return "\n".join(merged).strip()
+
+
+def wrap_text_lines(text: str, preferred: int, hard_max: int) -> List[str]:
+    cleaned = re.sub(r"\s+", " ", str(text or "").strip())
+    if not cleaned:
+        return []
+
+    tokens = cleaned.split(" ")
+    lines: List[str] = []
+    current = ""
+
+    for token in tokens:
+        if not token:
+            continue
+        candidate = token if not current else f"{current} {token}"
+        if len(candidate) <= hard_max:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+        current = token
+
+        while len(current) > hard_max:
+            lines.append(current[:hard_max].rstrip())
+            current = current[hard_max:].lstrip()
+
+    if current:
+        lines.append(current)
+
+    # 마지막 줄이 과도하게 짧으면 이전 줄과 병합
+    if len(lines) >= 2 and len(lines[-1]) <= max(4, preferred // 4):
+        merged = f"{lines[-2]} {lines[-1]}".strip()
+        if len(merged) <= hard_max:
+            lines[-2] = merged
+            lines.pop()
+
+    return [line.strip() for line in lines if line.strip()]
+
+
+def format_post_for_readability(content: str, platform: str) -> str:
+    text = str(content or "").strip()
+    if not text:
+        return text
+
+    # URL/해시태그를 본문에서 먼저 분리한 뒤 본문만 래핑한다.
+    url_lines = extract_urls(text)
+    body_without_url = URL_RE.sub(" ", text)
+
+    hashtag_candidates = re.findall(r"(?<!\w)#\S+", body_without_url)
+    hashtag_lines: List[str] = []
+    seen_hashtags = set()
+    for tag in hashtag_candidates:
+        normalized = str(tag or "").strip()
+        if not normalized:
+            continue
+        if normalized in seen_hashtags:
+            continue
+        seen_hashtags.add(normalized)
+        hashtag_lines.append(normalized)
+
+    body_without_meta = re.sub(r"(?<!\w)#\S+", " ", body_without_url)
+    body_lines = [line.strip() for line in body_without_meta.splitlines() if line.strip()]
+    body_text = " ".join(body_lines).strip()
+    if platform == "x":
+        preferred, hard_max, block_size = 22, 28, 2
+    else:
+        preferred, hard_max, block_size = 24, 32, 3
+
+    wrapped_body = wrap_text_lines(body_text, preferred, hard_max)
+    formatted_body: List[str] = []
+    for idx, line in enumerate(wrapped_body, start=1):
+        formatted_body.append(line)
+        if idx % block_size == 0 and idx < len(wrapped_body):
+            formatted_body.append("")
+
+    merged_lines = formatted_body + [line.strip() for line in url_lines if str(line).strip()] + hashtag_lines
+    merged_text = "\n".join(merged_lines).strip()
+    merged_text = re.sub(r"\n{3,}", "\n\n", merged_text)
+    return merged_text
 
 
 def build_thread_cta_text(blog_url: str) -> str:
@@ -252,6 +502,26 @@ def has_source_signal(content: str, source_text: str) -> bool:
     return any(token in content for token in tokens)
 
 
+def normalize_for_overlap(text: str) -> str:
+    normalized = URL_RE.sub(" ", text or "")
+    normalized = re.sub(r"(?<!\w)#\S+", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
+
+
+def get_source_overlap_stats(content: str, source_text: str, sample_size: int = 30) -> Dict[str, float]:
+    sampled_count = max(1, int(sample_size or 1))
+    source_tokens = extract_source_signal_tokens(source_text, limit=max(sampled_count * 2, 20))
+    if not source_tokens:
+        return {"matched": 0.0, "sampled": 0.0, "ratio": 1.0}
+
+    sampled = source_tokens[:sampled_count]
+    normalized_content = normalize_for_overlap(content)
+    matched = sum(1 for token in sampled if token in normalized_content)
+    ratio = matched / len(sampled)
+    return {"matched": float(matched), "sampled": float(len(sampled)), "ratio": ratio}
+
+
 def validate_x_post_quality(
     content: str,
     source_text: str,
@@ -262,8 +532,8 @@ def validate_x_post_quality(
     issues = []
     text = content or ""
     actual_len = count_without_space(text)
-    if actual_len < min_len or actual_len > max_len:
-        issues.append(f"길이 불일치: {actual_len}자 (요구 {min_len}~{max_len}자)")
+    if actual_len > max_len:
+        issues.append(f"길이 초과: {actual_len}자 (최대 {max_len}자)")
 
     if normalize_blog_url(blog_url) and not has_url(text):
         issues.append("블로그 링크가 본문에 포함되지 않음")
@@ -273,6 +543,13 @@ def validate_x_post_quality(
 
     if not has_source_signal(text, source_text):
         issues.append("원문의 고유명사/핵심 수치/핵심 주장 반영 부족")
+    else:
+        overlap = get_source_overlap_stats(text, source_text, sample_size=20)
+        sampled = int(overlap["sampled"])
+        matched = int(overlap["matched"])
+        ratio = overlap["ratio"]
+        if sampled >= 8 and (matched < 3 or ratio < 0.14):
+            issues.append(f"원문 기반 변환 비율 부족: 핵심어 {matched}/{sampled}개 반영")
 
     return issues
 
@@ -284,6 +561,7 @@ def validate_threads_posts_quality(
     max_posts: int,
     min_len: int,
     max_len: int,
+    source_text: str = "",
 ) -> List[str]:
     issues = []
     post_count = len(posts or [])
@@ -297,17 +575,34 @@ def validate_threads_posts_quality(
             issues.append("마지막 게시물에 블로그 링크가 없음")
 
     repeated_heads = set()
+    weak_signal_count = 0
     for idx, post in enumerate(posts or [], start=1):
         content = str((post or {}).get("content", "")).strip()
         length = count_without_space(content)
-        if length < min_len or length > max_len:
-            issues.append(f"{idx}번 게시물 길이 불일치: {length}자 (요구 {min_len}~{max_len}자)")
+        if length > max_len:
+            issues.append(f"{idx}번 게시물 길이 초과: {length}자 (최대 {max_len}자)")
 
         normalized_head = re.sub(r"\s+", " ", content)[:28]
         if normalized_head and normalized_head in repeated_heads:
             issues.append("게시물 시작 문장이 반복됨")
             break
         repeated_heads.add(normalized_head)
+
+        if source_text and not has_source_signal(content, source_text):
+            weak_signal_count += 1
+
+    if source_text and post_count:
+        weak_threshold = max(2, (post_count + 1) // 2)
+        if weak_signal_count >= weak_threshold:
+            issues.append("원문 기반 변환 비율 부족: 다수 게시물에서 원문 핵심어 반영이 약함")
+
+        merged_content = "\n".join(str((post or {}).get("content", "")).strip() for post in posts)
+        overlap = get_source_overlap_stats(merged_content, source_text, sample_size=36)
+        sampled = int(overlap["sampled"])
+        matched = int(overlap["matched"])
+        ratio = overlap["ratio"]
+        if sampled >= 12 and (matched < 5 or ratio < 0.16):
+            issues.append(f"원문 기반 변환 비율 부족: 타래 핵심어 {matched}/{sampled}개 반영")
 
     return issues
 
@@ -474,6 +769,7 @@ def parse_converted_content(
             content = clean_content(post.get("content", ""))
             if not content:
                 continue
+            content = format_post_for_readability(content, platform)
             posts.append(
                 {
                     **post,
@@ -506,6 +802,7 @@ def parse_converted_content(
             hashtags = generate_default_hashtags(platform)
 
     content = enforce_length(clean_content(content), platform, platform_config)
+    content = format_post_for_readability(content, platform)
     hashtags = validate_hashtags(hashtags, platform)
     return {"isThread": False, "content": content, "hashtags": hashtags}
 
@@ -541,13 +838,11 @@ def get_thread_length_adjustment(
     min_length: int,
     min_posts: int,
 ) -> Optional[Dict[str, Any]]:
-    if not posts or len(posts) <= min_posts:
-        return None
-    stats = get_thread_length_stats(posts, min_length)
-    too_short = stats["averageLength"] < min_length or stats["shortCount"] >= ((len(posts) + 1) // 2)
-    if not too_short:
-        return None
-    return {"targetPostCount": max(min_posts, len(posts) - 1), "stats": stats}
+    _ = posts
+    _ = min_length
+    _ = min_posts
+    # SNS는 블로그처럼 분량을 강제로 채우지 않는다.
+    return None
 
 
 def generate_code(length: int = 6) -> str:
@@ -598,23 +893,28 @@ async def apply_thread_cta_to_last_post(
     platform: str,
     uid: str,
     post_id: str,
+    signature_text: str = "",
+    include_signature: bool = False,
 ) -> List[Dict[str, Any]]:
     if not posts:
         return posts
 
     normalized_url = normalize_blog_url(blog_url)
+    use_original_blog_url = platform == "x"
     short_url = ""
-    if normalized_url:
+    if normalized_url and not use_original_blog_url:
         short_url = await generate_short_link(db, normalized_url, uid, post_id, platform)
-    final_url = normalize_blog_url(short_url) or normalized_url
+    final_url = normalized_url if use_original_blog_url else (normalize_blog_url(short_url) or normalized_url)
 
     last_index = len(posts) - 1
     last_post = posts[last_index] if last_index >= 0 else {}
     last_content = str(last_post.get("content", "")).strip()
+    if include_signature and signature_text:
+        last_content = inject_signature_line(last_content, signature_text)
 
     if platform == "x":
-        min_len = SNS_LIMITS["x"].get("minLengthPerPost", 130)
-        max_len = SNS_LIMITS["x"].get("maxLengthPerPost", 160)
+        min_len = SNS_LIMITS["x"].get("minLengthPerPost", X_MIN_NON_SPACE)
+        max_len = SNS_LIMITS["x"].get("maxLengthPerPost", X_TARGET_AVG_NON_SPACE)
         next_content = enforce_x_length_with_link(last_content, final_url, min_len, max_len)
     else:
         cta_text = build_thread_cta_text(final_url)
@@ -625,6 +925,7 @@ async def apply_thread_cta_to_last_post(
         else:
             next_content = f"{last_content}\n{cta_text}".strip() if last_content else cta_text
 
+    next_content = format_post_for_readability(next_content, platform)
     updated = list(posts)
     updated[last_index] = {
         **last_post,
@@ -649,6 +950,9 @@ async def _convert_platform(
     uid: str,
     post_id_str: str,
     selected_model: str,
+    signature_mode: str,
+    signature_text: str,
+    source_type: str,
 ) -> Dict[str, Any]:
     if platform_index > 0:
         await asyncio.sleep(platform_index * 2)
@@ -657,10 +961,16 @@ async def _convert_platform(
     thread_constraints = {
         "minPosts": platform_config.get("minPosts", 2),
         "maxPosts": platform_config.get("maxPosts", 5),
-        "minLengthPerPost": platform_config.get("minLengthPerPost", 130),
+        "minLengthPerPost": platform_config.get("minLengthPerPost", X_MIN_NON_SPACE),
     }
 
     converted_result = None
+    include_signature = should_attach_signature_auto(
+        signature_mode=signature_mode,
+        signature_text=signature_text,
+        post_data=post_data,
+        source_text=original_content,
+    )
 
     try:
         sns_prompt = build_sns_prompt(
@@ -669,21 +979,22 @@ async def _convert_platform(
             platform_config,
             post_keywords,
             user_info,
-            {
-                "blogUrl": blog_url,
-                "category": post_data.get("category", ""),
-                "subCategory": post_data.get("subCategory", ""),
-                "topic": post_data.get("topic", ""),
-                "title": post_data.get("title", ""),
-            },
-        )
+                {
+                    "blogUrl": blog_url,
+                    "category": post_data.get("category", ""),
+                    "subCategory": post_data.get("subCategory", ""),
+                    "topic": post_data.get("topic", ""),
+                    "title": post_data.get("title", ""),
+                    "sourceType": source_type,
+                },
+            )
 
         ranked = await with_timeout(
             rank_and_select(
                 sns_prompt,
                 platform,
                 cleaned_original_content,
-                {"platformConfig": platform_config, "userInfo": user_info},
+                {"platformConfig": platform_config, "userInfo": user_info, "sourceType": source_type},
             ),
             60,
             "랭킹 파이프라인 타임아웃 (60초)",
@@ -739,6 +1050,7 @@ async def _convert_platform(
                                 "subCategory": post_data.get("subCategory", ""),
                                 "topic": post_data.get("topic", ""),
                                 "title": post_data.get("title", ""),
+                                "sourceType": source_type,
                             },
                         )
                         try:
@@ -818,10 +1130,19 @@ async def _convert_platform(
             }
 
     posts = converted_result.get("posts", [])
-    posts = await apply_thread_cta_to_last_post(db, posts, blog_url, platform, uid, post_id_str)
+    posts = await apply_thread_cta_to_last_post(
+        db,
+        posts,
+        blog_url,
+        platform,
+        uid,
+        post_id_str,
+        signature_text=signature_text,
+        include_signature=include_signature,
+    )
     if platform == "x" and posts:
-        x_min = platform_config.get("minLengthPerPost", 130)
-        x_max = platform_config.get("maxLengthPerPost", 160)
+        x_min = platform_config.get("minLengthPerPost", X_MIN_NON_SPACE)
+        x_max = platform_config.get("maxLengthPerPost", X_TARGET_AVG_NON_SPACE)
         first_content = str(posts[0].get("content", "")).strip()
         quality_issues = validate_x_post_quality(first_content, cleaned_original_content, blog_url, x_min, x_max)
 
@@ -840,6 +1161,7 @@ async def _convert_platform(
                     "topic": post_data.get("topic", ""),
                     "title": post_data.get("title", ""),
                     "qualityIssues": quality_issues,
+                    "sourceType": source_type,
                 },
             )
             try:
@@ -874,6 +1196,8 @@ async def _convert_platform(
                         platform,
                         uid,
                         post_id_str,
+                        signature_text=signature_text,
+                        include_signature=include_signature,
                     )
                     retried_content = str(retried_posts[0].get("content", "")).strip()
                     retried_issues = validate_x_post_quality(
@@ -901,6 +1225,7 @@ async def _convert_platform(
             th_max_posts,
             th_min_len,
             th_max_len,
+            cleaned_original_content,
         )
 
         if thread_issues:
@@ -918,6 +1243,7 @@ async def _convert_platform(
                     "topic": post_data.get("topic", ""),
                     "title": post_data.get("title", ""),
                     "qualityIssues": thread_issues,
+                    "sourceType": source_type,
                 },
             )
             try:
@@ -943,6 +1269,8 @@ async def _convert_platform(
                         platform,
                         uid,
                         post_id_str,
+                        signature_text=signature_text,
+                        include_signature=include_signature,
                     )
                     retried_issues = validate_threads_posts_quality(
                         retried_posts,
@@ -951,6 +1279,7 @@ async def _convert_platform(
                         th_max_posts,
                         th_min_len,
                         th_max_len,
+                        cleaned_original_content,
                     )
                     if retried_issues:
                         logger.warning("Threads 재생성 후에도 품질 이슈 잔존: %s", ", ".join(retried_issues))
@@ -1004,8 +1333,17 @@ async def _convert_to_sns_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]
         "values": user_profile.get("values", ""),
         "tone": user_profile.get("tone", "formal"),
     }
+    signature_mode = normalize_signature_mode(
+        data.get("signatureMode")
+        or post_data.get("snsSignatureMode")
+        or user_profile.get("snsSignatureMode")
+        or "auto"
+    )
+    signature_text = build_profile_signature(user_profile, user_info)
 
-    original_content = post_data.get("content", "")
+    source_payload = resolve_source_content(post_data)
+    original_content = source_payload["content"]
+    source_type = source_payload["sourceType"]
     post_keywords = post_data.get("keywords", "")
     blog_url = normalize_blog_url(post_data.get("publishUrl"))
 
@@ -1034,6 +1372,9 @@ async def _convert_to_sns_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]
             uid=uid,
             post_id_str=post_id_str,
             selected_model=selected_model,
+            signature_mode=signature_mode,
+            signature_text=signature_text,
+            source_type=source_type,
         )
         for idx, platform in enumerate(platforms)
     ]
@@ -1057,6 +1398,7 @@ async def _convert_to_sns_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]
         "metadata": {
             "originalWordCount": len(original_content or ""),
             "platformCount": len(platforms),
+            "sourceType": source_type,
         },
     }
     db.collection("sns_conversions").add(conversion_data)

@@ -12,12 +12,17 @@ import html
 import re
 from typing import Any, Dict
 
+# 예시 원고(사용자 제공) 기반 X 평균 길이(공백 제외) 정책값
+X_TARGET_AVG_NON_SPACE = 111
+X_MIN_NON_SPACE = 60
+THREADS_MIN_NON_SPACE = 120
+
 # SNS 플랫폼별 제한사항 (Facebook 제외)
 SNS_LIMITS: Dict[str, Dict[str, Any]] = {
     "x": {
-        "maxLengthPerPost": 160,
-        "minLengthPerPost": 130,
-        "recommendedMinLength": 130,
+        "maxLengthPerPost": X_TARGET_AVG_NON_SPACE,
+        "minLengthPerPost": X_MIN_NON_SPACE,
+        "recommendedMinLength": X_TARGET_AVG_NON_SPACE,
         "hashtagLimit": 2,
         "charsPerLine": 32,
         "name": "X(Twitter)",
@@ -27,7 +32,7 @@ SNS_LIMITS: Dict[str, Dict[str, Any]] = {
     },
     "threads": {
         "maxLengthPerPost": 350,
-        "minLengthPerPost": 250,
+        "minLengthPerPost": THREADS_MIN_NON_SPACE,
         "recommendedMinLength": 250,
         "hashtagLimit": 3,
         "charsPerLine": 27,
@@ -73,6 +78,13 @@ def _build_topic_and_title_block(options: Dict[str, Any]) -> str:
     return f"{topic_block}{title_block}"
 
 
+def _resolve_source_label(options: Dict[str, Any]) -> str:
+    source_type = str((options or {}).get("sourceType") or "").strip().lower()
+    if source_type in {"position_statement", "statement", "stance", "facebook_post", "facebook", "fb"}:
+        return "내 입장문/페이스북 글"
+    return "블로그 원고"
+
+
 def build_x_prompt(
     clean_content: str,
     platform_config: Dict[str, Any],
@@ -81,14 +93,16 @@ def build_x_prompt(
 ) -> str:
     options = options or {}
     hashtag_limit = platform_config.get("hashtagLimit", 2)
-    min_len = platform_config.get("minLengthPerPost", 130)
-    max_len = platform_config.get("maxLengthPerPost", 160)
+    min_len = platform_config.get("minLengthPerPost", X_MIN_NON_SPACE)
+    recommended_len = platform_config.get("recommendedMinLength", X_TARGET_AVG_NON_SPACE)
+    max_len = platform_config.get("maxLengthPerPost", X_TARGET_AVG_NON_SPACE)
     blog_url = options.get("blogUrl", "")
     category = options.get("category", "")
     sub_category = options.get("subCategory", "")
     quality_issues = options.get("qualityIssues", [])
     natural_tone_guide = build_sns_natural_tone_guide()
     extra_context = _build_topic_and_title_block(options)
+    source_label = _resolve_source_label(options)
 
     # Node 로직과 유사한 분기
     is_friendly_style = category in {"일상 소통", "daily-communication"} or (
@@ -137,16 +151,23 @@ def build_x_prompt(
   <source_info>
     <author_name>{user_info.get('name', '정치인')}</author_name>
     <author_role>{user_info.get('position', '의원')}</author_role>
-    <instruction>블로그 원고를 X 게시물 1개로 변환하라.</instruction>
+    <instruction>{source_label}을 X 게시물 1개로 변환하라.</instruction>
   </source_info>
 
 {extra_context}
 
-  <source_blog_content>
+  <source_content>
 {clean_content}
-  </source_blog_content>
+  </source_content>
 
 {natural_tone_guide}
+
+  <transformation_policy priority="critical">
+    <rule>변환 목적은 신규 원고 작성이 아니라 원문 압축/재배열입니다.</rule>
+    <rule>원문의 핵심 표현을 최대한 재사용하고, 길이 제약으로 인한 축약만 허용합니다.</rule>
+    <rule>원문에 없는 구호/슬로건/브랜딩 문구를 새로 만들지 않습니다.</rule>
+    <rule>원문 핵심어(고유명사/숫자/정책명) 3개 이상을 본문에 그대로 포함합니다.</rule>
+  </transformation_policy>
 
   <platform_strategy>
     <description>X는 훑어보는 플랫폼이므로 1개 게시물에 핵심 메시지와 임팩트 요소를 동시에 담아야 한다.</description>
@@ -167,7 +188,7 @@ def build_x_prompt(
       <item>감성 훅 또는 핵심 메시지로 시작</item>
       <item>원본의 임팩트 요소 1~2개 포함</item>
       <item>구체적 정책/활동 1개 언급</item>
-      <item>길이: {min_len}-{max_len}자 (공백 제외)</item>
+      <item>길이: 권장 {recommended_len}자 내외, 최대 {max_len}자 (공백 제외)</item>
       <item>블로그 링크 필수 포함 (별도 CTA 문구 없이 링크만 자연 배치)</item>
       <item>해시태그: 최대 {hashtag_limit}개</item>
       <item>{blog_line}</item>
@@ -175,11 +196,13 @@ def build_x_prompt(
   </extraction_steps>
 
   <writing_rules>
-    <rule>{min_len}-{max_len}자 엄수</rule>
+    <rule>최대 {max_len}자 이내(공백 제외)로 작성하고, 분량을 억지로 채우지 않습니다.</rule>
     <rule>줄바꿈 카드형 구성(2~5줄)으로 가독성 확보</rule>
     <rule>원본 고유명사/핵심 수치/핵심 주장 최소 1개 이상 포함</rule>
+    <rule>원문 문장 또는 원문 어절을 직접 재사용한 구문을 1개 이상 포함</rule>
     <rule>인사/서론 금지, 핵심부터 시작</rule>
     <rule>원본에 없는 사실/수치 추가 금지</rule>
+    <rule>원문에 없는 가치판단/수식어 확장 최소화</rule>
     <rule>정치적 입장과 논조 보존</rule>
   </writing_rules>
 
@@ -187,6 +210,7 @@ def build_x_prompt(
     <item>"자세한 내용은 블로그에서 확인하세요" 같은 저품질 CTA 문구</item>
     <item>링크 앞 장황한 안내 문구</item>
     <item>원본 키워드 없는 일반 요약</item>
+    <item>원문에 없는 새로운 구호/캐치프레이즈 창작</item>
     <item>느낌표/감탄사 남발</item>
   </anti_patterns>
 
@@ -214,8 +238,9 @@ def build_x_prompt(
   </output_contract>
 
   <final_checklist>
-    <item>{min_len}-{max_len}자 범위인가?</item>
+    <item>{max_len}자 이하인가?</item>
     <item>원본의 고유명사/수치/핵심 주장을 1개 이상 반영했는가?</item>
+    <item>원문 어절/문장을 재사용한 구문이 포함되었는가?</item>
     <item>저품질 CTA 문구가 없는가?</item>
     <item>블로그 링크가 본문에 포함되어 있는가?</item>
   </final_checklist>
@@ -233,13 +258,15 @@ def build_threads_prompt(
     hashtag_limit = platform_config.get("hashtagLimit", 3)
     min_posts = platform_config.get("minPosts", 2)
     max_posts = platform_config.get("maxPosts", 5)
-    min_len = platform_config.get("minLengthPerPost", 250)
+    min_len = platform_config.get("minLengthPerPost", THREADS_MIN_NON_SPACE)
     max_len = platform_config.get("maxLengthPerPost", 350)
+    recommended_len = platform_config.get("recommendedMinLength", 250)
     target_post_count = options.get("targetPostCount")
     blog_url = options.get("blogUrl", "")
     quality_issues = options.get("qualityIssues", [])
     natural_tone_guide = build_sns_natural_tone_guide()
     extra_context = _build_topic_and_title_block(options)
+    source_label = _resolve_source_label(options)
 
     post_count_guidance = (
         f"게시물 수는 {target_post_count}개로 맞춰주세요."
@@ -265,16 +292,23 @@ def build_threads_prompt(
   <source_info>
     <author_name>{user_info.get('name', '정치인')}</author_name>
     <author_role>{user_info.get('position', '의원')}</author_role>
-    <instruction>블로그 원고를 Threads 타래로 변환하라.</instruction>
+    <instruction>{source_label}을 Threads 타래로 변환하라.</instruction>
   </source_info>
 
 {extra_context}
 
-  <source_blog_content>
+  <source_content>
 {clean_content}
-  </source_blog_content>
+  </source_content>
 
 {natural_tone_guide}
+
+  <transformation_policy priority="critical">
+    <rule>Threads 변환은 원문을 게시물 단위로 분해/재배열하는 작업입니다.</rule>
+    <rule>각 게시물은 원문 문장(또는 절)을 압축 편집해 구성하고 새 서사를 만들지 않습니다.</rule>
+    <rule>원문에 없는 새로운 주장/수치/구호를 추가하지 않습니다.</rule>
+    <rule>타래 전체에서 원문 핵심어(고유명사/숫자/정책명) 5개 이상을 그대로 유지합니다.</rule>
+  </transformation_policy>
 
   <platform_strategy>
     <description>Threads는 대화와 맥락을 쌓는 플랫폼이므로, 왜 중요한지와 무엇을 할 것인지를 단계적으로 설명한다.</description>
@@ -282,7 +316,7 @@ def build_threads_prompt(
     <link_guidance>{blog_line}</link_guidance>
   </platform_strategy>
 
-  <thread_structure post_range="{min_posts}-{max_posts}" length_per_post="{min_len}-{max_len}">
+  <thread_structure post_range="{min_posts}-{max_posts}" length_per_post="권장 {recommended_len}자 내외, 최대 {max_len}자">
     <rule>각 게시물은 X보다 길고 설명적으로 작성</rule>
     <post order="1" role="요약+훅">
       <item>핵심 메시지와 배경을 함께 담은 요약</item>
@@ -310,7 +344,8 @@ def build_threads_prompt(
 
   <writing_rules>
     <rule>각 게시물은 독립적으로도 이해 가능해야 함</rule>
-    <rule>X보다 더 길고 설명적으로 작성</rule>
+    <rule>각 게시물은 필요한 정보만 담아 간결하게 작성하고, 분량을 억지로 늘리지 않습니다.</rule>
+    <rule>각 게시물에 원문 표현(문장/어절) 재사용 구문을 1개 이상 포함</rule>
     <rule>게시물 간 중복 문장 최소화</rule>
     <rule>이모지 남발 금지 (필요 시 0~1개)</rule>
     <rule>원본의 정치적 입장과 논조 완전 보존</rule>
@@ -342,7 +377,8 @@ def build_threads_prompt(
 
   <final_checklist>
     <item>게시물 수가 {min_posts}~{max_posts}개 범위인가?</item>
-    <item>각 게시물이 {min_len}~{max_len}자 범위인가?</item>
+    <item>각 게시물이 {max_len}자 이하인가?</item>
+    <item>타래 전반에서 원문 핵심어/표현 재사용이 충분한가?</item>
     <item>마지막 게시물에 블로그 링크가 포함됐는가?</item>
     <item>게시물 간 중복 문장이 과도하지 않은가?</item>
   </final_checklist>

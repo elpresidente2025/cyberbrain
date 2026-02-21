@@ -22,6 +22,25 @@ from services.posts.profile_loader import end_session
 
 logger = logging.getLogger(__name__)
 
+SOURCE_TYPE_ALIASES = {
+    "position_statement": "position_statement",
+    "statement": "position_statement",
+    "stance": "position_statement",
+    "입장문": "position_statement",
+    "내 입장문": "position_statement",
+    "facebook_post": "facebook_post",
+    "facebook": "facebook_post",
+    "fb": "facebook_post",
+    "페이스북": "facebook_post",
+    "페이스북 글": "facebook_post",
+    "blog_draft": "blog_draft",
+    "blog_post": "blog_draft",
+    "blog": "blog_draft",
+    "블로그": "blog_draft",
+    "블로그 원고": "blog_draft",
+    "원고": "blog_draft",
+}
+
 
 class ApiError(Exception):
     def __init__(self, status: int, code: str, message: str):
@@ -127,6 +146,44 @@ def _normalize_keywords(raw_keywords: Any) -> List[str]:
     return []
 
 
+def _normalize_source_type(raw_value: Any) -> str:
+    normalized = str(raw_value or "").strip().lower()
+    if not normalized:
+        return "blog_draft"
+    return SOURCE_TYPE_ALIASES.get(normalized, "blog_draft")
+
+
+def _extract_source_input(data: Dict[str, Any], fallback_content: str) -> str:
+    candidate_keys = (
+        "sourceInput",
+        "sourceContent",
+        "originalContent",
+        "inputContent",
+        "rawContent",
+        "sourceText",
+    )
+    for key in candidate_keys:
+        value = str(data.get(key) or "").strip()
+        if value:
+            return value
+    return str(fallback_content or "").strip()
+
+
+def _extract_source_type(data: Dict[str, Any]) -> str:
+    candidate_keys = (
+        "sourceType",
+        "inputType",
+        "contentType",
+        "writingSource",
+        "sourceMode",
+    )
+    for key in candidate_keys:
+        value = str(data.get(key) or "").strip()
+        if value:
+            return _normalize_source_type(value)
+    return "blog_draft"
+
+
 def _evaluate_and_update_post(
     doc_ref,
     *,
@@ -171,6 +228,8 @@ def _save_selected_post_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     content = str(data.get("content") or "").strip()
     if not title or not content:
         raise ApiError(400, "invalid-argument", "제목과 내용이 필요합니다.")
+    source_input = _extract_source_input(data, content)
+    source_type = _extract_source_type(data)
 
     db = firestore.client()
     session_id = data.get("sessionId")
@@ -187,6 +246,8 @@ def _save_selected_post_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]:
             "subCategory": str(data.get("subCategory") or ""),
             "keywords": data.get("keywords") or "",
             "wordCount": word_count,
+            "sourceInput": source_input,
+            "sourceType": source_type,
             "status": "scheduled",
             "createdAt": firestore.SERVER_TIMESTAMP,
             "updatedAt": firestore.SERVER_TIMESTAMP,

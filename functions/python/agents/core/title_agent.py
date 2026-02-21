@@ -4,7 +4,11 @@ import re
 from typing import Dict, Any, Optional
 
 from ..base_agent import Agent
-from ..common.title_generation import generate_and_validate_title, resolve_title_purpose
+from ..common.title_generation import (
+    generate_and_validate_title,
+    normalize_title_surface,
+    resolve_title_purpose,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -146,10 +150,12 @@ class TitleAgent(Agent):
                 }
             )
 
-            logger.info(f"[{self.name}] Selected Title: {result['title']} (Score: {result['score']})")
+            raw_title = str(result.get('title') or '')
+            normalized_title = normalize_title_surface(raw_title) or raw_title
+            logger.info(f"[{self.name}] Selected Title: {normalized_title} (Score: {result['score']})")
 
             return {
-                'title': result['title'],
+                'title': normalized_title,
                 'titleScore': result['score'],
                 'titleHistory': result['history'],
                 'titleType': result.get('analysis', {}).get('type', 'UNKNOWN')

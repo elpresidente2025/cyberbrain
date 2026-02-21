@@ -104,8 +104,14 @@ def build_scoring_prompt(
     context = context or {}
     platform_config = context.get("platformConfig") or {}
     user_info = context.get("userInfo") or {}
+    source_type = str(context.get("sourceType") or "").strip().lower()
     platform_name = platform_config.get("name", platform)
     author_label = f"{user_info.get('name', '작성자')} {user_info.get('position', '')}".strip()
+    source_label = (
+        "원본 입장문/페이스북 글"
+        if source_type in {"position_statement", "statement", "stance", "facebook_post", "facebook", "fb"}
+        else "원본 블로그 원고"
+    )
 
     original_summary = original_content[:500] + "..." if len(original_content) > 500 else original_content
     candidate_blocks = []
@@ -140,7 +146,7 @@ def build_scoring_prompt(
 
     return f"""
 당신은 SNS 콘텐츠 성과 예측 전문가입니다.
-아래 원본 블로그 원고를 {platform_name} 플랫폼용으로 변환한 {len(candidates)}개 후보를 평가해주세요.
+아래 {source_label}를 {platform_name} 플랫폼용으로 변환한 {len(candidates)}개 후보를 평가해주세요.
 
 **작성자:** {author_label}
 **원본 원고 (요약):**

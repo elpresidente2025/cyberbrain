@@ -177,9 +177,176 @@ def indexPastPosts(req: https_fn.CallableRequest) -> dict:
     """Index past posts for RAG (legacy callable compatibility)."""
     from handlers.posts import handle_index_past_posts_call
     return handle_index_past_posts_call(req)
+# ============================================================
+# Profile Endpoints
+# ============================================================
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.MB_512,
+    timeout_sec=120,
+)
+def getUserProfile(req: https_fn.CallableRequest) -> dict:
+    """Get current user profile (legacy callable compatibility)."""
+    from handlers.profile import handle_get_user_profile_call
+    return handle_get_user_profile_call(req)
 
 
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.MB_512,
+    timeout_sec=180,
+)
+def updateProfile(req: https_fn.CallableRequest) -> dict:
+    """Update current user profile (legacy callable compatibility)."""
+    from handlers.profile import handle_update_profile_call
+    return handle_update_profile_call(req)
 
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.MB_256,
+    timeout_sec=60,
+)
+def checkDistrictAvailability(req: https_fn.CallableRequest) -> dict:
+    """Check district availability (legacy callable compatibility)."""
+    from handlers.profile import handle_check_district_availability_call
+    return handle_check_district_availability_call(req)
+
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.MB_512,
+    timeout_sec=180,
+)
+def registerWithDistrictCheck(req: https_fn.CallableRequest) -> dict:
+    """Register with district check (legacy callable compatibility)."""
+    from handlers.profile import handle_register_with_district_check_call
+    return handle_register_with_district_check_call(req)
+
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.MB_256,
+    timeout_sec=60,
+)
+def checkBonusEligibility(req: https_fn.CallableRequest) -> dict:
+    """Check bonus eligibility (legacy callable compatibility)."""
+    from handlers.publishing_bonus import handle_check_bonus_eligibility_call
+    return handle_check_bonus_eligibility_call(req)
+
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.MB_256,
+    timeout_sec=60,
+)
+def useBonusGeneration(req: https_fn.CallableRequest) -> dict:
+    """Consume one bonus generation (legacy callable compatibility)."""
+    from handlers.publishing_bonus import handle_use_bonus_generation_call
+    return handle_use_bonus_generation_call(req)
+
+
+# ============================================================
+# Party Verification Endpoints
+# ============================================================
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.MB_512,
+    timeout_sec=120,
+)
+def verifyPartyCertificate(req: https_fn.CallableRequest) -> dict:
+    """Verify party certificate (legacy callable compatibility)."""
+    from handlers.party_verification import handle_verify_party_certificate_call
+    return handle_verify_party_certificate_call(req)
+
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.MB_512,
+    timeout_sec=120,
+)
+def verifyPaymentReceipt(req: https_fn.CallableRequest) -> dict:
+    """Verify payment receipt (legacy callable compatibility)."""
+    from handlers.party_verification import handle_verify_payment_receipt_call
+    return handle_verify_payment_receipt_call(req)
+
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.MB_256,
+    timeout_sec=30,
+)
+def getVerificationHistory(req: https_fn.CallableRequest) -> dict:
+    """Get verification history (legacy callable compatibility)."""
+    from handlers.party_verification import handle_get_verification_history_call
+    return handle_get_verification_history_call(req)
+
+
+# ============================================================
+# Keyword Analysis Endpoints
+# ============================================================
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.MB_512,
+    timeout_sec=60,
+    secrets=["GEMINI_API_KEY"]
+)
+def requestKeywordAnalysis(req: https_fn.CallableRequest) -> dict:
+    """Request keyword analysis (legacy callable compatibility)."""
+    from handlers.keyword_analysis import handle_request_keyword_analysis_call
+    return handle_request_keyword_analysis_call(req)
+
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.MB_256,
+    timeout_sec=30,
+)
+def getKeywordAnalysisResult(req: https_fn.CallableRequest) -> dict:
+    """Get keyword analysis result (legacy callable compatibility)."""
+    from handlers.keyword_analysis import handle_get_keyword_analysis_result_call
+    return handle_get_keyword_analysis_result_call(req)
+
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.MB_256,
+    timeout_sec=30,
+)
+def getKeywordAnalysisHistory(req: https_fn.CallableRequest) -> dict:
+    """Get keyword analysis history (legacy callable compatibility)."""
+    from handlers.keyword_analysis import handle_get_keyword_analysis_history_call
+    return handle_get_keyword_analysis_history_call(req)
+
+
+@https_fn.on_request(
+    region="asia-northeast3",
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=540,
+    secrets=["GEMINI_API_KEY"]
+)
+def keywordAnalysisWorker(req: https_fn.Request) -> https_fn.Response:
+    """Keyword analysis worker endpoint."""
+    from handlers.keyword_analysis import handle_keyword_analysis_worker
+    return handle_keyword_analysis_worker(req)
+
+
+# ============================================================
+# Emergency Admin Endpoint
+# ============================================================
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.MB_256,
+    timeout_sec=60,
+)
+def emergencyRestoreAdmin(req: https_fn.CallableRequest) -> dict:
+    """Emergency restore admin role (legacy callable compatibility)."""
+    from handlers.emergency_admin import handle_emergency_restore_admin_call
+    return handle_emergency_restore_admin_call(req)
 
 
 @https_fn.on_request(

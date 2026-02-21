@@ -228,6 +228,21 @@ export function useGenerateAPI() {
         // 메타데이터
         style: formData.style,
         type: formData.type,
+        sourceInput:
+          draftData.sourceInput ||
+          formData.sourceInput ||
+          formData.originalContent ||
+          formData.inputContent ||
+          formData.rawContent ||
+          formData.prompt ||
+          content,
+        sourceType:
+          draftData.sourceType ||
+          formData.sourceType ||
+          formData.inputType ||
+          formData.contentType ||
+          formData.writingSource ||
+          'blog_draft',
 
         // 📌 개선: 설정 기반 SEO 최적화 판단
         aiGeneratedVariations: 1,
@@ -347,6 +362,8 @@ export function useGenerateAPI() {
         wordCount: draft.wordCount,
         style: draft.style,
         type: draft.type,
+        sourceInput: draft.sourceInput,
+        sourceType: draft.sourceType,
         meta: draft.meta,
         sessionId: sessionId, // 🆕 세션 ID 전달 (세션 완료 처리용)
         appliedStrategy: draft.multiAgent?.appliedStrategy || null  // 🎯 적용된 수사학 전략 (선호도 학습용)

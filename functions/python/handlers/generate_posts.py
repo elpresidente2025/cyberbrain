@@ -8,6 +8,7 @@ Node `handlers/posts.js`의 generatePosts 엔트리 역할을 Python으로 이�
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import logging
 import re
@@ -502,11 +503,93 @@ def _validate_keyword_gate(keyword_validation: Dict[str, Any], user_keywords: li
 def _extract_tag_text(text: str, tag: str) -> str:
     if not text:
         return ""
-    pattern = re.compile(rf"<{tag}\b[^>]*>([\s\S]*?)</{tag}>", re.IGNORECASE)
-    matches = list(pattern.finditer(str(text)))
-    if not matches:
+    source = str(text or "").strip()
+    if not source:
         return ""
-    return str(matches[-1].group(1) or "").strip()
+
+    # Remove markdown code fences first.
+    source = re.sub(r"```(?:xml|html|json)?\s*([\s\S]*?)\s*```", r"\1", source, flags=re.IGNORECASE).strip()
+
+    def _normalize_payload(payload: str) -> str:
+        cleaned = str(payload or "").strip()
+        if not cleaned:
+            return ""
+
+        # Remove optional XML declaration.
+        cleaned = re.sub(r"^\s*<\?xml[^>]*\?>\s*", "", cleaned, flags=re.IGNORECASE)
+
+        # Unwrap CDATA wrappers repeatedly.
+        cdata_pattern = re.compile(r"^\s*<!\[CDATA\[(.*)\]\]>\s*$", re.DOTALL)
+        while True:
+            m = cdata_pattern.match(cleaned)
+            if not m:
+                break
+            cleaned = str(m.group(1) or "").strip()
+
+        # Guard against leaked CDATA delimiters from malformed outputs.
+        cleaned = cleaned.replace("<![CDATA[", "").replace("]]>", "").strip()
+        return cleaned
+
+    def _extract_from(raw: str) -> str:
+        pattern = re.compile(rf"<{tag}\b[^>]*>([\s\S]*?)</{tag}>", re.IGNORECASE)
+        matches = list(pattern.finditer(raw))
+        for match in reversed(matches):
+            candidate = _normalize_payload(match.group(1) or "")
+            if not candidate:
+                continue
+            # Skip obvious placeholder echoes from prompt examples.
+            plain = re.sub(r"<[^>]*>", " ", candidate)
+            plain = re.sub(r"\s+", " ", plain).strip().lower()
+            if "html 본문" in plain and len(plain) < 40:
+                continue
+            if plain in {"...", "…"}:
+                continue
+            return candidate
+        return ""
+
+    extracted = _extract_from(source)
+    if extracted:
+        return extracted
+
+    # Retry once with HTML-unescaped text (&lt;content&gt;...).
+    unescaped = html.unescape(source)
+    if unescaped != source:
+        extracted = _extract_from(unescaped)
+        if extracted:
+            return extracted
+
+    return ""
+
+
+def _extract_content_payload(text: str) -> str:
+    source = str(text or "").strip()
+    if not source:
+        return ""
+
+    extracted = _extract_tag_text(source, "content")
+    if extracted:
+        return extracted
+
+    # JSON fallback: {"content": "..."}
+    stripped = re.sub(r"```(?:json)?\s*([\s\S]*?)\s*```", r"\1", source, flags=re.IGNORECASE).strip()
+    json_candidate = ""
+    if stripped.startswith("{") and stripped.endswith("}"):
+        json_candidate = stripped
+    else:
+        match = re.search(r"\{[\s\S]*\}", stripped)
+        if match:
+            json_candidate = match.group(0)
+    if json_candidate:
+        try:
+            parsed = json.loads(json_candidate)
+            if isinstance(parsed, dict):
+                content_value = parsed.get("content")
+                if isinstance(content_value, str):
+                    return content_value.strip()
+        except Exception:
+            pass
+
+    return ""
 
 
 def _run_async_sync(coro):
@@ -580,8 +663,9 @@ def _recover_short_content_once(
         logger.warning("분량 자동 보정 호출 실패: %s", exc)
         return {"content": base_content, "edited": False, "error": str(exc)}
 
-    candidate = _extract_tag_text(response_text, "content") or str(response_text or "").strip()
+    candidate = _extract_content_payload(response_text)
     if not candidate:
+        logger.warning("Length auto-repair parse failed: no <content> payload extracted")
         return {"content": base_content, "edited": False}
 
     candidate_len = _count_chars_no_space(candidate)
@@ -1120,8 +1204,9 @@ def _recover_repetition_issues_once(
         logger.warning("반복 품질 자동 보정 호출 실패: %s", exc)
         return {"content": base_content, "edited": False, "error": str(exc)}
 
-    candidate = _extract_tag_text(response_text, "content") or str(response_text or "").strip()
+    candidate = _extract_content_payload(response_text)
     if not candidate:
+        logger.warning("Repetition auto-repair parse failed: no <content> payload extracted")
         return {"content": base_content, "edited": False}
 
     candidate_len = _count_chars_no_space(candidate)
@@ -1816,6 +1901,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         context_analysis=context_analysis_for_title,
         full_name=full_name,
     )
+    generated_title = _normalize_title_surface_local(generated_title) or generated_title
     generated_content = normalize_book_title_notation(
         generated_content,
         topic=topic,
@@ -1899,6 +1985,23 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
 
     generated_at = datetime.utcnow().isoformat() + "Z"
     now_ms = int(time.time() * 1000)
+    source_input = str(
+        data.get("sourceInput")
+        or data.get("sourceContent")
+        or data.get("originalContent")
+        or data.get("inputContent")
+        or data.get("rawContent")
+        or data.get("prompt")
+        or data.get("topic")
+        or ""
+    ).strip()
+    source_type = str(
+        data.get("sourceType")
+        or data.get("inputType")
+        or data.get("contentType")
+        or data.get("writingSource")
+        or "blog_draft"
+    ).strip()
     draft_data = {
         "id": f"draft_{now_ms}",
         "title": generated_title,
@@ -1907,6 +2010,8 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         "category": category,
         "subCategory": str(data.get("subCategory") or ""),
         "keywords": data.get("keywords") or "",
+        "sourceInput": source_input,
+        "sourceType": source_type,
         "generatedAt": generated_at,
     }
 

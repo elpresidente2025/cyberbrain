@@ -452,6 +452,16 @@ def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[st
         has_user_keywords = bool(user_keywords)
         primary_kw = user_keywords[0] if has_user_keywords else (keywords[0] if keywords else '')
         secondary_kw = (user_keywords[1] if len(user_keywords) > 1 else (keywords[0] if keywords else '')) if has_user_keywords else (keywords[1] if len(keywords) > 1 else '')
+        if primary_kw and secondary_kw:
+            primary_compact = re.sub(r'\s+', '', primary_kw)
+            secondary_compact = re.sub(r'\s+', '', secondary_kw)
+            if (
+                primary_compact
+                and secondary_compact
+                and primary_compact in secondary_compact
+                and len(secondary_compact) > len(primary_compact)
+            ):
+                primary_kw, secondary_kw = secondary_kw, primary_kw
 
         # 두 키워드 간 유사/독립 판별
         has_two_keywords = bool(primary_kw and secondary_kw and primary_kw != secondary_kw)
@@ -464,13 +474,13 @@ def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[st
                 kw1_words = primary_kw.split()
                 unique_words = [w for w in kw2_words if w not in kw1_words]
                 unique_hint = f'"{", ".join(unique_words)}"를 제목 뒤쪽에 녹여넣기' if unique_words else '공통 어절로 자동 충족'
-                example_word = unique_words[0] if unique_words else kw2_words[0]
                 title_keyword_rule = f"""
 <keyword_placement type="similar">
   <description>두 검색어("{primary_kw}", "{secondary_kw}")가 공통 어절을 공유</description>
   <rule type="must">제목은 반드시 "{primary_kw}"로 시작</rule>
   <rule type="must">"{secondary_kw}"는 어절 단위로 해체하여 자연스럽게 배치 ({unique_hint})</rule>
-  <example>"{primary_kw}, 보고있나, {example_word} 출판기념회에 초대합니다"</example>
+  <example>"서면 영광도서, &lt;보고있나, 부산&gt; 출판기념회에 초대합니다"</example>
+  <example>"부산 대형병원, 암센터 확충으로 고령 환자도 안심"</example>
 </keyword_placement>
 """
             else:
@@ -479,7 +489,9 @@ def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[st
   <description>두 검색어("{primary_kw}", "{secondary_kw}")가 독립적</description>
   <rule type="must">제목은 반드시 "{primary_kw}"로 시작</rule>
   <rule type="must">"{secondary_kw}"는 제목 뒤쪽에 자연스럽게 배치</rule>
-  <example>"{primary_kw}, 확장 공사에 {secondary_kw} 적극 구제 촉구"</example>
+  <example>"계양산 러브버그 방역, 계양구청에 적극 구제 촉구"</example>
+  <example>"성수역 3번 출구, 확장 공사 전현희 덕이라는 코레일 노조"</example>
+  <example>"부산 디즈니랜드 유치, 서부산 발전의 열쇠?"</example>
 </keyword_placement>
 """
 
@@ -1045,6 +1057,11 @@ def normalize_title_surface(title: str) -> str:
     if not cleaned:
         return ''
 
+    candidate = cleaned
+    # 소수점 앞뒤 공백 정리: "0. 7%" -> "0.7%", "3 .5" -> "3.5"
+    candidate = re.sub(r'(\d)\s*\.\s*(\d)', r'\1.\2', candidate)
+    cleaned = candidate
+
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
     cleaned = re.sub(r'\s+([,.:;!?])', r'\1', cleaned)
     cleaned = re.sub(r'([,.:;!?])(?=[^\s\]\)\}])', r'\1 ', cleaned)
@@ -1202,7 +1219,17 @@ def resolve_title_purpose(topic: str, params: Dict[str, Any]) -> str:
         return 'event_announcement'
 
     context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
-    intent = str(context_analysis.get('intent') or '').strip()
+    intent = str(context_analysis.get('intent') or '').strip().lower()
+    offline_intents = {
+        'event_announcement',
+        'offline_engagement',
+        'event_participation',
+        'event_attendance',
+        'brief_notice',
+        'schedule_notice',
+    }
+    if intent in offline_intents:
+        return 'event_announcement'
     if intent:
         return intent
     return ''
@@ -1818,19 +1845,43 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
         any_keyword = next((k['keyword'] for k in keyword_infos if k['index'] >= 0), '')
         
         # 키워드 뒤 구분자 검증: 쉼표, 물음표, 조사 등으로 분리되어야 함
+        # 단, 유사 키워드가 중첩되는 경우(예: "부산 디즈니랜드 유치" / "부산 디즈니랜드")
+        # 짧은 키워드의 중간 매칭은 구분자 검증에서 제외한다.
+        matched_spans = []
+        for info in keyword_infos:
+            idx = int(info.get('index', -1))
+            keyword = str(info.get('keyword') or '')
+            if idx < 0 or not keyword:
+                continue
+            matched_spans.append({
+                'keyword': keyword,
+                'start': idx,
+                'end': idx + len(keyword),
+            })
+
         kw_delimiter_ok = True
-        for k in keyword_infos:
-            if k['index'] >= 0:
-                end_pos = k['index'] + len(k['keyword'])
-                if end_pos < len(title):
-                    next_char = title[end_pos]
-                    # 구분자: 쉼표, 물음표, 조사(에,의,에서,을,를,은,는,이,가), 마침표, 느낌표
-                    if next_char not in (',', '?', '!', '.', '에', '의', '을', '를', '은', '는', '이', '가', ':', ' '):
-                        kw_delimiter_ok = False
-                    elif next_char == ' ':
-                        # 공백 뒤에 바로 한글(이름 등)이 오면 구분자 부족
-                        if end_pos + 1 < len(title) and '\uac00' <= title[end_pos + 1] <= '\ud7a3':
-                            kw_delimiter_ok = False
+        delimiters = (',', '?', '!', '.', '에', '의', '을', '를', '은', '는', '이', '가', ':', ' ')
+        for span in matched_spans:
+            is_shadowed = any(
+                other['start'] == span['start'] and other['end'] > span['end']
+                for other in matched_spans
+            )
+            if is_shadowed:
+                continue
+
+            end_pos = span['end']
+            if end_pos >= len(title):
+                continue
+
+            next_char = title[end_pos]
+            if next_char not in delimiters:
+                kw_delimiter_ok = False
+                continue
+
+            if next_char == ' ':
+                # 공백 뒤에 바로 한글(이름 등)이 오면 구분자 부족
+                if end_pos + 1 < len(title) and '\uac00' <= title[end_pos + 1] <= '\ud7a3':
+                    kw_delimiter_ok = False
 
         # 듀얼 키워드 배치 검증: 1번 키워드가 제목 시작에 있는지
         dual_kw_bonus = 0
@@ -1934,26 +1985,37 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
         
     # 5. Author Inclusion (Max 10)
     if author_name:
+        category_text = str(params.get('category') or '').strip().lower()
+        commentary_purposes = {'commentary', 'issue_analysis', 'current_affairs'}
+        commentary_categories = {'current-affairs', 'bipartisan-cooperation'}
+        prefers_relationship_style = (
+            title_purpose in commentary_purposes or category_text in commentary_categories
+        )
+
         if author_name in title:
             speaker_patterns = [
                 f"{author_name}이 본", f"{author_name}가 본", f"{author_name}의 평가", f"{author_name}의 시각",
                 f"칭찬한 {author_name}", f"질타한 {author_name}", f"{author_name} [\"'`]"
             ]
             has_pattern = any(re.search(p, title) for p in speaker_patterns)
-            
-            if has_pattern:
-                breakdown['authorIncluded'] = {'score': 10, 'max': 10, 'status': '패턴 적용'}
-            else:
-                breakdown['authorIncluded'] = {'score': 6, 'max': 10, 'status': '단순 포함'}
-                if title_purpose != 'event_announcement':
+
+            if prefers_relationship_style:
+                if has_pattern:
+                    breakdown['authorIncluded'] = {'score': 10, 'max': 10, 'status': '패턴 적용'}
+                else:
+                    breakdown['authorIncluded'] = {'score': 6, 'max': 10, 'status': '단순 포함'}
                     suggestions.append(f'"{author_name}이 본", "칭찬한 {author_name}" 등 관계형 표현 권장.')
+            else:
+                breakdown['authorIncluded'] = {'score': 10, 'max': 10, 'status': '포함'}
         else:
             # 행사 안내형 제목은 인물명 누락을 치명 감점으로 보지 않는다.
             if title_purpose == 'event_announcement':
                 breakdown['authorIncluded'] = {'score': 6, 'max': 10, 'status': '행사형 예외'}
-            else:
+            elif prefers_relationship_style:
                 breakdown['authorIncluded'] = {'score': 0, 'max': 10, 'status': '미포함'}
                 suggestions.append(f'화자 "{author_name}"를 제목에 포함하면 브랜딩에 도움됩니다.')
+            else:
+                breakdown['authorIncluded'] = {'score': 5, 'max': 10, 'status': '선택'}
     else:
         breakdown['authorIncluded'] = {'score': 5, 'max': 10, 'status': '해당없음'}
 
@@ -2049,6 +2111,7 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
     min_score = int(options.get('minScore', 70))
     max_attempts = int(options.get('maxAttempts', 3))
     candidate_count = max(1, int(options.get('candidateCount', 5)))
+    soft_accept_min_score = max(0, int(options.get('softAcceptMinScore', 60)))
     similarity_threshold = float(options.get('similarityThreshold', 0.78))
     similarity_threshold = min(max(similarity_threshold, 0.50), 0.95)
     max_similarity_penalty = max(0, int(options.get('maxSimilarityPenalty', 18)))
@@ -2271,6 +2334,29 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
             "[TitleGen] event_announcement soft-accept: score=%s < minScore=%s, title=%s",
             best_score,
             min_score,
+            best_title,
+        )
+        return {
+            'title': best_title,
+            'score': max(best_score, 0),
+            'baseScore': int(best_result.get('baseScore', max(best_score, 0))),
+            'similarityPenalty': int(best_result.get('similarityPenalty', 0)),
+            'attempts': max_attempts,
+            'passed': False,
+            'softAccepted': True,
+            'history': history,
+            'breakdown': dict(best_result.get('breakdown', {})),
+        }
+
+    # 일반 목적 제목도 품질 하한을 만족하면 실패 대신 soft-accept 처리
+    # (파이프라인 전체 실패를 막고, 후속 가드/에디터 단계에서 추가 보정)
+    if best_score >= soft_accept_min_score:
+        logger.warning(
+            "[TitleGen] generic soft-accept: purpose=%s score=%s < minScore=%s (softAcceptMinScore=%s), title=%s",
+            title_purpose or "(none)",
+            best_score,
+            min_score,
+            soft_accept_min_score,
             best_title,
         )
         return {

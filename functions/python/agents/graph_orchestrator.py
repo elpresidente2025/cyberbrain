@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import operator
 from typing import Dict, Any, List, Optional, Annotated, TypedDict
@@ -52,7 +53,7 @@ class GraphOrchestrator:
         if 'modelName' not in self.options:
              self.options['modelName'] = 'models/gemini-2.5-flash'
              
-        self.max_refinement_steps = self.options.get('maxRefinementSteps', 3)
+        self.max_refinement_steps = self.options.get('maxRefinementSteps', 2)
         self.app = self.build_graph()
         
     def build_graph(self):
@@ -61,9 +62,8 @@ class GraphOrchestrator:
         
         # Add Nodes
         workflow.add_node("structure_node", self.run_structure_agent)
-        workflow.add_node("keyword_injector_node", self.run_keyword_injector_agent)
+        workflow.add_node("parallel_mid_node", self.run_parallel_mid_agents)
         workflow.add_node("style_node", self.run_style_agent)
-        workflow.add_node("title_node", self.run_title_agent)
         workflow.add_node("compliance_node", self.run_compliance_agent)
         workflow.add_node("seo_node", self.run_seo_agent)
         workflow.add_node("editor_node", self.run_editor_agent)
@@ -71,11 +71,10 @@ class GraphOrchestrator:
         # Set Entry Point
         workflow.set_entry_point("structure_node")
         
-        # Linear Flow
-        workflow.add_edge("structure_node", "keyword_injector_node")
-        workflow.add_edge("keyword_injector_node", "style_node")
-        workflow.add_edge("style_node", "title_node")
-        workflow.add_edge("title_node", "compliance_node")
+        # Optimized Flow: KeywordInjector + Title run in parallel, then Style
+        workflow.add_edge("structure_node", "parallel_mid_node")
+        workflow.add_edge("parallel_mid_node", "style_node")
+        workflow.add_edge("style_node", "compliance_node")
         
         # Conditional Edges for Compliance
         workflow.add_conditional_edges(
@@ -194,23 +193,47 @@ class GraphOrchestrator:
             logger.error(f"StructureAgent failed: {e}")
             return {"history": [{"agent": "StructureAgent", "success": False, "error": str(e)}], "fatal_error": True}
 
-    async def run_keyword_injector_agent(self, state: AgentState):
-        logger.info("[Graph] Running KeywordInjectorAgent")
-        agent = KeywordInjectorAgent(options=self.options)
+    async def run_parallel_mid_agents(self, state: AgentState):
+        """KeywordInjectorAgent와 TitleAgent를 병렬 실행하여 ~10초 절감."""
+        logger.info("[Graph] Running KeywordInjectorAgent + TitleAgent in parallel")
         context = self._map_state_to_context(state)
-        
-        try:
-            result = await agent.run(context)
-            return {
-                # KeywordInjector usually returns 'keywords' (the injected ones) or modified content?
-                # Assuming standard returns just 'keywords' list for metadata, 
-                # but if it modifies content, we should update 'content'.
-                # Checking legacy logic: it updates 'keywords'.
-                "keywords": result.get("keywords", []) if result else [],
-                "history": [{"agent": "KeywordInjectorAgent", "success": True}]
-            }
-        except Exception as e:
-            return {"history": [{"agent": "KeywordInjectorAgent", "success": False, "error": str(e)}]}
+
+        keyword_agent = KeywordInjectorAgent(options=self.options)
+        title_agent = TitleAgent(options=self.options)
+
+        async def _run_keyword():
+            try:
+                result = await keyword_agent.run(context)
+                return {
+                    "keywords": result.get("keywords", []) if result else [],
+                    "history": [{"agent": "KeywordInjectorAgent", "success": True}],
+                }
+            except Exception as e:
+                logger.warning(f"KeywordInjectorAgent failed (non-fatal): {e}")
+                return {"history": [{"agent": "KeywordInjectorAgent", "success": False, "error": str(e)}]}
+
+        async def _run_title():
+            try:
+                result = await title_agent.run(context)
+                return {
+                    "title": result.get("title"),
+                    "history": [{"agent": "TitleAgent", "success": True, "title": result.get("title")}],
+                }
+            except Exception as e:
+                logger.warning(f"TitleAgent failed (non-fatal): {e}")
+                return {"history": [{"agent": "TitleAgent", "success": False, "error": str(e)}]}
+
+        keyword_result, title_result = await asyncio.gather(_run_keyword(), _run_title())
+
+        # 두 결과를 병합하여 state 업데이트
+        merged = {}
+        for partial in [keyword_result, title_result]:
+            for key, value in partial.items():
+                if key == "history":
+                    merged.setdefault("history", []).extend(value)
+                else:
+                    merged[key] = value
+        return merged
 
     async def run_style_agent(self, state: AgentState):
         logger.info("[Graph] Running StyleAgent")
@@ -225,20 +248,6 @@ class GraphOrchestrator:
             }
         except Exception as e:
              return {"history": [{"agent": "StyleAgent", "success": False, "error": str(e)}], "fatal_error": True}
-
-    async def run_title_agent(self, state: AgentState):
-        logger.info("[Graph] Running TitleAgent")
-        agent = TitleAgent(options=self.options)
-        context = self._map_state_to_context(state)
-        
-        try:
-            result = await agent.run(context)
-            return {
-                "title": result.get("title"),
-                "history": [{"agent": "TitleAgent", "success": True, "title": result.get("title")}]
-            }
-        except Exception as e:
-             return {"history": [{"agent": "TitleAgent", "success": False, "error": str(e)}]}
 
     async def run_compliance_agent(self, state: AgentState):
         logger.info("[Graph] Running ComplianceAgent")

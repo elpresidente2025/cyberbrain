@@ -38,128 +38,27 @@ TEMPLATE_BUILDERS = {
 
 logger = logging.getLogger(__name__)
 
-def strip_html(text: str) -> str:
-    if not text:
-        return ''
-    text = re.sub(r'<[^>]*>', '', text)
-    return re.sub(r'\s+', '', text).strip()
-
-def normalize_artifacts(text: str) -> str:
-    if not text:
-        return ''
-    cleaned = text.strip()
-    # 코드펜스가 감싸져 온 경우 본문을 보존한 채 펜스만 제거
-    cleaned = re.sub(
-        r'```(?:[\w.+-]+)?\s*([\s\S]*?)\s*```',
-        lambda m: m.group(1).strip(),
-        cleaned,
-    ).strip()
-    cleaned = re.sub(r'^\s*\\"', '', cleaned)
-    cleaned = re.sub(r'\\"?\s*$', '', cleaned)
-    cleaned = re.sub(r'^\s*["“]', '', cleaned)
-    cleaned = re.sub(r'["”]\s*$', '', cleaned)
-    
-    # Remove trailing metadata block only when marker appears near the tail as a standalone line.
-    # (Do not truncate normal body text that happens to include "카테고리:" in a sentence.)
-    lines = cleaned.splitlines()
-    metadata_line_re = re.compile(
-        r'^\s*\*{0,2}(카테고리|검색어 삽입 횟수|생성 시간)\*{0,2}\s*:\s*',
-        re.IGNORECASE,
-    )
-    tail_cut_index = None
-    if lines:
-        tail_window_start = max(0, len(lines) - 8)
-        for i in range(tail_window_start, len(lines)):
-            line = lines[i].strip()
-            if not line:
-                continue
-            # HTML line은 본문일 가능성이 높으므로 metadata 시작점으로 보지 않음
-            if '<' in line and '>' in line:
-                continue
-            if metadata_line_re.match(line):
-                tail_cut_index = i
-                break
-    if tail_cut_index is not None:
-        cleaned = "\n".join(lines[:tail_cut_index]).strip()
-    
-    cleaned = re.sub(r'"content"\s*:\s*', '', cleaned)
-    
-    return cleaned.strip()
 
 
-def normalize_html_structure_tags(text: str) -> str:
-    """기본 구조 태그를 표준 형태로 정규화한다.
-
-    엄격 기준은 유지하되, 모델이 생성한 부가 속성/대소문자 차이로
-    구조 검증이 오탐으로 실패하는 상황을 줄인다.
-    """
-    if not text:
-        return ''
-    normalized = text
-    normalized = re.sub(r'<\s*h2\b[^>]*>', '<h2>', normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r'<\s*/\s*h2\s*>', '</h2>', normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r'<\s*p\b[^>]*>', '<p>', normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r'<\s*/\s*p\s*>', '</p>', normalized, flags=re.IGNORECASE)
-    return normalized
 
 
-def is_example_like_block(text: str) -> bool:
-    """예시/템플릿 블록 여부를 판정한다.
-
-    규칙 완화가 아니라, 모델이 프롬프트 예시를 그대로 재출력한 블록을
-    본문 후보에서 제외하기 위한 방어 로직이다.
-    """
-    if not text:
-        return True
-    lowered = text.lower()
-    placeholder_count = len(re.findall(r'\[[^\]\n]{1,40}\]', text))
-    marker_count = sum(
-        1
-        for marker in (
-            'sample_output',
-            'reference_example',
-            'placeholder',
-            '예시',
-            '샘플',
-            '여기에',
-            '작성',
-        )
-        if marker in lowered
-    )
-    plain_len = len(strip_html(text))
-    return (
-        placeholder_count >= 2
-        or ('<![cdata[' in lowered and plain_len < 900)
-        or (marker_count >= 1 and plain_len < 900)
-    )
 
 
-def normalize_context_text(value: Any, *, sep: str = "\n\n") -> str:
-    """list/tuple 중첩 입력까지 안전하게 문자열로 정규화."""
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value.strip()
-    if isinstance(value, (list, tuple, set)):
-        parts: List[str] = []
-        for item in value:
-            normalized = normalize_context_text(item, sep=sep)
-            if normalized:
-                parts.append(normalized)
-        return sep.join(parts)
-    return str(value).strip()
 
 
-def _xml_text(value: Any) -> str:
-    return _xml_escape_raw(str(value or ""), quote=True)
 
 
-def _xml_cdata(value: Any) -> str:
-    text = str(value or "")
-    safe = text.replace("]]>", "]]]]><![CDATA[>")
-    return f"<![CDATA[{safe}]]>"
+
 
 from ..base_agent import Agent
+
+from .structure_utils import (
+    strip_html, normalize_artifacts, normalize_html_structure_tags,
+    is_example_like_block, normalize_context_text, _xml_text, _xml_cdata,
+    material_key, split_into_context_items, parse_response
+)
+from .content_validator import ContentValidator
+from .content_repair import ContentRepairAgent
 
 class StructureAgent(Agent):
     def __init__(self, name: str = 'StructureAgent', options: Optional[Dict[str, Any]] = None):
@@ -176,6 +75,8 @@ class StructureAgent(Agent):
         else:
             print(f"⚠️ [StructureAgent] Gemini 클라이언트 초기화 실패")
 
+        self.validator = ContentValidator()
+        self.repairer = ContentRepairAgent(model_name=self.model_name)
     def _sanitize_target_word_count(self, target_word_count: Any) -> int:
         try:
             parsed = int(float(target_word_count))
@@ -333,44 +234,7 @@ class StructureAgent(Agent):
 
         return "\n".join(lines).strip()
 
-    def _split_into_context_items(self, text: str, *, min_len: int = 14, max_items: int = 40) -> List[str]:
-        if not text:
-            return []
 
-        normalized = normalize_context_text(text, sep="\n")
-        if not normalized:
-            return []
-
-        raw_parts = re.split(r'[\r\n]+|[;·•]+|(?<=[.!?。])\s+|다\.\s+', normalized)
-        items: List[str] = []
-        seen: set[str] = set()
-
-        for part in raw_parts:
-            cleaned = re.sub(r'\s+', ' ', str(part or "")).strip(" \t-•")
-            if not cleaned:
-                continue
-            if len(strip_html(cleaned)) < min_len:
-                continue
-            if len(cleaned) > 220:
-                cleaned = cleaned[:220].rstrip() + "..."
-            key = cleaned.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            items.append(cleaned)
-            if len(items) >= max_items:
-                break
-
-        return items
-
-    def _material_key(self, value: Any) -> str:
-        text = normalize_context_text(value)
-        if not text:
-            return ""
-        text = strip_html(text).lower()
-        text = re.sub(r'["\'`“”‘’\[\]\(\)<>]', '', text)
-        text = re.sub(r'[\s\.,!?;:·~\-_\\/]+', '', text)
-        return text
 
     def _normalize_context_analysis_materials(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(analysis, dict):
@@ -397,7 +261,7 @@ class StructureAgent(Agent):
                 if len(strip_html(topic)) < 5:
                     continue
 
-                key = self._material_key(topic)
+                key = material_key(topic)
                 if not key or key in stance_seen:
                     continue
 
@@ -431,7 +295,7 @@ class StructureAgent(Agent):
                 text = normalize_context_text(raw)
                 if len(strip_html(text)) < 8:
                     continue
-                key = self._material_key(text)
+                key = material_key(text)
                 if not key or key in blocked or key in keys:
                     continue
                 keys.add(key)
@@ -440,7 +304,7 @@ class StructureAgent(Agent):
                     break
             return results, keys
 
-        stance_keys = {self._material_key(item.get('topic')) for item in stance_items if isinstance(item, dict)}
+        stance_keys = {material_key(item.get('topic')) for item in stance_items if isinstance(item, dict)}
         stance_keys.discard("")
 
         facts, fact_keys = dedupe_text_list(
@@ -475,7 +339,7 @@ class StructureAgent(Agent):
             text = normalize_context_text(raw_text)
             if len(strip_html(text)) < 8:
                 return
-            key = self._material_key(text)
+            key = material_key(text)
             if not key or key in seen:
                 return
             seen.add(key)
@@ -537,50 +401,6 @@ class StructureAgent(Agent):
 </material_uniqueness_guard>
 """.strip()
 
-    def _detect_material_reuse_issues(
-        self,
-        content: str,
-        context_analysis: Optional[Dict[str, Any]],
-        *,
-        max_mentions: int = 1,
-    ) -> List[Dict[str, Any]]:
-        if not content or not isinstance(context_analysis, dict):
-            return []
-
-        normalized_body = self._material_key(strip_html(content))
-        if not normalized_body:
-            return []
-
-        candidates: List[Tuple[str, str]] = []
-        for item in context_analysis.get('mustIncludeFromStance') or []:
-            if isinstance(item, dict):
-                candidates.append(("stance", normalize_context_text(item.get('topic'))))
-            else:
-                candidates.append(("stance", normalize_context_text(item)))
-        for item in context_analysis.get('mustIncludeFacts') or []:
-            candidates.append(("fact", normalize_context_text(item)))
-        for item in context_analysis.get('newsQuotes') or []:
-            candidates.append(("quote", normalize_context_text(item)))
-
-        issues: List[Dict[str, Any]] = []
-        seen_keys: set[str] = set()
-        for material_type, text in candidates:
-            key = self._material_key(text)
-            if not key or key in seen_keys:
-                continue
-            seen_keys.add(key)
-            if len(key) < 16:
-                continue
-            count = normalized_body.count(key)
-            if count > max_mentions:
-                issues.append(
-                    {
-                        "type": material_type,
-                        "text": text,
-                        "count": count,
-                    }
-                )
-        return issues
 
     def _extract_profile_additional_items(self, user_profile: Dict[str, Any], *, max_items: int = 24) -> List[str]:
         if not isinstance(user_profile, dict):
@@ -680,7 +500,7 @@ class StructureAgent(Agent):
             if not interesting_key_pattern.search(key_text):
                 continue
             flattened = flatten_value(value)
-            for snippet in self._split_into_context_items(flattened, min_len=14, max_items=8):
+            for snippet in split_into_context_items(flattened, min_len=14, max_items=8):
                 add_unique(f"[{key_text}] {snippet}")
                 if len(items) >= max_items:
                     return items[:max_items]
@@ -705,7 +525,7 @@ class StructureAgent(Agent):
                 sep="\n",
             )
             bio_pool = [
-                item for item in self._split_into_context_items(bio_text, min_len=12, max_items=24)
+                item for item in split_into_context_items(bio_text, min_len=12, max_items=24)
                 if item not in selected_items
             ]
             if bio_pool:
@@ -716,7 +536,7 @@ class StructureAgent(Agent):
         if needed > 0:
             support_text = self._build_profile_support_context(user_profile, max_chars=1800)
             support_pool = [
-                item for item in self._split_into_context_items(support_text, min_len=10, max_items=24)
+                item for item in split_into_context_items(support_text, min_len=10, max_items=24)
                 if item not in selected_items
             ]
             if support_pool:
@@ -836,7 +656,7 @@ class StructureAgent(Agent):
             news_source_mode = 'profile_fallback'
             substitute_text = normalize_context_text(profile_substitute.get('contextText'))
             if not substitute_text and profile_support_context:
-                fallback_items = self._split_into_context_items(
+                fallback_items = split_into_context_items(
                     profile_support_context,
                     min_len=12,
                     max_items=3,
@@ -1032,7 +852,7 @@ class StructureAgent(Agent):
                 response = await self.call_llm(current_prompt)
                 print(f"📥 [StructureAgent] LLM 원본 응답 ({len(response)}자)")
 
-                structured = self.parse_response(response)
+                structured = parse_response(response)
                 content = normalize_artifacts(structured['content'])
                 content = normalize_html_structure_tags(content)
                 title = normalize_artifacts(structured['title'])
@@ -1051,7 +871,7 @@ class StructureAgent(Agent):
                 ):
                     raise Exception(f"파싱 비정상 축약 감지 ({plain_len}자)")
 
-                validation = self.validate_output(
+                validation = self.validator.validate(
                     content,
                     length_spec,
                     context_analysis=context_analysis,
@@ -1090,7 +910,7 @@ class StructureAgent(Agent):
                     recovery_result: Optional[Tuple[str, str]] = None
 
                     if current_code == 'LENGTH_SHORT':
-                        recovery_result = await self.recover_length_shortfall(
+                        recovery_result = await self.repairer.recover_length_shortfall(
                             content=recovery_content,
                             title=recovery_title,
                             topic=topic,
@@ -1098,7 +918,7 @@ class StructureAgent(Agent):
                             author_bio=author_bio,
                         )
                     elif current_code in structural_recoverable_codes:
-                        recovery_result = await self.recover_structural_shortfall(
+                        recovery_result = await self.repairer.recover_structural_shortfall(
                             content=recovery_content,
                             title=recovery_title,
                             topic=topic,
@@ -1113,7 +933,7 @@ class StructureAgent(Agent):
                         break
 
                     recovered_content, recovered_title = recovery_result
-                    recovered_validation = self.validate_output(
+                    recovered_validation = self.validator.validate(
                         recovered_content,
                         length_spec,
                         context_analysis=context_analysis,
@@ -1218,209 +1038,7 @@ class StructureAgent(Agent):
                 raise Exception(f"LLM 호출 타임아웃 ({elapsed:.1f}초). Gemini API가 응답하지 않습니다.")
             raise
 
-    async def recover_length_shortfall(
-        self,
-        *,
-        content: str,
-        title: str,
-        topic: str,
-        length_spec: Dict[str, int],
-        author_bio: str = '',
-    ) -> Optional[Tuple[str, str]]:
-        current_len = len(strip_html(content))
-        min_len = int(length_spec.get('min_chars', 0))
-        max_len = int(length_spec.get('max_chars', 0))
-        expected_h2 = int(length_spec.get('expected_h2', 0))
 
-        if min_len <= 0:
-            return None
-
-        from ..common.gemini_client import generate_content_async
-
-        best_content = content
-        best_title = title
-        best_len = current_len
-        max_recovery_attempts = 3
-
-        for recovery_attempt in range(1, max_recovery_attempts + 1):
-            gap = max(0, min_len - best_len)
-            rewrite_mode = best_len < int(min_len * 0.6)
-
-            if rewrite_mode:
-                prompt = f"""
-<length_recovery_prompt version="xml-v1" mode="full_rewrite">
-  <role>당신은 엄격한 한국어 정치 에디터입니다. 현재 초안이 지나치게 짧으므로 완전 재작성합니다.</role>
-  <goal>
-    <current_chars>{best_len}</current_chars>
-    <min_chars>{min_len}</min_chars>
-    <max_chars>{max_len}</max_chars>
-    <expected_h2>{expected_h2}</expected_h2>
-  </goal>
-  <rules>
-    <rule order="1">최종 결과는 완성형 본문이어야 하며, 개요/요약/예시 금지.</rule>
-    <rule order="2">태그는 &lt;h2&gt;, &lt;p&gt;만 사용.</rule>
-    <rule order="3">도입 1 + 본론/결론 구조를 유지하고 분량을 충족.</rule>
-    <rule order="4">출력에는 title/content XML 외 설명문 금지.</rule>
-  </rules>
-  <topic>{_xml_cdata(topic)}</topic>
-  <author_bio>{_xml_cdata((author_bio or '(없음)')[:1800])}</author_bio>
-  <draft>
-    <draft_title>{_xml_cdata(best_title)}</draft_title>
-    <draft_content>{_xml_cdata(best_content)}</draft_content>
-  </draft>
-  <output_contract>
-    <format>XML</format>
-    <allowed_tags>title, content</allowed_tags>
-    <example>{_xml_cdata('<title>...</title>\n<content>...</content>')}</example>
-  </output_contract>
-</length_recovery_prompt>
-""".strip()
-            else:
-                prompt = f"""
-<length_recovery_prompt version="xml-v1" mode="expand_only">
-  <role>당신은 엄격한 한국어 정치 에디터입니다. 기존 흐름을 유지하며 분량만 보강합니다.</role>
-  <goal>
-    <current_chars>{best_len}</current_chars>
-    <min_chars>{min_len}</min_chars>
-    <max_chars>{max_len}</max_chars>
-    <required_additional_chars>{gap}</required_additional_chars>
-    <expected_h2>{expected_h2}</expected_h2>
-  </goal>
-  <rules>
-    <rule order="1">기존 &lt;h2&gt; 제목 삭제/변경 금지.</rule>
-    <rule order="2">&lt;h2&gt; 개수는 정확히 {expected_h2}개 유지.</rule>
-    <rule order="3">문단은 &lt;p&gt;...&lt;/p&gt;만 사용하고 태그를 정확히 닫을 것.</rule>
-    <rule order="4">기존 사실/주장을 삭제하거나 왜곡하지 말 것.</rule>
-    <rule order="5">중복/반복 금지. 각 단락은 새로운 근거/설명으로 보강.</rule>
-    <rule order="6">최종 분량은 {min_len}~{max_len}자 범위를 반드시 충족.</rule>
-  </rules>
-  <topic>{_xml_cdata(topic)}</topic>
-  <author_bio>{_xml_cdata((author_bio or '(없음)')[:1800])}</author_bio>
-  <draft>
-    <draft_title>{_xml_cdata(best_title)}</draft_title>
-    <draft_content>{_xml_cdata(best_content)}</draft_content>
-  </draft>
-  <output_contract>
-    <format>XML</format>
-    <allowed_tags>title, content</allowed_tags>
-    <example>{_xml_cdata('<title>...</title>\n<content>...</content>')}</example>
-  </output_contract>
-</length_recovery_prompt>
-""".strip()
-
-            try:
-                response_text = await generate_content_async(
-                    prompt,
-                    model_name=self.model_name,
-                    temperature=0.0,
-                    max_output_tokens=8192,
-                )
-                parsed = self.parse_response(response_text)
-                recovered_content = normalize_html_structure_tags(normalize_artifacts(parsed.get('content', '')))
-                recovered_title = normalize_artifacts(parsed.get('title', '')) or best_title
-                if not recovered_content:
-                    continue
-
-                recovered_len = len(strip_html(recovered_content))
-                print(
-                    f"🔧 [StructureAgent] 분량 보강 시도 {recovery_attempt}/{max_recovery_attempts}: "
-                    f"{best_len}자 -> {recovered_len}자"
-                )
-                if recovered_len > best_len:
-                    best_content = recovered_content
-                    best_title = recovered_title
-                    best_len = recovered_len
-
-                if recovered_len >= min_len:
-                    return recovered_content, recovered_title
-            except Exception as e:
-                print(f"⚠️ [StructureAgent] 분량 보강 복구 실패: {str(e)}")
-
-        if best_len > current_len:
-            print(
-                f"⚠️ [StructureAgent] 분량 기준 미달이지만 보강 개선: "
-                f"{current_len}자 -> {best_len}자"
-            )
-            return best_content, best_title
-        return None
-
-    async def recover_structural_shortfall(
-        self,
-        *,
-        content: str,
-        title: str,
-        topic: str,
-        length_spec: Dict[str, int],
-        author_bio: str = '',
-        failed_code: str,
-        failed_reason: str,
-        failed_feedback: str,
-    ) -> Optional[Tuple[str, str]]:
-        from ..common.gemini_client import generate_content_async
-
-        current_len = len(strip_html(content))
-        min_len = int(length_spec.get('min_chars', 0))
-        max_len = int(length_spec.get('max_chars', 0))
-        expected_h2 = int(length_spec.get('expected_h2', 0))
-        total_sections = int(length_spec.get('total_sections', 5))
-        min_p = total_sections * 2
-        max_p = total_sections * 4
-
-        prompt = f"""
-<structural_recovery_prompt version="xml-v1">
-  <role>당신은 엄격한 편집자입니다. 아래 원고는 구조/형식 검증에 실패했으므로 완전 교정합니다.</role>
-  <failure>
-    <code>{_xml_text(failed_code)}</code>
-    <reason>{_xml_cdata(failed_reason)}</reason>
-    <feedback>{_xml_cdata(failed_feedback)}</feedback>
-  </failure>
-  <goal>
-    <current_chars>{current_len}</current_chars>
-    <target_chars>{min_len}~{max_len}</target_chars>
-    <expected_h2>{expected_h2}</expected_h2>
-    <expected_p>{min_p}~{max_p}</expected_p>
-  </goal>
-  <rules>
-    <rule order="1">허용 태그는 &lt;h2&gt;, &lt;p&gt;만 사용.</rule>
-    <rule order="2">모든 &lt;h2&gt;, &lt;p&gt; 태그를 정확히 열고 닫을 것.</rule>
-    <rule order="3">본문에 예시 플레이스홀더([제목], [내용], [구체적 대안] 등)를 남기지 말 것.</rule>
-    <rule order="4">기존 핵심 의미/사실은 유지하되 형식과 구조를 완전 교정할 것.</rule>
-    <rule order="5">분량 부족이면 구체 근거를 보강하고, 분량 초과면 중복을 압축할 것.</rule>
-    <rule order="6">최종 응답은 title/content XML 태그만 출력할 것.</rule>
-    <rule order="7">실패 코드({ _xml_text(failed_code) })를 최우선으로 해결하고, 동일 실패 코드가 재발하지 않게 재작성할 것.</rule>
-    <rule order="8">반복 관련 실패 코드라면 동일 어구 반복을 줄이고, 초과 부분은 새로운 사실/근거/행동 문장으로 치환할 것(의미 보존).</rule>
-    <rule order="9">검증 규칙 설명문이나 메타 문장을 본문으로 출력하지 말 것.</rule>
-  </rules>
-  <topic>{_xml_cdata(topic)}</topic>
-  <author_bio>{_xml_cdata((author_bio or '(없음)')[:1800])}</author_bio>
-  <draft>
-    <draft_title>{_xml_cdata(title)}</draft_title>
-    <draft_content>{_xml_cdata(content)}</draft_content>
-  </draft>
-  <output_contract>
-    <format>XML</format>
-    <allowed_tags>title, content</allowed_tags>
-    <example>{_xml_cdata('<title>...</title>\n<content>...</content>')}</example>
-  </output_contract>
-</structural_recovery_prompt>
-""".strip()
-
-        try:
-            response_text = await generate_content_async(
-                prompt,
-                model_name=self.model_name,
-                temperature=0.1,
-                max_output_tokens=8192,
-            )
-            parsed = self.parse_response(response_text)
-            recovered_content = normalize_html_structure_tags(normalize_artifacts(parsed.get('content', '')))
-            recovered_title = normalize_artifacts(parsed.get('title', '')) or title
-            if not recovered_content:
-                return None
-            return recovered_content, recovered_title
-        except Exception as e:
-            print(f"⚠️ [StructureAgent] 구조/분량 보강 복구 실패: {str(e)}")
-            return None
 
     async def run_context_analyzer(self, stance_text: str, news_data_text: str, author_name: str) -> Optional[Dict]:
         from ..common.gemini_client import generate_content_async
@@ -1664,13 +1282,13 @@ class StructureAgent(Agent):
         intro_anchor_effect = ""
         intro_seed = ""
 
-        intro_seed_candidates = self._split_into_context_items(instructions_text, min_len=10, max_items=6)
+        intro_seed_candidates = split_into_context_items(instructions_text, min_len=10, max_items=6)
         if not intro_seed_candidates and profile_substitute_context:
-            intro_seed_candidates = self._split_into_context_items(profile_substitute_context, min_len=10, max_items=6)
+            intro_seed_candidates = split_into_context_items(profile_substitute_context, min_len=10, max_items=6)
         if not intro_seed_candidates and news_context_text:
-            intro_seed_candidates = self._split_into_context_items(news_context_text, min_len=10, max_items=6)
+            intro_seed_candidates = split_into_context_items(news_context_text, min_len=10, max_items=6)
         if not intro_seed_candidates:
-            intro_seed_candidates = self._split_into_context_items(
+            intro_seed_candidates = split_into_context_items(
                 normalize_context_text(params.get('topic')),
                 min_len=6,
                 max_items=2,
@@ -2048,532 +1666,9 @@ class StructureAgent(Agent):
         text_to_check = status + position + title
         return any(k in text_to_check for k in elected_keywords)
 
-    def parse_response(self, response: str) -> Dict[str, str]:
-        if not response:
-            return {'content': '', 'title': ''}
-        
-        # XML Tag Extraction
-        try:
-            def extract_html_fallback(text: str) -> str:
-                html_blocks = re.findall(
-                    r'<(?:p|h[23])\b[^>]*>[\s\S]*?</(?:p|h[23])>',
-                    text or '',
-                    re.IGNORECASE,
-                )
-                return "\n".join(html_blocks).strip() if html_blocks else ''
 
-            # Title extraction (여러 블록이 있을 때는 마지막 유효 블록 우선)
-            title_blocks = [
-                (m.group(1) or "").strip()
-                for m in re.finditer(r'<title>(.*?)</title>', response, re.DOTALL | re.IGNORECASE)
-            ]
-            title = next((t for t in reversed(title_blocks) if t), '')
 
-            # Content extraction
-            content_blocks = [
-                (m.group(1) or "").strip()
-                for m in re.finditer(r'<content>(.*?)</content>', response, re.DOTALL | re.IGNORECASE)
-            ]
-            content = ''
-            if content_blocks:
-                # 1) 예시/템플릿 블록 제거 2) 구조 밀도 + 길이로 본문 블록 선택
-                candidates = []
-                for idx, block in enumerate(content_blocks):
-                    normalized = normalize_html_structure_tags(normalize_artifacts(block))
-                    tag_density = len(re.findall(r'<(?:h2|p)\b', normalized, re.IGNORECASE))
-                    plain_len = len(strip_html(normalized))
-                    candidates.append(
-                        {
-                            'index': idx,
-                            'content': normalized,
-                            'tag_density': tag_density,
-                            'plain_len': plain_len,
-                            'is_example': is_example_like_block(normalized),
-                        }
-                    )
 
-                real_candidates = [c for c in candidates if not c['is_example']]
-                pool = real_candidates if real_candidates else candidates
 
-                # Prefer substantial body text first, then structure density.
-                # This prevents short outline/sample blocks from being selected
-                # over the actual long-form draft.
-                max_plain_len = max((c['plain_len'] for c in pool), default=0)
-                min_plain_threshold = max(300, int(max_plain_len * 0.45))
-                length_filtered_pool = [
-                    c for c in pool
-                    if c['plain_len'] >= min_plain_threshold
-                ]
-                selection_pool = length_filtered_pool if length_filtered_pool else pool
-                selected = max(
-                    selection_pool,
-                    key=lambda c: (c['plain_len'], c['tag_density'], c['index']),
-                )
-                content = selected['content'].strip()
-                selected_plain_len = selected['plain_len']
 
-                # 선택된 content 인덱스와 같은 title이 있으면 우선 사용
-                selected_idx = selected['index']
-                if selected_idx < len(title_blocks):
-                    aligned_title = (title_blocks[selected_idx] or '').strip()
-                    if aligned_title:
-                        title = aligned_title
 
-                # 짧은 XML content 블록이 잡혔는데 본문 HTML이 응답에 따로 존재하면 폴백으로 교체
-                fallback_content = extract_html_fallback(response)
-                fallback_plain_len = len(strip_html(fallback_content))
-                fallback_is_example = is_example_like_block(fallback_content)
-                if (
-                    not fallback_is_example
-                    and
-                    selected_plain_len < 180
-                    and fallback_plain_len >= max(260, selected_plain_len + 120)
-                ):
-                    print(
-                        f"⚠️ [StructureAgent] 짧은 XML content({selected_plain_len}자) 감지, "
-                        f"HTML 폴백({fallback_plain_len}자)로 교체"
-                    )
-                    content = fallback_content
-            
-            if not content:
-                # Fallback: try to find just HTML tags if XML tags are missing
-                print('⚠️ [StructureAgent] XML 태그 누락, HTML 직접 추출 시도')
-                fallback_content = extract_html_fallback(response)
-                if fallback_content:
-                    content = fallback_content
-                else:
-                    content = response # 최후단: 전체 텍스트
-            
-            print(f"✅ [StructureAgent] 파싱 성공: content={len(content)}자")
-            return {'content': content, 'title': title}
-            
-        except Exception as e:
-            print(f"⚠️ [StructureAgent] 파싱 에러: {str(e)}")
-            return {'content': response, 'title': ''}
-
-    def _split_plain_sentences(self, text: str) -> List[str]:
-        if not text:
-            return []
-        chunks = re.findall(r'[^.!?。]+[.!?。]?', text)
-        sentences = []
-        for chunk in chunks:
-            sentence = re.sub(r'\s+', ' ', chunk).strip()
-            if sentence:
-                sentences.append(sentence)
-        return sentences
-
-    def _find_meta_prompt_leak_sentences(self, content: str) -> List[str]:
-        plain_text = re.sub(r'<[^>]*>', ' ', content or '')
-        plain_text = re.sub(r'\s+', ' ', plain_text).strip()
-        if not plain_text:
-            return []
-
-        patterns = [
-            re.compile(r'문제는 .*현장 .*데이터.*점검해야', re.IGNORECASE),
-            re.compile(r'관련 .*쟁점.*함께 .*봐야', re.IGNORECASE),
-            re.compile(r'그래도 .*문제는 .*점검해야', re.IGNORECASE),
-            re.compile(r'현장 .*데이터.*함께 .*점검', re.IGNORECASE),
-        ]
-
-        leaks: List[str] = []
-        for sentence in self._split_plain_sentences(plain_text):
-            if any(pattern.search(sentence) for pattern in patterns):
-                leaks.append(sentence)
-        return leaks
-
-    def _count_event_fact_sentence_mentions(
-        self,
-        content: str,
-        *,
-        event_date_hint: str = '',
-        event_location_hint: str = '',
-    ) -> int:
-        plain_text = re.sub(r'<[^>]*>', ' ', content or '')
-        plain_text = re.sub(r'\s+', ' ', plain_text).strip()
-        if not plain_text:
-            return 0
-
-        location_tokens: List[str] = []
-        for token in ('서면 영광도서', '부산 영광도서'):
-            if token in plain_text:
-                location_tokens.append(token)
-        if event_location_hint:
-            normalized_location_hint = re.sub(r'\s+', ' ', event_location_hint).strip()
-            if normalized_location_hint and normalized_location_hint not in location_tokens:
-                location_tokens.append(normalized_location_hint)
-
-        date_tokens: List[str] = []
-        if event_date_hint:
-            for pattern in (
-                r'\d{1,2}\s*월\s*\d{1,2}\s*일(?:\s*\([^)]+\))?',
-                r'(?:오전|오후)\s*\d{1,2}\s*시(?:\s*\d{1,2}\s*분)?',
-            ):
-                match = re.search(pattern, event_date_hint)
-                if match:
-                    date_tokens.append(re.sub(r'\s+', ' ', match.group(0)).strip())
-
-        if not date_tokens:
-            date_tokens = [r'\d{1,2}\s*월\s*\d{1,2}\s*일', r'(?:오전|오후)\s*\d{1,2}\s*시']
-
-        count = 0
-        for sentence in self._split_plain_sentences(plain_text):
-            has_location = any(token and token in sentence for token in location_tokens)
-            has_date = any(re.search(token, sentence) for token in date_tokens)
-            if has_location and has_date:
-                count += 1
-        return count
-
-    def _find_overused_anchor_phrases(self, content: str) -> List[str]:
-        plain_text = re.sub(r'<[^>]*>', ' ', content or '')
-        plain_text = re.sub(r'\s+', ' ', plain_text).strip()
-        if not plain_text:
-            return []
-
-        phrase_limits = {
-            '부산항 부두 노동자의 막내로': 2,
-            '시민 여러분과 함께': 2,
-        }
-        overused: List[str] = []
-        for phrase, limit in phrase_limits.items():
-            count = len(re.findall(re.escape(phrase), plain_text))
-            if count > limit:
-                overused.append(f'"{phrase}" {count}회')
-        return overused
-
-    def _repair_anchor_phrase_overuse(self, content: str) -> Tuple[str, List[Dict[str, Any]]]:
-        working = str(content or '')
-        if not working:
-            return working, []
-
-        rules: List[Dict[str, Any]] = [
-            {
-                'phrase': '시민 여러분과 함께',
-                'limit': 2,
-                'replacements': ['시민과 함께', '여러분과 함께', '지역사회와 함께'],
-            },
-            {
-                'phrase': '부산항 부두 노동자의 막내로',
-                'limit': 2,
-                'replacements': ['부산항 노동자 가정의 막내로', '부산항 현장 노동자 집안의 막내로'],
-            },
-        ]
-
-        actions: List[Dict[str, Any]] = []
-        for rule in rules:
-            phrase = str(rule.get('phrase') or '').strip()
-            limit = int(rule.get('limit') or 2)
-            replacements = [str(item).strip() for item in (rule.get('replacements') or []) if str(item).strip()]
-            if not phrase or not replacements:
-                continue
-
-            pattern = re.compile(re.escape(phrase))
-            matches = list(pattern.finditer(working))
-            if len(matches) <= limit:
-                continue
-
-            replaced = 0
-            to_replace = list(reversed(matches[limit:]))
-            for idx, match in enumerate(to_replace):
-                replacement = replacements[idx % len(replacements)]
-                start, end = match.span()
-                working = working[:start] + replacement + working[end:]
-                replaced += 1
-
-            if replaced > 0:
-                actions.append(
-                    {
-                        'type': 'anchor_phrase_overuse_repair',
-                        'phrase': phrase,
-                        'replaced': replaced,
-                        'limit': limit,
-                    }
-                )
-
-        return working, actions
-
-    def validate_output(
-        self,
-        content: str,
-        target_word_count: Any,
-        stance_count: int = 0,
-        *,
-        context_analysis: Optional[Dict[str, Any]] = None,
-        is_event_announcement: bool = False,
-        event_date_hint: str = '',
-        event_location_hint: str = '',
-    ) -> Dict:
-        if not content:
-            return {
-                'passed': False,
-                'code': 'EMPTY_CONTENT',
-                'reason': '내용 없음',
-                'feedback': '내용이 비어있습니다.'
-            }
-        
-        plain_length = len(strip_html(content))
-
-        if isinstance(target_word_count, dict):
-            length_spec = target_word_count
-        else:
-            length_spec = self._build_length_spec(target_word_count, stance_count)
-
-        min_length = length_spec['min_chars']
-        max_length = length_spec['max_chars']
-        expected_h2 = length_spec['expected_h2']
-        per_section_recommended = length_spec['per_section_recommended']
-        per_section_max = length_spec['per_section_max']
-        total_sections = length_spec['total_sections']
-
-        placeholder_count = len(re.findall(r'\[[^\]\n]{1,40}\]', content))
-        if placeholder_count >= 2:
-            return {
-                'passed': False,
-                'code': 'TEMPLATE_ECHO',
-                'reason': f"예시/플레이스홀더 잔존 ({placeholder_count}개)",
-                'feedback': '예시 문구([제목], [구체적 내용] 등)를 모두 제거하고 실제 본문으로 작성하십시오.'
-            }
-
-        if plain_length < min_length:
-            deficit = min_length - plain_length
-            return {
-                'passed': False,
-                'code': 'LENGTH_SHORT',
-                'reason': f"분량 부족 ({plain_length}자 < {min_length}자)",
-                'feedback': (
-                    f"현재 분량({plain_length}자)이 최소 기준({min_length}자)보다 {deficit}자 부족합니다. "
-                    f"섹션당 {per_section_recommended}자 안팎으로 구체 사례를 보강하되, 총 분량은 {max_length}자를 넘기지 마십시오."
-                )
-            }
-        
-        if plain_length > max_length:
-            excess = plain_length - max_length
-            return {
-                'passed': False,
-                'code': 'LENGTH_LONG',
-                'reason': f"분량 초과 ({plain_length}자 > {max_length}자)",
-                'feedback': (
-                    f"현재 분량({plain_length}자)이 최대 기준({max_length}자)을 {excess}자 초과했습니다. "
-                    f"각 섹션을 {per_section_recommended}자 안팎(최대 {per_section_max}자)으로 압축하고, "
-                    f"중복 문장과 장황한 수식어를 제거하십시오."
-                )
-            }
-
-        # 허용 태그는 h2/p만 사용해야 하므로, 기타 heading 태그는 즉시 반려.
-        disallowed_heading_count = len(re.findall(r'<h(?!2\b)[1-6]\b[^>]*>', content, re.IGNORECASE))
-        if disallowed_heading_count > 0:
-            return {
-                'passed': False,
-                'code': 'TAG_DISALLOWED',
-                'reason': f"허용되지 않은 heading 태그 사용 (h2 외 {disallowed_heading_count}개)",
-                'feedback': '소제목은 <h2>만 사용하고, <h1>/<h3> 등 다른 heading 태그는 제거하십시오.'
-            }
-
-        h2_open_tags = re.findall(r'<h2\b[^>]*>', content, re.IGNORECASE)
-        h2_close_tags = re.findall(r'</h2\s*>', content, re.IGNORECASE)
-        h2_count = len(h2_open_tags)
-        if h2_count != len(h2_close_tags):
-            return {
-                'passed': False,
-                'code': 'H2_MALFORMED',
-                'reason': f"h2 태그 짝 불일치 (열림 {h2_count}개, 닫힘 {len(h2_close_tags)}개)",
-                'feedback': '모든 소제목은 <h2>...</h2> 형태로 정확히 닫아 주십시오.'
-            }
-
-        if h2_count < expected_h2:
-            return {
-                'passed': False,
-                'code': 'H2_SHORT',
-                'reason': f"소제목 부족 (현재 {h2_count}개, 목표 {expected_h2}개)",
-                'feedback': (
-                    f"소제목(<h2>)이 부족합니다. 도입을 제외한 본론+결론 기준으로 정확히 {expected_h2}개의 "
-                    f"<h2>를 작성하십시오."
-                )
-            }
-        
-        if h2_count > expected_h2:
-            return {
-                'passed': False,
-                'code': 'H2_LONG',
-                'reason': f"소제목 과다 (현재 {h2_count}개, 목표 {expected_h2}개)",
-                'feedback': (
-                    f"소제목(<h2>)이 너무 많습니다. 도입을 제외한 본론+결론 소제목 수를 정확히 {expected_h2}개로 "
-                    f"맞추십시오."
-                )
-            }
-
-        p_open_tags = re.findall(r'<p\b[^>]*>', content, re.IGNORECASE)
-        p_close_tags = re.findall(r'</p\s*>', content, re.IGNORECASE)
-        p_count = len(p_open_tags)
-        if p_count != len(p_close_tags):
-            return {
-                'passed': False,
-                'code': 'P_MALFORMED',
-                'reason': f"p 태그 짝 불일치 (열림 {p_count}개, 닫힘 {len(p_close_tags)}개)",
-                'feedback': '모든 문단은 <p>...</p> 형태로 정확히 닫아 주십시오.'
-            }
-
-        expected_min_p = total_sections * 2
-        expected_max_p = total_sections * 4
-        
-        if p_count < expected_min_p:
-             return {
-                'passed': False,
-                'code': 'P_SHORT',
-                'reason': f"문단 수 부족 (현재 {p_count}개, 필요 {expected_min_p}개 이상)",
-                'feedback': (
-                    f"문단 수가 너무 적습니다. 총 {total_sections}개 섹션 기준으로 최소 {expected_min_p}개 "
-                    f"문단(섹션당 2개 이상)이 필요합니다."
-                )
-            }
-
-        if p_count > expected_max_p:
-            return {
-                'passed': False,
-                'code': 'P_LONG',
-                'reason': f"문단 수 과다 (현재 {p_count}개, 최대 {expected_max_p}개)",
-                'feedback': (
-                    f"문단 수가 너무 많습니다. 총 {total_sections}개 섹션 기준으로 {expected_max_p}개 이하로 줄이고, "
-                    f"문단을 합쳐 중복 설명을 압축하십시오."
-                )
-            }
-
-        # 장소 키워드가 단독 1문장 문단으로 반복되는 패턴을 하드 차단한다.
-        # (한 번의 안내성 단문은 허용하되, 2회 이상 반복되면 반려)
-        location_orphan_paragraphs: List[str] = []
-        paragraph_blocks = re.findall(r'<p\b[^>]*>([\s\S]*?)</p\s*>', content, re.IGNORECASE)
-        location_pattern = re.compile(r'(서면\s*영광도서|부산\s*영광도서)', re.IGNORECASE)
-        for block in paragraph_blocks:
-            paragraph_text = re.sub(r'<[^>]*>', ' ', block)
-            paragraph_text = re.sub(r'\s+', ' ', paragraph_text).strip()
-            if not paragraph_text:
-                continue
-            if not location_pattern.search(paragraph_text):
-                continue
-
-            sentence_tokens = [
-                token.strip()
-                for token in re.split(r'(?<=[.!?。])\s+', paragraph_text)
-                if token and token.strip()
-            ]
-            sentence_count = len(sentence_tokens) if sentence_tokens else (1 if paragraph_text else 0)
-            if sentence_count <= 1:
-                location_orphan_paragraphs.append(paragraph_text)
-
-        if len(location_orphan_paragraphs) >= 2:
-            samples = '; '.join(f'"{text[:40]}{"..." if len(text) > 40 else ""}"' for text in location_orphan_paragraphs[:2])
-            return {
-                'passed': False,
-                'code': 'LOCATION_ORPHAN_REPEAT',
-                'reason': f"장소 단문 반복 ({len(location_orphan_paragraphs)}회)",
-                'feedback': (
-                    "서면/부산 영광도서가 들어간 단독 1문장 문단이 반복되었습니다. "
-                    "장소 표현은 기존 문단의 주장/근거/행동 제안과 결합해 서술하고, "
-                    "단독 안내 문단은 최대 1회만 허용됩니다. "
-                    f"반복 예시: {samples}"
-                )
-            }
-
-        plain_text = re.sub(r'<[^>]*>', ' ', content)
-        plain_text = re.sub(r'\s+', ' ', plain_text).strip()
-
-        meta_leaks = self._find_meta_prompt_leak_sentences(content)
-        if meta_leaks:
-            sample = "; ".join(f'"{item[:45]}{"..." if len(item) > 45 else ""}"' for item in meta_leaks[:2])
-            return {
-                'passed': False,
-                'code': 'META_PROMPT_LEAK',
-                'reason': f"메타 문구 누수 ({len(meta_leaks)}문장)",
-                'feedback': (
-                    "프롬프트 규칙 설명 문장이 본문으로 출력되었습니다. "
-                    "해당 문장을 삭제하고 실제 행사·정책 내용으로 대체하십시오. "
-                    f"누수 예시: {sample}"
-                )
-            }
-
-        overused_anchor_phrases = self._find_overused_anchor_phrases(content)
-        if overused_anchor_phrases:
-            detail = ", ".join(overused_anchor_phrases[:2])
-            return {
-                'passed': False,
-                'code': 'PHRASE_REPEAT_CAP',
-                'reason': f"상투 구문 반복 과다 ({detail})",
-                'feedback': (
-                    "대표 문구 반복이 과다합니다. 동일 어구는 원고 전체 최대 2회로 제한하고, "
-                    "초과 구간은 새로운 사실/근거 문장으로 교체하십시오."
-                )
-            }
-
-        material_reuse_issues = self._detect_material_reuse_issues(
-            content,
-            context_analysis,
-            max_mentions=1,
-        )
-        if material_reuse_issues:
-            samples = "; ".join(
-                f"[{item.get('type')}] {str(item.get('text') or '')[:36]}"
-                for item in material_reuse_issues[:2]
-            )
-            return {
-                'passed': False,
-                'code': 'MATERIAL_REUSE',
-                'reason': f"동일 소재 재사용 감지 ({len(material_reuse_issues)}개)",
-                'feedback': (
-                    "같은 인용/일화/근거가 여러 섹션에서 반복되었습니다. "
-                    "본론 섹션마다 서로 다른 소재를 1회씩만 사용하도록 재작성하십시오. "
-                    f"중복 예시: {samples}"
-                ),
-            }
-
-        event_signal_patterns = [
-            r'\d{1,2}\s*월\s*\d{1,2}\s*일',
-            r'출판기념회',
-            r'행사',
-            r'오후\s*\d{1,2}\s*시',
-            r'서면\s*영광도서',
-            r'부산\s*영광도서',
-        ]
-        event_signal_hits = sum(
-            1 for pattern in event_signal_patterns if re.search(pattern, plain_text, re.IGNORECASE)
-        )
-        if is_event_announcement or event_signal_hits >= 2:
-            event_fact_mentions = self._count_event_fact_sentence_mentions(
-                content,
-                event_date_hint=event_date_hint,
-                event_location_hint=event_location_hint,
-            )
-            if event_fact_mentions > 2:
-                return {
-                    'passed': False,
-                    'code': 'EVENT_FACT_REPEAT',
-                    'reason': f"행사 일시/장소 문장 반복 과다 ({event_fact_mentions}회)",
-                    'feedback': (
-                        "행사 일시+장소가 결합된 안내 문장은 도입 1회, 결론 1회까지만 허용됩니다. "
-                        "중간 본론에서는 '이번 행사 현장'처럼 변형해 반복을 줄이십시오."
-                    )
-                }
-
-            invite_patterns = {
-                '직접 만나': r'직접\s*만나',
-                '진솔한 소통': r'진솔한\s*소통',
-                '기다리겠습니다': r'기다리겠습니다',
-            }
-            overused_phrases = []
-            for label, pattern in invite_patterns.items():
-                count = len(re.findall(pattern, plain_text, re.IGNORECASE))
-                if count > 2:
-                    overused_phrases.append(f"{label} {count}회")
-
-            if overused_phrases:
-                detail = ", ".join(overused_phrases)
-                return {
-                    'passed': False,
-                    'code': 'EVENT_INVITE_REDUNDANT',
-                    'reason': f"행사 초대 문구 반복 과다 ({detail})",
-                    'feedback': (
-                        "행사 안내문은 정보 중심으로 간결하게 작성해야 합니다. "
-                        "\"직접 만나\", \"진솔한 소통\", \"기다리겠습니다\" 류 문구는 각 2회 이하로 줄이고, "
-                        "반복 구간은 행사 핵심 정보(일시/장소/참여 방법) 또는 새로운 근거 설명으로 대체하십시오."
-                    )
-                }
-
-        return {'passed': True}

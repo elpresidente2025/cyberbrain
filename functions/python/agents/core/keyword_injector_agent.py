@@ -192,7 +192,7 @@ class KeywordInjectorAgent(Agent):
                     response_mime_type='application/json'
                 )
 
-                instructions = self.parse_instructions(response_text)
+                instructions = self.parse_instructions(response_text, sections=sections)
 
                 if not instructions:
                     print("[KeywordInjectorAgent] 유효한 지시가 없어 재시도합니다")
@@ -371,6 +371,26 @@ class KeywordInjectorAgent(Agent):
                 excess = total_kw_count - max_target
                 issues.append(f"전체 \"{kw}\" {total_kw_count}회 (최대 {max_target}회 허용, {excess}회 삭제 필요)")
 
+        user_keywords: List[str] = []
+        for kw in keywords:
+            if kw in auto_keyword_set or kw in user_keywords:
+                continue
+            user_keywords.append(kw)
+
+        if user_keywords:
+            for i, section in enumerate(section_counts, start=1):
+                section_user_total = sum(section['counts'].get(kw, 0) for kw in user_keywords)
+                if section_user_total == 0:
+                    issues.append(f"섹션 {i}에 검색어 없음")
+
+        if len(user_keywords) >= 2:
+            user_total = sum(
+                sum(sc['counts'].get(kw, 0) for sc in section_counts)
+                for kw in user_keywords
+            )
+            if user_total < 7:
+                issues.append(f"검색어 총합 {user_total}회 (최소 7회 필요)")
+
         if not issues:
             return {'passed': True}
 
@@ -431,6 +451,12 @@ class KeywordInjectorAgent(Agent):
         policy_lines = build_keyword_injection_policy_lines()
         policy_text = "\n".join([f"{idx + 1}. {line}" for idx, line in enumerate(policy_lines)])
 
+
+        if len(user_keywords) >= 2:
+            additional_rule = f"- 각 검색어 {min_target}~{max_target}회, 전체 검색어 총합 최소 7회\n"
+        else:
+            additional_rule = ""
+
         prompt = f"""검색어가 전체 {min_target}~{max_target}회 범위에 들어오도록 기존 원고를 최소 수정하세요.
 
 ## 검색어
@@ -449,6 +475,12 @@ class KeywordInjectorAgent(Agent):
 ## 편집 원칙
 {policy_text}
 
+## 삽입 추가 규칙
+{additional_rule}- 한 섹션(문단 묶음)에서는 insert 액션을 최대 1개만 사용하세요.
+- 결말 섹션(conclusion)에는 insert 액션을 사용하지 말고 replace/delete만 사용하세요.
+- "특히", "한편", "아울러", "또한"으로 시작하는 보강 문장을 연속 추가하지 마세요.
+- 키워드 충족을 위해 동일 기능 문장을 반복 생성하지 마세요.
+
 ## Action 스키마
 - replace: {{"section": 0, "action": "replace", "target": "원문 일부", "replacement": "치환 문구"}}
 - insert: {{"section": 0, "action": "insert", "anchor": "기준 구절", "sentence": "삽입 문장"}}
@@ -464,7 +496,14 @@ class KeywordInjectorAgent(Agent):
 
         return prompt
 
-    def parse_instructions(self, response: str) -> List[Dict]:
+    def _is_low_context_insert_sentence(self, sentence: str) -> bool:
+        normalized = re.sub(r"\s+", " ", str(sentence or "")).strip()
+        if not normalized:
+            return True
+        low_context_prefixes = ("특히", "한편", "아울러", "또한")
+        return any(normalized.startswith(prefix) for prefix in low_context_prefixes)
+
+    def parse_instructions(self, response: str, sections: Optional[List[Dict]] = None) -> List[Dict]:
         if not response:
             return []
 
@@ -482,6 +521,7 @@ class KeywordInjectorAgent(Agent):
                 return []
 
             validated = []
+            per_section_insert_count: Dict[int, int] = {}
             for ins in instructions:
                 if not isinstance(ins, dict):
                     continue
@@ -489,6 +529,9 @@ class KeywordInjectorAgent(Agent):
                 section = ins.get('section')
                 if not isinstance(section, int):
                     continue
+                section_type = ""
+                if isinstance(sections, list) and 0 <= section < len(sections):
+                    section_type = str((sections[section] or {}).get('type') or '')
 
                 action = str(ins.get('action') or '').strip().lower()
 
@@ -523,12 +566,19 @@ class KeywordInjectorAgent(Agent):
                         continue
                     if len(sentence) > 220:
                         continue
+                    if section_type == 'conclusion':
+                        continue
+                    if self._is_low_context_insert_sentence(sentence):
+                        continue
+                    if per_section_insert_count.get(section, 0) >= 1:
+                        continue
                     validated.append({
                         'section': section,
                         'action': 'insert',
                         'anchor': anchor,
                         'sentence': sentence,
                     })
+                    per_section_insert_count[section] = per_section_insert_count.get(section, 0) + 1
 
             return validated
 
@@ -648,6 +698,8 @@ class KeywordInjectorAgent(Agent):
                 continue
 
             section_html = result[start_idx:end_idx]
+            section_type = str(section.get('type') or '')
+            insert_applied = 0
 
             for ins in grouped.get(section_idx, []):
                 action = str(ins.get('action') or '').strip().lower()
@@ -676,9 +728,16 @@ class KeywordInjectorAgent(Agent):
                     sentence = str(ins.get('sentence') or '').strip()
                     if not anchor or not sentence:
                         continue
+                    if section_type == 'conclusion':
+                        continue
+                    if insert_applied >= 1:
+                        continue
+                    if self._is_low_context_insert_sentence(sentence):
+                        continue
                     section_html, changed = self._insert_after_anchor(section_html, anchor, sentence)
                     if changed:
                         print(f"[KeywordInjectorAgent] 섹션 {section_idx} anchor 삽입 적용")
+                        insert_applied += 1
                     continue
 
             result = result[:start_idx] + section_html + result[end_idx:]
