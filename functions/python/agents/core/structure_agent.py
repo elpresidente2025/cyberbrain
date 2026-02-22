@@ -541,6 +541,7 @@ class StructureAgent(Agent):
             'META_PROMPT_LEAK',
             'EVENT_FACT_REPEAT',
             'EVENT_INVITE_REDUNDANT',
+            'SECTION_LENGTH',
         }
 
         def _candidate_rank(candidate_validation: Dict[str, Any], candidate_content: str) -> tuple:

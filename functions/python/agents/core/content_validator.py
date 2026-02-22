@@ -229,8 +229,12 @@ class ContentValidator:
             if section_p_count < min_p or section_p_count > 4:
                 return {'passed': False, 'code': 'SECTION_P_COUNT', 'reason': f"섹션 {section_index} 문단 수 위반", 'feedback': f"섹션 {section_index}의 <p> 개수는 {min_p}~4개여야 합니다."}
             section_plain_length = len(strip_html(section_content))
-            if section_plain_length < 200 or section_plain_length > 500:
-                return {'passed': False, 'code': 'SECTION_LENGTH', 'reason': f"섹션 {section_index} 글자 수 위반", 'feedback': f"섹션 {section_index}의 글자 수는 200~500자여야 합니다."}
+            sec_min = length_spec.get('per_section_min', 280) - 80
+            sec_max = length_spec.get('per_section_max', 430) + 80
+            if section_index == len(section_blocks):
+                sec_min = min(sec_min, 130)
+            if section_plain_length < sec_min or section_plain_length > sec_max:
+                return {'passed': False, 'code': 'SECTION_LENGTH', 'reason': f"섹션 {section_index} 글자 수 위반", 'feedback': f"섹션 {section_index}의 글자 수는 {sec_min}~{sec_max}자여야 합니다."}
 
         normalized_user_keywords: List[str] = []
         for keyword in user_keywords or []:

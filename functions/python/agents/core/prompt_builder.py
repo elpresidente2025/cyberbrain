@@ -205,6 +205,13 @@ def build_retry_directive(
             "본론 섹션마다 서로 다른 소재 카드를 배정하고, 각 카드는 1회만 사용하십시오."
         )
 
+    if code == 'SECTION_LENGTH':
+        return (
+            f"섹션별 글자 수를 {per_section_recommended}자 내외({per_section_recommended - 50}~{per_section_recommended + 50}자)로 조정하십시오. "
+            f"결론부가 너무 짧으면 행동 제안이나 핵심 메시지를 보강하고, "
+            f"특정 섹션이 너무 길면 중복 문장을 제거하여 균형을 맞추십시오."
+        )
+
     return (
         f"총 {total_sections}개 섹션 구조와 분량 범위({min_chars}~{max_chars}자)를 정확히 준수하여 재작성하십시오."
     )
