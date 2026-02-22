@@ -218,9 +218,9 @@ def build_offline_engagement_prompt(options: dict) -> str:
         keywords_text = ", ".join(str(item).strip() for item in keywords if str(item).strip())
         if keywords_text:
             keywords_section = f"""
-<context_keywords usage="참고용 - 기계적 반복 금지">
+<context_keywords usage="필수 삽입 - 원문 그대로">
 {_xml_escape(keywords_text)}
-키워드는 문맥 안에서 자연스럽게 사용하고, 단독 장식 문장으로 분리하지 마십시오.
+키워드를 원문 그대로 본문에 삽입하세요. 조사를 붙이거나 어순을 바꾸지 말고, 문맥 안에서 자연스럽게 배치하세요. 삽입 횟수는 seo_rules를 따르세요.
 </context_keywords>
 """
 

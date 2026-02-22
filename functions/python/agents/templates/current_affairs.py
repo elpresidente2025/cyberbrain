@@ -96,9 +96,9 @@ def build_critical_writing_prompt(options: dict) -> str:
     if keywords:
         keywords_str = ", ".join(keywords)
         keywords_section = f"""
-<context_keywords usage="참고용 - 삽입 강제 아님">
+<context_keywords usage="필수 삽입 - 원문 그대로">
 {keywords_str}
-이 키워드들을 참고하여 글의 방향과 맥락을 잡으세요. 억지로 삽입할 필요 없습니다.
+아래 키워드를 원문 그대로 본문에 삽입하세요. 조사(의/은/는/을/를)를 붙이거나 어순을 바꾸지 마세요. 삽입 횟수는 seo_rules를 따르세요.
 </context_keywords>
 """
 
@@ -272,8 +272,9 @@ def build_diagnosis_writing_prompt(options: dict) -> str:
     if keywords:
         keywords_str = ", ".join(keywords)
         keywords_section = f"""
-<context_keywords usage="맥락 파악과 표현 다양화에만 참고">
+<context_keywords usage="필수 삽입 - 원문 그대로">
 {keywords_str}
+키워드를 원문 그대로 삽입하세요. 삽입 횟수는 seo_rules를 따르세요.
 </context_keywords>
 """
 

@@ -50,12 +50,13 @@ def build_seo_instruction(params):
     <total_target min="{total_insertions}" max="{total_insertions + kw_count}" note="키워드 {kw_count}개 × 각 {min_insertions}~{max_per_keyword}회 = 총 {total_insertions}~{total_insertions + kw_count}회"/>
     <distribution intro="{distribution['intro']}" body="{distribution['body']}" conclusion="{distribution['conclusion']}" note="15문단 기준 약 2문단당 1개 꼴로 배치"/>
     <insertion_method>
-      <good position="주어">"{first_kw}은(는) 이번 행사에서..."</good>
-      <good position="목적어">"...에서 {first_kw}을(를) 논의했습니다."</good>
-      <good position="수식어">"{first_kw}의 성과로..."</good>
+      <exact_match severity="critical">키워드 원문을 한 글자도 바꾸지 말고 정확히 그대로 삽입할 것. 조사(의/은/는/을/를) 추가 금지, 어순 변경 금지, 띄어쓰기 변경 금지.</exact_match>
+      <good>"이번 행사에서 {first_kw} 관련 성과를 공유했습니다." (키워드 원문 그대로)</good>
+      <good>"지역 경제를 살리기 위한 {first_kw} 전략이 주목받고 있습니다." (키워드 원문 그대로)</good>
+      <bad>"{first_kw}의 성과로..." → 조사 "의" 삽입으로 키워드 변형됨</bad>
+      <bad>"{first_kw}은(는)..." → 조사 추가로 키워드 변형됨</bad>
       <bad>동일 문단에 같은 키워드 2회 이상 반복</bad>
       <bad>키워드만 나열하는 스터핑</bad>
-      <bad>띄어쓰기 임의 변경</bad>
       <bad>같은 키워드를 연속 문단에 배치 (최소 1문단 간격 유지)</bad>
     </insertion_method>
   </keywords>
