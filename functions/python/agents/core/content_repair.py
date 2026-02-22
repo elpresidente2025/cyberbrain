@@ -161,6 +161,20 @@ class ContentRepairAgent:
         min_p = total_sections * 2
         max_p = total_sections * 4
 
+        # 동적 HTML 스켈레톤 생성
+        skeleton_lines = ['<!-- 서론: h2 없음 -->', '<p>서론 1문단 (2~3문장)</p>', '<p>서론 2문단 (2~3문장)</p>']
+        body_count = max(1, expected_h2 - 1)  # 본론 섹션 수 (결론 제외)
+        for i in range(1, body_count + 1):
+            skeleton_lines.append(f'<!-- 본론 {i} -->')
+            skeleton_lines.append(f'<h2>본론{i} 소제목 (25자 이하, 명사구/질문형)</h2>')
+            skeleton_lines.append(f'<p>본론{i} 1문단 (2~3문장)</p>')
+            skeleton_lines.append(f'<p>본론{i} 2문단 (2~3문장)</p>')
+        skeleton_lines.append('<!-- 결론 -->')
+        skeleton_lines.append('<h2>결론 소제목</h2>')
+        skeleton_lines.append('<p>결론 1문단 (2~3문장)</p>')
+        skeleton_lines.append('<p>결론 2문단 (CTA 포함)</p>')
+        skeleton_text = '\n'.join(skeleton_lines)
+
         prompt = f"""
 <structural_recovery_prompt version="xml-v1">
   <role>당신은 엄격한 편집자입니다. 아래 원고는 구조/형식 검증에 실패했으므로 완전 교정합니다.</role>
@@ -175,6 +189,9 @@ class ContentRepairAgent:
     <expected_h2>{expected_h2}</expected_h2>
     <expected_p>{min_p}~{max_p}</expected_p>
   </goal>
+  <target_skeleton description="반드시 아래 구조를 따를 것">
+{_xml_cdata(skeleton_text)}
+  </target_skeleton>
   <rules>
     <rule order="1">허용 태그는 &lt;h2&gt;, &lt;p&gt;만 사용.</rule>
     <rule order="2">모든 &lt;h2&gt;, &lt;p&gt; 태그를 정확히 열고 닫을 것.</rule>
@@ -185,6 +202,9 @@ class ContentRepairAgent:
     <rule order="7">실패 코드({ _xml_text(failed_code) })를 최우선으로 해결하고, 동일 실패 코드가 재발하지 않게 재작성할 것.</rule>
     <rule order="8">반복 관련 실패 코드라면 동일 어구 반복을 줄이고, 초과 부분은 새로운 사실/근거/행동 문장으로 치환할 것(의미 보존).</rule>
     <rule order="9">검증 규칙 설명문이나 메타 문장을 본문으로 출력하지 말 것.</rule>
+    <rule order="10">h2 개수를 정확히 {expected_h2}개로 맞출 것. 서론에는 h2를 넣지 말 것.</rule>
+    <rule order="11">각 섹션(서론/본론/결론)마다 p 태그를 2~3개씩 배치할 것.</rule>
+    <rule order="12">서론과 결론에 동일 문구를 반복하지 말 것. 결론에서는 새로운 표현으로 재작성.</rule>
   </rules>
   <topic>{_xml_cdata(topic)}</topic>
   <author_bio>{_xml_cdata((author_bio or '(없음)')[:1800])}</author_bio>

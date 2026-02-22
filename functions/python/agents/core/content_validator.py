@@ -117,6 +117,50 @@ class ContentValidator:
                 overused.append(f'"{phrase}" {count}회')
         return overused
 
+    def _intro_has_stance_anchor(
+        self,
+        intro_plain: str,
+        context_analysis: Optional[Dict[str, Any]],
+        *,
+        min_overlap_tokens: int = 2,
+    ) -> bool:
+        if not intro_plain or not isinstance(context_analysis, dict):
+            return True
+
+        stance_topics: List[str] = []
+        for item in context_analysis.get('mustIncludeFromStance') or []:
+            if isinstance(item, dict):
+                topic = normalize_context_text(item.get('topic'))
+            else:
+                topic = normalize_context_text(item)
+            if topic:
+                stance_topics.append(topic)
+
+        if not stance_topics:
+            return True
+
+        intro_text = normalize_context_text(intro_plain, sep=' ')
+        intro_compact = re.sub(r'\s+', '', intro_text)
+        if not intro_compact:
+            return False
+
+        for topic in stance_topics[:3]:
+            normalized_topic = normalize_context_text(topic, sep=' ')
+            compact_topic = re.sub(r'\s+', '', normalized_topic)
+            if len(compact_topic) >= 6:
+                probe = compact_topic[: min(18, len(compact_topic))]
+                if probe and probe in intro_compact:
+                    return True
+
+            tokens = [tok for tok in re.split(r'\s+', normalized_topic) if len(tok) >= 2]
+            if not tokens:
+                continue
+            overlap = sum(1 for tok in tokens if tok in intro_text)
+            if overlap >= min(min_overlap_tokens, len(tokens)):
+                return True
+
+        return False
+
     def validate(
         self,
         content: str,
@@ -197,6 +241,13 @@ class ContentValidator:
         if len(section_blocks) >= 2:
             intro_plain = strip_html(section_blocks[0])
             conclusion_plain = strip_html(section_blocks[-1])
+            if not self._intro_has_stance_anchor(intro_plain, context_analysis):
+                return {
+                    'passed': False,
+                    'code': 'INTRO_STANCE_MISSING',
+                    'reason': '서론에 입장문 앵커 누락',
+                    'feedback': '서론 첫 1~2문단에 입장문 핵심 주장/문제의식을 재구성해 반드시 포함하십시오.',
+                }
             duplicate_phrases: List[str] = []
             seen_duplicate_phrases: set[str] = set()
             min_phrase_len = 12

@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 AUTO_KEYWORD_STOPWORDS = {
     "그래도",
+    "그래서",
     "그리고",
     "그러나",
     "하지만",
@@ -27,11 +28,9 @@ AUTO_KEYWORD_STOPWORDS = {
     "한편",
     "아울러",
     "특히",
-    "먼저",
     "다만",
     "결국",
     "즉",
-    "그래서",
     "따라서",
     "이에",
     "또는",
@@ -42,8 +41,24 @@ AUTO_KEYWORD_STOPWORDS = {
     "중심으로",
     "관점",
     "점검",
+    "위해",
+    "대한",
+    "대해",
+    "관한",
+    "중단",
     "검토",
+    "먼저",
+    "이후",
+    "같이",
+    "등",
 }
+
+REFERENCE_LABEL_PATTERN = re.compile(
+    r"^\s*(?:[#>*-]\s*)?(?:\d+[.)]\s*)?(?:\[)?"
+    r"(?P<label>내\s*입장문|입장문|실제\s*원고|뉴스\s*/?\s*데이터(?:\s*\d+)?|뉴스(?:\s*\d+)?|데이터(?:\s*\d+)?)"
+    r"(?:\])?\s*[:：]\s*(?P<rest>.*)$",
+    re.IGNORECASE,
+)
 
 
 def _json_response(payload: Dict[str, Any], status: int) -> https_fn.Response:
@@ -126,7 +141,7 @@ def _merge_profiles(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str,
 
 
 def _normalize_text(value: Any, *, sep: str = "\n\n") -> str:
-    """list/tuple 중첩 입력까지 안전하게 문자열로 정규화."""
+    """Normalize nested list/tuple inputs into a clean text string."""
     if value is None:
         return ""
     if isinstance(value, str):
@@ -162,6 +177,111 @@ def _normalize_reference_list(value: Any) -> list[str]:
     return result
 
 
+def _classify_reference_label(label: str) -> str:
+    normalized = re.sub(r"\s+", "", str(label or "")).lower()
+    stance_label = "\uC785\uC7A5\uBB38"  # 입장문
+    my_stance_label = "\uB0B4\uC785\uC7A5\uBB38"  # 내입장문
+    news_label = "\uB274\uC2A4"  # 뉴스
+    data_label = "\uB370\uC774\uD130"  # 데이터
+    draft_label = "\uC6D0\uACE0"  # 원고
+    actual_draft_label = "\uC2E4\uC81C\uC6D0\uACE0"  # 실제원고
+
+    # "실제 원고"는 과거 생성본/샘플 본문일 가능성이 높아 제외한다.
+    if actual_draft_label in normalized:
+        return "ignore"
+
+    # 입장문 계열만 stance로 취급한다.
+    if my_stance_label in normalized or normalized == stance_label:
+        return "stance"
+    if stance_label in normalized and draft_label not in normalized:
+        return "stance"
+
+    if news_label in normalized or data_label in normalized:
+        return "news"
+
+    # "원고" 단독 라벨은 출력본/샘플일 가능성이 높아 제외한다.
+    if draft_label in normalized:
+        return "ignore"
+
+    return ""
+
+
+def _extract_labeled_reference_blocks(text: str) -> tuple[list[str], list[str], bool]:
+    if not text:
+        return [], [], False
+    stance_blocks: list[str] = []
+    news_blocks: list[str] = []
+    current_bucket = ""
+    buffer: list[str] = []
+    has_labeled_block = False
+    def flush() -> None:
+        nonlocal buffer, current_bucket
+        payload = "\n".join(buffer).strip()
+        if payload:
+            if current_bucket == "stance":
+                stance_blocks.append(payload)
+            elif current_bucket == "news":
+                news_blocks.append(payload)
+        buffer = []
+        current_bucket = ""
+    for line in str(text or "").splitlines():
+        match = REFERENCE_LABEL_PATTERN.match(line)
+        if match:
+            has_labeled_block = True
+            flush()
+            current_bucket = _classify_reference_label(match.group("label"))
+            rest = str(match.group("rest") or "").strip()
+            if rest:
+                buffer.append(rest)
+            continue
+        if current_bucket:
+            buffer.append(line)
+    flush()
+    return stance_blocks, news_blocks, has_labeled_block
+
+
+def _join_reference_blocks(blocks: list[str]) -> str:
+    normalized = [str(block or "").strip() for block in blocks if str(block or "").strip()]
+    return "\n\n".join(normalized).strip()
+
+
+def _split_reference_materials(data: Dict[str, Any]) -> tuple[str, str, str]:
+    stance_text = _normalize_text(data.get("stanceText"))
+    news_data_text = _normalize_text(data.get("newsDataText"))
+    raw_instructions = data.get("instructions")
+    instruction_list = _normalize_reference_list(raw_instructions)
+    normalized_entries = [_normalize_text(item) for item in instruction_list]
+    normalized_entries = [entry for entry in normalized_entries if entry]
+    labeled_stance: list[str] = []
+    labeled_news: list[str] = []
+    unlabeled_entries: list[str] = []
+    for entry in normalized_entries:
+        stance_blocks, news_blocks, has_labeled_block = _extract_labeled_reference_blocks(entry)
+        if has_labeled_block:
+            labeled_stance.extend(stance_blocks)
+            labeled_news.extend(news_blocks)
+            continue
+        unlabeled_entries.append(entry)
+    if labeled_stance:
+        stance_text = _join_reference_blocks(labeled_stance)
+    elif not stance_text and unlabeled_entries:
+        stance_text = unlabeled_entries[0]
+    if labeled_news:
+        news_data_text = _join_reference_blocks(labeled_news)
+    elif not news_data_text and len(unlabeled_entries) >= 2:
+        news_data_text = _join_reference_blocks(unlabeled_entries[1:])
+    # 분리된 1차 소스(입장문/뉴스)로 instructions를 재구성해 재혼합을 방지한다.
+    materials: list[str] = []
+    if stance_text:
+        materials.append(stance_text)
+    if news_data_text:
+        materials.append(news_data_text)
+    instructions_text = _normalize_text(materials, sep="\n\n---\n\n")
+    if not instructions_text:
+        instructions_text = _normalize_text(raw_instructions)
+    return stance_text, news_data_text, instructions_text
+
+
 def _is_noise_auto_keyword(keyword: str) -> bool:
     normalized = re.sub(r"\s+", " ", str(keyword or "")).strip()
     if not normalized:
@@ -171,7 +291,7 @@ def _is_noise_auto_keyword(keyword: str) -> bool:
         return True
     if len(normalized) <= 1:
         return True
-    # 조사/접속어 기반 메타 문구는 자동 키워드로 사용하지 않는다.
+    # 접속어/메타 문구는 자동 키워드 후보에서 제외한다.
     if re.fullmatch(r"(?:그리고|그래서|그러나|하지만|또한|한편|아울러)(?:\s+\w+)?", lowered):
         return True
     return False
@@ -217,12 +337,13 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
             return _json_response({"error": "topic is required", "code": "INVALID_INPUT"}, 400)
 
         category = str(data.get("category") or "activity-report").strip() or "activity-report"
+        stance_text, news_data_text, instructions_text = _split_reference_materials(data)
         request_keywords = data.get("keywords") if isinstance(data.get("keywords"), list) else []
         request_user_keywords = data.get("userKeywords") if isinstance(data.get("userKeywords"), list) else request_keywords
 
         normalized_request_keywords = [str(item).strip() for item in request_keywords if str(item).strip()]
         normalized_user_keywords = [str(item).strip() for item in request_user_keywords if str(item).strip()]
-        extracted_keywords = extract_keywords_from_instructions(_normalize_text(data.get("instructions"), sep=" "))
+        extracted_keywords = extract_keywords_from_instructions(_normalize_text(instructions_text, sep=" "))
 
         merged_keywords: list[str] = []
         seen_keywords: set[str] = set()
@@ -258,6 +379,12 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
             len(merged_keywords),
             len(auto_keywords),
             len(filtered_out_auto_keywords),
+        )
+        logger.info(
+            "Reference split completed: stance=%s news=%s instructions=%s chars",
+            len(_normalize_text(stance_text)),
+            len(_normalize_text(news_data_text)),
+            len(_normalize_text(instructions_text)),
         )
         if filtered_out_auto_keywords:
             logger.info("Filtered noisy auto keywords: %s", filtered_out_auto_keywords[:6])
@@ -443,9 +570,9 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
             "userKeywords": normalized_user_keywords,
             "autoKeywords": auto_keywords,
             "userProfile": user_profile,
-            "instructions": _normalize_text(data.get("instructions")),
-            "stanceText": _normalize_text(data.get("stanceText")),
-            "newsDataText": _normalize_text(data.get("newsDataText")),
+            "instructions": instructions_text,
+            "stanceText": stance_text,
+            "newsDataText": news_data_text,
             "newsContext": _normalize_text(additional_context.get("newsContext", data.get("newsContext", ""))),
             "styleHints": additional_context.get("styleHints", {}),
             "styleGuide": style_guide,
@@ -489,3 +616,4 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
         logger.error("Pipeline start failed: %s", exc)
         traceback.print_exc()
         return _json_response({"error": str(exc), "code": "INTERNAL_ERROR"}, 500)
+

@@ -144,9 +144,25 @@ export function useGenerateAPI() {
 
       // 🔧 진행 상황 추적용 세션 ID (프론트엔드에서 생성하여 백엔드로 전달)
       const progressSessionId = `${user.uid}_${Date.now()}`;
+      const instructionEntries = Array.isArray(formData.instructions)
+        ? formData.instructions
+        : [formData.instructions];
+      const normalizedInstructions = instructionEntries
+        .map((item) => String(item || '').trim())
+        .filter((item) => item.length > 0);
+
+      const stanceText = String(
+        formData.stanceText || normalizedInstructions[0] || ''
+      ).trim();
+      const newsDataText = String(
+        formData.newsDataText || normalizedInstructions.slice(1).join('\n\n') || ''
+      ).trim();
 
       const requestData = {
         ...formData,
+        instructions: normalizedInstructions,
+        stanceText,
+        newsDataText,
         prompt: formData.topic || formData.prompt,
         generateSingle: true,
         useBonus: useBonus,
@@ -253,7 +269,10 @@ export function useGenerateAPI() {
         multiAgent: responseData.metadata?.multiAgent || null,
 
         // 🔑 검색어 검증 결과 (백엔드 판정 기준)
-        keywordValidation: responseData.metadata?.seo?.keywordValidation || null
+        keywordValidation:
+          responseData.metadata?.multiAgent?.keywordValidation ||
+          responseData.metadata?.seo?.keywordValidation ||
+          null
       };
 
       // 📌 메모리 누수 방지: 제한된 개수로 추가

@@ -204,6 +204,11 @@ export default function PreviewPane({ draft }) {
                   {keywordStats.map((stat, index) => {
                     // 🔑 백엔드 검증 결과 우선 사용
                     const backendValidation = draft.keywordValidation?.[stat.keyword];
+                    const backendExactCount = Number(backendValidation?.exactCount);
+                    const backendCount = Number(backendValidation?.count);
+                    const displayCount = Number.isFinite(backendExactCount)
+                      ? backendExactCount
+                      : (Number.isFinite(backendCount) ? backendCount : stat.count);
                     const fallbackMinCount = keywordStats.length >= 2 ? 3 : 5;
                     const fallbackMaxCount = fallbackMinCount + 1;
 
@@ -218,9 +223,9 @@ export default function PreviewPane({ draft }) {
 
                     let validationStatus = backendValidation?.status;
                     if (!['valid', 'insufficient', 'spam_risk'].includes(validationStatus)) {
-                      if (stat.count < minCount) {
+                      if (displayCount < minCount) {
                         validationStatus = 'insufficient';
-                      } else if (stat.count > maxCount) {
+                      } else if (displayCount > maxCount) {
                         validationStatus = 'spam_risk';
                       } else {
                         validationStatus = 'valid';
@@ -242,7 +247,7 @@ export default function PreviewPane({ draft }) {
                           pl: 1
                         }}
                       >
-                        "{stat.keyword}": {stat.count}회{statusLabel}
+                        "{stat.keyword}": {displayCount}회{statusLabel}
                       </Typography>
                     );
                   })}
