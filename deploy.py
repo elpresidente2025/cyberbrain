@@ -24,7 +24,12 @@ FRONTEND_DIR = ROOT_DIR / "frontend"
 def run_command(command: list[str], cwd: Path | None = None) -> None:
     working_dir = cwd or ROOT_DIR
     print(f"$ {' '.join(command)}")
-    subprocess.run(command, cwd=str(working_dir), check=True)
+    subprocess.run(
+        command,
+        cwd=str(working_dir),
+        check=True,
+        shell=(os.name == "nt"),
+    )
 
 
 def maybe_setup_functions_config() -> None:
@@ -120,4 +125,3 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
-
