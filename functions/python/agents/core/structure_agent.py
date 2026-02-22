@@ -542,6 +542,8 @@ class StructureAgent(Agent):
             'EVENT_FACT_REPEAT',
             'EVENT_INVITE_REDUNDANT',
             'SECTION_LENGTH',
+            'H2_TEXT_LONG',
+            'H2_TEXT_MODIFIER',
         }
 
         def _candidate_rank(candidate_validation: Dict[str, Any], candidate_content: str) -> tuple:

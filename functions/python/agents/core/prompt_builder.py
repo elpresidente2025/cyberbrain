@@ -205,6 +205,19 @@ def build_retry_directive(
             "본론 섹션마다 서로 다른 소재 카드를 배정하고, 각 카드는 1회만 사용하십시오."
         )
 
+    if code == 'H2_TEXT_LONG':
+        return (
+            "소제목(<h2>)이 25자를 초과했습니다. "
+            "각 소제목을 15~25자 이내의 간결한 명사형/체언형으로 줄이십시오. "
+            "수식어(~위한, ~향한, ~통한)를 삭제하고 핵심 단어만 남기십시오."
+        )
+
+    if code == 'H2_TEXT_MODIFIER':
+        return (
+            "소제목에 금지 수식어(위한/향한/만드는/통한/대한)가 포함되어 있습니다. "
+            "해당 수식어를 제거하고 '명사+명사' 또는 '명사, 명사' 형태로 간결하게 재작성하십시오."
+        )
+
     if code == 'SECTION_LENGTH':
         return (
             f"섹션별 글자 수를 {per_section_recommended}자 내외({per_section_recommended - 50}~{per_section_recommended + 50}자)로 조정하십시오. "
