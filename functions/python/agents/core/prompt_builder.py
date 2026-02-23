@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional, List
 
 from ..common.warnings import generate_non_lawmaker_warning
 from ..common.seo import build_seo_instruction
+from ..common.h2_guide import build_h2_examples
 from ..common.election_rules import get_prompt_instruction
 
 from ..templates.daily_communication import build_daily_communication_prompt
@@ -655,6 +656,8 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     <banned>추상적 표현("노력", "열전", "마음"), 모호한 지시어("이것", "그것", "관련 내용"), 과장 표현("최고", "혁명적", "놀라운"), 서술어 포함("~에 대한 설명", "~을 알려드립니다"), 키워드 없는 짧은 제목("정책", "방법", "소개")</banned>
     <aeo_rule>H2 바로 아래 첫 문장(40~60자)은 해당 질문/주제에 대한 직접 답변으로 작성할 것.</aeo_rule>
   </h2_strategy>
+
+{build_h2_examples()}
 
   <mandatory_rules>
     <rule id="html_tags">소제목은 &lt;h2&gt;, 문단은 &lt;p&gt; 태그만 사용 (마크다운 문법 금지)</rule>
