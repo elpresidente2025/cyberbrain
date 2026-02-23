@@ -84,7 +84,7 @@ def _generate_h2_text(p_block: str, index: int) -> str:
     # 첫 문장만 추출
     first_sentence = _split_sentences(plain)[0] if _split_sentences(plain) else plain
     # 처음 25자까지 잘라서 적절한 종결 위치 찾기
-    candidate = first_sentence[:25].strip()
+    candidate = first_sentence[:30].strip()
     # 마지막 조사/어미 제거하여 명사구화
     candidate = re.sub(r'[은는이가을를에서의와과도로만]$', '', candidate).strip()
     # 마침표 등 제거

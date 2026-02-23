@@ -207,9 +207,17 @@ def build_retry_directive(
 
     if code == 'H2_TEXT_LONG':
         return (
-            "소제목(<h2>)이 25자를 초과했습니다. "
-            "각 소제목을 15~25자 이내의 간결한 명사형/체언형으로 줄이십시오. "
-            "수식어(~위한, ~향한, ~통한)를 삭제하고 핵심 단어만 남기십시오."
+            "소제목(<h2>)이 30자를 초과했습니다. "
+            "각 소제목을 12~30자 이내로 줄이십시오. "
+            "질문형('~인가?', '~할까?') 또는 핵심 키워드 중심 명사구로 작성하고, "
+            "수식어(~위한, ~향한, ~통한, ~에 대한)를 삭제하십시오."
+        )
+
+    if code == 'H2_TEXT_SHORT':
+        return (
+            "소제목(<h2>)이 8자 미만으로 너무 짧습니다. "
+            "각 소제목을 12~30자로 작성하십시오. "
+            "핵심 키워드를 앞에 배치하고, 구체적 정보(수치/대상/장소)를 포함하십시오."
         )
 
     if code == 'H2_TEXT_MODIFIER':
@@ -620,12 +628,32 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
   </sections>
 
   <h2_strategy name="소제목 작성 전략 (AEO+SEO)">
-    <type name="질문형" strength="AEO 최강">청년 기본소득, 신청 방법은?</type>
-    <type name="명사형" strength="SEO 기본">분당구 정자동 주차장 신설 위치</type>
-    <type name="데이터" strength="신뢰성">2025년 상반기 5대 주요 성과</type>
-    <type name="절차" strength="실용성">청년 기본소득 신청 3단계 절차</type>
-    <type name="비교" strength="차별화">기존 정책 대비 개선된 3가지</type>
-    <banned>추상적 표현("노력", "열전", "마음"), 모호한 제목("정책 안내", "소개"), 서술어 포함("~에 대한 설명")</banned>
+    <length min="12" max="30" optimal="15~22"/>
+    <types>
+      <type name="질문형" strength="AEO 최강" ratio="40% 이상 권장">
+        <good>청년 기본소득, 신청 방법은?</good>
+        <good>전세 사기 피해, 어떻게 보상받나요?</good>
+        <bad>이것을 꼭 알아야 합니다</bad>
+      </type>
+      <type name="명사형" strength="SEO 기본">
+        <good>분당구 정자동 주차장 신설 위치</good>
+        <bad>정책 안내</bad>
+      </type>
+      <type name="데이터" strength="신뢰성">
+        <good>청년 일자리 274명 창출 방법</good>
+        <bad>좋은 성과를 냈습니다</bad>
+      </type>
+      <type name="절차" strength="실용성">
+        <good>청년 기본소득 신청 3단계 절차</good>
+        <bad>신청하는 방법</bad>
+      </type>
+      <type name="비교" strength="차별화">
+        <good>기존 정책 대비 개선된 3가지</good>
+        <bad>비교해 보겠습니다</bad>
+      </type>
+    </types>
+    <banned>추상적 표현("노력", "열전", "마음"), 모호한 지시어("이것", "그것", "관련 내용"), 과장 표현("최고", "혁명적", "놀라운"), 서술어 포함("~에 대한 설명", "~을 알려드립니다"), 키워드 없는 짧은 제목("정책", "방법", "소개")</banned>
+    <aeo_rule>H2 바로 아래 첫 문장(40~60자)은 해당 질문/주제에 대한 직접 답변으로 작성할 것.</aeo_rule>
   </h2_strategy>
 
   <mandatory_rules>

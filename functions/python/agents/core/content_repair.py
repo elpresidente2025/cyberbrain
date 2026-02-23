@@ -166,7 +166,7 @@ class ContentRepairAgent:
         body_count = max(1, expected_h2 - 1)  # 본론 섹션 수 (결론 제외)
         for i in range(1, body_count + 1):
             skeleton_lines.append(f'<!-- 본론 {i} -->')
-            skeleton_lines.append(f'<h2>본론{i} 소제목 (25자 이하, 명사구/질문형)</h2>')
+            skeleton_lines.append(f'<h2>본론{i} 소제목 (12~30자, 질문형 권장)</h2>')
             skeleton_lines.append(f'<p>본론{i} 1문단 (2~3문장)</p>')
             skeleton_lines.append(f'<p>본론{i} 2문단 (2~3문장)</p>')
         skeleton_lines.append('<!-- 결론 -->')

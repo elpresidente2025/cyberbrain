@@ -210,8 +210,10 @@ class ContentValidator:
 
         h2_texts = [strip_html(text).strip() for text in re.findall(r'<h2[^>]*>(.*?)</h2>', content, re.IGNORECASE | re.DOTALL)]
         for h2_text in h2_texts:
-            if len(h2_text) > 25:
-                return {'passed': False, 'code': 'H2_TEXT_LONG', 'reason': "h2 텍스트 길이 초과", 'feedback': f'h2 텍스트가 25자를 초과했습니다: "{h2_text}"'}
+            if len(h2_text) > 30:
+                return {'passed': False, 'code': 'H2_TEXT_LONG', 'reason': "h2 텍스트 길이 초과", 'feedback': f'h2 텍스트가 30자를 초과했습니다: "{h2_text}"'}
+            if len(h2_text) < 8:
+                return {'passed': False, 'code': 'H2_TEXT_SHORT', 'reason': "h2 텍스트 너무 짧음", 'feedback': f'h2 텍스트가 8자 미만으로 너무 짧습니다: "{h2_text}"'}
             if re.search(r'(위한|향한|만드는|통한|대한)(\s|$)', h2_text):
                 return {'passed': False, 'code': 'H2_TEXT_MODIFIER', 'reason': "h2 금지된 수식어", 'feedback': f'금지 수식어(위한/향한/만드는/통한/대한)를 제거하십시오: "{h2_text}"'}
 
