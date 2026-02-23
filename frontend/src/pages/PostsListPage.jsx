@@ -110,6 +110,7 @@ function isNaverBlogUrl(value = '') {
 // 🗓️ 캘린더 뷰 컴포넌트
 function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish }) {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   // 오늘 날짜를 기본값으로 설정
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
@@ -138,10 +139,10 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
 
   return (
     <>
-      <Paper elevation={0} sx={{ p: 3, mb: 3, border: `1px solid ${theme.palette.divider}` }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="h5" fontWeight="bold">
+      <Paper elevation={0} sx={{ p: { xs: 0.5, sm: 3 }, mb: 3, border: `1px solid ${theme.palette.divider}` }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <Typography variant={isMobile ? 'h6' : 'h5'} fontWeight="bold">
               {year}년 {month + 1}월
             </Typography>
             <Button size="small" onClick={handleToday} sx={{ ml: 1, minWidth: 'auto', px: 1 }}>
@@ -149,23 +150,23 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
             </Button>
           </Box>
           <Box>
-            <IconButton onClick={handlePrev}><ChevronLeft /></IconButton>
-            <IconButton onClick={handleNext}><ChevronRight /></IconButton>
+            <IconButton size={isMobile ? 'small' : 'medium'} aria-label="이전 달 보기" onClick={handlePrev}><ChevronLeft /></IconButton>
+            <IconButton size={isMobile ? 'small' : 'medium'} aria-label="다음 달 보기" onClick={handleNext}><ChevronRight /></IconButton>
           </Box>
         </Box>
 
         <Grid container sx={{ mb: 1 }}>
           {weekDays.map((day, idx) => (
-            <Grid item xs={12 / 7} key={day} sx={{ textAlign: 'center', fontWeight: 'bold', color: idx === 0 ? 'error.main' : idx === 6 ? 'primary.main' : 'text.secondary' }}>
+            <Grid item xs={12 / 7} key={day} sx={{ textAlign: 'center', fontWeight: 'bold', color: idx === 0 ? 'error.main' : idx === 6 ? 'primary.main' : 'text.secondary', fontSize: { xs: '0.72rem', sm: '0.85rem' } }}>
               {day}
             </Grid>
           ))}
         </Grid>
 
-        <Grid container spacing={1}>
+        <Grid container spacing={{ xs: 0, sm: 1 }}>
           {Array.from({ length: firstDay }).map((_, i) => (
             <Grid item xs={12 / 7} key={`empty-${i}`}>
-              <Box sx={{ minHeight: 60, aspectRatio: '3 / 2' }} />
+              <Box sx={{ minHeight: { xs: 44, sm: 60 }, aspectRatio: { xs: '1 / 1', sm: '3 / 2' } }} />
             </Grid>
           ))}
 
@@ -186,9 +187,9 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
                   sx={{
                     border: `1px solid ${theme.palette.divider}`,
                     borderRadius: 1,
-                    p: 0.5,
-                    aspectRatio: '3 / 2',
-                    minHeight: 60,
+                    p: { xs: 0.25, sm: 0.5 },
+                    aspectRatio: { xs: '1 / 1', sm: '3 / 2' },
+                    minHeight: { xs: 44, sm: 60 },
                     bgcolor: isToday ? 'primary.main' : isSelected ? 'primary.light' : 'background.paper',
                     display: 'flex',
                     flexDirection: 'column',
@@ -206,7 +207,8 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
                       fontWeight: 'bold',
                       textAlign: 'center',
                       display: 'block',
-                      mb: 0.5,
+                      mb: { xs: 0.25, sm: 0.5 },
+                      fontSize: { xs: '0.7rem', sm: '0.75rem' },
                       color: isToday ? 'primary.contrastText' : 'text.primary'
                     }}
                     style={isToday ? { color: '#ffffff' } : {}}
@@ -221,8 +223,8 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
                         <Box
                           key={idx}
                           sx={{
-                            width: 6,
-                            height: 6,
+                            width: { xs: 5, sm: 6 },
+                            height: { xs: 5, sm: 6 },
                             borderRadius: '50%',
                             bgcolor: isToday ? 'primary.contrastText' : 'primary.main'
                           }}
@@ -306,7 +308,7 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
                           클릭 시 원고 전문을 확인하실 수 있습니다.
                         </Typography>
 
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); onDelete(post.id, e); }}><DeleteOutline /></IconButton>
+                        <IconButton size="small" aria-label="원고 삭제" onClick={(e) => { e.stopPropagation(); onDelete(post.id, e); }}><DeleteOutline /></IconButton>
                       </CardActions>
                     </Card>
                   </Grid>
@@ -467,7 +469,7 @@ export default function PostsListPage() {
 
   return (
     <DashboardLayout title="포스트 목록">
-      <Container maxWidth="xl" sx={{ py: `${spacing.xl}px`, px: { xs: 1, sm: 2 } }}>
+      <Container disableGutters maxWidth="xl" sx={{ py: `${spacing.xl}px`, px: { xs: 0, sm: 2 } }}>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -507,8 +509,8 @@ export default function PostsListPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
         >
-          <Paper elevation={0} sx={{ p: { xs: 2, sm: 3 } }}>
-            <Typography variant="body2" sx={{ mb: `${spacing.md}px`, color: 'grey.100', fontStyle: 'italic', textAlign: 'center' }}>
+          <Paper elevation={0} sx={{ p: { xs: 0.5, sm: 3 } }}>
+            <Typography variant="body2" sx={{ mb: `${spacing.md}px`, color: 'text.secondary', fontStyle: 'italic', textAlign: 'center' }}>
               날짜를 클릭/터치하면 달력 하단에 원고가 나옵니다.
             </Typography>
 
@@ -538,7 +540,7 @@ export default function PostsListPage() {
           post={viewerPost}
         />
 
-        <Dialog open={publishDialogOpen} onClose={closePublishDialog} maxWidth="sm" fullWidth disableEnforceFocus>
+        <Dialog open={publishDialogOpen} onClose={closePublishDialog} maxWidth="sm" fullWidth>
           <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.xs}px` }}>
             <Publish sx={{ color: theme.palette.ui?.header || colors.brand.primary }} />
             원고 발행 등록

@@ -1,6 +1,6 @@
 // frontend/src/components/generate/PromptForm.jsx (카테고리 자동 분류 버전)
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Paper,
   Typography,
@@ -23,7 +23,8 @@ export default function PromptForm({
   onChange,
   disabled = false,
   isMobile = false,
-  user = null
+  user = null,
+  errors = {}
 }) {
   const theme = useTheme();
 
@@ -36,14 +37,38 @@ export default function PromptForm({
   // 키워드 경고 메시지 상태
   const [keywordWarning, setKeywordWarning] = useState(null);
 
-  // 참고자료 목록 상태 관리
-  const [instructionsList, setInstructionsList] = useState(() => {
-    // formData.instructions가 배열이면 그대로 사용, 아니면 문자열을 배열로 변환
-    if (Array.isArray(formData.instructions)) {
-      return formData.instructions.length > 0 ? formData.instructions : [''];
+  const normalizeInstructions = (instructions) => {
+    if (Array.isArray(instructions)) {
+      return instructions.length > 0 ? instructions : [''];
     }
-    return formData.instructions ? [formData.instructions] : [''];
-  });
+    return instructions ? [instructions] : [''];
+  };
+
+  const areInstructionListsEqual = (a, b) => {
+    if (a.length !== b.length) return false;
+    return a.every((item, index) => item === b[index]);
+  };
+
+  const normalizeKeywordsInput = (rawValue, maxKeywords = 2) => {
+    const tokens = String(rawValue || '')
+      .split(',')
+      .map((token) => token.trim())
+      .filter((token) => token.length > 0);
+
+    const exceeded = tokens.length > maxKeywords;
+    const normalized = tokens.slice(0, maxKeywords).join(', ');
+    return { normalized, exceeded };
+  };
+
+  // 참고자료 목록 상태 관리
+  const [instructionsList, setInstructionsList] = useState(() => normalizeInstructions(formData.instructions));
+
+  useEffect(() => {
+    const normalizedInstructions = normalizeInstructions(formData.instructions);
+    setInstructionsList((prev) => (
+      areInstructionListsEqual(prev, normalizedInstructions) ? prev : normalizedInstructions
+    ));
+  }, [formData.instructions]);
   // 참고자료 입력창 변경 핸들러
   const handleInstructionChange = (index) => (event) => {
     const { value } = event.target;
@@ -113,21 +138,27 @@ export default function PromptForm({
 
         {/* ✅ 5. 주제 입력칸을 `topic`에 연결하여 버튼 활성화 문제를 해결합니다. */}
         <Grid item xs={12}>
-          <TextField
-            fullWidth
-            size={formSize}
-            label="주제"
-            placeholder="어떤 내용의 원고를 작성하고 싶으신가요?"
-            value={formData.topic || ''}
-            onChange={handleInputChange('topic')}
-            onBlur={handleInputBlur('topic')}
-            disabled={disabled}
-            multiline
-            rows={2}
-            inputProps={{ maxLength: 500 }}
-            helperText={`${formData.topic?.length || 0}/500자`}
-            FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
-          />
+          {(() => {
+            const topicError = Boolean(errors?.topic);
+            return (
+              <TextField
+                fullWidth
+                size={formSize}
+                label="주제"
+                placeholder="어떤 내용의 원고를 작성하고 싶으신가요?"
+                value={formData.topic || ''}
+                onChange={handleInputChange('topic')}
+                onBlur={handleInputBlur('topic')}
+                disabled={disabled}
+                multiline
+                rows={2}
+                error={topicError}
+                inputProps={{ maxLength: 500, name: 'topic' }}
+                helperText={topicError ? errors.topic : `${formData.topic?.length || 0}/500자`}
+                FormHelperTextProps={{ sx: { color: topicError ? 'error.main' : 'text.secondary' } }}
+              />
+            );
+          })()}
         </Grid>
 
         {/* ✅ 6. 참고자료 및 배경정보 입력창 - 다중 입력 지원 */}
@@ -156,9 +187,12 @@ export default function PromptForm({
                 size="small"
                 onClick={addInstructionField}
                 disabled={disabled || instructionsList.length >= 10}
+                aria-label="참고자료 입력창 추가"
                 sx={{
-                  width: 24,
-                  height: 24,
+                  width: 44,
+                  height: 44,
+                  minWidth: 44,
+                  minHeight: 44,
                   backgroundColor: '#006261',
                   color: 'white',
                   border: '1px solid',
@@ -197,12 +231,16 @@ export default function PromptForm({
                   required={index === 0}
                   multiline
                   rows={index === 0 ? 4 : 3}
+                  error={index === 0 && Boolean(errors?.instructions0)}
+                  inputProps={{ name: index === 0 ? 'instructions_0' : `instructions_${index}` }}
                   // 글자수 제한 해제 (백엔드에서 4000자로 잘림)
-                  helperText={index === 0
-                    ? `원고의 논조와 주장을 결정합니다. 핵심 메시지를 입력하세요. | ${(instruction?.length || 0).toLocaleString()}자`
-                    : `URL이 아닌 기사 본문 텍스트를 직접 복사-붙여넣기 하세요. | ${(instruction?.length || 0).toLocaleString()}자`
+                  helperText={index === 0 && errors?.instructions0
+                    ? errors.instructions0
+                    : (index === 0
+                      ? `원고의 논조와 주장을 결정합니다. 핵심 메시지를 입력하세요. | ${(instruction?.length || 0).toLocaleString()}자`
+                      : `URL이 아닌 기사 본문 텍스트를 직접 복사-붙여넣기 하세요. | ${(instruction?.length || 0).toLocaleString()}자`)
                   }
-                  FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
+                  FormHelperTextProps={{ sx: { color: index === 0 && errors?.instructions0 ? 'error.main' : 'text.secondary' } }}
                 />
                 {instructionsList.length > 1 && index !== 0 && (
                   <Tooltip title="이 참고자료 삭제">
@@ -210,10 +248,13 @@ export default function PromptForm({
                       size="small"
                       onClick={() => removeInstructionField(index)}
                       disabled={disabled}
+                      aria-label="참고자료 입력창 삭제"
                       sx={{
                         mt: 1,
-                        width: 24,
-                        height: 24,
+                        width: 44,
+                        height: 44,
+                        minWidth: 44,
+                        minHeight: 44,
                         backgroundColor: '#55207d',
                         color: 'white',
                         border: '1px solid',
@@ -261,24 +302,16 @@ export default function PromptForm({
               placeholder="검색어는 최대 2개만 입력하세요"
               value={formData.keywords || ''}
               onChange={(e) => {
-                let value = e.target.value;
-                // 쉼표 개수 확인 (2개 이상 입력 시 차단 및 잘라내기)
-                const commas = value.match(/,/g);
-                if (commas && commas.length >= 2) {
-                  // 2번째 쉼표 위치 찾기
-                  const secondCommaIndex = value.indexOf(',', value.indexOf(',') + 1);
-                  if (secondCommaIndex !== -1) {
-                    // 2번째 쉼표까지만 남기고 뒷부분 제거
-                    value = value.substring(0, secondCommaIndex + 1);
-
-                    // 경고 메시지 표시 (이미 표시 중이 아닐 때만)
-                    if (!keywordWarning) {
-                      setKeywordWarning("검색어는 최대 2개까지만 입력 가능합니다.");
-                      setTimeout(() => setKeywordWarning(null), 3000);
-                    }
+                const { normalized, exceeded } = normalizeKeywordsInput(e.target.value, 2);
+                if (exceeded) {
+                  if (!keywordWarning) {
+                    setKeywordWarning('검색어는 최대 2개까지만 입력 가능합니다.');
+                    setTimeout(() => setKeywordWarning(null), 3000);
                   }
+                } else if (keywordWarning) {
+                  setKeywordWarning(null);
                 }
-                onChange({ keywords: value });
+                onChange({ keywords: normalized });
               }}
               onBlur={handleInputBlur('keywords')}
               disabled={disabled}
@@ -293,9 +326,10 @@ export default function PromptForm({
                   variant="outlined"
                   onClick={() => setKeywordDialogOpen(true)}
                   disabled={disabled}
+                  aria-label="AI 검색어 추천"
                   sx={{
-                    minWidth: isMobile ? '40px' : '120px',
-                    height: isMobile ? '40px' : '56px',
+                    minWidth: isMobile ? '44px' : '120px',
+                    height: isMobile ? '44px' : '56px',
                     mt: 0.5,
                     px: isMobile ? 1 : 2
                   }}

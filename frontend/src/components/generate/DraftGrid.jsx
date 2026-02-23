@@ -28,10 +28,10 @@ export default function DraftGrid({
     return (
       <Paper elevation={0} sx={{ p: 4, textAlign: 'center', color: 'text.secondary' }}>
         <AutoAwesome sx={{ fontSize: 64, mb: 2, color: theme.palette.ui?.header || '#152484' }} />
-        <Typography variant="h6" gutterBottom sx={{ color: 'black' }}>
+        <Typography variant="h6" gutterBottom sx={{ color: 'text.primary' }}>
           AI 원고 생성을 시작해보세요
         </Typography>
-        <Typography variant="body2" sx={{ color: 'black' }}>
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           상단 폼을 작성하고 "원고 생성 시도" 버튼을 클릭하세요.<br />
           한 번의 생성에서 최대 {maxAttempts}회까지 시도할 수 있습니다.
         </Typography>
@@ -39,30 +39,22 @@ export default function DraftGrid({
     );
   }
 
-  // 모바일: 세로 배치, 데스크톱: 가로 배치
-  const containerStyle = isMobile ? {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 2
-  } : {
-    display: 'flex',
-    justifyContent: 'center',
-    gap: 2
-  };
-
-  // 카드 크기 계산
-  const getCardWidth = () => {
-    if (isMobile) return '100%';
-    if (items.length === 1) return '600px';
-    if (items.length === 2) return '400px';
-    return '350px';
+  const containerStyle = {
+    display: 'grid',
+    gap: 2,
+    mx: 'auto',
+    width: '100%',
+    maxWidth: 1280,
+    gridTemplateColumns: isMobile
+      ? '1fr'
+      : 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))'
   };
 
   const getContentHeight = () => {
     if (isMobile) return 400;
-    if (items.length === 1) return 400;
-    if (items.length === 2) return 300;
-    return 200;
+    if (items.length === 1) return 420;
+    if (items.length === 2) return 320;
+    return 280;
   };
 
   const getFontSize = () => {
@@ -82,8 +74,6 @@ export default function DraftGrid({
             key={draft.id || index} 
             elevation={0}
             sx={{ 
-              width: getCardWidth(),
-              maxWidth: '100%',
               bgcolor: ['#003a87', '#55207d', '#006261'][index] || '#003a87',
               color: 'white',
               display: 'flex', 
@@ -103,7 +93,7 @@ export default function DraftGrid({
                 component="div"
                 gutterBottom
                 sx={{
-                  color: '#ffffff !important',
+                  color: 'common.white',
                   textAlign: 'center',
                   fontWeight: 'bold'
                 }}
@@ -112,33 +102,27 @@ export default function DraftGrid({
               </Typography>
               
               <Box sx={{
-                bgcolor: '#f5f5f5',
+                bgcolor: 'background.paper',
+                color: 'text.primary',
                 p: 2,
                 borderRadius: 1,
-                mt: 1,
-                // 모든 텍스트 강제로 검정색
-                '& *': {
-                  color: '#000000 !important'
-                }
+                mt: 1
               }}>
                 <Typography variant="subtitle1" sx={{
-                  color: '#000000 !important',
+                  color: 'text.primary',
                   fontWeight: 'bold',
-                  mb: 1,
-                  '&, & *': {
-                    color: '#000000 !important'
-                  }
+                  mb: 1
                 }}>
                   제목: {draft.title || `${draft.category} - ${draft.subCategory || '일반'}`}
                 </Typography>
                 
-                <Divider sx={{ my: 1, borderColor: 'rgba(0,0,0,0.1)' }} />
+                <Divider sx={{ my: 1, borderColor: 'divider' }} />
                 
                 <Typography variant="body2" sx={{
                   maxHeight: getContentHeight(),
                   overflow: 'auto',
                   whiteSpace: 'pre-wrap',
-                  color: '#000000 !important',
+                  color: 'text.primary',
                   lineHeight: 1.6,
                   fontSize: getFontSize()
                 }}>
@@ -218,7 +202,7 @@ export default function DraftGrid({
             )}
 
             <CardActions sx={{ justifyContent: 'space-between', px: 2, pb: 2, flexWrap: 'wrap' }}>
-              <Typography variant="caption" sx={{ color: '#ffffff !important' }}>
+              <Typography variant="caption" sx={{ color: 'common.white' }}>
                 {draft.generatedAt ?
                   new Date(draft.generatedAt).toLocaleString() :
                   new Date().toLocaleString()

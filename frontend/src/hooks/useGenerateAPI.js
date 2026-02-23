@@ -22,6 +22,12 @@ export function useGenerateAPI() {
   const [sessionAttempts, setSessionAttempts] = useState(0);
   const [maxAttempts, setMaxAttempts] = useState(3);
   const [canRegenerate, setCanRegenerate] = useState(false);
+  const sessionStoragePrefix = user?.uid ? `draft_session_${user.uid}_` : null;
+
+  const getSessionStorageKey = useCallback((id) => {
+    if (!id || !user?.uid) return null;
+    return `draft_session_${user.uid}_${id}`;
+  }, [user?.uid]);
 
   // 📌 메모리 누수 방지: 최대 개수 제한
   const addDraft = useCallback((newDraft) => {
@@ -38,7 +44,7 @@ export function useGenerateAPI() {
     try {
       // localStorage에서 모든 세션 찾기
       const allKeys = Object.keys(localStorage);
-      const sessionKeys = allKeys.filter(key => key.startsWith('draft_session_'));
+      const sessionKeys = allKeys.filter(key => sessionStoragePrefix && key.startsWith(sessionStoragePrefix));
 
       if (sessionKeys.length === 0) {
         console.log('📭 복원할 세션 없음');
@@ -99,7 +105,7 @@ export function useGenerateAPI() {
     } catch (error) {
       console.error('❌ 세션 복원 실패:', error);
     }
-  }, [user?.uid]);
+  }, [user?.uid, sessionStoragePrefix]);
 
   // 메타데이터 수집 함수 (향후 기능)
   const collectMetadata = useCallback(async (draft) => {
@@ -301,11 +307,17 @@ export function useGenerateAPI() {
         // 🆕 localStorage에 세션 및 원고 저장 (누적)
         try {
           // 기존 세션 데이터 불러오기 (재생성 시 누적)
-          const existingDataStr = localStorage.getItem(`draft_session_${newSessionId}`);
+          const storageKey = getSessionStorageKey(newSessionId);
+          if (!storageKey) {
+            throw new Error('세션 저장 키를 생성할 수 없습니다.');
+          }
+
+          const existingDataStr = localStorage.getItem(storageKey);
           const existingData = existingDataStr ? JSON.parse(existingDataStr) : null;
           const existingDrafts = existingData?.drafts || [];
 
           const sessionData = {
+            userId: user.uid,
             sessionId: newSessionId,
             attempts: newAttempts,
             maxAttempts: newMaxAttempts,
@@ -314,7 +326,7 @@ export function useGenerateAPI() {
             savedAt: Date.now(),
             formData: formData
           };
-          localStorage.setItem(`draft_session_${newSessionId}`, JSON.stringify(sessionData));
+          localStorage.setItem(storageKey, JSON.stringify(sessionData));
           console.log('💾 localStorage에 세션 저장 (누적):', {
             sessionId: newSessionId,
             draftCount: sessionData.drafts.length
@@ -363,7 +375,7 @@ export function useGenerateAPI() {
         }, 2000); // 2초 후 해제 (완료 메시지 표시 시간 확보)
       }
     }
-  }, [sessionId, canRegenerate, addDraft, collectMetadata, user]);
+  }, [sessionId, canRegenerate, addDraft, collectMetadata, user, getSessionStorageKey]);
 
   // 초안 저장 함수
   const save = useCallback(async (draft) => {
@@ -402,7 +414,10 @@ export function useGenerateAPI() {
         // 🆕 저장 완료 시 localStorage 세션 삭제
         if (sessionId) {
           try {
-            localStorage.removeItem(`draft_session_${sessionId}`);
+            const storageKey = getSessionStorageKey(sessionId);
+            if (storageKey) {
+              localStorage.removeItem(storageKey);
+            }
             console.log('🗑️ 저장 완료 - localStorage 세션 삭제:', sessionId);
           } catch (e) {
             console.warn('⚠️ localStorage 삭제 실패:', e);
@@ -425,7 +440,7 @@ export function useGenerateAPI() {
 
       return { success: false, error: errorMessage };
     }
-  }, [collectMetadata, sessionId]);
+  }, [collectMetadata, sessionId, getSessionStorageKey]);
 
   // 상태 초기화 함수
   const reset = useCallback(() => {
@@ -437,7 +452,10 @@ export function useGenerateAPI() {
     // 🆕 세션 초기화 및 localStorage 정리
     if (sessionId) {
       try {
-        localStorage.removeItem(`draft_session_${sessionId}`);
+        const storageKey = getSessionStorageKey(sessionId);
+        if (storageKey) {
+          localStorage.removeItem(storageKey);
+        }
         console.log('🗑️ localStorage 세션 삭제:', sessionId);
       } catch (e) {
         console.warn('⚠️ localStorage 삭제 실패:', e);
@@ -447,7 +465,7 @@ export function useGenerateAPI() {
     setSessionId(null);
     setSessionAttempts(0);
     setCanRegenerate(false);
-  }, [sessionId]);
+  }, [sessionId, getSessionStorageKey]);
 
   return {
     loading,

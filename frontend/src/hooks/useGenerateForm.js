@@ -67,7 +67,7 @@ export const useGenerateForm = (user = null) => {
   const validateForm = useCallback(() => {
     // ✅ 수정: 'prompt' 대신 'topic' 필드가 비어있는지 확인합니다.
     if (!formData.topic || formData.topic.trim() === '') {
-      return { isValid: false, error: '주제를 입력해주세요.' };
+      return { isValid: false, error: '주제를 입력해주세요.', field: 'topic' };
     }
     // 카테고리는 AI가 자동 분류하므로 검증하지 않음
     // ✅ 수정: 첫 번째 참고자료(입장문) 필수 체크
@@ -76,9 +76,13 @@ export const useGenerateForm = (user = null) => {
       : formData.instructions;
 
     if (!firstInstruction || firstInstruction.trim() === '') {
-      return { isValid: false, error: '첫 번째 참고자료(내 입장문/페이스북 글)를 입력해주세요.' };
+      return {
+        isValid: false,
+        error: '첫 번째 참고자료(내 입장문/페이스북 글)를 입력해주세요.',
+        field: 'instructions0'
+      };
     }
-    return { isValid: true, error: null };
+    return { isValid: true, error: null, field: null };
   }, [formData.topic, formData.instructions]);
 
   /**
@@ -91,7 +95,7 @@ export const useGenerateForm = (user = null) => {
     const firstInstruction = Array.isArray(formData.instructions)
       ? formData.instructions[0]
       : formData.instructions;
-    return !!formData.topic && !!firstInstruction && firstInstruction.trim() !== '';
+    return !!formData.topic?.trim() && !!firstInstruction?.trim();
   }, [formData.topic, formData.instructions]);
 
   // 훅이 외부로 제공하는 상태와 함수들

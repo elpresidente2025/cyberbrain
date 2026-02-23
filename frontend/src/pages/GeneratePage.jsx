@@ -247,6 +247,7 @@ const GeneratePage = () => {
 
   // --- 📢 사용자 피드백(알림창) 상태 관리 ---
   const { notification, showNotification, hideNotification } = useNotification();
+  const [formErrors, setFormErrors] = React.useState({ topic: '', instructions0: '' });
 
   // --- 👁️ 미리보기 상태 관리 ---
   const [selectedDraft, setSelectedDraft] = React.useState(null); // 사용자가 선택한 초안
@@ -286,6 +287,22 @@ const GeneratePage = () => {
     return user?.role === 'admin' || user?.isAdmin === true || user?.isTester === true;
   }, [user]);
 
+  const handleFormChange = useCallback((updates) => {
+    updateForm(updates);
+    setFormErrors((prev) => {
+      let next = prev;
+      if (Object.prototype.hasOwnProperty.call(updates, 'topic') && prev.topic) {
+        if (next === prev) next = { ...prev };
+        next.topic = '';
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, 'instructions') && prev.instructions0) {
+        if (next === prev) next = { ...prev };
+        next.instructions0 = '';
+      }
+      return next;
+    });
+  }, [updateForm]);
+
   /** 원고 생성 버튼 클릭 시 실행되는 함수 */
   const handleGenerate = async () => {
     // 🔴 [FIX] 한글 IME 조합 완료를 위해 현재 포커스된 요소에서 blur 트리거
@@ -305,9 +322,31 @@ const GeneratePage = () => {
     // 1. 폼 데이터 유효성 검사
     const validation = validateForm();
     if (!validation.isValid) {
+      const nextErrors = { topic: '', instructions0: '' };
+      if (validation.field === 'topic') {
+        nextErrors.topic = validation.error;
+      } else if (validation.field === 'instructions0') {
+        nextErrors.instructions0 = validation.error;
+      }
+      setFormErrors(nextErrors);
       showNotification(validation.error, 'error');
+
+      const targetName = validation.field === 'topic'
+        ? 'topic'
+        : (validation.field === 'instructions0' ? 'instructions_0' : null);
+
+      if (targetName) {
+        requestAnimationFrame(() => {
+          const target = document.querySelector(`[name="${targetName}"]`);
+          if (target) {
+            target.focus();
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        });
+      }
       return;
     }
+    setFormErrors({ topic: '', instructions0: '' });
 
     // 2. 유효하면 API 호출
     // 🆕 고품질 모드 선택 시 pipeline 파라미터 추가
@@ -477,11 +516,12 @@ const GeneratePage = () => {
 
           <PromptForm
             formData={formData}
-            onChange={updateForm} // 폼 데이터가 변경될 때 호출될 함수
+            onChange={handleFormChange} // 폼 데이터가 변경될 때 호출될 함수
             disabled={loading}     // 로딩 중일 때는 입력 비활성화
             categories={CATEGORIES}
             isMobile={isMobile}
             user={user}            // 사용자 정보 전달 (검색어 추천에 필요)
+            errors={formErrors}
           />
         </motion.div>
 

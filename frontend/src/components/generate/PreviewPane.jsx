@@ -87,14 +87,7 @@ export default function PreviewPane({ draft }) {
         elevation={0}
         sx={{
           p: { xs: 1, sm: 2 },
-          backgroundColor: '#f5f5f5',
-          // 제목과 글자수를 강제로 검은색으로
-          '& .MuiTypography-h6': {
-            color: '#000000 !important'
-          },
-          '& .MuiTypography-body2': {
-            color: '#000000 !important'
-          },
+          backgroundColor: 'background.paper',
           '.article-content h1': {
             fontSize: '1.75rem',
             fontWeight: 700,
@@ -114,16 +107,19 @@ export default function PreviewPane({ draft }) {
             fontSize: '1rem',
             lineHeight: 1.8,
             marginBottom: '1rem',
-            color: '#000000 !important', // Force black text
+            color: 'text.primary',
           },
-          // 🔥 'strong' 태그 스타일 개선 (가이드 역할 강화)
           '.article-content strong': {
             fontWeight: 700,
-            color: theme.palette.ui?.header || '#152484', // 남색 계열로 텍스트 색상 강조
-            backgroundColor: 'rgba(33, 150, 243, 0.1)', // 아주 연한 하늘색 배경 추가
+            color: theme.palette.mode === 'dark'
+              ? theme.palette.primary.light
+              : (theme.palette.ui?.header || theme.palette.primary.dark),
+            backgroundColor: theme.palette.mode === 'dark'
+              ? 'rgba(144, 202, 249, 0.2)'
+              : 'rgba(33, 150, 243, 0.1)',
             padding: '2px 5px',
             borderRadius: '2px',
-            boxDecorationBreak: 'clone', // 줄바꿈 시에도 스타일 유지
+            boxDecorationBreak: 'clone',
             WebkitBoxDecorationBreak: 'clone',
           }
         }}
@@ -136,22 +132,20 @@ export default function PreviewPane({ draft }) {
         }}>
           <Typography
             variant="h6"
-            sx={{ fontWeight: 600, color: '#000000 !important' }}
-            style={{ color: '#000000 !important' }}
+            sx={{ fontWeight: 600, color: 'text.primary' }}
           >
             {draft.title || '제목 없음'}
           </Typography>
           <Typography
             variant="body2"
             sx={{
-              backgroundColor: 'grey.100',
+              backgroundColor: 'action.hover',
               px: 1.5,
               py: 0.5,
               borderRadius: 1,
               fontWeight: 500,
-              color: '#000000 !important'
+              color: 'text.secondary'
             }}
-            style={{ color: '#000000 !important' }}
           >
             {characterCount.toLocaleString()}자
           </Typography>
@@ -165,16 +159,15 @@ export default function PreviewPane({ draft }) {
             borderColor: 'divider',
             borderRadius: 1,
             p: 2,
-            backgroundColor: '#f5f5f5',
+            backgroundColor: 'background.default',
             minHeight: 200,
             maxHeight: '60vh',
             overflow: 'auto',
             '& p:last-child': {
               mb: 0,
             },
-            // Force all text to be black
             '& *': {
-              color: '#000000 !important',
+              color: 'text.primary',
             },
           }}
         />
@@ -186,19 +179,19 @@ export default function PreviewPane({ draft }) {
             pt: 2,
             borderTop: '1px solid',
             borderColor: 'divider',
-            backgroundColor: theme.palette.mode === 'dark' ? '#1e1e1e' : '#2c3e50',
+            backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(21, 36, 132, 0.08)',
             p: 2,
             borderRadius: 1
           }}>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
               {categoryLabel && (
-                <Typography variant="caption" sx={{ color: '#ffffff !important' }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                   카테고리: {categoryLabel}
                 </Typography>
               )}
               {keywordStats && keywordStats.length > 0 && (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 600, color: '#ffffff !important' }}>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
                     검색어 삽입 횟수:
                   </Typography>
                   {keywordStats.map((stat, index) => {
@@ -242,7 +235,7 @@ export default function PreviewPane({ draft }) {
                         key={index}
                         variant="caption"
                         sx={{
-                          color: isValid ? '#4caf50 !important' : '#f44336 !important',
+                          color: isValid ? 'success.main' : 'error.main',
                           fontWeight: 500,
                           pl: 1
                         }}
@@ -254,7 +247,7 @@ export default function PreviewPane({ draft }) {
                 </Box>
               )}
               {draft.generatedAt && (
-                <Typography variant="caption" sx={{ color: '#ffffff !important' }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                   생성 시간: {new Date(draft.generatedAt).toLocaleString()}
                 </Typography>
               )}

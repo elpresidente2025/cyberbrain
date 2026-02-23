@@ -170,8 +170,8 @@ export default function GenerateActions({
       {/* 🆕 세션 한도 도달 안내 */}
       {!canRegenerate && sessionAttempts >= maxSessionAttempts && sessionAttempts > 0 && (
         <Alert severity="info" sx={{ mt: 2 }}>
-          <Typography variant="body2" fontWeight="bold" sx={{ color: 'black' }}>ℹ️ 재생성 한도 도달</Typography>
-          <Typography variant="body2" sx={{ color: 'black' }}>
+          <Typography variant="body2" fontWeight="bold" sx={{ color: 'text.primary' }}>ℹ️ 재생성 한도 도달</Typography>
+          <Typography variant="body2" sx={{ color: 'text.primary' }}>
             현재 생성 세션에서 {maxSessionAttempts}회 시도를 모두 사용했습니다.
             위의 원고 중 하나를 선택하여 저장하거나, "새 생성 시작" 버튼을 눌러 새로운 원고를 생성해주세요.
           </Typography>
@@ -180,8 +180,8 @@ export default function GenerateActions({
 
       {/* 주의사항 */}
       <Alert severity="warning" sx={{ mt: 2 }}>
-        <Typography variant="body2" fontWeight="bold" sx={{ color: 'black' }}>⚠️ 주의사항</Typography>
-        <Typography variant="body2" sx={{ color: 'black' }}>
+        <Typography variant="body2" fontWeight="bold" sx={{ color: 'text.primary' }}>⚠️ 주의사항</Typography>
+        <Typography variant="body2" sx={{ color: 'text.primary' }}>
           전자두뇌비서관은 원고 초안을 제공하며, 반드시 사용자가 최종 검수 및 수정해야 합니다.
         </Typography>
       </Alert>
