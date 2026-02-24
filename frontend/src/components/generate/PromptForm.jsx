@@ -60,6 +60,11 @@ export default function PromptForm({
     return { normalized, exceeded };
   };
 
+  const showKeywordWarning = (message = '검색어는 최대 2개까지만 입력 가능합니다.') => {
+    setKeywordWarning(message);
+    setTimeout(() => setKeywordWarning(null), 3000);
+  };
+
   // 참고자료 목록 상태 관리
   const [instructionsList, setInstructionsList] = useState(() => normalizeInstructions(formData.instructions));
 
@@ -124,8 +129,36 @@ export default function PromptForm({
   // 키워드 선택 핸들러 - 노출 희망 검색어 필드에 추가
   const handleKeywordSelect = (keyword) => {
     const currentKeywords = formData.keywords || '';
-    const newKeywords = currentKeywords ? `${currentKeywords}, ${keyword}` : keyword;
-    onChange({ keywords: newKeywords });
+    const combinedKeywords = currentKeywords ? `${currentKeywords}, ${keyword}` : keyword;
+    const { normalized, exceeded } = normalizeKeywordsInput(combinedKeywords, 2);
+    onChange({ keywords: normalized });
+    if (exceeded) {
+      showKeywordWarning();
+    }
+  };
+
+  const handleKeywordsChange = (event) => {
+    const rawValue = event.target.value;
+    onChange({ keywords: rawValue });
+
+    const { exceeded } = normalizeKeywordsInput(rawValue, 2);
+    if (exceeded) {
+      if (!keywordWarning) {
+        showKeywordWarning();
+      }
+    } else if (keywordWarning) {
+      setKeywordWarning(null);
+    }
+  };
+
+  const handleKeywordsBlur = (event) => {
+    const { normalized, exceeded } = normalizeKeywordsInput(event.target.value, 2);
+    if ((formData.keywords || '') !== normalized) {
+      onChange({ keywords: normalized });
+    }
+    if (exceeded) {
+      showKeywordWarning('검색어는 최대 2개까지만 반영됩니다.');
+    }
   };
 
   const formSize = isMobile ? "small" : "medium";
@@ -301,19 +334,8 @@ export default function PromptForm({
               label="노출 희망 검색어 (선택사항)"
               placeholder="검색어는 최대 2개만 입력하세요"
               value={formData.keywords || ''}
-              onChange={(e) => {
-                const { normalized, exceeded } = normalizeKeywordsInput(e.target.value, 2);
-                if (exceeded) {
-                  if (!keywordWarning) {
-                    setKeywordWarning('검색어는 최대 2개까지만 입력 가능합니다.');
-                    setTimeout(() => setKeywordWarning(null), 3000);
-                  }
-                } else if (keywordWarning) {
-                  setKeywordWarning(null);
-                }
-                onChange({ keywords: normalized });
-              }}
-              onBlur={handleInputBlur('keywords')}
+              onChange={handleKeywordsChange}
+              onBlur={handleKeywordsBlur}
               disabled={disabled}
               helperText={keywordWarning || "쉼표(,)로 구분하여 입력하세요. (예: 성수역 3번 출구, 울산대 대학로)"}
               error={!!keywordWarning}

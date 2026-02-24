@@ -163,12 +163,19 @@ export function useGenerateAPI() {
       const newsDataText = String(
         formData.newsDataText || normalizedInstructions.slice(1).join('\n\n') || ''
       ).trim();
+      const normalizedKeywords = String(formData.keywords || '')
+        .split(',')
+        .map((keyword) => keyword.trim())
+        .filter((keyword) => keyword.length > 0)
+        .slice(0, 2)
+        .join(', ');
 
       const requestData = {
         ...formData,
         instructions: normalizedInstructions,
         stanceText,
         newsDataText,
+        keywords: normalizedKeywords,
         prompt: formData.topic || formData.prompt,
         generateSingle: true,
         useBonus: useBonus,
