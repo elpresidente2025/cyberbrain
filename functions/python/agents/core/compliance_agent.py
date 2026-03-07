@@ -10,6 +10,7 @@ from ..base_agent import Agent
 from ..common.fact_guard import validate_with_llm, build_fact_allowlist
 from ..common.framing_rules import OVERRIDE_KEYWORDS, HIGH_RISK_KEYWORDS, POLITICAL_FRAMES
 from ..common.election_rules import get_election_stage, validate_election_content, sanitize_election_content
+from ..common.editorial import TITLE_SPEC
 
 logger = logging.getLogger(__name__)
 
@@ -276,11 +277,12 @@ class ComplianceAgent(Agent):
                 })
 
         # 제목 길이 검사
-        if len(title) > 35:
+        max_title_len = int(TITLE_SPEC['hardMax'])
+        if len(title) > max_title_len:
             issues.append({
                 'type': 'TITLE_LENGTH',
                 'severity': 'medium',
-                'message': f'제목이 너무 깁니다 ({len(title)}자 > 35자)',
+                'message': f'제목이 너무 깁니다 ({len(title)}자 > {max_title_len}자)',
                 'location': 'title'
             })
 

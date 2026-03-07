@@ -13,7 +13,8 @@ import {
   Download,
   People,
   Api,
-  ToggleOn
+  ToggleOn,
+  Psychology
 } from '@mui/icons-material';
 import UserListModal from './UserListModal';
 import StatusUpdateModal from './StatusUpdateModal';
@@ -27,6 +28,8 @@ function QuickActions() {
   const [serviceMode, setServiceMode] = useState(null);
   const [loadingToggle, setLoadingToggle] = useState(false);
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
+  const [ragIndexing, setRagIndexing] = useState(false);
+  const [ragProgress, setRagProgress] = useState('');
 
   // cleanup ref
   const isMountedRef = useRef(true);
@@ -132,6 +135,78 @@ function QuickActions() {
     } catch (error) {
       console.error('캐시 비우기 실패:', error);
       showNotification('캐시 비우기 실패: ' + error.message, 'error');
+    }
+  }, [showNotification]);
+
+  // RAG 일괄 색인
+  const batchIndexRag = useCallback(async () => {
+    if (!window.confirm(
+      '전체 사용자의 프로필 데이터를 LightRAG 지식 그래프에 일괄 색인합니다.\n\n' +
+      '• Gemini API를 사용하므로 사용자당 30~60초 소요\n' +
+      '• 사용자가 많으면 자동으로 여러 배치로 나눠 실행\n\n' +
+      '진행하시겠습니까?'
+    )) return;
+
+    setRagIndexing(true);
+    setRagProgress('색인 준비 중...');
+
+    const region = 'asia-northeast3';
+    const projectId = 'ai-secretary-6e9c8';
+    const functionUrl = `https://${region}-${projectId}.cloudfunctions.net/batch_index_bios`;
+
+    let totalSuccess = 0;
+    let totalSkipped = 0;
+    let totalFailed = 0;
+    let batchNumber = 0;
+    let startAfter = '';
+    let hasMore = true;
+
+    try {
+      while (hasMore) {
+        batchNumber++;
+        setRagProgress(`배치 ${batchNumber} 처리 중... (성공: ${totalSuccess}, 스킵: ${totalSkipped}, 실패: ${totalFailed})`);
+
+        const body = { limit: 10 };
+        if (startAfter) body.startAfter = startAfter;
+
+        const response = await fetch(functionUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(600000),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+
+        if (result.error) {
+          throw new Error(result.error);
+        }
+
+        totalSuccess += result.successCount || 0;
+        totalSkipped += result.skippedCount || 0;
+        totalFailed += result.failedCount || 0;
+        startAfter = result.lastUid || '';
+        hasMore = result.hasMore === true && startAfter;
+      }
+
+      setRagProgress('');
+      showNotification(
+        `RAG 일괄 색인 완료: 성공 ${totalSuccess}명, 스킵 ${totalSkipped}명, 실패 ${totalFailed}명`,
+        totalFailed > 0 ? 'warning' : 'success'
+      );
+    } catch (error) {
+      console.error('RAG 일괄 색인 실패:', error);
+      setRagProgress('');
+      showNotification(
+        `RAG 일괄 색인 오류: ${error.message} (성공: ${totalSuccess}, 실패: ${totalFailed})`,
+        'error'
+      );
+    } finally {
+      setRagIndexing(false);
     }
   }, [showNotification]);
 
@@ -337,7 +412,7 @@ function QuickActions() {
           <Typography variant="subtitle2" color="text.secondary" gutterBottom>
             시스템 관리
           </Typography>
-          <Grid container spacing={1}>
+          <Grid container spacing={1} alignItems="center">
             <Grid item>
               <Button
                 size="small"
@@ -353,6 +428,29 @@ function QuickActions() {
                 }}
               >
                 캐시 비우기
+              </Button>
+            </Grid>
+            <Grid item>
+              <Button
+                size="small"
+                variant="text"
+                startIcon={<Psychology aria-hidden="true" sx={{ fontSize: 18 }} />}
+                onClick={batchIndexRag}
+                disabled={ragIndexing}
+                aria-label="전체 사용자 RAG 일괄 색인"
+                sx={{
+                  color: '#003A87',
+                  '&:focus-visible': {
+                    outline: '2px solid #003A87',
+                    outlineOffset: '2px'
+                  },
+                  '&.Mui-disabled': {
+                    color: '#003A87',
+                    opacity: 0.7
+                  }
+                }}
+              >
+                {ragIndexing ? ragProgress || 'RAG 색인 중...' : 'RAG 일괄 색인'}
               </Button>
             </Grid>
           </Grid>

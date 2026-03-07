@@ -28,6 +28,16 @@ import {
   Psychology,
   AutoAwesome
 } from '@mui/icons-material';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ReferenceLine
+} from 'recharts';
 
 const AboutPage = () => {
   const navigate = useNavigate();
@@ -36,6 +46,36 @@ const AboutPage = () => {
   const [showAllFAQs, setShowAllFAQs] = useState(false);
   const [expandedFAQ, setExpandedFAQ] = useState(false);
   const [selectedFeature, setSelectedFeature] = useState(null); // 모달 상태 추가
+
+  const monthlyViewData = [
+    { month: '25.03', total: 238, isAfterLaunch: false },
+    { month: '25.04', total: 317, isAfterLaunch: false },
+    { month: '25.05', total: 435, isAfterLaunch: false },
+    { month: '25.06', total: 403, isAfterLaunch: false },
+    { month: '25.07', total: 259, isAfterLaunch: false },
+    { month: '25.08', total: 267, isAfterLaunch: false },
+    { month: '25.09', total: 281, isAfterLaunch: false },
+    { month: '25.10', total: 217, isAfterLaunch: false },
+    { month: '25.11', total: 180, isAfterLaunch: false },
+    { month: '25.12', total: 991, isAfterLaunch: true },
+    { month: '26.01', total: 1500, isAfterLaunch: true },
+    { month: '26.02', total: 1862, isAfterLaunch: true }
+  ];
+
+  const preLaunchData = monthlyViewData.filter((item) => !item.isAfterLaunch);
+  const postLaunchData = monthlyViewData.filter((item) => item.isAfterLaunch);
+
+  const preLaunchAverage = Math.round(
+    preLaunchData.reduce((sum, item) => sum + item.total, 0) / preLaunchData.length
+  );
+  const postLaunchAverage = Math.round(
+    postLaunchData.reduce((sum, item) => sum + item.total, 0) / postLaunchData.length
+  );
+  const growthMultiple = (postLaunchAverage / preLaunchAverage).toFixed(2);
+  const postLaunchPeak = postLaunchData.reduce(
+    (peak, item) => (item.total > peak.total ? item : peak),
+    postLaunchData[0]
+  );
 
   const handleFAQChange = (panel) => (event, isExpanded) => {
     setExpandedFAQ(isExpanded ? panel : false);
@@ -315,6 +355,235 @@ AI가 학습합니다. 점점 닮아갑니다.
             >
               📖 자세히 보기
             </Button>
+          </Box>
+        </Container>
+      </motion.div>
+
+      {/* 도입 성과 그래프 섹션 */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.15 }}
+      >
+        <Container
+          maxWidth="lg"
+          sx={{
+            py: { xs: 10, md: 14 }
+          }}
+        >
+          <Box
+            sx={{
+              p: { xs: 3, sm: 4, md: 6 },
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid var(--color-border)',
+              bgcolor: 'var(--color-surface)',
+              boxShadow: 'var(--shadow-lg)'
+            }}
+          >
+            <Box sx={{ mb: { xs: 4, md: 5 }, textAlign: 'center' }}>
+              <Typography
+                variant="h2"
+                sx={{
+                  fontWeight: 700,
+                  color: 'var(--color-text-primary)',
+                  mb: 2,
+                  fontSize: { xs: '2rem', md: '2.8rem' },
+                  letterSpacing: '-0.02em',
+                  wordBreak: 'keep-all'
+                }}
+              >
+                의정 성과, 이제는 읽히게 만듭니다
+              </Typography>
+              <Typography
+                sx={{
+                  color: 'var(--color-text-secondary)',
+                  fontSize: { xs: '1rem', md: '1.125rem' },
+                  lineHeight: 1.7,
+                  wordBreak: 'keep-all'
+                }}
+              >
+                전자두뇌비서관 도입 후 월 평균 조회수 289회 → 1,451회 (5.03배)
+              </Typography>
+              <Typography
+                sx={{
+                  mt: 0.75,
+                  color: 'var(--color-text-secondary)',
+                  fontSize: { xs: '0.9rem', md: '0.95rem' },
+                  lineHeight: 1.6,
+                  wordBreak: 'keep-all'
+                }}
+              >
+                도입 이후 기간(2025.12~2026.02) 기준
+              </Typography>
+            </Box>
+
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={8}>
+                <Box
+                  sx={{
+                    height: { xs: 280, md: 360 },
+                    p: { xs: 1.5, md: 2 },
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--color-border)',
+                    bgcolor: 'var(--color-background)'
+                  }}
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={monthlyViewData} margin={{ top: 24, right: 12, left: 0, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                      <XAxis
+                        dataKey="month"
+                        tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }}
+                        tickLine={false}
+                        axisLine={{ stroke: 'var(--color-border)' }}
+                        interval={isMobile ? 1 : 0}
+                      />
+                      <YAxis
+                        tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }}
+                        tickLine={false}
+                        axisLine={{ stroke: 'var(--color-border)' }}
+                        tickFormatter={(value) => `${Math.round(value / 100) * 100}`}
+                      />
+                      <Tooltip
+                        formatter={(value) => [`${Number(value).toLocaleString()}회`, '조회수']}
+                        labelFormatter={(label) => `${label}`}
+                        contentStyle={{
+                          borderRadius: '12px',
+                          border: '1px solid var(--color-border)',
+                          backgroundColor: 'var(--color-surface)',
+                          color: 'var(--color-text-primary)'
+                        }}
+                      />
+                      <ReferenceLine
+                        x="25.12"
+                        stroke="var(--color-primary)"
+                        strokeDasharray="4 4"
+                        label={{
+                          value: '도입 시점',
+                          fill: 'var(--color-primary)',
+                          position: 'insideTopRight',
+                          fontSize: 12
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="total"
+                        stroke="var(--color-primary)"
+                        strokeWidth={3}
+                        dot={{ r: 4, fill: 'var(--color-primary)' }}
+                        activeDot={{ r: 6, fill: 'var(--color-primary)' }}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </Box>
+              </Grid>
+
+              <Grid item xs={12} md={4}>
+                <Grid container spacing={2}>
+                  <Grid item xs={6} md={12}>
+                    <Card
+                      elevation={0}
+                      sx={{
+                        p: 2.5,
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px dashed var(--color-border)',
+                        bgcolor: 'var(--color-background)',
+                        minHeight: 132
+                      }}
+                    >
+                      <Typography sx={{ color: 'var(--color-text-secondary)', mb: 1, fontSize: '0.95rem' }}>
+                        도입 전 월 평균
+                      </Typography>
+                      <Typography sx={{ color: 'var(--color-text-secondary)', fontSize: '1.55rem', fontWeight: 600 }}>
+                        {preLaunchAverage.toLocaleString()}회
+                      </Typography>
+                      <Typography sx={{ color: 'var(--color-text-secondary)', mt: 0.75, fontSize: '0.85rem' }}>
+                        기준 구간 9개월
+                      </Typography>
+                    </Card>
+                  </Grid>
+                  <Grid item xs={6} md={12}>
+                    <Card
+                      elevation={0}
+                      sx={{
+                        p: 2.5,
+                        borderRadius: 'var(--radius-md)',
+                        border: '2px solid var(--color-primary)',
+                        bgcolor: 'var(--color-surface)',
+                        background: 'linear-gradient(135deg, var(--color-primary-lighter) 0%, var(--color-surface) 72%)',
+                        boxShadow: 'var(--shadow-glow-primary)',
+                        minHeight: 132
+                      }}
+                    >
+                      <Typography sx={{ color: 'var(--color-primary)', mb: 1, fontSize: '0.95rem', fontWeight: 700 }}>
+                        도입 후 월 평균
+                      </Typography>
+                      <Typography
+                        sx={{
+                          color: 'var(--color-primary)',
+                          fontSize: { xs: '2.15rem', md: '2.55rem' },
+                          fontWeight: 800,
+                          lineHeight: 1
+                        }}
+                      >
+                        {postLaunchAverage.toLocaleString()}회
+                      </Typography>
+                      <Typography sx={{ color: 'var(--color-text-secondary)', mt: 0.75, fontSize: '0.85rem' }}>
+                        도입 후 3개월 평균
+                      </Typography>
+                    </Card>
+                  </Grid>
+                  <Grid item xs={12}>
+                    <Card
+                      elevation={0}
+                      sx={{
+                        p: 2.5,
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--color-primary)',
+                        bgcolor: 'var(--color-primary-lighter)'
+                      }}
+                    >
+                      <Typography sx={{ color: 'var(--color-text-secondary)', mb: 1, fontSize: '0.95rem' }}>
+                        도입 후 3개월 성과
+                      </Typography>
+                      <Typography
+                        sx={{
+                          color: 'var(--color-primary)',
+                          fontSize: { xs: '1.9rem', md: '2.2rem' },
+                          fontWeight: 800,
+                          lineHeight: 1.2
+                        }}
+                      >
+                        월 평균 {growthMultiple}배
+                      </Typography>
+                      <Typography sx={{ color: 'var(--color-text-secondary)', mt: 1, fontSize: '0.95rem' }}>
+                        최고 {postLaunchPeak.total.toLocaleString()}회{' '}
+                        <Typography
+                          component="span"
+                          sx={{
+                            fontSize: '0.82em',
+                            color: 'var(--color-text-secondary)'
+                          }}
+                        >
+                          ({postLaunchPeak.month})
+                        </Typography>
+                      </Typography>
+                    </Card>
+                  </Grid>
+                </Grid>
+              </Grid>
+            </Grid>
+
+            <Typography
+              sx={{
+                mt: 3,
+                color: 'var(--color-text-secondary)',
+                fontSize: '0.9rem',
+                textAlign: 'right'
+              }}
+            >
+              데이터 기준: 제9회 동시지방선거 이재성 부산광역시장 예비후보 네이버 블로그 조회수 월간 리포트 (2025.03~2026.02)
+            </Typography>
           </Box>
         </Container>
       </motion.div>

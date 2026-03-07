@@ -65,6 +65,13 @@ export default function PromptForm({
     setTimeout(() => setKeywordWarning(null), 3000);
   };
 
+  const iconButtonSizeSx = {
+    width: { xs: 44, sm: 36 },
+    height: { xs: 44, sm: 36 },
+    minWidth: { xs: 44, sm: 36 },
+    minHeight: { xs: 44, sm: 36 },
+  };
+
   // 참고자료 목록 상태 관리
   const [instructionsList, setInstructionsList] = useState(() => normalizeInstructions(formData.instructions));
 
@@ -196,54 +203,52 @@ export default function PromptForm({
 
         {/* ✅ 6. 참고자료 및 배경정보 입력창 - 다중 입력 지원 */}
         <Grid item xs={12}>
-          <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-              참고자료 입력
-            </Typography>
+          <Box sx={{ mb: 1.25 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                참고자료 입력
+              </Typography>
+              <Tooltip title="참고자료 입력창 추가">
+                <IconButton
+                  size="small"
+                  onClick={addInstructionField}
+                  disabled={disabled || instructionsList.length >= 10}
+                  aria-label="참고자료 입력창 추가"
+                  sx={{
+                    ...iconButtonSizeSx,
+                    backgroundColor: '#006261',
+                    color: 'white',
+                    border: '1px solid',
+                    borderColor: '#006261',
+                    '&:hover': {
+                      backgroundColor: '#003A87',
+                      borderColor: '#003A87'
+                    },
+                    '&:disabled': {
+                      backgroundColor: 'grey.50',
+                      borderColor: 'grey.200',
+                      color: 'grey.400'
+                    }
+                  }}
+                >
+                  <Add fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+
             {/* ✅ 역할 구분 안내 text + 합산 글자수 */}
             {(() => {
               const totalLength = instructionsList.reduce((sum, text) => sum + (text?.length || 0), 0);
               const isOverLimit = totalLength > 4000;
               return (
-                <>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                    <span style={{ color: isOverLimit ? '#d32f2f' : 'inherit', fontWeight: isOverLimit ? 700 : 400 }}>
-                      합계: {totalLength.toLocaleString()}자
-                      {isOverLimit && ' ⚠️ 4,000자 초과 시 앞부분만 분석됩니다'}
-                    </span>
-                  </Typography>
-                </>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                  <span style={{ color: isOverLimit ? '#d32f2f' : 'inherit', fontWeight: isOverLimit ? 700 : 400 }}>
+                    합계: {totalLength.toLocaleString()}자
+                    {isOverLimit && ' ⚠️ 4,000자 초과 시 앞부분만 분석됩니다'}
+                  </span>
+                </Typography>
               );
             })()}
-            <Tooltip title="참고자료 입력창 추가">
-              <IconButton
-                size="small"
-                onClick={addInstructionField}
-                disabled={disabled || instructionsList.length >= 10}
-                aria-label="참고자료 입력창 추가"
-                sx={{
-                  width: 44,
-                  height: 44,
-                  minWidth: 44,
-                  minHeight: 44,
-                  backgroundColor: '#006261',
-                  color: 'white',
-                  border: '1px solid',
-                  borderColor: '#006261',
-                  '&:hover': {
-                    backgroundColor: '#003A87',
-                    borderColor: '#003A87'
-                  },
-                  '&:disabled': {
-                    backgroundColor: 'grey.50',
-                    borderColor: 'grey.200',
-                    color: 'grey.400'
-                  }
-                }}
-              >
-                <Add fontSize="small" />
-              </IconButton>
-            </Tooltip>
           </Box>
 
           {instructionsList.map((instruction, index) => (
@@ -283,11 +288,8 @@ export default function PromptForm({
                       disabled={disabled}
                       aria-label="참고자료 입력창 삭제"
                       sx={{
-                        mt: 1,
-                        width: 44,
-                        height: 44,
-                        minWidth: 44,
-                        minHeight: 44,
+                        mt: 1.25,
+                        ...iconButtonSizeSx,
                         backgroundColor: '#55207d',
                         color: 'white',
                         border: '1px solid',
@@ -327,7 +329,7 @@ export default function PromptForm({
 
         {/* 노출 희망 검색어 */}
         <Grid item xs={12}>
-          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: { xs: 'stretch', sm: 'flex-start' }, gap: 1, flexDirection: { xs: 'column', sm: 'row' } }}>
             <TextField
               fullWidth
               size={formSize}
@@ -350,14 +352,14 @@ export default function PromptForm({
                   disabled={disabled}
                   aria-label="AI 검색어 추천"
                   sx={{
-                    minWidth: isMobile ? '44px' : '120px',
+                    minWidth: isMobile ? '100%' : '120px',
                     height: isMobile ? '44px' : '56px',
-                    mt: 0.5,
+                    mt: { xs: 0, sm: 0.5 },
                     px: isMobile ? 1 : 2
                   }}
                 >
                   <Search />
-                  {!isMobile && <Typography variant="button" sx={{ ml: 1 }}>검색어 추천</Typography>}
+                  <Typography variant="button" sx={{ ml: 1 }}>검색어 추천</Typography>
                 </Button>
               </Tooltip>
             )}

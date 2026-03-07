@@ -4,6 +4,7 @@ import re
 from typing import Dict, Any, List, Optional
 from ..base_agent import Agent
 from ..common.seo import build_seo_instruction, SEO_RULES
+from ..common.editorial import KEYWORD_SPEC, QUALITY_SPEC
 
 logger = logging.getLogger(__name__)
 
@@ -87,10 +88,13 @@ class SEOAgent(Agent):
         plain_text = re.sub(r'<[^>]*>', ' ', content)
         actual_length = len(re.sub(r'\s+', '', plain_text)) # Chars without spaces
 
-        # 키워드 2개 기준: 각 3~4회, 총합 7~8회 (15문단 기준 약 2문단당 1회)
         kw_count = len(keywords) if keywords else 1
-        min_allowed = 3 if kw_count >= 2 else 5
-        max_allowed = min_allowed + 1  # 3→4, 5→6
+        if kw_count >= 2:
+            min_allowed = int(KEYWORD_SPEC['perKeywordMin'])
+            max_allowed = int(KEYWORD_SPEC['perKeywordMax'])
+        else:
+            min_allowed = int(KEYWORD_SPEC['singleKeywordMin'])
+            max_allowed = int(KEYWORD_SPEC['singleKeywordMax'])
         ideal_count = min_allowed
         
         issues = []
@@ -154,7 +158,7 @@ class SEOAgent(Agent):
         if repeated:
             issues.append(f'반복된 문장 발견 ({len(repeated)}개)')
 
-        # 3어절 이상 구문 반복 검출 (3회 이상 등장 시 위반)
+        # 3어절 이상 구문 반복 검출
         words = plain_text.split()
         phrase_count = {}
         for n in range(3, 7):
@@ -165,7 +169,10 @@ class SEOAgent(Agent):
                 phrase_count[phrase] = phrase_count.get(phrase, 0) + 1
 
         over_limit = sorted(
-            [(p, c) for p, c in phrase_count.items() if c >= 3],
+            [
+                (p, c) for p, c in phrase_count.items()
+                if c > int(QUALITY_SPEC['phrase3wordMax'])
+            ],
             key=lambda x: -len(x[0])
         )
         already_covered = []

@@ -19,7 +19,7 @@ const initialState = {
   category: '',
   subCategory: '',
   topic: '', // ✅ 수정: 'prompt' 대신 'topic'을 기본으로 사용
-  instructions: '',
+  instructions: ['', ''], // 1번(입장문) + 2번(뉴스/데이터) 기본 노출
   keywords: '',
 };
 
@@ -57,8 +57,8 @@ export const useGenerateForm = (user = null) => {
    * 폼 데이터를 초기 상태로 리셋하는 함수.
    */
   const resetForm = useCallback(() => {
-    setFormData(initialState);
-  }, []);
+    setFormData(getInitialState());
+  }, [user?.role, user?.isAdmin]);
 
   /**
    * 폼 데이터가 유효한지 검사하는 함수.

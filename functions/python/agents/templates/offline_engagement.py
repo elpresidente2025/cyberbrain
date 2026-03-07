@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from ..common.editorial import STRUCTURE_SPEC, TITLE_SPEC, QUALITY_SPEC
 
 
 @dataclass
@@ -189,7 +190,8 @@ def build_offline_engagement_prompt(options: dict) -> str:
     author_name = options.get("authorName", "")
     instructions = options.get("instructions", "")
     keywords = options.get("keywords", [])
-    target_word_count = _safe_int(options.get("targetWordCount", 2000), 2000)
+    default_target = int(STRUCTURE_SPEC['idealTotalMin'])
+    target_word_count = _safe_int(options.get("targetWordCount", default_target), default_target)
     personalized_hints = options.get("personalizedHints", "")
     profile_support_context = options.get("profileSupportContext", "")
     profile_substitute_context = options.get("profileSubstituteContext", "")
@@ -351,7 +353,7 @@ def build_offline_engagement_prompt(options: dict) -> str:
   <author>{safe_author_bio}</author>
   <author_name>{safe_author_name}</author_name>
   <topic>{safe_topic}</topic>
-  <target_length unit="자(공백 제외)">{target_word_count or 2000}</target_length>
+  <target_length unit="자(공백 제외)">{target_word_count or int(STRUCTURE_SPEC['idealTotalMin'])}</target_length>
 </basic_info>
 
 <source_material>
@@ -382,7 +384,7 @@ def build_offline_engagement_prompt(options: dict) -> str:
   <rule id="end_once">마무리 문단은 1회만 작성하고, 마무리 뒤에 본문을 덧붙이지 않습니다.</rule>
   <rule id="attendance_balance">참석형일 경우 현장 사실(무엇을 봤는지)과 의미(왜 중요한지)를 함께 제시합니다.</rule>
   <rule id="invite_balance">초대형일 경우 참여 방법과 참석 효익을 분리해 명확히 안내합니다.</rule>
-  <rule id="self_pr_density_cap">자기PR·경력 서술은 본문 전체의 30%를 넘기지 말고, 나머지는 행사 정보/독자 효익/행동 안내로 구성합니다.</rule>
+  <rule id="self_pr_density_cap">자기PR·경력 서술은 본문 전체의 {int(float(QUALITY_SPEC['firstPersonRatioMax']) * 100)}%를 넘기지 말고, 나머지는 행사 정보/독자 효익/행동 안내로 구성합니다.</rule>
   <rule id="failure_pattern_guard">{mode_failure_pattern_rule}</rule>
 </writing_rules>
 
@@ -408,7 +410,7 @@ def build_offline_engagement_prompt(options: dict) -> str:
 출력은 반드시 아래 XML 태그 형식만 사용:
 
 <title>
-[제목 - 35자 이내]
+[제목 - {TITLE_SPEC['hardMax']}자 이내]
 </title>
 
 <content>

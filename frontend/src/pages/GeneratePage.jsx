@@ -18,10 +18,6 @@ import {
   IconButton,
   Button,
   Typography,
-  FormControlLabel, // 🆕 추가
-  Switch,           // 🆕 추가
-  Tooltip,          // 🆕 추가
-  Chip,             // 🆕 추가
   Backdrop,         // 🆕 추가
   CircularProgress  // 🆕 추가
 } from '@mui/material';
@@ -280,12 +276,6 @@ const GeneratePage = () => {
 
   // --- 헨들러 함수 (사용자 이벤트 처리) ---
 
-  // 🌟 고품질 모드 상태 (A/B 테스트)
-  const [useHighQuality, setUseHighQuality] = React.useState(false);
-  // 권한 체크: 관리자 또는 테스터만 허용
-  const canUseBetaFeatures = React.useMemo(() => {
-    return user?.role === 'admin' || user?.isAdmin === true || user?.isTester === true;
-  }, [user]);
 
   const handleFormChange = useCallback((updates) => {
     updateForm(updates);
@@ -349,19 +339,15 @@ const GeneratePage = () => {
     setFormErrors({ topic: '', instructions0: '' });
 
     // 2. 유효하면 API 호출
-    // 🆕 고품질 모드 선택 시 pipeline 파라미터 추가
-    // 기본값은 백엔드에서 'modular'로 설정됨 (프롬프트 분산으로 품질 향상)
     const payload = {
-      ...formData,
-      ...(useHighQuality && { pipeline: 'highQuality' })  // highQuality만 명시, 나머지는 백엔드 기본값 사용
+      ...formData
     };
 
     const result = await generate(payload);
 
     // 3. API 결과 처리
     if (result.success) {
-      const modeMsg = useHighQuality ? ' [고품질 모드 적용됨]' : '';
-      const successMessage = result.message + modeMsg + '\n\n💡 생성된 원고를 꼭 검수하시고, 필요에 따라 직위나 내용을 직접 편집해주세요.';
+      const successMessage = result.message + '\n\n💡 생성된 원고를 꼭 검수하시고, 필요에 따라 직위나 내용을 직접 편집해주세요.';
       showNotification(successMessage, 'success');
     } else {
       showNotification(result.error, 'error');
@@ -477,42 +463,7 @@ const GeneratePage = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.3 }}
         >
-          {/* 🆕 고품질 모드 토글 (PromptForm 위에 배치) */}
-          {canUseBetaFeatures && (
-            <Box sx={{
-              mb: 2,
-              p: 2,
-              bgcolor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)',
-              borderRadius: 2,
-              border: `1px solid ${theme.palette.divider}`
-            }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={useHighQuality}
-                      onChange={(e) => setUseHighQuality(e.target.checked)}
-                      color="secondary"
-                    />
-                  }
-                  label={
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography fontWeight="bold">💎 고품질 모드 (Chain Writer)</Typography>
-                      <Chip label="BETA" size="small" color="secondary" sx={{ height: 20, fontSize: '0.7rem' }} />
-                    </Box>
-                  }
-                />
-                {useHighQuality && (
-                  <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
-                    ⚠️ 생성 시간이 2~3배 더 소요됩니다
-                  </Typography>
-                )}
-              </Box>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1, ml: 4 }}>
-                단계별 생성(CoT) 기술을 적용하여 글의 구조와 핵심 내용 반영도를 극대화합니다. (관리자/테스터 전용)
-              </Typography>
-            </Box>
-          )}
+
 
           <PromptForm
             formData={formData}

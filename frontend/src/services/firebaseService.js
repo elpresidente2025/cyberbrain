@@ -84,6 +84,61 @@ export const callFunctionWithNaverAuth = async (functionName, data = {}, options
   return await callFunctionWithRetry(functionName, data, options);
 };
 
+// Cloud Run 직접 호출 (Cloud Functions 게이트웨이 60초 타임아웃 우회)
+// on_call 함수를 Cloud Run URL로 직접 호출하여 최대 540초까지 대기 가능
+const CLOUD_RUN_BASE = 'https://generateposts-ebgiucgqsa-du.a.run.app';
+
+export const callCallableViaCloudRun = async (cloudRunUrl, data = {}, options = {}) => {
+  const timeoutMs = options.timeoutMs || 540000;
+
+  if (!auth.currentUser) {
+    throw new Error('로그인이 필요합니다.');
+  }
+
+  const token = await auth.currentUser.getIdToken(true);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(cloudRunUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ data }),
+      signal: controller.signal,
+    });
+
+    const body = await response.json();
+
+    if (!response.ok || body.error) {
+      const errorMsg = body.error?.message || body.error || '요청 처리에 실패했습니다.';
+      const errorCode = body.error?.status || 'internal';
+      const err = new Error(errorMsg);
+      err.code = `functions/${errorCode}`;
+      throw err;
+    }
+
+    // on_call 프로토콜: 성공 시 {result: {...}}
+    return { data: body.result ?? body };
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const timeoutErr = new Error('요청 시간이 초과되었습니다.');
+      timeoutErr.code = 'functions/deadline-exceeded';
+      throw timeoutErr;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
+// generatePosts 전용 Cloud Run 호출
+export const callGeneratePostsViaCloudRun = async (data = {}, options = {}) => {
+  return await callCallableViaCloudRun(CLOUD_RUN_BASE, data, options);
+};
+
 // ----------------------------------------------------------------------------
 // 관리자 전용 HTTP 엔드포인트/백오피스/SNS 함수는 Bearer 토큰 사용
 // ----------------------------------------------------------------------------

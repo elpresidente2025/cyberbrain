@@ -1,7 +1,104 @@
 # functions/python/agents/common/h2_guide.py
-"""AEO+SEO 최적화 H2 소제목 작성 가이드 (few-shot 예시 포함)"""
+"""AEO+SEO 최적화 H2 소제목 단일 원칙 소스 (Single Source of Truth)
+
+모든 H2 관련 상수, 규칙, few-shot 예시를 이 파일에서 관리한다.
+소비처: prompt_builder.py (StructureAgent), SubheadingAgent, content_validator.py, structure_normalizer.py
+"""
+
+# ---------------------------------------------------------------------------
+# 상수 (validator, normalizer, agent 공통)
+# ---------------------------------------------------------------------------
+H2_MIN_LENGTH = 10      # content_validator: 이 미만이면 H2_TEXT_SHORT
+H2_MAX_LENGTH = 25      # content_validator: 이 초과이면 H2_TEXT_LONG
+H2_OPTIMAL_MIN = 12     # 프롬프트 권장 최소
+H2_OPTIMAL_MAX = 25     # 프롬프트 권장 최대
+H2_BEST_RANGE = "15~22" # 네이버 최적 범위
 
 
+# ---------------------------------------------------------------------------
+# build_h2_rules: 프롬프트용 H2 규칙 블록
+# ---------------------------------------------------------------------------
+def build_h2_rules(style: str = 'aeo') -> str:
+    """H2 규칙 + few-shot 예시를 합친 완전한 블록을 반환한다.
+
+    Args:
+        style: 'aeo' (일반 AEO+SEO) 또는 'assertive' (논평/시사 주장형)
+    """
+    if style == 'assertive':
+        return _build_assertive_rules()
+    return _build_aeo_rules()
+
+
+def _build_aeo_rules() -> str:
+    return f"""<h2_rules name="소제목 작성 규칙 (AEO+SEO)" severity="critical">
+  <length min="{H2_OPTIMAL_MIN}" max="{H2_MAX_LENGTH}" optimal="{H2_BEST_RANGE}"/>
+  <keyword_position>핵심 키워드를 문장 앞쪽 1/3에 배치</keyword_position>
+
+  <types>
+    <type name="질문형" strength="AEO 최강" ratio="40% 이상 권장">
+      <good>청년 기본소득, 신청 방법은?</good>
+      <good>전세 사기 피해, 어떻게 보상받나요?</good>
+      <bad>이것을 꼭 알아야 합니다</bad>
+    </type>
+    <type name="명사형" strength="SEO 기본">
+      <good>분당구 정자동 주차장 신설 위치</good>
+      <bad>정책 안내</bad>
+    </type>
+    <type name="데이터형" strength="신뢰성">
+      <good>청년 일자리 274명 창출 방법</good>
+      <bad>좋은 성과를 냈습니다</bad>
+    </type>
+    <type name="절차형" strength="실용성">
+      <good>청년 기본소득 신청 3단계 절차</good>
+      <bad>신청하는 방법</bad>
+    </type>
+    <type name="비교형" strength="차별화">
+      <good>기존 정책 대비 개선된 3가지</good>
+      <bad>비교해 보겠습니다</bad>
+    </type>
+  </types>
+
+  <banned>
+    추상적 표현("노력", "열전", "마음"),
+    모호한 지시어("이것", "그것", "관련 내용"),
+    과장 표현("최고", "혁명적", "놀라운"),
+    서술어 포함("~에 대한 설명", "~을 알려드립니다"),
+    키워드 없는 짧은 제목("정책", "방법", "소개"),
+    1인칭 표현("저는", "제가", "나는", "내가")
+  </banned>
+
+  <aeo_rule>H2 바로 아래 첫 문장(40~60자)은 해당 질문/주제에 대한 직접 답변으로 작성할 것.</aeo_rule>
+</h2_rules>
+
+{build_h2_examples()}"""
+
+
+def _build_assertive_rules() -> str:
+    return f"""<h2_rules name="논평용 소제목 작성 규칙" severity="critical">
+  <length min="{H2_OPTIMAL_MIN}" max="{H2_MAX_LENGTH}" optimal="{H2_BEST_RANGE}"/>
+  <style>주장형 또는 명사형 (질문형 절대 금지)</style>
+  <tone>단정적, 비판적, 명확한 입장 표명</tone>
+
+  <types>
+    <type name="단정형" pattern="~이다, ~해야 한다">
+      <good>특검은 정치 보복이 아니다</good>
+      <good>당당하면 피할 이유 없다</good>
+    </type>
+    <type name="비판형" pattern="대상을 명시한 비판">
+      <good>진실 규명을 거부하는 태도</good>
+    </type>
+    <type name="명사형" pattern="핵심 쟁점 명시">
+      <good>특검법의 정당성과 의의</good>
+    </type>
+  </types>
+
+  <forbidden>질문형 소제목 ("~인가요?", "~일까요?", "~는?", "~할까?") 절대 금지</forbidden>
+</h2_rules>"""
+
+
+# ---------------------------------------------------------------------------
+# build_h2_examples: few-shot 교정 예시 (50개)
+# ---------------------------------------------------------------------------
 def build_h2_examples() -> str:
     """H2 소제목 few-shot 예시 XML 블록을 반환한다."""
     return """
@@ -55,22 +152,25 @@ def build_h2_examples() -> str:
     <good>2024년 vs 2025년 예산 변화 분석</good>
     <good>기존 정책 대비 개선된 3가지</good>
     <good>온라인 vs 오프라인 신청 장단점</good>
+    <good>vs 주진우, 이재성의 약진</good>
     <good>타 지역 대비 분당구만의 특징</good>
     <correction before="비교해 보겠습니다" after="청년 기본소득 vs 청년수당 비교"/>
     <correction before="다른 정책들과의 차이" after="기존 정책 대비 개선된 5가지"/>
     <correction before="장점과 단점" after="온라인 vs 오프라인 신청 비교"/>
+    <correction before="주진우 의원과의 가상대결, 제가 앞서가다" after="vs 주진우, 이재성의 약진"/>
   </type>
 
   <checklist>
-    <must>12~30자 범위 (네이버 최적 15~22자)</must>
+    <must>12~25자 범위 (네이버 최적 15~22자)</must>
     <must>핵심 키워드를 앞 1/3에 배치</must>
     <must>질문형 또는 명확한 명사형 구조</must>
     <must>H2 바로 아래 첫 문장(40~60자)은 직접 답변</must>
-    <ban>8자 미만 또는 30자 초과</ban>
+    <ban>10자 미만 또는 25자 초과</ban>
     <ban>"이것", "그것", "관련" 등 모호한 지시어</ban>
     <ban>"최고", "혁명적", "놀라운" 등 과장 표현</ban>
     <ban>키워드 없는 추상적 표현 ("노력", "열심히")</ban>
     <ban>"~에 대한", "~관련" 등 불필요한 접속사</ban>
+    <ban>"저는/제가/나는/내가" 같은 1인칭 표현</ban>
   </checklist>
 </h2_examples>
 """

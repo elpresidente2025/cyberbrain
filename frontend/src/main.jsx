@@ -16,12 +16,19 @@ import ProfileRequiredRoute from './components/ProfileRequiredRoute.jsx';
 import './index.css';
 // 새 디자인 시스템 토큰 로드
 import './design-system/tokens.css';
-
 // 임시 조치: lazy loading 제거하고 직접 import
 import HomePage from './pages/HomePage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+
+// [FIX] 동적 import(lazy loading) 실패 시 페이지를 새로고침하는 전역 핸들러
+// 배포 후 이전 해시의 chunk 파일을 요청할 때 발생하는 에러를 자동으로 복구합니다.
+window.addEventListener('vite:preloadError', (event) => {
+  console.warn('🔄 Vite preload error caught. Reloading page to fetch latest chunks...', event);
+  window.location.reload();
+});
+
 import GeneratePage from './pages/GeneratePage.jsx';
 import ProfilePage from './pages/ProfilePage.jsx';
 import AdminPage from './pages/AdminPage.jsx';

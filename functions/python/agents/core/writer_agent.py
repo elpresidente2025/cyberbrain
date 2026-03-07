@@ -338,14 +338,20 @@ class WriterAgent:
              if sandwich_xml: prompt_sections.append(sandwich_xml)
              
         # Identity Lock
+        opponent_name = str(context.get('_opponentName') or '').strip()
+        opponent_guard = ""
+        if opponent_name:
+            opponent_guard = f'\n    절대 금지: "저는 {opponent_name} 후보/시장/의원..." 식으로 경쟁자를 1인칭 화자로 쓰지 마십시오.'
+
         identity_lock = f"""
 <identity-lock priority="override">
   <status>FINAL_CHECK</status>
   <who-am-i>{author_name} ({user_profile.get('position', '정치인')})</who-am-i>
-  <who-is-opponent>{context.get('_opponentName') or '참고자료의 인물들'}</who-is-opponent>
+  <who-is-opponent>{opponent_name or '참고자료의 인물들'}</who-is-opponent>
   <instruction>
     직전의 참고자료에 몰입하지 마십시오. 당신은 비판하는 주체이지, 비판 대상이 아닙니다.
     반드시 "저는 {author_name}입니다"라는 자각을 유지하며 글을 마무리하십시오.
+    {opponent_guard}
   </instruction>
 </identity-lock>
 """

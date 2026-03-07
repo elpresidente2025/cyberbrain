@@ -117,25 +117,16 @@ def select_logical_structure(topic="", instructions=""):
     text = f"{topic} {instructions}".lower()
 
     if re.search(r"타지역|다른 지역|비교|우리는|우리 지역은|반면", text):
-        return LOGICAL_STRUCTURES["COMPARATIVE_ADVANTAGE"].id # Assuming this exists or falls back to STEP_BY_STEP if I missed defining it in port.
-        # Note: I checked policy_proposal.py and realized I might have missed COMPARATIVE_ADVANTAGE key in the manual port dictionary if it wasn't in the JS snippet I read or if I missed it.
-        # Let's check my policy_proposal.py write.
-        # I wrote: STEP_BY_STEP, ENUMERATIVE, PROBLEM_SOLUTION, CLIMACTIC_SANDWICH, COMPREHENSIVE, PRINCIPLE_BASED.
-        # I missed COMPARATIVE_ADVANTAGE, STEP_BY_STEP_ROADMAP, CAUSE_AND_EFFECT in policy_proposal.py.
-        # The JS view of intelligent-selector.js implies they exist.
-        # Let's fallback to defaults if they don't exist, or just map them to existing ones for now to avoid errors.
-        # Or better, since I am writing this file now, I should stick to the keys I actually defined in policy_proposal.py
-        # defined: STEP_BY_STEP, ENUMERATIVE, PROBLEM_SOLUTION, CLIMACTIC_SANDWICH, COMPREHENSIVE, PRINCIPLE_BASED.
-    
-    # Mapping attempt to closest existing structure
-    if re.search(r"타지역|다른 지역|비교|우리는|우리 지역은|반면", text):
-        return LOGICAL_STRUCTURES["COMPREHENSIVE"].id # Fallback
+        return LOGICAL_STRUCTURES["COMPREHENSIVE"].id
     
     if re.search(r"단계|1단계|2단계|로드맵|계획|일정|순서대로|먼저|다음|마지막", text):
          return LOGICAL_STRUCTURES["STEP_BY_STEP"].id
     
     if re.search(r"원인|이유|때문에|결과|따라서|그래서|그러므로", text):
-        return LOGICAL_STRUCTURES["PROBLEM_SOLUTION"].id # Fallback
+        return LOGICAL_STRUCTURES["PROBLEM_SOLUTION"].id
+
+    if re.search(r"원칙|기준|가치|철학|법치|헌법|책임", text):
+        return LOGICAL_STRUCTURES["PRINCIPLE_BASED"].id
 
     return LOGICAL_STRUCTURES["PROBLEM_SOLUTION"].id
 
@@ -279,6 +270,13 @@ def select_prompt_parameters(category: str, topic: str, instructions: str = "") 
         }
     
     elif category == 'policy-proposal':
+        selected_params = {
+            'logicalStructureId': select_logical_structure(topic, instructions),
+            'argumentationTacticId': select_argumentation_tactic(topic, instructions),
+            'vocabularyModuleId': select_policy_vocabulary(topic, instructions)
+        }
+
+    elif category == 'educational-content':
         selected_params = {
             'logicalStructureId': select_logical_structure(topic, instructions),
             'argumentationTacticId': select_argumentation_tactic(topic, instructions),

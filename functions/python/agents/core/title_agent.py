@@ -12,6 +12,14 @@ from ..common.title_generation import (
 
 logger = logging.getLogger(__name__)
 
+TITLE_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+    },
+    "required": ["title"],
+}
+
 class TitleAgent(Agent):
     def __init__(self, name: str = 'TitleAgent', options: Optional[Dict[str, Any]] = None):
         super().__init__(name, options)
@@ -25,7 +33,7 @@ class TitleAgent(Agent):
         """
         TitleAgent main process
         """
-        from ..common.gemini_client import generate_content_async
+        from ..common.gemini_client import StructuredOutputError, generate_json_async
 
         # Extract inputs
         topic = context.get('topic', '')
@@ -79,6 +87,8 @@ class TitleAgent(Agent):
             'backgroundText': background_text,
             'stanceText': stance_text,  # 🔑 [NEW] 입장문 전달
             'contextAnalysis': context_analysis,
+            # 빈 응답 예방: 제목 프롬프트를 경량화해 모델 부담을 낮춘다.
+            'titlePromptLite': bool((self.options or {}).get('titlePromptLite', True)),
         }
 
         # 최근 제목을 전달해 동일 패턴 재생산을 줄인다.
@@ -113,56 +123,119 @@ class TitleAgent(Agent):
         if (self.options or {}).get('forceType'):
             params['_forcedType'] = self.options['forceType']
 
-        generation_temperature = 0.7
-
-        async def generate_fn(prompt: str) -> str:
-            if not self._client:
-                raise ValueError("Model not initialized")
-            return await generate_content_async(
-                prompt,
-                model_name=self.model_name,
-                temperature=generation_temperature,
-                options={
-                    'top_p': 0.95,
-                    'top_k': 40,
-                },
-            )
-
         logger.info(f"[{self.name}] Generating title for topic: {topic}")
         title_purpose = resolve_title_purpose(topic, params)
         # 행사 안내형은 규칙 준수 우선으로 샘플링 강도를 낮춰 안정적으로 생성한다.
         generation_temperature = 0.25 if title_purpose == 'event_announcement' else 0.7
+        generation_top_p = 0.90 if title_purpose == 'event_announcement' else 0.95
+        generation_top_k = 32 if title_purpose == 'event_announcement' else 40
         min_score = 70
 
-        try:
-            result = await generate_and_validate_title(
-                generate_fn,
-                params,
+        # 단계별로 올리는 클로저 변수 (프리앰블 재시도 기회 확보를 위해 최소 2)
+        _json_parse_retries = 2
+
+        async def generate_fn(prompt: str) -> str:
+            if not self._client:
+                raise ValueError("Model not initialized")
+            payload = await generate_json_async(
+                prompt,
+                model_name=self.model_name,
+                temperature=generation_temperature,
+                max_output_tokens=220,
+                retries=2,
+                response_schema=TITLE_RESPONSE_SCHEMA,
+                required_keys=("title",),
                 options={
-                    'minScore': min_score,
-                    'maxAttempts': 3,
-                    'candidateCount': int((self.options or {}).get('candidateCount', 5)),
-                    'similarityThreshold': float((self.options or {}).get('similarityThreshold', 0.78)),
-                    'maxSimilarityPenalty': int((self.options or {}).get('maxSimilarityPenalty', 18)),
-                    'recentTitles': params.get('recentTitles', []),
-                    'temperature': generation_temperature,
-                    'onProgress': lambda p: logger.debug(f"[{self.name}] Attempt {p['attempt']} finished. Score: {p.get('score', 0)}")
-                }
+                    'top_p': generation_top_p,
+                    'top_k': generation_top_k,
+                    'json_parse_retries': _json_parse_retries,
+                },
             )
+            title = str(payload.get('title') or '').strip()
+            if not title:
+                raise StructuredOutputError("title is empty")
+            return title
 
-            raw_title = str(result.get('title') or '')
-            normalized_title = normalize_title_surface(raw_title) or raw_title
-            logger.info(f"[{self.name}] Selected Title: {normalized_title} (Score: {result['score']})")
+        primary_options = {
+            'minScore': min_score,
+            'maxAttempts': 2,
+            'candidateCount': int((self.options or {}).get('candidateCount', 2)),
+            'similarityThreshold': float((self.options or {}).get('similarityThreshold', 0.78)),
+            'maxSimilarityPenalty': int((self.options or {}).get('maxSimilarityPenalty', 18)),
+            'recentTitles': params.get('recentTitles', []),
+            'temperature': generation_temperature,
+            'onProgress': lambda p: logger.debug(f"[{self.name}] Attempt {p['attempt']} finished. Score: {p.get('score', 0)}")
+        }
 
-            return {
-                'title': normalized_title,
-                'titleScore': result['score'],
-                'titleHistory': result['history'],
-                'titleType': result.get('analysis', {}).get('type', 'UNKNOWN')
+        try:
+            result = await generate_and_validate_title(generate_fn, params, options=primary_options)
+        except Exception as primary_error:
+            logger.warning(
+                "[%s] Primary title generation failed. Retry with strict single-candidate mode: %s",
+                self.name,
+                primary_error,
+            )
+            # strict retry: 파싱 재시도 강화, 후보 1개, 낮은 temperature
+            generation_temperature = 0.2
+            generation_top_p = 0.75
+            generation_top_k = 20
+            _json_parse_retries = 3
+            strict_retry_options = {
+                'minScore': min_score,
+                'maxAttempts': 2,
+                'candidateCount': 1,
+                'similarityThreshold': float((self.options or {}).get('similarityThreshold', 0.78)),
+                'maxSimilarityPenalty': int((self.options or {}).get('maxSimilarityPenalty', 18)),
+                'recentTitles': params.get('recentTitles', []),
+                'temperature': generation_temperature,
+                'onProgress': lambda p: logger.debug(
+                    f"[{self.name}] Strict retry attempt {p['attempt']} finished. Score: {p.get('score', 0)}"
+                ),
             }
+            try:
+                result = await generate_and_validate_title(generate_fn, params, options=strict_retry_options)
+            except Exception as strict_error:
+                # minimal retry: 경량 프롬프트로 generate_and_validate_title 경유 (A 하드페일 보장)
+                logger.warning(
+                    "[%s] Strict retry failed. Minimal prompt retry via validate: %s",
+                    self.name,
+                    strict_error,
+                )
+                _json_parse_retries = 3
+                generation_temperature = 0.3
+                generation_top_p = 0.80
+                generation_top_k = 20
+                minimal_params = {
+                    **params,
+                    'contentPreview': '',
+                    'backgroundText': '',
+                    'stanceText': '',
+                }
+                minimal_options = {
+                    'minScore': 1,
+                    'maxAttempts': 1,
+                    'candidateCount': 1,
+                    'recentTitles': params.get('recentTitles', []),
+                }
+                try:
+                    result = await generate_and_validate_title(
+                        generate_fn, minimal_params, options=minimal_options,
+                    )
+                except Exception as minimal_error:
+                    logger.error(
+                        "[%s] All title generation attempts exhausted. "
+                        "primary=%s | strict=%s | minimal=%s",
+                        self.name, primary_error, strict_error, minimal_error,
+                    )
+                    raise minimal_error
 
-        except Exception as e:
-            # 🚨 NO FALLBACK ALLOWED as per user request.
-            # Fail loudly so debugging is possible.
-            logger.error(f"[{self.name}] CRITICAL FAILURE: {e}")
-            raise RuntimeError(f"[TitleAgent Failed] {str(e)}") from e
+        raw_title = str(result.get('title') or '')
+        normalized_title = normalize_title_surface(raw_title) or raw_title
+        logger.info(f"[{self.name}] Selected Title: {normalized_title} (Score: {result['score']})")
+
+        return {
+            'title': normalized_title,
+            'titleScore': result['score'],
+            'titleHistory': result['history'],
+            'titleType': result.get('analysis', {}).get('type', 'UNKNOWN')
+        }

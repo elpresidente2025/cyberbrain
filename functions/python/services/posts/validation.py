@@ -9,11 +9,12 @@ import json
 import logging
 import re
 from datetime import date, datetime
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence
+from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence
 
 from agents.common.election_rules import get_election_stage
 from agents.common.fact_guard import extract_numeric_tokens, find_unsupported_numeric_tokens
 from agents.common.legal import ViolationDetector
+from agents.common.editorial import TITLE_SPEC, KEYWORD_SPEC
 
 from .corrector import apply_corrections, summarize_violations
 from .critic import has_hard_violations, run_critic_review, summarize_guidelines
@@ -953,31 +954,33 @@ def validate_title_quality(
         return {"passed": True, "issues": [], "details": {}}
 
     issues: list[Dict[str, Any]] = []
+    title_min_length = int(TITLE_SPEC['hardMin'])
+    title_max_length = int(TITLE_SPEC['hardMax'])
     details: Dict[str, Any] = {
         "length": len(title),
-        "maxLength": 35,
+        "maxLength": title_max_length,
         "keywordPosition": None,
         "abstractExpressions": [],
         "hasNumbers": False,
     }
 
-    if len(title) < 10:
+    if len(title) < title_min_length:
         issues.append(
             {
                 "type": "title_too_short",
                 "severity": "critical",
                 "description": f"제목이 너무 짧음 ({len(title)}자)",
-                "instruction": "10자 이상으로 구체적인 내용을 포함하여 작성하세요. 단순 키워드 나열 금지.",
+                "instruction": f"{title_min_length}자 이상으로 구체적인 내용을 포함하여 작성하세요. 단순 키워드 나열 금지.",
             }
         )
 
-    if len(title) > 35:
+    if len(title) > title_max_length:
         issues.append(
             {
                 "type": "title_length",
                 "severity": "critical",
-                "description": f"제목 {len(title)}자 → 35자 초과 (네이버에서 잘림)",
-                "instruction": "35자 이내로 줄이세요. 불필요한 조사, 부제목(:, -) 제거.",
+                "description": f"제목 {len(title)}자 → {title_max_length}자 초과",
+                "instruction": f"{title_max_length}자 이내로 줄이세요. 불필요한 조사, 부제목(:, -) 제거.",
             }
         )
 
@@ -1479,11 +1482,69 @@ def count_keyword_coverage(content: str, keyword: str) -> int:
     return sum(count_keyword_occurrences(content, item) for item in keywords)
 
 
-def _keyword_user_threshold(user_keywords: Optional[Sequence[str]] = None) -> tuple[int, int]:
-    normalized = [item for item in (user_keywords or []) if item]
-    kw_count = len(normalized) if normalized else 1
-    user_min_count = 3 if kw_count >= 2 else 5
-    user_max_count = user_min_count + 1
+def _count_user_keyword_exact_non_overlap(content: str, user_keywords: Sequence[str]) -> Dict[str, int]:
+    clean_content = re.sub(r"<[^>]*>", "", str(content or ""))
+    normalized_keywords = [str(item or "").strip() for item in (user_keywords or []) if str(item or "").strip()]
+    if not clean_content or not normalized_keywords:
+        return {}
+
+    counts: Dict[str, int] = {keyword: 0 for keyword in normalized_keywords}
+    occupied_spans: list[tuple[int, int]] = []
+    ordered_keywords = sorted(
+        list(enumerate(normalized_keywords)),
+        key=lambda item: (-len(item[1]), item[0]),
+    )
+
+    def _is_overlapping(start: int, end: int) -> bool:
+        for occupied_start, occupied_end in occupied_spans:
+            if start < occupied_end and occupied_start < end:
+                return True
+        return False
+
+    for _, keyword in ordered_keywords:
+        escaped = re.escape(keyword)
+        if not escaped:
+            continue
+        for match in re.finditer(escaped, clean_content):
+            start, end = match.span()
+            if start >= end or _is_overlapping(start, end):
+                continue
+            occupied_spans.append((start, end))
+            counts[keyword] = int(counts.get(keyword) or 0) + 1
+
+    return counts
+
+
+def _count_keyword_occurrences_in_h2(content: str, keyword: str) -> int:
+    if not content or not keyword:
+        return 0
+    total = 0
+    for match in re.finditer(r"<h2\b[^>]*>([\s\S]*?)</h2\s*>", str(content), re.IGNORECASE):
+        inner = str(match.group(1) or "")
+        total += count_keyword_occurrences(inner, keyword)
+    return total
+
+
+def _count_keyword_occurrences_in_paragraphs(content: str, keyword: str) -> int:
+    if not content or not keyword:
+        return 0
+    paragraphs = list(re.finditer(r"<p\b[^>]*>([\s\S]*?)</p\s*>", str(content), re.IGNORECASE))
+    if not paragraphs:
+        return count_keyword_occurrences(str(content), keyword)
+    total = 0
+    for match in paragraphs:
+        inner = str(match.group(1) or "")
+        total += count_keyword_occurrences(inner, keyword)
+    return total
+
+
+def _keyword_user_threshold(keyword_count: int) -> tuple[int, int]:
+    if keyword_count >= 2:
+        user_min_count = int(KEYWORD_SPEC['perKeywordMin'])
+        user_max_count = int(KEYWORD_SPEC['perKeywordMax'])
+    else:
+        user_min_count = int(KEYWORD_SPEC['singleKeywordMin'])
+        user_max_count = int(KEYWORD_SPEC['singleKeywordMax'])
     return user_min_count, user_max_count
 
 
@@ -1893,6 +1954,8 @@ def enforce_keyword_requirements(
     user_keywords: Optional[Sequence[str]] = None,
     auto_keywords: Optional[Sequence[str]] = None,
     target_word_count: Optional[int] = None,
+    title_text: str = "",
+    body_min_overrides: Optional[Mapping[str, int]] = None,
     max_iterations: int = 2,
 ) -> Dict[str, Any]:
     working_content = str(content or "")
@@ -1904,6 +1967,8 @@ def enforce_keyword_requirements(
         user_keywords,
         auto_keywords,
         target_word_count,
+        title_text=title_text,
+        body_min_overrides=body_min_overrides,
     )
     if not working_content or (not user_keywords and not auto_keywords):
         return {
@@ -1931,62 +1996,70 @@ def enforce_keyword_requirements(
         if not details or not sections:
             break
 
-        adjusted_for_excess = False
         for keyword in user_keywords:
             keyword_info = details.get(keyword) or {}
             current_count = int(keyword_info.get("count") or keyword_info.get("coverage") or 0)
-            max_allowed = int(keyword_info.get("max") or _keyword_user_threshold(user_keywords)[1])
+            max_allowed = int(keyword_info.get("max") or _keyword_user_threshold(len(user_keywords))[1])
             excess = max(0, current_count - max_allowed)
             if excess <= 0:
                 continue
 
-            updated_content, replaced_count = _replace_last_keyword_occurrences(
-                working_content,
-                keyword,
-                excess,
-            )
-            if replaced_count <= 0:
-                continue
-
-            adjusted_for_excess = True
-            working_content = updated_content
             reductions.append(
                 {
                     "keyword": keyword,
                     "excess": excess,
-                    "replaced": replaced_count,
+                    "replaced": 0,
                     "targetMax": max_allowed,
+                    "skipped": True,
+                    "reason": "over_max_rewrite_disabled",
                 }
             )
-
-        if adjusted_for_excess:
-            current_result = validate_keyword_insertion(
-                working_content,
-                user_keywords,
-                auto_keywords,
-                target_word_count,
-            )
-            if current_result.get("valid"):
-                break
-            details = (current_result.get("details") or {}).get("keywords") or {}
-            sections = _parse_keyword_sections(working_content)
-            if not details or not sections:
-                break
 
         insertion_plan: Dict[int, List[Dict[str, Any]]] = {}
         needs_fix = False
 
         for keyword in [*user_keywords, *auto_keywords]:
             keyword_info = details.get(keyword) or {}
-            expected = int(keyword_info.get("expected") or (1 if keyword in auto_keywords else _keyword_user_threshold(user_keywords)[0]))
+            expected = int(keyword_info.get("expected") or (1 if keyword in auto_keywords else _keyword_user_threshold(len(user_keywords))[0]))
             current_count = int(keyword_info.get("count") or keyword_info.get("coverage") or 0)
             deficit = max(0, expected - current_count)
-            if deficit <= 0:
+            body_expected = int(keyword_info.get("bodyExpected") or 0)
+            body_count = int(keyword_info.get("bodyCount") or 0)
+            body_deficit = max(0, body_expected - body_count)
+            total_deficit = max(deficit, body_deficit)
+            if total_deficit <= 0:
                 continue
 
             needs_fix = True
-            target_indexes = _select_keyword_section_indexes(sections, keyword, deficit)
-            for section_idx in target_indexes:
+            planned_indexes: list[int] = []
+            if body_deficit > 0:
+                body_sections = [
+                    (idx, section)
+                    for idx, section in enumerate(sections)
+                    if str(section.get("type") or "").startswith("body")
+                ]
+                ranked_body = sorted(
+                    body_sections,
+                    key=lambda item: (
+                        count_keyword_occurrences(str(item[1].get("content") or ""), keyword),
+                        item[0],
+                    ),
+                )
+                while len(planned_indexes) < body_deficit:
+                    progressed = False
+                    for section_idx, _section in ranked_body:
+                        planned_indexes.append(section_idx)
+                        progressed = True
+                        if len(planned_indexes) >= body_deficit:
+                            break
+                    if not progressed:
+                        break
+
+            remaining_deficit = max(0, total_deficit - len(planned_indexes))
+            if remaining_deficit > 0:
+                planned_indexes.extend(_select_keyword_section_indexes(sections, keyword, remaining_deficit))
+
+            for section_idx in planned_indexes:
                 if section_idx < 0 or section_idx >= len(sections):
                     continue
                 section = sections[section_idx]
@@ -2044,6 +2117,8 @@ def enforce_keyword_requirements(
             user_keywords,
             auto_keywords,
             target_word_count,
+            title_text=title_text,
+            body_min_overrides=body_min_overrides,
         )
         if current_result.get("valid"):
             break
@@ -2086,6 +2161,8 @@ def validate_keyword_insertion(
     user_keywords: Optional[Sequence[str]] = None,
     auto_keywords: Optional[Sequence[str]] = None,
     target_word_count: Optional[int] = None,
+    title_text: str = "",
+    body_min_overrides: Optional[Mapping[str, int]] = None,
 ) -> Dict[str, Any]:
     _ = target_word_count
     user_keywords = [item for item in (user_keywords or []) if item]
@@ -2093,25 +2170,46 @@ def validate_keyword_insertion(
     plain_text = re.sub(r"\s", "", re.sub(r"<[^>]*>", "", content or ""))
     actual_word_count = len(plain_text)
 
-    user_min_count, user_max_count = _keyword_user_threshold(user_keywords)
+    user_min_count, user_max_count = _keyword_user_threshold(len(user_keywords))
     auto_min_count = 1
 
     results: Dict[str, Dict[str, Any]] = {}
     all_valid = True
+    user_exact_counts = _count_user_keyword_exact_non_overlap(content, user_keywords)
 
     for keyword in user_keywords:
-        exact_count = count_keyword_occurrences(content, keyword)
+        exclusive_count = int(user_exact_counts.get(keyword) or 0)
+        raw_count = count_keyword_occurrences(content, keyword)
         coverage_count = count_keyword_coverage(content, keyword)
+        title_count = count_keyword_occurrences(title_text, keyword)
+        h2_count = _count_keyword_occurrences_in_h2(content, keyword)
+        body_count = _count_keyword_occurrences_in_paragraphs(content, keyword)
+        derived_body_expected = max(0, int(user_min_count) - int(title_count) - int(h2_count))
+        override_value = None
+        if isinstance(body_min_overrides, Mapping):
+            override_value = body_min_overrides.get(keyword)
+        if override_value is not None:
+            try:
+                derived_body_expected = max(0, int(override_value))
+            except (TypeError, ValueError):
+                derived_body_expected = max(0, derived_body_expected)
         # 사용자 입력 키워드는 "정확 일치" 기준으로 검증한다.
-        is_under_min = exact_count < user_min_count
-        is_over_max = exact_count > user_max_count
-        is_valid = (not is_under_min) and (not is_over_max)
+        is_under_min = exclusive_count < user_min_count
+        is_over_max = exclusive_count > user_max_count
+        is_under_body_min = body_count < derived_body_expected
+        is_valid = (not is_under_min) and (not is_over_max) and (not is_under_body_min)
         results[keyword] = {
-            "count": exact_count,
-            "exactCount": exact_count,
+            "count": exclusive_count,
+            "exactCount": raw_count,
+            "exclusiveCount": exclusive_count,
+            "rawCount": raw_count,
             "coverage": coverage_count,
             "expected": user_min_count,
             "max": user_max_count,
+            "titleCount": title_count,
+            "subheadingCount": h2_count,
+            "bodyCount": body_count,
+            "bodyExpected": derived_body_expected,
             "valid": is_valid,
             "type": "user",
         }

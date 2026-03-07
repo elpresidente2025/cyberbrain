@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { callFunctionWithNaverAuth } from '../services/firebaseService';
+import { callFunctionWithNaverAuth, callGeneratePostsViaCloudRun } from '../services/firebaseService';
 import { useAuth } from './useAuth';
 import { handleHttpError } from '../utils/errorHandler';
 import { sanitizeHtml, stripHtmlTags, getTextLength, isSeoOptimized } from '../utils/contentSanitizer';
@@ -210,9 +210,8 @@ export function useGenerateAPI() {
         }
       );
 
-      // HTTP 함수 호출 및 결과 대기
-      const result = await callFunctionWithNaverAuth(
-        CONFIG.FUNCTIONS.GENERATE_POSTS,
+      // Cloud Run 직접 호출 (Cloud Functions 게이트웨이 60초 타임아웃 우회)
+      const result = await callGeneratePostsViaCloudRun(
         requestData,
         { timeoutMs: CONFIG.GENERATE_TIMEOUT_MS }
       );

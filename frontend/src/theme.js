@@ -27,7 +27,7 @@ const createCustomTheme = (isDarkMode) => createTheme({
     // 그라데이션 (디자인 토큰 통합)
     gradient: colors.gradient,
     background: {
-      default: 'transparent',
+      default: 'rgba(0, 0, 0, 0)',
       paper: isDarkMode ? '#1a1a1a' : '#f5f5f5',
     },
   },

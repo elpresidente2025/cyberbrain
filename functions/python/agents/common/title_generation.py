@@ -5,13 +5,14 @@ import logging
 from difflib import SequenceMatcher
 from typing import Dict, Any, List, Optional
 from .election_rules import get_election_stage
+from .editorial import TITLE_SPEC
 
 logger = logging.getLogger(__name__)
 
-TITLE_LENGTH_HARD_MIN = 12
-TITLE_LENGTH_HARD_MAX = 35
-TITLE_LENGTH_OPTIMAL_MIN = 15
-TITLE_LENGTH_OPTIMAL_MAX = 30
+TITLE_LENGTH_HARD_MIN = TITLE_SPEC['hardMin']
+TITLE_LENGTH_HARD_MAX = TITLE_SPEC['hardMax']
+TITLE_LENGTH_OPTIMAL_MIN = TITLE_SPEC['optimalMin']
+TITLE_LENGTH_OPTIMAL_MAX = TITLE_SPEC['optimalMax']
 
 EVENT_NAME_MARKERS = (
     '출판기념회',
@@ -121,6 +122,30 @@ USER_PROVIDED_TITLE_FEW_SHOT: Dict[str, Dict[str, Any]] = {
         'bad_to_fix': [
             {'bad': '정치 현실에 대해 생각해 봅시다', 'fix_template': '[이슈명], 실제로 뭐가 달라질까?'},
             {'bad': '문제가 많습니다', 'fix_template': '[문제명], [대안수]대 대안 제시'},
+        ],
+    },
+    'VIRAL_HOOK': {
+        'name': '서사 후킹 전개',
+        'templates': [
+            {'template': '[주제명], 왜 지금 주목받나', 'intent': '정보 격차 후킹'},
+            {'template': '[이슈명] 앞에 선 [인물명], 선택의 이유', 'intent': '인물 중심 서사형'},
+            {'template': '[정책명], [숫자]가지 쟁점 정리', 'intent': '핵심 포인트 압축'},
+        ],
+        'bad_to_fix': [
+            {'bad': '중요한 이야기입니다', 'fix_template': '[주제명], 왜 지금 주목받나'},
+            {'bad': '핵심을 알려드립니다', 'fix_template': '[이슈명] 앞에 선 [인물명], 선택의 이유'},
+        ],
+    },
+    'COMMENTARY': {
+        'name': '논평·관점형',
+        'templates': [
+            {'template': '[인물명], [이슈명]에 답하다', 'intent': '화자 관점 명시'},
+            {'template': '[이슈명], [인물명]의 판단은', 'intent': '관점형 긴장감'},
+            {'template': '[정책쟁점], [대안수]대 대안 제시', 'intent': '논평+해법 구조'},
+        ],
+        'bad_to_fix': [
+            {'bad': '입장을 밝힙니다', 'fix_template': '[인물명], [이슈명]에 답하다'},
+            {'bad': '생각을 전합니다', 'fix_template': '[이슈명], [인물명]의 판단은'},
         ],
     },
 }
@@ -638,7 +663,8 @@ def _render_slot_template(template: str, slot_values: Dict[str, str]) -> str:
 
 
 def build_user_provided_few_shot_instruction(type_id: str, params: Optional[Dict[str, Any]] = None) -> str:
-    resolved_type_id = str(type_id or '').strip()
+    requested_type_id = str(type_id or '').strip()
+    resolved_type_id = requested_type_id
     few_shot = USER_PROVIDED_TITLE_FEW_SHOT.get(resolved_type_id)
     if not few_shot:
         logger.info("[TitleGen] 사용자 few-shot 미정의 타입: %s", resolved_type_id)
@@ -669,7 +695,7 @@ def build_user_provided_few_shot_instruction(type_id: str, params: Optional[Dict
     return f"""
 <user_provided_few_shot priority="high" source="사용자_정치인_7유형_전략">
   <description>아래 예시는 고정 카피가 아니라 슬롯 기반 템플릿이다. 현재 주제/지역/인물에 맞게 슬롯만 치환해 사용하라.</description>
-  <type requested="{type_id}" resolved="{resolved_type_id}" name="{few_shot.get('name', '')}" />
+  <type requested="{requested_type_id}" resolved="{resolved_type_id}" name="{few_shot.get('name', '')}" />
   <slot_guide>
 {slot_guide}
   </slot_guide>
@@ -1064,7 +1090,10 @@ def normalize_title_surface(title: str) -> str:
 
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
     cleaned = re.sub(r'\s+([,.:;!?])', r'\1', cleaned)
-    cleaned = re.sub(r'([,.:;!?])(?=[^\s\]\)\}])', r'\1 ', cleaned)
+    cleaned = re.sub(r'([,:;!?])(?=[^\s\]\)\}])', r'\1 ', cleaned)
+    # 마침표는 소수점/날짜 숫자 구간을 제외하고만 뒤 공백을 부여한다.
+    cleaned = re.sub(r'(\d)\.(?=[^\s\]\)\}\d])', r'\1. ', cleaned)
+    cleaned = re.sub(r'(?<!\d)\.(?=[^\s\]\)\}\d])', '. ', cleaned)
     cleaned = re.sub(r'\(\s+', '(', cleaned)
     cleaned = re.sub(r'\s+\)', ')', cleaned)
     cleaned = re.sub(r'\[\s+', '[', cleaned)
@@ -1163,18 +1192,19 @@ def _build_title_candidate_prompt(
 
     blocked = [f'"{t}"' for t in disallow_titles[-4:] if t]
     blocked_line = (
-        f"- 다음 제목/문구를 반복하지 마세요: {', '.join(blocked)}"
+        f"다음 제목/문구를 반복하지 마세요: {', '.join(blocked)}"
         if blocked else
-        "- 직전 시도와 동일한 문구/어순 반복 금지"
+        "직전 시도와 동일한 문구/어순 반복 금지"
     )
 
     return f"""{base_prompt}
 
 <diversity_hint attempt="{attempt}" candidate="{candidate_index}/{candidate_count}">
-- 이번 후보의 초점: {variant}
-{blocked_line}
-- 1순위 키워드 시작 규칙은 반드시 지키되, 그 뒤 문장은 새롭게 작성
+  <focus>{variant}</focus>
+  <blocked>{blocked_line}</blocked>
+  <rule>1순위 키워드 시작 규칙은 반드시 지키되, 그 뒤 문장은 새롭게 작성</rule>
 </diversity_hint>
+
 """
 
 
@@ -1413,6 +1443,7 @@ def _build_event_title_prompt(params: Dict[str, Any]) -> str:
     topic = str(params.get('topic') or '')
     full_name = str(params.get('fullName') or '').strip()
     content_preview = str(params.get('contentPreview') or '')
+    prompt_lite = bool(params.get('titlePromptLite'))
     user_keywords = params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else []
     context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
     must_preserve = context_analysis.get('mustPreserve') if isinstance(context_analysis.get('mustPreserve'), dict) else {}
@@ -1426,6 +1457,7 @@ def _build_event_title_prompt(params: Dict[str, Any]) -> str:
     is_book_event = any(marker in topic for marker in ('출판기념회', '북토크', '토크콘서트'))
     hook_words = "현장, 직접, 일정, 안내, 초대, 만남, 참석"
     number_validation = extract_numbers_from_content(content_preview)
+    content_preview_limit = 260 if prompt_lite else 500
 
     return f"""<event_title_prompt priority="critical">
 <role>당신은 행사 안내형 블로그 제목 에디터입니다. 목적 적합성과 규칙 준수를 최우선으로 합니다.</role>
@@ -1438,7 +1470,7 @@ def _build_event_title_prompt(params: Dict[str, Any]) -> str:
   <location_hint>{event_location or '(없음)'}</location_hint>
   <book_title>{book_title or '(없음)'}</book_title>
   <event_label>{event_label}</event_label>
-  <content_preview>{content_preview[:500]}</content_preview>
+  <content_preview>{content_preview[:content_preview_limit]}</content_preview>
 </input>
 
 <hard_rules>
@@ -1455,10 +1487,27 @@ def _build_event_title_prompt(params: Dict[str, Any]) -> str:
 
 {number_validation.get('instruction', '')}
 
-<output_format>
-  순수한 제목 한 줄만 출력. 따옴표, 부연설명, 번호, 마크다운 금지.
-</output_format>
 </event_title_prompt>"""
+
+
+def _render_narrative_principle_xml(raw_text: str) -> str:
+    text = str(raw_text or "").strip()
+    if not text:
+        return ""
+
+    items: List[str] = []
+    for line in text.splitlines():
+        normalized = re.sub(r'^\s*[-•]\s*', '', str(line or '').strip())
+        normalized = normalized.replace('❌ ', '').replace('✅ ', '').strip()
+        if not normalized:
+            continue
+        items.append(f"  <item>{normalized}</item>")
+
+    if not items:
+        return ""
+
+    return "<narrative_principle>\n" + "\n".join(items) + "\n</narrative_principle>"
+
 
 def build_title_prompt(params: Dict[str, Any]) -> str:
     # No try/except blocking logic here. Let it propagate.
@@ -1473,6 +1522,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     title_scope = params.get('titleScope', {})
     forced_type = params.get('_forcedType')
     stance_text = params.get('stanceText', '')  # 🔑 [NEW] 입장문
+    prompt_lite = bool(params.get('titlePromptLite'))
     title_purpose = resolve_title_purpose(topic, params)
     if title_purpose == 'event_announcement':
         return _build_event_title_prompt(params)
@@ -1497,48 +1547,71 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     election_compliance = get_election_compliance_instruction(status)
     keyword_strategy = get_keyword_strategy_instruction(user_keywords, keywords)
     user_few_shot = build_user_provided_few_shot_instruction(primary_type['id'], params)
+    narrative_principle_xml = '' if prompt_lite else _render_narrative_principle_xml(primary_type.get('principle', ''))
+
+    good_examples_source = list(primary_type.get('good', []))
+    bad_examples_source = list(primary_type.get('bad', []))
+    if prompt_lite:
+        good_examples_source = good_examples_source[:2]
+        bad_examples_source = bad_examples_source[:2]
+
+    stance_limit = 240 if prompt_lite else 500
+    content_limit = 420 if prompt_lite else 800
+    background_limit = 160 if prompt_lite else 300
     
     region_scope_instruction = ""
     if avoid_local_in_title:
         region_scope_instruction = f"""
-[TITLE REGION SCOPE]
-- Target position: {title_scope.get('position', 'metro-level') if title_scope else 'metro-level'}
-- Do NOT use district/town names (gu/gun/dong/eup/myeon) in the title.
-- Use the metro-wide region like "{title_scope.get('regionMetro', 'the city/province') if title_scope else 'the city/province'}".
+<title_region_scope>
+  <target_position>{title_scope.get('position', 'metro-level') if title_scope else 'metro-level'}</target_position>
+  <rule>Do NOT use district/town names (gu/gun/dong/eup/myeon) in the title.</rule>
+  <metro_region>{title_scope.get('regionMetro', 'the city/province') if title_scope else 'the city/province'}</metro_region>
+</title_region_scope>
 """
 
     good_lines = []
-    for i, ex in enumerate(primary_type['good']):
-        good_lines.append(f"{i+1}. \"{ex['title']}\" ({ex.get('chars', 0)}자)\n   → {ex.get('analysis', '')}")
+    for i, ex in enumerate(good_examples_source):
+        good_lines.append(
+            f'  <example index="{i + 1}" chars="{int(ex.get("chars", 0) or 0)}">'
+            f'<title>{ex["title"]}</title>'
+            f'<analysis>{ex.get("analysis", "")}</analysis>'
+            f'</example>'
+        )
     good_examples = "\n".join(good_lines)
 
     bad_lines = []
-    for i, ex in enumerate(primary_type['bad']):
-        bad_lines.append(f"{i+1}. ❌ \"{ex['title']}\"\n   문제: {ex.get('problem', '')}\n   ✅ 수정: \"{ex.get('fix', '')}\"")
+    for i, ex in enumerate(bad_examples_source):
+        bad_lines.append(
+            f'  <example index="{i + 1}">'
+            f'<bad>{ex["title"]}</bad>'
+            f'<problem>{ex.get("problem", "")}</problem>'
+            f'<fix>{ex.get("fix", "")}</fix>'
+            f'</example>'
+        )
     bad_examples = "\n\n".join(bad_lines)
 
     primary_kw_str = user_keywords[0] if user_keywords else '(없음)'
     objective_block = """
 <objective>
-아래 내용을 분석하여, **독자가 클릭하지 않고는 못 배기는 서사적 긴장감이 있는 블로그 제목**을 작성하십시오.
-
-【핵심 원칙: 정보 격차(Information Gap)】
-좋은 제목은 "답"이 아니라 "질문"을 남깁니다.
-- ❌ 선언형 (긴장감 없음): "이재성이 경제 0.7%를 바꾼다" → 답을 다 알려줘서 클릭 불필요
-- ❌ 키워드 나열 (의미 없음): "이재성 부산 AI 3대 강국?" → 문장이 아님
-- ✅ 서사적 긴장감: "부산 경제 0.7%, 왜 이 남자가 뛰어들었나" → 구체적 팩트 + 미해결 질문
-
-【금지】
-- 지루한 공무원 스타일("~개최", "~참석", "~발표")
-- 선언형 결론("~바꾼다", "~이끈다", "~완성한다")
-- 키워드만 나열하고 문장을 완성하지 않는 것
-- 과도한 자극("충격", "경악", "결국 터졌다")
+  <goal>아래 내용을 분석하여, 독자가 클릭하고 싶어지는 서사적 긴장감의 블로그 제목을 작성하십시오.</goal>
+  <core_principle name="information_gap">좋은 제목은 답보다 질문을 남깁니다.</core_principle>
+  <examples>
+    <bad reason="긴장감 부족">이재성이 경제 0.7%를 바꾼다</bad>
+    <bad reason="문장 불완전">이재성 부산 AI 3대 강국?</bad>
+    <good reason="팩트+미해결질문">부산 경제 0.7%, 왜 이 남자가 뛰어들었나</good>
+  </examples>
+  <banned_styles>
+    <item>지루한 공무원 스타일("~개최", "~참석", "~발표")</item>
+    <item>선언형 결론("~바꾼다", "~이끈다", "~완성한다")</item>
+    <item>키워드 나열만 하고 문장을 완성하지 않는 표현</item>
+    <item>과도한 자극("충격", "경악", "결국 터졌다")</item>
+  </banned_styles>
 </objective>
 """.strip()
     style_ban_rule = '"발표", "개최", "참석" 등 보도자료 스타일 금지'
     keyword_position_rule = (
-        f'핵심 키워드 "{primary_kw_str}" 반드시 포함. 키워드 직후에 반드시 구분자(쉼표, 물음표, 조사+쉼표)를 넣어라. '
-        '✅ "부산 지방선거, 왜~" ✅ "부산 지방선거에 뛰어든~" ❌ "부산 지방선거 이재성" '
+        f'핵심 키워드 "{primary_kw_str}" 반드시 포함. 키워드 직후에 구분자(쉼표, 물음표, 조사+쉼표)를 넣어라. '
+        '"부산 지방선거, 왜~", "부산 지방선거에 뛰어든~", "부산 지방선거 이재성" '
         '(네이버가 하나의 키워드로 인식)'
     )
 
@@ -1546,33 +1619,26 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
         event_label = _detect_event_label(topic)
         objective_block = f"""
 <objective>
-아래 내용을 분석하여, **행사 안내 목적이 분명하면서도 클릭하고 싶어지는 제목**을 작성하십시오.
-
-【핵심 원칙: 목적 적합성 우선】
-- 제목은 먼저 "이 글이 행사 안내/초대"라는 점이 즉시 드러나야 합니다.
-- 그 다음에 후킹을 얹습니다. 안내 목적을 흐리면 실패입니다.
-
-【허용】
-- 안내형 표현: "안내", "초대", "개최", "열립니다", "행사명"
-- 날짜/장소/행사명을 자연스럽게 포함한 제목
-- 안전한 후킹 단어: "현장", "직접", "일정", "안내", "초대", "만남", "참석"
-- 추상 문구("핵심 대화 공개", "핵심 메시지 공개") 단독 사용 금지
-
-【권장 공식】
-- [메인 SEO 키워드] + [날짜/장소] + [후킹 단어] + [[행사명]/안내]
-- 예: "[장소명], [날짜] [{event_label}] 안내"
-
-【금지】
-- 추측형/논쟁형/공격형 표현: "진짜 속내", "왜 왔냐", "답할까"
-- 물음표(?) 기반 도발형 제목
-- 과도한 자극("충격", "경악", "결국 터졌다")
+  <goal>아래 내용을 분석하여, 행사 안내 목적이 분명하면서도 클릭하고 싶어지는 제목을 작성하십시오.</goal>
+  <core_principle name="purpose_fit">안내/초대 목적이 먼저 드러나고 후킹은 그 다음에 배치합니다.</core_principle>
+  <allowed>
+    <item>안내형 표현: "안내", "초대", "개최", "열립니다", "행사명"</item>
+    <item>날짜/장소/행사명을 자연스럽게 포함한 제목</item>
+    <item>안전한 후킹 단어: "현장", "직접", "일정", "안내", "초대", "만남", "참석"</item>
+  </allowed>
+  <recommended_formula>[메인 SEO 키워드] + [날짜/장소] + [후킹 단어] + [[행사명]/안내]</recommended_formula>
+  <example>[장소명], [날짜] [{event_label}] 안내</example>
+  <banned_styles>
+    <item>추측형/논쟁형/공격형 표현: "진짜 속내", "왜 왔냐", "답할까"</item>
+    <item>물음표(?) 기반 도발형 제목</item>
+    <item>과도한 자극("충격", "경악", "결국 터졌다")</item>
+  </banned_styles>
 </objective>
 """.strip()
         style_ban_rule = '행사 안내 목적을 흐리는 논쟁형/도발형 카피 금지 (추측·공격·선동 어투 금지)'
         keyword_position_rule = (
             f'핵심 키워드 "{primary_kw_str}" 반드시 포함. 키워드 직후에는 쉼표(,) 또는 조사(에/의/에서 등)를 사용해 분리하세요. '
-            '✅ "[장소명], [날짜] [행사명] 안내" ✅ "[장소명]에서 열리는 [행사명] 안내" '
-            '❌ "[장소명] [인물명] [행사명]"'
+            '"[장소명], [날짜] [행사명] 안내", "[장소명]에서 열리는 [행사명] 안내", "[장소명] [인물명] [행사명]"'
         )
     
     return f"""<title_generation_prompt>
@@ -1588,14 +1654,14 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
   <naver_tip>{primary_type['naverTip']}</naver_tip>
 </content_type>
 
-{('<narrative_principle>' + primary_type['principle'] + '</narrative_principle>') if primary_type.get('principle') else ''}
+{narrative_principle_xml}
 
 <input>
   <topic>{topic}</topic>
   <author>{full_name}</author>
-  <stance_summary priority="Highest">{stance_text[:500] if stance_text else '(없음) - 입장문이 없으면 본문 내용 바탕으로 작성'}</stance_summary>
-  <content_preview>{(content_preview or '')[:800]}</content_preview>
-  <background>{background_text[:300] if background_text else '(없음)'}</background>
+  <stance_summary priority="Highest">{stance_text[:stance_limit] if stance_text else '(없음) - 입장문이 없으면 본문 내용 바탕으로 작성'}</stance_summary>
+  <content_preview>{(content_preview or '')[:content_limit]}</content_preview>
+  <background>{background_text[:background_limit] if background_text else '(없음)'}</background>
 </input>
 
 <examples type="good">
@@ -1609,7 +1675,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 {user_few_shot}
 
 <rules priority="critical">
-  <rule id="length_max">🚨 {TITLE_LENGTH_HARD_MAX}자 이내 (네이버 검색결과 잘림 방지) - 절대 초과 금지!</rule>
+  <rule id="length_max">{TITLE_LENGTH_HARD_MAX}자 이내 (네이버 검색결과 잘림 방지) - 절대 초과 금지.</rule>
   <rule id="length_optimal">{TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자 권장 (클릭률 최고 구간)</rule>
   <rule id="no_slot_placeholder">슬롯 플레이스홀더([행사명], [지역명], [정책명] 등)를 제목에 그대로 출력하지 마세요.</rule>
   <rule id="no_ellipsis">말줄임표("...") 절대 금지</rule>
@@ -1618,6 +1684,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
   <rule id="style_ban">{style_ban_rule}</rule>
   <rule id="narrative_tension">읽은 뒤 "그래서?" "왜?"가 떠오르는 제목이 좋다. 기법을 억지로 넣지 말고 자연스러운 호기심을 만들어라. 선언형 종결("~바꾼다") 금지. 정보 요소 3개 이하.</rule>
   <rule id="info_density">제목에 담는 정보 요소는 최대 3개. SEO 키워드는 1개로 카운트. 요소: SEO키워드, 인명, 수치, 정책명, 수식어. "부산 지방선거, 왜 이 남자가 뛰어들었나" = 2개 OK. "부산 지방선거 이재명 2호 이재성 원칙 선택" = 5개 NG.</rule>
+  <rule id="no_topic_copy">주제(topic) 텍스트를 그대로 또는 거의 그대로 제목으로 사용 금지. 주제의 핵심 방향만 따르되, 표현·어순·구성은 반드시 새롭게 작성할 것.</rule>
 </rules>
 
 {event_title_policy}
@@ -1627,7 +1694,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 {region_scope_instruction}
 
 <topic_priority priority="highest">
-  <instruction>🚨 제목의 방향은 반드시 주제(topic)를 따라야 합니다. 본문 내용이 아무리 많아도 topic이 절대 우선.</instruction>
+  <instruction>제목의 방향은 반드시 주제(topic)를 따라야 합니다. 본문 내용이 아무리 많아도 topic이 절대 우선입니다.</instruction>
   <rules>
     <rule>주제가 "후원"이면 제목도 후원/응원/함께에 관한 것이어야 함 — 경제/AI/정책으로 빠지면 안 됨</rule>
     <rule>주제가 "원칙"이면 제목도 원칙/품격에 관한 것이어야 함</rule>
@@ -1642,7 +1709,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 </topic_priority>
 
 <output_rules>
-  <rule>🚨 {TITLE_LENGTH_HARD_MAX}자 이내 필수</rule>
+  <rule>{TITLE_LENGTH_HARD_MAX}자 이내 필수</rule>
   <rule>{TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자 권장</rule>
   <rule>슬롯 플레이스홀더([행사명] 등) 출력 금지</rule>
   <rule>말줄임표 금지</rule>
@@ -1650,8 +1717,6 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
   <rule>본문에 실제 등장하는 숫자만 사용</rule>
   <rule>지루한 표현 금지</rule>
 </output_rules>
-
-<output_format>순수한 제목 텍스트만. 따옴표 제외.</output_format>
 
 </title_generation_prompt>
 """
@@ -1722,12 +1787,141 @@ def validate_theme_and_content(topic: str, content: str, title: str = '') -> Dic
     except:
         return {'isValid': True, 'overlapScore': 100, 'mismatchReasons': []}
 
+
+def _validate_user_keyword_title_requirements(title: str, user_keywords: List[str]) -> Dict[str, Any]:
+    """사용자 지정 검색어의 제목 반영 여부를 강제 검증한다."""
+    cleaned_title = str(title or '').strip()
+    normalized_user_keywords = [str(item or '').strip() for item in (user_keywords or []) if str(item or '').strip()]
+    if not normalized_user_keywords:
+        return {'passed': True}
+
+    primary_kw = normalized_user_keywords[0]
+    if primary_kw not in cleaned_title:
+        return {
+            'passed': False,
+            'reason': f'1순위 검색어 "{primary_kw}"가 제목에 없습니다.',
+        }
+
+    if len(normalized_user_keywords) < 2:
+        return {'passed': True}
+
+    secondary_kw = normalized_user_keywords[1]
+    if not secondary_kw or secondary_kw == primary_kw:
+        return {'passed': True}
+
+    similar = are_keywords_similar(primary_kw, secondary_kw)
+    if similar:
+        kw2_words = [w for w in secondary_kw.split() if len(w) >= 2]
+        kw1_words = set(primary_kw.split())
+        unique_words = [w for w in kw2_words if w not in kw1_words]
+        if unique_words and not any(word in cleaned_title for word in unique_words):
+            return {
+                'passed': False,
+                'severity': 'soft',
+                'missingType': 'secondary_unique',
+                'primaryKw': primary_kw,
+                'secondaryKw': secondary_kw,
+                'uniqueWords': unique_words,
+                'reason': (
+                    f'2순위 검색어 "{secondary_kw}"의 고유 어절({", ".join(unique_words)})이 제목에 없습니다.'
+                ),
+            }
+        return {'passed': True}
+
+    if secondary_kw not in cleaned_title:
+        return {
+            'passed': False,
+            'missingType': 'secondary_full',
+            'primaryKw': primary_kw,
+            'secondaryKw': secondary_kw,
+            'uniqueWords': [],
+            'reason': f'2순위 검색어 "{secondary_kw}"가 제목에 없습니다.',
+        }
+
+    return {'passed': True}
+
+
+_ROLE_KEYWORD_TOKENS = (
+    '부산시장',
+    '시장',
+    '국회의원',
+    '의원',
+    '후보',
+)
+
+
+def _is_role_keyword_token(token: str) -> bool:
+    normalized = str(token or '').strip()
+    if not normalized:
+        return False
+    return any(role_token == normalized for role_token in _ROLE_KEYWORD_TOKENS)
+
+
+def _repair_title_for_missing_keywords(
+    title: str,
+    keyword_gate: Dict[str, Any],
+) -> Optional[str]:
+    """2순위 키워드 고유 어절을 1순위 키워드를 보존하면서 제목에 삽입한다.
+
+    전략: primary_kw 직후에 괄호 또는 중간점으로 missing word를 추가.
+    예: "부산 영광도서, ..." → "부산 영광도서(서면), ..."
+    """
+    missing_type = keyword_gate.get('missingType', '')
+    primary_kw = str(keyword_gate.get('primaryKw') or '')
+    missing_words = keyword_gate.get('uniqueWords') or []
+
+    if not primary_kw or primary_kw not in title:
+        return None
+
+    if missing_type == 'secondary_unique' and missing_words:
+        secondary_kw = str(keyword_gate.get('secondaryKw') or '').strip()
+        normalized_missing_roles = [word for word in missing_words if _is_role_keyword_token(word)]
+        has_primary_role = bool(
+            re.search(
+                rf"{re.escape(primary_kw)}\s*(?:현\s*)?(?:부산시장|국회의원|의원|시장)(?:\s*후보)?",
+                title,
+            )
+        )
+        # 호칭 충돌(예: "주진우 국회의원" + 2순위 "주진우 부산시장")은
+        # 괄호 삽입 대신 검색 의도형 질문 제목으로 치환한다.
+        if secondary_kw and normalized_missing_roles and has_primary_role:
+            conflict_candidates = (
+                f"{secondary_kw} 왜 거론되나?",
+                f"{secondary_kw} 경쟁력은?",
+                f"{secondary_kw} 쟁점은?",
+            )
+            for candidate in conflict_candidates:
+                if TITLE_LENGTH_HARD_MIN <= len(candidate) <= TITLE_LENGTH_HARD_MAX:
+                    return candidate
+
+        # 고유 어절만 삽입: "부산 영광도서" → "부산 영광도서(서면)"
+        suffix = '·'.join(missing_words)
+        repaired = title.replace(primary_kw, f"{primary_kw}({suffix})", 1)
+    elif missing_type == 'secondary_full':
+        secondary_kw = str(keyword_gate.get('secondaryKw') or '')
+        if not secondary_kw:
+            return None
+        # 전체 2순위 키워드 삽입: primary_kw 뒤에 추가
+        repaired = title.replace(primary_kw, f"{primary_kw}·{secondary_kw}", 1)
+    else:
+        return None
+
+    if len(repaired) > TITLE_LENGTH_HARD_MAX:
+        return None
+    if len(repaired) < TITLE_LENGTH_HARD_MIN:
+        return None
+
+    return repaired
+
+
 def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[str, Any]:
     # No try/except blocking logic here. Let it propagate.
     topic = params.get('topic', '')
     content = params.get('contentPreview', '')
     user_keywords = params.get('userKeywords', [])
     author_name = params.get('fullName', '')
+    repaired_title: Optional[str] = None
+    keyword_gate_soft_reason = ''
     
     if not title:
         return {'score': 0, 'breakdown': {}, 'passed': False, 'suggestions': ['제목이 없습니다']}
@@ -1768,6 +1962,44 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
             'suggestions': ['말줄임표("...") 사용 금지. 내용을 자르지 말고 완결된 제목을 작성하세요.']
         }
 
+    normalized_author = re.sub(r"\s+", "", str(author_name or "")).strip()
+    normalized_title = re.sub(r"\s+", "", str(title or "")).strip()
+    if normalized_author and ("그의" in title or "그녀의" in title) and normalized_author not in normalized_title:
+        return {
+            'score': 0,
+            'breakdown': {
+                'speakerFocus': {
+                    'score': 0,
+                    'max': 100,
+                    'status': '실패',
+                    'reason': '3인칭 소유 표현으로 화자 중심성이 약화됨',
+                }
+            },
+            'passed': False,
+            'suggestions': ['제목에서 "그의/그녀의" 같은 3인칭 소유 표현을 제거하고 화자 중심으로 작성하세요.'],
+        }
+
+    # 0-b. Topic 직복 감지: 주제 텍스트와 지나치게 유사한 제목은 hard fail
+    if topic and len(topic) >= 12:
+        title_purpose = resolve_title_purpose(topic, params)
+        topic_sim_threshold = 0.85 if title_purpose == 'event_announcement' else 0.75
+        topic_sim = _title_similarity(title, topic)
+        if topic_sim >= topic_sim_threshold:
+            return {
+                'score': 0,
+                'breakdown': {
+                    'topicCopy': {
+                        'score': 0, 'max': 100, 'status': '실패',
+                        'reason': f'주제와 유사도 {topic_sim:.0%} (임계 {topic_sim_threshold:.0%})',
+                    },
+                },
+                'passed': False,
+                'suggestions': [
+                    '주제(topic) 텍스트를 그대로 제목으로 사용하지 마세요. '
+                    '표현과 어순을 새롭게 구성하세요.',
+                ],
+            }
+
     title_purpose = resolve_title_purpose(topic, params)
     if title_purpose == 'event_announcement':
         event_validation = validate_event_announcement_title(title, params)
@@ -1785,6 +2017,54 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
                 'passed': False,
                 'suggestions': [str(event_validation.get('reason') or '행사 안내 목적에 맞게 제목을 다시 작성하세요.')]
             }
+
+    keyword_gate = _validate_user_keyword_title_requirements(title, user_keywords)
+    if not keyword_gate.get('passed'):
+        repaired_candidate = _repair_title_for_missing_keywords(title, keyword_gate)
+        if repaired_candidate:
+            re_gate = _validate_user_keyword_title_requirements(repaired_candidate, user_keywords)
+            if re_gate.get('passed'):
+                keyword_gate = re_gate
+                repaired_title = repaired_candidate
+                title = repaired_candidate
+            else:
+                keyword_reason = str(re_gate.get('reason') or keyword_gate.get('reason') or '사용자 검색어 반영 실패')
+                severity = str(re_gate.get('severity') or keyword_gate.get('severity') or '').strip().lower()
+                if severity == 'soft':
+                    keyword_gate_soft_reason = keyword_reason
+                else:
+                    return {
+                        'score': 0,
+                        'breakdown': {
+                            'keywordRequirement': {
+                                'score': 0,
+                                'max': 100,
+                                'status': '실패',
+                                'reason': keyword_reason,
+                            }
+                        },
+                        'passed': False,
+                        'suggestions': [keyword_reason],
+                    }
+        else:
+            keyword_reason = str(keyword_gate.get('reason') or '사용자 검색어 반영 실패')
+            severity = str(keyword_gate.get('severity') or '').strip().lower()
+            if severity == 'soft':
+                keyword_gate_soft_reason = keyword_reason
+            else:
+                return {
+                    'score': 0,
+                    'breakdown': {
+                        'keywordRequirement': {
+                            'score': 0,
+                            'max': 100,
+                            'status': '실패',
+                            'reason': keyword_reason,
+                        }
+                    },
+                        'passed': False,
+                        'suggestions': [keyword_reason],
+                    }
 
     event_anchor_context: Dict[str, Any] = {
         'dateHint': '',
@@ -1804,7 +2084,25 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
     breakdown = {}
     suggestions = []
     title_length = len(title)
-    
+
+    # 길이 초과는 즉시 실패시키지 않고, 먼저 자동 축약 후 재검증한다.
+    if title_length > TITLE_LENGTH_HARD_MAX:
+        fitted_title = _fit_title_length(title)
+        if fitted_title and fitted_title != title:
+            fitted_gate = _validate_user_keyword_title_requirements(fitted_title, user_keywords)
+            if not fitted_gate.get('passed'):
+                recovered_title = _repair_title_for_missing_keywords(fitted_title, fitted_gate)
+                if recovered_title:
+                    recovered_gate = _validate_user_keyword_title_requirements(recovered_title, user_keywords)
+                    if recovered_gate.get('passed'):
+                        fitted_title = recovered_title
+                        fitted_gate = recovered_gate
+
+            if fitted_gate.get('passed'):
+                title = fitted_title
+                repaired_title = fitted_title
+                title_length = len(title)
+
     # Hard fail length check
     if title_length < TITLE_LENGTH_HARD_MIN or title_length > TITLE_LENGTH_HARD_MAX:
              return {
@@ -1813,6 +2111,17 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
             'passed': False,
             'suggestions': [f'제목이 {title_length}자입니다. {TITLE_LENGTH_HARD_MIN}-{TITLE_LENGTH_HARD_MAX}자 범위로 작성하세요.']
         }
+
+    if keyword_gate_soft_reason:
+        breakdown['keywordRequirement'] = {
+            'score': 6,
+            'max': 10,
+            'status': '보완 필요',
+            'reason': keyword_gate_soft_reason,
+        }
+        suggestions.append(keyword_gate_soft_reason)
+    else:
+        breakdown['keywordRequirement'] = {'score': 10, 'max': 10, 'status': '충족'}
 
     # 1. Length Score (Max 20)
     if TITLE_LENGTH_OPTIMAL_MIN <= title_length <= TITLE_LENGTH_OPTIMAL_MAX:
@@ -1883,43 +2192,23 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
                 if end_pos + 1 < len(title) and '\uac00' <= title[end_pos + 1] <= '\ud7a3':
                     kw_delimiter_ok = False
 
-        # 듀얼 키워드 배치 검증: 1번 키워드가 제목 시작에 있는지
+        # 듀얼 키워드 보너스: 1순위 키워드가 제목 시작에 있으면 가산점
         dual_kw_bonus = 0
-        dual_kw_penalty = 0
         if len(user_keywords) >= 2:
             kw1 = user_keywords[0]
             kw1_idx = title.find(kw1)
             kw1_starts_title = 0 <= kw1_idx <= 2  # 제목 맨 앞(0~2자 내)
             if kw1_starts_title:
                 dual_kw_bonus = 3
-            elif kw1_idx < 0:
-                dual_kw_penalty = 5
-                suggestions.append(f'1순위 키워드 "{kw1}"가 제목에 없습니다. 제목 시작 부분에 배치하세요.')
-
-            # 2번 키워드: 유사면 어절 해체 충족, 독립이면 포함 여부
-            kw2 = user_keywords[1]
-            similar = are_keywords_similar(kw1, kw2)
-            if similar:
-                kw2_words = kw2.split()
-                kw1_words = kw1.split()
-                unique_words = [w for w in kw2_words if w not in kw1_words and len(w) >= 2]
-                has_unique = len(unique_words) == 0 or any(w in title for w in unique_words)
-                if not has_unique:
-                    dual_kw_penalty += 3
-                    suggestions.append(f'2순위 키워드 "{kw2}"의 고유 어절({", ".join(unique_words)})이 제목에 없습니다.')
-            else:
-                if kw2 not in title:
-                    dual_kw_penalty += 3
-                    suggestions.append(f'2순위 키워드 "{kw2}"가 제목에 포함되지 않았습니다.')
 
         if any_in_front10:
-            score = min(20, max(0, (20 if kw_delimiter_ok else 15) + dual_kw_bonus - dual_kw_penalty))
+            score = min(20, max(0, (20 if kw_delimiter_ok else 15) + dual_kw_bonus))
             status = '최적' if kw_delimiter_ok else '최적(구분자 부족)'
             breakdown['keywordPosition'] = {'score': score, 'max': 20, 'status': status, 'keyword': front_keyword}
             if not kw_delimiter_ok:
                 suggestions.append(f'키워드 "{front_keyword}" 뒤에 쉼표나 조사를 넣어 다음 단어와 분리하세요. (예: "부산 지방선거, ~")')
         elif any_in_title:
-            score = max(0, 12 - dual_kw_penalty)
+            score = 12
             breakdown['keywordPosition'] = {'score': score, 'max': 20, 'status': '포함됨', 'keyword': any_keyword}
             suggestions.append(f'키워드 "{any_keyword}"를 제목 앞쪽(10자 내)으로 이동하면 SEO 효과 증가.')
         else:
@@ -2098,7 +2387,7 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
     # Normalize to 100
     normalized_score = round(total_score / max_possible * 100) if max_possible > 0 else 0
     
-    return {
+    result = {
         'score': normalized_score,
         'rawScore': total_score,
         'maxScore': max_possible,
@@ -2106,12 +2395,14 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
         'passed': normalized_score >= 70,
         'suggestions': suggestions[:3]
     }
+    if repaired_title:
+        result['repairedTitle'] = repaired_title
+    return result
 
 async def generate_and_validate_title(generate_fn, params: Dict[str, Any], options: Dict[str, Any] = {}) -> Dict[str, Any]:
     min_score = int(options.get('minScore', 70))
     max_attempts = int(options.get('maxAttempts', 3))
     candidate_count = max(1, int(options.get('candidateCount', 5)))
-    soft_accept_min_score = max(0, int(options.get('softAcceptMinScore', 60)))
     similarity_threshold = float(options.get('similarityThreshold', 0.78))
     similarity_threshold = min(max(similarity_threshold, 0.50), 0.95)
     max_similarity_penalty = max(0, int(options.get('maxSimilarityPenalty', 18)))
@@ -2133,14 +2424,16 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
     best_score = -1
     best_result = None
     title_purpose = resolve_title_purpose(str(params.get('topic') or ''), params)
+    generation_failure_streak = 0
 
     for attempt in range(1, max_attempts + 1):
+        effective_candidate_count = 1 if generation_failure_streak > 0 else candidate_count
         if on_progress:
             on_progress({
                 'attempt': attempt,
                 'maxAttempts': max_attempts,
                 'status': 'generating',
-                'candidateCount': candidate_count
+                'candidateCount': effective_candidate_count
             })
 
         # 1. Prompt generation
@@ -2149,17 +2442,20 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
             prompt = build_title_prompt(params)
         else:
             last_attempt = history[-1]
+            suggestion_items = ''
+            for suggestion in last_attempt.get('suggestions', []):
+                suggestion_text = str(suggestion or '').strip()
+                if suggestion_text:
+                    suggestion_items += f"\n    <item>{suggestion_text}</item>"
+            if not suggestion_items:
+                suggestion_items = "\n    <item>이전 문제를 보완해 새 제목을 생성하세요.</item>"
             feedback_prompt = f"""
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ 이전 제목 피드백 (점수: {last_attempt.get('score', 0)}/100)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-이전 제목: "{last_attempt.get('title', '')}"
-문제점:
-{chr(10).join([f'• {s}' for s in last_attempt.get('suggestions', [])])}
-
-위 문제를 해결한 새로운 제목을 작성하세요.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
+<previous_attempt_feedback attempt="{attempt - 1}" score="{last_attempt.get('score', 0)}">
+  <previous_title>{last_attempt.get('title', '')}</previous_title>
+  <issues>{suggestion_items}
+  </issues>
+  <instruction>위 문제를 해결한 새로운 제목을 작성하세요.</instruction>
+</previous_attempt_feedback>
 """
             prompt = feedback_prompt + build_title_prompt(params)
 
@@ -2175,21 +2471,27 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
                 prompt,
                 attempt,
                 idx + 1,
-                candidate_count,
+                effective_candidate_count,
                 disallow_titles,
                 title_purpose,
             )
-            for idx in range(candidate_count)
+            for idx in range(effective_candidate_count)
         ]
 
         # 2. Multi-candidate generation
-        if candidate_count == 1:
-            responses = [await generate_fn(candidate_prompts[0])]
+        if effective_candidate_count == 1:
+            try:
+                responses = [await generate_fn(candidate_prompts[0])]
+            except Exception as error:
+                responses = [error]
         else:
-            responses = await asyncio.gather(
-                *[generate_fn(candidate_prompt) for candidate_prompt in candidate_prompts],
-                return_exceptions=True,
-            )
+            # 빈 응답 예방: 다중 후보를 병렬 호출하지 않고 순차 생성해 모델 부하를 낮춘다.
+            responses = []
+            for candidate_prompt in candidate_prompts:
+                try:
+                    responses.append(await generate_fn(candidate_prompt))
+                except Exception as error:
+                    responses.append(error)
 
         generation_errors: List[str] = []
         candidate_results: List[Dict[str, Any]] = []
@@ -2214,6 +2516,15 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
                 continue
 
             score_result = calculate_title_quality_score(generated_title, params)
+            repaired_title = str(score_result.get('repairedTitle') or '').strip()
+            if repaired_title and repaired_title != generated_title:
+                logger.info(
+                    "[TitleGen] 키워드 repair 적용(후보 %s): \"%s\" -> \"%s\"",
+                    idx,
+                    generated_title,
+                    repaired_title,
+                )
+                generated_title = repaired_title
             similarity_meta = _compute_similarity_penalty(
                 generated_title,
                 disallow_titles,
@@ -2233,11 +2544,28 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
             })
 
         if not candidate_results:
+            generation_failure_streak += 1
             if generation_errors and len(generation_errors) == len(candidate_prompts):
-                raise RuntimeError(
-                    f"[TitleGen] 제목 생성 실패: attempt {attempt}에서 후보 {candidate_count}개 생성이 모두 실패했습니다. "
-                    f"첫 오류: {generation_errors[0]}"
+                first_error = str(generation_errors[0])
+                logger.warning(
+                    "[TitleGen] attempt %s에서 후보 %s개 생성이 모두 실패했습니다. 첫 오류: %s",
+                    attempt,
+                    effective_candidate_count,
+                    first_error,
                 )
+                history.append({
+                    'attempt': attempt,
+                    'title': '',
+                    'score': 0,
+                    'suggestions': [
+                        f'모델 생성 오류: {first_error[:180]}',
+                        '다음 시도에서 후보 수를 줄여 안정적으로 재생성합니다.',
+                    ],
+                    'breakdown': {'generationError': {'score': 0, 'max': 100, 'status': '실패'}},
+                    'candidateCount': effective_candidate_count,
+                    'generationErrors': generation_errors[:3],
+                })
+                continue
 
             history.append({
                 'attempt': attempt,
@@ -2245,10 +2573,11 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
                 'score': 0,
                 'suggestions': ['후보 제목이 모두 비어 있습니다. 프롬프트 또는 모델 응답을 확인하세요.'],
                 'breakdown': {'empty': {'score': 0, 'max': 100, 'status': '실패'}},
-                'candidateCount': candidate_count,
+                'candidateCount': effective_candidate_count,
             })
             continue
 
+        generation_failure_streak = 0
         selected = max(
             candidate_results,
             key=lambda item: (item.get('adjustedScore', 0), item.get('baseScore', 0)),
@@ -2301,7 +2630,7 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
                     'status': 'passed',
                     'score': current_score,
                     'baseScore': selected.get('baseScore', 0),
-                    'candidateCount': candidate_count
+                    'candidateCount': effective_candidate_count
                 })
 
             return {
@@ -2325,51 +2654,22 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
         })
 
     if best_result is None:
+        last_generation_error = ''
+        for item in reversed(history):
+            if not isinstance(item, dict):
+                continue
+            errors = item.get('generationErrors')
+            if isinstance(errors, list) and errors:
+                last_generation_error = str(errors[0])
+                break
+        if last_generation_error:
+            raise RuntimeError(
+                f"[TitleGen] 제목 생성 실패: {max_attempts}회 시도 모두 생성 오류가 발생했습니다. "
+                f"마지막 오류: {last_generation_error}"
+            )
         raise RuntimeError(
             f"[TitleGen] 제목 생성 실패: {max_attempts}회 시도 모두 유효한 제목을 생성하지 못했습니다."
         )
-
-    if title_purpose == 'event_announcement':
-        logger.warning(
-            "[TitleGen] event_announcement soft-accept: score=%s < minScore=%s, title=%s",
-            best_score,
-            min_score,
-            best_title,
-        )
-        return {
-            'title': best_title,
-            'score': max(best_score, 0),
-            'baseScore': int(best_result.get('baseScore', max(best_score, 0))),
-            'similarityPenalty': int(best_result.get('similarityPenalty', 0)),
-            'attempts': max_attempts,
-            'passed': False,
-            'softAccepted': True,
-            'history': history,
-            'breakdown': dict(best_result.get('breakdown', {})),
-        }
-
-    # 일반 목적 제목도 품질 하한을 만족하면 실패 대신 soft-accept 처리
-    # (파이프라인 전체 실패를 막고, 후속 가드/에디터 단계에서 추가 보정)
-    if best_score >= soft_accept_min_score:
-        logger.warning(
-            "[TitleGen] generic soft-accept: purpose=%s score=%s < minScore=%s (softAcceptMinScore=%s), title=%s",
-            title_purpose or "(none)",
-            best_score,
-            min_score,
-            soft_accept_min_score,
-            best_title,
-        )
-        return {
-            'title': best_title,
-            'score': max(best_score, 0),
-            'baseScore': int(best_result.get('baseScore', max(best_score, 0))),
-            'similarityPenalty': int(best_result.get('similarityPenalty', 0)),
-            'attempts': max_attempts,
-            'passed': False,
-            'softAccepted': True,
-            'history': history,
-            'breakdown': dict(best_result.get('breakdown', {})),
-        }
 
     best_suggestions = best_result.get('suggestions', []) if isinstance(best_result, dict) else []
     suggestion_text = ', '.join(best_suggestions) if best_suggestions else '없음'

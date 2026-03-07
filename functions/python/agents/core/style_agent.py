@@ -1,9 +1,17 @@
 import re
-import json
 import logging
 from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
+
+STYLE_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "content": {"type": "string"},
+        "html_content": {"type": "string"},
+    },
+    "required": ["content"],
+}
 
 def strip_html(text: str) -> str:
     if not text:
@@ -84,7 +92,7 @@ class StyleAgent(Agent):
         final_content = content
         final_length = current_length
 
-        from ..common.gemini_client import generate_content_async
+        from ..common.gemini_client import StructuredOutputError, generate_json_async
 
         while attempt < max_attempts:
             attempt += 1
@@ -100,18 +108,31 @@ class StyleAgent(Agent):
                 'userProfile': user_profile,
                 'keywordCounts': keyword_counts
             })
+            prompt += (
+                "\n\n# Output Contract\n"
+                "Return JSON object only.\n"
+                "{\n"
+                '  "content": "<h2>...</h2><p>...</p>"\n'
+                "}\n"
+                "No markdown code fences."
+            )
 
             logger.info(f"📝 [StyleAgent] Prompt generated ({len(prompt)} chars, Attempt {attempt})")
 
             try:
-                response_text = await generate_content_async(
+                response_payload = await generate_json_async(
                     prompt,
                     model_name=self.model_name,
+                    response_schema=STYLE_RESPONSE_SCHEMA,
+                    required_keys=("content",),
                     max_output_tokens=4000,
-                    temperature=0.3  # Lower temp for style correction
+                    temperature=0.3,
+                    retries=2,
                 )
 
-                styled = self.parse_response(response_text, working_content)
+                styled = str(response_payload.get('content') or '').strip()
+                if not styled:
+                    raise StructuredOutputError("content is empty")
                 styled_length = len(strip_html(styled))
                 
                 if styled_length < working_length * 0.7:
@@ -132,6 +153,9 @@ class StyleAgent(Agent):
                     
                 working_content = final_content
             
+            except StructuredOutputError as e:
+                logger.error(f"❌ [StyleAgent] Structured output validation failed: {e}")
+                break
             except Exception as e:
                 logger.error(f"❌ [StyleAgent] Error: {e}")
                 break
@@ -234,35 +258,6 @@ class StyleAgent(Agent):
 
       ## 출력 형식
       교정된 전체 본문만 출력하세요. 설명 없이 HTML 본문만 출력하세요."""
-
-    def parse_response(self, response_text: str, original: str) -> str:
-        if not response_text:
-            return original
-            
-        try:
-             # Try clean code block
-             json_match = re.search(r'```(?:json)?\s*([\s\S]*?)```', response_text)
-             clean_text = json_match.group(1).strip() if json_match else response_text.strip()
-             
-             # Try JSON parse
-             try:
-                 parsed = json.loads(clean_text)
-                 if parsed.get('content'): return parsed['content']
-                 if parsed.get('html_content'): return parsed['html_content']
-             except:
-                 pass
-             
-             # HTML fallback
-             if '<p>' in clean_text or '<h2>' in clean_text:
-                 # Clean HTML code blocks
-                 clean_text = re.sub(r'```html?\s*', '', clean_text, flags=re.IGNORECASE)
-                 clean_text = clean_text.replace('```', '').strip()
-                 return clean_text
-                 
-        except Exception:
-            pass
-            
-        return original
 
     def check_style_issues(self, content: str) -> bool:
         issues = [

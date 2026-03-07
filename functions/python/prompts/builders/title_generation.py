@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Dict, Optional, Sequence
 
+from agents.common.editorial import TITLE_SPEC
 from agents.common.title_generation import (
     TITLE_TYPES,
     are_keywords_similar as _are_keywords_similar,
@@ -36,7 +37,7 @@ KEYWORD_POSITION_GUIDE: Dict[str, Dict[str, str]] = {
         "example": '"월 50만원", "주거·일자리"',
     },
     "end": {
-        "range": "18-35자",
+        "range": f"18-{TITLE_SPEC['hardMax']}자",
         "weight": "60%",
         "use": "행동 유도, 긴급성, 신뢰성 신호",
         "example": '"신청 마감 3일 전", "5대 성과"',
@@ -105,14 +106,14 @@ def get_title_guideline_for_template(
     return f"""<title_quality_conditions platform="naver-blog">
 
 <requirements priority="must" description="위반 시 재생성">
-  <rule id="length_max">35자 이내 (네이버 검색결과 35자 초과 시 잘림)</rule>
+  <rule id="length_max">{TITLE_SPEC['hardMax']}자 이내</rule>
   <rule id="numbers_only">숫자는 본문에 실제 등장한 것만 사용 (날조 금지)</rule>
   <rule id="topic_core">주제 핵심 요소 반영 필수</rule>
   <rule id="no_ellipsis">말줄임표("...") 절대 금지</rule>
 </requirements>
 
 <recommendations priority="should" description="품질 향상">
-  <rule id="optimal_length">15-30자 (클릭률 최고 구간)</rule>
+  <rule id="optimal_length">{TITLE_SPEC['optimalMin']}-{TITLE_SPEC['optimalMax']}자 (클릭률 최고 구간)</rule>
   <rule id="keyword_position">{f'키워드 "{primary_kw}"를 제목 앞 8자 안에 배치' if primary_kw else '핵심 키워드를 제목 앞 8자 안에 배치'}</rule>
   <rule id="concrete_numbers">구체적 숫자 포함 (274명, 85억 등)</rule>
   {f'<rule id="speaker_pattern">화자 연결 패턴: "{author}이 본", "칭찬한 {author}"</rule>' if is_commentary_category else ''}
@@ -124,7 +125,7 @@ def get_title_guideline_for_template(
   <rule type="must">정보 요소 3개 이하</rule>
 </optional>
 
-<examples type="good" description="15-30자">
+<examples type="good" description="{TITLE_SPEC['optimalMin']}-{TITLE_SPEC['optimalMax']}자">
   <example length="20">부산 지방선거, 왜 이 남자가 뛰어들었나</example>
   <example length="21">부산 지방선거에 뛰어든 부두 노동자의 아들</example>
   <example length="17">부산 지방선거, {author}은 왜 다른가</example>

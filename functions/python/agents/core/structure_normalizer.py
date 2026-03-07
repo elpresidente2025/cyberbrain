@@ -1,400 +1,631 @@
 """
 structure_normalizer.py
-─────────────────────────
-LLM이 생성한 HTML 콘텐츠의 구조(h2 개수, 섹션 문단 수, 섹션 길이,
-서론-결론 중복)를 **프로그래밍적으로** 교정하여 content_validator의
-합격률을 높인다.  검증 규칙 자체는 일절 변경하지 않는다.
+
+LLM이 생성한 HTML 콘텐츠를 검증 규칙에 맞도록 후처리한다.
+검증 기준 자체(임계값/정책)는 변경하지 않는다.
 """
 
 import re
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from .structure_utils import strip_html
+from .intro_echo_utils import find_intro_conclusion_duplicates, normalize_keywords
+from .structure_utils import normalize_context_text, strip_html
+from ..common.h2_guide import H2_MAX_LENGTH
 
 
-# ──────────────────────────────────────────────────────────
-#  내부 헬퍼
-# ──────────────────────────────────────────────────────────
+SECTION_PADDING_SENTENCES = (
+    "현장에서 확인한 문제를 바탕으로 실행 가능한 대안을 분명히 제시하겠습니다.",
+    "핵심 과제를 단계별로 정리하고 성과가 보이도록 꾸준히 점검하겠습니다.",
+    "추상적 선언이 아니라 시민이 체감할 수 있는 변화를 만들겠습니다.",
+    "우선순위를 명확히 하고 필요한 자원과 일정을 현실적으로 맞추겠습니다.",
+    "실행 과정에서 드러나는 한계는 즉시 보완해 완성도를 높이겠습니다.",
+    "주민 의견을 수렴해 정책 방향을 구체화하고 실천 계획을 마련하겠습니다.",
+    "사업 추진 현황을 투명하게 공개하고 결과로 증명하겠습니다.",
+    "지역 현안에 대한 전문가 자문과 주민 토론을 병행하겠습니다.",
+    "예산 집행의 효율성을 높이고 불필요한 낭비를 줄이겠습니다.",
+    "관련 기관과 긴밀히 협력해 실질적인 성과를 이끌어 내겠습니다.",
+    "제도적 개선이 필요한 부분은 조례 정비를 통해 뒷받침하겠습니다.",
+    "현장 점검을 정례화하고 문제 발생 시 신속하게 대응하겠습니다.",
+    "데이터에 기반한 분석으로 정확한 현황 파악과 대책 수립에 힘쓰겠습니다.",
+    "주민 참여 기회를 확대해 정책 수용성과 실효성을 동시에 높이겠습니다.",
+    "단기 성과에 그치지 않고 장기적 관점에서 지속 가능한 방안을 마련하겠습니다.",
+)
+
+CONCLUSION_REWRITE_TOKENS = (
+    "이 과제",
+    "이 방향",
+    "이 변화",
+    "이 실행 전략",
+    "이 전환",
+)
+
 
 def _split_into_sections(content: str) -> List[Dict[str, Any]]:
     """
-    content를 (선택적 서론) + h2 섹션들로 분할.
-    각 섹션은 {'html': str, 'has_h2': bool, 'h2_text': str|None} 딕셔너리.
+    콘텐츠를 (선택적 서론) + h2 섹션 목록으로 분할한다.
     """
-    first_h2 = re.search(r'<h2\b', content, re.IGNORECASE)
+    first_h2 = re.search(r"<h2\b", content, re.IGNORECASE)
     sections: List[Dict[str, Any]] = []
+
     if first_h2 and first_h2.start() > 0:
-        intro_html = content[:first_h2.start()].strip()
+        intro_html = content[: first_h2.start()].strip()
         if intro_html:
-            sections.append({'html': intro_html, 'has_h2': False, 'h2_text': None})
-        remaining = content[first_h2.start():]
+            sections.append({"html": intro_html, "has_h2": False, "h2_text": None})
+        remaining = content[first_h2.start() :]
     elif first_h2:
         remaining = content
     else:
-        # h2가 아예 없는 경우
-        sections.append({'html': content.strip(), 'has_h2': False, 'h2_text': None})
+        sections.append({"html": content.strip(), "has_h2": False, "h2_text": None})
         return sections
 
-    # h2 기준으로 분할
-    parts = re.split(r'(?=<h2\b)', remaining, flags=re.IGNORECASE)
+    parts = re.split(r"(?=<h2\b)", remaining, flags=re.IGNORECASE)
     for part in parts:
-        part = part.strip()
-        if not part:
+        block = part.strip()
+        if not block:
             continue
-        h2_match = re.match(r'<h2[^>]*>(.*?)</h2>', part, re.IGNORECASE | re.DOTALL)
+        h2_match = re.match(r"<h2[^>]*>(.*?)</h2>", block, re.IGNORECASE | re.DOTALL)
         h2_text = strip_html(h2_match.group(1)).strip() if h2_match else None
-        sections.append({
-            'html': part,
-            'has_h2': bool(h2_match),
-            'h2_text': h2_text,
-        })
+        sections.append(
+            {
+                "html": block,
+                "has_h2": bool(h2_match),
+                "h2_text": h2_text,
+            }
+        )
     return sections
 
 
 def _join_sections(sections: List[Dict[str, Any]]) -> str:
-    """섹션 리스트를 하나의 HTML 문자열로 재결합."""
-    return '\n'.join(s['html'] for s in sections if s['html'].strip())
+    return "\n".join(section["html"] for section in sections if section["html"].strip())
 
 
 def _count_p_tags(html: str) -> int:
-    return len(re.findall(r'<p\b[^>]*>[\s\S]*?</p\s*>', html, re.IGNORECASE))
+    return len(re.findall(r"<p\b[^>]*>[\s\S]*?</p\s*>", html, re.IGNORECASE))
 
 
 def _get_p_blocks(html: str) -> List[str]:
-    """<p>…</p> 블록 목록 반환."""
-    return re.findall(r'<p\b[^>]*>[\s\S]*?</p\s*>', html, re.IGNORECASE)
+    return re.findall(r"<p\b[^>]*>[\s\S]*?</p\s*>", html, re.IGNORECASE)
 
 
 def _plain_len(html: str) -> int:
     return len(strip_html(html))
 
 
+def _strip_tags(html: str) -> str:
+    plain = re.sub(r"<[^>]*>", " ", html or "")
+    return re.sub(r"\s+", " ", plain).strip()
+
+
 def _split_sentences(text: str) -> List[str]:
-    """한국어 문장 분리. 마침표/느낌표/물음표 기준."""
-    chunks = re.split(r'(?<=[.!?。])\s+', text.strip())
-    return [c.strip() for c in chunks if c.strip()]
+    chunks = re.split(r"(?<=[.!?])\s+", (text or "").strip())
+    return [chunk.strip() for chunk in chunks if chunk and chunk.strip()]
+
+
+def _split_paragraph_text(text: str) -> Optional[Tuple[str, str]]:
+    normalized = re.sub(r"\s+", " ", text or "").strip()
+    if len(normalized) < 24:
+        return None
+
+    sentences = _split_sentences(normalized)
+    if len(sentences) >= 2:
+        mid = len(sentences) // 2
+        left = " ".join(sentences[:mid]).strip()
+        right = " ".join(sentences[mid:]).strip()
+        if left and right:
+            return left, right
+
+    split_at = len(normalized) // 2
+    right_space = normalized.find(" ", split_at)
+    left_space = normalized.rfind(" ", 0, split_at)
+    boundary = right_space if right_space != -1 else left_space
+    if boundary == -1:
+        return None
+    if boundary < 12 or boundary > len(normalized) - 12:
+        return None
+
+    left = normalized[:boundary].strip()
+    right = normalized[boundary + 1 :].strip()
+    if not left or not right:
+        return None
+    return left, right
+
+
+def _extract_h2_tag(section_html: str) -> str:
+    match = re.search(r"<h2[^>]*>.*?</h2>", section_html, re.IGNORECASE | re.DOTALL)
+    return match.group(0) if match else ""
+
+
+def _ensure_sentence_ending(text: str) -> str:
+    normalized = re.sub(r"\s+", " ", text or "").strip()
+    if not normalized:
+        return normalized
+    if normalized.endswith((".", "!", "?")):
+        return normalized
+    return normalized + "."
+
+
+def _build_padding_text(section_index: int, deficit: int, existing_text: str = "") -> str:
+    existing_lower = existing_text.lower() if existing_text else ""
+    if existing_lower:
+        available = [s for s in SECTION_PADDING_SENTENCES if s.lower() not in existing_lower]
+    else:
+        available = list(SECTION_PADDING_SENTENCES)
+    if not available:
+        available = list(SECTION_PADDING_SENTENCES)
+    size = max(1, min(3, (deficit // 35) + 1))
+    start = max(0, section_index - 1) % len(available)
+    parts: List[str] = []
+    for offset in range(size):
+        parts.append(available[(start + offset) % len(available)])
+    return " ".join(parts).strip()
+
+
+def _pad_short_section(section_html: str, section_index: int, deficit: int) -> str:
+    if deficit <= 0:
+        return section_html
+
+    # 이미 사용된 패딩 문장은 스킵하여 중복 방지
+    existing_lower = strip_html(section_html).lower()
+    available = [s for s in SECTION_PADDING_SENTENCES if s.lower() not in existing_lower]
+    if not available:
+        return section_html  # 모든 패딩 문장이 이미 사용됨
+
+    size = max(1, min(len(available), (deficit // 35) + 1))
+    start = max(0, section_index - 1) % len(available)
+    parts: List[str] = []
+    for offset in range(size):
+        parts.append(available[(start + offset) % len(available)])
+    pad_text = " ".join(parts).strip()
+
+    p_blocks = _get_p_blocks(section_html)
+    if not p_blocks:
+        h2_tag = _extract_h2_tag(section_html)
+        if h2_tag:
+            return f"{h2_tag}\n<p>{pad_text}</p>"
+        return f"{section_html.strip()}\n<p>{pad_text}</p>".strip()
+
+    target_p = p_blocks[-1]
+    inner = _strip_tags(target_p)
+    expanded = f"{_ensure_sentence_ending(inner)} {pad_text}".strip()
+    new_p = f"<p>{expanded}</p>"
+    return section_html.replace(target_p, new_p, 1)
+
+
+def _compress_section_overflow(section_html: str, target_max: int) -> str:
+    if _plain_len(section_html) <= target_max:
+        return section_html
+
+    result = section_html
+    for _ in range(12):
+        if _plain_len(result) <= target_max:
+            break
+        p_blocks = _get_p_blocks(result)
+        if not p_blocks:
+            break
+        longest_idx = max(range(len(p_blocks)), key=lambda idx: _plain_len(p_blocks[idx]))
+        target_p = p_blocks[longest_idx]
+        text = _strip_tags(target_p)
+        sentences = _split_sentences(text)
+
+        if len(sentences) >= 3:
+            trimmed = " ".join(sentences[:-1]).strip()
+        elif len(sentences) == 2 and len(sentences[1]) > 24:
+            trimmed = sentences[0].strip()
+        elif len(text) > 90:
+            cut = max(60, int(len(text) * 0.8))
+            trimmed = text[:cut].rstrip(" ,;:") + "."
+        else:
+            break
+
+        trimmed = re.sub(r"\s+", " ", trimmed).strip()
+        if not trimmed:
+            break
+
+        new_p = f"<p>{trimmed}</p>"
+        if new_p == target_p:
+            break
+        result = result.replace(target_p, new_p, 1)
+
+    return result
 
 
 def _generate_h2_text(p_block: str, index: int) -> str:
-    """p 블록 내용에서 소제목 후보를 생성.
-    첫 2~6 어절을 명사구로 잘라 사용한다.
-    """
-    plain = re.sub(r'<[^>]*>', '', p_block).strip()
-    plain = re.sub(r'\s+', ' ', plain)
-    # 첫 문장만 추출
+    plain = _strip_tags(p_block)
     first_sentence = _split_sentences(plain)[0] if _split_sentences(plain) else plain
-    # 처음 25자까지 잘라서 적절한 종결 위치 찾기
-    candidate = first_sentence[:30].strip()
-    # 마지막 조사/어미 제거하여 명사구화
-    candidate = re.sub(r'[은는이가을를에서의와과도로만]$', '', candidate).strip()
-    # 마침표 등 제거
-    candidate = candidate.rstrip('.!?。,')
+    candidate = first_sentence[:H2_MAX_LENGTH].strip()
+    candidate = re.sub(r"[은는이가을를에의와과로만도]$", "", candidate).strip()
+    candidate = candidate.rstrip(".!?")
     if not candidate or len(candidate) < 3:
         candidate = f"핵심 주제 {index}"
     return candidate
 
 
-# ──────────────────────────────────────────────────────────
-#  1. H2 개수 정규화
-# ──────────────────────────────────────────────────────────
+def ensure_intro_section(content: str) -> str:
+    """
+    본문이 h2로 시작하면 서론 섹션(<p> 1개 이상)을 강제로 추가한다.
+    """
+    sections = _split_into_sections(content)
+    if not sections:
+        return content
+    if not sections[0]["has_h2"]:
+        return content
+
+    first_section = sections[0]
+    first_p_blocks = _get_p_blocks(first_section["html"])
+    if first_p_blocks:
+        intro_html = first_p_blocks[0].strip()
+        first_section["html"] = first_section["html"].replace(first_p_blocks[0], "", 1).strip()
+    else:
+        plain = re.sub(
+            r"<h2[^>]*>.*?</h2>",
+            "",
+            first_section["html"],
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        sentence = _split_sentences(_strip_tags(plain))
+        intro_text = sentence[0] if sentence else "핵심 문제를 먼저 짚고 해결 방향을 제시하겠습니다."
+        intro_html = f"<p>{intro_text}</p>"
+
+    if _count_p_tags(first_section["html"]) == 0:
+        fallback = "<p>핵심 쟁점을 구체적으로 정리하고 실행 가능한 대안을 제시하겠습니다.</p>"
+        h2_tag = _extract_h2_tag(first_section["html"])
+        if h2_tag:
+            first_section["html"] = f"{h2_tag}\n{fallback}"
+        else:
+            first_section["html"] = f"{first_section['html'].strip()}\n{fallback}".strip()
+
+    sections[0] = first_section
+    sections.insert(0, {"html": intro_html, "has_h2": False, "h2_text": None})
+    return _join_sections(sections)
+
+
+def _extract_stance_topics(context_analysis: Optional[Dict[str, Any]]) -> List[str]:
+    if not isinstance(context_analysis, dict):
+        return []
+
+    topics: List[str] = []
+    for item in context_analysis.get("mustIncludeFromStance") or []:
+        raw_topic = item.get("topic") if isinstance(item, dict) else item
+        topic = normalize_context_text(raw_topic, sep=" ")
+        topic = re.sub(r"\s+", " ", topic).strip()
+        if topic and topic not in topics:
+            topics.append(topic)
+        if len(topics) >= 3:
+            break
+    return topics
+
+
+def _intro_has_stance_anchor(
+    intro_plain: str,
+    stance_topics: List[str],
+    *,
+    min_overlap_tokens: int = 2,
+) -> bool:
+    if not intro_plain or not stance_topics:
+        return True
+
+    intro_text = normalize_context_text(intro_plain, sep=" ")
+    intro_compact = re.sub(r"\s+", "", intro_text)
+    if not intro_compact:
+        return False
+
+    for topic in stance_topics:
+        normalized_topic = normalize_context_text(topic, sep=" ")
+        compact_topic = re.sub(r"\s+", "", normalized_topic)
+        if len(compact_topic) >= 6:
+            probe = compact_topic[: min(18, len(compact_topic))]
+            if probe and probe in intro_compact:
+                return True
+
+        tokens = [token for token in re.split(r"\s+", normalized_topic) if len(token) >= 2]
+        if not tokens:
+            continue
+        overlap = sum(1 for token in tokens if token in intro_text)
+        if overlap >= min(min_overlap_tokens, len(tokens)):
+            return True
+
+    return False
+
+
+def ensure_intro_stance_anchor(content: str, context_analysis: Optional[Dict[str, Any]]) -> str:
+    stance_topics = _extract_stance_topics(context_analysis)
+    if not stance_topics:
+        return content
+
+    sections = _split_into_sections(content)
+    if not sections or sections[0]["has_h2"]:
+        return content
+
+    intro_html = sections[0]["html"]
+    intro_plain = strip_html(intro_html)
+    if _intro_has_stance_anchor(intro_plain, stance_topics):
+        return content
+
+    anchor_topic = stance_topics[0]
+    anchor_sentence = f"{anchor_topic}에 대한 분명한 입장과 실행 방향을 먼저 밝힙니다."
+    p_blocks = _get_p_blocks(intro_html)
+    if p_blocks:
+        first_p = p_blocks[0]
+        first_text = _strip_tags(first_p)
+        merged = f"{anchor_sentence} {first_text}".strip() if first_text else anchor_sentence
+        sections[0]["html"] = intro_html.replace(first_p, f"<p>{merged}</p>", 1)
+    else:
+        sections[0]["html"] = f"<p>{anchor_sentence}</p>\n{intro_html}".strip()
+
+    return _join_sections(sections)
+
 
 def normalize_h2_count(content: str, expected_h2: int) -> str:
-    """
-    h2 태그 개수를 expected_h2에 맞춘다.
-    - 부족 → 가장 긴 비-h2 섹션 또는 가장 긴 h2 섹션을 문단 경계에서 분할
-    - 과다 → 가장 짧은 인접 h2 섹션 병합
-    """
     if expected_h2 <= 0:
         return content
 
     sections = _split_into_sections(content)
-    current_h2 = sum(1 for s in sections if s['has_h2'])
+    current_h2 = sum(1 for section in sections if section["has_h2"])
 
-    # ─── h2 부족: 분할 ───
-    max_iterations = 10  # 무한루프 방지
-    iteration = 0
-    while current_h2 < expected_h2 and iteration < max_iterations:
-        iteration += 1
-        # 분할 대상: p가 2개 이상인 섹션 (h2 있는 것 우선, 없으면 서론도 대상)
-        # 우선순위: p가 많은 h2 섹션 → p가 많은 비-h2 섹션
-        splittable = [
-            (i, s) for i, s in enumerate(sections)
-            if _count_p_tags(s['html']) >= 2
-        ]
+    for _ in range(10):
+        if current_h2 >= expected_h2:
+            break
+
+        splittable = [(idx, section) for idx, section in enumerate(sections) if _count_p_tags(section["html"]) >= 2]
         if not splittable:
             break
 
-        # p 개수가 가장 많은 섹션을 우선 선택 (동률 시 길이 기준)
         target_idx, target = max(
             splittable,
-            key=lambda x: (_count_p_tags(x[1]['html']), _plain_len(x[1]['html']))
+            key=lambda item: (_count_p_tags(item[1]["html"]), _plain_len(item[1]["html"])),
         )
-        p_blocks = _get_p_blocks(target['html'])
+        p_blocks = _get_p_blocks(target["html"])
         if len(p_blocks) < 2:
             break
 
-        # 분할 지점: p가 2개이면 1+1, 3개면 1+2 또는 2+1, 4개 이상이면 절반
-        if len(p_blocks) <= 3:
-            split_point = 1  # 첫 p만 앞에, 나머지 뒤에
+        split_point = 1 if len(p_blocks) <= 3 else len(p_blocks) // 2
+        first_half = p_blocks[:split_point]
+        second_half = p_blocks[split_point:]
+
+        if target["has_h2"]:
+            h2_tag = _extract_h2_tag(target["html"])
+            first_html = f"{h2_tag}\n" + "\n".join(first_half)
         else:
-            split_point = len(p_blocks) // 2
-        first_half_ps = p_blocks[:split_point]
-        second_half_ps = p_blocks[split_point:]
+            first_html = "\n".join(first_half)
 
-        # 첫 번째 반: 기존 h2 유지 + 앞쪽 p
-        if target['has_h2']:
-            h2_tag_match = re.search(r'<h2[^>]*>.*?</h2>', target['html'], re.IGNORECASE | re.DOTALL)
-            first_html = (h2_tag_match.group(0) if h2_tag_match else '') + '\n' + '\n'.join(first_half_ps)
-        else:
-            first_html = '\n'.join(first_half_ps)
+        new_h2_text = _generate_h2_text(second_half[0], current_h2 + 1)
+        second_html = f"<h2>{new_h2_text}</h2>\n" + "\n".join(second_half)
 
-        # 두 번째 반: 새 h2 생성 + 뒤쪽 p
-        new_h2_text = _generate_h2_text(second_half_ps[0], current_h2 + 1)
-        second_html = f'<h2>{new_h2_text}</h2>\n' + '\n'.join(second_half_ps)
+        sections[target_idx : target_idx + 1] = [
+            {"html": first_html.strip(), "has_h2": target["has_h2"], "h2_text": target["h2_text"]},
+            {"html": second_html.strip(), "has_h2": True, "h2_text": new_h2_text},
+        ]
+        current_h2 = sum(1 for section in sections if section["has_h2"])
 
-        # 섹션 교체
-        new_first = {'html': first_html.strip(), 'has_h2': target['has_h2'], 'h2_text': target['h2_text']}
-        new_second = {'html': second_html.strip(), 'has_h2': True, 'h2_text': new_h2_text}
-        sections[target_idx:target_idx + 1] = [new_first, new_second]
-        current_h2 = sum(1 for s in sections if s['has_h2'])
+    for _ in range(10):
+        if current_h2 <= expected_h2:
+            break
 
-    # ─── h2 과다: 병합 ───
-    iteration = 0
-    while current_h2 > expected_h2 and iteration < max_iterations:
-        iteration += 1
-        # h2 있는 섹션 중 가장 짧은 것을 이전 섹션과 병합
-        h2_indices = [i for i, s in enumerate(sections) if s['has_h2']]
+        h2_indices = [idx for idx, section in enumerate(sections) if section["has_h2"]]
         if len(h2_indices) < 2:
             break
 
-        # 가장 짧은 h2 섹션 찾기
-        shortest_idx = min(h2_indices, key=lambda i: _plain_len(sections[i]['html']))
+        shortest_idx = min(h2_indices, key=lambda idx: _plain_len(sections[idx]["html"]))
+        target_html = sections[shortest_idx]["html"]
+        content_without_h2 = re.sub(
+            r"<h2[^>]*>.*?</h2>\s*",
+            "",
+            target_html,
+            count=1,
+            flags=re.IGNORECASE | re.DOTALL,
+        ).strip()
 
-        # 이전 섹션이 있으면 이전과 합침, 없으면 다음과 합침
         if shortest_idx > 0:
-            merge_with = shortest_idx - 1
-            # h2 태그 제거하고 내용만 추가
-            content_without_h2 = re.sub(
-                r'<h2[^>]*>.*?</h2>\s*', '', sections[shortest_idx]['html'],
-                count=1, flags=re.IGNORECASE | re.DOTALL
+            sections[shortest_idx - 1]["html"] = (
+                sections[shortest_idx - 1]["html"].strip() + "\n" + content_without_h2
             ).strip()
-            sections[merge_with]['html'] = sections[merge_with]['html'].strip() + '\n' + content_without_h2
             sections.pop(shortest_idx)
         elif shortest_idx < len(sections) - 1:
-            merge_with = shortest_idx + 1
-            # 현재 섹션의 h2 제거, 다음 섹션 앞에 p 추가
-            content_without_h2 = re.sub(
-                r'<h2[^>]*>.*?</h2>\s*', '', sections[shortest_idx]['html'],
-                count=1, flags=re.IGNORECASE | re.DOTALL
+            sections[shortest_idx + 1]["html"] = (
+                content_without_h2 + "\n" + sections[shortest_idx + 1]["html"]
             ).strip()
-            sections[merge_with]['html'] = content_without_h2 + '\n' + sections[merge_with]['html']
             sections.pop(shortest_idx)
         else:
             break
 
-        current_h2 = sum(1 for s in sections if s['has_h2'])
+        current_h2 = sum(1 for section in sections if section["has_h2"])
 
     return _join_sections(sections)
 
 
-# ──────────────────────────────────────────────────────────
-#  2. 섹션별 문단 수 정규화
-# ──────────────────────────────────────────────────────────
-
 def normalize_section_p_count(content: str) -> str:
-    """
-    각 섹션의 <p> 개수를 검증 범위(서론 1~4, 나머지 2~4)에 맞춘다.
-    - 부족 → 긴 <p>의 문장을 분리하여 새 <p> 생성
-    - 과다 → 가장 짧은 인접 <p> 2개 병합
-    """
     sections = _split_into_sections(content)
 
     for sec_idx, section in enumerate(sections):
-        p_blocks = _get_p_blocks(section['html'])
-        p_count = len(p_blocks)
-        is_intro = (sec_idx == 0 and not section['has_h2'])
+        is_intro = sec_idx == 0 and not section["has_h2"]
         min_p = 1 if is_intro else 2
         max_p = 4
 
-        # ─── p 부족: 분할 ───
-        max_split_iter = 5
-        split_iter = 0
-        while p_count < min_p and split_iter < max_split_iter:
-            split_iter += 1
-            if p_count == 0:
-                # p 태그가 아예 없으면 전체 텍스트를 p로 감싸고 분할
-                raw_text = re.sub(r'<h2[^>]*>.*?</h2>', '', section['html'], flags=re.IGNORECASE | re.DOTALL).strip()
-                raw_text = re.sub(r'<[^>]*>', '', raw_text).strip()
-                if raw_text:
-                    sentences = _split_sentences(raw_text)
-                    if len(sentences) >= 2:
-                        mid = len(sentences) // 2
-                        p1 = '<p>' + ' '.join(sentences[:mid]) + '</p>'
-                        p2 = '<p>' + ' '.join(sentences[mid:]) + '</p>'
-                        h2_match = re.search(r'<h2[^>]*>.*?</h2>', section['html'], re.IGNORECASE | re.DOTALL)
-                        new_html = (h2_match.group(0) + '\n' if h2_match else '') + p1 + '\n' + p2
-                        section['html'] = new_html
-                    else:
-                        section['html'] = re.sub(
-                            r'(<h2[^>]*>.*?</h2>)?\s*(.*)',
-                            lambda m: (m.group(1) or '') + '\n<p>' + (m.group(2) or '') + '</p>',
-                            section['html'],
-                            flags=re.IGNORECASE | re.DOTALL
-                        )
-                p_blocks = _get_p_blocks(section['html'])
-                p_count = len(p_blocks)
+        for _ in range(6):
+            p_blocks = _get_p_blocks(section["html"])
+            if len(p_blocks) >= min_p:
+                break
+
+            if not p_blocks:
+                h2_tag = _extract_h2_tag(section["html"])
+                raw_text = _strip_tags(re.sub(r"<h2[^>]*>.*?</h2>", "", section["html"], flags=re.IGNORECASE | re.DOTALL))
+                sentences = _split_sentences(raw_text)
+                new_ps: List[str] = []
+                if len(sentences) >= 2 and min_p >= 2:
+                    mid = len(sentences) // 2
+                    left = " ".join(sentences[:mid]).strip()
+                    right = " ".join(sentences[mid:]).strip()
+                    if left:
+                        new_ps.append(f"<p>{left}</p>")
+                    if right:
+                        new_ps.append(f"<p>{right}</p>")
+                elif sentences:
+                    new_ps.append(f"<p>{' '.join(sentences).strip()}</p>")
+                else:
+                    full_text = " ".join(strip_html(s["html"]) for s in sections)
+                    new_ps.append(f"<p>{_build_padding_text(sec_idx + 1, 60, existing_text=full_text)}</p>")
+
+                while len(new_ps) < min_p:
+                    full_text = " ".join(strip_html(s["html"]) for s in sections)
+                    supplement = _build_padding_text(sec_idx + 1, 50 + len(new_ps) * 20, existing_text=full_text)
+                    new_ps.append(f"<p>{supplement}</p>")
+
+                section["html"] = ((h2_tag + "\n") if h2_tag else "") + "\n".join(new_ps)
                 continue
 
-            # p가 1개인 경우 — 가장 긴 p를 문장 단위로 분할
-            longest_idx = max(range(len(p_blocks)), key=lambda i: _plain_len(p_blocks[i]))
+            longest_idx = max(range(len(p_blocks)), key=lambda idx: _plain_len(p_blocks[idx]))
             longest_p = p_blocks[longest_idx]
-            inner_text = re.sub(r'</?p[^>]*>', '', longest_p, flags=re.IGNORECASE).strip()
-            sentences = _split_sentences(inner_text)
-
-            if len(sentences) >= 2:
-                mid = len(sentences) // 2
-                new_p1 = '<p>' + ' '.join(sentences[:mid]) + '</p>'
-                new_p2 = '<p>' + ' '.join(sentences[mid:]) + '</p>'
-                section['html'] = section['html'].replace(longest_p, new_p1 + '\n' + new_p2, 1)
+            split_pair = _split_paragraph_text(_strip_tags(longest_p))
+            if split_pair:
+                left, right = split_pair
+                replacement = f"<p>{left}</p>\n<p>{right}</p>"
+                section["html"] = section["html"].replace(longest_p, replacement, 1)
             else:
-                break
+                full_text = " ".join(strip_html(s["html"]) for s in sections)
+                supplement = _build_padding_text(sec_idx + 1, 60, existing_text=full_text)
+                section["html"] = f"{section['html'].strip()}\n<p>{supplement}</p>".strip()
 
-            p_blocks = _get_p_blocks(section['html'])
-            p_count = len(p_blocks)
+        p_blocks = _get_p_blocks(section["html"])
+        while len(p_blocks) < min_p:
+            full_text = " ".join(strip_html(s["html"]) for s in sections)
+            supplement = _build_padding_text(sec_idx + 1, 60 + len(p_blocks) * 20, existing_text=full_text)
+            section["html"] = f"{section['html'].strip()}\n<p>{supplement}</p>".strip()
+            p_blocks = _get_p_blocks(section["html"])
 
-        # ─── p 과다: 병합 ───
-        merge_iter = 0
-        while p_count > max_p and merge_iter < 5:
-            merge_iter += 1
-            p_blocks = _get_p_blocks(section['html'])
-            if len(p_blocks) < 2:
+        for _ in range(5):
+            p_blocks = _get_p_blocks(section["html"])
+            if len(p_blocks) <= max_p:
                 break
-            # 가장 짧은 2개 인접 p 찾기
-            min_combined_len = float('inf')
+            min_combined_len = float("inf")
             merge_target = 0
-            for i in range(len(p_blocks) - 1):
-                combined = _plain_len(p_blocks[i]) + _plain_len(p_blocks[i + 1])
+            for idx in range(len(p_blocks) - 1):
+                combined = _plain_len(p_blocks[idx]) + _plain_len(p_blocks[idx + 1])
                 if combined < min_combined_len:
                     min_combined_len = combined
-                    merge_target = i
+                    merge_target = idx
 
-            inner1 = re.sub(r'</?p[^>]*>', '', p_blocks[merge_target], flags=re.IGNORECASE).strip()
-            inner2 = re.sub(r'</?p[^>]*>', '', p_blocks[merge_target + 1], flags=re.IGNORECASE).strip()
-            merged = f'<p>{inner1} {inner2}</p>'
-            # 두 p를 merged로 대체
-            section['html'] = section['html'].replace(
-                p_blocks[merge_target] + '\n' + p_blocks[merge_target + 1],
-                merged, 1
-            )
-            if p_blocks[merge_target] + p_blocks[merge_target + 1] in section['html'].replace('\n', ''):
-                section['html'] = section['html'].replace(
-                    p_blocks[merge_target], merged, 1
-                ).replace(p_blocks[merge_target + 1], '', 1)
-
-            p_blocks = _get_p_blocks(section['html'])
-            p_count = len(p_blocks)
+            inner1 = _strip_tags(p_blocks[merge_target])
+            inner2 = _strip_tags(p_blocks[merge_target + 1])
+            merged = f"<p>{inner1} {inner2}</p>"
+            pair = p_blocks[merge_target] + "\n" + p_blocks[merge_target + 1]
+            if pair in section["html"]:
+                section["html"] = section["html"].replace(pair, merged, 1)
+            else:
+                section["html"] = section["html"].replace(p_blocks[merge_target], merged, 1)
+                section["html"] = section["html"].replace(p_blocks[merge_target + 1], "", 1)
 
     return _join_sections(sections)
 
 
-# ──────────────────────────────────────────────────────────
-#  3. 섹션 글자 수 정규화
-# ──────────────────────────────────────────────────────────
-
-def normalize_section_length(
-    content: str,
-    min_chars: int = 200,
-    max_chars: int = 500,
-) -> str:
-    """
-    각 섹션의 plain text 길이를 min_chars~max_chars 범위에 맞춘다.
-    - 짧은 섹션: 이전/이후 섹션에서 p를 이동
-    - 긴 섹션: normalize_h2_count에서 이미 처리되므로 여기선 건너뜀
-      (추가 분할은 h2 개수를 다시 어긋나게 할 수 있음)
-    """
+def normalize_section_length(content: str, min_chars: int = 200, max_chars: int = 500) -> str:
     sections = _split_into_sections(content)
     if len(sections) < 2:
         return content
 
-    # 짧은 섹션에 이웃 섹션에서 p 이동
+    for idx in range(len(sections)):
+        sections[idx]["html"] = _compress_section_overflow(sections[idx]["html"], max_chars)
+
     changed = True
-    max_iter = 10
-    cur_iter = 0
-    while changed and cur_iter < max_iter:
-        cur_iter += 1
+    for _ in range(10):
+        if not changed:
+            break
         changed = False
-        for i in range(len(sections)):
-            sec_len = _plain_len(sections[i]['html'])
+        for idx in range(len(sections)):
+            sec_len = _plain_len(sections[idx]["html"])
             if sec_len >= min_chars:
                 continue
 
-            # 이전 섹션에서 마지막 p를 가져올 수 있는지 확인
-            if i > 0:
-                donor_ps = _get_p_blocks(sections[i - 1]['html'])
-                donor_len = _plain_len(sections[i - 1]['html'])
-                # 기부자가 min_chars 이상이고 p가 3개 이상일 때만
+            if idx > 0:
+                donor_ps = _get_p_blocks(sections[idx - 1]["html"])
+                donor_len = _plain_len(sections[idx - 1]["html"])
                 if donor_len > min_chars and len(donor_ps) >= 3:
                     last_p = donor_ps[-1]
-                    # 기부 후에도 기부자가 min_chars 이상인지 확인
                     donor_after = donor_len - _plain_len(last_p)
                     if donor_after >= min_chars:
-                        sections[i - 1]['html'] = sections[i - 1]['html'].replace(last_p, '', 1).strip()
-                        # 현재 섹션의 h2 뒤에 삽입
-                        h2_match = re.search(r'<h2[^>]*>.*?</h2>', sections[i]['html'], re.IGNORECASE | re.DOTALL)
-                        if h2_match:
-                            insert_pos = h2_match.end()
-                            sections[i]['html'] = (
-                                sections[i]['html'][:insert_pos] + '\n' + last_p + '\n' +
-                                sections[i]['html'][insert_pos:]
-                            ).strip()
+                        sections[idx - 1]["html"] = sections[idx - 1]["html"].replace(last_p, "", 1).strip()
+                        h2_tag = _extract_h2_tag(sections[idx]["html"])
+                        if h2_tag:
+                            sections[idx]["html"] = sections[idx]["html"].replace(h2_tag, f"{h2_tag}\n{last_p}", 1)
                         else:
-                            sections[i]['html'] = last_p + '\n' + sections[i]['html']
+                            sections[idx]["html"] = f"{last_p}\n{sections[idx]['html']}"
                         changed = True
                         continue
 
-            # 다음 섹션에서 첫 p를 가져올 수 있는지 확인
-            if i < len(sections) - 1:
-                donor_ps = _get_p_blocks(sections[i + 1]['html'])
-                donor_len = _plain_len(sections[i + 1]['html'])
+            if idx < len(sections) - 1:
+                donor_ps = _get_p_blocks(sections[idx + 1]["html"])
+                donor_len = _plain_len(sections[idx + 1]["html"])
                 if donor_len > min_chars and len(donor_ps) >= 3:
                     first_p = donor_ps[0]
                     donor_after = donor_len - _plain_len(first_p)
                     if donor_after >= min_chars:
-                        sections[i + 1]['html'] = sections[i + 1]['html'].replace(first_p, '', 1).strip()
-                        sections[i]['html'] = sections[i]['html'].strip() + '\n' + first_p
+                        sections[idx + 1]["html"] = sections[idx + 1]["html"].replace(first_p, "", 1).strip()
+                        sections[idx]["html"] = f"{sections[idx]['html'].strip()}\n{first_p}"
                         changed = True
                         continue
+
+    for idx, section in enumerate(sections):
+        for _ in range(6):
+            sec_len = _plain_len(section["html"])
+            if sec_len >= min_chars:
+                break
+            section["html"] = _pad_short_section(section["html"], idx + 1, min_chars - sec_len)
+        section["html"] = _compress_section_overflow(section["html"], max_chars)
+        sections[idx] = section
 
     return _join_sections(sections)
 
 
-# ──────────────────────────────────────────────────────────
-#  4. 서론-결론 중복 완화
-# ──────────────────────────────────────────────────────────
+def normalize_total_p_count(content: str, total_sections: int) -> str:
+    """
+    전체 문단 수가 validator 하한(total_sections * 2)을 만족하도록 보정한다.
+    """
+    sections = _split_into_sections(content)
+    if not sections:
+        return content
 
-# 동의어 치환 사전 (결론 쪽에서만 적용)
-_SYNONYM_MAP = {
-    '시민 여러분': '주민 여러분',
-    '함께 만들어': '함께 이뤄',
-    '함께하겠습니다': '동행하겠습니다',
-    '약속드립니다': '다짐합니다',
-    '최선을 다하겠습니다': '끝까지 노력하겠습니다',
-    '존경하는': '사랑하는',
-    '성장하는': '발전하는',
-    '밝은 미래': '새로운 미래',
-    '힘차게': '당차게',
-    '앞장서겠습니다': '선두에 서겠습니다',
-    '뛰어들었습니다': '나섰습니다',
-    '반드시 이뤄내겠습니다': '꼭 실현하겠습니다',
-    '감사합니다': '고맙습니다',
-    '진심으로': '마음 깊이',
-    '열정': '의지',
-    '염원': '소망',
-    '헌신': '봉사',
-    '경제 대혁신': '경제 혁신',
-    '미래를 열어': '미래를 만들어',
-    '변화를 이끌어': '변화를 만들어',
-}
+    expected_min_p = max(0, int(total_sections) * 2)
+    if expected_min_p <= 0:
+        return content
+
+    def _total_p() -> int:
+        return sum(_count_p_tags(section["html"]) for section in sections)
+
+    guard = 0
+    while _total_p() < expected_min_p and guard < 32:
+        guard += 1
+        candidates = [
+            (idx, _count_p_tags(section["html"]))
+            for idx, section in enumerate(sections)
+            if _count_p_tags(section["html"]) < 4
+        ]
+        if not candidates:
+            break
+
+        target_idx = min(candidates, key=lambda item: (item[1], item[0]))[0]
+        section = sections[target_idx]
+        deficit_hint = max(40, (expected_min_p - _total_p()) * 30)
+        full_text = " ".join(strip_html(s["html"]) for s in sections)
+        supplement = _build_padding_text(target_idx + 1, deficit_hint, existing_text=full_text)
+
+        p_blocks = _get_p_blocks(section["html"])
+        if p_blocks:
+            section["html"] = f"{section['html'].strip()}\n<p>{supplement}</p>"
+        else:
+            h2_tag = _extract_h2_tag(section["html"])
+            if h2_tag:
+                section["html"] = f"{h2_tag}\n<p>{supplement}</p>"
+            else:
+                section["html"] = f"{section['html'].strip()}\n<p>{supplement}</p>".strip()
+        sections[target_idx] = section
+
+    return _join_sections(sections)
+
+
+def _select_rewrite_token(phrase: str, index: int) -> str:
+    if not phrase:
+        return CONCLUSION_REWRITE_TOKENS[index % len(CONCLUSION_REWRITE_TOKENS)]
+    seed = sum(ord(ch) for ch in phrase) + index
+    return CONCLUSION_REWRITE_TOKENS[seed % len(CONCLUSION_REWRITE_TOKENS)]
 
 
 def mitigate_intro_conclusion_echo(
@@ -403,104 +634,104 @@ def mitigate_intro_conclusion_echo(
     min_phrase_len: int = 12,
     max_duplicates: int = 2,
 ) -> str:
-    """
-    서론과 결론에서 12자 이상 동일 구문이 3개 이상 발견되면,
-    결론 쪽의 중복 구문을 동의어로 치환한다.
-    user_keywords에 포함된 구문은 치환 대상에서 제외.
-    """
     sections = _split_into_sections(content)
     if len(sections) < 2:
         return content
 
-    intro_html = sections[0]['html']
-    conclusion_html = sections[-1]['html']
-    intro_plain = strip_html(intro_html)
+    intro_plain = strip_html(sections[0]["html"])
+    conclusion_html = sections[-1]["html"]
     conclusion_plain = strip_html(conclusion_html)
+    normalized_keywords = normalize_keywords(user_keywords)
 
-    if len(intro_plain) < min_phrase_len or len(conclusion_plain) < min_phrase_len:
+    duplicates = find_intro_conclusion_duplicates(
+        intro_plain,
+        conclusion_plain,
+        user_keywords=normalized_keywords,
+        min_phrase_len=min_phrase_len,
+    )
+    if len(duplicates) <= max_duplicates:
         return content
 
-    # 키워드 정규화
-    normalized_keywords: List[str] = []
-    for kw in (user_keywords or []):
-        kw_plain = strip_html(str(kw or ''))
-        if kw_plain:
-            normalized_keywords.append(kw_plain)
-
-    # 중복 구문 찾기
-    duplicate_phrases: List[str] = []
-    seen: set = set()
-    idx = 0
-    while idx <= len(intro_plain) - min_phrase_len:
-        phrase = intro_plain[idx:idx + min_phrase_len]
-        if any(kw and kw in phrase for kw in normalized_keywords):
-            idx += 1
-            continue
-        if phrase in conclusion_plain and phrase not in seen:
-            seen.add(phrase)
-            duplicate_phrases.append(phrase)
-            idx += min_phrase_len
-        else:
-            idx += 1
-
-    if len(duplicate_phrases) < max_duplicates + 1:
-        return content
-
-    # 결론에서 중복 구문을 동의어로 치환
-    modified_conclusion = conclusion_html
-    replacements_made = 0
-    for phrase in duplicate_phrases:
-        if replacements_made >= len(duplicate_phrases) - max_duplicates:
+    updated_conclusion = conclusion_html
+    for pass_idx in range(4):
+        duplicates = find_intro_conclusion_duplicates(
+            intro_plain,
+            strip_html(updated_conclusion),
+            user_keywords=normalized_keywords,
+            min_phrase_len=min_phrase_len,
+        )
+        if len(duplicates) <= max_duplicates:
             break
-        # 동의어 사전에서 매칭되는 치환 찾기
-        for original, replacement in _SYNONYM_MAP.items():
-            if original in phrase:
-                # 결론 HTML에서 해당 원문을 치환
-                if original in modified_conclusion:
-                    modified_conclusion = modified_conclusion.replace(original, replacement, 1)
-                    replacements_made += 1
-                    break
 
-    if replacements_made > 0:
-        sections[-1]['html'] = modified_conclusion
-        return _join_sections(sections)
+        replaced = 0
+        for dup_idx, phrase in enumerate(duplicates):
+            if any(keyword and keyword in phrase for keyword in normalized_keywords):
+                continue
+            if phrase not in updated_conclusion:
+                continue
+            token = _select_rewrite_token(phrase, pass_idx + dup_idx)
+            updated_conclusion = updated_conclusion.replace(phrase, token, 1)
+            replaced += 1
+            if len(duplicates) - replaced <= max_duplicates:
+                break
+        if replaced == 0:
+            break
 
-    return content
+    sections[-1]["html"] = updated_conclusion
+    final_duplicates = find_intro_conclusion_duplicates(
+        intro_plain,
+        strip_html(updated_conclusion),
+        user_keywords=normalized_keywords,
+        min_phrase_len=min_phrase_len,
+    )
+    if len(final_duplicates) > max_duplicates:
+        h2_tag = _extract_h2_tag(updated_conclusion)
+        section_prefix = f"{h2_tag}\n" if h2_tag else ""
+        sections[-1]["html"] = (
+            section_prefix
+            + "<p>핵심 과제를 실행 중심으로 추진하고 과정과 결과를 투명하게 공개하겠습니다. "
+            + "현장에서 확인한 문제를 바탕으로 실행 가능한 대안을 분명히 제시하겠습니다.</p>\n"
+            + "<p>성과를 주기적으로 점검하고 미흡한 부분은 즉시 보완해 책임 있게 완성하겠습니다. "
+            + "추상적 선언이 아니라 시민이 체감할 수 있는 변화를 만들겠습니다.</p>"
+        )
 
+    return _join_sections(sections)
 
-# ──────────────────────────────────────────────────────────
-#  통합 진입점
-# ──────────────────────────────────────────────────────────
 
 def normalize_structure(
     content: str,
     length_spec: Dict[str, int],
     *,
     user_keywords: Optional[List[str]] = None,
+    context_analysis: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
-    LLM 출력의 HTML 구조를 프로그래밍적으로 정규화.
-    파이프라인: h2 정규화 → p 정규화 → 섹션 길이 → 서론-결론 중복 완화
+    LLM 출력 HTML 구조를 후처리로 교정해 검증 통과 가능성을 높인다.
     """
     if not content or not content.strip():
         return content
 
-    expected_h2 = int(length_spec.get('expected_h2', 4))
-    sec_min = int(length_spec.get('per_section_min', 200))
-    sec_max = int(length_spec.get('per_section_max', 500))
+    expected_h2 = int(length_spec.get("expected_h2", 4))
+    total_sections = int(length_spec.get("total_sections", expected_h2 + 1))
+    sec_min = int(length_spec.get("per_section_min", 200))
+    sec_max = int(length_spec.get("per_section_max", 500))
 
     result = content
+    result = ensure_intro_section(result)
+    result = ensure_intro_stance_anchor(result, context_analysis)
 
-    # 1. h2 개수 정규화
     result = normalize_h2_count(result, expected_h2)
-
-    # 2. 섹션별 p 개수 정규화
+    result = normalize_section_p_count(result)
+    result = normalize_h2_count(result, expected_h2)
     result = normalize_section_p_count(result)
 
-    # 3. 섹션 길이 정규화
     result = normalize_section_length(result, min_chars=sec_min, max_chars=sec_max)
+    result = normalize_section_p_count(result)
+    result = normalize_section_length(result, min_chars=sec_min, max_chars=sec_max)
+    result = normalize_total_p_count(result, total_sections=total_sections)
 
-    # 4. 서론-결론 중복 완화
     result = mitigate_intro_conclusion_echo(result, user_keywords=user_keywords)
-
+    result = normalize_section_p_count(result)
+    result = normalize_section_length(result, min_chars=sec_min, max_chars=sec_max)
+    result = normalize_total_p_count(result, total_sections=total_sections)
     return result

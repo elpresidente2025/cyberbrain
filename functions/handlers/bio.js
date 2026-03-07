@@ -459,6 +459,30 @@ async function extractEntriesMetadataAsync(uid, entries) {
       // RAG 인덱싱 실패는 무시하고 계속 진행
     }
 
+    // 🧠 LightRAG 지식 그래프 색인 (Python Cloud Function 호출)
+    try {
+      const { getFunctions } = require('firebase-admin/functions');
+      const projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || 'ai-secretary-6e9c8';
+      const region = 'asia-northeast3';
+      const functionUrl = `https://${region}-${projectId}.cloudfunctions.net/index_bio_to_rag`;
+
+      console.log(`🧠 LightRAG 색인 시작: ${uid}`);
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid, entries }),
+        signal: AbortSignal.timeout(60000),
+      });
+      const result = await response.json();
+      if (result.success) {
+        console.log(`✅ LightRAG 색인 완료: ${uid} (${result.documentLength}자)`);
+      } else {
+        console.warn(`⚠️ LightRAG 색인 실패: ${uid}`, result.error);
+      }
+    } catch (lightragError) {
+      console.warn(`⚠️ LightRAG 색인 실패 (무시): ${uid}`, lightragError.message);
+    }
+
   } catch (error) {
     console.error(`❌ 다중 엔트리 메타데이터 추출 실패: ${uid}`, error);
     

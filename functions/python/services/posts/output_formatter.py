@@ -8,6 +8,7 @@ pipeline results can be returned as final-ready drafts.
 from __future__ import annotations
 
 from difflib import SequenceMatcher
+import html as html_lib
 import logging
 import re
 from typing import Any, Dict
@@ -52,6 +53,22 @@ DIAGNOSTIC_TAIL_MARKERS = [
     "진단 요약",
 ]
 
+EMBEDDED_META_MARKERS = [
+    "카테고리:",
+    "검색어 삽입 횟수",
+    "생성 시간:",
+    "조사개요",
+    "조사요약",
+]
+META_TAIL_MIN_RATIO = 0.40
+META_NOISE_LINE_REGEXES = (
+    re.compile(r"^카테고리\s*:\s*.+$", re.IGNORECASE),
+    re.compile(r"^검색어\s*삽입\s*횟수\s*:?\s*$", re.IGNORECASE),
+    re.compile(r"^생성\s*시간\s*:\s*.+$", re.IGNORECASE),
+    re.compile(r"^[\"'“”‘’][^\"'“”‘’\n]{1,80}[\"'“”‘’]\s*:\s*\d+\s*회$", re.IGNORECASE),
+    re.compile(r"^[^:\n]{1,80}\s*:\s*\d+\s*회$", re.IGNORECASE),
+)
+
 CLOSING_MARKERS = [
     "감사합니다",
     "감사드립니다",
@@ -81,7 +98,37 @@ OVER_TRIM_GUARD_KEEP_RATIO = 0.70
 TARGET_CHAR_SOFT_UPPER_RATIO = 1.15
 TARGET_CHAR_HARD_UPPER_RATIO = 1.25
 TAIL_PARAGRAPH_WINDOW = 8
-TAIL_DUPLICATE_SIMILARITY = 0.90
+TAIL_DUPLICATE_SIMILARITY = 0.88
+REDUNDANT_PARAGRAPH_SIMILARITY = 0.88
+POLICY_PARAGRAPH_SIMILARITY = 0.78
+
+REPETITIVE_POLICY_MARKERS = (
+    "핵심 과제",
+    "실행 중심",
+    "과정과 결과를 투명",
+    "성과를 주기적으로",
+    "미흡한 부분은 즉시",
+    "시민이 체감",
+    "주민 의견을 수렴",
+    "정책 방향을 구체화",
+    "실천 계획을 마련",
+    "전문가 자문",
+    "예산 집행의 효율성",
+)
+INTRO_SENTENCE_MAX = 1
+POLL_PAIR_SENTENCE_MAX = 2
+SENTENCE_DUPLICATE_SIMILARITY = 0.90
+SENTENCE_DUPLICATE_LOOKBACK = 48
+
+INTRO_SENTENCE_PATTERNS = (
+    re.compile(r"부산항\s*(?:부두\s*)?노동자.*(?:막내|아들)", re.IGNORECASE),
+    re.compile(r"부산.*초등학교를\s*다니며\s*꿈을\s*키웠", re.IGNORECASE),
+    re.compile(r"부산\s*소년의집에서\s*자", re.IGNORECASE),
+)
+
+POLL_PAIR_SENTENCE_RE = re.compile(
+    r"(\d{1,2}(?:\.\d+)?)\s*%\s*(?:대|vs|VS|→|->|-)\s*(\d{1,2}(?:\.\d+)?)\s*%"
+)
 
 TAIL_LOW_PRIORITY_MARKERS = (
     "감사합니다",
@@ -129,6 +176,131 @@ def _trim_from_index(text: str, cut_index: int) -> str:
         if tag_end != -1 and tag_end < cut_index:
             return text[:paragraph_start].strip()
     return text[:cut_index].strip()
+
+
+def _resolve_trim_index(text: str, cut_index: int) -> int:
+    if cut_index < 0:
+        return cut_index
+    paragraph_start = text.rfind("<p", 0, cut_index)
+    if paragraph_start != -1:
+        tag_end = text.find(">", paragraph_start)
+        if tag_end != -1 and tag_end < cut_index:
+            return paragraph_start
+    return cut_index
+
+
+def _html_to_plain_lines(text: str) -> str:
+    if not text:
+        return ""
+    normalized = str(text)
+    normalized = re.sub(r"<br\s*/?>", "\n", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"</p\s*>", "\n", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"</h[1-6]\s*>", "\n", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"</li\s*>", "\n", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<[^>]*>", " ", normalized)
+    normalized = html_lib.unescape(normalized)
+    normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = re.sub(r"[ \t]+", " ", normalized)
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+    return normalized.strip()
+
+
+def _extract_embedded_meta_tail(content: str) -> tuple[str, Dict[str, Any]]:
+    raw = str(content or "")
+    if not raw.strip():
+        return raw, {}
+
+    start_index = int(len(raw) * META_TAIL_MIN_RATIO)
+    marker_index = _find_first_index(raw, EMBEDDED_META_MARKERS, start_index)
+    if marker_index == -1:
+        return raw, {}
+
+    cut_index = _resolve_trim_index(raw, marker_index)
+    if cut_index <= 0 or cut_index >= len(raw):
+        return raw, {}
+
+    body = raw[:cut_index].strip()
+    tail = raw[cut_index:].strip()
+    if not tail:
+        return raw, {}
+
+    plain_tail = _html_to_plain_lines(tail)
+    if not plain_tail:
+        return body, {"metaRemoved": True}
+
+    meta: Dict[str, Any] = {
+        "metaRemoved": True,
+        "rawTailPreview": plain_tail[:1000],
+    }
+
+    category_match = re.search(r"카테고리\s*:\s*(.+)", plain_tail)
+    if category_match:
+        meta["category"] = str(category_match.group(1) or "").strip()
+
+    generated_at_match = re.search(r"생성\s*시간\s*:\s*(.+)", plain_tail)
+    if generated_at_match:
+        meta["generatedAtText"] = str(generated_at_match.group(1) or "").strip()
+
+    keyword_counts: Dict[str, int] = {}
+    for key, count_text in re.findall(r'"([^"\n]{1,80})"\s*:\s*(\d+)\s*회', plain_tail):
+        key_norm = str(key or "").strip()
+        if not key_norm:
+            continue
+        keyword_counts[key_norm] = int(count_text)
+    if keyword_counts:
+        meta["keywordInsertionCounts"] = keyword_counts
+
+    poll_match = re.search(
+        r"조사개요\s*(.+?)(?:\n\s*(?:카테고리\s*:|검색어\s*삽입\s*횟수\s*:|생성\s*시간\s*:)|$)",
+        plain_tail,
+        flags=re.DOTALL,
+    )
+    if poll_match:
+        poll_text = str(poll_match.group(1) or "").strip()
+        if poll_text:
+            meta["embeddedPollSummary"] = poll_text
+
+    return body, meta
+
+
+def _strip_meta_noise_lines(content: str) -> str:
+    text = str(content or "")
+    if not text:
+        return text
+
+    lines = text.splitlines()
+    filtered: list[str] = []
+    in_keyword_count_block = False
+    for line in lines:
+        plain = _normalize_plain_text(line)
+        if not plain:
+            in_keyword_count_block = False
+            filtered.append(line)
+            continue
+
+        normalized_plain = re.sub(r"\s+", " ", plain).strip()
+        if any(pattern.match(normalized_plain) for pattern in META_NOISE_LINE_REGEXES):
+            if "검색어 삽입 횟수" in normalized_plain:
+                in_keyword_count_block = True
+            continue
+
+        if normalized_plain in {"카테고리", "검색어 삽입 횟수", "생성 시간", "조사개요", "조사요약"}:
+            if normalized_plain == "검색어 삽입 횟수":
+                in_keyword_count_block = True
+            continue
+
+        if in_keyword_count_block and re.match(
+            r"^[\"'“”‘’]?\s*[^\"'“”‘’:\n]{1,80}\s*[\"'“”‘’]?\s*:\s*\d+\s*회$",
+            normalized_plain,
+            re.IGNORECASE,
+        ):
+            continue
+
+        in_keyword_count_block = False
+        filtered.append(line)
+    updated = "\n".join(filtered)
+    updated = re.sub(r"\n{3,}", "\n\n", updated)
+    return updated.strip()
 
 
 def _is_tail_segment(total_len: int, start_index: int, ratio: float = CLOSING_TRIM_MIN_TAIL_RATIO) -> bool:
@@ -539,6 +711,36 @@ def insert_slogan(content: str, slogan: str) -> str:
     return f"{trimmed}\n{html}" if trimmed else html
 
 
+def _normalize_poll_citation_body(citation: str) -> str:
+    lines = [line.strip() for line in str(citation or "").splitlines() if line and line.strip()]
+    if not lines:
+        return ""
+
+    first_line = re.sub(r"[\s:：\[\]【】()（）]", "", lines[0]).lower()
+    if first_line in {"조사개요", "조사요약"}:
+        lines = lines[1:]
+    return "<br>".join(lines).strip()
+
+
+def insert_poll_citation(content: str, citation: str) -> str:
+    if not content or not citation:
+        return content
+
+    citation_body = _normalize_poll_citation_body(citation)
+    if not citation_body:
+        return content
+
+    html = (
+        '<p style="text-align: left; font-size: 0.85em; color: #888; margin: 1.5em 0 0.5em; '
+        'border-top: 1px solid #ddd; padding-top: 0.8em;">'
+        "<strong>조사개요</strong><br>"
+        f"{citation_body}"
+        "</p>"
+    )
+    trimmed = content.strip()
+    return f"{trimmed}\n{html}" if trimmed else html
+
+
 def count_without_space(content: str) -> int:
     plain = re.sub(r"<[^>]*>", "", str(content or ""))
     plain = re.sub(r"\s", "", plain)
@@ -574,6 +776,107 @@ def _normalize_plain_text(text: str) -> str:
     plain = re.sub(r"<[^>]*>", " ", str(text or ""))
     plain = re.sub(r"\s+", " ", plain).strip()
     return plain
+
+
+def _normalize_sentence_for_similarity(sentence: str) -> str:
+    normalized = _normalize_plain_text(sentence)
+    normalized = re.sub(r"[\"'“”‘’`´·•,.:;!?()\[\]{}<>《》「」『』…\-–—]", "", normalized)
+    normalized = re.sub(r"\s+", "", normalized)
+    return normalized
+
+
+def _split_sentences(plain_text: str) -> list[str]:
+    text = _normalize_plain_text(plain_text)
+    if not text:
+        return []
+    parts = re.split(r"(?<=[.!?。！？])\s+", text)
+    sentences = [part.strip() for part in parts if part and part.strip()]
+    return sentences
+
+
+def _extract_poll_pair_key(sentence: str) -> str:
+    match = POLL_PAIR_SENTENCE_RE.search(str(sentence or ""))
+    if not match:
+        return ""
+    left_raw = str(match.group(1) or "").strip()
+    right_raw = str(match.group(2) or "").strip()
+    if not left_raw or not right_raw:
+        return ""
+    try:
+        left = float(left_raw)
+        right = float(right_raw)
+    except Exception:
+        return ""
+    ordered = sorted([left, right])
+    return f"{ordered[0]:.1f}|{ordered[1]:.1f}"
+
+
+def _is_intro_sentence(sentence: str) -> bool:
+    text = _normalize_plain_text(sentence)
+    if len(text) < 14:
+        return False
+    return any(pattern.search(text) for pattern in INTRO_SENTENCE_PATTERNS)
+
+
+def _build_paragraph_html_like(original_html: str, plain_text: str) -> str:
+    body = str(plain_text or "").strip()
+    if not body:
+        return ""
+    open_match = re.match(r"\s*(<p\b[^>]*>)", str(original_html or ""), flags=re.IGNORECASE)
+    open_tag = str(open_match.group(1) or "<p>") if open_match else "<p>"
+    escaped_body = html_lib.escape(body, quote=False)
+    return f"{open_tag}{escaped_body}</p>"
+
+
+def _replace_paragraph_blocks(content: str, blocks: list[dict[str, Any]], replacements: dict[int, str]) -> str:
+    if not blocks:
+        return str(content or "").strip()
+
+    cursor = 0
+    segments: list[str] = []
+    source = str(content or "")
+    for idx, block in enumerate(blocks):
+        start = int(block.get("start") or 0)
+        end = int(block.get("end") or start)
+        segments.append(source[cursor:start])
+        replacement = replacements.get(idx, str(block.get("html") or ""))
+        if replacement:
+            segments.append(replacement)
+        cursor = end
+    segments.append(source[cursor:])
+    updated = "".join(segments)
+    updated = re.sub(r"\n{3,}", "\n\n", updated)
+    return updated.strip()
+
+
+def _measure_repetition_signals(content: str) -> dict[str, int]:
+    blocks = _extract_paragraph_blocks(content)
+    sentences: list[str] = []
+    for block in blocks:
+        sentences.extend(_split_sentences(str(block.get("plain") or "")))
+
+    normalized_counts: dict[str, int] = {}
+    intro_count = 0
+    poll_pair_counts: dict[str, int] = {}
+    for sentence in sentences:
+        normalized = _normalize_sentence_for_similarity(sentence)
+        if len(normalized) >= 10:
+            normalized_counts[normalized] = int(normalized_counts.get(normalized) or 0) + 1
+        if _is_intro_sentence(sentence):
+            intro_count += 1
+        pair_key = _extract_poll_pair_key(sentence)
+        if pair_key:
+            poll_pair_counts[pair_key] = int(poll_pair_counts.get(pair_key) or 0) + 1
+
+    duplicate_sentences = sum(count - 1 for count in normalized_counts.values() if count > 1)
+    poll_pair_excess = sum(max(0, count - POLL_PAIR_SENTENCE_MAX) for count in poll_pair_counts.values())
+    return {
+        "duplicateSentences": int(duplicate_sentences),
+        "introSentences": int(intro_count),
+        "pollPairMentions": int(sum(poll_pair_counts.values())),
+        "pollPairExcess": int(poll_pair_excess),
+        "uniqueSentences": int(len(normalized_counts)),
+    }
 
 
 def _extract_paragraph_blocks(content: str) -> list[dict[str, Any]]:
@@ -623,6 +926,19 @@ def _looks_tail_duplicate(a: str, b: str) -> bool:
     return SequenceMatcher(None, left, right).ratio() >= TAIL_DUPLICATE_SIMILARITY
 
 
+def _is_repetitive_policy_paragraph(plain: str) -> bool:
+    text = _normalize_plain_text(plain)
+    if len(text) < 24:
+        return False
+    hits = 0
+    for marker in REPETITIVE_POLICY_MARKERS:
+        if marker in text:
+            hits += 1
+            if hits >= 2:
+                return True
+    return False
+
+
 def dedupe_tail_paragraphs(content: str) -> tuple[str, int]:
     blocks = _extract_paragraph_blocks(content)
     if len(blocks) < 2:
@@ -649,6 +965,138 @@ def dedupe_tail_paragraphs(content: str) -> tuple[str, int]:
 
     updated = _remove_paragraph_blocks(content, blocks, removed)
     return updated, len(removed)
+
+
+def compress_redundant_paragraphs(content: str) -> tuple[str, int]:
+    blocks = _extract_paragraph_blocks(content)
+    if len(blocks) < 3:
+        return content, 0
+
+    removed: set[int] = set()
+    kept_indices: list[int] = []
+    for idx, block in enumerate(blocks):
+        plain = _normalize_plain_text(block.get("plain") or "")
+        if len(plain) < 20:
+            kept_indices.append(idx)
+            continue
+        if any(marker in plain for marker in SIGNATURE_MARKERS):
+            kept_indices.append(idx)
+            continue
+        if any(marker in plain for marker in DONATION_MARKERS):
+            kept_indices.append(idx)
+            continue
+
+        duplicate = False
+        for prev_idx in kept_indices[-8:]:
+            prev_plain = _normalize_plain_text(blocks[prev_idx].get("plain") or "")
+            if len(prev_plain) < 20:
+                continue
+            similarity = SequenceMatcher(None, prev_plain, plain).ratio()
+            if similarity >= REDUNDANT_PARAGRAPH_SIMILARITY:
+                duplicate = True
+                break
+            if (
+                similarity >= POLICY_PARAGRAPH_SIMILARITY
+                and _is_repetitive_policy_paragraph(prev_plain)
+                and _is_repetitive_policy_paragraph(plain)
+            ):
+                duplicate = True
+                break
+        if duplicate:
+            removed.add(idx)
+            continue
+        kept_indices.append(idx)
+
+    if not removed:
+        return content, 0
+
+    updated = _remove_paragraph_blocks(content, blocks, removed)
+    return updated, len(removed)
+
+
+def compress_redundant_sentences(content: str) -> tuple[str, dict[str, int]]:
+    blocks = _extract_paragraph_blocks(content)
+    if len(blocks) < 2:
+        return content, {"removedSentences": 0, "introTrimmed": 0, "pollPairTrimmed": 0}
+
+    replacements: dict[int, str] = {}
+    removed_sentences = 0
+    intro_trimmed = 0
+    poll_pair_trimmed = 0
+
+    kept_norms: list[str] = []
+    intro_kept = 0
+    poll_pair_kept: dict[str, int] = {}
+
+    for idx, block in enumerate(blocks):
+        html_block = str(block.get("html") or "")
+        plain = str(block.get("plain") or "")
+        if not plain:
+            continue
+
+        if any(marker in plain for marker in SIGNATURE_MARKERS):
+            continue
+        if any(marker in plain for marker in DONATION_MARKERS):
+            continue
+
+        sentences = _split_sentences(plain)
+        if not sentences:
+            continue
+
+        kept_sentences: list[str] = []
+        for sentence in sentences:
+            text = str(sentence or "").strip()
+            if not text:
+                continue
+
+            if _is_intro_sentence(text):
+                if intro_kept >= INTRO_SENTENCE_MAX:
+                    removed_sentences += 1
+                    intro_trimmed += 1
+                    continue
+                intro_kept += 1
+
+            poll_pair_key = _extract_poll_pair_key(text)
+            if poll_pair_key:
+                poll_count = int(poll_pair_kept.get(poll_pair_key) or 0)
+                if poll_count >= POLL_PAIR_SENTENCE_MAX:
+                    removed_sentences += 1
+                    poll_pair_trimmed += 1
+                    continue
+                poll_pair_kept[poll_pair_key] = poll_count + 1
+
+            norm = _normalize_sentence_for_similarity(text)
+            if len(norm) >= 10:
+                duplicate = False
+                for prev_norm in kept_norms[-SENTENCE_DUPLICATE_LOOKBACK:]:
+                    if prev_norm == norm:
+                        duplicate = True
+                        break
+                    if SequenceMatcher(None, prev_norm, norm).ratio() >= SENTENCE_DUPLICATE_SIMILARITY:
+                        duplicate = True
+                        break
+                if duplicate:
+                    removed_sentences += 1
+                    continue
+                kept_norms.append(norm)
+
+            kept_sentences.append(text)
+
+        if not kept_sentences:
+            replacements[idx] = ""
+            continue
+        if len(kept_sentences) != len(sentences):
+            replacements[idx] = _build_paragraph_html_like(html_block, " ".join(kept_sentences))
+
+    if not replacements:
+        return content, {"removedSentences": 0, "introTrimmed": 0, "pollPairTrimmed": 0}
+
+    updated = _replace_paragraph_blocks(content, blocks, replacements)
+    return updated, {
+        "removedSentences": int(removed_sentences),
+        "introTrimmed": int(intro_trimmed),
+        "pollPairTrimmed": int(poll_pair_trimmed),
+    }
 
 
 def _split_hint_tokens(text: str) -> list[str]:
@@ -807,14 +1255,28 @@ def build_keyword_validation(keyword_result: Dict[str, Any] | None) -> Dict[str,
         expected = int(info.get("expected") or 0)
         max_count = int(info.get("max") or expected or 0)
         keyword_type = str(info.get("type") or "").strip().lower()
-        exact_count = int(info.get("exactCount") or info.get("count") or 0)
-        coverage_count = int(info.get("coverage") or exact_count)
-        # 사용자 키워드는 exactCount(정확 일치) 기준, 자동 키워드는 coverage 기준을 사용한다.
-        count = exact_count if keyword_type == "user" else coverage_count
+        exclusive_count = int(
+            info.get("exclusiveCount")
+            or info.get("count")
+            or 0
+        )
+        raw_count = int(
+            info.get("rawCount")
+            or info.get("exactCount")
+            or exclusive_count
+        )
+        coverage_count = int(info.get("coverage") or raw_count)
+        body_count = int(info.get("bodyCount") or 0)
+        body_expected = int(info.get("bodyExpected") or 0)
+        # 사용자 키워드는 게이트는 exclusive 기준, 표시는 raw 기준으로 분리한다.
+        count = exclusive_count if keyword_type == "user" else coverage_count
         is_valid = bool(info.get("valid") is True)
+        body_under_min = keyword_type == "user" and body_expected > 0 and body_count < body_expected
 
         if is_valid:
             status = "valid"
+        elif body_under_min:
+            status = "insufficient"
         elif count < expected:
             status = "insufficient"
         elif max_count > 0 and count > max_count:
@@ -828,8 +1290,12 @@ def build_keyword_validation(keyword_result: Dict[str, Any] | None) -> Dict[str,
             "max": max_count,
             "status": status,
             "type": keyword_type,
-            "exactCount": exact_count,
+            "exactCount": raw_count,
+            "exclusiveCount": exclusive_count,
+            "rawCount": raw_count,
             "coverage": coverage_count,
+            "bodyCount": body_count,
+            "bodyExpected": body_expected,
         }
 
     return mapped
@@ -884,6 +1350,8 @@ def finalize_output(
     slogan_enabled: bool = False,
     donation_info: str = "",
     donation_enabled: bool = False,
+    poll_citation: str = "",
+    embed_poll_citation: bool = False,
     allow_diagnostic_tail: bool = False,
     keyword_result: Dict[str, Any] | None = None,
     topic: str = "",
@@ -893,6 +1361,7 @@ def finalize_output(
     target_word_count: int | None = None,
 ) -> Dict[str, Any]:
     updated = normalize_ascii_double_quotes(content)
+    final_meta: Dict[str, Any] = {}
 
     # 생성 단계에서 섞여 들어온 슬로건/후원 안내는 제거하고, 최종 단계에서만 재부착한다.
     updated = strip_generated_addons(
@@ -932,9 +1401,33 @@ def finalize_output(
     if perspective_rewrites > 0:
         logger.info("First-person perspective normalization applied: rewrites=%s", perspective_rewrites)
 
+    repetition_before = _measure_repetition_signals(updated)
+
     updated, dedup_removed = dedupe_tail_paragraphs(updated)
     if dedup_removed > 0:
         logger.info("Tail paragraph dedupe applied: removed=%s", dedup_removed)
+
+    updated, redundant_removed = compress_redundant_paragraphs(updated)
+    if redundant_removed > 0:
+        logger.info("Redundant paragraph compression applied: removed=%s", redundant_removed)
+
+    updated, sentence_compress = compress_redundant_sentences(updated)
+    removed_sentences = int(sentence_compress.get("removedSentences") or 0)
+    if removed_sentences > 0:
+        logger.info(
+            "Sentence-level compression applied: removed=%s introTrimmed=%s pollPairTrimmed=%s",
+            removed_sentences,
+            int(sentence_compress.get("introTrimmed") or 0),
+            int(sentence_compress.get("pollPairTrimmed") or 0),
+        )
+
+    repetition_after = _measure_repetition_signals(updated)
+    if repetition_before != repetition_after:
+        logger.info(
+            "Repetition signals updated: before=%s after=%s",
+            repetition_before,
+            repetition_after,
+        )
 
     updated, trim_removed, before_chars, after_chars = trim_tail_for_length(
         updated,
@@ -954,18 +1447,28 @@ def finalize_output(
         )
 
     # 최종 wordCount는 '공백 제외' 기준으로 계산한다.
+    updated, extracted_meta = _extract_embedded_meta_tail(updated)
+    if extracted_meta:
+        final_meta.update(extracted_meta)
+    updated = _strip_meta_noise_lines(updated)
     word_count = count_without_space(updated)
 
     if donation_enabled and str(donation_info or "").strip():
         updated = insert_donation_info(updated, normalize_ascii_double_quotes(donation_info))
     if slogan_enabled and str(slogan or "").strip():
         updated = insert_slogan(updated, normalize_ascii_double_quotes(slogan))
+    normalized_poll_body = _normalize_poll_citation_body(normalize_ascii_double_quotes(poll_citation))
+    if normalized_poll_body:
+        final_meta["pollCitation"] = normalized_poll_body
+        if embed_poll_citation:
+            updated = insert_poll_citation(updated, normalized_poll_body)
     updated = normalize_ascii_double_quotes(updated)
 
     return {
         "content": updated,
         "wordCount": word_count,
         "keywordValidation": build_keyword_validation(keyword_result),
+        "meta": final_meta,
     }
 
 
@@ -978,6 +1481,7 @@ __all__ = [
     "trim_after_closing",
     "insert_donation_info",
     "insert_slogan",
+    "insert_poll_citation",
     "count_without_space",
     "build_keyword_validation",
     "finalize_output",

@@ -6,12 +6,36 @@ from typing import List, Dict, Any, Optional
 logger = logging.getLogger(__name__)
 
 from ..base_agent import Agent
+from ..common.gemini_client import StructuredOutputError, generate_json_async
+from ..common.editorial import KEYWORD_SPEC
 from services.posts.validation import (
     count_keyword_occurrences,
     enforce_keyword_requirements,
     validate_keyword_insertion,
 )
 from services.posts.keyword_insertion_policy import build_keyword_injection_policy_lines
+
+KEYWORD_INSTRUCTION_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "instructions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "section": {"type": "integer"},
+                    "action": {"type": "string", "enum": ["replace", "insert", "delete"]},
+                    "target": {"type": "string"},
+                    "replacement": {"type": "string"},
+                    "anchor": {"type": "string"},
+                    "sentence": {"type": "string"},
+                },
+                "required": ["section", "action"],
+            },
+        },
+    },
+    "required": ["instructions"],
+}
 
 class KeywordInjectorAgent(Agent):
     def __init__(self, name: str = 'KeywordInjectorAgent', options: Optional[Dict[str, Any]] = None):
@@ -22,7 +46,7 @@ class KeywordInjectorAgent(Agent):
 
     def get_min_target(self, keyword_count: int) -> int:
         """검증 규칙과 동일한 사용자 키워드 최소 등장 횟수."""
-        return 3 if keyword_count >= 2 else 5
+        return int(KEYWORD_SPEC['perKeywordMin']) if keyword_count >= 2 else int(KEYWORD_SPEC['singleKeywordMin'])
 
     def _extract_keyword_counts(self, keyword_result: Dict[str, Any], keywords: List[str]) -> Dict[str, int]:
         details = (keyword_result.get('details') or {}).get('keywords') or {}
@@ -182,17 +206,17 @@ class KeywordInjectorAgent(Agent):
             print(f"[KeywordInjectorAgent] 프롬프트 생성 완료 ({len(prompt)}자)")
 
             try:
-                from ..common.gemini_client import generate_content_async
-                response_text = await generate_content_async(
+                response_payload = await generate_json_async(
                     prompt,
                     model_name=self.model_name,
-                    # Temperature Lowered: 0.3 for precision and less hallucination
                     temperature=0.3,
                     max_output_tokens=4000,
-                    response_mime_type='application/json'
+                    retries=2,
+                    response_schema=KEYWORD_INSTRUCTION_SCHEMA,
+                    required_keys=("instructions",),
                 )
 
-                instructions = self.parse_instructions(response_text, sections=sections)
+                instructions = self.parse_instructions(response_payload, sections=sections)
 
                 if not instructions:
                     print("[KeywordInjectorAgent] 유효한 지시가 없어 재시도합니다")
@@ -244,6 +268,11 @@ class KeywordInjectorAgent(Agent):
                 sections = new_sections
                 section_counts = new_section_counts
 
+            except StructuredOutputError as e:
+                print(f"[KeywordInjectorAgent][ERROR] Structured output error: {str(e)}")
+                feedback = str(e)
+                last_error = feedback
+                break
             except Exception as e:
                 print(f"[KeywordInjectorAgent][ERROR] 에러 발생: {str(e)}")
                 feedback = str(e)
@@ -388,8 +417,8 @@ class KeywordInjectorAgent(Agent):
                 sum(sc['counts'].get(kw, 0) for sc in section_counts)
                 for kw in user_keywords
             )
-            if user_total < 7:
-                issues.append(f"검색어 총합 {user_total}회 (최소 7회 필요)")
+            if user_total < int(KEYWORD_SPEC['totalMin']):
+                issues.append(f"검색어 총합 {user_total}회 (최소 {KEYWORD_SPEC['totalMin']}회 필요)")
 
         if not issues:
             return {'passed': True}
@@ -453,7 +482,7 @@ class KeywordInjectorAgent(Agent):
 
 
         if len(user_keywords) >= 2:
-            additional_rule = f"- 각 검색어 {min_target}~{max_target}회, 전체 검색어 총합 최소 7회\n"
+            additional_rule = f"- 각 검색어 {min_target}~{max_target}회, 전체 검색어 총합 최소 {KEYWORD_SPEC['totalMin']}회\n"
         else:
             additional_rule = ""
 
@@ -503,19 +532,22 @@ class KeywordInjectorAgent(Agent):
         low_context_prefixes = ("특히", "한편", "아울러", "또한")
         return any(normalized.startswith(prefix) for prefix in low_context_prefixes)
 
-    def parse_instructions(self, response: str, sections: Optional[List[Dict]] = None) -> List[Dict]:
+    def parse_instructions(self, response: Any, sections: Optional[List[Dict]] = None) -> List[Dict]:
         if not response:
             return []
 
         try:
-            text = re.sub(r'```(?:json)?\s*([\s\S]*?)```', r'\1', response).strip()
-            text = re.sub(r'[\r\n]+', ' ', text)
+            if isinstance(response, dict):
+                parsed = response
+            else:
+                text = re.sub(r'```(?:json)?\s*([\s\S]*?)```', r'\1', str(response)).strip()
+                text = re.sub(r'[\r\n]+', ' ', text)
 
-            json_match = re.search(r'\{[\s\S]*\}', text)
-            if json_match:
-                text = json_match.group(0)
+                json_match = re.search(r'\{[\s\S]*\}', text)
+                if json_match:
+                    text = json_match.group(0)
 
-            parsed = json.loads(text)
+                parsed = json.loads(text)
             instructions = parsed.get('instructions', [])
             if not isinstance(instructions, list):
                 return []

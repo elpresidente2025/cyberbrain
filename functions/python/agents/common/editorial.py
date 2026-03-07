@@ -1,5 +1,53 @@
 # functions/python/agents/common/editorial.py
 
+# ---------------------------------------------------------------------------
+# SSOT 상수: 모든 프롬프트 빌더 & 검증기가 이 값을 참조한다.
+# 규칙 변경 시 여기만 수정하면 프롬프트와 검증기에 동시 반영된다.
+# ---------------------------------------------------------------------------
+
+TITLE_SPEC = {
+    'hardMin': 12,
+    'hardMax': 35,
+    'optimalMin': 15,
+    'optimalMax': 30,
+}
+
+STRUCTURE_SPEC = {
+    'sectionCharTarget': 400,
+    'sectionCharMin': 350,
+    'sectionCharMax': 450,
+    'paragraphsPerSection': 3,
+    'paragraphCharMin': 110,
+    'paragraphCharMax': 140,
+    'minSections': 5,
+    'maxSections': 7,
+    'idealTotalMin': 2000,
+    'idealTotalMax': 2800,
+    'validatorSectionTolerance': 80,
+    'validatorMicroTolerance': 10,
+}
+
+KEYWORD_SPEC = {
+    'perSectionMin': 1,
+    'perKeywordMin': 3,
+    'perKeywordMax': 4,
+    'singleKeywordMin': 5,
+    'singleKeywordMax': 6,
+    'totalMin': 7,
+    'totalMax': 8,
+}
+
+QUALITY_SPEC = {
+    'verbRepeatMax': 2,
+    'sloganMax': 1,
+    'benchmarkMax': 1,
+    'duplicateSentenceMax': 1,
+    'phrase3wordMax': 2,
+    'firstPersonRatioMax': 0.30,
+    'introEchoMax': 2,              # 서론-결론 12자 이상 동일 문구 허용 횟수
+    'materialReuseMax': 1,           # 동일 소재(인용/일화) 최대 사용 횟수
+}
+
 SEO_RULES = {
     'wordCount': {
         'min': 1500,
@@ -14,8 +62,8 @@ SEO_RULES = {
             'position': 'natural',
             'length': {
                 'min': 30,
-                'max': 40,
-                'description': '제목 권장 길이 30-40자'
+                'max': 35,
+                'description': '제목 권장 길이 30-35자'
             },
             'description': '제목에 핵심 키워드 1회, 자연스럽게 배치'
         },
@@ -54,7 +102,7 @@ SEO_RULES = {
             '구체적이고 명확한 표현',
             '감정적 어필 요소 포함',
             '지역명/날짜 등 구체 정보 활용',
-            '30-40자 길이 준수'
+            '30-35자 길이 준수'
         ],
         'contentStrategy': [
             '첫 문단에 주제 명확히 제시',

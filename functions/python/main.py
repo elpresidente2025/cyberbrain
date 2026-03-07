@@ -99,7 +99,7 @@ def saveSelectedPost(req: https_fn.CallableRequest) -> dict:
 @https_fn.on_call(
     region="asia-northeast3",
     memory=options.MemoryOption.GB_1,
-    timeout_sec=540,
+    timeout_sec=1200,
     secrets=["GEMINI_API_KEY", "LANGCHAIN_API_KEY"]
 )
 def generatePosts(req: https_fn.CallableRequest) -> dict:
@@ -177,6 +177,34 @@ def indexPastPosts(req: https_fn.CallableRequest) -> dict:
     """Index past posts for RAG (legacy callable compatibility)."""
     from handlers.posts import handle_index_past_posts_call
     return handle_index_past_posts_call(req)
+
+
+@https_fn.on_request(
+    cors=options.CorsOptions(cors_origins="*", cors_methods=["POST", "OPTIONS"]),
+    region="asia-northeast3",
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=300,
+    secrets=["GEMINI_API_KEY"],
+)
+def index_bio_to_rag(req: https_fn.Request) -> https_fn.Response:
+    """프로필 bioEntries를 LightRAG 지식 그래프에 색인"""
+    from handlers.rag_index import handle_index_bio
+    return handle_index_bio(req)
+
+
+@https_fn.on_request(
+    cors=options.CorsOptions(cors_origins="*", cors_methods=["POST", "OPTIONS"]),
+    region="asia-northeast3",
+    memory=options.MemoryOption.GB_2,
+    timeout_sec=540,
+    secrets=["GEMINI_API_KEY"],
+)
+def batch_index_bios(req: https_fn.Request) -> https_fn.Response:
+    """관리자 전용 — 전체 사용자 bioEntries를 LightRAG에 일괄 색인"""
+    from handlers.rag_index import handle_batch_index_bios
+    return handle_batch_index_bios(req)
+
+
 @https_fn.on_request(
     cors=options.CorsOptions(cors_origins="*", cors_methods=["POST", "OPTIONS"]),
     region="asia-northeast3",

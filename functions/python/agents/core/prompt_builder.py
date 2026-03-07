@@ -7,8 +7,15 @@ from typing import Dict, Any, Optional, List
 
 from ..common.warnings import generate_non_lawmaker_warning
 from ..common.seo import build_seo_instruction
-from ..common.h2_guide import build_h2_examples
+from ..common.h2_guide import (
+    build_h2_examples,
+    H2_MIN_LENGTH,
+    H2_MAX_LENGTH,
+    H2_OPTIMAL_MIN,
+    H2_OPTIMAL_MAX,
+)
 from ..common.election_rules import get_prompt_instruction
+from ..common.editorial import STRUCTURE_SPEC, KEYWORD_SPEC, QUALITY_SPEC
 
 from ..templates.daily_communication import build_daily_communication_prompt
 from ..templates.activity_report import build_activity_report_prompt
@@ -149,6 +156,8 @@ def build_retry_directive(
     max_chars = length_spec['max_chars']
     per_section_recommended = length_spec['per_section_recommended']
     expected_h2 = length_spec['expected_h2']
+    section_min_delta = int(STRUCTURE_SPEC['sectionCharTarget']) - int(STRUCTURE_SPEC['sectionCharMin'])
+    section_max_delta = int(STRUCTURE_SPEC['sectionCharMax']) - int(STRUCTURE_SPEC['sectionCharTarget'])
 
     if code == 'LENGTH_SHORT':
         return (
@@ -196,7 +205,7 @@ def build_retry_directive(
 
     if code == 'PHRASE_REPEAT_CAP':
         return (
-            "상투 구문 반복이 과다합니다. 동일 어구는 최대 2회로 제한하고, "
+            f"상투 구문 반복이 과다합니다. 동일 어구는 최대 {int(QUALITY_SPEC['phrase3wordMax'])}회로 제한하고, "
             "초과 구간은 새로운 근거·수치·사례 중심 문장으로 재작성하십시오."
         )
 
@@ -208,16 +217,16 @@ def build_retry_directive(
 
     if code == 'H2_TEXT_LONG':
         return (
-            "소제목(<h2>)이 30자를 초과했습니다. "
-            "각 소제목을 12~30자 이내로 줄이십시오. "
+            f"소제목(<h2>)이 {H2_MAX_LENGTH}자를 초과했습니다. "
+            f"각 소제목을 {H2_OPTIMAL_MIN}~{H2_MAX_LENGTH}자 이내로 줄이십시오. "
             "질문형('~인가?', '~할까?') 또는 핵심 키워드 중심 명사구로 작성하고, "
             "수식어(~위한, ~향한, ~통한, ~에 대한)를 삭제하십시오."
         )
 
     if code == 'H2_TEXT_SHORT':
         return (
-            "소제목(<h2>)이 8자 미만으로 너무 짧습니다. "
-            "각 소제목을 12~30자로 작성하십시오. "
+            f"소제목(<h2>)이 {H2_MIN_LENGTH}자 미만으로 너무 짧습니다. "
+            f"각 소제목을 {H2_OPTIMAL_MIN}~{H2_OPTIMAL_MAX}자로 작성하십시오. "
             "핵심 키워드를 앞에 배치하고, 구체적 정보(수치/대상/장소)를 포함하십시오."
         )
 
@@ -227,15 +236,61 @@ def build_retry_directive(
             "해당 수식어를 제거하고 '명사+명사' 또는 '명사, 명사' 형태로 간결하게 재작성하십시오."
         )
 
+    if code == 'H2_TEXT_FIRST_PERSON':
+        return (
+            "소제목에 1인칭 표현(저는/제가/나는/내가)이 포함되어 있습니다. "
+            "소제목은 헤드라인형으로 작성하고, 대결/비교 문맥이면 'vs 주진우, 이재성의 약진'처럼 "
+            "인물명+쟁점 중심 명사형으로 바꾸십시오."
+        )
+
     if code == 'SECTION_LENGTH':
         return (
-            f"섹션별 글자 수를 {per_section_recommended}자 내외({per_section_recommended - 50}~{per_section_recommended + 50}자)로 조정하십시오. "
+            f"원문 구조는 유지한 채 실패한 섹션만 부분 수정하십시오. "
+            f"섹션별 글자 수를 {per_section_recommended}자 내외({per_section_recommended - section_min_delta}~{per_section_recommended + section_max_delta}자)로 조정하십시오. "
             f"결론부가 너무 짧으면 행동 제안이나 핵심 메시지를 보강하고, "
-            f"특정 섹션이 너무 길면 중복 문장을 제거하여 균형을 맞추십시오."
+            f"특정 섹션이 너무 길면 마지막 문장부터 압축해 균형을 맞추십시오."
+        )
+
+    if code == 'SECTION_P_COUNT':
+        return (
+            "실패한 섹션의 문단 수만 부분 수정하십시오. "
+            "서론은 1~4개, 나머지 섹션은 2~4개의 <p>를 유지하고, "
+            "기존 사실/근거 문장은 최대한 보존하십시오."
+        )
+
+    if code == 'INTRO_STANCE_MISSING':
+        return (
+            "서론 첫 1~2문단에 입장문 핵심 주장/문제의식을 1~2문장으로 보강하십시오. "
+            "본론/결론은 유지하고 서론만 부분 수정하십시오."
+        )
+
+    if code == 'INTRO_CONCLUSION_ECHO':
+        return (
+            "서론-결론의 중복 문구만 변형하십시오. "
+            "결론 문장 중 반복 구간만 치환하고, 나머지 구조와 근거는 유지하십시오."
+        )
+
+    if code == 'DUPLICATE_SENTENCE':
+        return (
+            "동일 문장이 반복되었습니다. "
+            "같은 의미를 전달하더라도 표현을 반드시 변형하여 재작성하십시오."
+        )
+
+    if code == 'PHRASE_REPEAT':
+        return (
+            "3어절 이상의 동일 구문이 과다 반복되었습니다. "
+            "핵심 메시지는 결론에서 1회만, 본론에서는 구체적 정책/사례로 대체하십시오."
+        )
+
+    if code == 'VERB_REPEAT':
+        return (
+            "동일 동사/구문이 과다 반복되었습니다. "
+            "동의어로 교체하십시오 (예: '던지면서' → '제시하며', '약속하며', '보여드리며')."
         )
 
     return (
-        f"총 {total_sections}개 섹션 구조와 분량 범위({min_chars}~{max_chars}자)를 정확히 준수하여 재작성하십시오."
+        f"총 {total_sections}개 섹션 구조와 분량 범위({min_chars}~{max_chars}자)를 준수하되, "
+        "전면 재작성보다 부분 수정을 우선하십시오."
     )
 
 
@@ -258,6 +313,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     user_profile = params.get('userProfile', {})
     if not isinstance(user_profile, dict):
         user_profile = {}
+    output_mode = str(params.get('outputMode') or 'xml').strip().lower()
     news_source_mode = str(params.get('newsSourceMode') or 'news').strip().lower()
     profile_support_context = normalize_context_text(params.get('profileSupportContext'))
     profile_substitute_context = normalize_context_text(params.get('profileSubstituteContext'))
@@ -278,15 +334,29 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
         'newsContext': params.get('newsContext'),
         'isCurrentLawmaker': is_current_lawmaker(user_profile),
         'politicalExperience': user_profile.get('politicalExperience', '정치 신인'),
-        'familyStatus': user_profile.get('familyStatus', '')
+        'familyStatus': user_profile.get('familyStatus', ''),
+        'emotionalArchetypeId': params.get('emotionalArchetypeId'),
+        'narrativeFrameId': params.get('narrativeFrameId'),
+        'declarativeStructureId': params.get('declarativeStructureId'),
+        'rhetoricalTacticId': params.get('rhetoricalTacticId'),
+        'logicalStructureId': params.get('logicalStructureId'),
+        'argumentationTacticId': params.get('argumentationTacticId'),
+        'criticalStructureId': params.get('criticalStructureId'),
+        'offensiveTacticId': params.get('offensiveTacticId'),
+        'analyticalStructureId': params.get('analyticalStructureId'),
+        'explanatoryTacticId': params.get('explanatoryTacticId'),
+        'vocabularyModuleId': params.get('vocabularyModuleId'),
     })
 
     # Reference Materials Section
     instructions_text = normalize_context_text(params.get('instructions'))
     news_context_text = normalize_context_text(params.get('newsContext'))
+    rag_context_text = normalize_context_text(params.get('ragContext'))
     source_blocks = [instructions_text]
     if news_context_text:
         source_blocks.append(news_context_text)
+    if rag_context_text:
+        source_blocks.append(f"[사용자 프로필 기반 맥락]\n{rag_context_text}")
     bio_source_line = ""
     bio_source_rule = "보조 자료: 사용자 프로필(Bio)은 화자 정체성과 어조 참고용이며, 분량이 부족할 때만 활용하세요."
     if news_source_mode == 'profile_fallback' and profile_substitute_context:
@@ -528,13 +598,15 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     if context_analysis:
         stance_count = len(context_analysis.get('mustIncludeFromStance', []))
 
-    body_section_count = length_spec.get('body_sections', 3)
-    total_section_count = length_spec.get('total_sections', 5)
-    min_total_chars = length_spec.get('min_chars', 1600)
-    max_total_chars = length_spec.get('max_chars', 3000)
-    per_section_min = length_spec.get('per_section_min', 280)
-    per_section_max = length_spec.get('per_section_max', 430)
-    per_section_recommended = length_spec.get('per_section_recommended', 350)
+    total_sections_default = int(STRUCTURE_SPEC['minSections'])
+    body_sections_default = max(1, total_sections_default - 2)
+    body_section_count = length_spec.get('body_sections', body_sections_default)
+    total_section_count = length_spec.get('total_sections', total_sections_default)
+    min_total_chars = length_spec.get('min_chars', int(STRUCTURE_SPEC['idealTotalMin']))
+    max_total_chars = length_spec.get('max_chars', int(STRUCTURE_SPEC['idealTotalMax']))
+    per_section_min = length_spec.get('per_section_min', int(STRUCTURE_SPEC['sectionCharMin']))
+    per_section_max = length_spec.get('per_section_max', int(STRUCTURE_SPEC['sectionCharMax']))
+    per_section_recommended = length_spec.get('per_section_recommended', int(STRUCTURE_SPEC['sectionCharTarget']))
     material_uniqueness_guard = build_material_uniqueness_guard(
         context_analysis,
         body_sections=body_section_count,
@@ -588,7 +660,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     body_structure_lines = []
     for i in range(1, body_section_count + 1):
         body_structure_lines.append(
-            f"<body_section order=\"{i+1}\" name=\"본론 {i}\" paragraphs=\"2~3\" chars=\"{per_section_min}~{per_section_max}\" heading=\"h2 필수\"/>"
+            f"<body_section order=\"{i+1}\" name=\"본론 {i}\" paragraphs=\"{STRUCTURE_SPEC['paragraphsPerSection']}\" chars=\"{per_section_min}~{per_section_max}\" heading=\"h2 필수\"/>"
         )
     body_structure_str = "\n    ".join(body_structure_lines)
 
@@ -599,13 +671,20 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     if not user_region:
         user_region = "지역 사회"
 
+    output_format_rule = "템플릿에서 지시한 XML 태그(title, content, hashtags)만 출력. output 래퍼나 마크다운 코드블록 금지."
+    if output_mode == 'json':
+        output_format_rule = (
+            "최종 출력은 JSON 객체 1개만 반환하고, XML 태그/코드블록/설명문을 추가하지 마십시오. "
+            "필수 키: title, intro, body, conclusion."
+        )
+
     structure_enforcement = f"""
 <structure_guide mode="strict">
   <strategy>E-A-T (전문성-권위-신뢰) 전략으로 작성</strategy>
 
   <volume warning="위반 시 시스템 오류">
     <per_section min="{per_section_min}" max="{per_section_max}" recommended="{per_section_recommended}"/>
-    <paragraphs_per_section>3개 문단, 문단당 110~130자</paragraphs_per_section>
+    <paragraphs_per_section>{STRUCTURE_SPEC['paragraphsPerSection']}개 문단, 문단당 {STRUCTURE_SPEC['paragraphCharMin']}~{STRUCTURE_SPEC['paragraphCharMax']}자</paragraphs_per_section>
     <total sections="{total_section_count}" min="{min_total_chars}" max="{max_total_chars}"/>
     <caution>총 분량 상한을 넘기지 않도록 중복 문장과 장황한 수식어를 제거하고, 근거 중심으로 간결하게 작성하십시오.</caution>
   </volume>
@@ -619,13 +698,13 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
   </expansion_guide>
 
   <sections total="{total_section_count}">
-    <intro paragraphs="2~3" chars="{per_section_recommended}" heading="없음">
+    <intro paragraphs="{STRUCTURE_SPEC['paragraphsPerSection']}" chars="{per_section_recommended}" heading="없음">
       {intro_line_1}
       {intro_line_2}
       {intro_line_3}
     </intro>
     {body_structure_str}
-    <conclusion order="{total_section_count}" paragraphs="2~3" chars="{per_section_recommended}" heading="h2 필수"/>
+    <conclusion order="{total_section_count}" paragraphs="{STRUCTURE_SPEC['paragraphsPerSection']}" chars="{per_section_recommended}" heading="h2 필수"/>
   </sections>
 
   <h2_strategy name="소제목 작성 전략 (AEO+SEO)">
@@ -664,10 +743,10 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     <rule id="defer_output_addons" severity="critical">슬로건/후원 안내(계좌·예금주·연락처·영수증 안내)는 본문에 쓰지 말 것. 해당 정보는 최종 출력 직전에 시스템이 자동 부착.</rule>
     <rule id="no_slogan_repeat" severity="critical">입장문의 맺음말/슬로건을 각 섹션 끝마다 반복 금지. 모든 호소와 다짐은 맨 마지막 결론부에만.</rule>
     <rule id="sentence_completion">문장은 올바른 종결 어미(~입니다, ~합니다, ~시오)로 끝내야 함. 고의적 오타/잘린 문장 금지.</rule>
-    <rule id="keyword_per_section">각 섹션마다 키워드 1개 이상 포함</rule>
+    <rule id="keyword_per_section">각 섹션마다 키워드 {KEYWORD_SPEC['perSectionMin']}개 이상 포함</rule>
     <rule id="separate_pledges">각 본론 섹션은 서로 다른 주제/공약을 다룰 것</rule>
-    <rule id="verb_diversity" severity="critical">같은 동사(예: "던지면서")를 원고 전체에서 3회 이상 사용 금지. 동의어 교체: 제시하며, 약속하며, 열며, 보여드리며 등.</rule>
-    <rule id="slogan_once">캐치프레이즈("청년이 돌아오는 부산")나 비유("아시아의 싱가포르")는 결론부 1회만. 다른 섹션에서는 변형 사용.</rule>
+    <rule id="verb_diversity" severity="critical">같은 동사(예: "던지면서")를 원고 전체에서 {int(QUALITY_SPEC['verbRepeatMax']) + 1}회 이상 사용 금지. 동의어 교체: 제시하며, 약속하며, 열며, 보여드리며 등.</rule>
+    <rule id="slogan_once">캐치프레이즈("청년이 돌아오는 부산")나 비유("아시아의 싱가포르")는 결론부 {QUALITY_SPEC['sloganMax']}회만. 다른 섹션에서는 변형 사용.</rule>
     <rule id="natural_keyword">키워드는 정보 문장이 아니라 맥락 문장으로 삽입. 키워드 문장에는 최소 1개 이상 포함: 행사 정보(일시/장소/참여 방법), 대화 주제, 시민 행동 제안. 해당 문단의 주장/근거와 결합해 쓰고, 키워드만으로 된 장식/단독 문장 금지.</rule>
     <rule id="no_single_sentence_echo">같은 구조의 단문 문장을 섹션 말미마다 반복 금지. 특히 "이 만남은 ~", "이 자리는 ~", "이 뜻깊은 자리는 ~", "이번 만남은 ~" 패턴은 한 번만 사용.</rule>
     <rule id="no_datetime_location_ngram_repeat">일시+장소가 함께 들어간 구문(예: "3월 1일(일) 오후 2시, 서면...")은 같은 어순으로 3회 이상 반복 금지. 2회를 넘으면 어순/표현을 반드시 변형할 것.</rule>
@@ -687,14 +766,14 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     <separate_pledges>서로 다른 공약/정책은 하나의 본론에 합치지 말 것</separate_pledges>
   </constraints>
 
-  <output_format>템플릿에서 지시한 XML 태그(title, content, hashtags)만 출력. output 래퍼나 마크다운 코드블록 금지.</output_format>
+  <output_format>{_xml_text(output_format_rule)}</output_format>
 </structure_guide>
 """
 
     # SEO 지침 생성
     seo_instruction = build_seo_instruction({
         'keywords': params.get('userKeywords', []),
-        'targetWordCount': params.get('targetWordCount', 2000)
+        'targetWordCount': params.get('targetWordCount', int(STRUCTURE_SPEC['idealTotalMin']))
     })
 
     # 선거법 준수 지침 생성

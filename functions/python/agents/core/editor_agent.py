@@ -1,7 +1,6 @@
 
 import logging
 import re
-import json
 import asyncio
 from typing import Dict, Any, List, Optional
 from ..base_agent import Agent
@@ -41,7 +40,7 @@ class EditorAgent(Agent):
         Refine content using LLM based on validation issues.
         Matches Node.js refineWithLLM logic.
         """
-        from ..common.gemini_client import generate_content_async
+        from ..common.gemini_client import generate_json_async
 
         content = context.get('content', '')
         title = context.get('title', '')
@@ -51,6 +50,7 @@ class EditorAgent(Agent):
         status = context.get('status', 'active')
         target_word_count = context.get('targetWordCount', 2000)
         polish_mode = bool(context.get('polishMode') is True)
+        speaker_name = str(context.get('fullName') or context.get('speakerName') or '').strip()
 
         # 1. Apply Hard Constraints First (Pre-LLM cleanups if any? Node.js does it post-LLM usually, but applyHardConstraintsOnly uses it)
         # We will use LLM first, then apply hard constraints as fallback/final polish.
@@ -64,6 +64,7 @@ class EditorAgent(Agent):
             user_keywords=user_keywords,
             status=status,
             target_word_count=target_word_count,
+            speaker_name=speaker_name,
             polish_mode=polish_mode,
         )
 
@@ -73,13 +74,15 @@ class EditorAgent(Agent):
 
         # Call LLM
         try:
-            response_text = await generate_content_async(
+            result = await generate_json_async(
                 prompt,
                 model_name=self.model_name,
-                response_mime_type='application/json'
+                temperature=0.7,
+                max_output_tokens=8192,
+                retries=2,
+                required_keys=("content",),
+                options={'json_parse_retries': 2},
             )
-            text = re.sub(r'```(?:json)?\s*([\s\S]*?)```', r'\1', response_text).strip()
-            result = json.loads(text)
 
             new_content = result.get('content', content)
             new_title = result.get('title', title)
@@ -110,6 +113,7 @@ class EditorAgent(Agent):
         user_keywords,
         status,
         target_word_count,
+        speaker_name: str = "",
         polish_mode: bool = False,
     ):
         issues = []
@@ -148,6 +152,19 @@ class EditorAgent(Agent):
              status_note = f"\n⚠️ 작성자 상태: {status} (예비후보 등록 전) - 공약성 표현 엄격 금지"
              
         natural_tone = build_natural_tone_prompt({'severity': 'strict'})
+        speaker_guard = ""
+        if speaker_name:
+            speaker_guard = f"""
+7. **화자 정체성 고정**: 이 글의 유일한 1인칭 화자는 \"{speaker_name}\"입니다.
+   - \"저는 {speaker_name}\" 또는 \"저는/제가\" 시점만 허용
+   - \"저는 [다른 인물명] 후보/시장/의원...\" 형태는 절대 금지
+   - 경쟁자 언급은 반드시 3인칭(예: \"주진우 후보는\")으로만 작성
+""".strip()
+        else:
+            speaker_guard = """
+7. **화자 정체성 고정**: 1인칭 화자를 다른 인물로 바꾸지 마세요.
+   - \"저는 [다른 인물명] 후보/시장/의원...\" 형태는 절대 금지
+""".strip()
         
         return f"""당신은 정치 원고 편집 전문가입니다. 아래 원고에서 발견된 문제들을 수정해주세요.
 
@@ -172,7 +189,8 @@ class EditorAgent(Agent):
 {natural_tone}
 5. **최종 윤문**: 의미/사실/정치적 입장/수치/고유명사는 유지하고 문장 흐름, 연결어, 호흡만 개선
 6. **과편집 금지**: 원문의 핵심 주장과 논리 순서를 바꾸지 말 것
-
+{speaker_guard}
+ 
 다음 JSON 형식으로만 응답하세요:
 {{
   "title": "수정된 제목",
@@ -210,8 +228,6 @@ class EditorAgent(Agent):
         # 2. 과다 키워드 강제 분산 (reduceKeywordSpam)
         # Porting strict logic: max 6 times allowed
         MAX_ALLOWED = 6
-        PRESERVE_FRONT = 4
-        PRESERVE_BACK = 2
         
         for keyword in user_keywords:
             # Count occurrences using simple text search to avoid complex regex issues for now
@@ -224,23 +240,9 @@ class EditorAgent(Agent):
             
             if count > MAX_ALLOWED:
                 excess = count - MAX_ALLOWED
-                summary.append(f"키워드 과다('{keyword}' {count}회) -> {excess}회 분산 필요 (자동 보정)")
-                
-                # Replace logic: Keep first 4, keep last 2, replace middle ones with synonyms
-                # Since we don't have a robust synonym generator in Python yet, we just remove/dilute the middle ones
-                # or replace with "이 문제", "해당 사안" etc.
-                
-                indices_to_replace = matches[PRESERVE_FRONT : count - PRESERVE_BACK]
-                
-                # We need to replace from back to front to not mess up indices
-                indices_to_replace.reverse()
-                
-                for match in indices_to_replace:
-                    start, end = match.span()
-                    # Check context to choose replacement?
-                    # Simple fallback: "관련 현안" or just delete if safe? Replacement is better.
-                    replacement = "관련 현안" 
-                    updated_content = updated_content[:start] + replacement + updated_content[end:]
+                summary.append(
+                    f"키워드 과다('{keyword}' {count}회) 감지 - 문장 파손 방지를 위해 자동 치환은 수행하지 않음 ({excess}회 초과)"
+                )
 
         # 3. Double Transformation Check ("것일 것입니다" -> "것입니다")
         updated_content = re.sub(r'것일 것입니다', '것입니다', updated_content)

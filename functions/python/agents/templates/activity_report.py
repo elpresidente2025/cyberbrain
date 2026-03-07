@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from ..common.editorial import STRUCTURE_SPEC, TITLE_SPEC
 
 @dataclass
 class PromptOption:
@@ -34,7 +35,7 @@ def build_activity_report_prompt(options: dict) -> str:
     author_bio = options.get('authorBio', '')
     instructions = options.get('instructions', '')
     keywords = options.get('keywords', [])
-    target_word_count = options.get('targetWordCount', 2000)
+    target_word_count = options.get('targetWordCount', int(STRUCTURE_SPEC['idealTotalMin']))
     personalized_hints = options.get('personalizedHints', '')
     # newsContext handled by writer agent
     declarative_structure_id = options.get('declarativeStructureId')
@@ -70,7 +71,7 @@ def build_activity_report_prompt(options: dict) -> str:
 <basic_info>
   <author>{author_bio}</author>
   <topic>{topic}</topic>
-  <target_length unit="자(공백 제외)">{target_word_count or 2000}</target_length>
+  <target_length unit="자(공백 제외)">{target_word_count or int(STRUCTURE_SPEC['idealTotalMin'])}</target_length>
 </basic_info>
 
 {keywords_section}{hints_section}
@@ -114,7 +115,7 @@ def build_activity_report_prompt(options: dict) -> str:
 출력 시 반드시 아래 XML 태그 형식을 사용하라:
 
 <title>
-[여기에 제목 작성 - 35자 이내, 숫자 포함 권장]
+[여기에 제목 작성 - {TITLE_SPEC['hardMax']}자 이내, 숫자 포함 권장]
 </title>
 
 <content>

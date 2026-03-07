@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from ..common.editorial import get_active_strategies
+from ..common.editorial import get_active_strategies, STRUCTURE_SPEC, TITLE_SPEC
 from ..common.election_rules import get_election_stage
 
 @dataclass
@@ -37,7 +37,7 @@ def build_policy_proposal_prompt(options: dict) -> str:
     author_name = options.get('authorName', '')
     instructions = options.get('instructions', '')
     keywords = options.get('keywords', [])
-    target_word_count = options.get('targetWordCount', 2000)
+    target_word_count = options.get('targetWordCount', int(STRUCTURE_SPEC['idealTotalMin']))
     personalized_hints = options.get('personalizedHints', '')
     logical_structure_id = options.get('logicalStructureId')
     argumentation_tactic_id = options.get('argumentationTacticId')
@@ -115,7 +115,7 @@ def build_policy_proposal_prompt(options: dict) -> str:
   <author>{author_bio}</author>
   <speaker_name usage="서론 1회, 결론 1회만">{speaker_name}</speaker_name>
   <topic>{topic}</topic>
-  <target_length unit="자(공백 제외)">{target_word_count or 2000}</target_length>
+  <target_length unit="자(공백 제외)">{target_word_count or int(STRUCTURE_SPEC['idealTotalMin'])}</target_length>
 </basic_info>
 
 {keywords_section}{hints_section}{rhetorical_section}
@@ -166,7 +166,7 @@ def build_policy_proposal_prompt(options: dict) -> str:
 출력 시 반드시 아래 XML 태그 형식을 사용하라:
 
 <title>
-[여기에 제목 작성 - 35자 이내, 숫자 포함 권장]
+[여기에 제목 작성 - {TITLE_SPEC['hardMax']}자 이내, 숫자 포함 권장]
 </title>
 
 <content>

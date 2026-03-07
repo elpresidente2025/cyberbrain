@@ -1,14 +1,24 @@
 import logging
 import re
-import json
-import asyncio
 from typing import Dict, Any, List, Optional
 from ..base_agent import Agent
 
 # Local imports
-from ..common.gemini_client import get_client, generate_content_async
+from ..common.gemini_client import StructuredOutputError, generate_json_async
 
 logger = logging.getLogger(__name__)
+
+SUBHEADING_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "headings": {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 1,
+        }
+    },
+    "required": ["headings"],
+}
 
 # 🔑 카테고리별 소제목 스타일 정의 (Node.js 포팅)
 SUBHEADING_STYLES = {
@@ -249,35 +259,35 @@ class SubheadingAgent(Agent):
 }
 """
         
-        # Retry Logic
-        max_retries = 3
-        last_error = None
-        
-        for attempt in range(1, max_retries + 1):
-            try:
-                response_text = await generate_content_async(
-                    prompt, 
-                    model_name=self.model_name,
-                    response_mime_type='application/json'
-                )
-                
-                # Check JSON validity
-                parsed = json.loads(response_text)
-                if 'headings' in parsed and isinstance(parsed['headings'], list):
-                    processed = []
-                    for h in parsed['headings']:
-                        h_str = str(h).strip().strip('"\'')
-                        if len(h_str) > 28:
-                             h_str = h_str[:27] + "..."
-                        processed.append(h_str)
-                    return processed
-                else:
-                    raise ValueError("JSON parse successful but 'headings' array missing")
+        try:
+            payload = await generate_json_async(
+                prompt,
+                model_name=self.model_name,
+                temperature=0.3,
+                max_output_tokens=1200,
+                retries=2,
+                response_schema=SUBHEADING_RESPONSE_SCHEMA,
+                required_keys=("headings",),
+            )
 
-            except Exception as e:
-                last_error = e
-                logger.warning(f"⚠️ [SubheadingAgent] Attempt {attempt} failed: {e}")
-                await asyncio.sleep(1)
+            headings = payload.get("headings")
+            if not isinstance(headings, list):
+                raise StructuredOutputError("headings must be an array.")
 
-        logger.error(f"❌ [SubheadingAgent] Failed after {max_retries} attempts.")
+            processed: List[str] = []
+            for heading in headings:
+                heading_text = str(heading).strip().strip('"\'')
+                if not heading_text:
+                    continue
+                if len(heading_text) > 28:
+                    heading_text = heading_text[:27] + "..."
+                processed.append(heading_text)
+
+            if not processed:
+                raise StructuredOutputError("headings array is empty after normalization.")
+            return processed
+        except StructuredOutputError as error:
+            logger.error(f"❌ [SubheadingAgent] Structured output validation failed: {error}")
+        except Exception as error:
+            logger.error(f"❌ [SubheadingAgent] Generation failed: {error}")
         return []

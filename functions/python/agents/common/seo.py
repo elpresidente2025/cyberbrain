@@ -1,21 +1,25 @@
-# functions/python/agents/common/seo.py
+﻿# functions/python/agents/common/seo.py
 
-from .editorial import SEO_RULES
+from .editorial import SEO_RULES, KEYWORD_SPEC, QUALITY_SPEC
 
 def calculate_min_insertions(keyword_count=1):
     """
-    키워드별 적정 삽입 횟수 계산
-    키워드 2개 기준: 각 3~4회, 총합 7~8회 (15문단 기준 약 2문단당 1회)
+    ???? ?? ?? ?? ??
+    ??? 2? ??: ? 3~4?, ?? 7~8? (15?? ?? ? 2??? 1?)
     """
     if keyword_count >= 2:
-        return 3  # 각 3~4회, 총합 7~8회
-    return 5  # 키워드 1개면 5~6회
+        return KEYWORD_SPEC['perKeywordMin']
+    return KEYWORD_SPEC['singleKeywordMin']
+def calculate_max_insertions(keyword_count=1):
+    if keyword_count >= 2:
+        return KEYWORD_SPEC['perKeywordMax']
+    return KEYWORD_SPEC['singleKeywordMax']
 
 def calculate_distribution(per_keyword):
     """
-    키워드 배치 구간 계산 (15문단 기준, 2문단당 1개 꼴)
+    ?ㅼ썙??諛곗튂 援ш컙 怨꾩궛 (15臾몃떒 湲곗?, 2臾몃떒??1媛?瑗?
     """
-    if per_keyword <= 3:
+    if per_keyword <= KEYWORD_SPEC['perKeywordMin']:
         return {'intro': 1, 'body': 1, 'conclusion': 1}
     return {
         'intro': 1,
@@ -25,7 +29,7 @@ def calculate_distribution(per_keyword):
 
 def build_seo_instruction(params):
     """
-    SEO 최적화 지침 생성 (XML 형식)
+    SEO 理쒖쟻??吏移??앹꽦 (XML ?뺤떇)
     """
     keywords = params.get('keywords', [])
     target_word_count = params.get('targetWordCount') or SEO_RULES['wordCount']['target']
@@ -35,9 +39,17 @@ def build_seo_instruction(params):
 
     kw_count = len(keywords) if keywords else 0
     min_insertions = calculate_min_insertions(kw_count)
+    if kw_count >= 2:
+        max_per_keyword = KEYWORD_SPEC['perKeywordMax']
+    else:
+        max_per_keyword = KEYWORD_SPEC['singleKeywordMax']
     distribution = calculate_distribution(min_insertions)
-    total_insertions = min_insertions * kw_count
-    max_per_keyword = min_insertions + 1  # 3~4회 허용
+    if kw_count >= 2:
+        total_insertions = KEYWORD_SPEC['totalMin']
+        total_max_insertions = KEYWORD_SPEC['totalMax']
+    else:
+        total_insertions = min_insertions * kw_count
+        total_max_insertions = max_per_keyword * kw_count
 
     keyword_section = ''
     if keywords:
@@ -47,98 +59,72 @@ def build_seo_instruction(params):
         keyword_section = f"""
   <keywords>
 {keyword_items}
-    <total_target min="{total_insertions}" max="{total_insertions + kw_count}" note="키워드 {kw_count}개 × 각 {min_insertions}~{max_per_keyword}회 = 총 {total_insertions}~{total_insertions + kw_count}회"/>
-    <distribution intro="{distribution['intro']}" body="{distribution['body']}" conclusion="{distribution['conclusion']}" note="15문단 기준 약 2문단당 1개 꼴로 배치"/>
+    <total_target min="{total_insertions}" max="{total_max_insertions}" note="?ㅼ썙??{kw_count}媛?횞 媛?{min_insertions}~{max_per_keyword}??= 珥?{total_insertions}~{total_max_insertions}??/>
+    <distribution intro="{distribution['intro']}" body="{distribution['body']}" conclusion="{distribution['conclusion']}" note="15臾몃떒 湲곗? ??2臾몃떒??1媛?瑗대줈 諛곗튂"/>
     <insertion_method>
-      <exact_match severity="critical">키워드 원문을 한 글자도 바꾸지 말고 정확히 그대로 삽입할 것. 조사(의/은/는/을/를) 추가 금지, 어순 변경 금지, 띄어쓰기 변경 금지.</exact_match>
-      <good>"이번 행사에서 {first_kw} 관련 성과를 공유했습니다." (키워드 원문 그대로)</good>
-      <good>"지역 경제를 살리기 위한 {first_kw} 전략이 주목받고 있습니다." (키워드 원문 그대로)</good>
-      <bad>"{first_kw}의 성과로..." → 조사 "의" 삽입으로 키워드 변형됨</bad>
-      <bad>"{first_kw}은(는)..." → 조사 추가로 키워드 변형됨</bad>
-      <bad>동일 문단에 같은 키워드 2회 이상 반복</bad>
-      <bad>키워드만 나열하는 스터핑</bad>
-      <bad>같은 키워드를 연속 문단에 배치 (최소 1문단 간격 유지)</bad>
+      <exact_match severity="critical">?ㅼ썙???먮Ц????湲?먮룄 諛붽씀吏 留먭퀬 ?뺥솗??洹몃?濡??쎌엯??寃? 議곗궗(???/????瑜? 異붽? 湲덉?, ?댁닚 蹂寃?湲덉?, ?꾩뼱?곌린 蹂寃?湲덉?.</exact_match>
+      <good>"?대쾲 ?됱궗?먯꽌 {first_kw} 愿???깃낵瑜?怨듭쑀?덉뒿?덈떎." (?ㅼ썙???먮Ц 洹몃?濡?</good>
+      <good>"吏??寃쎌젣瑜??대━湲??꾪븳 {first_kw} ?꾨왂??二쇰ぉ諛쏄퀬 ?덉뒿?덈떎." (?ㅼ썙???먮Ц 洹몃?濡?</good>
+      <bad>"{first_kw}???깃낵濡?.." ??議곗궗 "?? ?쎌엯?쇰줈 ?ㅼ썙??蹂?뺣맖</bad>
+      <bad>"{first_kw}?(??..." ??議곗궗 異붽?濡??ㅼ썙??蹂?뺣맖</bad>
+      <bad>?숈씪 臾몃떒??媛숈? ?ㅼ썙??2???댁긽 諛섎났</bad>
+      <bad>?ㅼ썙?쒕쭔 ?섏뿴?섎뒗 ?ㅽ꽣??/bad>
+      <bad>媛숈? ?ㅼ썙?쒕? ?곗냽 臾몃떒??諛곗튂 (理쒖냼 1臾몃떒 媛꾧꺽 ?좎?)</bad>
     </insertion_method>
   </keywords>
   <keyword_quality severity="critical">
-    <bad>키워드만으로 구성된 독립 문장: "OO 공약은 ~을 위한 약속입니다."</bad>
-    <bad>문맥과 무관한 키워드 삽입: "OO 관련 현황을 반드시 이뤄낼 것입니다."</bad>
-    <good>앞 문단과 연결어(이러한, 이처럼)로 이어지는 자연스러운 문장 속 배치</good>
-    <good>구체적 정보(수치, 사례)와 함께 키워드가 등장하는 문장</good>
-    <test>이 키워드를 빼도 문장이 성립하는가? → NO면 자연 삽입 성공</test>
+    <bad>?ㅼ썙?쒕쭔?쇰줈 援ъ꽦???낅┰ 臾몄옣: "OO 怨듭빟? ~???꾪븳 ?쎌냽?낅땲??"</bad>
+    <bad>臾몃㎘怨?臾닿????ㅼ썙???쎌엯: "OO 愿???꾪솴??諛섎뱶???대쨪??寃껋엯?덈떎."</bad>
+    <good>??臾몃떒怨??곌껐???대윭?? ?댁쿂??濡??댁뼱吏???먯뿰?ㅻ윭??臾몄옣 ??諛곗튂</good>
+    <good>援ъ껜???뺣낫(?섏튂, ?щ?)? ?④퍡 ?ㅼ썙?쒓? ?깆옣?섎뒗 臾몄옣</good>
+    <test>???ㅼ썙?쒕? 鍮쇰룄 臾몄옣???깅┰?섎뒗媛? ??NO硫??먯뿰 ?쎌엯 ?깃났</test>
   </keyword_quality>"""
 
     checklist_keywords = ''
     if keywords:
         checklist_keywords = f"""
-    <item>각 키워드를 {min_insertions}~{max_per_keyword}회씩, 총 {total_insertions}~{total_insertions + kw_count}회 자연스럽게 배치</item>
-    <item>키워드가 도입부/본론/결론에 고르게 분산 (약 2문단당 1개 꼴)</item>
-    <item>같은 키워드를 연속 문단에 넣지 않기 (최소 1문단 간격)</item>"""
+    <item>媛??ㅼ썙?쒕? {min_insertions}~{max_per_keyword}?뚯뵫, 珥?{total_insertions}~{total_max_insertions}???먯뿰?ㅻ읇寃?諛곗튂</item>
+    <item>?ㅼ썙?쒓? ?꾩엯遺/蹂몃줎/寃곕줎??怨좊Ⅴ寃?遺꾩궛 (??2臾몃떒??1媛?瑗?</item>
+    <item>媛숈? ?ㅼ썙?쒕? ?곗냽 臾몃떒???ｌ? ?딄린 (理쒖냼 1臾몃떒 媛꾧꺽)</item>"""
 
     return f"""
-<seo_rules priority="highest" warning="위반 시 원고 폐기">
+<seo_rules priority="highest" warning="?꾨컲 ???먭퀬 ?먭린">
   <word_count min="{min_len}" max="{max_len}"/>
 {keyword_section}
   <checklist>
-    <item>글자수 {min_len}~{max_len}자 범위 준수</item>{checklist_keywords}
-    <item>도입-본론-결론 구조로 내용 구성</item>
+    <item>湲?먯닔 {min_len}~{max_len}??踰붿쐞 以??/item>{checklist_keywords}
+    <item>?꾩엯-蹂몃줎-寃곕줎 援ъ“濡??댁슜 援ъ꽦</item>
   </checklist>
 </seo_rules>
 """
 
 def build_anti_repetition_instruction():
     """
-    반복 금지 및 품질 규칙 지침 생성 (XML 형식)
+    諛섎났 湲덉? 諛??덉쭏 洹쒖튃 吏移??앹꽦 (XML ?뺤떇)
     """
-    return """
+    return f"""
 <anti_repetition_rules severity="critical" warning="위반 시 원고 폐기">
   <rule id="no_duplicate_sentence">
-    동일 문장 2회 이상 등장 절대 금지. 표현만 살짝 바꾼 유사 문장도 반복으로 간주.
+    동일 문장 {QUALITY_SPEC['duplicateSentenceMax'] + 1}회 이상 반복 금지.
   </rule>
   <rule id="no_similar_paragraph">
-    같은 주장을 표현만 바꿔 여러 번 반복 금지. 결론에서 본문 재요약 금지.
-    각 문단은 하나의 핵심 메시지만 전달. 새 문단은 반드시 새로운 정보 포함.
+    같은 주장을 표현만 바꿔 반복하지 않습니다. 각 문단은 새로운 정보/근거를 포함합니다.
   </rule>
   <rule id="no_verb_repeat">
-    같은 동사/구문을 원고 전체에서 3회 이상 사용 금지.
-    <bad>"던지면서" 6회 반복</bad>
-    <fix>제시하며, 약속하며, 열며, 보여드리며 등 동의어 교체</fix>
+    같은 동사/구문을 원고 전체에서 {QUALITY_SPEC['verbRepeatMax'] + 1}회 이상 사용 금지.
   </rule>
   <rule id="no_slogan_repeat">
-    캐치프레이즈, 비전 문구, 벤치마크 비유는 결론부에서 1회만 사용.
-    <bad>"아시아의 싱가포르" 2회 사용</bad>
-    <fix>첫 등장만 유지, 두 번째는 "세계적인 경제·관광 도시"로 변형</fix>
-  </rule>
-  <rule id="no_section_closing_repeat" severity="critical">
-    CTA(행사 안내, 장소·일시, 참여 요청)는 도입부(1회)와 결론부(1회)에만 허용.
-    본론 섹션(소제목 아래)은 CTA 없이 다음 주제로 자연스럽게 연결해야 함.
-    <bad>5개 섹션 모두 "3월 1일, 서면 영광도서에서 여러분을 기다리겠습니다"로 끝남</bad>
-    <fix>본론 섹션은 "이러한 경험이 다음 비전의 토대가 되었습니다" 식으로 다음 주제 예고</fix>
+    캐치프레이즈/비전 문구/벤치마크 비유는 결론부 {QUALITY_SPEC['sloganMax']}회만 사용.
   </rule>
   <rule id="no_phrase_repeat" severity="critical">
-    3어절 이상의 동일 구문은 원고 전체에서 2회까지만 허용.
-    <bad>"부산 경제 대혁신을 반드시 이뤄내겠습니다" 5회 등장</bad>
-    <bad>"평범한 이웃들의 월급봉투" 4회 등장</bad>
-    <fix>핵심 메시지는 결론에서 1회만, 본론에서는 구체적 정책/사례로 대체</fix>
-  </rule>
-  <rule id="no_forced_insertion">
-    프롬프트에서 요청한 톤 키워드("그래도", "함께" 등)를 매 섹션에 기계적으로 삽입 금지.
-    톤 키워드는 원고 전체에서 자연스러운 맥락에서 1~2회만 사용.
-    <bad>"그래도"가 5개 섹션 모두에 1회씩 = 5회 등장</bad>
-    <fix>"그래도"는 가장 효과적인 위치(역경 서사 또는 결론) 1곳에서만 사용</fix>
-  </rule>
-  <rule id="structure_consistency">
-    마무리 인사("감사합니다", "~드림") 이후 본문 절대 재시작 금지.
+    3어절 이상 동일 구문은 원고 전체에서 {QUALITY_SPEC['phrase3wordMax']}회까지만 허용.
   </rule>
   <checklist>
-    <item>같은 문장 2번 이상 등장하지 않는가?</item>
-    <item>같은 동사 3번 이상 반복하지 않았는가?</item>
-    <item>같은 슬로건/비유 2번 이상 반복하지 않았는가?</item>
-    <item>각 문단이 새로운 정보를 담고 있는가?</item>
-    <item>마무리 인사 이후 본문이 재시작되지 않는가?</item>
-    <item>CTA(장소·일시·참여 요청)가 도입부와 결론부에만 있는가?</item>
-    <item>3어절 이상 동일 구문이 3회 이상 등장하지 않는가?</item>
-    <item>톤 키워드("그래도" 등)가 2회 이하인가?</item>
+    <item>동일 문장 {QUALITY_SPEC['duplicateSentenceMax'] + 1}회 이상 반복이 없는가?</item>
+    <item>동일 동사/구문 {QUALITY_SPEC['verbRepeatMax'] + 1}회 이상 반복이 없는가?</item>
+    <item>슬로건/비유가 결론부 {QUALITY_SPEC['sloganMax']}회로 제한되는가?</item>
+    <item>3어절 이상 동일 구문이 {QUALITY_SPEC['phrase3wordMax'] + 1}회 이상 등장하지 않는가?</item>
   </checklist>
 </anti_repetition_rules>
 """
+

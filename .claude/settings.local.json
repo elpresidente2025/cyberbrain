@@ -207,7 +207,21 @@
       "Bash(git reset:*)",
       "Bash(npx firebase deploy --force)",
       "Bash(gh repo view:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: 반복 방지 검증 강화 및 키워드 삽입 규칙 개편\n\n- 키워드 삽입: 400자÷1 공식 → 키워드 2개 기준 각 3~4회/총 7~8회로 변경\n- 듀얼 키워드 제목 배치: 유사 키워드\\(어절 해체\\) / 독립 키워드\\(뒤쪽 배치\\) 분기\n- 반복 금지 프롬프트: CTA 도입·결론만 허용, 3어절 구문 2회 제한, 톤 키워드 1~2회\n- 후처리 검증: detectPhraseRepetition \\(3어절 빈도\\), detectNearDuplicateSentences \\(Jaccard 유사도 60%\\)\n- Python SEO agent에도 동일 검증 로직 반영\n- 프론트엔드 리팩토링: Dashboard, Billing, Profile 컴포넌트 분리\n- Python 파이프라인 추가 \\(agents, handlers, services\\)\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: 반복 방지 검증 강화 및 키워드 삽입 규칙 개편\n\n- 키워드 삽입: 400자÷1 공식 → 키워드 2개 기준 각 3~4회/총 7~8회로 변경\n- 듀얼 키워드 제목 배치: 유사 키워드\\(어절 해체\\) / 독립 키워드\\(뒤쪽 배치\\) 분기\n- 반복 금지 프롬프트: CTA 도입·결론만 허용, 3어절 구문 2회 제한, 톤 키워드 1~2회\n- 후처리 검증: detectPhraseRepetition \\(3어절 빈도\\), detectNearDuplicateSentences \\(Jaccard 유사도 60%\\)\n- Python SEO agent에도 동일 검증 로직 반영\n- 프론트엔드 리팩토링: Dashboard, Billing, Profile 컴포넌트 분리\n- Python 파이프라인 추가 \\(agents, handlers, services\\)\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git status:*)",
+      "Bash(npx firebase deploy --only functions:pythonRag)",
+      "Bash(gcloud run services logs read:*)",
+      "Bash(firebase storage:buckets:*)",
+      "Bash(gsutil ls:*)",
+      "Bash(gcloud storage ls:*)",
+      "Bash(npx firebase ext:list)",
+      "Bash(findstr:*)",
+      "Bash(FUNCTIONS_DISCOVERY_TIMEOUT=120000 npx firebase deploy:*)",
+      "Bash(npx vite build)",
+      "Bash(npx firebase functions:log:*)",
+      "Bash(gcloud functions list:*)",
+      "Bash(set:*)",
+      "Bash(python -c \"import json; json.loads\\(''{\"\"test\"\": \"\"unterminated''\\)\")"
     ]
   },
   "mcpServers": {
