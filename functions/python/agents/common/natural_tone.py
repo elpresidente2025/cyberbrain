@@ -22,7 +22,24 @@ BLACKLIST_PATTERNS = {
     'verb_repetition': [
         '던지면서', '던지며',
         '이끌어내며', '이끌어가며'
-    ]
+    ],
+    # AI 투 패턴 (oh-my-humanizer 참고)
+    'structural_enumeration': [
+        '첫째,', '둘째,', '셋째,', '넷째,',
+        '첫 번째로', '두 번째로', '세 번째로',
+    ],
+    'excessive_emphasis': [
+        '매우 중요한', '특히 주목할', '반드시 필요한',
+        '절대적으로', '핵심적으로', '본질적으로',
+    ],
+    'symmetric_overuse': [
+        '뿐만 아니라', '은 물론', '를 넘어',
+        '동시에', '아울러',
+    ],
+    'formal_closing': [
+        '도움이 되었으면 합니다', '참고가 되셨으면 합니다',
+        '함께 나아가겠습니다', '함께 만들어가겠습니다',
+    ],
 }
 
 def build_natural_tone_prompt(options={}):
@@ -39,7 +56,11 @@ def build_natural_tone_prompt(options={}):
     strict_extras = ""
     if is_strict:
         strict_extras = """
-    <category name="격식체 잔여" action="간결한 구어체로 변환">따라서, 결과적으로, ~라고 할 수 있습니다</category>"""
+    <category name="격식체 잔여" action="간결한 구어체로 변환">따라서, 결과적으로, ~라고 할 수 있습니다</category>
+    <category name="AI 투 — 구조 나열" action="나열 대신 흐름으로 연결">첫째/둘째/셋째 기계적 나열, 첫 번째로/두 번째로</category>
+    <category name="AI 투 — 과강조" action="수식어 제거, 사실로 대체">매우 중요한, 특히 주목할, 반드시 필요한, 핵심적으로, 본질적으로</category>
+    <category name="AI 투 — 대칭 남발" action="문장 구조 다양화">뿐만 아니라, 은 물론, 를 넘어, 동시에, 아울러 과다 반복</category>
+    <category name="AI 투 — 형식적 마무리" action="구체적 다짐/사실로 대체">도움이 되었으면 합니다, 함께 나아가겠습니다, 함께 만들어가겠습니다</category>"""
 
     return f"""
 <natural_tone_rules>

@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 WEEKDAY_SHORT_TOKENS = ("월", "화", "수", "목", "금", "토", "일")
 WEEKDAY_FULL_TOKENS = tuple(f"{token}요일" for token in WEEKDAY_SHORT_TOKENS)
 WEEKDAY_TOKEN_PATTERN = r"(?:월|화|수|목|금|토|일)(?:요일)?"
+ROLE_KEYWORD_PATTERN = re.compile(r"^[가-힣]{2,8}\s*(?:현\s*)?(?:부산시장|국회의원)$")
 DATE_WEEKDAY_PATTERN = re.compile(
     rf"(?:(?P<year>\d{{4}})\s*년\s*)?"
     rf"(?P<month>\d{{1,2}})\s*월\s*"
@@ -1094,6 +1095,48 @@ def validate_title_quality(
     return {"passed": not has_blocking_issue, "issues": issues, "details": details}
 
 
+def detect_ai_writing_patterns(content: str) -> Dict[str, Any]:
+    """BLACKLIST_PATTERNS 기준으로 AI 투 패턴을 감지한다.
+
+    Returns:
+        {
+            "score": 0-100,   # 패턴 밀도 기반 점수 (높을수록 AI 투)
+            "detected": [...], # 감지된 패턴 목록
+            "passed": bool,   # score <= 30 이면 True
+        }
+    """
+    from agents.common.natural_tone import BLACKLIST_PATTERNS
+
+    ai_categories = [
+        'structural_enumeration',
+        'excessive_emphasis',
+        'symmetric_overuse',
+        'formal_closing',
+    ]
+
+    plain = re.sub(r'<[^>]+>', '', content)
+    word_count = max(len(plain), 1)
+
+    detected: list[str] = []
+    hit_count = 0
+
+    for cat in ai_categories:
+        patterns = BLACKLIST_PATTERNS.get(cat, [])
+        for p in patterns:
+            if p in plain:
+                detected.append(p)
+                hit_count += plain.count(p)
+
+    # 1000자당 히트 수 기준으로 0-100 점수
+    score = min(100, int(hit_count / word_count * 1000 * 10))
+
+    return {
+        "score": score,
+        "detected": detected,
+        "passed": score <= 30,
+    }
+
+
 def run_heuristic_validation_sync(
     content: str,
     status: str,
@@ -1131,6 +1174,11 @@ def run_heuristic_validation_sync(
         title_check = find_unsupported_numeric_tokens(title, fact_allowlist) if title else {"passed": True, "unsupported": []}
         fact_check_result = {"content": content_check, "title": title_check}
 
+    ai_writing_result = detect_ai_writing_patterns(content)
+    if not ai_writing_result.get("passed", True):
+        detected = ", ".join(ai_writing_result.get("detected", [])[:5])
+        issues.append(f"⚠️ AI 투 표현 감지: {detected}")
+
     return {
         "passed": len(issues) == 0,
         "issues": issues,
@@ -1138,6 +1186,7 @@ def run_heuristic_validation_sync(
             "repetition": repetition_result,
             "electionLaw": election_result,
             "factCheck": fact_check_result,
+            "ai_writing": ai_writing_result,
         },
     }
 
@@ -1211,6 +1260,11 @@ async def run_heuristic_validation(
         title_check = find_unsupported_numeric_tokens(title, fact_allowlist) if title else {"passed": True, "unsupported": []}
         fact_check_result = {"content": content_check, "title": title_check}
 
+    ai_writing_result = detect_ai_writing_patterns(content)
+    if not ai_writing_result.get("passed", True):
+        detected = ", ".join(ai_writing_result.get("detected", [])[:5])
+        issues.append(f"⚠️ AI 투 표현 감지: {detected}")
+
     return {
         "passed": len(issues) == 0,
         "issues": issues,
@@ -1219,6 +1273,7 @@ async def run_heuristic_validation(
             "electionLaw": election_result,
             "titleQuality": title_result,
             "factCheck": fact_check_result,
+            "ai_writing": ai_writing_result,
         },
     }
 
@@ -1515,6 +1570,56 @@ def _count_user_keyword_exact_non_overlap(content: str, user_keywords: Sequence[
     return counts
 
 
+def _normalize_user_keyword(keyword: Any) -> str:
+    return re.sub(r"\s+", " ", str(keyword or "")).strip()
+
+
+def _keyword_tokens(keyword: Any) -> tuple[str, ...]:
+    normalized = _normalize_user_keyword(keyword)
+    if not normalized:
+        return ()
+    return tuple(part for part in normalized.split(" ") if part)
+
+
+def _contains_token_subsequence(longer: Sequence[str], shorter: Sequence[str]) -> bool:
+    if not longer or not shorter or len(shorter) >= len(longer):
+        return False
+    window = len(shorter)
+    for start in range(len(longer) - window + 1):
+        if tuple(longer[start : start + window]) == tuple(shorter):
+            return True
+    return False
+
+
+def find_shadowed_user_keywords(user_keywords: Sequence[str] | None) -> Dict[str, List[str]]:
+    normalized_keywords: list[str] = []
+    seen: set[str] = set()
+    for item in user_keywords or []:
+        keyword = _normalize_user_keyword(item)
+        if not keyword or keyword in seen:
+            continue
+        seen.add(keyword)
+        normalized_keywords.append(keyword)
+
+    shadowed: Dict[str, List[str]] = {}
+    token_cache = {keyword: _keyword_tokens(keyword) for keyword in normalized_keywords}
+    for keyword in normalized_keywords:
+        keyword_tokens = token_cache.get(keyword) or ()
+        if not keyword_tokens:
+            continue
+        for other in normalized_keywords:
+            if keyword == other:
+                continue
+            other_tokens = token_cache.get(other) or ()
+            if not other_tokens:
+                continue
+            if _contains_token_subsequence(other_tokens, keyword_tokens):
+                matches = shadowed.setdefault(keyword, [])
+                if other not in matches:
+                    matches.append(other)
+    return shadowed
+
+
 def _count_keyword_occurrences_in_h2(content: str, keyword: str) -> int:
     if not content or not keyword:
         return 0
@@ -1536,6 +1641,22 @@ def _count_keyword_occurrences_in_paragraphs(content: str, keyword: str) -> int:
         inner = str(match.group(1) or "")
         total += count_keyword_occurrences(inner, keyword)
     return total
+
+
+def _count_user_keyword_exact_non_overlap_in_body(
+    content: str, user_keywords: Sequence[str]
+) -> Dict[str, int]:
+    """<p> 태그 본문만 대상으로 비중첩 카운팅.
+
+    긴 키워드가 짧은 키워드의 위치를 선점하므로
+    'A B'와 'A'가 공존할 때 'A B' 위치는 'A' 카운트에서 제외된다.
+    """
+    paragraphs = list(re.finditer(r"<p\b[^>]*>([\s\S]*?)</p\s*>", str(content or ""), re.IGNORECASE))
+    if not paragraphs:
+        body_text = re.sub(r"<[^>]*>", " ", str(content or ""))
+    else:
+        body_text = " ".join(re.sub(r"<[^>]*>", " ", m.group(1) or "") for m in paragraphs)
+    return _count_user_keyword_exact_non_overlap(body_text, user_keywords)
 
 
 def _keyword_user_threshold(keyword_count: int) -> tuple[int, int]:
@@ -1826,6 +1947,44 @@ def _rewrite_sentence_with_keyword(sentence: str, keyword: str, variant_index: i
     return normalized_sentence
 
 
+def _is_role_keyword(keyword: str) -> bool:
+    normalized_keyword = re.sub(r"\s+", " ", str(keyword or "")).strip()
+    return bool(normalized_keyword and ROLE_KEYWORD_PATTERN.fullmatch(normalized_keyword))
+
+
+def _build_role_keyword_reference_sentence(keyword: str, section_type: str, variant_index: int = 0) -> str:
+    normalized_keyword = re.sub(r"\s+", " ", str(keyword or "")).strip()
+    if not normalized_keyword:
+        return ""
+
+    if str(section_type or "") == "conclusion":
+        templates = (
+            f"마지막까지 '{normalized_keyword}' 검색어도 함께 주목받고 있습니다.",
+            f"이 흐름 속에서 '{normalized_keyword}' 키워드도 계속 거론되고 있습니다.",
+            f"끝까지 '{normalized_keyword}' 표현 역시 함께 언급되고 있습니다.",
+        )
+    else:
+        templates = (
+            f"온라인에서는 '{normalized_keyword}' 검색어도 함께 거론되고 있습니다.",
+            f"시민들 사이에서는 '{normalized_keyword}' 키워드 역시 자주 언급됩니다.",
+            f"이 이슈를 두고 '{normalized_keyword}' 표현도 함께 주목받고 있습니다.",
+        )
+    return templates[variant_index % len(templates)]
+
+
+def _append_sentence_to_paragraph(paragraph_inner: str, sentence: str) -> str:
+    base = str(paragraph_inner or "").rstrip()
+    addition = str(sentence or "").strip()
+    if not addition:
+        return base
+    if not base:
+        return addition
+
+    if not re.search(r"[.!?。]\s*$", base):
+        base += "."
+    return f"{base} {addition}"
+
+
 def _inject_keyword_into_section(
     section_html: str,
     keyword: str,
@@ -1912,6 +2071,31 @@ def _inject_keyword_into_section(
             if count_keyword_occurrences(candidate, normalized_keyword) > before_count:
                 return candidate, True, rewritten_sentence
 
+    if _is_role_keyword(normalized_keyword):
+        reference_sentence = _build_role_keyword_reference_sentence(
+            normalized_keyword,
+            str(section_type or ""),
+            variant_index,
+        )
+        if reference_sentence:
+            for paragraph_index in paragraph_indexes:
+                paragraph_match = paragraph_matches[paragraph_index]
+                paragraph_inner = str(paragraph_match.group(1) or "")
+                plain_paragraph = _strip_html(paragraph_inner)
+                if not plain_paragraph or len(plain_paragraph) < 20:
+                    continue
+                if normalized_keyword in plain_paragraph:
+                    continue
+
+                updated_inner = _append_sentence_to_paragraph(paragraph_inner, reference_sentence)
+                candidate = (
+                    raw_section[: paragraph_match.start(1)]
+                    + updated_inner
+                    + raw_section[paragraph_match.end(1) :]
+                )
+                if count_keyword_occurrences(candidate, normalized_keyword) > before_count:
+                    return candidate, True, reference_sentence
+
     # 신규 문장 보강 없이, 기존 문맥 리라이트가 불가능하면 실패를 반환한다.
     return raw_section, False, ""
 
@@ -1956,11 +2140,17 @@ def enforce_keyword_requirements(
     target_word_count: Optional[int] = None,
     title_text: str = "",
     body_min_overrides: Optional[Mapping[str, int]] = None,
+    skip_user_keywords: Optional[Sequence[str]] = None,
     max_iterations: int = 2,
 ) -> Dict[str, Any]:
     working_content = str(content or "")
-    user_keywords = [item for item in (user_keywords or []) if item]
+    user_keywords = [_normalize_user_keyword(item) for item in (user_keywords or []) if _normalize_user_keyword(item)]
     auto_keywords = [item for item in (auto_keywords or []) if item]
+    skipped_user_keyword_set = {
+        _normalize_user_keyword(item)
+        for item in (skip_user_keywords or [])
+        if _normalize_user_keyword(item)
+    }
 
     initial_result = validate_keyword_insertion(
         working_content,
@@ -1997,6 +2187,8 @@ def enforce_keyword_requirements(
             break
 
         for keyword in user_keywords:
+            if keyword in skipped_user_keyword_set:
+                continue
             keyword_info = details.get(keyword) or {}
             current_count = int(keyword_info.get("count") or keyword_info.get("coverage") or 0)
             max_allowed = int(keyword_info.get("max") or _keyword_user_threshold(len(user_keywords))[1])
@@ -2019,6 +2211,8 @@ def enforce_keyword_requirements(
         needs_fix = False
 
         for keyword in [*user_keywords, *auto_keywords]:
+            if keyword in skipped_user_keyword_set:
+                continue
             keyword_info = details.get(keyword) or {}
             expected = int(keyword_info.get("expected") or (1 if keyword in auto_keywords else _keyword_user_threshold(len(user_keywords))[0]))
             current_count = int(keyword_info.get("count") or keyword_info.get("coverage") or 0)
@@ -2176,14 +2370,16 @@ def validate_keyword_insertion(
     results: Dict[str, Dict[str, Any]] = {}
     all_valid = True
     user_exact_counts = _count_user_keyword_exact_non_overlap(content, user_keywords)
+    user_title_exact_counts = _count_user_keyword_exact_non_overlap(title_text or "", user_keywords)
+    user_body_exact_counts = _count_user_keyword_exact_non_overlap_in_body(content, user_keywords)
 
     for keyword in user_keywords:
         exclusive_count = int(user_exact_counts.get(keyword) or 0)
         raw_count = count_keyword_occurrences(content, keyword)
         coverage_count = count_keyword_coverage(content, keyword)
-        title_count = count_keyword_occurrences(title_text, keyword)
+        title_count = int(user_title_exact_counts.get(keyword) or 0)
         h2_count = _count_keyword_occurrences_in_h2(content, keyword)
-        body_count = _count_keyword_occurrences_in_paragraphs(content, keyword)
+        body_count = int(user_body_exact_counts.get(keyword) or 0)
         derived_body_expected = max(0, int(user_min_count) - int(title_count) - int(h2_count))
         override_value = None
         if isinstance(body_min_overrides, Mapping):
@@ -2515,6 +2711,69 @@ validateAndRetry = validate_and_retry
 evaluateQualityWithLLM = evaluate_quality_with_llm
 
 
+def force_insert_insufficient_keywords(
+    content: str,
+    user_keywords: List[str],
+    keyword_validation: Dict[str, Any],
+    skip_user_keywords: Optional[Sequence[str]] = None,
+) -> str:
+    """최종 gate 실패(insufficient) 전용 last-resort 삽입.
+
+    섹션 구조(`<p>` 태그 존재 여부)와 관계없이 콘텐츠 전체에서
+    마지막으로 적절한 `<p>` 단락을 찾아 직접 문장을 추가한다.
+    `_apply_content_repair()` 예산 체크를 우회하는 최후 안전망.
+    """
+    working = str(content or "")
+    skipped_user_keyword_set = {
+        _normalize_user_keyword(item)
+        for item in (skip_user_keywords or [])
+        if _normalize_user_keyword(item)
+    }
+    for keyword in (user_keywords or []):
+        normalized = _normalize_user_keyword(keyword)
+        if not normalized:
+            continue
+        if normalized in skipped_user_keyword_set:
+            continue
+        info = keyword_validation.get(normalized) if isinstance(keyword_validation, dict) else None
+        if not isinstance(info, dict):
+            continue
+        if str(info.get("status") or "").strip().lower() != "insufficient":
+            continue
+        min_required = max(1, int((info or {}).get("expected") or 1))
+        if _is_role_keyword(normalized):
+            sentence = _build_role_keyword_reference_sentence(normalized, "body", 0)
+        else:
+            sentence = f"온라인에서는 '{normalized}' 검색어도 함께 거론되고 있습니다."
+
+        # min_required 충족할 때까지 반복 삽입 (최대 5회 guard)
+        for _attempt in range(5):
+            if count_keyword_occurrences(working, normalized) >= min_required:
+                break
+            p_matches = list(re.finditer(r"<p\b[^>]*>([\s\S]*?)</p\s*>", working, re.IGNORECASE))
+            if not p_matches:
+                break
+            # 역순 탐색: 충분히 길고 키워드가 없는 단락에 추가
+            target_match = None
+            for m in reversed(p_matches):
+                plain = re.sub(r"<[^>]*>", " ", m.group(1) or "")
+                plain = re.sub(r"\s+", " ", plain).strip()
+                if len(plain) >= 20 and normalized not in plain:
+                    target_match = m
+                    break
+            if target_match is None:
+                break
+            inner = str(target_match.group(1) or "")
+            updated_inner = _append_sentence_to_paragraph(inner, sentence)
+            working = (
+                working[: target_match.start(1)]
+                + updated_inner
+                + working[target_match.end(1):]
+            )
+
+    return working
+
+
 __all__ = [
     "ALLOWED_ENDINGS",
     "EXPLICIT_PLEDGE_PATTERNS",
@@ -2545,10 +2804,11 @@ __all__ = [
     "build_keyword_variants",
     "count_keyword_coverage",
     "build_fallback_draft",
+    "find_shadowed_user_keywords",
     "validate_keyword_insertion",
     "enforce_keyword_requirements",
     "enforce_repetition_requirements",
+    "force_insert_insufficient_keywords",
     "validate_and_retry",
     "evaluate_quality_with_llm",
 ]
-

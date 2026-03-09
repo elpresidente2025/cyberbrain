@@ -15,6 +15,7 @@ from ..common.h2_guide import (
     H2_OPTIMAL_MAX,
 )
 from ..common.election_rules import get_prompt_instruction
+from ..common.natural_tone import build_natural_tone_prompt
 from ..common.editorial import STRUCTURE_SPEC, KEYWORD_SPEC, QUALITY_SPEC
 
 from ..templates.daily_communication import build_daily_communication_prompt
@@ -785,6 +786,8 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     if context_injection.strip():
         context_injection_xml = f"<context_injection>\n{context_injection.strip()}\n</context_injection>"
 
+    natural_tone_guide = build_natural_tone_prompt({'severity': 'standard'})
+
     return f"""
 <structure_agent_prompt version="xml-v1">
   <template_prompt>{_xml_cdata(template_prompt)}</template_prompt>
@@ -795,5 +798,6 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
   {context_injection_xml}
   {bio_warning}
   {structure_enforcement}
+  {natural_tone_guide}
 </structure_agent_prompt>
 """.strip()

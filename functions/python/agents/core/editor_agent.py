@@ -1,7 +1,6 @@
 
 import logging
 import re
-import asyncio
 from typing import Dict, Any, List, Optional
 from ..base_agent import Agent
 from ..common.natural_tone import build_natural_tone_prompt
@@ -132,7 +131,14 @@ class EditorAgent(Agent):
                   repeated = ", ".join(details['repetition']['repeatedSentences'][:3])
                   issues.append(f"[HIGH] 문장 반복 감지: {repeated}...\n   → 반복을 피하고 다른 표현으로 수정")
 
-        # 2. Keyword issues
+        # 2. AI 투 패턴 이슈
+        ai_writing = details.get('ai_writing', {})
+        if ai_writing and not ai_writing.get('passed', True):
+            detected = ", ".join(ai_writing.get('detected', [])[:5])
+            score = ai_writing.get('score', 0)
+            issues.append(f"[MEDIUM] AI 투 표현 감지 (점수: {score}): {detected}\n   → 자연스러운 구어체로 교체")
+
+        # 3. Keyword issues
         if hasattr(keyword_result, 'get'):
              if not keyword_result.get('passed', True):
                   kw_issues = keyword_result.get('issues', [])
