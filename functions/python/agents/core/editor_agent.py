@@ -88,15 +88,24 @@ class EditorAgent(Agent):
             edit_summary = result.get('editSummary', [])
 
             # 2. Apply Hard Constraints (Post-LLM)
-            final_result = self.apply_hard_constraints(
+            constrained = self.apply_hard_constraints(
                 content=new_content,
                 title=new_title,
                 user_keywords=user_keywords,
                 status=status,
                 previous_summary=edit_summary
             )
-            
-            return final_result
+
+            # 3. Humanize pass (oh-my-humanizer 스타일 2차 LLM)
+            humanized = await self._humanize_pass(
+                content=constrained['content'],
+                title=constrained['title'],
+                speaker_name=speaker_name,
+            )
+            constrained['content'] = humanized.get('content', constrained['content'])
+            constrained['editSummary'] = constrained['editSummary'] + humanized.get('changes', [])
+
+            return constrained
 
         except Exception as e:
             logger.error(f"EditorAgent failed: {e}")
@@ -118,25 +127,19 @@ class EditorAgent(Agent):
         issues = []
         
         # 1. Validation issues
+        details = {}
         if hasattr(validation_result, 'get'):
              details = validation_result.get('details', {})
-             
+
              # Election Law
              if details.get('electionLaw', {}).get('violations'):
                   violations = ", ".join(details['electionLaw']['violations'])
                   issues.append(f"[CRITICAL] 선거법 위반 표현 발견: {violations}\n   → 선거법을 준수하는 완곡한 표현으로 수정 (예: '~하겠습니다' -> '~추진합니다')")
-             
+
              # Repetition
              if details.get('repetition', {}).get('repeatedSentences'):
                   repeated = ", ".join(details['repetition']['repeatedSentences'][:3])
                   issues.append(f"[HIGH] 문장 반복 감지: {repeated}...\n   → 반복을 피하고 다른 표현으로 수정")
-
-        # 2. AI 투 패턴 이슈
-        ai_writing = details.get('ai_writing', {})
-        if ai_writing and not ai_writing.get('passed', True):
-            detected = ", ".join(ai_writing.get('detected', [])[:5])
-            score = ai_writing.get('score', 0)
-            issues.append(f"[MEDIUM] AI 투 표현 감지 (점수: {score}): {detected}\n   → 자연스러운 구어체로 교체")
 
         # 3. Keyword issues
         if hasattr(keyword_result, 'get'):
@@ -202,6 +205,83 @@ class EditorAgent(Agent):
   "title": "수정된 제목",
   "content": "수정된 본문 (HTML)",
   "editSummary": ["수정 사항 1", "수정 사항 2"]
+}}"""
+
+    async def _humanize_pass(self, content: str, title: str, speaker_name: str = "") -> Dict[str, Any]:
+        """oh-my-humanizer 스타일 2차 LLM 패스.
+
+        1단계(감지): AI 투 표현 식별
+        2단계(교체): 자연스러운 구어체로 재작성
+        3단계(검증): 스스로 잔존 패턴 확인
+        """
+        from ..common.gemini_client import generate_json_async
+
+        prompt = self._build_humanize_prompt(content, title, speaker_name)
+        try:
+            result = await generate_json_async(
+                prompt,
+                model_name=self.model_name,
+                temperature=0.4,
+                max_output_tokens=8192,
+                retries=1,
+                required_keys=("content",),
+                options={'json_parse_retries': 1},
+            )
+            return {
+                'content': result.get('content', content),
+                'changes': result.get('changes', []),
+            }
+        except Exception as e:
+            logger.warning(f"humanize_pass 실패 (원본 유지): {e}")
+            return {'content': content, 'changes': []}
+
+    def _build_humanize_prompt(self, content: str, title: str, speaker_name: str = "") -> str:
+        speaker_note = f'화자는 "{speaker_name}"입니다. 화자 정체성을 바꾸지 마세요.' if speaker_name else ""
+        return f"""당신은 AI가 생성한 한국어 텍스트를 인간이 쓴 것처럼 자연스럽게 다듬는 전문가입니다.
+{speaker_note}
+
+아래 원고를 3단계로 처리하세요.
+
+[1단계 — 감지]
+다음 AI 투 패턴을 찾으세요:
+- 대칭 구조 남발: "~뿐만 아니라 ~도", "~은 물론 ~까지", "~을 넘어 ~로"
+- 추상 수식어: "혁신적인", "실현 가능한", "진정성", "새로운 미래", "더 나은 내일"
+- 형식적 마무리: "함께 만들겠습니다", "함께 나아가겠습니다", "도움이 되었으면 합니다"
+- 결론 클리셰: "결론적으로", "요약하자면", "이러한 점에서"
+- 과도한 확신: "확신합니다", "분명합니다", "틀림없습니다" (사실 근거 없이)
+
+[2단계 — 교체]
+감지된 표현을 아래 원칙으로 교체하세요:
+- 추상어 → 구체적 사실/수치/경험으로 대체
+- 대칭 구조 → 단문으로 분리하거나 어순 변경
+- 형식적 마무리 → 구체적 다짐이나 행동으로 대체
+- 수정 시 의미·사실·수치·고유명사는 절대 변경 금지
+- 5단 구조(서론-본론1-본론2-본론3-결론) 유지
+
+예시:
+BAD:  "이는 단순한 경제 성장을 넘어, 시민 모두가 함께 잘사는 부산을 의미합니다."
+GOOD: "부산 경제가 살아나면 시민 삶의 질도 함께 오릅니다."
+
+BAD:  "저의 혁신적인 비전과 실현 가능한 정책들을 통해"
+GOOD: "제가 준비한 정책들을 통해"
+
+BAD:  "저의 진정성은 시민 여러분께 큰 공감을 얻을 것이라고 확신합니다."
+GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
+
+[3단계 — 검증]
+수정 후 스스로 확인: "아직도 AI가 쓴 것처럼 들리는 문장이 있는가?"
+있다면 추가 수정.
+
+[원본 제목]
+{title}
+
+[원본 본문]
+{content}
+
+다음 JSON 형식으로만 응답하세요:
+{{
+  "content": "수정된 본문 (HTML 태그 유지)",
+  "changes": ["교체한 표현 1: BAD → GOOD", "교체한 표현 2: BAD → GOOD"]
 }}"""
 
     def apply_hard_constraints(self, content: str, title: str, user_keywords: List[str], status: str, previous_summary: List[str] = [], error: str = None) -> Dict[str, Any]:
