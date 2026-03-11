@@ -37,7 +37,7 @@ KEYWORD_POSITION_GUIDE: Dict[str, Dict[str, str]] = {
         "example": '"월 50만원", "주거·일자리"',
     },
     "end": {
-        "range": f"18-{TITLE_SPEC['hardMax']}자",
+        "range": f"18-{TITLE_SPEC['optimalMax']}자",
         "weight": "60%",
         "use": "행동 유도, 긴급성, 신뢰성 신호",
         "example": '"신청 마감 3일 전", "5대 성과"',
@@ -106,14 +106,16 @@ def get_title_guideline_for_template(
     return f"""<title_quality_conditions platform="naver-blog">
 
 <requirements priority="must" description="위반 시 재생성">
+  <rule id="length_target">{TITLE_SPEC['optimalMin']}-{TITLE_SPEC['optimalMax']}자 우선 작성</rule>
   <rule id="length_max">{TITLE_SPEC['hardMax']}자 이내</rule>
+  <rule id="length_min">{TITLE_SPEC['hardMin']}자 이상</rule>
   <rule id="numbers_only">숫자는 본문에 실제 등장한 것만 사용 (날조 금지)</rule>
   <rule id="topic_core">주제 핵심 요소 반영 필수</rule>
   <rule id="no_ellipsis">말줄임표("...") 절대 금지</rule>
 </requirements>
 
 <recommendations priority="should" description="품질 향상">
-  <rule id="optimal_length">{TITLE_SPEC['optimalMin']}-{TITLE_SPEC['optimalMax']}자 (클릭률 최고 구간)</rule>
+  <rule id="exception_band">예외 구간({TITLE_SPEC['hardMin']}-14자, 31-{TITLE_SPEC['hardMax']}자) 지양</rule>
   <rule id="keyword_position">{f'키워드 "{primary_kw}"를 제목 앞 8자 안에 배치' if primary_kw else '핵심 키워드를 제목 앞 8자 안에 배치'}</rule>
   <rule id="concrete_numbers">구체적 숫자 포함 (274명, 85억 등)</rule>
   {f'<rule id="speaker_pattern">화자 연결 패턴: "{author}이 본", "칭찬한 {author}"</rule>' if is_commentary_category else ''}
@@ -149,8 +151,9 @@ def validate_theme_and_content(topic: str, content: str, title: str = "") -> Dic
 def calculate_title_quality_score(
     title: str,
     params: Optional[Dict[str, Any]] = None,
+    options: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    return _calculate_title_quality_score(title, dict(params or {}))
+    return _calculate_title_quality_score(title, dict(params or {}), dict(options or {}))
 
 
 async def generate_and_validate_title(

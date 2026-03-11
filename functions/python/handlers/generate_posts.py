@@ -23,6 +23,17 @@ from firebase_admin import firestore
 from firebase_functions import https_fn
 
 from agents.common.poll_citation import build_poll_citation_text
+from agents.common.role_keyword_policy import (
+    ROLE_KEYWORD_PATTERN as COMMON_ROLE_KEYWORD_PATTERN,
+    ROLE_SURFACE_PATTERN as COMMON_ROLE_SURFACE_PATTERN,
+    build_role_keyword_intent_text,
+    build_role_keyword_policy,
+    extract_person_role_facts_from_text as extract_person_role_facts_from_text_common,
+    extract_role_keyword_parts,
+    is_role_keyword_intent_surface,
+    normalize_role_label as normalize_role_label_common,
+    roles_equivalent as roles_equivalent_common,
+)
 from services.posts.content_processor import cleanup_post_content, remove_grammatical_errors
 from services.posts.profile_loader import (
     get_or_create_session,
@@ -43,6 +54,8 @@ from services.posts.poll_fact_guard import (
 from services.posts.validation import (
     enforce_repetition_requirements,
     enforce_keyword_requirements,
+    find_shadowed_user_keywords,
+    force_insert_insufficient_keywords,
     repair_date_weekday_pairs,
     run_heuristic_validation_sync,
     validate_keyword_insertion,
@@ -63,20 +76,207 @@ CATEGORY_MIN_WORD_COUNT = {
     "current-affairs": 2000,
     "daily-communication": 2000,
 }
-ROLE_FACT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"([가-힣]{2,8})\s*현\s*부산시장(?!\s*후보)"), "현 부산시장"),
-    (re.compile(r"([가-힣]{2,8})\s*부산시장(?!\s*후보)"), "부산시장"),
-    (re.compile(r"([가-힣]{2,8})\s*국회의원"), "국회의원"),
+ROLE_MENTION_PATTERN = re.compile(
+    rf"([가-힣]{{2,8}})\s*(현\s*)?({COMMON_ROLE_SURFACE_PATTERN})",
+    re.IGNORECASE,
 )
-ROLE_MENTION_PATTERN = re.compile(r"([가-힣]{2,8})\s*(현\s*)?(부산시장|국회의원)")
+ROLE_KEYWORD_PATTERN = COMMON_ROLE_KEYWORD_PATTERN
+SEARCH_KEYWORD_CONTEXT_PATTERN = re.compile(r"^(?:검색어|키워드|표현|문구)")
+QUOTE_CHAR_PATTERN = re.compile(r"[\"'“”‘’]")
 ROLE_TOKEN_PRIORITY: tuple[tuple[str, str], ...] = (
-    ("부산시장", "부산시장"),
     ("국회의원", "국회의원"),
     ("의원", "국회의원"),
-    ("시장", "부산시장"),
+    ("당대표", "당대표"),
+    ("원내대표", "원내대표"),
+    ("대표", "대표"),
+    ("위원장", "위원장"),
+    ("장관", "장관"),
+    ("구청장", "구청장"),
+    ("군수", "군수"),
+    ("교육감", "교육감"),
 )
 H2_TAG_PATTERN = re.compile(r"<h2\b[^>]*>([\s\S]*?)</h2\s*>", re.IGNORECASE)
 PARAGRAPH_TAG_PATTERN = re.compile(r"<p\b[^>]*>([\s\S]*?)</p\s*>", re.IGNORECASE)
+CONTENT_BLOCK_TAG_PATTERN = re.compile(r"<(?:h2|p)\b[^>]*>([\s\S]*?)</(?:h2|p)\s*>", re.IGNORECASE)
+CONTENT_BLOCK_WITH_TAG_PATTERN = re.compile(
+    r"<(?P<tag>h2|p)\b[^>]*>(?P<inner>[\s\S]*?)</(?P=tag)\s*>",
+    re.IGNORECASE,
+)
+PERSON_ROLE_CHAIN_CANDIDATE_PATTERN = re.compile(
+    r"(?:[가-힣]{2,8}\s*(?:의원|위원장|장관|후보|시장)\s*){3,}",
+    re.IGNORECASE,
+)
+PERSON_ROLE_PAIR_PATTERN = re.compile(r"([가-힣]{2,8})\s*(의원|위원장|장관|후보|시장)", re.IGNORECASE)
+NUMERIC_PERSON_CHAIN_CANDIDATE_PATTERN = re.compile(
+    r"(?:\d{1,4}(?:\.\d+)?(?:%|명|일|월|년|회|건|개|시|분|p)?\s*){2,}(?:[가-힣]{2,8}\s*(?:의원|위원장|장관|후보|시장)\s*){2,}",
+    re.IGNORECASE,
+)
+_NUMERIC_UNIT_TOKEN_FRAGMENT = r"\d{1,4}(?:\.\d+)?(?:%|명|일|월|년|회|건|개|시|분|p)?"
+_HTML_INLINE_GAP_FRAGMENT = r"(?:\s|&nbsp;|<[^>]+>)*"
+_HTML_INLINE_SEPARATOR_FRAGMENT = r"(?:\s|&nbsp;|<[^>]+>)+"
+INLINE_DECORATION_TAG_PATTERN = re.compile(r"</?(?:strong|em|span)\b[^>]*>", re.IGNORECASE)
+NUMERIC_UNIT_RUN_PATTERN = re.compile(
+    rf"(?<!\S){_NUMERIC_UNIT_TOKEN_FRAGMENT}(?:\s+{_NUMERIC_UNIT_TOKEN_FRAGMENT}){{4,}}(?!\S)",
+    re.IGNORECASE,
+)
+DATETIME_ONLY_NUMERIC_RUN_PATTERN = re.compile(
+    r"^(?:(?:\d{4}년)\s+)?\d{1,2}월\s+\d{1,2}일(?:\s+\d{1,2}시(?:\s+\d{1,2}분)?)?$"
+)
+LEADING_DATETIME_PREFIX_PATTERN = re.compile(
+    r"^(?:(?:\d{4}년)\s+)?\d{1,2}월\s+\d{1,2}일(?:\s+\d{1,2}시(?:\s+\d{1,2}분)?)?"
+)
+INTEGRITY_SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[.!?。])\s+|\n+")
+SUSPICIOUS_POLL_RESIDUE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"(?:(?:지난|최근)\s*)?(?:\d{1,2}일\s+){1,2}0\d{2,3}명"
+        r"(?:\s+(?!(?:비전|정책|청사진|공약|리더십|메시지|방향))[가-힣]{2,8}"
+        r"(?:\s*(?:의원|후보|시장|위원장|국회의원))?){0,2}",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:(?:지난|최근)\s*)?(?:\d{1,2}일\s+){1,2}\d{3,4}명"
+        r"(?:\s+(?!(?:비전|정책|청사진|공약|리더십|메시지|방향))[가-힣]{2,8}"
+        r"(?:\s*(?:의원|후보|시장|위원장|국회의원))?){2,}",
+        re.IGNORECASE,
+    ),
+)
+ABSTRACT_POLICY_NOUNS: tuple[str, ...] = (
+    "비전",
+    "정책",
+    "청사진",
+    "공약",
+    "리더십",
+    "메시지",
+    "방향",
+)
+STRUCTURAL_MATCHUP_RESIDUE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"(?:[가-힣]{1,8}도\s*)?후보군\s*(?=(?:[가-힣]{2,8}\s*(?:의원|후보|시장|위원장|국회의원)\s*){1,}"
+        r"(?:비전|정책|청사진|공약|리더십|메시지|방향))",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:[가-힣]{2,8}\s*(?:의원|후보|시장|위원장|국회의원)\s*){2,}"
+        r"(?=(?:비전|정책|청사진|공약|리더십|메시지|방향))",
+        re.IGNORECASE,
+    ),
+)
+TARGETED_POLISH_HEADING_PATTERN = re.compile(
+    r"(?:^|[,:\-]\s*|\s)(?:제가|저는)\s+(?:제시할\s+)?(?:비전|해법|대안|경쟁력|가능성|약속|역할|메시지|방향|해결책)은\?$",
+    re.IGNORECASE,
+)
+TARGETED_POLISH_SENTENCE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(
+            r"(?:상대 후보와의\s+)?(?:가상대결|양자대결|대결)에서\s+결과(?:는|가)\s+",
+            re.IGNORECASE,
+        ),
+        "matchup_result_clause",
+    ),
+    (
+        re.compile(
+            r"(?:상대 후보와의\s+)?(?:가상 대결|양자 대결)에서\s+결과(?:는|가)\s+",
+            re.IGNORECASE,
+        ),
+        "matchup_result_clause_spaced",
+    ),
+)
+TARGETED_POLISH_NUMERIC_TOKEN_PATTERN = re.compile(
+    r"[±]?\d{1,4}(?:,\d{3})*(?:\.\d+)?(?:%p|%|p|명)?",
+    re.IGNORECASE,
+)
+TARGETED_POLISH_MAX_CANDIDATES = 4
+TARGETED_POLISH_MAX_TEXT_LENGTH = 180
+SUBHEADING_SUBJECT_NOISE_MARKERS: tuple[str, ...] = (
+    "조사개요",
+    "조사기관",
+    "조사기간",
+    "조사대상",
+    "표본수",
+    "표본오차",
+    "응답률",
+    "중앙선거여론조사심의위원회",
+)
+SUBHEADING_LOW_SIGNAL_MARKERS: tuple[str, ...] = (
+    "검색어",
+    "키워드",
+    "표현",
+    "문구",
+    "가상대결",
+    "양자대결",
+    "대결",
+    "경쟁",
+    "비교",
+    "행보",
+    "거론",
+    "언급",
+    "주목",
+    "후보군",
+    "지지율",
+)
+SUBHEADING_FIRST_PERSON_SIGNAL_PATTERN = re.compile(
+    r"(저는|제가|저의|저만의|제\s*(?:비전|해법|대안|정책|생각|진심|메시지)|말씀드리|설명드리|준비했습니다|제시하겠습니다)",
+    re.IGNORECASE,
+)
+SUBHEADING_FIRST_PERSON_TOPIC_NOUNS: tuple[str, ...] = (
+    "비전",
+    "해법",
+    "대안",
+    "정책",
+    "생각",
+    "진심",
+    "메시지",
+    "방향",
+    "약속",
+    "역할",
+    "경쟁력",
+    "가능성",
+    "해결책",
+    "행보",
+    "구상",
+    "계획",
+    "승부수",
+    "도전",
+    "실천",
+    "미래",
+    "꿈",
+    "과제",
+    "원칙",
+    "제안",
+    "목표",
+    "다짐",
+    "소신",
+    "철학",
+    "이유",
+    "해답",
+    "로드맵",
+    "리더십",
+    "변화",
+    "선택",
+    "전략",
+    "강점",
+    "질문",
+    "답",
+    "설명",
+    "주장",
+    "진단",
+    "기회",
+)
+_SUBHEADING_FIRST_PERSON_TOPIC_NOUN_FRAGMENT = "|".join(
+    re.escape(item) for item in SUBHEADING_FIRST_PERSON_TOPIC_NOUNS
+)
+SUBHEADING_FIRST_PERSON_POSSESSIVE_PATTERN = re.compile(
+    rf"(?:(?<=^)|(?<=[\s\(\[\{{\"'“”‘’,:/\-]))(?:제|내)"
+    rf"(?=\s*(?:{_SUBHEADING_FIRST_PERSON_TOPIC_NOUN_FRAGMENT})"
+    rf"(?:은|는|이|가|을|를|의|과|와|도)?(?:$|[\s?!.,]))",
+    re.IGNORECASE,
+)
+SUBHEADING_NUMERIC_TOKEN_PATTERN = re.compile(
+    r"\d{1,4}(?:[.,]\d+)?(?:%p|%|명|일|월|년|회|건|개)?",
+    re.IGNORECASE,
+)
+SUBHEADING_SIGNAL_SENTENCE_LIMIT = 6
+SUBHEADING_SIGNAL_PARAGRAPH_LIMIT = 3
 
 # 프론트 로딩 오버레이가 순환 메시지를 출력하는 기준 키.
 LOADING_STAGE_STRUCTURE = "구조 설계 및 초안 작성 중"
@@ -258,6 +458,32 @@ def _normalize_keywords(raw_keywords: Any) -> list[str]:
     if isinstance(raw_keywords, str):
         return [part.strip() for part in raw_keywords.split(",") if part.strip()]
     return []
+
+
+def _resolve_keyword_gate_policy(
+    user_keywords: list[str],
+    *,
+    conflicting_role_keyword: str = "",
+    role_keyword_policy: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    normalized_user_keywords = [str(item).strip() for item in (user_keywords or []) if str(item).strip()]
+    shadowed_map = find_shadowed_user_keywords(normalized_user_keywords)
+    soft_keywords: set[str] = set(shadowed_map.keys())
+    if isinstance(role_keyword_policy, dict):
+        blocked_keywords = role_keyword_policy.get("blockedKeywords")
+        if isinstance(blocked_keywords, list):
+            soft_keywords.update(str(item).strip() for item in blocked_keywords if str(item).strip())
+
+    conflicting = str(conflicting_role_keyword or "").strip()
+    hard_keywords = [keyword for keyword in normalized_user_keywords if keyword not in soft_keywords]
+    return {
+        "allKeywords": normalized_user_keywords,
+        "hardKeywords": hard_keywords,
+        "softKeywords": sorted(soft_keywords),
+        "shadowedMap": shadowed_map,
+        "conflictingRoleKeyword": conflicting,
+        "roleKeywordPolicy": role_keyword_policy if isinstance(role_keyword_policy, dict) else {},
+    }
 
 
 def _map_api_error(code: str, message: str) -> ApiError:
@@ -507,19 +733,19 @@ def _validate_keyword_gate(keyword_validation: Dict[str, Any], user_keywords: li
     if not isinstance(keyword_validation, dict) or not keyword_validation:
         return False, "키워드 검증 결과가 없습니다."
 
-    primary_keyword = normalized_user_keywords[0]
-    info = keyword_validation.get(primary_keyword)
-    if not isinstance(info, dict):
-        return False, f"\"{primary_keyword}\" 검증 정보 없음"
-
-    status = str(info.get("status") or "").strip().lower()
-    count = _to_int(info.get("count"), 0)
-    expected = _to_int(info.get("expected"), 0)
-    max_count = _to_int(info.get("max"), 0)
-    if status == "insufficient":
-        return False, f"\"{primary_keyword}\" 부족 ({count}/{expected})"
-    if status == "spam_risk":
-        return False, f"\"{primary_keyword}\" 과다 ({count}/{max_count})"
+    for keyword in normalized_user_keywords:
+        info = keyword_validation.get(keyword)
+        if not isinstance(info, dict):
+            return False, f"\"{keyword}\" 검증 정보 없음"
+        status = str(info.get("status") or "").strip().lower()
+        count = _to_int(info.get("gateCount"), _to_int(info.get("count"), 0))
+        expected = _to_int(info.get("expected"), 0)
+        max_count = _to_int(info.get("max"), 0)
+        exact_count = _to_int(info.get("exclusiveCount"), count)
+        if status == "insufficient":
+            return False, f"\"{keyword}\" 부족 ({count}/{expected})"
+        if status == "spam_risk":
+            return False, f"\"{keyword}\" 과다 ({exact_count}/{max_count})"
     return True, ""
 
 
@@ -540,14 +766,84 @@ def _collect_secondary_keyword_soft_issues(
             issues.append(f"\"{keyword}\" 검증 정보 없음")
             continue
         status = str(info.get("status") or "").strip().lower()
-        count = _to_int(info.get("count"), 0)
+        count = _to_int(info.get("gateCount"), _to_int(info.get("count"), 0))
         expected = _to_int(info.get("expected"), 0)
         max_count = _to_int(info.get("max"), 0)
+        exact_count = _to_int(info.get("exclusiveCount"), count)
         if status == "insufficient":
             issues.append(f"\"{keyword}\" 부족 ({count}/{expected})")
         elif status == "spam_risk":
-            issues.append(f"\"{keyword}\" 과다 ({count}/{max_count})")
+            issues.append(f"\"{keyword}\" 과다 ({exact_count}/{max_count})")
     return issues
+
+
+def _collect_exact_preference_keywords(
+    keyword_validation: Dict[str, Any],
+    user_keywords: list[str],
+) -> list[str]:
+    normalized_user_keywords = [str(item).strip() for item in (user_keywords or []) if str(item).strip()]
+    if not normalized_user_keywords or not isinstance(keyword_validation, dict) or not keyword_validation:
+        return []
+
+    unmet: list[str] = []
+    for keyword in normalized_user_keywords:
+        info = keyword_validation.get(keyword)
+        if not isinstance(info, dict):
+            continue
+        if _to_int(info.get("exactPreferredMin"), 0) <= 0:
+            continue
+        if _to_int(info.get("exactShortfall"), 0) > 0:
+            unmet.append(keyword)
+    return unmet
+
+
+def _build_display_keyword_validation(
+    keyword_validation: Dict[str, Any],
+    *,
+    soft_keywords: Optional[Sequence[str]] = None,
+    shadowed_map: Optional[Mapping[str, Sequence[str]]] = None,
+) -> Dict[str, Any]:
+    base_validation = {
+        str(keyword).strip(): dict(info)
+        for keyword, info in (keyword_validation or {}).items()
+        if str(keyword).strip() and isinstance(info, dict)
+    }
+    if not base_validation:
+        return {}
+
+    normalized_soft_keywords = {
+        str(keyword).strip()
+        for keyword in (soft_keywords or [])
+        if str(keyword).strip()
+    }
+    if not normalized_soft_keywords:
+        return base_validation
+
+    normalized_shadowed_map = {
+        str(keyword).strip(): [
+            str(item).strip() for item in (items or []) if str(item).strip()
+        ]
+        for keyword, items in (shadowed_map or {}).items()
+        if str(keyword).strip()
+    }
+
+    adjusted: Dict[str, Any] = {}
+    for keyword, info in base_validation.items():
+        updated = dict(info)
+        if keyword in normalized_soft_keywords:
+            count = _to_int(updated.get("count"), 0)
+            updated["status"] = "valid"
+            updated["expected"] = 0
+            updated["bodyExpected"] = 0
+            updated["max"] = max(_to_int(updated.get("max"), 0), count)
+            updated["exactPreferredMin"] = 0
+            updated["exactShortfall"] = 0
+            updated["exactPreferredMet"] = True
+            updated["soft"] = True
+            updated["policy"] = "soft-shadowed"
+            updated["shadowedBy"] = list(normalized_shadowed_map.get(keyword) or [])
+        adjusted[keyword] = updated
+    return adjusted
 
 
 def _normalize_person_name(text: str) -> str:
@@ -750,29 +1046,19 @@ def _repair_speaker_consistency_once(content: str, full_name: str) -> Dict[str, 
 
 
 def _canonical_role_label(role: str) -> str:
-    normalized = re.sub(r"\s+", "", str(role or ""))
-    if "부산시장" in normalized:
-        return "부산시장"
-    if "국회의원" in normalized:
-        return "국회의원"
-    return ""
+    return normalize_role_label_common(role)
 
 
 def _extract_keyword_person_role(keyword: str) -> tuple[str, str]:
-    normalized = re.sub(r"\s+", " ", str(keyword or "")).strip()
-    if not normalized:
-        return "", ""
-
-    name_match = re.match(r"^([가-힣]{2,8})(?:\s|$)", normalized)
-    name = _clean_full_name_candidate(name_match.group(1)) if name_match else ""
-    if not name:
-        return "", ""
-
-    role_label = ""
-    for token, mapped in ROLE_TOKEN_PRIORITY:
-        if token in normalized:
-            role_label = mapped
-            break
+    parts = extract_role_keyword_parts(keyword)
+    name = _clean_full_name_candidate(parts.get("name"))
+    role_label = _canonical_role_label(parts.get("role") or parts.get("roleCanonical") or "")
+    if not role_label:
+        normalized = re.sub(r"\s+", " ", str(keyword or "")).strip()
+        for token, mapped in ROLE_TOKEN_PRIORITY:
+            if token in normalized:
+                role_label = mapped
+                break
     return name, role_label
 
 
@@ -789,7 +1075,7 @@ def _find_conflicting_role_keyword(
         if not name or not keyword_role:
             continue
         expected_role = _canonical_role_label(person_roles.get(name) or "")
-        if expected_role and expected_role != keyword_role:
+        if expected_role and not roles_equivalent_common(expected_role, keyword_role):
             return keyword
     return ""
 
@@ -798,6 +1084,11 @@ def _build_keyword_intent_h2(keyword: str) -> str:
     normalized = re.sub(r"\s+", " ", str(keyword or "")).strip()
     if not normalized:
         return ""
+
+    if ROLE_KEYWORD_PATTERN.fullmatch(normalized):
+        quoted_candidate = f"'{normalized}' 검색어가 거론되는 이유"
+        if 10 <= len(quoted_candidate) <= 25:
+            return quoted_candidate
 
     candidates = (
         f"{normalized} 왜 거론되나?",
@@ -884,6 +1175,10 @@ def _ensure_user_keyword_in_subheading_once(
     else:
         target_keyword = normalized_keywords[0]
 
+    target_person_name, target_role = _extract_keyword_person_role(target_keyword)
+    if target_person_name or target_role or ROLE_KEYWORD_PATTERN.fullmatch(target_keyword):
+        return {"content": base, "edited": False}
+
     return _ensure_keyword_in_subheading_once(base, target_keyword)
 
 
@@ -944,17 +1239,203 @@ def _pick_primary_person_name(text: str, known_names: list[str]) -> str:
     return best_name if best_score > 0 else ""
 
 
-def _repair_subheading_entity_consistency_once(content: str, known_names: list[str]) -> Dict[str, Any]:
+def _is_subheading_subject_noise_sentence(
+    sentence: str,
+    *,
+    known_names: list[str],
+    preferred_names: list[str],
+) -> bool:
+    plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(sentence or "")))
+    if not plain:
+        return True
+
+    if any(marker in plain for marker in SUBHEADING_SUBJECT_NOISE_MARKERS):
+        return True
+
+    if (
+        any(marker in plain for marker in ("검색어", "키워드", "표현", "문구"))
+        and any(verb in plain for verb in ("거론", "언급", "주목"))
+    ):
+        return True
+
+    preferred_set = {
+        _normalize_person_name(item)
+        for item in preferred_names
+        if len(_normalize_person_name(item)) >= 2
+    }
+    mentioned_non_preferred = any(
+        normalized_name
+        and normalized_name not in preferred_set
+        and normalized_name in plain
+        for normalized_name in (
+            _normalize_person_name(item)
+            for item in known_names
+        )
+    )
+    if mentioned_non_preferred and any(marker in plain for marker in SUBHEADING_LOW_SIGNAL_MARKERS):
+        return True
+
+    numeric_tokens = SUBHEADING_NUMERIC_TOKEN_PATTERN.findall(plain)
+    if len(numeric_tokens) >= 2 and ("여론조사" in plain or "조사" in plain):
+        return True
+    return False
+
+
+def _score_subheading_body_names(
+    section_html: str,
+    *,
+    known_names: list[str],
+    preferred_names: list[str],
+) -> Dict[str, Any]:
+    paragraph_matches = list(PARAGRAPH_TAG_PATTERN.finditer(str(section_html or "")))
+    if not paragraph_matches:
+        return {"scores": {}, "filteredText": "", "firstPersonSignal": False}
+
+    filtered_sentences: list[str] = []
+    first_person_signal = False
+    for paragraph_match in paragraph_matches[:SUBHEADING_SIGNAL_PARAGRAPH_LIMIT]:
+        paragraph_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(paragraph_match.group(1) or "")))
+        if not paragraph_plain:
+            continue
+
+        for sentence in _split_sentence_like_units(paragraph_plain):
+            if SUBHEADING_FIRST_PERSON_SIGNAL_PATTERN.search(sentence):
+                first_person_signal = True
+            if _is_subheading_subject_noise_sentence(
+                sentence,
+                known_names=known_names,
+                preferred_names=preferred_names,
+            ):
+                continue
+            filtered_sentences.append(sentence)
+            if len(filtered_sentences) >= SUBHEADING_SIGNAL_SENTENCE_LIMIT:
+                break
+        if len(filtered_sentences) >= SUBHEADING_SIGNAL_SENTENCE_LIMIT:
+            break
+
+    filtered_text = " ".join(filtered_sentences).strip()
+    scores: Dict[str, int] = {}
+    for name in known_names:
+        normalized_name = _normalize_person_name(name)
+        if len(normalized_name) < 2:
+            continue
+        score = filtered_text.count(normalized_name) * 3
+        if score > 0:
+            scores[normalized_name] = score
+
+    if first_person_signal:
+        for preferred in preferred_names:
+            normalized_preferred = _normalize_person_name(preferred)
+            if len(normalized_preferred) < 2:
+                continue
+            scores[normalized_preferred] = int(scores.get(normalized_preferred) or 0) + 2
+
+    return {
+        "scores": scores,
+        "filteredText": filtered_text,
+        "firstPersonSignal": first_person_signal,
+    }
+
+
+def _pick_scored_primary_person_name(
+    scores: Dict[str, int],
+    *,
+    preferred_names: list[str],
+) -> str:
+    if not scores:
+        return ""
+
+    preferred_set = {
+        _normalize_person_name(item)
+        for item in preferred_names
+        if len(_normalize_person_name(item)) >= 2
+    }
+    best_name = ""
+    best_score = 0
+    for name, score in scores.items():
+        normalized_name = _normalize_person_name(name)
+        score_value = int(score or 0)
+        if score_value <= 0 or len(normalized_name) < 2:
+            continue
+        if score_value > best_score:
+            best_name = normalized_name
+            best_score = score_value
+            continue
+        if score_value == best_score and normalized_name in preferred_set and best_name not in preferred_set:
+            best_name = normalized_name
+    return best_name if best_score > 0 else ""
+
+
+def _third_personize_first_person_subheading_text(
+    heading_inner: str,
+    *,
+    speaker_name: str,
+) -> tuple[str, bool]:
+    normalized_speaker_name = _clean_full_name_candidate(speaker_name)
+    if not heading_inner or not normalized_speaker_name:
+        return heading_inner, False
+
+    updated_heading = str(heading_inner)
+    changed = False
+    direct_replacements: tuple[tuple[re.Pattern[str], str], ...] = (
+        (re.compile(r"(?<![가-힣])저만의", re.IGNORECASE), f"{normalized_speaker_name}만의"),
+        (re.compile(r"(?<![가-힣])저의", re.IGNORECASE), f"{normalized_speaker_name}의"),
+        (re.compile(r"(?<![가-힣])제가", re.IGNORECASE), f"{normalized_speaker_name}이"),
+        (re.compile(r"(?<![가-힣])저는", re.IGNORECASE), f"{normalized_speaker_name}은"),
+        (re.compile(r"(?<![가-힣])나의", re.IGNORECASE), f"{normalized_speaker_name}의"),
+        (re.compile(r"(?<![가-힣])내가", re.IGNORECASE), f"{normalized_speaker_name}이"),
+        (re.compile(r"(?<![가-힣])나는", re.IGNORECASE), f"{normalized_speaker_name}은"),
+    )
+    for pattern, replacement in direct_replacements:
+        updated_heading, count = pattern.subn(replacement, updated_heading)
+        if count > 0:
+            changed = True
+
+    updated_heading, possessive_count = SUBHEADING_FIRST_PERSON_POSSESSIVE_PATTERN.subn(
+        f"{normalized_speaker_name}의",
+        updated_heading,
+    )
+    if possessive_count > 0:
+        changed = True
+
+    awkward_possessive_pattern = re.compile(
+        rf"(?<![가-힣]){re.escape(normalized_speaker_name)}이\s+"
+        r"((?:[가-힣]{2,8}\s+)?(?:비전|해법|대안|정책|생각|진심|메시지|방향|해결책|경쟁력|가능성|역할))은\?",
+        re.IGNORECASE,
+    )
+    updated_heading, awkward_possessive_count = awkward_possessive_pattern.subn(
+        rf"{normalized_speaker_name}의 \1은?",
+        updated_heading,
+    )
+    if awkward_possessive_count > 0:
+        changed = True
+
+    return updated_heading, changed
+
+
+def _repair_subheading_entity_consistency_once(
+    content: str,
+    known_names: list[str],
+    *,
+    preferred_names: Optional[list[str]] = None,
+) -> Dict[str, Any]:
     base = str(content or "")
     if not base.strip() or not known_names:
         return {"content": base, "edited": False, "replacements": []}
 
+    normalized_preferred_names = [
+        _normalize_person_name(item)
+        for item in (preferred_names or [])
+        if len(_normalize_person_name(item)) >= 2
+    ]
+    preferred_name_set = set(normalized_preferred_names)
     h2_matches = list(H2_TAG_PATTERN.finditer(base))
     if not h2_matches:
         return {"content": base, "edited": False, "replacements": []}
 
     replacements: list[Dict[str, str]] = []
     repaired = base
+    speaker_name = normalized_preferred_names[0] if normalized_preferred_names else ""
     for idx in range(len(h2_matches) - 1, -1, -1):
         match = h2_matches[idx]
         heading_inner = str(match.group(1) or "")
@@ -963,22 +1444,57 @@ def _repair_subheading_entity_consistency_once(content: str, known_names: list[s
         if not heading_plain:
             continue
 
+        updated_heading_inner, renamed_first_person = _third_personize_first_person_subheading_text(
+            heading_inner,
+            speaker_name=speaker_name,
+        )
+        if renamed_first_person:
+            repaired = repaired[:match.start(1)] + updated_heading_inner + repaired[match.end(1):]
+            replacements.append(
+                {
+                    "from": "first_person_pronoun",
+                    "to": speaker_name,
+                    "headingBefore": heading_plain,
+                    "headingAfter": re.sub(
+                        r"\s+",
+                        " ",
+                        re.sub(r"<[^>]*>", " ", updated_heading_inner),
+                    ).strip(),
+                }
+            )
+            heading_inner = updated_heading_inner
+            heading_plain = re.sub(r"<[^>]*>", " ", updated_heading_inner)
+            heading_plain = re.sub(r"\s+", " ", heading_plain).strip()
+        if re.search(r"(검색어|키워드|표현|문구)", heading_plain):
+            continue
+
         section_start = match.end()
         section_end = h2_matches[idx + 1].start() if idx < len(h2_matches) - 1 else len(repaired)
         section_html = repaired[section_start:section_end]
-        paragraph_matches = list(PARAGRAPH_TAG_PATTERN.finditer(section_html))
-        if not paragraph_matches:
-            continue
-        paragraph_plain = " ".join(
-            re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", str(p.group(1) or ""))).strip()
-            for p in paragraph_matches[:2]
-        ).strip()
-        if not paragraph_plain:
-            continue
-
         heading_name = _pick_primary_person_name(heading_plain, known_names)
-        body_name = _pick_primary_person_name(paragraph_plain, known_names)
+        subject_signal = _score_subheading_body_names(
+            section_html,
+            known_names=known_names,
+            preferred_names=normalized_preferred_names,
+        )
+        body_scores = subject_signal.get("scores") if isinstance(subject_signal, dict) else {}
+        if not isinstance(body_scores, dict):
+            body_scores = {}
+        body_name = _pick_scored_primary_person_name(
+            {
+                _normalize_person_name(name): int(score or 0)
+                for name, score in body_scores.items()
+                if len(_normalize_person_name(name)) >= 2
+            },
+            preferred_names=normalized_preferred_names,
+        )
         if not heading_name or not body_name or heading_name == body_name:
+            continue
+        if heading_name in preferred_name_set and body_name not in preferred_name_set:
+            continue
+        body_name_score = int(body_scores.get(body_name) or 0)
+        heading_name_score = int(body_scores.get(heading_name) or 0)
+        if body_name_score <= heading_name_score:
             continue
 
         updated_heading_inner, changed = re.subn(
@@ -1037,34 +1553,410 @@ def _extract_role_check_plain_text(content: str) -> str:
     return re.sub(r"\s+", " ", plain).strip()
 
 
-def _extract_person_role_facts_from_text(text: Any) -> Dict[str, str]:
-    source = re.sub(r"<[^>]*>", " ", str(text or ""))
-    source = re.sub(r"\s+", " ", source).strip()
-    if not source:
-        return {}
+def _is_protected_search_keyword_role_mention(text: str, start: int, end: int) -> bool:
+    source = str(text or "")
+    if not source or start < 0 or end <= start:
+        return False
 
-    votes: Dict[str, Dict[str, int]] = {}
-    for pattern, role in ROLE_FACT_PATTERNS:
-        for match in pattern.finditer(source):
-            name = _clean_full_name_candidate(match.group(1))
-            if not name:
+    before = source[max(0, start - 8) : start]
+    after = source[end : min(len(source), end + 16)]
+    quote_before = bool(QUOTE_CHAR_PATTERN.search(before[-2:]))
+    if not quote_before:
+        return False
+
+    return bool(re.match(r"\s*[\"'“”‘’]?\s*(?:검색어|키워드|표현|문구)", after))
+
+
+def _looks_like_person_name_token(token: Any) -> bool:
+    normalized = re.sub(r"\s+", "", str(token or "")).strip()
+    if len(normalized) < 2 or len(normalized) > 4:
+        return False
+    if normalized[-1] in "은는이가도를을와과의로":
+        return False
+
+    blocked_tokens = {
+        "더불어민주당",
+        "국민의힘",
+        "민주당",
+        "부산시당",
+        "시당",
+        "후보군",
+        "예비후보",
+        "캠프",
+        "시민",
+        "경제",
+        "부산",
+    }
+    if normalized in blocked_tokens:
+        return False
+
+    blocked_suffixes = ("시당", "정당", "캠프", "후보군", "예비후보")
+    return not any(normalized.endswith(suffix) for suffix in blocked_suffixes)
+
+
+def _is_valid_person_role_chain_text(text: Any, *, min_pairs: int) -> bool:
+    plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(text or "")))
+    if not plain:
+        return False
+
+    pairs = PERSON_ROLE_PAIR_PATTERN.findall(plain)
+    if len(pairs) < min_pairs:
+        return False
+    valid_count = sum(1 for name, _role in pairs if _looks_like_person_name_token(name))
+    return valid_count >= min_pairs
+
+
+def _find_valid_person_chain_match(text: Any) -> Optional[re.Match[str]]:
+    source = str(text or "")
+    for match in PERSON_ROLE_CHAIN_CANDIDATE_PATTERN.finditer(source):
+        if _is_valid_person_role_chain_text(match.group(0), min_pairs=3):
+            return match
+    return None
+
+
+def _find_valid_numeric_person_chain_match(text: Any) -> Optional[re.Match[str]]:
+    source = str(text or "")
+    for match in NUMERIC_PERSON_CHAIN_CANDIDATE_PATTERN.finditer(source):
+        if _is_valid_person_role_chain_text(match.group(0), min_pairs=2):
+            return match
+    return None
+
+
+def _normalize_inline_whitespace(text: Any) -> str:
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def _is_datetime_only_numeric_run(text: Any) -> bool:
+    candidate = _normalize_inline_whitespace(text)
+    if not candidate:
+        return False
+    return bool(DATETIME_ONLY_NUMERIC_RUN_PATTERN.fullmatch(candidate))
+
+
+def _find_problematic_numeric_runs(text: Any) -> list[Dict[str, Any]]:
+    source = str(text or "")
+    if not source.strip():
+        return []
+
+    matches: list[Dict[str, Any]] = []
+    for match in NUMERIC_UNIT_RUN_PATTERN.finditer(source):
+        matched_text = _normalize_inline_whitespace(match.group(0))
+        if not matched_text or _is_datetime_only_numeric_run(matched_text):
+            continue
+        matches.append(
+            {
+                "start": match.start(),
+                "end": match.end(),
+                "text": matched_text,
+            }
+        )
+    return matches
+
+
+def _extract_leading_datetime_prefix(text: Any) -> str:
+    candidate = _normalize_inline_whitespace(text)
+    if not candidate:
+        return ""
+
+    prefix_match = LEADING_DATETIME_PREFIX_PATTERN.match(candidate)
+    if not prefix_match:
+        return ""
+
+    prefix = _normalize_inline_whitespace(prefix_match.group(0))
+    if not prefix or not _is_datetime_only_numeric_run(prefix):
+        return ""
+    return prefix
+
+
+def _scrub_suspicious_poll_residue_text(text: Any) -> Dict[str, Any]:
+    base = str(text or "")
+    if not base:
+        return {"content": base, "edited": False, "actions": []}
+
+    updated = base
+    actions: list[str] = []
+    for index, pattern in enumerate(SUSPICIOUS_POLL_RESIDUE_PATTERNS, start=1):
+        updated, count = pattern.subn(" ", updated)
+        if count > 0:
+            actions.append(f"poll_residue:{index}:{count}")
+    for index, pattern in enumerate(STRUCTURAL_MATCHUP_RESIDUE_PATTERNS, start=1):
+        updated, count = pattern.subn(" ", updated)
+        if count > 0:
+            actions.append(f"matchup_residue:{index}:{count}")
+
+    updated = re.sub(r"\s{2,}", " ", updated)
+    updated = re.sub(r"\s+([,.;!?])", r"\1", updated)
+    updated = updated.strip()
+    return {
+        "content": updated,
+        "edited": updated != base,
+        "actions": actions,
+    }
+
+
+def _prune_problematic_integrity_fragments(text: Any) -> Dict[str, Any]:
+    plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(text or "")))
+    if not plain:
+        return {"content": "", "edited": False, "actions": []}
+
+    fragments = [
+        re.sub(r"\s+", " ", fragment).strip()
+        for fragment in INTEGRITY_SENTENCE_SPLIT_PATTERN.split(plain)
+        if re.sub(r"\s+", " ", fragment).strip()
+    ]
+    if not fragments:
+        return {"content": html.escape(plain, quote=False), "edited": False, "actions": []}
+
+    kept_fragments: list[str] = []
+    removed_person_chain = 0
+    removed_numeric_person_chain = 0
+    removed_numeric_noise = 0
+
+    for fragment in fragments:
+        if _find_valid_person_chain_match(fragment):
+            removed_person_chain += 1
+            continue
+        if _find_valid_numeric_person_chain_match(fragment):
+            removed_numeric_person_chain += 1
+            continue
+
+        problematic_runs = _find_problematic_numeric_runs(fragment)
+        if problematic_runs:
+            non_numeric_text = _normalize_inline_whitespace(
+                re.sub(
+                    rf"(?<!\S){_NUMERIC_UNIT_TOKEN_FRAGMENT}(?:\s+{_NUMERIC_UNIT_TOKEN_FRAGMENT})*",
+                    " ",
+                    fragment,
+                )
+            )
+            has_meaningful_korean = bool(re.search(r"[가-힣]{2,}", non_numeric_text))
+            if len(non_numeric_text) < 10 or not has_meaningful_korean:
+                removed_numeric_noise += 1
                 continue
-            role_votes = votes.setdefault(name, {})
-            role_votes[role] = int(role_votes.get(role) or 0) + 1
 
-    facts: Dict[str, str] = {}
-    priority = {"현 부산시장": 3, "부산시장": 2, "국회의원": 1}
-    for name, role_votes in votes.items():
-        selected_role = ""
-        selected_score = -1
-        for role, count in role_votes.items():
-            score = int(count) * 10 + int(priority.get(role, 0))
-            if score > selected_score:
-                selected_role = role
-                selected_score = score
-        if selected_role:
-            facts[name] = selected_role
-    return facts
+        kept_fragments.append(fragment)
+
+    actions: list[str] = []
+    if removed_person_chain > 0:
+        actions.append(f"drop_person_chain_fragment:{removed_person_chain}")
+    if removed_numeric_person_chain > 0:
+        actions.append(f"drop_numeric_person_chain_fragment:{removed_numeric_person_chain}")
+    if removed_numeric_noise > 0:
+        actions.append(f"drop_numeric_noise_fragment:{removed_numeric_noise}")
+
+    rebuilt_plain = re.sub(r"\s{2,}", " ", " ".join(kept_fragments)).strip()
+    poll_residue_fix = _scrub_suspicious_poll_residue_text(rebuilt_plain)
+    if poll_residue_fix.get("edited"):
+        rebuilt_plain = str(poll_residue_fix.get("content") or rebuilt_plain)
+        poll_actions = poll_residue_fix.get("actions")
+        if isinstance(poll_actions, list):
+            for action in poll_actions:
+                action_text = str(action).strip()
+                if action_text:
+                    actions.append(action_text)
+
+    if not actions:
+        return {"content": html.escape(plain, quote=False), "edited": False, "actions": []}
+
+    return {
+        "content": html.escape(rebuilt_plain, quote=False),
+        "edited": True,
+        "actions": actions,
+    }
+
+
+def _extract_person_role_facts_from_text(text: Any) -> Dict[str, str]:
+    extracted = extract_person_role_facts_from_text_common(text)
+    normalized: Dict[str, str] = {}
+    for name, role in extracted.items():
+        cleaned_name = _clean_full_name_candidate(name)
+        normalized_role = re.sub(r"\s+", " ", str(role or "")).strip()
+        if cleaned_name and normalized_role:
+            normalized[cleaned_name] = normalized_role
+    return normalized
+
+
+def _repair_competitor_policy_phrase_once(
+    content: str,
+    *,
+    full_name: str,
+    person_roles: Dict[str, str],
+) -> Dict[str, Any]:
+    base = str(content or "")
+    speaker_name = _clean_full_name_candidate(full_name)
+    if not base.strip() or not speaker_name or not person_roles:
+        return {"content": base, "edited": False, "replacements": []}
+
+    competitor_names = sorted(
+        {
+            cleaned
+            for cleaned in (_clean_full_name_candidate(name) for name in person_roles.keys())
+            if cleaned and cleaned != speaker_name
+        },
+        key=len,
+        reverse=True,
+    )
+    if not competitor_names:
+        return {"content": base, "edited": False, "replacements": []}
+
+    noun_fragment = "|".join(re.escape(noun) for noun in ABSTRACT_POLICY_NOUNS)
+    competitor_fragment = "|".join(re.escape(name) for name in competitor_names)
+    first_person_pattern = re.compile(
+        rf"(저는|제가|저의|저만의|저\s*{re.escape(speaker_name)}|{re.escape(speaker_name)}인\s*저)",
+        re.IGNORECASE,
+    )
+    malformed_phrase_pattern = re.compile(
+        rf"(?P<prefix>(?:과|와|및)\s+)(?P<name>{competitor_fragment})\s*"
+        rf"(?:(?:현\s*)?(?:부산시장|국회의원|의원|후보|위원장|시장)\s+)?"
+        rf"(?P<noun>{noun_fragment})",
+        re.IGNORECASE,
+    )
+    chained_competitor_phrase_pattern = re.compile(
+        rf"(?P<prefix>(?:과|와|및)\s+)"
+        rf"(?P<chain>(?:(?:{competitor_fragment})"
+        rf"(?:\s*(?:현\s*)?(?:부산시장|국회의원|의원|후보|위원장|시장))?"
+        rf"(?:\s+|$)){{2,}})"
+        rf"(?P<noun>{noun_fragment})",
+        re.IGNORECASE,
+    )
+
+    first_person_chain_phrase_pattern = re.compile(
+        rf"(?P<prefix>(?:????留뚯쓽|?쒓?)\s+(?:吏꾩떖怨?\s+)?)"
+        rf"(?P<chain>(?:(?:{competitor_fragment}|[媛-??{2,4})"
+        rf"(?:\s*(?:??s*)?(?:遺?곗떆??援?쉶?섏썝|?섏썝|?꾨낫|?꾩썝???쒖옣))?\s+){{1,2}})"
+        rf"(?P<noun>{noun_fragment})",
+        re.IGNORECASE,
+    )
+
+    replacements: list[str] = []
+
+    def _rewrite_text(text: str) -> str:
+        plain = re.sub(r"<[^>]*>", " ", str(text or ""))
+        if not first_person_pattern.search(plain):
+            return text
+
+        def _replace(match: re.Match[str]) -> str:
+            replacement = f"{str(match.group('prefix') or '')}{str(match.group('noun') or '').strip()}"
+            if replacement.strip() == match.group(0).strip():
+                return match.group(0)
+            replacements.append(f"{str(match.group('name') or '').strip()}->{str(match.group('noun') or '').strip()}")
+            return replacement
+
+        updated_text = chained_competitor_phrase_pattern.sub(
+            lambda match: f"{str(match.group('prefix') or '')}{str(match.group('noun') or '').strip()}",
+            text,
+        )
+        if updated_text != text:
+            replacements.append("competitor_chain->noun")
+            text = updated_text
+
+        updated_text = first_person_chain_phrase_pattern.sub(
+            lambda match: f"{str(match.group('prefix') or '').strip()} {str(match.group('noun') or '').strip()}".strip(),
+            text,
+        )
+        if updated_text != text:
+            replacements.append("first_person_competitor_chain->noun")
+            text = updated_text
+
+        return malformed_phrase_pattern.sub(_replace, text)
+
+    repaired = _rewrite_paragraph_blocks(base, _rewrite_text)
+    return {
+        "content": repaired,
+        "edited": repaired != base,
+        "replacements": replacements,
+    }
+
+
+def _repair_competitor_policy_phrase_once(
+    content: str,
+    *,
+    full_name: str,
+    person_roles: Dict[str, str],
+) -> Dict[str, Any]:
+    base = str(content or "")
+    speaker_name = _clean_full_name_candidate(full_name)
+    if not base.strip() or not speaker_name or not person_roles:
+        return {"content": base, "edited": False, "replacements": []}
+
+    competitor_names = sorted(
+        {
+            cleaned
+            for cleaned in (_clean_full_name_candidate(name) for name in person_roles.keys())
+            if cleaned and cleaned != speaker_name
+        },
+        key=len,
+        reverse=True,
+    )
+    if not competitor_names:
+        return {"content": base, "edited": False, "replacements": []}
+
+    noun_fragment = "|".join(re.escape(noun) for noun in ABSTRACT_POLICY_NOUNS)
+    competitor_fragment = "|".join(re.escape(name) for name in competitor_names)
+    first_person_pattern = re.compile(
+        rf"(?:저|제|저의|제게|저는|제가|{re.escape(speaker_name)})",
+        re.IGNORECASE,
+    )
+    malformed_phrase_pattern = re.compile(
+        rf"(?P<prefix>(?:과\s+|와\s+|및\s+|비롯한\s+)(?P<name>{competitor_fragment})\s*"
+        rf"(?:(?:전\s*)?(?:부산시장|국회의원|의원|후보|위원장|시장)\s+)?"
+        rf"(?P<noun>{noun_fragment}))",
+        re.IGNORECASE,
+    )
+    chained_competitor_phrase_pattern = re.compile(
+        rf"(?P<prefix>(?:과\s+|와\s+|및\s+))"
+        rf"(?P<chain>(?:(?:{competitor_fragment})"
+        rf"(?:\s*(?:전\s*)?(?:부산시장|국회의원|의원|후보|위원장|시장))?"
+        rf"(?:\s+|$)){{2,}})"
+        rf"(?P<noun>{noun_fragment})",
+        re.IGNORECASE,
+    )
+    first_person_chain_phrase_pattern = re.compile(
+        rf"(?P<prefix>(?:저의|제)\s+(?:진심과\s+)?)"
+        rf"(?P<chain>(?:(?:{competitor_fragment}|[가-힣]{{2,4}})"
+        rf"(?:\s*(?:전\s*)?(?:부산시장|국회의원|의원|후보|위원장|시장))?\s+){{1,2}})"
+        rf"(?P<noun>{noun_fragment})",
+        re.IGNORECASE,
+    )
+
+    replacements: list[str] = []
+
+    def _rewrite_text(text: str) -> str:
+        plain = re.sub(r"<[^>]*>", " ", str(text or ""))
+        if not first_person_pattern.search(plain):
+            return text
+
+        def _replace(match: re.Match[str]) -> str:
+            replacement = f"{str(match.group('prefix') or '')}{str(match.group('noun') or '').strip()}"
+            if replacement.strip() == match.group(0).strip():
+                return match.group(0)
+            replacements.append(f"{str(match.group('name') or '').strip()}->{str(match.group('noun') or '').strip()}")
+            return replacement
+
+        updated_text = chained_competitor_phrase_pattern.sub(
+            lambda match: f"{str(match.group('prefix') or '')}{str(match.group('noun') or '').strip()}",
+            text,
+        )
+        if updated_text != text:
+            replacements.append("competitor_chain->noun")
+            text = updated_text
+
+        updated_text = first_person_chain_phrase_pattern.sub(
+            lambda match: f"{str(match.group('prefix') or '').strip()} {str(match.group('noun') or '').strip()}".strip(),
+            text,
+        )
+        if updated_text != text:
+            replacements.append("first_person_competitor_chain->noun")
+            text = updated_text
+
+        return malformed_phrase_pattern.sub(_replace, text)
+
+    repaired = _rewrite_paragraph_blocks(base, _rewrite_text)
+    return {
+        "content": repaired,
+        "edited": repaired != base,
+        "replacements": replacements,
+    }
 
 
 def _build_person_role_facts(
@@ -1076,8 +1968,10 @@ def _build_person_role_facts(
     source_texts = [
         data.get("newsDataText"),
         pipeline_result.get("newsDataText"),
-        data.get("stanceText"),
         data.get("sourceInput"),
+        pipeline_result.get("sourceInput"),
+        data.get("sourceContent"),
+        pipeline_result.get("sourceContent"),
     ]
     for text in source_texts:
         extracted = _extract_person_role_facts_from_text(text)
@@ -1086,11 +1980,11 @@ def _build_person_role_facts(
                 merged[name] = role
                 continue
             current = str(merged.get(name) or "")
-            if _canonical_role_label(current) == _canonical_role_label(role):
-                if "현 부산시장" in role and "현 부산시장" not in current:
+            if roles_equivalent_common(current, role):
+                if str(role).startswith("현 ") and not str(current).startswith("현 "):
                     merged[name] = role
                 continue
-            if "현 부산시장" in role:
+            if str(role).startswith("현 "):
                 merged[name] = role
     return merged
 
@@ -1109,6 +2003,10 @@ def _extract_role_consistency_issues(
     issues: list[str] = []
     seen: set[str] = set()
     for match in ROLE_MENTION_PATTERN.finditer(plain):
+        if _is_protected_search_keyword_role_mention(plain, match.start(), match.end()):
+            continue
+        if is_role_keyword_intent_surface(plain, match.start(), match.end()):
+            continue
         name = _clean_full_name_candidate(match.group(1))
         if not name or name not in person_roles:
             continue
@@ -1116,11 +2014,9 @@ def _extract_role_consistency_issues(
         expected = _canonical_role_label(expected_role)
         detected_raw = f"{str(match.group(2) or '').strip()} {str(match.group(3) or '').strip()}".strip()
         detected = _canonical_role_label(detected_raw)
-        if expected not in {"부산시장", "국회의원"}:
+        if not expected or not detected:
             continue
-        if detected not in {"부산시장", "국회의원"}:
-            continue
-        if expected == detected:
+        if roles_equivalent_common(expected, detected):
             continue
 
         issue_key = f"{name}:{detected}->{expected}"
@@ -1146,6 +2042,10 @@ def _repair_role_consistency_once(
     def _replace(match: re.Match[str]) -> str:
         if len(replacements) >= 8:
             return match.group(0)
+        if _is_protected_search_keyword_role_mention(str(match.string or ""), match.start(), match.end()):
+            return match.group(0)
+        if is_role_keyword_intent_surface(str(match.string or ""), match.start(), match.end()):
+            return match.group(0)
 
         name = _clean_full_name_candidate(match.group(1))
         if not name or name not in person_roles:
@@ -1155,12 +2055,12 @@ def _repair_role_consistency_once(
         expected = _canonical_role_label(expected_role)
         detected_raw = f"{str(match.group(2) or '').strip()} {str(match.group(3) or '').strip()}".strip()
         detected = _canonical_role_label(detected_raw)
-        if expected not in {"부산시장", "국회의원"}:
+        if not expected or not detected:
             return match.group(0)
-        if detected not in {"부산시장", "국회의원"} or expected == detected:
+        if roles_equivalent_common(expected, detected):
             return match.group(0)
 
-        target_role = expected_role if expected == "부산시장" else "국회의원"
+        target_role = expected_role or expected
         normalized_target = re.sub(r"\s+", " ", target_role).strip()
         replacements.append(f"{name}:{detected_raw}->{normalized_target}")
         return f"{name} {normalized_target}"
@@ -1169,6 +2069,106 @@ def _repair_role_consistency_once(
         return ROLE_MENTION_PATTERN.sub(_replace, text)
 
     repaired = _rewrite_paragraph_blocks(base, _rewrite_text)
+    return {
+        "content": repaired,
+        "edited": repaired != base,
+        "replacements": replacements,
+    }
+
+
+INTENT_BODY_SKIP_TOKENS: tuple[str, ...] = (
+    "가상대결",
+    "양자대결",
+    "대결",
+    "여론조사",
+    "지지율",
+    "오차 범위",
+    "오차범위",
+)
+
+
+def _extract_inline_context_window(text: str, start: int, end: int) -> str:
+    source = str(text or "")
+    if not source:
+        return ""
+    left_boundary = max(
+        source.rfind(".", 0, start),
+        source.rfind("?", 0, start),
+        source.rfind("!", 0, start),
+        source.rfind("。", 0, start),
+    )
+    if left_boundary == -1:
+        left_boundary = 0
+    else:
+        left_boundary += 1
+
+    right_candidates = [source.find(token, end) for token in (".", "?", "!", "。")]
+    right_candidates = [index for index in right_candidates if index != -1]
+    right_boundary = min(right_candidates) if right_candidates else len(source)
+    return str(source[left_boundary:right_boundary] or "")
+
+
+def _repair_intent_only_role_keyword_mentions_once(
+    content: str,
+    role_keyword_policy: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    base = str(content or "")
+    entries = role_keyword_policy.get("entries") if isinstance(role_keyword_policy, dict) else {}
+    if not base.strip() or not isinstance(entries, dict) or not entries:
+        return {"content": base, "edited": False, "replacements": []}
+
+    intent_keywords = [
+        str(keyword or "").strip()
+        for keyword, raw_entry in entries.items()
+        if str(keyword or "").strip()
+        and isinstance(raw_entry, dict)
+        and str(raw_entry.get("mode") or "").strip().lower() == "intent_only"
+    ]
+    if not intent_keywords:
+        return {"content": base, "edited": False, "replacements": []}
+
+    replacements: list[str] = []
+
+    def _rewrite_inner(inner: str) -> str:
+        updated_inner = str(inner or "")
+        for keyword in intent_keywords:
+            escaped_keyword = re.escape(keyword)
+
+            def _replace(match: re.Match[str]) -> str:
+                if len(replacements) >= 6:
+                    return match.group(0)
+                raw_source = str(match.string or "")
+                if _is_protected_search_keyword_role_mention(raw_source, match.start(), match.end()):
+                    return match.group(0)
+                if is_role_keyword_intent_surface(raw_source, match.start(), match.end()):
+                    return match.group(0)
+
+                after = raw_source[match.end() : min(len(raw_source), match.end() + 12)]
+                if re.match(r"\s*(?:과|와)(?:의)?", after):
+                    return match.group(0)
+
+                context_window = _normalize_inline_whitespace(
+                    re.sub(r"<[^>]*>", " ", _extract_inline_context_window(raw_source, match.start(), match.end()))
+                )
+                if any(token in context_window for token in INTENT_BODY_SKIP_TOKENS):
+                    return match.group(0)
+                if "%" in context_window:
+                    return match.group(0)
+
+                replacement = build_role_keyword_intent_text(
+                    keyword,
+                    context="inline",
+                    variant_index=len(replacements),
+                )
+                if not replacement or replacement == match.group(0):
+                    return match.group(0)
+                replacements.append(f"{keyword}->{replacement}")
+                return replacement
+
+            updated_inner = re.sub(escaped_keyword, _replace, updated_inner)
+        return updated_inner
+
+    repaired = _rewrite_paragraph_blocks(base, _rewrite_inner)
     return {
         "content": repaired,
         "edited": repaired != base,
@@ -1209,8 +2209,10 @@ def _normalize_lawmaker_honorifics_once(
             for pattern in role_patterns:
                 changed = False
 
-                def _replace(_: re.Match[str]) -> str:
+                def _replace(match: re.Match[str]) -> str:
                     nonlocal changed
+                    if _is_protected_search_keyword_role_mention(str(match.string or ""), match.start(), match.end()):
+                        return match.group(0)
                     changed = True
                     return f"{cleaned_name} 의원"
 
@@ -1234,6 +2236,64 @@ def _normalize_lawmaker_honorifics_once(
     }
 
 
+def _extract_integrity_units(content: str) -> list[str]:
+    return [str(item.get("text") or "") for item in _extract_integrity_unit_records(content)]
+
+
+def _extract_integrity_unit_records(content: str) -> list[Dict[str, Any]]:
+    base = str(content or "")
+    if not base.strip():
+        return []
+
+    units: list[Dict[str, Any]] = []
+    for block_index, match in enumerate(CONTENT_BLOCK_WITH_TAG_PATTERN.finditer(base)):
+        tag = str(match.group("tag") or "").lower() or "block"
+        plain = re.sub(r"<[^>]*>", " ", str(match.group("inner") or ""))
+        plain = re.sub(r"\s+", " ", plain).strip()
+        if not plain:
+            continue
+        fragments = [
+            re.sub(r"\s+", " ", fragment).strip()
+            for fragment in INTEGRITY_SENTENCE_SPLIT_PATTERN.split(plain)
+            if re.sub(r"\s+", " ", fragment).strip()
+        ]
+        if fragments:
+            for fragment_index, fragment in enumerate(fragments):
+                units.append(
+                    {
+                        "tag": tag,
+                        "blockIndex": block_index,
+                        "fragmentIndex": fragment_index,
+                        "text": fragment,
+                    }
+                )
+        else:
+            units.append(
+                {
+                    "tag": tag,
+                    "blockIndex": block_index,
+                    "fragmentIndex": 0,
+                    "text": plain,
+                }
+            )
+
+    if units:
+        return units
+
+    fallback_plain = re.sub(r"<[^>]*>", " ", base)
+    fallback_plain = re.sub(r"\s+", " ", fallback_plain).strip()
+    if not fallback_plain:
+        return []
+    return [
+        {
+            "tag": "document",
+            "blockIndex": 0,
+            "fragmentIndex": 0,
+            "text": fallback_plain,
+        }
+    ]
+
+
 def _detect_integrity_gate_issues(content: str) -> list[str]:
     text = str(content or "")
     if not text.strip():
@@ -1242,6 +2302,7 @@ def _detect_integrity_gate_issues(content: str) -> list[str]:
     plain = re.sub(r"<[^>]*>", " ", text)
     plain = re.sub(r"[ \t]+", " ", plain)
     lines = [line.strip() for line in re.split(r"[\r\n]+", plain) if line.strip()]
+    integrity_unit_records = _extract_integrity_unit_records(text)
 
     issues: list[str] = []
     if any(re.search(r"카테고리\s*:", line) for line in lines):
@@ -1268,19 +2329,60 @@ def _detect_integrity_gate_issues(content: str) -> list[str]:
         ),
     )
     for pattern, label in critical_sentence_patterns:
-        if pattern.search(plain):
+        if any(pattern.search(str(unit.get("text") or "")) for unit in integrity_unit_records):
             issues.append(label)
 
-    if re.search(r"(?:\d{1,4}(?:\.\d+)?(?:%|명|일|월|년|회|건|개|시|분|p)?\s*){5,}", plain):
-        issues.append("숫자/단위 토큰이 비정상적으로 연속됨")
+    for unit_record in integrity_unit_records:
+        unit = str(unit_record.get("text") or "")
+        problematic_numeric_runs = _find_problematic_numeric_runs(unit)
+        if problematic_numeric_runs:
+            first_run = problematic_numeric_runs[0]
+            start = max(0, int(first_run["start"]) - 30)
+            end = min(len(unit), int(first_run["end"]) + 30)
+            logger.warning(
+                "INTEGRITY_TOKEN_MATCH: tag=%s block=%s fragment=%s matched=%r context=%r",
+                unit_record.get("tag"),
+                unit_record.get("blockIndex"),
+                unit_record.get("fragmentIndex"),
+                str(first_run.get("text") or ""),
+                unit[start:end],
+            )
+            issues.append("숫자/단위 토큰이 비정상적으로 연속됨")
+            break
 
-    if re.search(r"(?:[가-힣]{2,8}\s*(?:의원|위원장|장관|후보)\s*){4,}", plain):
-        issues.append("고유명사/직함 토큰이 비정상적으로 연속됨")
-    if re.search(
-        r"(?:\d{1,4}(?:\.\d+)?(?:%|명|일|월|년|회|건|개|시|분|p)?\s*){2,}(?:[가-힣]{2,8}\s*(?:의원|위원장|장관|후보|시장)\s*){2,}",
-        plain,
-    ):
-        issues.append("숫자+인명/직함 토큰이 비정상적으로 결합됨")
+    for unit_record in integrity_unit_records:
+        unit = str(unit_record.get("text") or "")
+        person_chain_match = _find_valid_person_chain_match(unit)
+        if person_chain_match:
+            start = max(0, person_chain_match.start() - 30)
+            end = min(len(unit), person_chain_match.end() + 30)
+            logger.warning(
+                "INTEGRITY_PERSON_CHAIN_MATCH: tag=%s block=%s fragment=%s matched=%r context=%r",
+                unit_record.get("tag"),
+                unit_record.get("blockIndex"),
+                unit_record.get("fragmentIndex"),
+                person_chain_match.group(0),
+                unit[start:end],
+            )
+            issues.append("고유명사/직함 토큰이 비정상적으로 연속됨")
+            break
+
+    for unit_record in integrity_unit_records:
+        unit = str(unit_record.get("text") or "")
+        numeric_person_match = _find_valid_numeric_person_chain_match(unit)
+        if numeric_person_match:
+            start = max(0, numeric_person_match.start() - 30)
+            end = min(len(unit), numeric_person_match.end() + 30)
+            logger.warning(
+                "INTEGRITY_NUMERIC_PERSON_MATCH: tag=%s block=%s fragment=%s matched=%r context=%r",
+                unit_record.get("tag"),
+                unit_record.get("blockIndex"),
+                unit_record.get("fragmentIndex"),
+                numeric_person_match.group(0),
+                unit[start:end],
+            )
+            issues.append("숫자+인명/직함 토큰이 비정상적으로 결합됨")
+            break
 
     suspicious_tokens = ("이 사안", "관련 현안")
     suspicious_hits = sum(plain.count(token) for token in suspicious_tokens)
@@ -1313,41 +2415,184 @@ def _extract_blocking_integrity_issues(issues: list[str]) -> list[str]:
 
 
 def _repair_integrity_noise_once(content: str) -> Dict[str, Any]:
-    base = str(content or "")
-    if not base.strip():
-        return {"content": base, "edited": False, "actions": []}
+    original_base = str(content or "")
+    if not original_base.strip():
+        return {"content": original_base, "edited": False, "actions": []}
+
+    person_role_token_html_fragment = (
+        rf"[가-힣]{{2,8}}{_HTML_INLINE_GAP_FRAGMENT}(?:의원|위원장|장관|후보|시장)"
+    )
+    numeric_token_html_fragment = _NUMERIC_UNIT_TOKEN_FRAGMENT
 
     noise_pattern = re.compile(
-        r"(?:\d{1,4}(?:\.\d+)?(?:%|명|일|월|년|회|건|개|시|분|p)?\s*){2,}(?:[가-힣]{2,8}\s*(?:의원|위원장|장관|후보|시장)\s*){2,}",
+        rf"{numeric_token_html_fragment}(?:{_HTML_INLINE_SEPARATOR_FRAGMENT}{numeric_token_html_fragment}){{1,}}"
+        rf"{_HTML_INLINE_SEPARATOR_FRAGMENT}{person_role_token_html_fragment}"
+        rf"(?:{_HTML_INLINE_SEPARATOR_FRAGMENT}{person_role_token_html_fragment}){{1,}}",
         re.IGNORECASE,
     )
-    trailing_noise_pattern = re.compile(
-        r"(?:\d{1,4}(?:\.\d+)?(?:%|명|일|월|년|회|건|개|시|분|p)?\s*){2,}[가-힣]{2,20}",
+    person_chain_pattern = re.compile(
+        rf"{person_role_token_html_fragment}(?:{_HTML_INLINE_SEPARATOR_FRAGMENT}{person_role_token_html_fragment}){{2,}}",
         re.IGNORECASE,
     )
-    matchup_tail_pattern = re.compile(r"(?:후보군(?:\s*대결(?:에서도|에서)?)?|[가-힣]{1,4}\s*대결(?:에서도|에서))")
+    matchup_tail_pattern = re.compile(
+        r"(?:[가-힣]{1,8}도\s*){0,2}(?:후보군(?:\s*대결(?:에서도|에서)?)?|[가-힣]{1,4}\s*대결(?:에서도|에서))"
+    )
 
-    repaired = base
+    repaired = original_base
     actions: list[str] = []
-    paragraph_matches = list(PARAGRAPH_TAG_PATTERN.finditer(base))
+
+    h2_matches = list(H2_TAG_PATTERN.finditer(repaired))
+    for match in reversed(h2_matches):
+        inner = str(match.group(1) or "")
+        plain_inner = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", inner))
+        if not plain_inner:
+            continue
+
+        has_person_chain = _find_valid_person_chain_match(plain_inner) is not None
+        has_numeric_person_chain = _find_valid_numeric_person_chain_match(plain_inner) is not None
+        if not has_person_chain and not has_numeric_person_chain:
+            continue
+
+        role_pairs = PERSON_ROLE_PAIR_PATTERN.findall(plain_inner)
+        heading_names: list[str] = []
+        for raw_name, _role in role_pairs:
+            cleaned_name = _clean_full_name_candidate(raw_name)
+            if not cleaned_name or not _looks_like_person_name_token(cleaned_name):
+                continue
+            if cleaned_name not in heading_names:
+                heading_names.append(cleaned_name)
+
+        rewritten_heading = ""
+        if len(heading_names) >= 3:
+            rewritten_heading = f"{'·'.join(heading_names[:3])} 구도"
+        elif len(heading_names) >= 2:
+            rewritten_heading = f"{heading_names[0]} vs {heading_names[1]}"
+        elif heading_names:
+            rewritten_heading = f"{heading_names[0]} 쟁점"
+        else:
+            rewritten_heading = "핵심 쟁점"
+
+        rewritten_heading = rewritten_heading.strip()
+        if not rewritten_heading or rewritten_heading == plain_inner:
+            continue
+
+        repaired = repaired[: match.start(1)] + rewritten_heading + repaired[match.end(1) :]
+        if has_numeric_person_chain:
+            actions.append("numeric_person_chain_h2_rewrite")
+        else:
+            actions.append("person_role_chain_h2_rewrite")
+
+    paragraph_matches = list(PARAGRAPH_TAG_PATTERN.finditer(repaired))
     for match in reversed(paragraph_matches):
         inner = str(match.group(1) or "")
         updated_inner = inner
         changed = False
 
-        updated_inner, removed_noise = noise_pattern.subn(" ", updated_inner)
+        removed_noise = 0
+
+        def _replace_noise_inner(match: re.Match[str]) -> str:
+            nonlocal removed_noise
+            if not _is_valid_person_role_chain_text(match.group(0), min_pairs=2):
+                return match.group(0)
+            removed_noise += 1
+            return " "
+
+        updated_inner = noise_pattern.sub(_replace_noise_inner, updated_inner)
         if removed_noise > 0:
             actions.append(f"numeric_person_chain:{removed_noise}")
             changed = True
 
-        updated_inner, removed_trailing = trailing_noise_pattern.subn(" ", updated_inner)
-        if removed_trailing > 0:
-            actions.append(f"numeric_tail_chain:{removed_trailing}")
+        removed_person_chain = 0
+
+        def _replace_person_chain_inner(match: re.Match[str]) -> str:
+            nonlocal removed_person_chain
+            if not _is_valid_person_role_chain_text(match.group(0), min_pairs=3):
+                return match.group(0)
+            removed_person_chain += 1
+            return " "
+
+        updated_inner = person_chain_pattern.sub(_replace_person_chain_inner, updated_inner)
+        if removed_person_chain > 0:
+            actions.append(f"person_role_chain:{removed_person_chain}")
             changed = True
+
         if changed:
             updated_inner, removed_matchup_tail = matchup_tail_pattern.subn(" ", updated_inner)
             if removed_matchup_tail > 0:
                 actions.append(f"matchup_tail:{removed_matchup_tail}")
+
+        problematic_runs = _find_problematic_numeric_runs(updated_inner)
+        drop_paragraph = False
+        if problematic_runs:
+            for run in reversed(problematic_runs):
+                run_start = int(run.get("start") or 0)
+                run_end = int(run.get("end") or 0)
+                before = updated_inner[:run_start]
+                after = updated_inner[run_end:]
+                if before.strip() and after.strip():
+                    plain_inner = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", updated_inner))
+                    non_numeric_text = _normalize_inline_whitespace(
+                        re.sub(
+                            rf"(?<!\S){_NUMERIC_UNIT_TOKEN_FRAGMENT}(?:\s+{_NUMERIC_UNIT_TOKEN_FRAGMENT})*",
+                            " ",
+                            plain_inner,
+                        )
+                    )
+                    has_meaningful_korean = bool(re.search(r"[가-힣]{2,}", non_numeric_text))
+                    if len(non_numeric_text) < 10 or not has_meaningful_korean:
+                        repaired = repaired[: match.start()] + repaired[match.end() :]
+                        actions.append("drop_numeric_noise_paragraph")
+                        changed = True
+                        drop_paragraph = True
+                        break
+                    continue
+
+                replacement_text = ""
+                leading_datetime_prefix = _extract_leading_datetime_prefix(run.get("text"))
+                if leading_datetime_prefix and leading_datetime_prefix != str(run.get("text") or ""):
+                    replacement_text = leading_datetime_prefix
+                    actions.append("numeric_run_datetime_prefix_preserved")
+
+                updated_inner = before.rstrip()
+                if replacement_text:
+                    if updated_inner:
+                        updated_inner += " "
+                    updated_inner += replacement_text
+                if (updated_inner or replacement_text) and after.lstrip():
+                    updated_inner += " "
+                updated_inner += after.lstrip()
+                actions.append(f"numeric_run_edge_trim:{str(run.get('text') or '')[:48]}")
+                changed = True
+
+        if drop_paragraph:
+            continue
+
+        plain_candidate = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", updated_inner))
+        if plain_candidate and (
+            _find_valid_person_chain_match(plain_candidate) is not None
+            or _find_valid_numeric_person_chain_match(plain_candidate) is not None
+        ):
+            fragment_repair = _prune_problematic_integrity_fragments(updated_inner)
+            if fragment_repair.get("edited"):
+                updated_inner = str(fragment_repair.get("content") or "")
+                fragment_actions = fragment_repair.get("actions")
+                if isinstance(fragment_actions, list):
+                    for action in fragment_actions:
+                        action_text = str(action).strip()
+                        if action_text:
+                            actions.append(action_text)
+                changed = True
+
+        residue_fix = _scrub_suspicious_poll_residue_text(updated_inner)
+        if residue_fix.get("edited"):
+            updated_inner = str(residue_fix.get("content") or updated_inner)
+            residue_actions = residue_fix.get("actions")
+            if isinstance(residue_actions, list):
+                for action in residue_actions:
+                    action_text = str(action).strip()
+                    if action_text:
+                        actions.append(action_text)
+            changed = True
 
         if not changed:
             continue
@@ -1356,11 +2601,250 @@ def _repair_integrity_noise_once(content: str) -> Dict[str, Any]:
         plain_after = re.sub(r"<[^>]*>", " ", updated_inner)
         plain_after = re.sub(r"\s+", " ", plain_after).strip()
         if len(plain_after) < 24:
-            repaired = repaired[: match.start()] + repaired[match.end() :]
-            actions.append("drop_short_noisy_paragraph")
-            continue
+            has_meaningful_korean = bool(re.search(r"[가-힣]{2,}", plain_after))
+            if len(plain_after) < 12 or not has_meaningful_korean:
+                repaired = repaired[: match.start()] + repaired[match.end() :]
+                actions.append("drop_short_noisy_paragraph")
+                continue
 
         repaired = repaired[: match.start(1)] + updated_inner + repaired[match.end(1) :]
+
+    return {
+        "content": repaired,
+        "edited": repaired != original_base,
+        "actions": actions,
+    }
+
+
+def _split_sentence_like_units(text: str) -> list[str]:
+    normalized = _normalize_inline_whitespace(text)
+    if not normalized:
+        return []
+
+    parts = [
+        str(match.group(0) or "").strip()
+        for match in re.finditer(r"[^.!?]+(?:[.!?]|$)", normalized)
+        if str(match.group(0) or "").strip()
+    ]
+    return parts or [normalized]
+
+
+def _detect_targeted_sentence_polish_issue(text: str, *, tag: str) -> str:
+    candidate = _normalize_inline_whitespace(text)
+    if not candidate:
+        return ""
+
+    normalized_tag = str(tag or "").strip().lower()
+    if normalized_tag == "h2":
+        if TARGETED_POLISH_HEADING_PATTERN.search(candidate):
+            return "heading_first_person_topic"
+        return ""
+
+    for pattern, reason in TARGETED_POLISH_SENTENCE_PATTERNS:
+        if pattern.search(candidate):
+            return reason
+    return ""
+
+
+def _collect_targeted_sentence_polish_candidates(content: str) -> list[Dict[str, Any]]:
+    base = str(content or "")
+    if not base.strip():
+        return []
+
+    candidates: list[Dict[str, Any]] = []
+    for block_index, match in enumerate(CONTENT_BLOCK_WITH_TAG_PATTERN.finditer(base)):
+        if len(candidates) >= TARGETED_POLISH_MAX_CANDIDATES:
+            break
+
+        tag = str(match.group("tag") or "").strip().lower()
+        raw_inner = str(match.group("inner") or "")
+        plain_inner = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", raw_inner))
+        if not plain_inner:
+            continue
+
+        block_key = f"{tag}-{block_index}"
+        if tag == "h2":
+            reason = _detect_targeted_sentence_polish_issue(plain_inner, tag=tag)
+            if reason and len(plain_inner) <= TARGETED_POLISH_MAX_TEXT_LENGTH:
+                candidates.append(
+                    {
+                        "id": block_key,
+                        "tag": tag,
+                        "reason": reason,
+                        "text": plain_inner,
+                        "blockKey": block_key,
+                        "blockInner": plain_inner,
+                        "innerStart": match.start("inner"),
+                        "innerEnd": match.end("inner"),
+                    }
+                )
+            continue
+
+        if tag != "p" or "<" in raw_inner:
+            continue
+
+        normalized_inner = _normalize_inline_whitespace(raw_inner)
+        if not normalized_inner:
+            continue
+
+        for sentence_index, sentence in enumerate(_split_sentence_like_units(normalized_inner)):
+            if len(candidates) >= TARGETED_POLISH_MAX_CANDIDATES:
+                break
+            if len(sentence) > TARGETED_POLISH_MAX_TEXT_LENGTH:
+                continue
+
+            reason = _detect_targeted_sentence_polish_issue(sentence, tag=tag)
+            if not reason:
+                continue
+
+            candidates.append(
+                {
+                    "id": f"{block_key}-s{sentence_index}",
+                    "tag": tag,
+                    "reason": reason,
+                    "text": sentence,
+                    "blockKey": block_key,
+                    "blockInner": normalized_inner,
+                    "innerStart": match.start("inner"),
+                    "innerEnd": match.end("inner"),
+                }
+            )
+    return candidates
+
+
+def _normalize_numeric_token(text: Any) -> str:
+    return re.sub(r"[,\s]", "", str(text or "")).strip()
+
+
+def _extract_targeted_polish_numeric_tokens(text: str) -> list[str]:
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for match in TARGETED_POLISH_NUMERIC_TOKEN_PATTERN.finditer(str(text or "")):
+        token = _normalize_numeric_token(match.group(0) or "")
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        tokens.append(token)
+    return tokens
+
+
+def _validate_targeted_sentence_rewrite(
+    original: str,
+    rewritten: str,
+    *,
+    tag: str,
+    user_keywords: list[str],
+    known_names: list[str],
+) -> tuple[bool, str]:
+    source = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(original or "")))
+    candidate = _normalize_inline_whitespace(str(rewritten or ""))
+    if not source:
+        return False, "empty_source"
+    if not candidate:
+        return False, "empty_output"
+    if "<" in candidate or ">" in candidate:
+        return False, "html_output"
+
+    source_len = len(source)
+    candidate_len = len(candidate)
+    if candidate_len < max(6, int(source_len * 0.55)):
+        return False, "too_short"
+    if candidate_len > max(source_len + 40, int(source_len * 1.6)):
+        return False, "too_long"
+    if str(tag or "").lower() == "h2" and source.endswith("?") and not candidate.endswith("?"):
+        return False, "question_lost"
+
+    normalized_source = _normalize_person_name(source)
+    normalized_candidate = _normalize_person_name(candidate)
+    candidate_numeric_surface = _normalize_numeric_token(candidate)
+    for token in _extract_targeted_polish_numeric_tokens(source):
+        if token not in candidate_numeric_surface:
+            return False, f"number_missing:{token}"
+
+    for keyword in user_keywords or []:
+        normalized_keyword = _normalize_inline_whitespace(keyword)
+        if normalized_keyword and normalized_keyword in source and normalized_keyword not in candidate:
+            return False, f"keyword_missing:{normalized_keyword}"
+
+    for name in known_names or []:
+        normalized_name = _normalize_person_name(name)
+        if normalized_name and normalized_name in normalized_source and normalized_name not in normalized_candidate:
+            return False, f"name_missing:{normalized_name}"
+
+    return True, ""
+
+
+def _apply_targeted_sentence_rewrites(
+    content: str,
+    candidates: list[Dict[str, Any]],
+    rewrite_map: Dict[str, str],
+    *,
+    user_keywords: list[str],
+    known_names: list[str],
+) -> Dict[str, Any]:
+    base = str(content or "")
+    if not base.strip() or not candidates or not rewrite_map:
+        return {"content": base, "edited": False, "actions": []}
+
+    block_updates: Dict[str, str] = {}
+    block_positions: Dict[str, Dict[str, Any]] = {}
+    actions: list[str] = []
+
+    for candidate in candidates:
+        candidate_id = str(candidate.get("id") or "").strip()
+        rewritten = _normalize_inline_whitespace(rewrite_map.get(candidate_id))
+        if not candidate_id or not rewritten:
+            continue
+
+        valid, reason = _validate_targeted_sentence_rewrite(
+            str(candidate.get("text") or ""),
+            rewritten,
+            tag=str(candidate.get("tag") or ""),
+            user_keywords=user_keywords,
+            known_names=known_names,
+        )
+        if not valid:
+            actions.append(f"targeted_sentence_llm_skip:{candidate_id}:{reason}")
+            continue
+
+        block_key = str(candidate.get("blockKey") or "").strip()
+        original_block_inner = str(candidate.get("blockInner") or "")
+        if not block_key or not original_block_inner:
+            continue
+
+        current_inner = block_updates.get(block_key, original_block_inner)
+        if str(candidate.get("tag") or "").lower() == "h2":
+            updated_inner = rewritten
+        else:
+            original_fragment = str(candidate.get("text") or "")
+            updated_inner = current_inner.replace(original_fragment, rewritten, 1)
+            if updated_inner == current_inner:
+                actions.append(f"targeted_sentence_llm_skip:{candidate_id}:replace_miss")
+                continue
+
+        block_updates[block_key] = updated_inner
+        block_positions[block_key] = {
+            "innerStart": int(candidate.get("innerStart") or 0),
+            "innerEnd": int(candidate.get("innerEnd") or 0),
+            "originalInner": original_block_inner,
+        }
+        actions.append(f"targeted_sentence_llm:{candidate_id}")
+
+    repaired = base
+    for block_key, info in sorted(
+        block_positions.items(),
+        key=lambda item: int(item[1].get("innerStart") or 0),
+        reverse=True,
+    ):
+        updated_inner = str(block_updates.get(block_key) or "")
+        original_inner = str(info.get("originalInner") or "")
+        if not updated_inner or updated_inner == original_inner:
+            continue
+        repaired = (
+            repaired[: int(info.get("innerStart") or 0)]
+            + updated_inner
+            + repaired[int(info.get("innerEnd") or 0) :]
+        )
 
     return {
         "content": repaired,
@@ -1369,7 +2853,127 @@ def _repair_integrity_noise_once(content: str) -> Dict[str, Any]:
     }
 
 
-def _apply_final_sentence_polish_once(content: str) -> Dict[str, Any]:
+def _rewrite_targeted_sentence_issues_once(
+    content: str,
+    *,
+    user_keywords: Optional[list[str]] = None,
+    known_names: Optional[list[str]] = None,
+) -> Dict[str, Any]:
+    base = str(content or "")
+    if not base.strip():
+        return {"content": base, "edited": False, "actions": []}
+
+    candidates = _collect_targeted_sentence_polish_candidates(base)
+    if not candidates:
+        return {"content": base, "edited": False, "actions": []}
+
+    prompt_items = [
+        {
+            "id": str(candidate.get("id") or ""),
+            "tag": str(candidate.get("tag") or ""),
+            "reason": str(candidate.get("reason") or ""),
+            "text": str(candidate.get("text") or ""),
+        }
+        for candidate in candidates
+    ]
+    prompt = (
+        "당신은 한국어 정치 원고의 파손 문장 교정기입니다.\n"
+        "아래 fragment만 최소 수정으로 자연스럽게 고치세요.\n"
+        "규칙:\n"
+        "1. 각 fragment는 하나의 소제목 또는 한 문장만 다룹니다.\n"
+        "2. 의미, 정치적 입장, 고유명사, 직함, 수치, 검색어를 유지하세요.\n"
+        "3. 새 사실을 추가하지 마세요.\n"
+        "4. HTML 태그를 넣지 마세요.\n"
+        "5. 가능한 한 조사/어순만 고치고 과하게 다시 쓰지 마세요.\n"
+        "6. id는 그대로 두고 text만 반환하세요.\n\n"
+        f"입력 JSON:\n{json.dumps(prompt_items, ensure_ascii=False, indent=2)}\n\n"
+        '반드시 다음 JSON만 반환하세요: {"rewrites":[{"id":"...","text":"..."}]}'
+    )
+
+    response_schema = {
+        "type": "object",
+        "properties": {
+            "rewrites": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "text": {"type": "string"},
+                    },
+                    "required": ["id", "text"],
+                },
+            }
+        },
+        "required": ["rewrites"],
+    }
+
+    try:
+        from agents.common.gemini_client import DEFAULT_MODEL, generate_json_async
+
+        payload = _run_async_sync(
+            generate_json_async(
+                prompt,
+                model_name=DEFAULT_MODEL,
+                temperature=0.0,
+                max_output_tokens=1024,
+                retries=1,
+                options={"json_parse_retries": 1},
+                response_schema=response_schema,
+                required_keys=("rewrites",),
+            )
+        )
+    except Exception as exc:
+        logger.warning("Targeted sentence polish skipped: %s", exc)
+        return {
+            "content": base,
+            "edited": False,
+            "actions": [
+                f"targeted_sentence_candidates:{len(candidates)}",
+                f"targeted_sentence_llm_error:{type(exc).__name__}",
+            ],
+        }
+
+    rewrite_map: Dict[str, str] = {}
+    rewrites = payload.get("rewrites") if isinstance(payload, dict) else None
+    if isinstance(rewrites, list):
+        for item in rewrites:
+            if not isinstance(item, dict):
+                continue
+            item_id = str(item.get("id") or "").strip()
+            item_text = _normalize_inline_whitespace(item.get("text"))
+            if item_id and item_text:
+                rewrite_map[item_id] = item_text
+
+    apply_result = _apply_targeted_sentence_rewrites(
+        base,
+        candidates,
+        rewrite_map,
+        user_keywords=[str(item or "").strip() for item in (user_keywords or []) if str(item or "").strip()],
+        known_names=[str(item or "").strip() for item in (known_names or []) if str(item or "").strip()],
+    )
+    actions = [f"targeted_sentence_candidates:{len(candidates)}"]
+    apply_actions = apply_result.get("actions")
+    if isinstance(apply_actions, list):
+        for action in apply_actions:
+            action_text = str(action).strip()
+            if action_text:
+                actions.append(action_text)
+    return {
+        "content": str(apply_result.get("content") or base),
+        "edited": bool(apply_result.get("edited")),
+        "actions": actions,
+    }
+
+
+def _apply_final_sentence_polish_once(
+    content: str,
+    *,
+    full_name: str = "",
+    user_keywords: Optional[list[str]] = None,
+    role_facts: Optional[Dict[str, str]] = None,
+    poll_fact_table: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """최종 단계에서 문장 파손 가능성이 낮은 경량 윤문만 1회 적용한다."""
     base = str(content or "")
     if not base.strip():
@@ -1416,11 +3020,55 @@ def _apply_final_sentence_polish_once(content: str) -> Dict[str, Any]:
             "결과가 ",
             "broken_result_clause",
         ),
+        (
+            re.compile(
+                r"((?:상대 후보와의\s+)?(?:가상대결|양자대결|대결))에서\s+결과(?:는|가)\s+",
+                re.IGNORECASE,
+            ),
+            r"\1 결과는 ",
+            "broken_matchup_result_clause",
+        ),
+        (
+            re.compile(
+                r"((?:상대 후보와의\s+)?(?:가상 대결|양자 대결))에서\s+결과(?:는|가)\s+",
+                re.IGNORECASE,
+            ),
+            r"\1 결과는 ",
+            "broken_matchup_result_clause_spaced",
+        ),
+        (
+            re.compile(
+                r"(?:제가|저는)\s+(비전|해법|대안|경쟁력|가능성|약속|역할|메시지|방향|해결책)은\?",
+                re.IGNORECASE,
+            ),
+            r"제 \1은?",
+            "broken_heading_first_person_topic",
+        ),
     ]
     for pattern, replacement, action_name in safe_patterns:
         repaired, changed = pattern.subn(replacement, repaired)
         if changed > 0:
             actions.append(f"{action_name}:{changed}")
+
+    known_person_names = _collect_known_person_names(
+        full_name=full_name,
+        role_facts=role_facts or {},
+        user_keywords=user_keywords or [],
+        poll_fact_table=poll_fact_table or {},
+    )
+    targeted_rewrite = _rewrite_targeted_sentence_issues_once(
+        repaired,
+        user_keywords=user_keywords or [],
+        known_names=known_person_names,
+    )
+    targeted_actions = targeted_rewrite.get("actions")
+    if isinstance(targeted_actions, list):
+        for action in targeted_actions:
+            action_text = str(action).strip()
+            if action_text:
+                actions.append(action_text)
+    if targeted_rewrite.get("edited"):
+        repaired = str(targeted_rewrite.get("content") or repaired)
 
     return {
         "content": repaired,
@@ -1550,6 +3198,10 @@ def _recover_short_content_once(
     user_keywords: list[str],
     auto_keywords: list[str],
     body_min_overrides: Dict[str, int],
+    user_keyword_expected_overrides: Dict[str, int],
+    user_keyword_max_overrides: Dict[str, int],
+    skip_user_keywords: Optional[list[str]],
+    role_keyword_policy: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """분량 부족 시 1회 확장 보정."""
     base_content = str(content or "").strip()
@@ -1616,6 +3268,10 @@ def _recover_short_content_once(
         auto_keywords=auto_keywords,
         target_word_count=target_word_count,
         body_min_overrides=body_min_overrides,
+        user_keyword_expected_overrides=user_keyword_expected_overrides,
+        user_keyword_max_overrides=user_keyword_max_overrides,
+        skip_user_keywords=skip_user_keywords,
+        role_keyword_policy=role_keyword_policy,
     )
     repaired_content = str(keyword_repair.get("content") or candidate)
     keyword_validation = _safe_dict(keyword_repair.get("keywordValidation"))
@@ -1641,6 +3297,10 @@ def _repair_keyword_gate_once(
     auto_keywords: list[str],
     target_word_count: int,
     body_min_overrides: Dict[str, int],
+    user_keyword_expected_overrides: Dict[str, int],
+    user_keyword_max_overrides: Dict[str, int],
+    skip_user_keywords: Optional[list[str]] = None,
+    role_keyword_policy: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """키워드 게이트 실패(부족/과다)를 1회 자동 보정한다."""
     base_content = str(content or "")
@@ -1651,6 +3311,10 @@ def _repair_keyword_gate_once(
         target_word_count=target_word_count,
         title_text=title_text,
         body_min_overrides=body_min_overrides,
+        user_keyword_expected_overrides=user_keyword_expected_overrides,
+        user_keyword_max_overrides=user_keyword_max_overrides,
+        skip_user_keywords=skip_user_keywords,
+        role_keyword_policy=role_keyword_policy,
         max_iterations=2,
     )
 
@@ -1664,12 +3328,14 @@ def _repair_keyword_gate_once(
             target_word_count=target_word_count,
             title_text=title_text,
             body_min_overrides=body_min_overrides,
+            user_keyword_expected_overrides=user_keyword_expected_overrides,
+            user_keyword_max_overrides=user_keyword_max_overrides,
         )
 
     keyword_validation = build_keyword_validation(keyword_result)
     keyword_details = (keyword_result.get("details") or {}).get("keywords") or {}
     keyword_counts = {
-        keyword: int((info or {}).get("coverage") or (info or {}).get("count") or 0)
+        keyword: int((info or {}).get("gateCount") or (info or {}).get("coverage") or (info or {}).get("count") or 0)
         for keyword, info in keyword_details.items()
         if isinstance(info, dict)
     }
@@ -1738,9 +3404,9 @@ def _detect_content_repair_corruption(before: str, after: str) -> tuple[bool, st
 
 def _build_editor_keyword_feedback(
     keyword_validation: Dict[str, Any],
-    user_keywords: list[str],
+    gate_user_keywords: list[str],
 ) -> Dict[str, Any]:
-    normalized_user_keywords = [str(item).strip() for item in (user_keywords or []) if str(item).strip()]
+    normalized_user_keywords = [str(item).strip() for item in (gate_user_keywords or []) if str(item).strip()]
     if not normalized_user_keywords:
         return {"passed": True, "issues": [], "softIssues": []}
 
@@ -1756,9 +3422,10 @@ def _build_editor_keyword_feedback(
             continue
 
         status = str(info.get("status") or "").strip().lower()
-        count = _to_int(info.get("count"), 0)
+        count = _to_int(info.get("gateCount"), _to_int(info.get("count"), 0))
         expected = _to_int(info.get("expected"), 0)
         max_count = _to_int(info.get("max"), 0)
+        exact_count = _to_int(info.get("exclusiveCount"), count)
         if status == "insufficient":
             message = f"키워드 \"{keyword}\"가 부족합니다 ({count}/{expected})."
             if index == 0:
@@ -1766,7 +3433,7 @@ def _build_editor_keyword_feedback(
             else:
                 soft_issues.append(f"보조 {message}")
         elif status == "spam_risk":
-            message = f"키워드 \"{keyword}\"가 과다합니다 ({count}/{max_count})."
+            message = f"키워드 \"{keyword}\"가 과다합니다 ({exact_count}/{max_count})."
             if index == 0:
                 hard_issues.append(message)
             else:
@@ -1785,6 +3452,7 @@ def _score_title_compliance(
     category: str,
     status: str,
     context_analysis: Dict[str, Any],
+    role_keyword_policy: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     candidate = _normalize_title_surface_local(title)
     if not candidate:
@@ -1802,6 +3470,7 @@ def _score_title_compliance(
                 "category": str(category or ""),
                 "status": str(status or ""),
                 "contextAnalysis": context_analysis if isinstance(context_analysis, dict) else {},
+                "roleKeywordPolicy": role_keyword_policy if isinstance(role_keyword_policy, dict) else {},
             },
         )
         repaired_title = ""
@@ -1812,25 +3481,45 @@ def _score_title_compliance(
             final_title = _normalize_title_surface_local(repaired_title) or repaired_title or candidate
         score = _to_int(result.get("score"), 0) if isinstance(result, dict) else 0
         strict_pass = bool(result.get("passed") is True) if isinstance(result, dict) else False
+        breakdown = result.get("breakdown") if isinstance(result, dict) else {}
+        topic_match = breakdown.get("topicMatch") if isinstance(breakdown, dict) else {}
+        keyword_requirement = breakdown.get("keywordRequirement") if isinstance(breakdown, dict) else {}
+        length_info = breakdown.get("length") if isinstance(breakdown, dict) else {}
+        topic_match_score = _to_int(
+            topic_match.get("score") if isinstance(topic_match, dict) else 0,
+            0,
+        )
+        keyword_requirement_score = _to_int(
+            keyword_requirement.get("score") if isinstance(keyword_requirement, dict) else 0,
+            0,
+        )
+        length_score = _to_int(
+            length_info.get("score") if isinstance(length_info, dict) else 0,
+            0,
+        )
+        soft_acceptable = (
+            score >= 60
+            and topic_match_score >= 15
+            and keyword_requirement_score > 0
+            and length_score > 0
+        )
         # 최종 출력 가드는 하드 실패(score=0)만 차단한다.
         # 점수 70 미만의 소프트 이슈는 경고로 남기고 제목 생성은 계속 진행한다.
-        passed = strict_pass or score > 0
+        passed = strict_pass
         suggestions = result.get("suggestions") if isinstance(result, dict) else []
         reason = ""
         if isinstance(suggestions, list) and suggestions:
             reason = str(suggestions[0] or "").strip()
-        if passed and not strict_pass:
-            logger.info(
-                "Title guard soft-pass applied (score=%s, reason=%s, title=%s)",
-                score,
-                reason,
-                final_title,
-            )
         return {
             "passed": passed,
             "score": score,
             "reason": reason,
             "title": final_title,
+            "strictPassed": strict_pass,
+            "softAccepted": soft_acceptable,
+            "topicMatchScore": topic_match_score,
+            "keywordRequirementScore": keyword_requirement_score,
+            "lengthScore": length_score,
         }
     except Exception as exc:
         logger.warning("Title compliance scoring failed (non-fatal): %s", exc)
@@ -1848,9 +3537,105 @@ def _guard_title_after_editor(
     category: str,
     status: str,
     context_analysis: Dict[str, Any],
+    role_keyword_policy: Optional[Dict[str, Any]] = None,
 ) -> tuple[str, Dict[str, Any]]:
     candidate = _normalize_title_surface_local(candidate_title)
-    _ = _normalize_title_surface_local(previous_title)
+    previous = _normalize_title_surface_local(previous_title)
+
+    def _compose_repaired_title_surface(base_title: str, start: int, end: int, replacement: str) -> str:
+        prefix = str(base_title[:start] or "").rstrip(" ,·:;!?")
+        suffix = re.sub(r"^[\s,·:;!?]+", "", str(base_title[end:] or ""))
+        parts = [part for part in (prefix, str(replacement or "").strip(), suffix) if str(part or "").strip()]
+        candidate_surface = " ".join(parts).strip()
+        return _normalize_title_surface_local(candidate_surface) or candidate_surface
+
+    def _iter_role_policy_repair_candidates(title_text: str) -> list[str]:
+        normalized_title = _normalize_title_surface_local(title_text)
+        entries = role_keyword_policy.get("entries") if isinstance(role_keyword_policy, dict) else {}
+        if not normalized_title or not isinstance(entries, dict) or not entries:
+            return []
+
+        candidates: list[str] = []
+        seen_candidates: set[str] = set()
+        for keyword, raw_entry in entries.items():
+            entry = raw_entry if isinstance(raw_entry, dict) else {}
+            normalized_keyword = str(keyword or "").strip()
+            if not normalized_keyword or normalized_keyword not in normalized_title:
+                continue
+            start_index = normalized_title.find(normalized_keyword)
+            end_index = start_index + len(normalized_keyword)
+            mode = str(entry.get("mode") or "").strip().lower()
+
+            replacements: list[str] = []
+            if mode == "intent_only" and not is_role_keyword_intent_surface(
+                normalized_title,
+                start_index,
+                end_index,
+            ):
+                replacements = [
+                    build_role_keyword_intent_text(normalized_keyword, context="title", variant_index=0),
+                    build_role_keyword_intent_text(normalized_keyword, context="title", variant_index=1),
+                    build_role_keyword_intent_text(normalized_keyword, context="title", variant_index=2),
+                ]
+            elif mode == "blocked":
+                source_role = str(entry.get("sourceRole") or "").strip()
+                person_name = str(entry.get("name") or "").strip()
+                if source_role and person_name:
+                    replacements = [f"{person_name} {source_role}", person_name]
+                elif person_name:
+                    replacements = [person_name]
+
+            for replacement in replacements:
+                repaired_candidate = _compose_repaired_title_surface(
+                    normalized_title,
+                    start_index,
+                    end_index,
+                    replacement,
+                )
+                if not repaired_candidate or repaired_candidate == normalized_title or repaired_candidate in seen_candidates:
+                    continue
+                seen_candidates.add(repaired_candidate)
+                candidates.append(repaired_candidate)
+        return candidates
+
+    def _try_role_policy_title_repair(title_text: str, source_label: str, failed_reason: str) -> Optional[tuple[str, Dict[str, Any]]]:
+        best_soft: Optional[tuple[str, Dict[str, Any]]] = None
+        for repaired_candidate in _iter_role_policy_repair_candidates(title_text):
+            repaired_score = _score_title_compliance(
+                title=repaired_candidate,
+                topic=topic,
+                content=content,
+                user_keywords=user_keywords,
+                full_name=full_name,
+                category=category,
+                status=status,
+                context_analysis=context_analysis,
+                role_keyword_policy=role_keyword_policy,
+            )
+            repaired_title = (
+                _normalize_title_surface_local(str(repaired_score.get("title") or repaired_candidate))
+                or repaired_candidate
+            )
+            if repaired_score.get("passed"):
+                return repaired_title, {
+                    "accepted": True,
+                    "source": f"{source_label}_role_policy_repair",
+                    "score": repaired_score.get("score"),
+                    "reason": failed_reason or repaired_score.get("reason"),
+                    "repaired": True,
+                }
+            if repaired_score.get("softAccepted"):
+                best_soft = (
+                    repaired_title,
+                    {
+                        "accepted": True,
+                        "source": f"{source_label}_role_policy_repair_soft",
+                        "score": repaired_score.get("score"),
+                        "reason": failed_reason or repaired_score.get("reason"),
+                        "repaired": True,
+                    },
+                )
+        return best_soft
 
     candidate_score = _score_title_compliance(
         title=candidate,
@@ -1861,6 +3646,7 @@ def _guard_title_after_editor(
         category=category,
         status=status,
         context_analysis=context_analysis,
+        role_keyword_policy=role_keyword_policy,
     )
     scored_title = (
         _normalize_title_surface_local(str(candidate_score.get("title") or candidate))
@@ -1882,7 +3668,69 @@ def _guard_title_after_editor(
             "repaired": repaired,
         }
 
-    reason = str(candidate_score.get("reason") or "candidate_failed")
+    candidate_failure_reason = str(candidate_score.get("reason") or "candidate_failed")
+    repaired_candidate_result = _try_role_policy_title_repair(
+        candidate,
+        "candidate",
+        candidate_failure_reason,
+    )
+    if repaired_candidate_result is not None:
+        return repaired_candidate_result
+
+    previous_score: Dict[str, Any] = {}
+    previous_scored_title = previous
+    if previous and previous != candidate:
+        previous_score = _score_title_compliance(
+            title=previous,
+            topic=topic,
+            content=content,
+            user_keywords=user_keywords,
+            full_name=full_name,
+            category=category,
+            status=status,
+            context_analysis=context_analysis,
+            role_keyword_policy=role_keyword_policy,
+        )
+        previous_scored_title = (
+            _normalize_title_surface_local(str(previous_score.get("title") or previous))
+            or previous
+        )
+        if previous_score.get("passed"):
+            return previous_scored_title, {
+                "accepted": True,
+                "source": "previous",
+                "score": previous_score.get("score"),
+                "reason": candidate_failure_reason or "candidate_failed",
+                "repaired": previous_scored_title != previous,
+            }
+
+        repaired_previous_result = _try_role_policy_title_repair(
+            previous,
+            "previous",
+            candidate_failure_reason or str(previous_score.get("reason") or "previous_failed"),
+        )
+        if repaired_previous_result is not None:
+            return repaired_previous_result
+
+    if candidate_score.get("softAccepted"):
+        return scored_title, {
+            "accepted": True,
+            "source": "candidate_soft",
+            "score": candidate_score.get("score"),
+            "reason": candidate_failure_reason,
+            "repaired": scored_title != candidate,
+        }
+
+    if previous and previous_score.get("softAccepted"):
+        return previous_scored_title, {
+            "accepted": True,
+            "source": "previous_soft",
+            "score": previous_score.get("score"),
+            "reason": candidate_score.get("reason") or previous_score.get("reason"),
+            "repaired": previous_scored_title != previous,
+        }
+
+    reason = candidate_failure_reason
     raise ApiError("internal", f"제목 검증 실패: {reason}")
 
 
@@ -1901,9 +3749,11 @@ def _extract_keyword_counts(keyword_result: Dict[str, Any] | None) -> Dict[str, 
             continue
 
         keyword_type = str(raw_info.get("type") or "").strip().lower()
-        exact_count = _to_int(raw_info.get("exactCount"), _to_int(raw_info.get("count"), 0))
-        coverage_count = _to_int(raw_info.get("coverage"), exact_count)
-        counts[keyword] = exact_count if keyword_type == "user" else coverage_count
+        # user 키워드는 비중첩 exclusive count 사용, auto 키워드는 coverage 사용
+        exclusive_count = _to_int(raw_info.get("exclusiveCount"), _to_int(raw_info.get("count"), 0))
+        gate_count = _to_int(raw_info.get("gateCount"), exclusive_count)
+        coverage_count = _to_int(raw_info.get("coverage"), exclusive_count)
+        counts[keyword] = gate_count if keyword_type == "user" else coverage_count
 
     return counts
 
@@ -1948,8 +3798,16 @@ def _resolve_output_format_options(
         or user_profile.get("donationEnabled") is True
     )
     poll_citation = build_poll_citation_text(
-        data.get("stanceText"),
         data.get("newsDataText"),
+        pipeline_result.get("newsDataText"),
+        data.get("stanceText"),
+        pipeline_result.get("stanceText"),
+        data.get("sourceInput"),
+        pipeline_result.get("sourceInput"),
+        data.get("sourceContent"),
+        data.get("originalContent"),
+        data.get("inputContent"),
+        data.get("rawContent"),
     )
     embed_poll_citation = _to_bool(
         data.get("embedPollCitation")
@@ -1957,6 +3815,8 @@ def _resolve_output_format_options(
         else pipeline_result.get("embedPollCitation"),
         False,
     )
+    if poll_citation:
+        embed_poll_citation = True
 
     return {
         "allowDiagnosticTail": allow_diagnostic_tail,
@@ -1995,6 +3855,8 @@ def _apply_last_mile_postprocess(
     user_keywords: list[str],
     auto_keywords: list[str],
     body_min_overrides: Dict[str, int],
+    user_keyword_expected_overrides: Dict[str, int],
+    user_keyword_max_overrides: Dict[str, int],
     output_options: Dict[str, Any],
     fallback_keyword_validation: Dict[str, Any],
     fallback_keyword_counts: Dict[str, Any],
@@ -2025,6 +3887,8 @@ def _apply_last_mile_postprocess(
             target_word_count,
             title_text=title_text,
             body_min_overrides=body_min_overrides,
+            user_keyword_expected_overrides=user_keyword_expected_overrides,
+            user_keyword_max_overrides=user_keyword_max_overrides,
         )
         finalized = finalize_output(
             cleaned,
@@ -2055,6 +3919,8 @@ def _apply_last_mile_postprocess(
             target_word_count,
             title_text=title_text,
             body_min_overrides=body_min_overrides,
+            user_keyword_expected_overrides=user_keyword_expected_overrides,
+            user_keyword_max_overrides=user_keyword_max_overrides,
         )
         final_keyword_validation = build_keyword_validation(final_keyword_result)
         final_keyword_counts = _extract_keyword_counts(final_keyword_result)
@@ -2089,6 +3955,7 @@ def _run_editor_repair_once(
     status: str,
     target_word_count: int,
     user_keywords: list[str],
+    gate_user_keywords: Optional[list[str]] = None,
     validation_result: Dict[str, Any],
     keyword_validation: Dict[str, Any],
     extra_issues: Optional[list[str]] = None,
@@ -2097,7 +3964,10 @@ def _run_editor_repair_once(
     """기준 미충족 시 EditorAgent로 1회 교정 시도."""
     base_content = str(content or "")
     base_title = str(title or "")
-    keyword_feedback = _build_editor_keyword_feedback(keyword_validation, user_keywords)
+    keyword_feedback = _build_editor_keyword_feedback(
+        keyword_validation,
+        gate_user_keywords if isinstance(gate_user_keywords, list) else user_keywords,
+    )
     if extra_issues:
         normalized_extra_issues = [str(item).strip() for item in extra_issues if str(item).strip()]
         if normalized_extra_issues:
@@ -2164,6 +4034,10 @@ def _recover_repetition_issues_once(
     user_keywords: list[str],
     auto_keywords: list[str],
     body_min_overrides: Dict[str, int],
+    user_keyword_expected_overrides: Dict[str, int],
+    user_keyword_max_overrides: Dict[str, int],
+    skip_user_keywords: Optional[list[str]],
+    role_keyword_policy: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """반복 품질 실패 시 LLM 재작성으로 1회 자동 교정."""
     base_content = str(content or "").strip()
@@ -2247,6 +4121,10 @@ def _recover_repetition_issues_once(
         auto_keywords=auto_keywords,
         target_word_count=target_word_count,
         body_min_overrides=body_min_overrides,
+        user_keyword_expected_overrides=user_keyword_expected_overrides,
+        user_keyword_max_overrides=user_keyword_max_overrides,
+        skip_user_keywords=skip_user_keywords,
+        role_keyword_policy=role_keyword_policy,
     )
     repaired_content = str(keyword_repair.get("content") or candidate)
     keyword_validation = _safe_dict(keyword_repair.get("keywordValidation"))
@@ -2366,6 +4244,18 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         data=data if isinstance(data, dict) else {},
         pipeline_result=pipeline_result if isinstance(pipeline_result, dict) else {},
     )
+    role_keyword_policy = build_role_keyword_policy(
+        user_keywords,
+        person_roles=role_facts,
+        source_texts=[
+            data.get("newsDataText"),
+            pipeline_result.get("newsDataText"),
+            data.get("sourceInput"),
+            pipeline_result.get("sourceInput"),
+            data.get("sourceContent"),
+            pipeline_result.get("sourceContent"),
+        ],
+    )
     poll_fact_table = build_poll_matchup_fact_table(
         [
             data.get("newsDataText"),
@@ -2377,24 +4267,63 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         known_names=[*list(role_facts.keys()), full_name],
     )
     conflicting_role_keyword = _find_conflicting_role_keyword(user_keywords, role_facts)
+    keyword_gate_policy = _resolve_keyword_gate_policy(
+        user_keywords,
+        conflicting_role_keyword=conflicting_role_keyword,
+        role_keyword_policy=role_keyword_policy,
+    )
+    gate_user_keywords = list(keyword_gate_policy.get("hardKeywords") or [])
+    soft_gate_keywords = list(keyword_gate_policy.get("softKeywords") or [])
+    if soft_gate_keywords:
+        logger.info(
+            "Keyword hard-gate softening applied: hard=%s soft=%s shadowed=%s conflicting=%s",
+            gate_user_keywords,
+            soft_gate_keywords,
+            keyword_gate_policy.get("shadowedMap") or {},
+            conflicting_role_keyword or "",
+        )
     body_min_overrides: Dict[str, int] = {}
-    if conflicting_role_keyword:
-        body_min_overrides[conflicting_role_keyword] = 0
+    user_keyword_expected_overrides: Dict[str, int] = {}
+    user_keyword_max_overrides: Dict[str, int] = {}
+    policy_entries = role_keyword_policy.get("entries") if isinstance(role_keyword_policy, dict) else {}
+    if isinstance(policy_entries, dict):
+        for keyword, entry in policy_entries.items():
+            if not isinstance(entry, dict):
+                continue
+            mode = str(entry.get("mode") or "").strip()
+            if mode == "intent_only":
+                body_min_overrides[str(keyword)] = 0
+                user_keyword_expected_overrides[str(keyword)] = 1
+                user_keyword_max_overrides[str(keyword)] = 2
+            elif mode == "blocked":
+                body_min_overrides[str(keyword)] = 0
+                user_keyword_expected_overrides[str(keyword)] = 0
+                user_keyword_max_overrides[str(keyword)] = 0
 
     quality_warnings: list[str] = []
     _raw_pipeline_title = str(pipeline_result.get("title") or "").strip()
     if not _raw_pipeline_title:
         raise ApiError("internal", "제목 생성에 실패했습니다. 다시 시도해 주세요.")
     generated_title = _normalize_title_surface_local(_raw_pipeline_title) or _raw_pipeline_title
-    keyword_validation = _safe_dict(pipeline_result.get("keywordValidation"))
     seo_passed = pipeline_result.get("seoPassed")
     compliance_passed = pipeline_result.get("compliancePassed")
     writing_method = str(pipeline_result.get("writingMethod") or pipeline_route or "modular")
     context_analysis_for_title = _safe_dict(pipeline_result.get("contextAnalysis"))
     must_preserve_for_title = _safe_dict(context_analysis_for_title.get("mustPreserve"))
     event_date_hint_for_guard = str(must_preserve_for_title.get("eventDate") or "").strip()
-    keyword_counts = pipeline_result.get("keywordCounts") if isinstance(pipeline_result.get("keywordCounts"), dict) else {}
     auto_keywords = _normalize_keywords(pipeline_result.get("autoKeywords"))
+    initial_keyword_result = validate_keyword_insertion(
+        generated_content,
+        user_keywords=user_keywords,
+        auto_keywords=auto_keywords,
+        target_word_count=target_word_count,
+        title_text=generated_title,
+        body_min_overrides=body_min_overrides,
+        user_keyword_expected_overrides=user_keyword_expected_overrides,
+        user_keyword_max_overrides=user_keyword_max_overrides,
+    )
+    keyword_validation = build_keyword_validation(initial_keyword_result)
+    keyword_counts = _extract_keyword_counts(initial_keyword_result)
     word_count = _to_int(pipeline_result.get("wordCount"), _count_chars_no_space(generated_content))
     stance_count = _extract_stance_count(pipeline_result)
     min_required_chars = _calc_min_required_chars(target_word_count, stance_count)
@@ -2462,14 +4391,14 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         "summary": [],
     }
 
-    def _apply_content_repair(stage: str, candidate_content: str) -> bool:
+    def _apply_content_repair(stage: str, candidate_content: str, *, force: bool = False) -> bool:
         nonlocal generated_content, word_count, content_repair_steps
 
         candidate = str(candidate_content or "").strip()
         if not candidate or candidate == generated_content:
             return False
 
-        if content_repair_steps >= max_content_repair_steps:
+        if not force and content_repair_steps >= max_content_repair_steps:
             logger.info(
                 "Content repair skipped(stage=%s): budget exhausted (%s/%s)",
                 stage,
@@ -2489,10 +4418,51 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         content_repair_steps += 1
         return True
 
+    def _refresh_terminal_validation_state() -> None:
+        nonlocal word_count
+        nonlocal keyword_validation
+        nonlocal keyword_counts
+        nonlocal final_heuristic
+        nonlocal legal_issues
+        nonlocal final_speaker_issues
+        nonlocal final_role_issues
+        nonlocal final_integrity_issues
+        nonlocal final_blocking_integrity_issues
+
+        word_count = _count_chars_no_space(generated_content)
+        refreshed_keyword_result = validate_keyword_insertion(
+            generated_content,
+            user_keywords=user_keywords,
+            auto_keywords=auto_keywords,
+            target_word_count=target_word_count,
+            title_text=generated_title,
+            body_min_overrides=body_min_overrides,
+            user_keyword_expected_overrides=user_keyword_expected_overrides,
+            user_keyword_max_overrides=user_keyword_max_overrides,
+        )
+        keyword_validation = build_keyword_validation(refreshed_keyword_result)
+        refreshed_keyword_counts = _extract_keyword_counts(refreshed_keyword_result)
+        if isinstance(refreshed_keyword_counts, dict):
+            keyword_counts = refreshed_keyword_counts
+
+        final_heuristic = run_heuristic_validation_sync(
+            generated_content,
+            status_for_validation,
+            generated_title,
+        )
+        legal_issues = _extract_legal_gate_issues(final_heuristic)
+        final_speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
+        final_role_issues = _extract_role_consistency_issues(
+            generated_content,
+            role_facts,
+        )
+        final_integrity_issues = _detect_integrity_gate_issues(generated_content)
+        final_blocking_integrity_issues = _extract_blocking_integrity_issues(final_integrity_issues)
+
     heading_anchor = _ensure_user_keyword_in_subheading_once(
         generated_content,
-        user_keywords,
-        preferred_keyword=conflicting_role_keyword,
+        gate_user_keywords,
+        preferred_keyword=conflicting_role_keyword if conflicting_role_keyword in gate_user_keywords else "",
     )
     if heading_anchor.get("edited"):
         candidate_content = str(heading_anchor.get("content") or generated_content)
@@ -2513,7 +4483,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 integrity_repair.get("actions"),
             )
 
-    initial_keyword_gate_ok, initial_keyword_gate_msg = _validate_keyword_gate(keyword_validation, user_keywords)
+    initial_keyword_gate_ok, initial_keyword_gate_msg = _validate_keyword_gate(keyword_validation, gate_user_keywords)
     initial_heuristic = run_heuristic_validation_sync(
         generated_content,
         status_for_validation,
@@ -2559,6 +4529,10 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             user_keywords=user_keywords,
             auto_keywords=auto_keywords,
             body_min_overrides=body_min_overrides,
+            user_keyword_expected_overrides=user_keyword_expected_overrides,
+            user_keyword_max_overrides=user_keyword_max_overrides,
+            skip_user_keywords=soft_gate_keywords,
+            role_keyword_policy=role_keyword_policy,
         )
         if length_repair.get("edited"):
             candidate_content = str(length_repair.get("content") or generated_content)
@@ -2588,7 +4562,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             word_count,
             min_required_chars,
         )
-    keyword_gate_ok, keyword_gate_msg = _validate_keyword_gate(keyword_validation, user_keywords)
+    keyword_gate_ok, keyword_gate_msg = _validate_keyword_gate(keyword_validation, gate_user_keywords)
     if not keyword_gate_ok:
         logger.info("키워드 자동 보정 시작: %s", keyword_gate_msg)
         repaired = _repair_keyword_gate_once(
@@ -2598,6 +4572,10 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             auto_keywords=auto_keywords,
             target_word_count=target_word_count,
             body_min_overrides=body_min_overrides,
+            user_keyword_expected_overrides=user_keyword_expected_overrides,
+            user_keyword_max_overrides=user_keyword_max_overrides,
+            skip_user_keywords=soft_gate_keywords,
+            role_keyword_policy=role_keyword_policy,
         )
         candidate_content = str(repaired.get("content") or generated_content)
         applied = bool(repaired.get("edited")) and _apply_content_repair("keyword_repair", candidate_content)
@@ -2617,7 +4595,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 "키워드 자동 보정 결과 미적용(stage=keyword_repair, edited=%s)",
                 bool(repaired.get("edited")),
             )
-        keyword_gate_ok, keyword_gate_msg = _validate_keyword_gate(keyword_validation, user_keywords)
+        keyword_gate_ok, keyword_gate_msg = _validate_keyword_gate(keyword_validation, gate_user_keywords)
 
     if not keyword_gate_ok:
         _append_quality_warning(
@@ -2652,11 +4630,13 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     target_word_count,
                     title_text=generated_title,
                     body_min_overrides=body_min_overrides,
+                    user_keyword_expected_overrides=user_keyword_expected_overrides,
+                    user_keyword_max_overrides=user_keyword_max_overrides,
                 )
                 keyword_validation = build_keyword_validation(post_fix_keyword_result)
                 post_fix_keyword_gate_ok, post_fix_keyword_gate_msg = _validate_keyword_gate(
                     keyword_validation,
-                    user_keywords,
+                    gate_user_keywords,
                 )
                 if not post_fix_keyword_gate_ok:
                     keyword_repair = _repair_keyword_gate_once(
@@ -2666,6 +4646,10 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                         auto_keywords=auto_keywords,
                         target_word_count=target_word_count,
                         body_min_overrides=body_min_overrides,
+                        user_keyword_expected_overrides=user_keyword_expected_overrides,
+                        user_keyword_max_overrides=user_keyword_max_overrides,
+                        skip_user_keywords=soft_gate_keywords,
+                        role_keyword_policy=role_keyword_policy,
                     )
                     keyword_candidate = str(keyword_repair.get("content") or generated_content)
                     keyword_applied = bool(keyword_repair.get("edited")) and _apply_content_repair(
@@ -2678,7 +4662,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                         keyword_counts = repaired_counts if isinstance(repaired_counts, dict) else keyword_counts
                         post_fix_keyword_gate_ok, post_fix_keyword_gate_msg = _validate_keyword_gate(
                             keyword_validation,
-                            user_keywords,
+                            gate_user_keywords,
                         )
                     if not post_fix_keyword_gate_ok:
                         _append_quality_warning(
@@ -2712,6 +4696,10 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 user_keywords=user_keywords,
                 auto_keywords=auto_keywords,
                 body_min_overrides=body_min_overrides,
+                user_keyword_expected_overrides=user_keyword_expected_overrides,
+                user_keyword_max_overrides=user_keyword_max_overrides,
+                skip_user_keywords=soft_gate_keywords,
+                role_keyword_policy=role_keyword_policy,
             )
             if repetition_llm_fix.get("edited"):
                 candidate_content = str(repetition_llm_fix.get("content") or generated_content)
@@ -2750,7 +4738,10 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     speaker_gate["checked"] = True
     initial_speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
     speaker_gate["initialIssues"] = initial_speaker_issues
-    initial_role_issues = _extract_role_consistency_issues(generated_content, role_facts)
+    initial_role_issues = _extract_role_consistency_issues(
+        generated_content,
+        role_facts,
+    )
     role_gate["initialIssues"] = initial_role_issues
 
     final_heuristic = run_heuristic_validation_sync(
@@ -2761,7 +4752,10 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     legal_issues = _extract_legal_gate_issues(final_heuristic)
     integrity_issues = _detect_integrity_gate_issues(generated_content)
     speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
-    role_issues = _extract_role_consistency_issues(generated_content, role_facts)
+    role_issues = _extract_role_consistency_issues(
+        generated_content,
+        role_facts,
+    )
     pre_editor_extra_issues = [*integrity_issues, *speaker_issues, *role_issues]
     if pre_editor_extra_issues:
         heuristic_issues = list(final_heuristic.get("issues") or [])
@@ -2796,6 +4790,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             status=status_for_validation,
             target_word_count=target_word_count,
             user_keywords=user_keywords,
+            gate_user_keywords=gate_user_keywords,
             validation_result=final_heuristic,
             keyword_validation=keyword_validation,
             extra_issues=pre_editor_extra_issues,
@@ -2820,6 +4815,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     category=category,
                     status=status_for_validation,
                     context_analysis=context_analysis_for_title,
+                    role_keyword_policy=role_keyword_policy,
                 )
                 guard_info["phase"] = "editor_auto_repair"
                 title_guard_trace.append(guard_info)
@@ -2843,11 +4839,13 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     target_word_count,
                     title_text=generated_title,
                     body_min_overrides=body_min_overrides,
+                    user_keyword_expected_overrides=user_keyword_expected_overrides,
+                    user_keyword_max_overrides=user_keyword_max_overrides,
                 )
                 keyword_validation = build_keyword_validation(post_editor_keyword_result)
                 post_editor_keyword_gate_ok, _ = _validate_keyword_gate(
                     keyword_validation,
-                    user_keywords,
+                    gate_user_keywords,
                 )
                 if not post_editor_keyword_gate_ok:
                     editor_keyword_repair = _repair_keyword_gate_once(
@@ -2857,6 +4855,10 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                         auto_keywords=auto_keywords,
                         target_word_count=target_word_count,
                         body_min_overrides=body_min_overrides,
+                        user_keyword_expected_overrides=user_keyword_expected_overrides,
+                        user_keyword_max_overrides=user_keyword_max_overrides,
+                        skip_user_keywords=soft_gate_keywords,
+                        role_keyword_policy=role_keyword_policy,
                     )
                     keyword_candidate = str(editor_keyword_repair.get("content") or generated_content)
                     keyword_applied = bool(editor_keyword_repair.get("edited")) and _apply_content_repair(
@@ -2892,6 +4894,8 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         user_keywords=user_keywords,
         auto_keywords=auto_keywords,
         body_min_overrides=body_min_overrides,
+        user_keyword_expected_overrides=user_keyword_expected_overrides,
+        user_keyword_max_overrides=user_keyword_max_overrides,
         output_options=output_format_options,
         fallback_keyword_validation=keyword_validation,
         fallback_keyword_counts=keyword_counts,
@@ -2922,7 +4926,10 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     residual_repetition_issues = _extract_repetition_gate_issues(final_heuristic)
     residual_integrity_issues = _detect_integrity_gate_issues(generated_content)
     residual_speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
-    residual_role_issues = _extract_role_consistency_issues(generated_content, role_facts)
+    residual_role_issues = _extract_role_consistency_issues(
+        generated_content,
+        role_facts,
+    )
     residual_extra_issues = [*residual_integrity_issues, *residual_speaker_issues, *residual_role_issues]
     if editor_second_pass_enabled and (residual_repetition_issues or residual_extra_issues) and not legal_issues:
         editor_second_pass["attempted"] = True
@@ -2937,6 +4944,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             status=status_for_validation,
             target_word_count=target_word_count,
             user_keywords=user_keywords,
+            gate_user_keywords=gate_user_keywords,
             validation_result=final_heuristic,
             keyword_validation=keyword_validation,
             extra_issues=residual_extra_issues,
@@ -2965,6 +4973,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     category=category,
                     status=status_for_validation,
                     context_analysis=context_analysis_for_title,
+                    role_keyword_policy=role_keyword_policy,
                 )
                 guard_info["phase"] = "editor_second_pass"
                 title_guard_trace.append(guard_info)
@@ -2987,6 +4996,8 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     user_keywords=user_keywords,
                     auto_keywords=auto_keywords,
                     body_min_overrides=body_min_overrides,
+                    user_keyword_expected_overrides=user_keyword_expected_overrides,
+                    user_keyword_max_overrides=user_keyword_max_overrides,
                     output_options=output_format_options,
                     fallback_keyword_validation=keyword_validation,
                     fallback_keyword_counts=keyword_counts,
@@ -3004,7 +5015,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     last_mile_postprocess_applied = True
                     logger.info("Post-second-pass cleanup/finalize reapplied")
 
-                second_keyword_gate_ok, _ = _validate_keyword_gate(keyword_validation, user_keywords)
+                second_keyword_gate_ok, _ = _validate_keyword_gate(keyword_validation, gate_user_keywords)
                 if not second_keyword_gate_ok:
                     second_keyword_repair = _repair_keyword_gate_once(
                         content=generated_content,
@@ -3013,6 +5024,10 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                         auto_keywords=auto_keywords,
                         target_word_count=target_word_count,
                         body_min_overrides=body_min_overrides,
+                        user_keyword_expected_overrides=user_keyword_expected_overrides,
+                        user_keyword_max_overrides=user_keyword_max_overrides,
+                        skip_user_keywords=soft_gate_keywords,
+                        role_keyword_policy=role_keyword_policy,
                     )
                     second_keyword_candidate = str(second_keyword_repair.get("content") or generated_content)
                     second_keyword_applied = bool(second_keyword_repair.get("edited")) and _apply_content_repair(
@@ -3111,6 +5126,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         category=category,
         status=status_for_validation,
         context_analysis=context_analysis_for_title,
+        role_keyword_policy=role_keyword_policy,
     )
     final_title_guard["phase"] = "final_output"
     title_guard_trace.append(final_title_guard)
@@ -3174,10 +5190,16 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 logger.warning("Final speaker repair skipped due to corruption risk: %s", reason)
     speaker_gate["finalIssues"] = final_speaker_issues
 
-    final_role_issues = _extract_role_consistency_issues(generated_content, role_facts)
+    final_role_issues = _extract_role_consistency_issues(
+        generated_content,
+        role_facts,
+    )
     if final_role_issues:
         role_gate["repairAttempted"] = True
-        final_role_repair = _repair_role_consistency_once(generated_content, role_facts)
+        final_role_repair = _repair_role_consistency_once(
+            generated_content,
+            role_facts,
+        )
         role_repair_candidate = str(final_role_repair.get("content") or generated_content).strip()
         if role_repair_candidate and role_repair_candidate != generated_content:
             corrupted, reason = _detect_content_repair_corruption(generated_content, role_repair_candidate)
@@ -3186,7 +5208,10 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 word_count = _count_chars_no_space(generated_content)
                 role_gate["repairApplied"] = True
                 role_gate["replacements"] = list(final_role_repair.get("replacements") or [])
-                final_role_issues = _extract_role_consistency_issues(generated_content, role_facts)
+                final_role_issues = _extract_role_consistency_issues(
+                    generated_content,
+                    role_facts,
+                )
                 final_heuristic = run_heuristic_validation_sync(
                     generated_content,
                     status_for_validation,
@@ -3265,8 +5290,75 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         )
         legal_issues = _extract_legal_gate_issues(final_heuristic)
 
+    competitor_policy_repair = _repair_competitor_policy_phrase_once(
+        generated_content,
+        full_name=full_name,
+        person_roles=role_facts,
+    )
+    competitor_policy_candidate = str(competitor_policy_repair.get("content") or generated_content).strip()
+    if competitor_policy_candidate and competitor_policy_candidate != generated_content:
+        corrupted, reason = _detect_content_repair_corruption(generated_content, competitor_policy_candidate)
+        if not corrupted:
+            generated_content = competitor_policy_candidate
+            word_count = _count_chars_no_space(generated_content)
+            role_replacements = list(role_gate.get("replacements") or [])
+            for item in competitor_policy_repair.get("replacements") or []:
+                text_item = str(item).strip()
+                if text_item and text_item not in role_replacements:
+                    role_replacements.append(text_item)
+            role_gate["replacements"] = role_replacements
+            final_heuristic = run_heuristic_validation_sync(
+                generated_content,
+                status_for_validation,
+                generated_title,
+            )
+            legal_issues = _extract_legal_gate_issues(final_heuristic)
+            final_speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
+            final_role_issues = _extract_role_consistency_issues(
+                generated_content,
+                role_facts,
+            )
+        else:
+            logger.warning("Competitor policy phrase repair skipped due to corruption risk: %s", reason)
+
+    intent_body_repair = _repair_intent_only_role_keyword_mentions_once(
+        generated_content,
+        role_keyword_policy=role_keyword_policy,
+    )
+    intent_body_candidate = str(intent_body_repair.get("content") or generated_content).strip()
+    if intent_body_candidate and intent_body_candidate != generated_content:
+        corrupted, reason = _detect_content_repair_corruption(generated_content, intent_body_candidate)
+        if not corrupted:
+            generated_content = intent_body_candidate
+            word_count = _count_chars_no_space(generated_content)
+            role_replacements = list(role_gate.get("replacements") or [])
+            for item in intent_body_repair.get("replacements") or []:
+                text_item = str(item).strip()
+                if text_item and text_item not in role_replacements:
+                    role_replacements.append(text_item)
+            role_gate["replacements"] = role_replacements
+            final_heuristic = run_heuristic_validation_sync(
+                generated_content,
+                status_for_validation,
+                generated_title,
+            )
+            legal_issues = _extract_legal_gate_issues(final_heuristic)
+            final_speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
+            final_role_issues = _extract_role_consistency_issues(
+                generated_content,
+                role_facts,
+            )
+        else:
+            logger.warning("Intent-only body keyword repair skipped due to corruption risk: %s", reason)
+
     final_sentence_polish["attempted"] = True
-    sentence_polish_result = _apply_final_sentence_polish_once(generated_content)
+    sentence_polish_result = _apply_final_sentence_polish_once(
+        generated_content,
+        full_name=full_name,
+        user_keywords=user_keywords,
+        role_facts=role_facts,
+        poll_fact_table=poll_fact_table,
+    )
     sentence_polish_candidate = str(sentence_polish_result.get("content") or generated_content).strip()
     final_sentence_polish["actions"] = list(sentence_polish_result.get("actions") or [])
     if sentence_polish_candidate and sentence_polish_candidate != generated_content:
@@ -3282,7 +5374,10 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             )
             legal_issues = _extract_legal_gate_issues(final_heuristic)
             final_speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
-            final_role_issues = _extract_role_consistency_issues(generated_content, role_facts)
+            final_role_issues = _extract_role_consistency_issues(
+                generated_content,
+                role_facts,
+            )
         else:
             final_sentence_polish["skippedReason"] = str(reason or "corruption-risk")
             logger.warning("Final sentence polish skipped due to corruption risk: %s", reason)
@@ -3297,6 +5392,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     h2_entity_repair = _repair_subheading_entity_consistency_once(
         generated_content,
         known_person_names,
+        preferred_names=[full_name],
     )
     h2_entity_candidate = str(h2_entity_repair.get("content") or generated_content).strip()
     subheading_entity_gate["replacements"] = list(h2_entity_repair.get("replacements") or [])
@@ -3313,13 +5409,35 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             )
             legal_issues = _extract_legal_gate_issues(final_heuristic)
             final_speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
-            final_role_issues = _extract_role_consistency_issues(generated_content, role_facts)
+            final_role_issues = _extract_role_consistency_issues(
+                generated_content,
+                role_facts,
+            )
         else:
             subheading_entity_gate["skippedReason"] = str(reason or "corruption-risk")
             logger.warning("Subheading entity repair skipped due to corruption risk: %s", reason)
 
     final_integrity_issues = _detect_integrity_gate_issues(generated_content)
     final_blocking_integrity_issues = _extract_blocking_integrity_issues(final_integrity_issues)
+    if final_blocking_integrity_issues:
+        final_noise_fix = _repair_integrity_noise_once(generated_content)
+        if final_noise_fix.get("edited"):
+            final_noise_candidate = str(final_noise_fix.get("content") or generated_content)
+            if _apply_content_repair("integrity_final_noise_repair", final_noise_candidate, force=True):
+                noise_actions = final_noise_fix.get("actions")
+                if isinstance(noise_actions, list):
+                    merged_summary = list(integrity_editor_repair.get("summary") or [])
+                    for item in noise_actions:
+                        text_item = str(item).strip()
+                        if text_item and text_item not in merged_summary:
+                            merged_summary.append(text_item)
+                    integrity_editor_repair["summary"] = merged_summary
+                    logger.warning(
+                        "Final integrity deterministic repair applied: %s",
+                        ", ".join(str(item).strip() for item in noise_actions if str(item).strip()),
+                    )
+                _refresh_terminal_validation_state()
+
     if final_blocking_integrity_issues and not legal_issues:
         max_integrity_editor_passes = 2
         for pass_no in range(1, max_integrity_editor_passes + 1):
@@ -3339,6 +5457,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 status=status_for_validation,
                 target_word_count=target_word_count,
                 user_keywords=user_keywords,
+                gate_user_keywords=gate_user_keywords,
                 validation_result=final_heuristic,
                 keyword_validation=keyword_validation,
                 extra_issues=final_blocking_integrity_issues,
@@ -3354,11 +5473,28 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                         merged_summary.append(text_item)
                 integrity_editor_repair["summary"] = merged_summary
 
-            if not integrity_fix.get("edited"):
+            integrity_candidate_content = str(integrity_fix.get("content") or generated_content)
+            noise_fix = _repair_integrity_noise_once(integrity_candidate_content)
+            if noise_fix.get("edited"):
+                integrity_candidate_content = str(noise_fix.get("content") or integrity_candidate_content)
+                noise_actions = noise_fix.get("actions")
+                if isinstance(noise_actions, list):
+                    merged_summary = list(integrity_editor_repair.get("summary") or [])
+                    for item in noise_actions:
+                        text_item = str(item).strip()
+                        if text_item and text_item not in merged_summary:
+                            merged_summary.append(text_item)
+                    integrity_editor_repair["summary"] = merged_summary
+                    logger.info(
+                        "Final integrity deterministic repair triggered(pass=%s): %s",
+                        pass_no,
+                        ", ".join(str(item).strip() for item in noise_actions if str(item).strip()),
+                    )
+
+            if not integrity_fix.get("edited") and not noise_fix.get("edited"):
                 logger.info("Final integrity editor repair produced no changes(pass=%s)", pass_no)
                 break
 
-            integrity_candidate_content = str(integrity_fix.get("content") or generated_content)
             if not _apply_content_repair(f"integrity_editor_pass_{pass_no}", integrity_candidate_content):
                 logger.info("Final integrity editor repair result skipped(pass=%s)", pass_no)
                 break
@@ -3375,6 +5511,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 category=category,
                 status=status_for_validation,
                 context_analysis=context_analysis_for_title,
+                role_keyword_policy=role_keyword_policy,
             )
             guard_info["phase"] = f"integrity_editor_pass_{pass_no}"
             title_guard_trace.append(guard_info)
@@ -3389,6 +5526,8 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 user_keywords=user_keywords,
                 auto_keywords=auto_keywords,
                 body_min_overrides=body_min_overrides,
+                user_keyword_expected_overrides=user_keyword_expected_overrides,
+                user_keyword_max_overrides=user_keyword_max_overrides,
                 output_options=output_format_options,
                 fallback_keyword_validation=keyword_validation,
                 fallback_keyword_counts=keyword_counts,
@@ -3403,19 +5542,23 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 keyword_counts = integrity_keyword_counts
             word_count = _to_int(integrity_postprocess.get("wordCount"), _count_chars_no_space(generated_content))
 
-            final_heuristic = run_heuristic_validation_sync(
-                generated_content,
-                status_for_validation,
-                generated_title,
-            )
-            legal_issues = _extract_legal_gate_issues(final_heuristic)
-            final_speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
-            final_role_issues = _extract_role_consistency_issues(generated_content, role_facts)
-            final_integrity_issues = _detect_integrity_gate_issues(generated_content)
-            final_blocking_integrity_issues = _extract_blocking_integrity_issues(final_integrity_issues)
+            _refresh_terminal_validation_state()
 
     speaker_gate["finalIssues"] = final_speaker_issues
     role_gate["finalIssues"] = final_role_issues
+
+    final_keyword_result = validate_keyword_insertion(
+        generated_content,
+        user_keywords=user_keywords,
+        auto_keywords=auto_keywords,
+        target_word_count=target_word_count,
+        title_text=generated_title,
+        body_min_overrides=body_min_overrides,
+        user_keyword_expected_overrides=user_keyword_expected_overrides,
+        user_keyword_max_overrides=user_keyword_max_overrides,
+    )
+    keyword_validation = build_keyword_validation(final_keyword_result)
+    keyword_counts = _extract_keyword_counts(final_keyword_result)
 
     # 최종 경고는 최종 산출물 기준으로 다시 계산한다.
     quality_warnings = []
@@ -3440,13 +5583,92 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             quality_warnings,
             f"분량 권장치 미달 ({word_count}자 < {min_required_chars}자)",
         )
-    final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(keyword_validation, user_keywords)
+    final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(keyword_validation, gate_user_keywords)
+    if not final_keyword_gate_ok and "과다" in final_keyword_gate_msg:
+        over_max_repair = enforce_keyword_requirements(
+            generated_content,
+            user_keywords=user_keywords,
+            auto_keywords=auto_keywords,
+            target_word_count=target_word_count,
+            title_text=generated_title,
+            body_min_overrides=body_min_overrides,
+            user_keyword_expected_overrides=user_keyword_expected_overrides,
+            user_keyword_max_overrides=user_keyword_max_overrides,
+            skip_user_keywords=soft_gate_keywords,
+            role_keyword_policy=role_keyword_policy,
+            max_iterations=1,
+        )
+        over_max_candidate = str(over_max_repair.get("content") or generated_content)
+        if over_max_candidate != generated_content:
+            generated_content = over_max_candidate
+            _refresh_terminal_validation_state()
+            final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
+                keyword_validation,
+                gate_user_keywords,
+            )
+            logger.info(
+                "키워드 과다 감산 적용: %s reductions=%s",
+                "성공" if final_keyword_gate_ok else final_keyword_gate_msg,
+                over_max_repair.get("reductions"),
+            )
+    if not final_keyword_gate_ok and "과다" not in final_keyword_gate_msg:
+        # insufficient → 섹션 구조 의존 없이 마지막 <p>에 직접 강제 삽입 (last-resort backstop)
+        backstop_content = force_insert_insufficient_keywords(
+            generated_content,
+            user_keywords=user_keywords,
+            keyword_validation=keyword_validation,
+            skip_user_keywords=soft_gate_keywords,
+            role_keyword_policy=role_keyword_policy,
+        )
+        if backstop_content != generated_content:
+            generated_content = backstop_content
+            _refresh_terminal_validation_state()
+            final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
+                keyword_validation, gate_user_keywords
+            )
+            logger.info(
+                "키워드 last-resort backstop 적용: %s",
+                "성공" if final_keyword_gate_ok else final_keyword_gate_msg,
+            )
+    final_exact_preference_keywords = _collect_exact_preference_keywords(keyword_validation, gate_user_keywords)
+    if final_exact_preference_keywords:
+        exact_preference_repair = enforce_keyword_requirements(
+            generated_content,
+            user_keywords=user_keywords,
+            auto_keywords=auto_keywords,
+            target_word_count=target_word_count,
+            title_text=generated_title,
+            body_min_overrides=body_min_overrides,
+            user_keyword_expected_overrides=user_keyword_expected_overrides,
+            user_keyword_max_overrides=user_keyword_max_overrides,
+            skip_user_keywords=soft_gate_keywords,
+            role_keyword_policy=role_keyword_policy,
+            max_iterations=1,
+        )
+        exact_preference_candidate = str(exact_preference_repair.get("content") or generated_content)
+        if exact_preference_candidate != generated_content:
+            generated_content = exact_preference_candidate
+            _refresh_terminal_validation_state()
+            final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
+                keyword_validation,
+                gate_user_keywords,
+            )
+            logger.info(
+                "키워드 exact 선호 보정 적용: remaining=%s",
+                _collect_exact_preference_keywords(keyword_validation, gate_user_keywords),
+            )
+        final_exact_preference_keywords = _collect_exact_preference_keywords(keyword_validation, gate_user_keywords)
     if not final_keyword_gate_ok:
         _append_quality_warning(
             quality_warnings,
             f"키워드 권장 기준 미충족: {final_keyword_gate_msg}",
         )
-    final_secondary_keyword_issues = _collect_secondary_keyword_soft_issues(keyword_validation, user_keywords)
+    if final_exact_preference_keywords:
+        _append_quality_warning(
+            quality_warnings,
+            f"정확 일치 검색어 1회 미확보: {', '.join(final_exact_preference_keywords[:2])}",
+        )
+    final_secondary_keyword_issues = _collect_secondary_keyword_soft_issues(keyword_validation, gate_user_keywords)
     if final_secondary_keyword_issues:
         _append_quality_warning(
             quality_warnings,
@@ -3574,6 +5796,11 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
 
     generated_at = datetime.utcnow().isoformat() + "Z"
     now_ms = int(time.time() * 1000)
+    display_keyword_validation = _build_display_keyword_validation(
+        keyword_validation,
+        soft_keywords=soft_gate_keywords,
+        shadowed_map=keyword_gate_policy.get("shadowedMap") if isinstance(keyword_gate_policy, dict) else None,
+    )
     source_input = str(
         data.get("sourceInput")
         or data.get("sourceContent")
@@ -3659,7 +5886,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 "complianceIssues": 0,
                 "seoPassed": seo_passed,
                 "keywords": pipeline_result.get("keywords") or user_keywords,
-                "keywordValidation": keyword_validation or None,
+                "keywordValidation": display_keyword_validation or None,
                 "duration": None,
                 "partial": bool(pipeline_result.get("partial") is True),
                 "partialReason": pipeline_result.get("partialReason"),
@@ -3731,7 +5958,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             },
             "seo": {
                 "passed": seo_passed,
-                "keywordValidation": keyword_validation or None,
+                "keywordValidation": display_keyword_validation or None,
             },
         },
     }

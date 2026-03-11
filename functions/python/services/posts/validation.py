@@ -15,6 +15,14 @@ from agents.common.election_rules import get_election_stage
 from agents.common.fact_guard import extract_numeric_tokens, find_unsupported_numeric_tokens
 from agents.common.legal import ViolationDetector
 from agents.common.editorial import TITLE_SPEC, KEYWORD_SPEC
+from agents.common.role_keyword_policy import (
+    ROLE_KEYWORD_PATTERN as COMMON_ROLE_KEYWORD_PATTERN,
+    ROLE_SURFACE_PATTERN as COMMON_ROLE_SURFACE_PATTERN,
+    build_role_keyword_intent_text,
+    is_role_keyword as is_role_keyword_common,
+    should_block_role_keyword,
+    should_render_role_keyword_as_intent,
+)
 
 from .corrector import apply_corrections, summarize_violations
 from .critic import has_hard_violations, run_critic_review, summarize_guidelines
@@ -36,7 +44,37 @@ logger = logging.getLogger(__name__)
 WEEKDAY_SHORT_TOKENS = ("월", "화", "수", "목", "금", "토", "일")
 WEEKDAY_FULL_TOKENS = tuple(f"{token}요일" for token in WEEKDAY_SHORT_TOKENS)
 WEEKDAY_TOKEN_PATTERN = r"(?:월|화|수|목|금|토|일)(?:요일)?"
-ROLE_KEYWORD_PATTERN = re.compile(r"^[가-힣]{2,8}\s*(?:현\s*)?(?:부산시장|국회의원)$")
+ROLE_KEYWORD_PATTERN = COMMON_ROLE_KEYWORD_PATTERN
+ROLE_SURFACE_PATTERN = COMMON_ROLE_SURFACE_PATTERN
+KEYWORD_REFERENCE_MARKERS: tuple[str, ...] = ("검색어", "키워드", "표현", "문구")
+KEYWORD_REFERENCE_VERBS: tuple[str, ...] = ("거론", "언급", "주목")
+LOW_SIGNAL_KEYWORD_TOKENS: tuple[str, ...] = (
+    "관심",
+    "이슈",
+    "흐름",
+    "행보",
+    "경쟁",
+    "비교",
+    "차별점",
+    "가상대결",
+    "양자대결",
+    "대결",
+    "검색어",
+    "키워드",
+    "표현",
+    "문구",
+    "거론",
+    "언급",
+    "주목",
+    "후보군",
+)
+ROLE_FALLBACK_LABELS: tuple[tuple[str, str], ...] = (
+    ("국회의원", "상대 의원"),
+    ("의원", "상대 의원"),
+    ("후보", "상대 후보"),
+    ("시장", "상대 시장"),
+    ("위원장", "상대"),
+)
 DATE_WEEKDAY_PATTERN = re.compile(
     rf"(?:(?P<year>\d{{4}})\s*년\s*)?"
     rf"(?P<month>\d{{1,2}})\s*월\s*"
@@ -1581,6 +1619,31 @@ def _keyword_tokens(keyword: Any) -> tuple[str, ...]:
     return tuple(part for part in normalized.split(" ") if part)
 
 
+def _split_keyword_sentence_units(text: Any) -> list[str]:
+    normalized = re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", str(text or ""))).strip()
+    if not normalized:
+        return []
+    units = [
+        str(part or "").strip()
+        for part in re.split(r"(?<=[.!?。])\s+|\n+", normalized)
+        if str(part or "").strip()
+    ]
+    return units or [normalized]
+
+
+def count_keyword_sentence_reflections(text: Any, keyword: Any) -> int:
+    tokens = tuple(re.sub(r"\s+", "", token) for token in _keyword_tokens(keyword) if token)
+    if len(tokens) < 2:
+        return 0
+
+    total = 0
+    for unit in _split_keyword_sentence_units(text):
+        compact_unit = re.sub(r"\s+", "", unit)
+        if compact_unit and all(token in compact_unit for token in tokens):
+            total += 1
+    return total
+
+
 def _contains_token_subsequence(longer: Sequence[str], shorter: Sequence[str]) -> bool:
     if not longer or not shorter or len(shorter) >= len(longer):
         return False
@@ -1902,13 +1965,23 @@ def _try_contextual_location_replacement(section_html: str, keyword: str) -> tup
     return raw_section, False
 
 
-def _rewrite_sentence_with_keyword(sentence: str, keyword: str, variant_index: int = 0) -> str:
+def _rewrite_sentence_with_keyword(
+    sentence: str,
+    keyword: str,
+    variant_index: int = 0,
+    *,
+    role_keyword_policy: Optional[Mapping[str, Any]] = None,
+) -> str:
     _ = variant_index
     normalized_sentence = re.sub(r"\s+", " ", str(sentence or "")).strip()
     normalized_keyword = str(keyword or "").strip()
     if not normalized_sentence or not normalized_keyword:
         return normalized_sentence
     if normalized_keyword in normalized_sentence:
+        return normalized_sentence
+    if should_block_role_keyword(role_keyword_policy, normalized_keyword):
+        return normalized_sentence
+    if _is_role_keyword(normalized_keyword) and should_render_role_keyword_as_intent(role_keyword_policy, normalized_keyword):
         return normalized_sentence
 
     if _is_location_keyword(normalized_keyword):
@@ -1949,13 +2022,32 @@ def _rewrite_sentence_with_keyword(sentence: str, keyword: str, variant_index: i
 
 def _is_role_keyword(keyword: str) -> bool:
     normalized_keyword = re.sub(r"\s+", " ", str(keyword or "")).strip()
-    return bool(normalized_keyword and ROLE_KEYWORD_PATTERN.fullmatch(normalized_keyword))
+    return bool(normalized_keyword and is_role_keyword_common(normalized_keyword))
 
 
-def _build_role_keyword_reference_sentence(keyword: str, section_type: str, variant_index: int = 0) -> str:
+def _build_role_keyword_reference_sentence(
+    keyword: str,
+    section_type: str,
+    variant_index: int = 0,
+    *,
+    role_keyword_policy: Optional[Mapping[str, Any]] = None,
+) -> str:
     normalized_keyword = re.sub(r"\s+", " ", str(keyword or "")).strip()
     if not normalized_keyword:
         return ""
+    if should_block_role_keyword(role_keyword_policy, normalized_keyword):
+        return ""
+
+    if _is_role_keyword(normalized_keyword) and should_render_role_keyword_as_intent(
+        role_keyword_policy,
+        normalized_keyword,
+    ):
+        context = "conclusion" if str(section_type or "") == "conclusion" else "body"
+        return build_role_keyword_intent_text(
+            normalized_keyword,
+            context=context,
+            variant_index=variant_index,
+        )
 
     if str(section_type or "") == "conclusion":
         templates = (
@@ -1972,6 +2064,113 @@ def _build_role_keyword_reference_sentence(keyword: str, section_type: str, vari
     return templates[variant_index % len(templates)]
 
 
+def _looks_like_keyword_reference_sentence(sentence: Any) -> bool:
+    normalized_sentence = _normalize_sentence_for_compare(sentence)
+    if not normalized_sentence:
+        return False
+    if re.search(
+        rf"[가-힣]{{2,8}}\s*{ROLE_SURFACE_PATTERN}\s*(?:출마(?:설|론|가능성)?|후보론|거론)",
+        normalized_sentence,
+        re.IGNORECASE,
+    ):
+        return True
+    return (
+        any(marker in normalized_sentence for marker in KEYWORD_REFERENCE_MARKERS)
+        and any(verb in normalized_sentence for verb in KEYWORD_REFERENCE_VERBS)
+    )
+
+
+def _normalize_sentence_for_compare(text: Any) -> str:
+    normalized = _strip_html(str(text or ""))
+    if not normalized:
+        return ""
+    normalized = (
+        normalized.replace("“", '"')
+        .replace("”", '"')
+        .replace("‘", "'")
+        .replace("’", "'")
+    )
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = re.sub(r"[\"']", "", normalized)
+    normalized = re.sub(r"[.!?。]+$", "", normalized).strip()
+    return normalized
+
+
+def _looks_like_compact_person_keyword(keyword: Any) -> bool:
+    normalized = re.sub(r"\s+", "", str(keyword or "")).strip()
+    if len(normalized) < 2 or len(normalized) > 4:
+        return False
+    return bool(re.fullmatch(r"[가-힣]{2,4}", normalized))
+
+
+def _build_keyword_replacement_pool(keyword: str) -> list[str]:
+    normalized_keyword = _normalize_user_keyword(keyword)
+    if not normalized_keyword:
+        return ["관련 사안"]
+    if _looks_like_compact_person_keyword(normalized_keyword):
+        return ["상대"]
+    if _is_role_keyword(normalized_keyword):
+        return ["상대 후보", "상대"]
+
+    variants = build_keyword_variants(normalized_keyword)
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in [*variants, "관련 사안", "이 사안"]:
+        normalized_item = _normalize_user_keyword(item)
+        if not normalized_item or normalized_item == normalized_keyword or normalized_item in seen:
+            continue
+        seen.add(normalized_item)
+        deduped.append(normalized_item)
+    return deduped or ["관련 사안"]
+
+
+def _protect_shadowed_keywords(
+    text: str,
+    shadowed_by: Optional[Sequence[str]] = None,
+) -> tuple[str, Dict[str, str]]:
+    protected = str(text or "")
+    mapping: Dict[str, str] = {}
+    for index, item in enumerate(
+        sorted(
+            {
+                _normalize_user_keyword(keyword)
+                for keyword in (shadowed_by or [])
+                if _normalize_user_keyword(keyword)
+            },
+            key=len,
+            reverse=True,
+        )
+    ):
+        placeholder = f"__KWPROTECT_{index}__"
+        protected, count = re.subn(re.escape(item), placeholder, protected)
+        if count > 0:
+            mapping[placeholder] = item
+    return protected, mapping
+
+
+def _restore_shadowed_keywords(text: str, mapping: Mapping[str, str]) -> str:
+    restored = str(text or "")
+    for placeholder, original in mapping.items():
+        restored = restored.replace(str(placeholder), str(original))
+    return restored
+
+
+def _paragraph_contains_equivalent_sentence(paragraph_inner: str, sentence: str) -> bool:
+    target = _normalize_sentence_for_compare(sentence)
+    if not target:
+        return False
+
+    plain_paragraph = _strip_html(paragraph_inner)
+    if not plain_paragraph:
+        return False
+
+    for match in re.finditer(r"[^.!?。]+[.!?。]?", plain_paragraph):
+        existing = _normalize_sentence_for_compare(match.group(0))
+        if existing and existing == target:
+            return True
+    return False
+
+
 def _append_sentence_to_paragraph(paragraph_inner: str, sentence: str) -> str:
     base = str(paragraph_inner or "").rstrip()
     addition = str(sentence or "").strip()
@@ -1979,10 +2178,51 @@ def _append_sentence_to_paragraph(paragraph_inner: str, sentence: str) -> str:
         return base
     if not base:
         return addition
+    if _paragraph_contains_equivalent_sentence(base, addition):
+        return base
 
     if not re.search(r"[.!?。]\s*$", base):
         base += "."
     return f"{base} {addition}"
+
+
+def _count_keyword_reference_sentences_in_content(content: str) -> int:
+    working = str(content or "")
+    if not working:
+        return 0
+
+    count = 0
+    plain_content = _strip_html(working)
+    for match in re.finditer(r"[^.!?。]+[.!?。]?", plain_content):
+        sentence = str(match.group(0) or "").strip()
+        if sentence and _looks_like_keyword_reference_sentence(sentence):
+            count += 1
+    return count
+
+
+def _should_allow_keyword_reference_fallback(
+    content: str,
+    keyword: str,
+    user_keywords: Optional[Sequence[str]] = None,
+    role_keyword_policy: Optional[Mapping[str, Any]] = None,
+) -> bool:
+    normalized_keyword = _normalize_user_keyword(keyword)
+    normalized_user_keywords = [
+        _normalize_user_keyword(item)
+        for item in (user_keywords or [])
+        if _normalize_user_keyword(item)
+    ]
+    if not normalized_keyword or not normalized_user_keywords:
+        return False
+    if normalized_keyword != normalized_user_keywords[0]:
+        return False
+    if not _is_role_keyword(normalized_keyword):
+        return False
+    if should_block_role_keyword(role_keyword_policy, normalized_keyword):
+        return False
+    if _count_keyword_reference_sentences_in_content(content) >= 1:
+        return False
+    return True
 
 
 def _inject_keyword_into_section(
@@ -1990,10 +2230,15 @@ def _inject_keyword_into_section(
     keyword: str,
     section_type: str,
     variant_index: int = 0,
+    *,
+    allow_reference_fallback: bool = False,
+    role_keyword_policy: Optional[Mapping[str, Any]] = None,
 ) -> tuple[str, bool, str]:
     raw_section = str(section_html or "")
     normalized_keyword = str(keyword or "").strip()
     if not raw_section or not normalized_keyword:
+        return raw_section, False, ""
+    if should_block_role_keyword(role_keyword_policy, normalized_keyword):
         return raw_section, False, ""
 
     before_count = count_keyword_occurrences(raw_section, normalized_keyword)
@@ -2052,6 +2297,7 @@ def _inject_keyword_into_section(
                 original_sentence,
                 normalized_keyword,
                 variant_index,
+                role_keyword_policy=role_keyword_policy,
             )
             if not rewritten_sentence or rewritten_sentence == original_sentence:
                 continue
@@ -2071,11 +2317,12 @@ def _inject_keyword_into_section(
             if count_keyword_occurrences(candidate, normalized_keyword) > before_count:
                 return candidate, True, rewritten_sentence
 
-    if _is_role_keyword(normalized_keyword):
+    if allow_reference_fallback and _is_role_keyword(normalized_keyword):
         reference_sentence = _build_role_keyword_reference_sentence(
             normalized_keyword,
             str(section_type or ""),
             variant_index,
+            role_keyword_policy=role_keyword_policy,
         )
         if reference_sentence:
             for paragraph_index in paragraph_indexes:
@@ -2088,6 +2335,8 @@ def _inject_keyword_into_section(
                     continue
 
                 updated_inner = _append_sentence_to_paragraph(paragraph_inner, reference_sentence)
+                if updated_inner == paragraph_inner:
+                    continue
                 candidate = (
                     raw_section[: paragraph_match.start(1)]
                     + updated_inner
@@ -2104,33 +2353,392 @@ def _replace_last_keyword_occurrences(
     content: str,
     keyword: str,
     remove_count: int,
+    *,
+    shadowed_by: Optional[Sequence[str]] = None,
 ) -> tuple[str, int]:
     """정확 일치 기준 과다 키워드를 뒤에서부터 치환해 개수를 줄인다."""
     if not content or not keyword or remove_count <= 0:
         return str(content or ""), 0
 
-    escaped = re.escape(str(keyword))
-    matches = list(re.finditer(escaped, str(content)))
-    if not matches:
-        return str(content), 0
-
-    replacements_needed = min(remove_count, len(matches))
-    variants = build_keyword_variants(keyword)
-    fallback_token = "이 사안"
-    replacement_pool = variants if variants else [fallback_token]
-
-    working = str(content)
+    normalized_keyword = _normalize_user_keyword(keyword)
+    protected, protected_mapping = _protect_shadowed_keywords(str(content or ""), shadowed_by)
+    working = protected
     replaced = 0
-    # 뒤에서부터 치환해 인덱스 어긋남을 방지한다.
-    for idx, match in enumerate(reversed(matches[-replacements_needed:])):
-        replacement = replacement_pool[idx % len(replacement_pool)]
-        start, end = match.span()
-        if start < 0 or end > len(working) or start >= end:
+    role_patterns = [
+        (re.compile(rf"{re.escape(normalized_keyword)}\s*{role}"), fallback)
+        for role, fallback in ROLE_FALLBACK_LABELS
+    ]
+    replacement_pool = _build_keyword_replacement_pool(normalized_keyword)
+    bare_pattern = re.compile(re.escape(normalized_keyword))
+
+    while replaced < remove_count:
+        rewritten = False
+        for pattern, fallback in role_patterns:
+            matches = list(pattern.finditer(working))
+            if not matches:
+                continue
+            start, end = matches[-1].span()
+            if start < 0 or end > len(working) or start >= end:
+                continue
+            working = working[:start] + fallback + working[end:]
+            replaced += 1
+            rewritten = True
+            break
+        if rewritten:
             continue
+
+        matches = list(bare_pattern.finditer(working))
+        if not matches:
+            break
+        start, end = matches[-1].span()
+        if start < 0 or end > len(working) or start >= end:
+            break
+        replacement = replacement_pool[(replaced if replaced >= 0 else 0) % len(replacement_pool)]
         working = working[:start] + replacement + working[end:]
         replaced += 1
 
-    return working, replaced
+    restored = _restore_shadowed_keywords(working, protected_mapping)
+    return restored, replaced
+
+
+def _cleanup_sentence_removed_paragraph(paragraph_inner: str) -> str:
+    cleaned = str(paragraph_inner or "")
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+([,.;!?])", r"\1", cleaned)
+    return cleaned.strip()
+
+
+def _is_keyword_reference_sentence(
+    sentence: str,
+    keyword: str,
+    *,
+    role_keyword_policy: Optional[Mapping[str, Any]] = None,
+) -> bool:
+    normalized_sentence = _normalize_sentence_for_compare(sentence)
+    normalized_keyword = _normalize_user_keyword(keyword)
+    if not normalized_sentence or not normalized_keyword or normalized_keyword not in normalized_sentence:
+        return False
+
+    template_candidates = {
+        _normalize_sentence_for_compare(
+            _build_role_keyword_reference_sentence(
+                normalized_keyword,
+                section_type,
+                variant_index,
+                role_keyword_policy=role_keyword_policy,
+            )
+        )
+        for section_type in ("body", "conclusion")
+        for variant_index in range(3)
+    }
+    template_candidates.add(
+        _normalize_sentence_for_compare(f"온라인에서는 '{normalized_keyword}' 검색어도 함께 거론되고 있습니다.")
+    )
+    if normalized_sentence in template_candidates:
+        return True
+
+    return _looks_like_keyword_reference_sentence(normalized_sentence)
+
+
+def _score_keyword_sentence_for_reduction(sentence: str, keyword: str) -> int:
+    normalized = _normalize_sentence_for_compare(sentence)
+    if not normalized:
+        return 9
+    if _is_keyword_reference_sentence(normalized, keyword):
+        return 0
+
+    score = 4
+    if any(token in normalized for token in LOW_SIGNAL_KEYWORD_TOKENS):
+        score = min(score, 1)
+    if len(normalized) < 40:
+        score = min(score, 2)
+    if re.search(r"\d|%", normalized) or "여론조사" in normalized:
+        score += 2
+    if any(token in normalized for token in ("후원", "영수증", "계좌")):
+        score += 4
+    return score
+
+
+def _rewrite_sentence_to_reduce_keyword(
+    sentence_html: str,
+    keyword: str,
+    *,
+    shadowed_by: Optional[Sequence[str]] = None,
+) -> str:
+    original = str(sentence_html or "")
+    normalized_keyword = _normalize_user_keyword(keyword)
+    if not original or not normalized_keyword:
+        return original
+
+    protected, protected_mapping = _protect_shadowed_keywords(original, shadowed_by)
+    rewritten = protected
+
+    first_person_negation_patterns = (
+        re.compile(
+            rf"{re.escape(normalized_keyword)}(?:이|가|은|는)?\s+아닌\s+(?P<speaker>저는|제가|저의|제)",
+        ),
+        re.compile(
+            rf"{re.escape(normalized_keyword)}(?:이|가|은|는)?\s+아니라\s+(?P<speaker>저는|제가|저의|제)",
+        ),
+        re.compile(
+            rf"{re.escape(normalized_keyword)}\s*(?:과|와)\s+달리\s+(?P<speaker>저는|제가)",
+        ),
+    )
+
+    for pattern in first_person_negation_patterns:
+        rewritten, count = pattern.subn(lambda match: str(match.group("speaker") or ""), rewritten, count=1)
+        if count > 0:
+            rewritten = re.sub(r"\s{2,}", " ", rewritten).strip()
+            rewritten = _restore_shadowed_keywords(rewritten, protected_mapping)
+            return rewritten if rewritten else original
+
+    if _is_keyword_reference_sentence(_strip_html(rewritten), normalized_keyword):
+        if re.search(
+            rf"[\"']?{re.escape(normalized_keyword)}[\"']?\s*(검색어|키워드|표현|문구)",
+            rewritten,
+        ):
+            rewritten = re.sub(
+                rf"[\"']?{re.escape(normalized_keyword)}[\"']?\s*(검색어|키워드|표현|문구)",
+                r"관련 \1",
+                rewritten,
+                count=1,
+            )
+        else:
+            rewritten = _restore_shadowed_keywords(rewritten, protected_mapping)
+            return rewritten if rewritten else original
+
+    replacements = 0
+    for role, fallback in ROLE_FALLBACK_LABELS:
+        rewritten, count = re.subn(
+            rf"{re.escape(normalized_keyword)}\s*{role}",
+            fallback,
+            rewritten,
+        )
+        replacements += count
+
+    if replacements == 0 and re.search(re.escape(normalized_keyword), rewritten):
+        bare_fallback = _build_keyword_replacement_pool(normalized_keyword)[0]
+        rewritten, count = re.subn(
+            re.escape(normalized_keyword),
+            bare_fallback,
+            rewritten,
+        )
+        replacements += count
+
+    rewritten = re.sub(r"\s{2,}", " ", rewritten).strip()
+    rewritten = _restore_shadowed_keywords(rewritten, protected_mapping)
+    return rewritten if replacements > 0 else original
+
+
+def _remove_low_signal_keyword_sentence_once(
+    content: str,
+    keyword: str,
+    user_keywords: Sequence[str],
+    *,
+    shadowed_by: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    working = str(content or "")
+    normalized_keyword = _normalize_user_keyword(keyword)
+    if not working or not normalized_keyword:
+        return {"content": working, "edited": False}
+
+    paragraph_matches = list(re.finditer(r"<p\b[^>]*>([\s\S]*?)</p\s*>", working, re.IGNORECASE))
+    if not paragraph_matches:
+        return {"content": working, "edited": False}
+
+    candidates: list[Dict[str, Any]] = []
+    for paragraph_index in reversed(range(len(paragraph_matches))):
+        paragraph_match = paragraph_matches[paragraph_index]
+        paragraph_inner = str(paragraph_match.group(1) or "")
+        sentence_matches = list(re.finditer(r"[^.!?。]+[.!?。]?", paragraph_inner))
+        for sentence_index in reversed(range(len(sentence_matches))):
+            sentence_match = sentence_matches[sentence_index]
+            sentence_html = str(sentence_match.group(0) or "")
+            sentence_plain = _strip_html(sentence_html)
+            if normalized_keyword not in sentence_plain:
+                continue
+
+            contribution = int(
+                _count_user_keyword_exact_non_overlap(sentence_plain, user_keywords).get(normalized_keyword) or 0
+            )
+            if contribution <= 0:
+                continue
+
+            candidates.append(
+                {
+                    "priority": _score_keyword_sentence_for_reduction(sentence_plain, normalized_keyword),
+                    "contribution": contribution,
+                    "paragraphIndex": paragraph_index,
+                    "sentenceIndex": sentence_index,
+                    "paragraphStart": paragraph_match.start(),
+                    "paragraphEnd": paragraph_match.end(),
+                    "innerStart": paragraph_match.start(1),
+                    "innerEnd": paragraph_match.end(1),
+                    "sentenceStart": sentence_match.start(),
+                    "sentenceEnd": sentence_match.end(),
+                    "sentence": sentence_plain,
+                    "sentenceHtml": sentence_html,
+                    "paragraphInner": paragraph_inner,
+                }
+            )
+
+    if not candidates:
+        return {"content": working, "edited": False}
+
+    ordered_candidates = sorted(
+        candidates,
+        key=lambda item: (
+            int(item.get("priority") or 9),
+            -int(item.get("contribution") or 0),
+            -int(item.get("paragraphIndex") or 0),
+            -int(item.get("sentenceIndex") or 0),
+        ),
+    )
+
+    current_count = int(_count_user_keyword_exact_non_overlap(working, user_keywords).get(normalized_keyword) or 0)
+    for candidate in ordered_candidates:
+        rewritten_sentence = _rewrite_sentence_to_reduce_keyword(
+            str(candidate.get("sentenceHtml") or ""),
+            normalized_keyword,
+            shadowed_by=shadowed_by,
+        )
+        if not rewritten_sentence or rewritten_sentence == str(candidate.get("sentenceHtml") or ""):
+            continue
+
+        paragraph_inner = str(candidate.get("paragraphInner") or "")
+        sentence_start = int(candidate.get("sentenceStart") or 0)
+        sentence_end = int(candidate.get("sentenceEnd") or 0)
+        updated_inner = (
+            paragraph_inner[:sentence_start]
+            + rewritten_sentence
+            + paragraph_inner[sentence_end:]
+        )
+        updated_content = (
+            working[: int(candidate.get("innerStart") or 0)]
+            + updated_inner
+            + working[int(candidate.get("innerEnd") or 0) :]
+        )
+        reduced_count = int(
+            _count_user_keyword_exact_non_overlap(updated_content, user_keywords).get(normalized_keyword) or 0
+        )
+        if reduced_count >= current_count:
+            continue
+        return {
+            "content": updated_content,
+            "edited": updated_content != working,
+            "rewrittenSentence": _strip_html(rewritten_sentence),
+            "originalSentence": str(candidate.get("sentence") or ""),
+            "contribution": int(candidate.get("contribution") or 0),
+            "priority": int(candidate.get("priority") or 9),
+            "mode": "rewrite",
+        }
+
+    candidate = ordered_candidates[0]
+
+    paragraph_inner = str(candidate.get("paragraphInner") or "")
+    sentence_start = int(candidate.get("sentenceStart") or 0)
+    sentence_end = int(candidate.get("sentenceEnd") or 0)
+    updated_inner = _cleanup_sentence_removed_paragraph(
+        paragraph_inner[:sentence_start] + paragraph_inner[sentence_end:]
+    )
+
+    if _strip_html(updated_inner):
+        updated_content = (
+            working[: int(candidate.get("innerStart") or 0)]
+            + updated_inner
+            + working[int(candidate.get("innerEnd") or 0) :]
+        )
+    else:
+        updated_content = working[: int(candidate.get("paragraphStart") or 0)] + working[
+            int(candidate.get("paragraphEnd") or 0) :
+        ]
+
+    return {
+        "content": updated_content,
+        "edited": updated_content != working,
+        "removedSentence": str(candidate.get("sentence") or ""),
+        "contribution": int(candidate.get("contribution") or 0),
+        "priority": int(candidate.get("priority") or 9),
+        "mode": "remove",
+    }
+
+
+def _reduce_excess_user_keyword_mentions(
+    content: str,
+    keyword: str,
+    user_keywords: Sequence[str],
+    *,
+    target_max: int,
+    shadowed_by: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    working = str(content or "")
+    normalized_keyword = _normalize_user_keyword(keyword)
+    shadowed = [_normalize_user_keyword(item) for item in (shadowed_by or []) if _normalize_user_keyword(item)]
+    target_max = max(0, int(target_max))
+    if not working or not normalized_keyword:
+        return {
+            "content": working,
+            "edited": False,
+            "replaced": 0,
+            "removedSentences": 0,
+            "currentCount": 0,
+            "targetMax": target_max,
+            "shadowedBy": shadowed,
+        }
+
+    removed_sentences = 0
+    removed_sentence_fragments: list[str] = []
+    rewritten_sentences = 0
+    rewritten_sentence_fragments: list[str] = []
+    current_count = int(_count_user_keyword_exact_non_overlap(working, user_keywords).get(normalized_keyword) or 0)
+
+    for _ in range(max(0, current_count - target_max)):
+        current_count = int(_count_user_keyword_exact_non_overlap(working, user_keywords).get(normalized_keyword) or 0)
+        if current_count <= target_max:
+            break
+        sentence_reduction = _remove_low_signal_keyword_sentence_once(
+            working,
+            normalized_keyword,
+            user_keywords,
+            shadowed_by=shadowed,
+        )
+        if not sentence_reduction.get("edited"):
+            break
+        working = str(sentence_reduction.get("content") or working)
+        if str(sentence_reduction.get("mode") or "") == "rewrite":
+            rewritten_sentences += 1
+            rewritten_sentence = _normalize_sentence_for_compare(sentence_reduction.get("rewrittenSentence") or "")
+            if rewritten_sentence:
+                rewritten_sentence_fragments.append(rewritten_sentence[:80])
+        else:
+            removed_sentences += 1
+            removed_sentence = _normalize_sentence_for_compare(sentence_reduction.get("removedSentence") or "")
+            if removed_sentence:
+                removed_sentence_fragments.append(removed_sentence[:80])
+
+    current_count = int(_count_user_keyword_exact_non_overlap(working, user_keywords).get(normalized_keyword) or 0)
+    replaced = 0
+    if current_count > target_max:
+        working, replaced = _replace_last_keyword_occurrences(
+            working,
+            normalized_keyword,
+            current_count - target_max,
+            shadowed_by=shadowed,
+        )
+        current_count = int(_count_user_keyword_exact_non_overlap(working, user_keywords).get(normalized_keyword) or 0)
+
+    return {
+        "content": working,
+        "edited": working != str(content or ""),
+        "replaced": replaced,
+        "removedSentences": removed_sentences,
+        "removedSentenceFragments": removed_sentence_fragments,
+        "rewrittenSentences": rewritten_sentences,
+        "rewrittenSentenceFragments": rewritten_sentence_fragments,
+        "currentCount": current_count,
+        "targetMax": target_max,
+        "shadowedBy": shadowed,
+    }
 
 
 def enforce_keyword_requirements(
@@ -2140,7 +2748,10 @@ def enforce_keyword_requirements(
     target_word_count: Optional[int] = None,
     title_text: str = "",
     body_min_overrides: Optional[Mapping[str, int]] = None,
+    user_keyword_expected_overrides: Optional[Mapping[str, int]] = None,
+    user_keyword_max_overrides: Optional[Mapping[str, int]] = None,
     skip_user_keywords: Optional[Sequence[str]] = None,
+    role_keyword_policy: Optional[Mapping[str, Any]] = None,
     max_iterations: int = 2,
 ) -> Dict[str, Any]:
     working_content = str(content or "")
@@ -2159,6 +2770,8 @@ def enforce_keyword_requirements(
         target_word_count,
         title_text=title_text,
         body_min_overrides=body_min_overrides,
+        user_keyword_expected_overrides=user_keyword_expected_overrides,
+        user_keyword_max_overrides=user_keyword_max_overrides,
     )
     if not working_content or (not user_keywords and not auto_keywords):
         return {
@@ -2167,7 +2780,13 @@ def enforce_keyword_requirements(
             "insertions": [],
             "keywordResult": initial_result,
         }
-    if initial_result.get("valid"):
+    initial_details = (initial_result.get("details") or {}).get("keywords") or {}
+    initial_exact_preference_pending = any(
+        int(((initial_details.get(keyword) or {}).get("exactShortfall")) or 0) > 0
+        for keyword in user_keywords
+        if keyword not in skipped_user_keyword_set
+    )
+    if initial_result.get("valid") and not initial_exact_preference_pending:
         return {
             "content": working_content,
             "edited": False,
@@ -2179,6 +2798,7 @@ def enforce_keyword_requirements(
     reductions: list[Dict[str, Any]] = []
     per_keyword_insertions: Dict[str, int] = {}
     current_result = initial_result
+    shadowed_map = find_shadowed_user_keywords(user_keywords)
 
     for _ in range(max_iterations):
         details = (current_result.get("details") or {}).get("keywords") or {}
@@ -2186,26 +2806,62 @@ def enforce_keyword_requirements(
         if not details or not sections:
             break
 
+        reductions_applied = False
         for keyword in user_keywords:
             if keyword in skipped_user_keyword_set:
                 continue
             keyword_info = details.get(keyword) or {}
-            current_count = int(keyword_info.get("count") or keyword_info.get("coverage") or 0)
+            current_count = int(
+                keyword_info.get("exclusiveCount")
+                or keyword_info.get("count")
+                or keyword_info.get("coverage")
+                or 0
+            )
             max_allowed = int(keyword_info.get("max") or _keyword_user_threshold(len(user_keywords))[1])
             excess = max(0, current_count - max_allowed)
             if excess <= 0:
                 continue
 
+            reduced = _reduce_excess_user_keyword_mentions(
+                working_content,
+                keyword,
+                user_keywords,
+                target_max=max_allowed,
+                shadowed_by=shadowed_map.get(keyword),
+            )
             reductions.append(
                 {
                     "keyword": keyword,
                     "excess": excess,
-                    "replaced": 0,
+                    "replaced": int(reduced.get("replaced") or 0),
+                    "removedSentences": int(reduced.get("removedSentences") or 0),
+                    "rewrittenSentences": int(reduced.get("rewrittenSentences") or 0),
                     "targetMax": max_allowed,
-                    "skipped": True,
-                    "reason": "over_max_rewrite_disabled",
+                    "resultCount": int(reduced.get("currentCount") or current_count),
+                    "shadowedBy": list(reduced.get("shadowedBy") or []),
+                    "removedSentenceFragments": list(reduced.get("removedSentenceFragments") or []),
+                    "rewrittenSentenceFragments": list(reduced.get("rewrittenSentenceFragments") or []),
+                    "edited": bool(reduced.get("edited")),
                 }
             )
+            if reduced.get("edited"):
+                working_content = str(reduced.get("content") or working_content)
+                reductions_applied = True
+
+        if reductions_applied:
+            current_result = validate_keyword_insertion(
+                working_content,
+                user_keywords,
+                auto_keywords,
+                target_word_count,
+                title_text=title_text,
+                body_min_overrides=body_min_overrides,
+                user_keyword_expected_overrides=user_keyword_expected_overrides,
+                user_keyword_max_overrides=user_keyword_max_overrides,
+            )
+            if current_result.get("valid"):
+                break
+            continue
 
         insertion_plan: Dict[int, List[Dict[str, Any]]] = {}
         needs_fix = False
@@ -2215,12 +2871,13 @@ def enforce_keyword_requirements(
                 continue
             keyword_info = details.get(keyword) or {}
             expected = int(keyword_info.get("expected") or (1 if keyword in auto_keywords else _keyword_user_threshold(len(user_keywords))[0]))
-            current_count = int(keyword_info.get("count") or keyword_info.get("coverage") or 0)
-            deficit = max(0, expected - current_count)
+            gate_count = int(keyword_info.get("gateCount") or keyword_info.get("count") or keyword_info.get("coverage") or 0)
+            deficit = max(0, expected - gate_count)
             body_expected = int(keyword_info.get("bodyExpected") or 0)
             body_count = int(keyword_info.get("bodyCount") or 0)
             body_deficit = max(0, body_expected - body_count)
-            total_deficit = max(deficit, body_deficit)
+            exact_shortfall = int(keyword_info.get("exactShortfall") or 0)
+            total_deficit = max(deficit, body_deficit, exact_shortfall)
             if total_deficit <= 0:
                 continue
 
@@ -2290,6 +2947,13 @@ def enforce_keyword_requirements(
                     str(item.get("keyword") or ""),
                     str(item.get("sectionType") or ""),
                     int(item.get("variantIndex") or 0),
+                    allow_reference_fallback=_should_allow_keyword_reference_fallback(
+                        working_content,
+                        str(item.get("keyword") or ""),
+                        user_keywords,
+                        role_keyword_policy=role_keyword_policy,
+                    ),
+                    role_keyword_policy=role_keyword_policy,
                 )
                 if not edited:
                     continue
@@ -2313,8 +2977,16 @@ def enforce_keyword_requirements(
             target_word_count,
             title_text=title_text,
             body_min_overrides=body_min_overrides,
+            user_keyword_expected_overrides=user_keyword_expected_overrides,
+            user_keyword_max_overrides=user_keyword_max_overrides,
         )
-        if current_result.get("valid"):
+        current_details = (current_result.get("details") or {}).get("keywords") or {}
+        exact_preference_pending = any(
+            int(((current_details.get(keyword) or {}).get("exactShortfall")) or 0) > 0
+            for keyword in user_keywords
+            if keyword not in skipped_user_keyword_set
+        )
+        if current_result.get("valid") and not exact_preference_pending:
             break
 
     return {
@@ -2357,6 +3029,8 @@ def validate_keyword_insertion(
     target_word_count: Optional[int] = None,
     title_text: str = "",
     body_min_overrides: Optional[Mapping[str, int]] = None,
+    user_keyword_expected_overrides: Optional[Mapping[str, int]] = None,
+    user_keyword_max_overrides: Optional[Mapping[str, int]] = None,
 ) -> Dict[str, Any]:
     _ = target_word_count
     user_keywords = [item for item in (user_keywords or []) if item]
@@ -2374,13 +3048,32 @@ def validate_keyword_insertion(
     user_body_exact_counts = _count_user_keyword_exact_non_overlap_in_body(content, user_keywords)
 
     for keyword in user_keywords:
-        exclusive_count = int(user_exact_counts.get(keyword) or 0)
+        content_exact_count = int(user_exact_counts.get(keyword) or 0)
         raw_count = count_keyword_occurrences(content, keyword)
-        coverage_count = count_keyword_coverage(content, keyword)
+        variant_coverage_count = count_keyword_coverage(content, keyword)
         title_count = int(user_title_exact_counts.get(keyword) or 0)
         h2_count = _count_keyword_occurrences_in_h2(content, keyword)
         body_count = int(user_body_exact_counts.get(keyword) or 0)
-        derived_body_expected = max(0, int(user_min_count) - int(title_count) - int(h2_count))
+        total_exact_count = content_exact_count + title_count
+        total_raw_count = raw_count + title_count
+        effective_expected = int(user_min_count)
+        if isinstance(user_keyword_expected_overrides, Mapping):
+            override_expected = user_keyword_expected_overrides.get(keyword)
+            if override_expected is not None:
+                try:
+                    effective_expected = max(0, int(override_expected))
+                except (TypeError, ValueError):
+                    effective_expected = int(user_min_count)
+        effective_max = int(user_max_count)
+        if isinstance(user_keyword_max_overrides, Mapping):
+            override_max = user_keyword_max_overrides.get(keyword)
+            if override_max is not None:
+                try:
+                    effective_max = max(effective_expected, int(override_max))
+                except (TypeError, ValueError):
+                    effective_max = max(effective_expected, int(user_max_count))
+
+        derived_body_expected = max(0, int(effective_expected) - int(title_count) - int(h2_count))
         override_value = None
         if isinstance(body_min_overrides, Mapping):
             override_value = body_min_overrides.get(keyword)
@@ -2389,23 +3082,41 @@ def validate_keyword_insertion(
                 derived_body_expected = max(0, int(override_value))
             except (TypeError, ValueError):
                 derived_body_expected = max(0, derived_body_expected)
-        # 사용자 입력 키워드는 "정확 일치" 기준으로 검증한다.
-        is_under_min = exclusive_count < user_min_count
-        is_over_max = exclusive_count > user_max_count
+        sentence_coverage_count = (
+            count_keyword_sentence_reflections(content, keyword)
+            + count_keyword_sentence_reflections(title_text or "", keyword)
+        )
+        gate_count = max(total_exact_count, sentence_coverage_count)
+        coverage_count = max(total_exact_count, variant_coverage_count + title_count, sentence_coverage_count)
+        preferred_exact_min = 1 if len(_keyword_tokens(keyword)) >= 2 and effective_expected > 0 else 0
+        exact_shortfall = max(0, preferred_exact_min - total_exact_count)
+        # 사용자 입력 키워드는 부족 판정은 gate count, 과다 판정은 exact count 기준으로 검증한다.
+        is_under_min = gate_count < effective_expected
+        is_over_max = total_exact_count > effective_max
         is_under_body_min = body_count < derived_body_expected
         is_valid = (not is_under_min) and (not is_over_max) and (not is_under_body_min)
         results[keyword] = {
-            "count": exclusive_count,
-            "exactCount": raw_count,
-            "exclusiveCount": exclusive_count,
-            "rawCount": raw_count,
+            "count": total_exact_count,
+            "exactCount": total_raw_count,
+            "exclusiveCount": total_exact_count,
+            "rawCount": total_raw_count,
             "coverage": coverage_count,
-            "expected": user_min_count,
-            "max": user_max_count,
+            "gateCount": gate_count,
+            "sentenceCoverageCount": sentence_coverage_count,
+            "expected": effective_expected,
+            "max": effective_max,
             "titleCount": title_count,
             "subheadingCount": h2_count,
             "bodyCount": body_count,
             "bodyExpected": derived_body_expected,
+            "contentCount": content_exact_count,
+            "contentExactCount": raw_count,
+            "underMin": is_under_min,
+            "overMax": is_over_max,
+            "underBodyMin": is_under_body_min,
+            "exactPreferredMin": preferred_exact_min,
+            "exactShortfall": exact_shortfall,
+            "exactPreferredMet": exact_shortfall <= 0,
             "valid": is_valid,
             "type": "user",
         }
@@ -2716,6 +3427,7 @@ def force_insert_insufficient_keywords(
     user_keywords: List[str],
     keyword_validation: Dict[str, Any],
     skip_user_keywords: Optional[Sequence[str]] = None,
+    role_keyword_policy: Optional[Mapping[str, Any]] = None,
 ) -> str:
     """최종 gate 실패(insufficient) 전용 last-resort 삽입.
 
@@ -2740,11 +3452,24 @@ def force_insert_insufficient_keywords(
             continue
         if str(info.get("status") or "").strip().lower() != "insufficient":
             continue
+        if should_block_role_keyword(role_keyword_policy, normalized):
+            continue
         min_required = max(1, int((info or {}).get("expected") or 1))
-        if _is_role_keyword(normalized):
-            sentence = _build_role_keyword_reference_sentence(normalized, "body", 0)
-        else:
-            sentence = f"온라인에서는 '{normalized}' 검색어도 함께 거론되고 있습니다."
+        sentence = ""
+        if _should_allow_keyword_reference_fallback(
+            working,
+            normalized,
+            user_keywords,
+            role_keyword_policy=role_keyword_policy,
+        ):
+            sentence = _build_role_keyword_reference_sentence(
+                normalized,
+                "body",
+                0,
+                role_keyword_policy=role_keyword_policy,
+            )
+        if not sentence:
+            continue
 
         # min_required 충족할 때까지 반복 삽입 (최대 5회 guard)
         for _attempt in range(5):
@@ -2753,23 +3478,24 @@ def force_insert_insufficient_keywords(
             p_matches = list(re.finditer(r"<p\b[^>]*>([\s\S]*?)</p\s*>", working, re.IGNORECASE))
             if not p_matches:
                 break
-            # 역순 탐색: 충분히 길고 키워드가 없는 단락에 추가
-            target_match = None
-            for m in reversed(p_matches):
-                plain = re.sub(r"<[^>]*>", " ", m.group(1) or "")
+            applied = False
+            for target_match in reversed(p_matches):
+                plain = re.sub(r"<[^>]*>", " ", target_match.group(1) or "")
                 plain = re.sub(r"\s+", " ", plain).strip()
                 if len(plain) >= 20 and normalized not in plain:
-                    target_match = m
+                    inner = str(target_match.group(1) or "")
+                    updated_inner = _append_sentence_to_paragraph(inner, sentence)
+                    if updated_inner == inner:
+                        continue
+                    working = (
+                        working[: target_match.start(1)]
+                        + updated_inner
+                        + working[target_match.end(1):]
+                    )
+                    applied = True
                     break
-            if target_match is None:
+            if not applied:
                 break
-            inner = str(target_match.group(1) or "")
-            updated_inner = _append_sentence_to_paragraph(inner, sentence)
-            working = (
-                working[: target_match.start(1)]
-                + updated_inner
-                + working[target_match.end(1):]
-            )
 
     return working
 

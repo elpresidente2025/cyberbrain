@@ -13,6 +13,8 @@ import logging
 import re
 from typing import Any, Dict
 
+from agents.common.poll_citation import normalize_poll_citation_text
+
 logger = logging.getLogger(__name__)
 
 
@@ -712,7 +714,9 @@ def insert_slogan(content: str, slogan: str) -> str:
 
 
 def _normalize_poll_citation_body(citation: str) -> str:
-    lines = [line.strip() for line in str(citation or "").splitlines() if line and line.strip()]
+    standardized = normalize_poll_citation_text(citation)
+    source = standardized or str(citation or "")
+    lines = [line.strip() for line in source.splitlines() if line and line.strip()]
     if not lines:
         return ""
 
@@ -739,6 +743,55 @@ def insert_poll_citation(content: str, citation: str) -> str:
     )
     trimmed = content.strip()
     return f"{trimmed}\n{html}" if trimmed else html
+
+
+POLL_CITATION_BLOCK_RE = re.compile(
+    r"<p\b[^>]*>\s*(?:<strong>\s*(?:조사개요|조사\s*요약|조사요약)\s*</strong>|(?:조사개요|조사\s*요약|조사요약))"
+    r"[\s\S]*?</p\s*>",
+    re.IGNORECASE,
+)
+
+
+def strip_generated_poll_citation(content: str) -> str:
+    if not content:
+        return content
+    updated = POLL_CITATION_BLOCK_RE.sub("", str(content or ""))
+    updated = re.sub(r"\n{3,}", "\n\n", updated)
+    return updated.strip()
+
+
+def _extract_inline_poll_citation_body(content: str) -> str:
+    if not content:
+        return ""
+    for match in POLL_CITATION_BLOCK_RE.finditer(str(content or "")):
+        block = str(match.group(0) or "")
+        if not block:
+            continue
+        plain = _html_to_plain_lines(block)
+        normalized = _normalize_poll_citation_body(plain)
+        if normalized:
+            return normalized
+    return ""
+
+
+def _resolve_final_poll_citation_body(
+    *,
+    poll_citation: str,
+    extracted_meta: Dict[str, Any],
+    inline_poll_citation: str = "",
+) -> str:
+    explicit = _normalize_poll_citation_body(normalize_ascii_double_quotes(poll_citation))
+    if explicit:
+        return explicit
+    embedded = _normalize_poll_citation_body(
+        normalize_ascii_double_quotes(str(extracted_meta.get("embeddedPollSummary") or ""))
+    )
+    if embedded:
+        return embedded
+    inline = _normalize_poll_citation_body(normalize_ascii_double_quotes(inline_poll_citation))
+    if inline:
+        return inline
+    return ""
 
 
 def count_without_space(content: str) -> int:
@@ -1266,21 +1319,27 @@ def build_keyword_validation(keyword_result: Dict[str, Any] | None) -> Dict[str,
             or exclusive_count
         )
         coverage_count = int(info.get("coverage") or raw_count)
+        gate_count = int(info.get("gateCount") or exclusive_count)
+        sentence_coverage_count = int(info.get("sentenceCoverageCount") or 0)
         body_count = int(info.get("bodyCount") or 0)
         body_expected = int(info.get("bodyExpected") or 0)
-        # 사용자 키워드는 게이트는 exclusive 기준, 표시는 raw 기준으로 분리한다.
-        count = exclusive_count if keyword_type == "user" else coverage_count
+        exact_preferred_min = int(info.get("exactPreferredMin") or 0)
+        exact_shortfall = int(info.get("exactShortfall") or 0)
+        exact_preferred_met = bool(info.get("exactPreferredMet")) or exact_shortfall <= 0
+        under_min = bool(info.get("underMin") is True)
+        over_max = bool(info.get("overMax") is True)
+        under_body_min = bool(info.get("underBodyMin") is True)
+        # 사용자 키워드는 부족 판정은 gate count, 과다 판정은 exclusive count 기준이다.
+        count = gate_count if keyword_type == "user" else coverage_count
         is_valid = bool(info.get("valid") is True)
-        body_under_min = keyword_type == "user" and body_expected > 0 and body_count < body_expected
+        body_under_min = keyword_type == "user" and (under_body_min or (body_expected > 0 and body_count < body_expected))
 
         if is_valid:
             status = "valid"
-        elif body_under_min:
-            status = "insufficient"
-        elif count < expected:
-            status = "insufficient"
-        elif max_count > 0 and count > max_count:
+        elif over_max:
             status = "spam_risk"
+        elif body_under_min or under_min:
+            status = "insufficient"
         else:
             status = "insufficient"
 
@@ -1294,8 +1353,13 @@ def build_keyword_validation(keyword_result: Dict[str, Any] | None) -> Dict[str,
             "exclusiveCount": exclusive_count,
             "rawCount": raw_count,
             "coverage": coverage_count,
+            "gateCount": gate_count,
+            "sentenceCoverageCount": sentence_coverage_count,
             "bodyCount": body_count,
             "bodyExpected": body_expected,
+            "exactPreferredMin": exact_preferred_min,
+            "exactShortfall": exact_shortfall,
+            "exactPreferredMet": exact_preferred_met,
         }
 
     return mapped
@@ -1450,18 +1514,24 @@ def finalize_output(
     updated, extracted_meta = _extract_embedded_meta_tail(updated)
     if extracted_meta:
         final_meta.update(extracted_meta)
+    inline_poll_citation = _extract_inline_poll_citation_body(updated)
     updated = _strip_meta_noise_lines(updated)
+    updated = strip_generated_poll_citation(updated)
     word_count = count_without_space(updated)
 
     if donation_enabled and str(donation_info or "").strip():
         updated = insert_donation_info(updated, normalize_ascii_double_quotes(donation_info))
     if slogan_enabled and str(slogan or "").strip():
         updated = insert_slogan(updated, normalize_ascii_double_quotes(slogan))
-    normalized_poll_body = _normalize_poll_citation_body(normalize_ascii_double_quotes(poll_citation))
+    normalized_poll_body = _resolve_final_poll_citation_body(
+        poll_citation=poll_citation,
+        extracted_meta=final_meta,
+        inline_poll_citation=inline_poll_citation,
+    )
     if normalized_poll_body:
         final_meta["pollCitation"] = normalized_poll_body
-        if embed_poll_citation:
-            updated = insert_poll_citation(updated, normalized_poll_body)
+        final_meta["pollCitationForced"] = True
+        updated = insert_poll_citation(updated, normalized_poll_body)
     updated = normalize_ascii_double_quotes(updated)
 
     return {
@@ -1482,6 +1552,7 @@ __all__ = [
     "insert_donation_info",
     "insert_slogan",
     "insert_poll_citation",
+    "strip_generated_poll_citation",
     "count_without_space",
     "build_keyword_validation",
     "finalize_output",

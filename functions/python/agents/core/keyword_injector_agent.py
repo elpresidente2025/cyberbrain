@@ -5,12 +5,21 @@ from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+_BARE_NAME_KEYWORD_PATTERN = re.compile(r"^[가-힣]{2,8}$")
+_ALLOWED_BARE_NAME_FOLLOWING_PATTERN = re.compile(
+    r"^(?:"
+    r"의원|시장|후보|위원장|장관|대표|군수|구청장|도지사|부산시장|국회의원|예비후보|"
+    r"관련|측|캠프|후보군"
+    r")(?:(?:은|는|이|가|을|를|의|에|와|과|도|만|보다|까지|부터|로|으로){1,2})?$"
+)
+
 from ..base_agent import Agent
 from ..common.gemini_client import StructuredOutputError, generate_json_async
 from ..common.editorial import KEYWORD_SPEC
 from services.posts.validation import (
     count_keyword_occurrences,
     enforce_keyword_requirements,
+    find_shadowed_user_keywords,
     validate_keyword_insertion,
 )
 from services.posts.keyword_insertion_policy import build_keyword_injection_policy_lines
@@ -53,7 +62,7 @@ class KeywordInjectorAgent(Agent):
         counts: Dict[str, int] = {}
         for kw in keywords:
             info = details.get(kw) or {}
-            counts[kw] = int(info.get('count') or info.get('coverage') or 0)
+            counts[kw] = int(info.get('gateCount') or info.get('count') or info.get('coverage') or 0)
         return counts
 
     def _build_keyword_feedback(self, keyword_result: Dict[str, Any], extra_feedback: str = '') -> str:
@@ -62,16 +71,36 @@ class KeywordInjectorAgent(Agent):
         for keyword, info in details.items():
             if not isinstance(info, dict):
                 continue
-            current = int(info.get('coverage') or info.get('count') or 0)
+            current = int(info.get('gateCount') or info.get('coverage') or info.get('count') or 0)
             expected = int(info.get('expected') or 0)
             max_allowed = int(info.get('max') or 9999)
             if current < expected:
                 issues.append(f"\"{keyword}\" 부족: {current}/{expected}")
-            elif current > max_allowed:
-                issues.append(f"\"{keyword}\" 과다: {current}/{max_allowed}")
+            elif int(info.get('exclusiveCount') or current) > max_allowed:
+                issues.append(f"\"{keyword}\" 과다: {int(info.get('exclusiveCount') or current)}/{max_allowed}")
         if extra_feedback:
             issues.append(extra_feedback)
         return ", ".join(issues) if issues else "키워드 기준에 맞게 조정하세요."
+
+    def _filter_keyword_result(self, keyword_result: Dict[str, Any], keywords: List[str]) -> Dict[str, Any]:
+        base_result = dict(keyword_result or {})
+        base_details = dict(base_result.get('details') or {})
+        raw_keywords = base_details.get('keywords') or {}
+        filtered_keywords: Dict[str, Any] = {}
+        all_valid = True
+        for keyword in keywords:
+            info = raw_keywords.get(keyword)
+            if not isinstance(info, dict):
+                all_valid = False
+                continue
+            filtered_keywords[keyword] = info
+            if not bool(info.get('valid')):
+                all_valid = False
+
+        base_details['keywords'] = filtered_keywords
+        base_result['details'] = base_details
+        base_result['valid'] = all_valid
+        return base_result
 
     def _finalize_keyword_result(
         self,
@@ -142,6 +171,29 @@ class KeywordInjectorAgent(Agent):
             print('[KeywordInjectorAgent] 검색어 없음 - 스킵')
             return {'content': content, 'title': title, 'keywordCounts': {}}
 
+        shadowed_keyword_map = find_shadowed_user_keywords(user_keywords)
+        soft_user_keywords = {keyword for keyword in shadowed_keyword_map.keys()}
+        active_user_keywords = [keyword for keyword in user_keywords if keyword not in soft_user_keywords]
+        if soft_user_keywords:
+            print(
+                "[KeywordInjectorAgent] 중첩 키워드 하드 삽입 제외: "
+                + ", ".join(
+                    f'{keyword} <- {"/".join(shadowed_keyword_map.get(keyword) or [])}'
+                    for keyword in sorted(soft_user_keywords)
+                )
+            )
+        if not active_user_keywords:
+            note = "모든 사용자 키워드가 중첩 키워드로 분류되어 하드 삽입을 건너뜀"
+            return self._finalize_keyword_result(
+                content=content,
+                title=title,
+                user_keywords=user_keywords,
+                auto_keywords=auto_keywords,
+                target_word_count=target_word_count,
+                mode='best-effort',
+                note=note,
+            )
+
         # Parse Sections
         sections = self.parse_sections(content)
         print(f"[KeywordInjectorAgent] 섹션 {len(sections)}개 파싱 완료")
@@ -151,21 +203,22 @@ class KeywordInjectorAgent(Agent):
         max_target = min_target + 1
         print(f"[KeywordInjectorAgent] 키워드 목표: {min_target}~{max_target}회")
 
-        section_counts = self.count_keywords_per_section(sections, user_keywords)
-        initial_keyword_result = validate_keyword_insertion(
+        section_counts = self.count_keywords_per_section(sections, active_user_keywords)
+        initial_full_keyword_result = validate_keyword_insertion(
             content,
             user_keywords,
             auto_keywords,
             target_word_count,
         )
-        total_counts = self._extract_keyword_counts(initial_keyword_result, user_keywords)
+        initial_keyword_result = self._filter_keyword_result(initial_full_keyword_result, active_user_keywords)
+        total_counts = self._extract_keyword_counts(initial_full_keyword_result, user_keywords)
 
         print(f"[KeywordInjectorAgent] 초기 상태: sections={len(sections)}, totalCounts={total_counts}")
 
         # Validation Check (검증 모듈과 동일 기준)
         validation = self.validate_section_balance(
             section_counts,
-            user_keywords,
+            active_user_keywords,
             min_target=min_target,
             max_target=max_target,
             auto_keywords=auto_keywords,
@@ -194,7 +247,7 @@ class KeywordInjectorAgent(Agent):
 
             prompt = self.build_prompt({
                 'sections': sections,
-                'userKeywords': user_keywords,
+                'userKeywords': active_user_keywords,
                 'sectionCounts': section_counts,
                 'feedback': feedback,
                 'contextAnalysis': context_analysis,
@@ -225,21 +278,27 @@ class KeywordInjectorAgent(Agent):
 
                 print(f"[KeywordInjectorAgent] 지시 {len(instructions)}개 파싱")
 
-                current_content = self.apply_instructions(current_content, sections, instructions)
+                current_content = self.apply_instructions(
+                    current_content,
+                    sections,
+                    instructions,
+                    user_keywords=user_keywords,
+                )
 
                 # Re-parse and validate
                 new_sections = self.parse_sections(current_content)
-                new_section_counts = self.count_keywords_per_section(new_sections, user_keywords)
-                new_keyword_result = validate_keyword_insertion(
+                new_section_counts = self.count_keywords_per_section(new_sections, active_user_keywords)
+                new_full_keyword_result = validate_keyword_insertion(
                     current_content,
                     user_keywords,
                     auto_keywords,
                     target_word_count,
                 )
-                new_total_counts = self._extract_keyword_counts(new_keyword_result, user_keywords)
+                new_keyword_result = self._filter_keyword_result(new_full_keyword_result, active_user_keywords)
+                new_total_counts = self._extract_keyword_counts(new_full_keyword_result, user_keywords)
                 validation = self.validate_section_balance(
                     new_section_counts,
-                    user_keywords,
+                    active_user_keywords,
                     min_target=min_target,
                     max_target=max_target,
                     auto_keywords=auto_keywords,
@@ -286,16 +345,21 @@ class KeywordInjectorAgent(Agent):
             user_keywords=user_keywords,
             auto_keywords=auto_keywords,
             target_word_count=target_word_count,
+            skip_user_keywords=list(soft_user_keywords),
             max_iterations=3,
         )
         repaired_content = str(enforcement.get('content') or current_content)
-        repaired_result = validate_keyword_insertion(
+        repaired_full_result = validate_keyword_insertion(
             repaired_content,
             user_keywords,
             auto_keywords,
             target_word_count,
         )
+        repaired_result = self._filter_keyword_result(repaired_full_result, active_user_keywords)
         if repaired_result.get('valid'):
+            note = 'LLM retry 미충족 후 enforce_keyword_requirements로 보정'
+            if soft_user_keywords:
+                note += f" (soft={','.join(sorted(soft_user_keywords))})"
             return self._finalize_keyword_result(
                 content=repaired_content,
                 title=title,
@@ -303,7 +367,7 @@ class KeywordInjectorAgent(Agent):
                 auto_keywords=auto_keywords,
                 target_word_count=target_word_count,
                 mode='deterministic-repair',
-                note='LLM retry 미충족 후 enforce_keyword_requirements로 보정',
+                note=note,
             )
 
         note_parts = []
@@ -311,6 +375,8 @@ class KeywordInjectorAgent(Agent):
             note_parts.append(f"lastError={last_error}")
         if feedback:
             note_parts.append(f"feedback={feedback}")
+        if soft_user_keywords:
+            note_parts.append(f"soft={','.join(sorted(soft_user_keywords))}")
         note = " | ".join(note_parts) if note_parts else "키워드 기준 미충족 상태로 베스트에포트 반환"
         return self._finalize_keyword_result(
             content=repaired_content,
@@ -532,6 +598,67 @@ class KeywordInjectorAgent(Agent):
         low_context_prefixes = ("특히", "한편", "아울러", "또한")
         return any(normalized.startswith(prefix) for prefix in low_context_prefixes)
 
+    def _extract_bare_name_keywords(self, keywords: Optional[List[str]]) -> List[str]:
+        extracted: List[str] = []
+        seen: set[str] = set()
+        for raw_keyword in keywords or []:
+            keyword = str(raw_keyword or '').strip()
+            if not keyword or not _BARE_NAME_KEYWORD_PATTERN.fullmatch(keyword):
+                continue
+            if keyword in seen:
+                continue
+            seen.add(keyword)
+            extracted.append(keyword)
+        return extracted
+
+    def _count_bare_keyword_attachments(self, text: str, keywords: Optional[List[str]]) -> int:
+        plain = re.sub(r"<[^>]*>", " ", str(text or ""))
+        plain = re.sub(r"\s+", " ", plain).strip()
+        if not plain:
+            return 0
+
+        suspicious_count = 0
+        for keyword in self._extract_bare_name_keywords(keywords):
+            pattern = re.compile(rf"{re.escape(keyword)}\s+([가-힣]{{1,8}})")
+            for match in pattern.finditer(plain):
+                following = str(match.group(1) or '').strip()
+                if not following:
+                    continue
+                if _ALLOWED_BARE_NAME_FOLLOWING_PATTERN.fullmatch(following):
+                    continue
+                suspicious_count += 1
+        return suspicious_count
+
+    def _introduces_bare_keyword_attachment(
+        self,
+        before_text: str,
+        after_text: str,
+        keywords: Optional[List[str]],
+    ) -> bool:
+        before_count = self._count_bare_keyword_attachments(before_text, keywords)
+        after_count = self._count_bare_keyword_attachments(after_text, keywords)
+        return after_count > before_count
+
+    def _introduces_particle_break(
+        self,
+        before_text: str,
+        after_text: str,
+        keywords: Optional[List[str]],
+    ) -> bool:
+        """조사(과/와/은/는 등) 바로 뒤에 이름이 새로 삽입됐는지 탐지."""
+        bare_keywords = self._extract_bare_name_keywords(keywords)
+        if not bare_keywords:
+            return False
+        plain_before = re.sub(r"<[^>]*>", " ", str(before_text or ""))
+        plain_after = re.sub(r"<[^>]*>", " ", str(after_text or ""))
+        for kw in bare_keywords:
+            pattern = re.compile(
+                rf"(?:과|와|이|가|을|를|은|는|에|의|도|만|로|으로)\s+{re.escape(kw)}\s"
+            )
+            if pattern.search(plain_after) and not pattern.search(plain_before):
+                return True
+        return False
+
     def parse_instructions(self, response: Any, sections: Optional[List[Dict]] = None) -> List[Dict]:
         if not response:
             return []
@@ -706,7 +833,13 @@ class KeywordInjectorAgent(Agent):
         cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
         return cleaned.strip()
 
-    def apply_instructions(self, content: str, sections: List[Dict], instructions: List[Dict]) -> str:
+    def apply_instructions(
+        self,
+        content: str,
+        sections: List[Dict],
+        instructions: List[Dict],
+        user_keywords: Optional[List[str]] = None,
+    ) -> str:
         if not instructions:
             return content
 
@@ -741,7 +874,14 @@ class KeywordInjectorAgent(Agent):
                     replacement = str(ins.get('replacement') or '').strip()
                     if not target or not replacement:
                         continue
-                    section_html, changed = self._replace_first_occurrence(section_html, target, replacement)
+                    candidate_html, changed = self._replace_first_occurrence(section_html, target, replacement)
+                    if changed and (
+                        self._introduces_bare_keyword_attachment(section_html, candidate_html, user_keywords)
+                        or self._introduces_particle_break(section_html, candidate_html, user_keywords)
+                    ):
+                        print(f"[KeywordInjectorAgent][WARN] 섹션 {section_idx} 치환 스킵(bare-name attach / particle-break)")
+                        continue
+                    section_html = candidate_html
                     if changed:
                         print(f"[KeywordInjectorAgent] 섹션 {section_idx} 치환 적용")
                     continue
@@ -766,7 +906,14 @@ class KeywordInjectorAgent(Agent):
                         continue
                     if self._is_low_context_insert_sentence(sentence):
                         continue
-                    section_html, changed = self._insert_after_anchor(section_html, anchor, sentence)
+                    candidate_html, changed = self._insert_after_anchor(section_html, anchor, sentence)
+                    if changed and (
+                        self._introduces_bare_keyword_attachment(section_html, candidate_html, user_keywords)
+                        or self._introduces_particle_break(section_html, candidate_html, user_keywords)
+                    ):
+                        print(f"[KeywordInjectorAgent][WARN] 섹션 {section_idx} anchor 삽입 스킵(bare-name attach / particle-break)")
+                        continue
+                    section_html = candidate_html
                     if changed:
                         print(f"[KeywordInjectorAgent] 섹션 {section_idx} anchor 삽입 적용")
                         insert_applied += 1

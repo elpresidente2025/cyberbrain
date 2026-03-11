@@ -4,6 +4,10 @@ import re
 from typing import Dict, Any, Optional
 
 from ..base_agent import Agent
+from ..common.role_keyword_policy import (
+    build_role_keyword_policy,
+    extract_person_role_facts_from_text,
+)
 from ..common.title_generation import (
     generate_and_validate_title,
     normalize_title_surface,
@@ -65,6 +69,18 @@ class TitleAgent(Agent):
             or user_profile.get('displayName')
             or ''
         ).strip()
+        source_texts = [
+            context.get('newsDataText'),
+            context.get('sourceInput'),
+            context.get('sourceContent'),
+            context.get('originalContent'),
+        ]
+        person_roles: Dict[str, str] = {}
+        for text in source_texts:
+            extracted = extract_person_role_facts_from_text(text)
+            for name, role in extracted.items():
+                if name not in person_roles:
+                    person_roles[name] = role
         category = context.get('category', 'activity-report')
         status = context.get('status', 'active') # Election status
         title_scope = (context.get('config') or {}).get('titleScope', {})
@@ -87,6 +103,11 @@ class TitleAgent(Agent):
             'backgroundText': background_text,
             'stanceText': stance_text,  # 🔑 [NEW] 입장문 전달
             'contextAnalysis': context_analysis,
+            'roleKeywordPolicy': build_role_keyword_policy(
+                user_keywords,
+                person_roles=person_roles,
+                source_texts=source_texts,
+            ),
             # 빈 응답 예방: 제목 프롬프트를 경량화해 모델 부담을 낮춘다.
             'titlePromptLite': bool((self.options or {}).get('titlePromptLite', True)),
         }

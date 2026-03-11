@@ -31,7 +31,6 @@ from .content_validator import ContentValidator
 from .content_repair import ContentRepairAgent
 from .context_analyzer import ContextAnalyzer
 from .structure_normalizer import normalize_structure
-from .structure_json_generator import StructureJsonGenerator
 
 
 def _coerce_int_option(
@@ -68,7 +67,6 @@ class StructureAgent(Agent):
         self.validator = ContentValidator()
         self.repairer = ContentRepairAgent(model_name=self.model_name)
         self.context_analyzer = ContextAnalyzer(model_name=self.model_name)
-        self.structure_json_generator = StructureJsonGenerator()
 
         # 생성/복구 루프 예산 (성능 최적화)
         self.max_retries = _coerce_int_option(
@@ -1026,11 +1024,17 @@ class StructureAgent(Agent):
                 )
 
             try:
-                payload = await self.structure_json_generator.generate_payload(
-                    base_prompt=current_prompt,
+                json_prompt = self._build_structure_json_prompt(
+                    prompt=current_prompt,
                     length_spec=length_spec,
-                    topic=topic,
-                    call_json=self.call_llm_json_contract,
+                )
+                response_schema = self._build_structure_json_schema(length_spec)
+                payload = await self.call_llm_json_contract(
+                    json_prompt,
+                    response_schema=response_schema,
+                    required_keys=("title", "intro", "body", "conclusion"),
+                    stage="structure",
+                    max_output_tokens=8192,
                 )
                 raw_content, title = self._build_html_from_structure_json(
                     payload,

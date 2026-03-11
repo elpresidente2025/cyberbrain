@@ -6,6 +6,11 @@ from difflib import SequenceMatcher
 from typing import Dict, Any, List, Optional
 from .election_rules import get_election_stage
 from .editorial import TITLE_SPEC
+from .role_keyword_policy import (
+    build_role_keyword_intent_text,
+    is_role_keyword_intent_surface,
+    should_block_role_keyword,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -472,11 +477,95 @@ def are_keywords_similar(kw1: str, kw2: str) -> bool:
     words2 = kw2.split()
     return any(w in words2 and len(w) >= 2 for w in words1)
 
-def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[str]) -> str:
+def _build_role_keyword_title_policy_instruction(role_keyword_policy: Dict[str, Any]) -> str:
+    entries = role_keyword_policy.get("entries") if isinstance(role_keyword_policy, dict) else {}
+    if not isinstance(entries, dict) or not entries:
+        return ""
+
+    lines: List[str] = []
+    for keyword, raw_entry in entries.items():
+        entry = raw_entry if isinstance(raw_entry, dict) else {}
+        mode = str(entry.get("mode") or "").strip()
+        if mode == "intent_only":
+            lines.append(
+                f'  <rule keyword="{keyword}" mode="intent_only">'
+                f'"{keyword}"를 완성된 호칭처럼 쓰지 말고 '
+                f'"{build_role_keyword_intent_text(keyword, context="title", variant_index=0)}"처럼 '
+                f'출마/거론 의도를 붙여 표현할 것.'
+                f"</rule>"
+            )
+        elif mode == "blocked":
+            source_role = str(entry.get("sourceRole") or "").strip() or "입력 근거"
+            lines.append(
+                f'  <rule keyword="{keyword}" mode="blocked">'
+                f'"{keyword}"는 입력 근거의 현재 직함("{source_role}")과 충돌하고 '
+                f"target role 근거도 없으므로 제목에서 사용 금지."
+                f"</rule>"
+            )
+    if not lines:
+        return ""
+    return "<role_keyword_policy>\n" + "\n".join(lines) + "\n</role_keyword_policy>"
+
+
+def _filter_required_title_keywords(
+    user_keywords: List[str],
+    role_keyword_policy: Optional[Dict[str, Any]] = None,
+) -> List[str]:
+    filtered: List[str] = []
+    for item in user_keywords or []:
+        keyword = str(item or "").strip()
+        if not keyword:
+            continue
+        if should_block_role_keyword(role_keyword_policy, keyword):
+            continue
+        filtered.append(keyword)
+    return filtered
+
+
+def _validate_role_keyword_title_policy(title: str, role_keyword_policy: Dict[str, Any]) -> Dict[str, Any]:
+    cleaned_title = str(title or "").strip()
+    if not cleaned_title:
+        return {"passed": True}
+    entries = role_keyword_policy.get("entries") if isinstance(role_keyword_policy, dict) else {}
+    if not isinstance(entries, dict) or not entries:
+        return {"passed": True}
+
+    for keyword, raw_entry in entries.items():
+        entry = raw_entry if isinstance(raw_entry, dict) else {}
+        normalized_keyword = str(keyword or "").strip()
+        if not normalized_keyword or normalized_keyword not in cleaned_title:
+            continue
+        mode = str(entry.get("mode") or "").strip()
+        start_index = cleaned_title.find(normalized_keyword)
+        end_index = start_index + len(normalized_keyword)
+        if mode == "blocked":
+            source_role = str(entry.get("sourceRole") or "").strip() or "입력 근거"
+            return {
+                "passed": False,
+                "reason": f'"{normalized_keyword}"는 입력 근거의 현재 직함("{source_role}")과 충돌해 제목에 사용할 수 없습니다.',
+            }
+        if mode == "intent_only" and not is_role_keyword_intent_surface(cleaned_title, start_index, end_index):
+            return {
+                "passed": False,
+                "reason": (
+                    f'"{normalized_keyword}"는 완성된 호칭처럼 쓰지 말고 '
+                    f'"{build_role_keyword_intent_text(normalized_keyword, context="title", variant_index=0)}"처럼 '
+                    "출마/거론 의도를 붙여 제목에 사용하세요."
+                ),
+            }
+    return {"passed": True}
+
+
+def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[str], role_keyword_policy: Optional[Dict[str, Any]] = None) -> str:
     try:
-        has_user_keywords = bool(user_keywords)
-        primary_kw = user_keywords[0] if has_user_keywords else (keywords[0] if keywords else '')
-        secondary_kw = (user_keywords[1] if len(user_keywords) > 1 else (keywords[0] if keywords else '')) if has_user_keywords else (keywords[1] if len(keywords) > 1 else '')
+        filtered_user_keywords = _filter_required_title_keywords(user_keywords, role_keyword_policy)
+        has_user_keywords = bool(filtered_user_keywords)
+        primary_kw = filtered_user_keywords[0] if has_user_keywords else (keywords[0] if keywords else '')
+        secondary_kw = (
+            (filtered_user_keywords[1] if len(filtered_user_keywords) > 1 else (keywords[0] if keywords else ''))
+            if has_user_keywords
+            else (keywords[1] if len(keywords) > 1 else '')
+        )
         if primary_kw and secondary_kw:
             primary_compact = re.sub(r'\s+', '', primary_kw)
             secondary_compact = re.sub(r'\s+', '', secondary_kw)
@@ -528,6 +617,8 @@ def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[st
             kw_instructions.append(f'  <keyword priority="2" value="{secondary_kw}">{placement}</keyword>')
         kw_instruction_xml = '\n'.join(kw_instructions)
 
+        role_keyword_policy_xml = _build_role_keyword_title_policy_instruction(role_keyword_policy or {})
+
         return f"""
 <seo_keyword_strategy>
 
@@ -548,6 +639,7 @@ def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[st
   </examples>
 </keyword_separator>
 {title_keyword_rule}
+{role_keyword_policy_xml}
 <keyword_density>
   <optimal count="2">가장 자연스럽고 효과적</optimal>
   <max count="3"/>
@@ -588,7 +680,11 @@ def _build_few_shot_slot_values(params: Dict[str, Any]) -> Dict[str, str]:
     topic = str(params.get('topic') or '')
     content_preview = str(params.get('contentPreview') or '')
     full_name = str(params.get('fullName') or '').strip()
-    user_keywords = params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else []
+    role_keyword_policy = params.get('roleKeywordPolicy') if isinstance(params.get('roleKeywordPolicy'), dict) else {}
+    user_keywords = _filter_required_title_keywords(
+        params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else [],
+        role_keyword_policy,
+    )
     context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
     must_preserve = context_analysis.get('mustPreserve') if isinstance(context_analysis.get('mustPreserve'), dict) else {}
 
@@ -1117,7 +1213,7 @@ def _fit_title_length(title: str) -> str:
     return compact[:TITLE_LENGTH_HARD_MAX].rstrip()
 
 
-def _normalize_generated_title(generated_title: str, params: Dict[str, Any]) -> str:
+def _normalize_generated_title_without_fit(generated_title: str, params: Dict[str, Any]) -> str:
     if not generated_title:
         return ''
 
@@ -1140,6 +1236,17 @@ def _normalize_generated_title(generated_title: str, params: Dict[str, Any]) -> 
             normalized = re.sub(r'《\s*》', f'《{book_title}》', normalized)
         normalized = normalize_title_surface(normalized)
 
+    return normalized
+
+
+def _normalize_generated_title(generated_title: str, params: Dict[str, Any]) -> str:
+    normalized = _normalize_generated_title_without_fit(generated_title, params)
+    if not normalized:
+        return ''
+
+    topic = str(params.get('topic') or '')
+    title_purpose = resolve_title_purpose(topic, params)
+
     if len(normalized) <= TITLE_LENGTH_HARD_MAX:
         return normalized
 
@@ -1149,6 +1256,77 @@ def _normalize_generated_title(generated_title: str, params: Dict[str, Any]) -> 
             return normalized
 
     return _fit_title_length(normalized)
+
+
+def _assess_initial_title_length_discipline(title: str) -> Dict[str, Any]:
+    normalized = normalize_title_surface(title)
+    title_length = len(normalized)
+    if not normalized:
+        return {
+            'length': 0,
+            'penalty': 0,
+            'status': 'empty',
+            'requiresRetry': True,
+            'inOptimalRange': False,
+        }
+
+    if TITLE_LENGTH_OPTIMAL_MIN <= title_length <= TITLE_LENGTH_OPTIMAL_MAX:
+        return {
+            'length': title_length,
+            'penalty': 0,
+            'status': 'optimal',
+            'requiresRetry': False,
+            'inOptimalRange': True,
+        }
+
+    if TITLE_LENGTH_HARD_MIN <= title_length < TITLE_LENGTH_OPTIMAL_MIN:
+        return {
+            'length': title_length,
+            'penalty': 8,
+            'status': 'short_borderline',
+            'requiresRetry': True,
+            'inOptimalRange': False,
+        }
+
+    if TITLE_LENGTH_OPTIMAL_MAX < title_length <= TITLE_LENGTH_HARD_MAX:
+        return {
+            'length': title_length,
+            'penalty': 12,
+            'status': 'long_borderline',
+            'requiresRetry': True,
+            'inOptimalRange': False,
+        }
+
+    return {
+        'length': title_length,
+        'penalty': 28,
+        'status': 'hard_violation',
+        'requiresRetry': True,
+        'inOptimalRange': False,
+    }
+
+
+def _build_initial_length_discipline_feedback(meta: Dict[str, Any]) -> str:
+    title_length = int(meta.get('length', 0) or 0)
+    status = str(meta.get('status') or '').strip().lower()
+    if status == 'short_borderline':
+        return (
+            f'초기 생성 제목이 {title_length}자로 짧습니다. '
+            f'처음부터 {TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자 안으로 다시 쓰세요.'
+        )
+    if status == 'long_borderline':
+        return (
+            f'초기 생성 제목이 {title_length}자로 깁니다. '
+            f'뒤를 자르지 말고 정보를 줄여 {TITLE_LENGTH_OPTIMAL_MAX}자 이하로 다시 쓰세요.'
+        )
+    if status == 'hard_violation':
+        return (
+            f'초기 생성 제목이 {title_length}자로 기준을 넘었습니다. '
+            f'사후 축약에 기대지 말고 {TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자로 새로 작성하세요.'
+        )
+    if status == 'empty':
+        return '후보 제목이 비어 있습니다. 1개의 완결된 제목을 다시 작성하세요.'
+    return ''
 
 
 def _normalize_title_for_similarity(title: str) -> str:
@@ -1203,6 +1381,9 @@ def _build_title_candidate_prompt(
   <focus>{variant}</focus>
   <blocked>{blocked_line}</blocked>
   <rule>1순위 키워드 시작 규칙은 반드시 지키되, 그 뒤 문장은 새롭게 작성</rule>
+  <rule>출력 직전에 제목 글자 수를 직접 세고 {TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자에 맞출 것</rule>
+  <rule>{TITLE_LENGTH_OPTIMAL_MAX}자를 넘으면 자르지 말고 더 짧은 새 문장으로 다시 쓸 것</rule>
+  <rule>{TITLE_LENGTH_HARD_MIN}-{TITLE_LENGTH_HARD_MAX}자 예외 통과에 기대지 말고, 처음부터 권장 범위에 맞춘 최종 1개만 출력</rule>
 </diversity_hint>
 
 """
@@ -1268,7 +1449,11 @@ def resolve_title_purpose(topic: str, params: Dict[str, Any]) -> str:
 def build_event_title_policy_instruction(params: Dict[str, Any]) -> str:
     topic = str(params.get('topic') or '')
     context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
-    user_keywords = params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else []
+    role_keyword_policy = params.get('roleKeywordPolicy') if isinstance(params.get('roleKeywordPolicy'), dict) else {}
+    user_keywords = _filter_required_title_keywords(
+        params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else [],
+        role_keyword_policy,
+    )
 
     must_preserve = context_analysis.get('mustPreserve') if isinstance(context_analysis.get('mustPreserve'), dict) else {}
     event_date = str(must_preserve.get('eventDate') or '').strip()
@@ -1298,7 +1483,11 @@ def validate_event_announcement_title(title: str, params: Dict[str, Any]) -> Dic
 
     topic = str(params.get('topic') or '')
     context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
-    user_keywords = params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else []
+    role_keyword_policy = params.get('roleKeywordPolicy') if isinstance(params.get('roleKeywordPolicy'), dict) else {}
+    user_keywords = _filter_required_title_keywords(
+        params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else [],
+        role_keyword_policy,
+    )
 
     banned_phrases = (
         '진짜 속내',
@@ -1444,7 +1633,11 @@ def _build_event_title_prompt(params: Dict[str, Any]) -> str:
     full_name = str(params.get('fullName') or '').strip()
     content_preview = str(params.get('contentPreview') or '')
     prompt_lite = bool(params.get('titlePromptLite'))
-    user_keywords = params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else []
+    role_keyword_policy = params.get('roleKeywordPolicy') if isinstance(params.get('roleKeywordPolicy'), dict) else {}
+    user_keywords = _filter_required_title_keywords(
+        params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else [],
+        role_keyword_policy,
+    )
     context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
     must_preserve = context_analysis.get('mustPreserve') if isinstance(context_analysis.get('mustPreserve'), dict) else {}
 
@@ -1474,7 +1667,10 @@ def _build_event_title_prompt(params: Dict[str, Any]) -> str:
 </input>
 
 <hard_rules>
-  <rule>제목 길이는 {TITLE_LENGTH_HARD_MIN}-{TITLE_LENGTH_HARD_MAX}자.</rule>
+  <rule>제목은 기본적으로 {TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자로 작성.</rule>
+  <rule>검증 허용 범위는 {TITLE_LENGTH_HARD_MIN}-{TITLE_LENGTH_HARD_MAX}자(예외 구간 포함).</rule>
+  <rule>출력 직전에 제목 글자 수를 직접 세고 {TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자가 아니면 내부에서 다시 고친 뒤 1개만 출력.</rule>
+  <rule>{TITLE_LENGTH_OPTIMAL_MAX}자를 넘으면 자르지 말고, 정보 요소를 줄여 더 짧은 새 제목으로 다시 작성.</rule>
   <rule>물음표(?)와 추측/논쟁형 어투 금지.</rule>
   <rule>안내 목적이 즉시 드러나도록 "{event_label}" 또는 "안내/초대/개최/행사" 포함.</rule>
   <rule>후킹 단어 1개 이상 포함: {hook_words}.</rule>
@@ -1516,7 +1712,11 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     topic = params.get('topic', '')
     full_name = params.get('fullName', '')
     keywords = params.get('keywords', [])
-    user_keywords = params.get('userKeywords', [])
+    role_keyword_policy = params.get('roleKeywordPolicy') if isinstance(params.get('roleKeywordPolicy'), dict) else {}
+    user_keywords = _filter_required_title_keywords(
+        params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else [],
+        role_keyword_policy,
+    )
     category = params.get('category', '')
     status = params.get('status', '')
     title_scope = params.get('titleScope', {})
@@ -1545,7 +1745,11 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     
     number_validation = extract_numbers_from_content(content_preview)
     election_compliance = get_election_compliance_instruction(status)
-    keyword_strategy = get_keyword_strategy_instruction(user_keywords, keywords)
+    keyword_strategy = get_keyword_strategy_instruction(
+        user_keywords,
+        keywords,
+        role_keyword_policy,
+    )
     user_few_shot = build_user_provided_few_shot_instruction(primary_type['id'], params)
     narrative_principle_xml = '' if prompt_lite else _render_narrative_principle_xml(primary_type.get('principle', ''))
 
@@ -1675,8 +1879,11 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 {user_few_shot}
 
 <rules priority="critical">
+  <rule id="length_target">제목은 기본적으로 {TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자로 작성 (최우선 목표).</rule>
   <rule id="length_max">{TITLE_LENGTH_HARD_MAX}자 이내 (네이버 검색결과 잘림 방지) - 절대 초과 금지.</rule>
-  <rule id="length_optimal">{TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자 권장 (클릭률 최고 구간)</rule>
+  <rule id="length_floor">{TITLE_LENGTH_HARD_MIN}자 미만 금지. {TITLE_LENGTH_HARD_MIN}-14자와 31-{TITLE_LENGTH_HARD_MAX}자는 예외 구간이므로 가급적 피할 것.</rule>
+  <rule id="length_self_check">출력 직전에 제목 글자 수를 직접 세고, {TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자가 아니면 내부에서 다시 써서 맞춘 뒤 최종 1개만 출력.</rule>
+  <rule id="no_length_repair_dependency">길이가 길다고 느껴지면 뒤를 자르지 말고, 정보 요소를 줄여 더 짧은 새 문장으로 다시 작성. 31-35자 예외 통과에 기대지 말 것.</rule>
   <rule id="no_slot_placeholder">슬롯 플레이스홀더([행사명], [지역명], [정책명] 등)를 제목에 그대로 출력하지 마세요.</rule>
   <rule id="no_ellipsis">말줄임표("...") 절대 금지</rule>
   <rule id="keyword_position">{keyword_position_rule}</rule>
@@ -1709,8 +1916,8 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 </topic_priority>
 
 <output_rules>
-  <rule>{TITLE_LENGTH_HARD_MAX}자 이내 필수</rule>
-  <rule>{TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자 권장</rule>
+  <rule>{TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자로 작성 (기본 목표)</rule>
+  <rule>검증 허용 범위는 {TITLE_LENGTH_HARD_MIN}-{TITLE_LENGTH_HARD_MAX}자 (예외 구간)</rule>
   <rule>슬롯 플레이스홀더([행사명] 등) 출력 금지</rule>
   <rule>말줄임표 금지</rule>
   <rule>핵심 키워드 포함</rule>
@@ -1786,6 +1993,204 @@ def validate_theme_and_content(topic: str, content: str, title: str = '') -> Dic
         }
     except:
         return {'isValid': True, 'overlapScore': 100, 'mismatchReasons': []}
+
+
+def _expand_topic_keyword_variants(keyword: str) -> List[str]:
+    base = re.sub(r"\s+", "", str(keyword or "")).strip()
+    if not base:
+        return []
+
+    variants = [base]
+    if base == "양자대결":
+        variants.extend(["맞대결", "대결"])
+    elif base == "우세":
+        variants.extend(["우위", "리드", "앞선", "앞섰", "앞서나"])
+    elif base == "가능성":
+        variants.extend(["경쟁력", "승산", "저력"])
+    elif base == "선거":
+        variants.extend(["경쟁", "승부", "판세"])
+    elif base.endswith("시장"):
+        variants.extend([f"{base}선거", f"{base}경쟁"])
+
+    deduped: List[str] = []
+    for token in variants:
+        cleaned = re.sub(r"\s+", "", str(token or "")).strip()
+        if cleaned and cleaned not in deduped:
+            deduped.append(cleaned)
+    return deduped
+
+
+def _topic_keyword_matches_text(keyword: str, text: str) -> bool:
+    normalized_text = re.sub(r"\s+", "", str(text or "")).strip().lower()
+    if not normalized_text:
+        return False
+    return any(variant.lower() in normalized_text for variant in _expand_topic_keyword_variants(keyword))
+
+
+def extract_topic_keywords(topic: str) -> List[str]:
+    topic_text = re.sub(r"\s+", " ", str(topic or "")).strip()
+    normalized_topic = re.sub(r"\s+", "", topic_text)
+    if not normalized_topic:
+        return []
+
+    particle_suffixes = (
+        "에서",
+        "보다",
+        "으로",
+        "로",
+        "에게",
+        "까지",
+        "부터",
+        "처럼",
+        "의",
+        "을",
+        "를",
+        "은",
+        "는",
+        "이",
+        "가",
+        "와",
+        "과",
+        "도",
+        "만",
+        "에",
+        "서",
+    )
+
+    def _strip_particle(token: str) -> str:
+        cleaned = re.sub(r"\s+", "", str(token or "")).strip()
+        for suffix in particle_suffixes:
+            if cleaned.endswith(suffix) and len(cleaned) - len(suffix) >= 2:
+                return cleaned[: -len(suffix)]
+        return cleaned
+
+    def _append_keyword(bucket: List[str], token: str) -> None:
+        cleaned = _strip_particle(token)
+        if not cleaned:
+            return
+        if "양자대결" in cleaned:
+            cleaned = "양자대결"
+        elif any(marker in cleaned for marker in ("우세", "우위", "리드", "앞선", "앞섰")):
+            cleaned = "우세"
+        elif any(marker in cleaned for marker in ("가능성", "경쟁력", "승산")):
+            cleaned = "가능성"
+        if len(cleaned) < 2:
+            return
+        if cleaned not in bucket:
+            bucket.append(cleaned)
+
+    keywords: List[str] = []
+    role_terms = re.findall(r"[가-힣]{2,10}(?:시장|지사|교육감|구청장|군수|국회의원|의원)", topic_text)
+    comparison_names = re.findall(r"([가-힣]{2,4})(?:보다|와|과)", topic_text)
+    possessive_names = re.findall(r"([가-힣]{2,4})의", topic_text)
+    for token in role_terms[:2]:
+        _append_keyword(keywords, token)
+    for token in comparison_names[:2]:
+        _append_keyword(keywords, token)
+    for token in possessive_names[:2]:
+        _append_keyword(keywords, token)
+
+    focus_terms = (
+        "양자대결",
+        "대결",
+        "선거",
+        "부산시장",
+        "시장",
+        "지지율",
+        "경쟁력",
+        "가능성",
+        "판세",
+        "우세",
+        "우위",
+        "리드",
+    )
+    for term in focus_terms:
+        if term in normalized_topic:
+            _append_keyword(keywords, term)
+
+    if "양자" in normalized_topic and "대결" in normalized_topic:
+        _append_keyword(keywords, "양자대결")
+    if any(marker in normalized_topic for marker in ("우세", "우위", "리드", "앞선", "앞섰")):
+        _append_keyword(keywords, "우세")
+    if any(marker in normalized_topic for marker in ("가능성", "경쟁력", "승산")):
+        _append_keyword(keywords, "가능성")
+
+    number_matches = re.findall(r"\d+(?:억|만원|%|명|건)?", topic_text)
+    for token in number_matches[:2]:
+        _append_keyword(keywords, token)
+
+    return keywords[:4]
+
+
+def validate_theme_and_content(topic: str, content: str, title: str = '') -> Dict[str, Any]:
+    try:
+        if not topic or not content:
+            return {
+                'isValid': False,
+                'mismatchReasons': ['주제 또는 본문이 비어 있습니다'],
+                'topicKeywords': [],
+                'contentKeywords': [],
+                'overlapScore': 0,
+                'contentOverlapScore': 0,
+                'titleOverlapScore': 0,
+                'effectiveTitleScore': 0,
+            }
+
+        topic_keywords = extract_topic_keywords(topic)
+        content_text = str(content or '')
+        matched_keywords = []
+        missing_keywords = []
+
+        for kw in topic_keywords:
+            if _topic_keyword_matches_text(kw, content_text):
+                matched_keywords.append(kw)
+            else:
+                missing_keywords.append(kw)
+
+        content_overlap_score = round(len(matched_keywords) / len(topic_keywords) * 100) if topic_keywords else 0
+        mismatch_reasons = []
+        title_matched_keywords: List[str] = []
+        title_missing: List[str] = []
+        title_overlap_score = 0
+        effective_title_score = content_overlap_score
+
+        if content_overlap_score < 50:
+            mismatch_reasons.append(f"주제 핵심어 중 {len(missing_keywords)}개가 본문에 없음: {', '.join(missing_keywords)}")
+
+        if title:
+            title_text = str(title or '')
+            for kw in topic_keywords:
+                if _topic_keyword_matches_text(kw, title_text):
+                    title_matched_keywords.append(kw)
+                else:
+                    title_missing.append(kw)
+            title_overlap_score = round(len(title_matched_keywords) / len(topic_keywords) * 100) if topic_keywords else 0
+            effective_title_score = round((title_overlap_score * 0.8) + (content_overlap_score * 0.2))
+            if len(title_missing) > len(topic_keywords) * 0.5:
+                mismatch_reasons.append(f"제목에 주제 핵심어 부족: {', '.join(title_missing[:3])}")
+
+        return {
+            'isValid': effective_title_score >= 50 and not mismatch_reasons,
+            'mismatchReasons': mismatch_reasons,
+            'topicKeywords': topic_keywords,
+            'matchedKeywords': matched_keywords,
+            'missingKeywords': missing_keywords,
+            'titleMatchedKeywords': title_matched_keywords,
+            'titleMissingKeywords': title_missing,
+            'overlapScore': content_overlap_score,
+            'contentOverlapScore': content_overlap_score,
+            'titleOverlapScore': title_overlap_score,
+            'effectiveTitleScore': effective_title_score,
+        }
+    except:
+        return {
+            'isValid': True,
+            'overlapScore': 100,
+            'contentOverlapScore': 100,
+            'titleOverlapScore': 100,
+            'effectiveTitleScore': 100,
+            'mismatchReasons': [],
+        }
 
 
 def _validate_user_keyword_title_requirements(title: str, user_keywords: List[str]) -> Dict[str, Any]:
@@ -1886,9 +2291,9 @@ def _repair_title_for_missing_keywords(
         # 괄호 삽입 대신 검색 의도형 질문 제목으로 치환한다.
         if secondary_kw and normalized_missing_roles and has_primary_role:
             conflict_candidates = (
-                f"{secondary_kw} 왜 거론되나?",
-                f"{secondary_kw} 경쟁력은?",
-                f"{secondary_kw} 쟁점은?",
+                build_role_keyword_intent_text(secondary_kw, context='title', variant_index=0),
+                build_role_keyword_intent_text(secondary_kw, context='title', variant_index=1),
+                build_role_keyword_intent_text(secondary_kw, context='title', variant_index=2),
             )
             for candidate in conflict_candidates:
                 if TITLE_LENGTH_HARD_MIN <= len(candidate) <= TITLE_LENGTH_HARD_MAX:
@@ -1914,11 +2319,21 @@ def _repair_title_for_missing_keywords(
     return repaired
 
 
-def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[str, Any]:
+def calculate_title_quality_score(
+    title: str,
+    params: Dict[str, Any],
+    options: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     # No try/except blocking logic here. Let it propagate.
+    score_options = options if isinstance(options, dict) else {}
+    auto_fit_length = bool(score_options.get('autoFitLength', True))
     topic = params.get('topic', '')
     content = params.get('contentPreview', '')
-    user_keywords = params.get('userKeywords', [])
+    role_keyword_policy = params.get('roleKeywordPolicy') if isinstance(params.get('roleKeywordPolicy'), dict) else {}
+    user_keywords = _filter_required_title_keywords(
+        params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else [],
+        role_keyword_policy,
+    )
     author_name = params.get('fullName', '')
     repaired_title: Optional[str] = None
     keyword_gate_soft_reason = ''
@@ -2066,6 +2481,23 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
                         'suggestions': [keyword_reason],
                     }
 
+    role_keyword_gate = _validate_role_keyword_title_policy(title, role_keyword_policy)
+    if not role_keyword_gate.get('passed'):
+        role_reason = str(role_keyword_gate.get('reason') or '역할형 검색어 제목 정책 위반')
+        return {
+            'score': 0,
+            'breakdown': {
+                'roleKeywordPolicy': {
+                    'score': 0,
+                    'max': 100,
+                    'status': '실패',
+                    'reason': role_reason,
+                }
+            },
+            'passed': False,
+            'suggestions': [role_reason],
+        }
+
     event_anchor_context: Dict[str, Any] = {
         'dateHint': '',
         'bookTitle': '',
@@ -2085,20 +2517,26 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
     suggestions = []
     title_length = len(title)
 
-    # 길이 초과는 즉시 실패시키지 않고, 먼저 자동 축약 후 재검증한다.
-    if title_length > TITLE_LENGTH_HARD_MAX:
+    # 일반 검증 경로에서는 길이 초과를 한 번 축약해볼 수 있지만,
+    # 제목 생성 경로에서는 auto_fit_length=False로 두고 초기 생성본을 그대로 평가한다.
+    if auto_fit_length and title_length > TITLE_LENGTH_HARD_MAX:
         fitted_title = _fit_title_length(title)
         if fitted_title and fitted_title != title:
             fitted_gate = _validate_user_keyword_title_requirements(fitted_title, user_keywords)
+            fitted_severity = str(fitted_gate.get('severity') or '').strip().lower()
+            fitted_gate_passed = bool(fitted_gate.get('passed')) or fitted_severity == 'soft'
             if not fitted_gate.get('passed'):
                 recovered_title = _repair_title_for_missing_keywords(fitted_title, fitted_gate)
                 if recovered_title:
                     recovered_gate = _validate_user_keyword_title_requirements(recovered_title, user_keywords)
-                    if recovered_gate.get('passed'):
+                    recovered_severity = str(recovered_gate.get('severity') or '').strip().lower()
+                    recovered_gate_passed = bool(recovered_gate.get('passed')) or recovered_severity == 'soft'
+                    if recovered_gate_passed:
                         fitted_title = recovered_title
                         fitted_gate = recovered_gate
+                        fitted_gate_passed = True
 
-            if fitted_gate.get('passed'):
+            if fitted_gate_passed:
                 title = fitted_title
                 repaired_title = fitted_title
                 title_length = len(title)
@@ -2260,14 +2698,34 @@ def calculate_title_quality_score(title: str, params: Dict[str, Any]) -> Dict[st
     # 4. Topic Match (Max 25)
     if topic:
         theme_val = validate_theme_and_content(topic, content, title)
-        if theme_val['overlapScore'] >= 80:
-            breakdown['topicMatch'] = {'score': 25, 'max': 25, 'status': '높음', 'overlap': theme_val['overlapScore']}
-        elif theme_val['overlapScore'] >= 50:
-            breakdown['topicMatch'] = {'score': 15, 'max': 25, 'status': '보통', 'overlap': theme_val['overlapScore']}
+        title_topic_score = int(theme_val.get('effectiveTitleScore') or theme_val.get('titleOverlapScore') or theme_val.get('overlapScore') or 0)
+        content_topic_score = int(theme_val.get('contentOverlapScore') or theme_val.get('overlapScore') or 0)
+        if title_topic_score >= 75:
+            breakdown['topicMatch'] = {
+                'score': 25,
+                'max': 25,
+                'status': '높음',
+                'overlap': title_topic_score,
+                'contentOverlap': content_topic_score,
+            }
+        elif title_topic_score >= 65:
+            breakdown['topicMatch'] = {
+                'score': 15,
+                'max': 25,
+                'status': '보통',
+                'overlap': title_topic_score,
+                'contentOverlap': content_topic_score,
+            }
             if theme_val['mismatchReasons']:
                 suggestions.append(theme_val['mismatchReasons'][0])
         else:
-            breakdown['topicMatch'] = {'score': 5, 'max': 25, 'status': '낮음', 'overlap': theme_val['overlapScore']}
+            breakdown['topicMatch'] = {
+                'score': 5,
+                'max': 25,
+                'status': '낮음',
+                'overlap': title_topic_score,
+                'contentOverlap': content_topic_score,
+            }
             suggestions.append('제목이 주제와 많이 다릅니다. 주제 핵심어를 반영하세요.')
     else:
         breakdown['topicMatch'] = {'score': 15, 'max': 25, 'status': '주제없음'}
@@ -2503,44 +2961,62 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
                 continue
 
             raw_generated_title = str(response or '').strip().strip('"\'')
+            initial_generated_title = _normalize_generated_title_without_fit(raw_generated_title, params)
             generated_title = _normalize_generated_title(raw_generated_title, params)
-            if raw_generated_title != generated_title:
+            if raw_generated_title != initial_generated_title:
                 logger.info(
                     "[TitleGen] 제목 정규화 적용(후보 %s): raw=\"%s\" -> normalized=\"%s\"",
                     idx,
                     raw_generated_title,
-                    generated_title,
+                    initial_generated_title,
                 )
 
-            if not generated_title:
+            if not initial_generated_title:
                 continue
 
-            score_result = calculate_title_quality_score(generated_title, params)
+            initial_length_meta = _assess_initial_title_length_discipline(initial_generated_title)
+            length_feedback = _build_initial_length_discipline_feedback(initial_length_meta)
+            score_result = calculate_title_quality_score(
+                initial_generated_title,
+                params,
+                {'autoFitLength': False},
+            )
             repaired_title = str(score_result.get('repairedTitle') or '').strip()
-            if repaired_title and repaired_title != generated_title:
+            candidate_title = initial_generated_title
+            if repaired_title and repaired_title != candidate_title:
                 logger.info(
                     "[TitleGen] 키워드 repair 적용(후보 %s): \"%s\" -> \"%s\"",
                     idx,
-                    generated_title,
+                    candidate_title,
                     repaired_title,
                 )
-                generated_title = repaired_title
+                candidate_title = repaired_title
             similarity_meta = _compute_similarity_penalty(
-                generated_title,
+                candidate_title,
                 disallow_titles,
                 threshold=similarity_threshold,
                 max_penalty=max_similarity_penalty,
             )
-            adjusted_score = max(0, int(score_result.get('score', 0)) - int(similarity_meta.get('penalty', 0)))
+            adjusted_score = max(
+                0,
+                int(score_result.get('score', 0))
+                - int(similarity_meta.get('penalty', 0))
+                - int(initial_length_meta.get('penalty', 0)),
+            )
 
             candidate_results.append({
                 'candidateIndex': idx,
-                'title': generated_title,
+                'title': candidate_title,
                 'rawTitle': raw_generated_title,
+                'initialTitle': initial_generated_title,
+                'postFitTitle': generated_title,
                 'baseScore': int(score_result.get('score', 0)),
                 'adjustedScore': adjusted_score,
                 'scoreResult': score_result,
                 'similarityMeta': similarity_meta,
+                'initialLengthMeta': initial_length_meta,
+                'initialLengthFeedback': length_feedback,
+                'initialLengthPenalty': int(initial_length_meta.get('penalty', 0)),
             })
 
         if not candidate_results:
@@ -2580,16 +3056,24 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
         generation_failure_streak = 0
         selected = max(
             candidate_results,
-            key=lambda item: (item.get('adjustedScore', 0), item.get('baseScore', 0)),
+            key=lambda item: (
+                int(bool((item.get('initialLengthMeta') or {}).get('inOptimalRange'))),
+                item.get('adjustedScore', 0),
+                item.get('baseScore', 0),
+            ),
         )
         selected_score_result = selected.get('scoreResult', {})
         selected_similarity = selected.get('similarityMeta', {})
+        selected_initial_length = selected.get('initialLengthMeta', {})
         selected_suggestions = list(selected_score_result.get('suggestions', []))
         if int(selected_similarity.get('penalty', 0)) > 0:
             selected_suggestions.append(
                 f"이전 제목과 유사도 {selected_similarity.get('maxSimilarity', 0)}로 "
                 f"{selected_similarity.get('penalty', 0)}점 감점"
             )
+        selected_length_feedback = str(selected.get('initialLengthFeedback') or '').strip()
+        if selected_length_feedback:
+            selected_suggestions.append(selected_length_feedback)
 
         selected_breakdown = dict(selected_score_result.get('breakdown', {}))
         selected_breakdown['diversityPenalty'] = {
@@ -2598,6 +3082,13 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
             'status': '적용' if int(selected_similarity.get('penalty', 0)) > 0 else '없음',
             'similarity': selected_similarity.get('maxSimilarity', 0),
             'against': selected_similarity.get('against', ''),
+        }
+        selected_breakdown['initialLengthDiscipline'] = {
+            'score': max(0, 20 - int(selected.get('initialLengthPenalty', 0) or 0)),
+            'max': 20,
+            'status': '적합' if bool(selected_initial_length.get('inOptimalRange')) else '재작성 필요',
+            'length': int(selected_initial_length.get('length', 0) or 0),
+            'penalty': int(selected.get('initialLengthPenalty', 0) or 0),
         }
 
         history_item = {
@@ -2609,11 +3100,15 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
             'selectedCandidate': selected.get('candidateIndex', 1),
             'similarityPenalty': int(selected_similarity.get('penalty', 0)),
             'similarity': selected_similarity.get('maxSimilarity', 0),
+            'initialLengthPenalty': int(selected.get('initialLengthPenalty', 0) or 0),
+            'initialTitleLength': int(selected_initial_length.get('length', 0) or 0),
             'suggestions': selected_suggestions[:4],
             'breakdown': selected_breakdown,
         }
         if selected.get('rawTitle') != selected.get('title'):
             history_item['rawTitle'] = selected.get('rawTitle', '')
+        if selected.get('initialTitle') != selected.get('title'):
+            history_item['initialTitle'] = selected.get('initialTitle', '')
         history.append(history_item)
 
         current_score = int(selected.get('adjustedScore', 0))
@@ -2638,6 +3133,7 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
                 'score': current_score,
                 'baseScore': selected.get('baseScore', 0),
                 'similarityPenalty': int(selected_similarity.get('penalty', 0)),
+                'initialLengthPenalty': int(selected.get('initialLengthPenalty', 0) or 0),
                 'attempts': attempt,
                 'passed': True,
                 'history': history,
