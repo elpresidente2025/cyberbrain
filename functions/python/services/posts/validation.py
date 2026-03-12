@@ -19,6 +19,7 @@ from agents.common.role_keyword_policy import (
     ROLE_KEYWORD_PATTERN as COMMON_ROLE_KEYWORD_PATTERN,
     ROLE_SURFACE_PATTERN as COMMON_ROLE_SURFACE_PATTERN,
     build_role_keyword_intent_text,
+    get_person_reference_fact,
     is_role_keyword as is_role_keyword_common,
     should_block_role_keyword,
     should_render_role_keyword_as_intent,
@@ -55,6 +56,12 @@ LOW_SIGNAL_KEYWORD_TOKENS: tuple[str, ...] = (
     "행보",
     "경쟁",
     "비교",
+    "우위",
+    "약진",
+    "경쟁력",
+    "차별화",
+    "가능성",
+    "지지",
     "차별점",
     "가상대결",
     "양자대결",
@@ -71,9 +78,16 @@ LOW_SIGNAL_KEYWORD_TOKENS: tuple[str, ...] = (
 ROLE_FALLBACK_LABELS: tuple[tuple[str, str], ...] = (
     ("국회의원", "상대 의원"),
     ("의원", "상대 의원"),
-    ("후보", "상대 후보"),
+    ("도지사", "상대 지사"),
+    ("지사", "상대 지사"),
     ("시장", "상대 시장"),
-    ("위원장", "상대"),
+    ("위원장", "상대 위원장"),
+    ("대표", "상대 대표"),
+    ("장관", "상대 장관"),
+)
+PERSON_ROLE_REDUCTION_PATTERN_TEMPLATE = (
+    r"{keyword}\s*(?P<modifier>(?:현|전)\s*)?"
+    r"(?P<role>(?:[가-힣]{{1,8}}도지사|도지사|지사|국회의원|[가-힣]{{1,8}}시장|시장|의원|위원장|대표|장관|예비후보|후보))"
 )
 DATE_WEEKDAY_PATTERN = re.compile(
     rf"(?:(?P<year>\d{{4}})\s*년\s*)?"
@@ -2103,19 +2117,176 @@ def _looks_like_compact_person_keyword(keyword: Any) -> bool:
     return bool(re.fullmatch(r"[가-힣]{2,4}", normalized))
 
 
-def _build_keyword_replacement_pool(keyword: str) -> list[str]:
+def _compact_person_surname(keyword: Any) -> str:
+    normalized = re.sub(r"\s+", "", str(keyword or "")).strip()
+    if not _looks_like_compact_person_keyword(normalized):
+        return ""
+    return normalized[:1]
+
+
+def _extract_person_name_from_keyword(keyword: Any) -> str:
+    normalized = re.sub(r"\s+", " ", str(keyword or "")).strip()
+    if not normalized:
+        return ""
+    first_token = str(normalized.split(" ", 1)[0] or "").strip()
+    if _looks_like_compact_person_keyword(first_token):
+        return first_token
+    collapsed = re.sub(r"\s+", "", normalized)
+    if _looks_like_compact_person_keyword(collapsed):
+        return collapsed
+    return ""
+
+
+def _normalize_reduced_role_label(role_text: Any) -> str:
+    normalized = re.sub(r"\s+", "", str(role_text or "")).strip()
+    if not normalized:
+        return ""
+    if normalized.endswith("예비후보"):
+        return "예비후보"
+    if normalized.endswith("도지사") or normalized == "지사":
+        return "지사"
+    if normalized.endswith("국회의원") or normalized.endswith("의원"):
+        return "의원"
+    if normalized.endswith("시장"):
+        return "시장"
+    if normalized.endswith("위원장"):
+        return "위원장"
+    if normalized.endswith("대표"):
+        return "대표"
+    if normalized.endswith("장관"):
+        return "장관"
+    if normalized.endswith("후보"):
+        return "후보"
+    return ""
+
+
+def _extract_geographic_role_label(role_text: Any) -> str:
+    normalized = re.sub(r"\s+", "", str(role_text or "")).strip()
+    if not normalized:
+        return ""
+    if re.fullmatch(r"[가-힣]{1,8}도지사", normalized):
+        return normalized
+    if re.fullmatch(r"[가-힣]{1,8}시장", normalized) and normalized != "시장":
+        return normalized
+    return ""
+
+
+def _build_short_role_reference(keyword: Any, role_text: Any) -> str:
+    surname = _compact_person_surname(_extract_person_name_from_keyword(keyword) or keyword)
+    reduced_role = _normalize_reduced_role_label(role_text)
+    if not surname or not reduced_role:
+        return ""
+    return f"{surname} {reduced_role}"
+
+
+def _candidate_reference_labels(fact: Mapping[str, Any]) -> list[str]:
+    label = _normalize_user_keyword(fact.get("explicitCandidateLabel") or "")
+    if label == "예비후보":
+        return ["예비후보", "후보"]
+    if label == "후보":
+        return ["후보"]
+    return []
+
+
+def _build_generic_role_reference(role_text: Any, *, allow_candidate_label: bool = False) -> str:
+    reduced_role = _normalize_reduced_role_label(role_text)
+    if not reduced_role:
+        return "상대"
+    generic_map = {
+        "의원": "상대 의원",
+        "지사": "상대 지사",
+        "시장": "상대 시장",
+        "위원장": "상대 위원장",
+        "대표": "상대 대표",
+        "장관": "상대 장관",
+    }
+    if reduced_role in {"예비후보", "후보"}:
+        return "상대 후보" if allow_candidate_label else "상대"
+    return generic_map.get(reduced_role, "상대")
+
+
+def _build_person_role_reduction_pattern(keyword: Any) -> Optional[re.Pattern[str]]:
+    normalized_keyword = _normalize_user_keyword(keyword)
+    if not normalized_keyword:
+        return None
+    return re.compile(
+        PERSON_ROLE_REDUCTION_PATTERN_TEMPLATE.format(keyword=re.escape(normalized_keyword)),
+    )
+
+
+def _build_person_role_reduction_candidates(
+    keyword: Any,
+    role_text: Any,
+    *,
+    preserve_full_name: bool,
+    role_keyword_policy: Optional[Mapping[str, Any]] = None,
+) -> list[str]:
+    normalized_keyword = _normalize_user_keyword(keyword)
+    person_name = _extract_person_name_from_keyword(normalized_keyword) or normalized_keyword
+    reference_fact = get_person_reference_fact(role_keyword_policy, person_name)
+    candidate_labels = _candidate_reference_labels(reference_fact)
+    base_role_text = _normalize_user_keyword(reference_fact.get("sourceRole") or "") or str(role_text or "")
+    generic_base_role_text = base_role_text or (candidate_labels[0] if candidate_labels else "")
+    reduced_role = _normalize_reduced_role_label(base_role_text)
+    geographic_role = _extract_geographic_role_label(base_role_text)
+    surname = _compact_person_surname(person_name)
+
+    candidates: list[str] = []
+
+    def _append(candidate: str) -> None:
+        cleaned = _normalize_user_keyword(candidate)
+        if cleaned and cleaned not in candidates:
+            candidates.append(cleaned)
+
+    for candidate_label in candidate_labels:
+        if preserve_full_name and person_name:
+            _append(f"{person_name} {candidate_label}")
+        if surname:
+            _append(f"{surname} {candidate_label}")
+    if preserve_full_name and person_name and reduced_role:
+        _append(f"{person_name} {reduced_role}")
+    if surname and reduced_role:
+        _append(f"{surname} {reduced_role}")
+    if surname and geographic_role:
+        _append(f"{surname} {geographic_role}")
+    _append(_build_generic_role_reference(generic_base_role_text, allow_candidate_label=bool(candidate_labels)))
+    return candidates
+
+
+def _build_keyword_replacement_pool(
+    keyword: str,
+    *,
+    role_keyword_policy: Optional[Mapping[str, Any]] = None,
+) -> list[str]:
     normalized_keyword = _normalize_user_keyword(keyword)
     if not normalized_keyword:
         return ["관련 사안"]
+    person_name = _extract_person_name_from_keyword(normalized_keyword) or (
+        normalized_keyword if _looks_like_compact_person_keyword(normalized_keyword) else ""
+    )
+    reference_fact = get_person_reference_fact(role_keyword_policy, person_name)
+    candidate_labels = _candidate_reference_labels(reference_fact)
+    generic_base_role_text = _normalize_user_keyword(reference_fact.get("sourceRole") or "") or (
+        candidate_labels[0] if candidate_labels else ""
+    )
+    generic_reference = _build_generic_role_reference(
+        generic_base_role_text,
+        allow_candidate_label=bool(candidate_labels),
+    )
     if _looks_like_compact_person_keyword(normalized_keyword):
+        if generic_reference != "상대":
+            return [generic_reference, "상대"]
         return ["상대"]
     if _is_role_keyword(normalized_keyword):
-        return ["상대 후보", "상대"]
+        if generic_reference != "상대":
+            return [generic_reference, "상대"]
+        return ["상대"]
 
     variants = build_keyword_variants(normalized_keyword)
     deduped: list[str] = []
     seen: set[str] = set()
-    for item in [*variants, "관련 사안", "이 사안"]:
+    extras = [generic_reference] if generic_reference != "상대" else []
+    for item in [*extras, *variants, "관련 사안", "이 사안"]:
         normalized_item = _normalize_user_keyword(item)
         if not normalized_item or normalized_item == normalized_keyword or normalized_item in seen:
             continue
@@ -2355,6 +2526,7 @@ def _replace_last_keyword_occurrences(
     remove_count: int,
     *,
     shadowed_by: Optional[Sequence[str]] = None,
+    role_keyword_policy: Optional[Mapping[str, Any]] = None,
 ) -> tuple[str, int]:
     """정확 일치 기준 과다 키워드를 뒤에서부터 치환해 개수를 줄인다."""
     if not content or not keyword or remove_count <= 0:
@@ -2364,16 +2536,62 @@ def _replace_last_keyword_occurrences(
     protected, protected_mapping = _protect_shadowed_keywords(str(content or ""), shadowed_by)
     working = protected
     replaced = 0
-    role_patterns = [
-        (re.compile(rf"{re.escape(normalized_keyword)}\s*{role}"), fallback)
-        for role, fallback in ROLE_FALLBACK_LABELS
-    ]
-    replacement_pool = _build_keyword_replacement_pool(normalized_keyword)
+    keyword_person_name = _extract_person_name_from_keyword(normalized_keyword)
+    keyword_role_surface = ""
+    if keyword_person_name and normalized_keyword != keyword_person_name:
+        keyword_role_surface = normalized_keyword[len(keyword_person_name) :].strip()
+    replacement_pool = _build_keyword_replacement_pool(
+        normalized_keyword,
+        role_keyword_policy=role_keyword_policy,
+    )
     bare_pattern = re.compile(re.escape(normalized_keyword))
 
     while replaced < remove_count:
         rewritten = False
-        for pattern, fallback in role_patterns:
+        if keyword_role_surface:
+            exact_matches = list(bare_pattern.finditer(working))
+            if exact_matches:
+                start, end = exact_matches[-1].span()
+                exact_replacements = _build_person_role_reduction_candidates(
+                    normalized_keyword,
+                    keyword_role_surface,
+                    preserve_full_name=True,
+                    role_keyword_policy=role_keyword_policy,
+                )
+                if exact_replacements:
+                    working = working[:start] + exact_replacements[0] + working[end:]
+                    replaced += 1
+                    rewritten = True
+        if rewritten:
+            continue
+
+        role_pattern = _build_person_role_reduction_pattern(keyword_person_name or normalized_keyword)
+        matches = list(role_pattern.finditer(working)) if role_pattern is not None else []
+        if matches:
+            match = matches[-1]
+            start, end = match.span()
+            role_surface = f"{str(match.group('modifier') or '').strip()} {str(match.group('role') or '').strip()}".strip()
+            role_replacements = _build_person_role_reduction_candidates(
+                keyword_person_name or normalized_keyword,
+                role_surface,
+                preserve_full_name=False,
+                role_keyword_policy=role_keyword_policy,
+            )
+            replacement = (
+                role_replacements[0]
+                if role_replacements
+                else _build_generic_role_reference(role_surface)
+            )
+            if start < 0 or end > len(working) or start >= end:
+                break
+            working = working[:start] + replacement + working[end:]
+            replaced += 1
+            rewritten = True
+        if rewritten:
+            continue
+
+        for role, fallback in ROLE_FALLBACK_LABELS:
+            pattern = re.compile(rf"{re.escape(normalized_keyword)}\s*{role}")
             matches = list(pattern.finditer(working))
             if not matches:
                 continue
@@ -2448,12 +2666,20 @@ def _score_keyword_sentence_for_reduction(sentence: str, keyword: str) -> int:
         return 0
 
     score = 4
+    has_poll_fact_signal = bool(re.search(r"\d|%", normalized)) or any(
+        token in normalized for token in ("여론조사", "오차 범위", "표본오차", "응답률", "지지율", "조사")
+    )
     if any(token in normalized for token in LOW_SIGNAL_KEYWORD_TOKENS):
         score = min(score, 1)
     if len(normalized) < 40:
         score = min(score, 2)
-    if re.search(r"\d|%", normalized) or "여론조사" in normalized:
+    if has_poll_fact_signal:
+        score += 4
+    if any(token in normalized for token in ("가상대결", "양자대결", "대결")):
         score += 2
+    if _looks_like_compact_person_keyword(keyword) and not has_poll_fact_signal:
+        if any(token in normalized for token in ("우위", "약진", "경쟁력", "차별화", "가능성", "비전", "정책", "성원", "지지")):
+            score = min(score, 0)
     if any(token in normalized for token in ("후원", "영수증", "계좌")):
         score += 4
     return score
@@ -2464,6 +2690,7 @@ def _rewrite_sentence_to_reduce_keyword(
     keyword: str,
     *,
     shadowed_by: Optional[Sequence[str]] = None,
+    role_keyword_policy: Optional[Mapping[str, Any]] = None,
 ) -> str:
     original = str(sentence_html or "")
     normalized_keyword = _normalize_user_keyword(keyword)
@@ -2508,16 +2735,47 @@ def _rewrite_sentence_to_reduce_keyword(
             return rewritten if rewritten else original
 
     replacements = 0
-    for role, fallback in ROLE_FALLBACK_LABELS:
-        rewritten, count = re.subn(
-            rf"{re.escape(normalized_keyword)}\s*{role}",
-            fallback,
-            rewritten,
-        )
+    keyword_person_name = _extract_person_name_from_keyword(normalized_keyword)
+    keyword_role_surface = ""
+    if keyword_person_name and normalized_keyword != keyword_person_name:
+        keyword_role_surface = normalized_keyword[len(keyword_person_name) :].strip()
+        for replacement in _build_person_role_reduction_candidates(
+            normalized_keyword,
+            keyword_role_surface,
+            preserve_full_name=True,
+            role_keyword_policy=role_keyword_policy,
+        ):
+            rewritten_candidate, count = re.subn(
+                re.escape(normalized_keyword),
+                replacement,
+                rewritten,
+                count=1,
+            )
+            if count > 0:
+                rewritten = rewritten_candidate
+                replacements += count
+                break
+
+    role_pattern = _build_person_role_reduction_pattern(keyword_person_name or normalized_keyword)
+    if replacements == 0 and role_pattern is not None:
+        def _replace_role_match(match: re.Match[str]) -> str:
+            role_surface = f"{str(match.group('modifier') or '').strip()} {str(match.group('role') or '').strip()}".strip()
+            candidates = _build_person_role_reduction_candidates(
+                keyword_person_name or normalized_keyword,
+                role_surface,
+                preserve_full_name=False,
+                role_keyword_policy=role_keyword_policy,
+            )
+            return candidates[0] if candidates else _build_generic_role_reference(role_surface)
+
+        rewritten, count = role_pattern.subn(_replace_role_match, rewritten)
         replacements += count
 
     if replacements == 0 and re.search(re.escape(normalized_keyword), rewritten):
-        bare_fallback = _build_keyword_replacement_pool(normalized_keyword)[0]
+        bare_fallback = _build_keyword_replacement_pool(
+            normalized_keyword,
+            role_keyword_policy=role_keyword_policy,
+        )[0]
         rewritten, count = re.subn(
             re.escape(normalized_keyword),
             bare_fallback,
@@ -2536,6 +2794,7 @@ def _remove_low_signal_keyword_sentence_once(
     user_keywords: Sequence[str],
     *,
     shadowed_by: Optional[Sequence[str]] = None,
+    role_keyword_policy: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     working = str(content or "")
     normalized_keyword = _normalize_user_keyword(keyword)
@@ -2601,6 +2860,7 @@ def _remove_low_signal_keyword_sentence_once(
             str(candidate.get("sentenceHtml") or ""),
             normalized_keyword,
             shadowed_by=shadowed_by,
+            role_keyword_policy=role_keyword_policy,
         )
         if not rewritten_sentence or rewritten_sentence == str(candidate.get("sentenceHtml") or ""):
             continue
@@ -2670,6 +2930,7 @@ def _reduce_excess_user_keyword_mentions(
     *,
     target_max: int,
     shadowed_by: Optional[Sequence[str]] = None,
+    role_keyword_policy: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     working = str(content or "")
     normalized_keyword = _normalize_user_keyword(keyword)
@@ -2701,6 +2962,7 @@ def _reduce_excess_user_keyword_mentions(
             normalized_keyword,
             user_keywords,
             shadowed_by=shadowed,
+            role_keyword_policy=role_keyword_policy,
         )
         if not sentence_reduction.get("edited"):
             break
@@ -2724,6 +2986,7 @@ def _reduce_excess_user_keyword_mentions(
             normalized_keyword,
             current_count - target_max,
             shadowed_by=shadowed,
+            role_keyword_policy=role_keyword_policy,
         )
         current_count = int(_count_user_keyword_exact_non_overlap(working, user_keywords).get(normalized_keyword) or 0)
 
@@ -2828,6 +3091,7 @@ def enforce_keyword_requirements(
                 user_keywords,
                 target_max=max_allowed,
                 shadowed_by=shadowed_map.get(keyword),
+                role_keyword_policy=role_keyword_policy,
             )
             reductions.append(
                 {
@@ -3020,6 +3284,76 @@ def build_fallback_draft(params: Optional[Dict[str, Any]] = None) -> str:
         f"<p>{full_name} 드림</p>" if full_name else "",
     ]
     return "\n".join(block for block in blocks if block)
+
+
+def force_insert_preferred_exact_keywords(
+    content: str,
+    user_keywords: List[str],
+    keyword_validation: Dict[str, Any],
+    skip_user_keywords: Optional[Sequence[str]] = None,
+    role_keyword_policy: Optional[Mapping[str, Any]] = None,
+) -> str:
+    """정확 일치 1회 선호가 남은 다중 어절 키워드를 마지막으로 1회만 보강한다."""
+    working = str(content or "")
+    skipped_user_keyword_set = {
+        _normalize_user_keyword(item)
+        for item in (skip_user_keywords or [])
+        if _normalize_user_keyword(item)
+    }
+    paragraph_matches = list(re.finditer(r"<p\b[^>]*>([\s\S]*?)</p\s*>", working, re.IGNORECASE))
+    if not working or not paragraph_matches:
+        return working
+
+    for keyword in (user_keywords or []):
+        normalized = _normalize_user_keyword(keyword)
+        if not normalized or normalized in skipped_user_keyword_set:
+            continue
+        if should_block_role_keyword(role_keyword_policy, normalized):
+            continue
+
+        info = keyword_validation.get(normalized) if isinstance(keyword_validation, dict) else None
+        if not isinstance(info, dict):
+            continue
+        if int(info.get("exactPreferredMin") or 0) <= 0:
+            continue
+        if int(info.get("exactShortfall") or 0) <= 0:
+            continue
+        if count_keyword_occurrences(working, normalized) > 0:
+            continue
+
+        inserted = False
+        for paragraph_index, paragraph_match in enumerate(paragraph_matches):
+            inner = str(paragraph_match.group(1) or "")
+            plain = re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", inner)).strip()
+            if len(plain) < 20 or normalized in plain:
+                continue
+
+            section_type = "conclusion" if paragraph_index == len(paragraph_matches) - 1 else "body"
+            sentence = _build_role_keyword_reference_sentence(
+                normalized,
+                section_type,
+                0,
+                role_keyword_policy=role_keyword_policy,
+            )
+            if not sentence:
+                continue
+
+            updated_inner = _append_sentence_to_paragraph(inner, sentence)
+            if updated_inner == inner:
+                continue
+            working = (
+                working[: paragraph_match.start(1)]
+                + updated_inner
+                + working[paragraph_match.end(1) :]
+            )
+            paragraph_matches = list(re.finditer(r"<p\b[^>]*>([\s\S]*?)</p\s*>", working, re.IGNORECASE))
+            inserted = True
+            break
+
+        if not inserted:
+            continue
+
+    return working
 
 
 def validate_keyword_insertion(
@@ -3534,6 +3868,7 @@ __all__ = [
     "validate_keyword_insertion",
     "enforce_keyword_requirements",
     "enforce_repetition_requirements",
+    "force_insert_preferred_exact_keywords",
     "force_insert_insufficient_keywords",
     "validate_and_retry",
     "evaluate_quality_with_llm",

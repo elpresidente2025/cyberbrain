@@ -135,7 +135,7 @@ const DashboardLayout = ({ children }) => {
                     startIcon={item.icon}
                     onClick={() => handleNavigate(item.path)}
                     sx={{
-                      color: 'var(--color-text-inverse)',
+                      color: '#ffffff',
                       transition: 'all var(--transition-fast)',
                       '&:hover': { bgcolor: 'var(--color-primary-light)' },
                       ...(isCurrentPath(item.path) && { bgcolor: 'var(--color-primary-light)', fontWeight: 'bold' })
@@ -150,7 +150,7 @@ const DashboardLayout = ({ children }) => {
               <IconButton
                 color="inherit"
                 onClick={toggleTheme}
-                sx={{ color: 'var(--color-text-inverse)', '&:hover': { bgcolor: 'var(--color-primary-light)' }, mr: 1 }}
+                sx={{ color: '#ffffff', '&:hover': { bgcolor: 'var(--color-primary-light)' }, mr: 1 }}
               >
                 {isDarkMode ? <LightMode /> : <DarkMode />}
               </IconButton>
@@ -159,7 +159,7 @@ const DashboardLayout = ({ children }) => {
                 color="inherit"
                 startIcon={<Logout />}
                 onClick={handleLogout}
-                sx={{ color: 'var(--color-text-inverse)', '&:hover': { bgcolor: 'var(--color-primary-light)' } }}
+                sx={{ color: '#ffffff', '&:hover': { bgcolor: 'var(--color-primary-light)' } }}
               >
                 로그아웃
               </Button>
@@ -219,7 +219,7 @@ const DashboardLayout = ({ children }) => {
           }
         }}
       >
-        <Typography variant="caption" sx={{ lineHeight: 1.6, color: 'var(--color-text-inverse)', position: 'relative', zIndex: 2 }}>
+        <Typography variant="caption" sx={{ lineHeight: 1.6, color: '#ffffff', position: 'relative', zIndex: 2 }}>
           사이버브레인 | 사업자등록번호: 256-24-02174 | 통신판매업신고번호: (비움)<br />
           대표: 강정구 | 인천광역시 계양구 용종로 124, 학마을한진아파트 139동 1504호 | 대표번호: 010-4885-6206<br />
           Copyright 2025. CyberBrain. All Rights Reserved.

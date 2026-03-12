@@ -93,7 +93,7 @@ export default function DraftGrid({
                 component="div"
                 gutterBottom
                 sx={{
-                  color: 'common.white',
+                  color: '#ffffff',
                   textAlign: 'center',
                   fontWeight: 'bold'
                 }}

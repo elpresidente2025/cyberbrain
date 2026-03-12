@@ -1208,9 +1208,39 @@ def _fit_title_length(title: str) -> str:
         return normalized
     compact = normalized.replace(' 핵심 메시지', '').replace(' 핵심', '').replace(' 현장', '')
     compact = re.sub(r'\s+', ' ', compact).strip()
-    if len(compact) <= TITLE_LENGTH_HARD_MAX:
-        return compact
-    return compact[:TITLE_LENGTH_HARD_MAX].rstrip()
+    return compact
+
+
+def _detect_truncated_title_reason(title: str) -> str:
+    normalized = normalize_title_surface(title)
+    if not normalized:
+        return ''
+
+    stripped = normalized.strip()
+    if not stripped:
+        return ''
+    if '...' in stripped or '…' in stripped:
+        return '말줄임표 포함'
+    if re.search(r'(?:^|[\s,:;!?])\d{1,3}$', stripped):
+        return '숫자로 비정상 종료'
+
+    wrapper_pairs = (
+        ('(', ')'),
+        ('[', ']'),
+        ('<', '>'),
+        ('《', '》'),
+        ('"', '"'),
+        ("'", "'"),
+    )
+    for opener, closer in wrapper_pairs:
+        if opener == closer:
+            if stripped.count(opener) % 2 == 1:
+                return f'{opener} 인용부호 불균형'
+            continue
+        if stripped.count(opener) > stripped.count(closer):
+            return f'{opener} 닫힘 누락'
+
+    return ''
 
 
 def _normalize_generated_title_without_fit(generated_title: str, params: Dict[str, Any]) -> str:
@@ -2369,12 +2399,28 @@ def calculate_title_quality_score(
             'suggestions': [f'제목이 본문처럼 보입니다 ({reason}). 검색어 중심의 간결한 제목으로 다시 작성하세요.']
         }
         
-    if '...' in title or title.endswith('..'):
-             return {
+    if '...' in title or '…' in title or title.endswith('..'):
+        return {
             'score': 0,
             'breakdown': {'ellipsis': {'score': 0, 'max': 100, 'status': '실패', 'reason': '말줄임표 포함'}},
             'passed': False,
-            'suggestions': ['말줄임표("...") 사용 금지. 내용을 자르지 말고 완결된 제목을 작성하세요.']
+            'suggestions': ['말줄임표("...", "…") 사용 금지. 내용을 자르지 말고 완결된 제목을 작성하세요.']
+        }
+
+    truncated_reason = _detect_truncated_title_reason(title)
+    if truncated_reason:
+        return {
+            'score': 0,
+            'breakdown': {
+                'truncatedTitle': {
+                    'score': 0,
+                    'max': 100,
+                    'status': '실패',
+                    'reason': truncated_reason,
+                }
+            },
+            'passed': False,
+            'suggestions': [f'제목이 중간에 잘린 것처럼 보입니다 ({truncated_reason}). 완결된 제목으로 다시 작성하세요.'],
         }
 
     normalized_author = re.sub(r"\s+", "", str(author_name or "")).strip()

@@ -55,6 +55,7 @@ from services.posts.validation import (
     enforce_repetition_requirements,
     enforce_keyword_requirements,
     find_shadowed_user_keywords,
+    force_insert_preferred_exact_keywords,
     force_insert_insufficient_keywords,
     repair_date_weekday_pairs,
     run_heuristic_validation_sync,
@@ -103,12 +104,15 @@ CONTENT_BLOCK_WITH_TAG_PATTERN = re.compile(
     re.IGNORECASE,
 )
 PERSON_ROLE_CHAIN_CANDIDATE_PATTERN = re.compile(
-    r"(?:[가-힣]{2,8}\s*(?:의원|위원장|장관|후보|시장)\s*){3,}",
+    r"(?:[가-힣]{2,8}\s*(?:국회의원|의원|위원장|장관|후보|시장)\s*){3,}",
     re.IGNORECASE,
 )
-PERSON_ROLE_PAIR_PATTERN = re.compile(r"([가-힣]{2,8})\s*(의원|위원장|장관|후보|시장)", re.IGNORECASE)
+PERSON_ROLE_PAIR_PATTERN = re.compile(
+    r"([가-힣]{2,8})\s*(국회의원|의원|위원장|장관|후보|시장)",
+    re.IGNORECASE,
+)
 NUMERIC_PERSON_CHAIN_CANDIDATE_PATTERN = re.compile(
-    r"(?:\d{1,4}(?:\.\d+)?(?:%|명|일|월|년|회|건|개|시|분|p)?\s*){2,}(?:[가-힣]{2,8}\s*(?:의원|위원장|장관|후보|시장)\s*){2,}",
+    r"(?:\d{1,4}(?:\.\d+)?(?:%|명|일|월|년|회|건|개|시|분|p)?\s*){2,}(?:[가-힣]{2,8}\s*(?:국회의원|의원|위원장|장관|후보|시장)\s*){2,}",
     re.IGNORECASE,
 )
 _NUMERIC_UNIT_TOKEN_FRAGMENT = r"\d{1,4}(?:\.\d+)?(?:%|명|일|월|년|회|건|개|시|분|p)?"
@@ -148,6 +152,14 @@ ABSTRACT_POLICY_NOUNS: tuple[str, ...] = (
     "리더십",
     "메시지",
     "방향",
+)
+LOW_SIGNAL_RESIDUE_NOUNS: tuple[str, ...] = (
+    *ABSTRACT_POLICY_NOUNS,
+    "전략",
+    "소통",
+    "후보군",
+    "구도",
+    "쟁점",
 )
 STRUCTURAL_MATCHUP_RESIDUE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(
@@ -1694,6 +1706,43 @@ def _scrub_suspicious_poll_residue_text(text: Any) -> Dict[str, Any]:
     }
 
 
+def _looks_like_low_signal_residue_fragment(text: Any) -> bool:
+    plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(text or "")))
+    if not plain:
+        return False
+
+    noun_fragment = "|".join(re.escape(noun) for noun in LOW_SIGNAL_RESIDUE_NOUNS)
+    short_name_noun_match = re.fullmatch(
+        rf"(?P<name>[가-힣]{{2,4}})(?:도|은|는|이|가)?\s+(?P<noun>{noun_fragment})",
+        plain,
+        re.IGNORECASE,
+    )
+    if short_name_noun_match and _looks_like_person_name_token(short_name_noun_match.group("name") or ""):
+        return True
+
+    role_pairs = PERSON_ROLE_PAIR_PATTERN.findall(plain)
+    cleaned_names = [
+        cleaned
+        for cleaned in (_clean_full_name_candidate(name) for name, _role in role_pairs)
+        if cleaned and _looks_like_person_name_token(cleaned)
+    ]
+    if len(cleaned_names) < 2:
+        return False
+
+    if not any(noun in plain for noun in LOW_SIGNAL_RESIDUE_NOUNS):
+        return False
+
+    has_stable_predicate = bool(
+        re.search(
+            r"(?:입니다|됩니다|했습니다|하겠습니다|보입니다|보여줍니다|나타났습니다|의미합니다|전달하겠습니다|말씀드리겠습니다|강조하겠습니다)$",
+            plain,
+        )
+    )
+    repeated_name = any(cleaned_names.count(name) >= 2 for name in set(cleaned_names))
+    trailing_noise = bool(re.search(rf"(?:{noun_fragment})\s*$", plain, re.IGNORECASE))
+    return (repeated_name or len(cleaned_names) >= 2) and trailing_noise and not has_stable_predicate
+
+
 def _prune_problematic_integrity_fragments(text: Any) -> Dict[str, Any]:
     plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(text or "")))
     if not plain:
@@ -1711,6 +1760,7 @@ def _prune_problematic_integrity_fragments(text: Any) -> Dict[str, Any]:
     removed_person_chain = 0
     removed_numeric_person_chain = 0
     removed_numeric_noise = 0
+    removed_low_signal_residue = 0
 
     for fragment in fragments:
         if _find_valid_person_chain_match(fragment):
@@ -1718,6 +1768,9 @@ def _prune_problematic_integrity_fragments(text: Any) -> Dict[str, Any]:
             continue
         if _find_valid_numeric_person_chain_match(fragment):
             removed_numeric_person_chain += 1
+            continue
+        if _looks_like_low_signal_residue_fragment(fragment):
+            removed_low_signal_residue += 1
             continue
 
         problematic_runs = _find_problematic_numeric_runs(fragment)
@@ -1743,6 +1796,8 @@ def _prune_problematic_integrity_fragments(text: Any) -> Dict[str, Any]:
         actions.append(f"drop_numeric_person_chain_fragment:{removed_numeric_person_chain}")
     if removed_numeric_noise > 0:
         actions.append(f"drop_numeric_noise_fragment:{removed_numeric_noise}")
+    if removed_low_signal_residue > 0:
+        actions.append(f"drop_low_signal_residue_fragment:{removed_low_signal_residue}")
 
     rebuilt_plain = re.sub(r"\s{2,}", " ", " ".join(kept_fragments)).strip()
     poll_residue_fix = _scrub_suspicious_poll_residue_text(rebuilt_plain)
@@ -1799,7 +1854,7 @@ def _repair_competitor_policy_phrase_once(
     if not competitor_names:
         return {"content": base, "edited": False, "replacements": []}
 
-    noun_fragment = "|".join(re.escape(noun) for noun in ABSTRACT_POLICY_NOUNS)
+    noun_fragment = "|".join(re.escape(noun) for noun in LOW_SIGNAL_RESIDUE_NOUNS)
     competitor_fragment = "|".join(re.escape(name) for name in competitor_names)
     first_person_pattern = re.compile(
         rf"(저는|제가|저의|저만의|저\s*{re.escape(speaker_name)}|{re.escape(speaker_name)}인\s*저)",
@@ -1891,7 +1946,7 @@ def _repair_competitor_policy_phrase_once(
     if not competitor_names:
         return {"content": base, "edited": False, "replacements": []}
 
-    noun_fragment = "|".join(re.escape(noun) for noun in ABSTRACT_POLICY_NOUNS)
+    noun_fragment = "|".join(re.escape(noun) for noun in LOW_SIGNAL_RESIDUE_NOUNS)
     competitor_fragment = "|".join(re.escape(name) for name in competitor_names)
     first_person_pattern = re.compile(
         rf"(?:저|제|저의|제게|저는|제가|{re.escape(speaker_name)})",
@@ -1915,6 +1970,8 @@ def _repair_competitor_policy_phrase_once(
         rf"(?P<prefix>(?:저의|제)\s+(?:진심과\s+)?)"
         rf"(?P<chain>(?:(?:{competitor_fragment}|[가-힣]{{2,4}})"
         rf"(?:\s*(?:전\s*)?(?:부산시장|국회의원|의원|후보|위원장|시장))?\s+){{1,2}})"
+        rf"(?:(?:[가-힣]{{1,4}}도\s*)?[가-힣]{{1,8}}도?\s*"
+        rf"(?:후보군(?:\s*대결(?:에서도|에서)?)?|대결(?:에서도|에서)?)\s+)?"
         rf"(?P<noun>{noun_fragment})",
         re.IGNORECASE,
     )
@@ -1956,6 +2013,40 @@ def _repair_competitor_policy_phrase_once(
         "content": repaired,
         "edited": repaired != base,
         "replacements": replacements,
+    }
+
+
+def _repair_terminal_sentence_spacing_once(text: Any) -> Dict[str, Any]:
+    base = str(text or "")
+    if not base.strip():
+        return {"content": base, "edited": False, "actions": []}
+
+    updated = base
+    actions: list[str] = []
+    spacing_patterns: list[tuple[re.Pattern[str], str, str]] = [
+        (
+            re.compile(r'(?<!\d)\.((?:["\'”’)\]])?)(?=[가-힣A-Za-z])'),
+            r".\1 ",
+            "sentence_spacing_after_period",
+        ),
+        (
+            re.compile(r'([!?。])((?:["\'”’)\]])?)(?=[가-힣A-Za-z0-9])'),
+            r"\1\2 ",
+            "sentence_spacing_after_terminal_punctuation",
+        ),
+    ]
+    for pattern, replacement, action_name in spacing_patterns:
+        updated, changed = pattern.subn(replacement, updated)
+        if changed > 0:
+            actions.append(f"{action_name}:{changed}")
+
+    if not actions:
+        return {"content": base, "edited": False, "actions": []}
+
+    return {
+        "content": updated,
+        "edited": updated != base,
+        "actions": actions,
     }
 
 
@@ -2571,6 +2662,7 @@ def _repair_integrity_noise_once(content: str) -> Dict[str, Any]:
         if plain_candidate and (
             _find_valid_person_chain_match(plain_candidate) is not None
             or _find_valid_numeric_person_chain_match(plain_candidate) is not None
+            or _looks_like_low_signal_residue_fragment(plain_candidate)
         ):
             fragment_repair = _prune_problematic_integrity_fragments(updated_inner)
             if fragment_repair.get("edited"):
@@ -3070,6 +3162,16 @@ def _apply_final_sentence_polish_once(
     if targeted_rewrite.get("edited"):
         repaired = str(targeted_rewrite.get("content") or repaired)
 
+    spacing_repair = _repair_terminal_sentence_spacing_once(repaired)
+    spacing_actions = spacing_repair.get("actions")
+    if isinstance(spacing_actions, list):
+        for action in spacing_actions:
+            action_text = str(action).strip()
+            if action_text:
+                actions.append(action_text)
+    if spacing_repair.get("edited"):
+        repaired = str(spacing_repair.get("content") or repaired)
+
     return {
         "content": repaired,
         "edited": repaired != base,
@@ -3186,6 +3288,102 @@ def _run_async_sync(coro):
             pass
         loop.close()
         asyncio.set_event_loop(None)
+
+
+def _build_independent_final_title_context(
+    *,
+    topic: str,
+    category: str,
+    content: str,
+    user_keywords: list[str],
+    full_name: str,
+    user_profile: Dict[str, Any],
+    status: str,
+    data: Dict[str, Any],
+    pipeline_result: Dict[str, Any],
+    context_analysis: Dict[str, Any],
+    auto_keywords: Optional[list[str]] = None,
+) -> Dict[str, Any]:
+    context: Dict[str, Any] = {
+        "topic": str(topic or ""),
+        "category": str(category or ""),
+        "content": str(content or ""),
+        "optimizedContent": str(content or ""),
+        "userKeywords": list(user_keywords or []),
+        "keywords": list(user_keywords or []),
+        "analysis": {"keywords": list(auto_keywords or [])},
+        "userProfile": user_profile if isinstance(user_profile, dict) else {},
+        "author": {"name": str(full_name or "").strip()} if str(full_name or "").strip() else {},
+        "status": str(status or ""),
+        "background": data.get("background") or pipeline_result.get("background") or "",
+        "instructions": data.get("instructions") or pipeline_result.get("instructions"),
+        "contextAnalysis": context_analysis if isinstance(context_analysis, dict) else {},
+        "config": data.get("config") if isinstance(data.get("config"), dict) else {},
+        "newsDataText": data.get("newsDataText") or pipeline_result.get("newsDataText") or "",
+        "stanceText": data.get("stanceText") or pipeline_result.get("stanceText") or "",
+        "sourceInput": data.get("sourceInput") or pipeline_result.get("sourceInput") or "",
+        "sourceContent": data.get("sourceContent") or pipeline_result.get("sourceContent") or "",
+        "originalContent": data.get("originalContent") or pipeline_result.get("originalContent") or "",
+    }
+    return context
+
+
+def _generate_independent_final_title(
+    *,
+    topic: str,
+    category: str,
+    content: str,
+    user_keywords: list[str],
+    full_name: str,
+    user_profile: Dict[str, Any],
+    status: str,
+    data: Dict[str, Any],
+    pipeline_result: Dict[str, Any],
+    context_analysis: Dict[str, Any],
+    auto_keywords: Optional[list[str]] = None,
+    model_name: str = "",
+) -> Dict[str, Any]:
+    context = _build_independent_final_title_context(
+        topic=topic,
+        category=category,
+        content=content,
+        user_keywords=user_keywords,
+        full_name=full_name,
+        user_profile=user_profile,
+        status=status,
+        data=data,
+        pipeline_result=pipeline_result,
+        context_analysis=context_analysis,
+        auto_keywords=auto_keywords,
+    )
+    try:
+        from agents.core.title_agent import TitleAgent
+
+        options: Dict[str, Any] = {}
+        normalized_model_name = str(model_name or "").strip()
+        if normalized_model_name:
+            options["modelName"] = normalized_model_name
+        title_agent = TitleAgent(options=options)
+        result = _run_async_sync(title_agent.run(context))
+        raw_title = str((result or {}).get("title") or "").strip()
+        normalized_title = _normalize_title_surface_local(raw_title) or raw_title
+        return {
+            "title": normalized_title,
+            "history": list((result or {}).get("titleHistory") or []),
+            "score": _to_int((result or {}).get("titleScore"), 0),
+            "type": str((result or {}).get("titleType") or "").strip(),
+            "context": context,
+        }
+    except Exception as exc:
+        logger.warning("Independent final title generation failed: %s", exc)
+        return {
+            "title": "",
+            "history": [],
+            "score": 0,
+            "type": "",
+            "error": str(exc),
+            "context": context,
+        }
 
 
 def _recover_short_content_once(
@@ -3734,6 +3932,61 @@ def _guard_title_after_editor(
     raise ApiError("internal", f"제목 검증 실패: {reason}")
 
 
+def _guard_draft_title_nonfatal(
+    *,
+    phase: str,
+    candidate_title: str,
+    previous_title: str,
+    topic: str,
+    content: str,
+    user_keywords: list[str],
+    full_name: str,
+    category: str,
+    status: str,
+    context_analysis: Dict[str, Any],
+    role_keyword_policy: Optional[Dict[str, Any]] = None,
+) -> tuple[str, Dict[str, Any]]:
+    candidate = _normalize_title_surface_local(candidate_title)
+    previous = _normalize_title_surface_local(previous_title)
+    try:
+        guarded_title, guard_info = _guard_title_after_editor(
+            candidate_title=candidate,
+            previous_title=previous,
+            topic=topic,
+            content=content,
+            user_keywords=user_keywords,
+            full_name=full_name,
+            category=category,
+            status=status,
+            context_analysis=context_analysis,
+            role_keyword_policy=role_keyword_policy,
+        )
+        guard_info["phase"] = phase
+        return guarded_title, guard_info
+    except ApiError as exc:
+        reason = str(exc or "").strip()
+        if reason.startswith("제목 검증 실패:"):
+            reason = reason.split(":", 1)[1].strip()
+        fallback_title = previous or candidate
+        fallback_source = "previous_fallback" if previous else "candidate_fallback"
+        logger.warning(
+            "Draft title guard failure downgraded to fallback (phase=%s, source=%s, reason=%s)",
+            phase,
+            fallback_source,
+            reason,
+        )
+        return fallback_title, {
+            "accepted": True,
+            "source": fallback_source,
+            "score": 0,
+            "reason": reason or "draft_title_guard_failed",
+            "repaired": False,
+            "phase": phase,
+            "nonFatal": True,
+            "fallbackUsed": True,
+        }
+
+
 def _extract_keyword_counts(keyword_result: Dict[str, Any] | None) -> Dict[str, int]:
     details = ((keyword_result or {}).get("details") or {}).get("keywords") or {}
     if not isinstance(details, dict):
@@ -4250,6 +4503,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         source_texts=[
             data.get("newsDataText"),
             pipeline_result.get("newsDataText"),
+            data.get("stanceText"),
             data.get("sourceInput"),
             pipeline_result.get("sourceInput"),
             data.get("sourceContent"),
@@ -4305,6 +4559,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     if not _raw_pipeline_title:
         raise ApiError("internal", "제목 생성에 실패했습니다. 다시 시도해 주세요.")
     generated_title = _normalize_title_surface_local(_raw_pipeline_title) or _raw_pipeline_title
+    draft_title = generated_title
     seo_passed = pipeline_result.get("seoPassed")
     compliance_passed = pipeline_result.get("compliancePassed")
     writing_method = str(pipeline_result.get("writingMethod") or pipeline_route or "modular")
@@ -4330,6 +4585,16 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     status_for_validation = str(data.get("status") or user_profile.get("status") or "")
     title_last_valid = generated_title
     title_guard_trace: list[Dict[str, Any]] = []
+    independent_final_title: Dict[str, Any] = {
+        "attempted": False,
+        "applied": False,
+        "fallbackUsed": False,
+        "draftTitle": draft_title,
+        "candidate": "",
+        "error": "",
+        "score": 0,
+        "type": "",
+    }
     speaker_gate: Dict[str, Any] = {
         "checked": False,
         "fullName": full_name,
@@ -4805,7 +5070,8 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             editor_candidate_content = str(editor_fix.get("content") or generated_content)
             if _apply_content_repair("editor_auto_repair", editor_candidate_content):
                 editor_candidate_title = str(editor_fix.get("title") or generated_title).strip() or generated_title
-                guarded_title, guard_info = _guard_title_after_editor(
+                guarded_title, guard_info = _guard_draft_title_nonfatal(
+                    phase="editor_auto_repair",
                     candidate_title=editor_candidate_title,
                     previous_title=title_last_valid,
                     topic=topic,
@@ -4817,7 +5083,6 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     context_analysis=context_analysis_for_title,
                     role_keyword_policy=role_keyword_policy,
                 )
-                guard_info["phase"] = "editor_auto_repair"
                 title_guard_trace.append(guard_info)
                 generated_title = guarded_title
                 if guard_info.get("source") == "candidate":
@@ -4963,7 +5228,8 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             second_editor_candidate_content = str(second_editor_fix.get("content") or generated_content)
             if _apply_content_repair("editor_second_pass", second_editor_candidate_content):
                 second_editor_candidate_title = str(second_editor_fix.get("title") or generated_title).strip() or generated_title
-                guarded_title, guard_info = _guard_title_after_editor(
+                guarded_title, guard_info = _guard_draft_title_nonfatal(
+                    phase="editor_second_pass",
                     candidate_title=second_editor_candidate_title,
                     previous_title=title_last_valid,
                     topic=topic,
@@ -4975,7 +5241,6 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     context_analysis=context_analysis_for_title,
                     role_keyword_policy=role_keyword_policy,
                 )
-                guard_info["phase"] = "editor_second_pass"
                 title_guard_trace.append(guard_info)
                 generated_title = guarded_title
                 if guard_info.get("source") == "candidate":
@@ -5116,7 +5381,8 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         str(title_date_repair.get("text") or title_last_valid)
     ) or title_last_valid
 
-    final_guarded_title, final_title_guard = _guard_title_after_editor(
+    final_guarded_title, final_title_guard = _guard_draft_title_nonfatal(
+        phase="draft_output",
         candidate_title=generated_title,
         previous_title=title_for_guard,
         topic=topic,
@@ -5128,7 +5394,6 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         context_analysis=context_analysis_for_title,
         role_keyword_policy=role_keyword_policy,
     )
-    final_title_guard["phase"] = "final_output"
     title_guard_trace.append(final_title_guard)
     generated_title = final_guarded_title
     if final_title_guard.get("source") == "candidate":
@@ -5501,7 +5766,8 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
 
             integrity_editor_repair["applied"] = int(integrity_editor_repair.get("applied") or 0) + 1
             integrity_candidate_title = str(integrity_fix.get("title") or generated_title).strip() or generated_title
-            guarded_title, guard_info = _guard_title_after_editor(
+            guarded_title, guard_info = _guard_draft_title_nonfatal(
+                phase=f"integrity_editor_pass_{pass_no}",
                 candidate_title=integrity_candidate_title,
                 previous_title=title_last_valid,
                 topic=topic,
@@ -5513,7 +5779,6 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 context_analysis=context_analysis_for_title,
                 role_keyword_policy=role_keyword_policy,
             )
-            guard_info["phase"] = f"integrity_editor_pass_{pass_no}"
             title_guard_trace.append(guard_info)
             generated_title = guarded_title
             if guard_info.get("source") == "candidate":
@@ -5547,6 +5812,116 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     speaker_gate["finalIssues"] = final_speaker_issues
     role_gate["finalIssues"] = final_role_issues
 
+    draft_title = generated_title
+    independent_final_title["draftTitle"] = draft_title
+    independent_final_title["attempted"] = True
+    final_title_candidate_result = _generate_independent_final_title(
+        topic=topic,
+        category=category,
+        content=generated_content,
+        user_keywords=user_keywords,
+        full_name=full_name,
+        user_profile=user_profile,
+        status=status_for_validation,
+        data=data if isinstance(data, dict) else {},
+        pipeline_result=pipeline_result if isinstance(pipeline_result, dict) else {},
+        context_analysis=context_analysis_for_title,
+        auto_keywords=auto_keywords,
+        model_name=str(data.get("modelName") or ""),
+    )
+    independent_final_title["candidate"] = str(final_title_candidate_result.get("title") or "").strip()
+    independent_final_title["score"] = _to_int(final_title_candidate_result.get("score"), 0)
+    independent_final_title["type"] = str(final_title_candidate_result.get("type") or "").strip()
+    independent_final_title["error"] = str(final_title_candidate_result.get("error") or "").strip()
+
+    final_title_candidate = str(final_title_candidate_result.get("title") or "").strip()
+    if final_title_candidate:
+        try:
+            candidate_title_date_repair = repair_date_weekday_pairs(
+                final_title_candidate,
+                year_hint=(date_year_hint or None),
+            )
+            candidate_title = _normalize_title_surface_local(
+                str(candidate_title_date_repair.get("text") or final_title_candidate)
+            ) or final_title_candidate
+            candidate_title_validation = (
+                candidate_title_date_repair.get("validation")
+                if isinstance(candidate_title_date_repair.get("validation"), dict)
+                else {}
+            )
+            date_weekday_guard["title"] = {
+                "edited": bool(candidate_title_date_repair.get("edited")),
+                "changes": (
+                    candidate_title_date_repair.get("changes")
+                    if isinstance(candidate_title_date_repair.get("changes"), list)
+                    else []
+                ),
+                "issues": (
+                    candidate_title_validation.get("issues")
+                    if isinstance(candidate_title_validation.get("issues"), list)
+                    else []
+                ),
+            }
+            date_weekday_guard["applied"] = bool(
+                bool(date_weekday_guard.get("content", {}).get("edited"))
+                or bool(date_weekday_guard.get("title", {}).get("edited"))
+            )
+
+            independent_guarded_title, independent_title_guard = _guard_title_after_editor(
+                candidate_title=candidate_title,
+                previous_title="",
+                topic=topic,
+                content=generated_content,
+                user_keywords=user_keywords,
+                full_name=full_name,
+                category=category,
+                status=status_for_validation,
+                context_analysis=context_analysis_for_title,
+                role_keyword_policy=role_keyword_policy,
+            )
+            independent_title_guard["phase"] = "final_output"
+            title_guard_trace.append(independent_title_guard)
+            final_title_guard = independent_title_guard
+            generated_title = independent_guarded_title
+            title_last_valid = generated_title
+
+            title_poll_result = enforce_poll_fact_consistency(
+                generated_title,
+                poll_fact_table,
+                full_name=full_name,
+                field="title",
+                allow_repair=True,
+            )
+            repaired_title = _normalize_title_surface_local(str(title_poll_result.get("text") or generated_title))
+            if repaired_title:
+                generated_title = repaired_title
+                title_last_valid = generated_title
+            poll_fact_guard["title"] = {
+                "checked": int(title_poll_result.get("checked") or 0),
+                "edited": bool(title_poll_result.get("edited")),
+                "blockingIssues": list(title_poll_result.get("blockingIssues") or []),
+                "repairs": list(title_poll_result.get("repairs") or []),
+            }
+            title_poll_issues = list(title_poll_result.get("blockingIssues") or [])
+            if title_poll_issues:
+                raise ApiError("internal", f"제목 사실관계 불일치: {title_poll_issues[0]}")
+
+            independent_final_title["applied"] = True
+        except Exception as exc:
+            independent_final_title["error"] = str(exc)
+            independent_final_title["fallbackUsed"] = True
+            generated_title = draft_title
+            logger.warning("Independent final title rejected; keeping draft title: %s", exc)
+    else:
+        independent_final_title["fallbackUsed"] = True
+
+    final_heuristic = run_heuristic_validation_sync(
+        generated_content,
+        status_for_validation,
+        generated_title,
+    )
+    legal_issues = _extract_legal_gate_issues(final_heuristic)
+
     final_keyword_result = validate_keyword_insertion(
         generated_content,
         user_keywords=user_keywords,
@@ -5566,6 +5941,11 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         _append_quality_warning(
             quality_warnings,
             "날짜-요일 불일치가 감지되어 자동 보정되었습니다.",
+        )
+    if independent_final_title.get("attempted") and not independent_final_title.get("applied"):
+        _append_quality_warning(
+            quality_warnings,
+            "최종 제목 독립 생성이 실패해 가제를 유지했습니다.",
         )
     if final_title_guard.get("source") != "candidate":
         _append_quality_warning(
@@ -5658,6 +6038,39 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 _collect_exact_preference_keywords(keyword_validation, gate_user_keywords),
             )
         final_exact_preference_keywords = _collect_exact_preference_keywords(keyword_validation, gate_user_keywords)
+    if final_exact_preference_keywords:
+        exact_backstop_content = force_insert_preferred_exact_keywords(
+            generated_content,
+            user_keywords=user_keywords,
+            keyword_validation=keyword_validation,
+            skip_user_keywords=soft_gate_keywords,
+            role_keyword_policy=role_keyword_policy,
+        )
+        if exact_backstop_content != generated_content:
+            generated_content = exact_backstop_content
+            _refresh_terminal_validation_state()
+            final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
+                keyword_validation,
+                gate_user_keywords,
+            )
+            logger.info(
+                "키워드 exact backstop 적용: remaining=%s",
+                _collect_exact_preference_keywords(keyword_validation, gate_user_keywords),
+            )
+        final_exact_preference_keywords = _collect_exact_preference_keywords(keyword_validation, gate_user_keywords)
+
+    terminal_spacing_cleanup = _repair_terminal_sentence_spacing_once(generated_content)
+    if terminal_spacing_cleanup.get("edited"):
+        generated_content = str(terminal_spacing_cleanup.get("content") or generated_content)
+        _refresh_terminal_validation_state()
+        final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
+            keyword_validation,
+            gate_user_keywords,
+        )
+        logger.info(
+            "최종 문장부호 공백 복원 적용: %s",
+            terminal_spacing_cleanup.get("actions") or [],
+        )
     if not final_keyword_gate_ok:
         _append_quality_warning(
             quality_warnings,
@@ -5909,6 +6322,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                         ),
                         "trace": title_guard_trace,
                     },
+                    "independentFinalTitle": independent_final_title,
                     "dateWeekdayGuard": date_weekday_guard,
                     "editorPolishEnabled": editor_polish_enabled,
                     "firstPass": {
