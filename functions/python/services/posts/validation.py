@@ -76,8 +76,6 @@ LOW_SIGNAL_KEYWORD_TOKENS: tuple[str, ...] = (
     "후보군",
 )
 ROLE_FALLBACK_LABELS: tuple[tuple[str, str], ...] = (
-    ("국회의원", "상대 의원"),
-    ("의원", "상대 의원"),
     ("도지사", "상대 지사"),
     ("지사", "상대 지사"),
     ("시장", "상대 시장"),
@@ -2193,7 +2191,6 @@ def _build_generic_role_reference(role_text: Any, *, allow_candidate_label: bool
     if not reduced_role:
         return "상대"
     generic_map = {
-        "의원": "상대 의원",
         "지사": "상대 지사",
         "시장": "상대 시장",
         "위원장": "상대 위원장",
@@ -2203,6 +2200,45 @@ def _build_generic_role_reference(role_text: Any, *, allow_candidate_label: bool
     if reduced_role in {"예비후보", "후보"}:
         return "상대 후보" if allow_candidate_label else "상대"
     return generic_map.get(reduced_role, "상대")
+
+
+def _has_batchim(text: Any) -> bool:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return False
+    last_char = normalized[-1]
+    if not ("가" <= last_char <= "힣"):
+        return False
+    return (ord(last_char) - ord("가")) % 28 != 0
+
+
+def _normalize_reduced_reference_particles(text: Any) -> str:
+    base = str(text or "")
+    if not base:
+        return ""
+
+    particle_pairs = {
+        ("은", "는"): ("은", "는"),
+        ("이", "가"): ("이", "가"),
+        ("을", "를"): ("을", "를"),
+        ("과", "와"): ("과", "와"),
+    }
+    role_pattern = r"(?:의원|지사|시장|위원장|대표|장관|예비후보|후보)"
+    pattern = re.compile(
+        rf"(?P<lemma>(?:[가-힣]{{1,4}}\s+)?{role_pattern})(?P<particle>은|는|이|가|을|를|과|와)"
+    )
+
+    def _replace(match: re.Match[str]) -> str:
+        lemma = str(match.group("lemma") or "")
+        particle = str(match.group("particle") or "")
+        for pair in particle_pairs.values():
+            if particle not in pair:
+                continue
+            selected = pair[0] if _has_batchim(lemma) else pair[1]
+            return f"{lemma}{selected}"
+        return match.group(0)
+
+    return pattern.sub(_replace, base)
 
 
 def _build_person_role_reduction_pattern(keyword: Any) -> Optional[re.Pattern[str]]:
@@ -2269,15 +2305,27 @@ def _build_keyword_replacement_pool(
     generic_base_role_text = _normalize_user_keyword(reference_fact.get("sourceRole") or "") or (
         candidate_labels[0] if candidate_labels else ""
     )
+    short_reference = _build_short_role_reference(
+        person_name or normalized_keyword,
+        generic_base_role_text,
+    )
     generic_reference = _build_generic_role_reference(
         generic_base_role_text,
         allow_candidate_label=bool(candidate_labels),
     )
     if _looks_like_compact_person_keyword(normalized_keyword):
+        if short_reference and short_reference != normalized_keyword:
+            if generic_reference not in {"상대", short_reference}:
+                return [short_reference, generic_reference, "상대"]
+            return [short_reference, "상대"]
         if generic_reference != "상대":
             return [generic_reference, "상대"]
         return ["상대"]
     if _is_role_keyword(normalized_keyword):
+        if short_reference and short_reference != normalized_keyword:
+            if generic_reference not in {"상대", short_reference}:
+                return [short_reference, generic_reference, "상대"]
+            return [short_reference, "상대"]
         if generic_reference != "상대":
             return [generic_reference, "상대"]
         return ["상대"]
@@ -2285,7 +2333,11 @@ def _build_keyword_replacement_pool(
     variants = build_keyword_variants(normalized_keyword)
     deduped: list[str] = []
     seen: set[str] = set()
-    extras = [generic_reference] if generic_reference != "상대" else []
+    extras = []
+    if short_reference and short_reference != normalized_keyword:
+        extras.append(short_reference)
+    if generic_reference != "상대" and generic_reference not in extras:
+        extras.append(generic_reference)
     for item in [*extras, *variants, "관련 사안", "이 사안"]:
         normalized_item = _normalize_user_keyword(item)
         if not normalized_item or normalized_item == normalized_keyword or normalized_item in seen:
@@ -2615,6 +2667,7 @@ def _replace_last_keyword_occurrences(
         working = working[:start] + replacement + working[end:]
         replaced += 1
 
+    working = _normalize_reduced_reference_particles(working)
     restored = _restore_shadowed_keywords(working, protected_mapping)
     return restored, replaced
 
@@ -2783,6 +2836,7 @@ def _rewrite_sentence_to_reduce_keyword(
         )
         replacements += count
 
+    rewritten = _normalize_reduced_reference_particles(rewritten)
     rewritten = re.sub(r"\s{2,}", " ", rewritten).strip()
     rewritten = _restore_shadowed_keywords(rewritten, protected_mapping)
     return rewritten if replacements > 0 else original

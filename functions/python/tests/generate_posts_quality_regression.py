@@ -93,6 +93,23 @@ def test_rewrite_sentence_to_reduce_keyword_prefers_short_lawmaker_title() -> No
     assert "주진우 의원" not in rewritten
 
 
+def test_rewrite_sentence_to_reduce_keyword_prefers_short_lawmaker_title_for_bare_name() -> None:
+    policy = build_role_keyword_policy(
+        ["주진우"],
+        person_roles={"주진우": "국회의원"},
+        source_texts=["주진우 의원은 부산시장 양자대결 조사에 포함됐다."],
+    )
+    rewritten = _rewrite_sentence_to_reduce_keyword(
+        "주진우를 비판하는 의견도 나옵니다.",
+        "주진우",
+        role_keyword_policy=policy,
+    )
+
+    assert rewritten == "주 의원을 비판하는 의견도 나옵니다."
+    assert "상대 의원" not in rewritten
+    assert "상대를 비판" not in rewritten
+
+
 def test_rewrite_sentence_to_reduce_keyword_prefers_short_governor_title() -> None:
     rewritten = _rewrite_sentence_to_reduce_keyword(
         "김동연 경기도지사의 해법도 다시 주목받고 있습니다.",
@@ -1143,6 +1160,10 @@ def main() -> None:
         (
             "rewrite_sentence_to_reduce_keyword_prefers_short_lawmaker_title",
             test_rewrite_sentence_to_reduce_keyword_prefers_short_lawmaker_title,
+        ),
+        (
+            "rewrite_sentence_to_reduce_keyword_prefers_short_lawmaker_title_for_bare_name",
+            test_rewrite_sentence_to_reduce_keyword_prefers_short_lawmaker_title_for_bare_name,
         ),
         (
             "rewrite_sentence_to_reduce_keyword_prefers_short_governor_title",
