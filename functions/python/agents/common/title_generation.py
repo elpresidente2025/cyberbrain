@@ -2152,6 +2152,199 @@ def extract_topic_keywords(topic: str) -> List[str]:
     return keywords[:4]
 
 
+def _extract_topic_person_names(topic: str) -> List[str]:
+    generic_tokens = {
+        "선거",
+        "양자대결",
+        "대결",
+        "가상대결",
+        "가능성",
+        "경쟁력",
+        "승산",
+        "우세",
+        "우위",
+        "리드",
+        "판세",
+        "지지율",
+        "부산시장",
+        "서울시장",
+        "시장",
+        "지사",
+        "교육감",
+        "구청장",
+        "군수",
+        "국회의원",
+        "의원",
+        "대표",
+        "위원장",
+        "후보",
+        "예비후보",
+        "부산",
+        "서울",
+        "인천",
+        "대구",
+        "대전",
+        "광주",
+        "울산",
+        "세종",
+        "제주",
+        "경기",
+        "강원",
+        "충북",
+        "충남",
+        "전북",
+        "전남",
+        "경북",
+        "경남",
+    }
+    topic_text = re.sub(r"\s+", " ", str(topic or "")).strip()
+    if not topic_text:
+        return []
+
+    names: List[str] = []
+
+    def _append_name(token: str) -> None:
+        cleaned = re.sub(r"\s+", "", str(token or "")).strip()
+        if not cleaned or cleaned in generic_tokens:
+            return
+        if not re.fullmatch(r"[가-힣]{2,4}", cleaned):
+            return
+        if cleaned not in names:
+            names.append(cleaned)
+
+    for token in extract_topic_keywords(topic):
+        _append_name(token)
+
+    extra_patterns = (
+        r"([가-힣]{2,4})(?=보다)",
+        r"([가-힣]{2,4})(?=[와과])",
+        r"([가-힣]{2,4})(?=의)",
+        r"([가-힣]{2,4})(?=\s*(?:전\s*)?(?:현\s*)?(?:국회의원|의원|시장|지사|교육감|구청장|군수|대표|위원장|후보|예비후보))",
+    )
+    for pattern in extra_patterns:
+        for match in re.findall(pattern, topic_text):
+            _append_name(match)
+
+    return names[:3]
+
+
+def _assess_title_frame_alignment(topic: str, title: str) -> Dict[str, Any]:
+    topic_text = re.sub(r"\s+", "", str(topic or "")).strip()
+    title_text = re.sub(r"\s+", "", str(title or "")).strip()
+    if not topic_text or not title_text:
+        return {
+            "score": 0,
+            "style": "",
+            "matchedPeople": [],
+            "requiredPeople": 0,
+            "hasContestContext": False,
+            "hasQuestionFrame": False,
+            "hasDirectionalFrame": False,
+        }
+
+    topic_people = _extract_topic_person_names(topic)
+    matched_people = [name for name in topic_people if name in title_text]
+    required_people = 2 if len(topic_people) >= 2 else (1 if topic_people else 0)
+
+    contest_tokens = (
+        "양자대결",
+        "가상대결",
+        "맞대결",
+        "대결",
+        "경쟁",
+        "승부",
+        "판세",
+        "선거",
+        "출마",
+        "출마론",
+        "후보론",
+        "거론",
+        "시장",
+        "부산시장",
+        "서울시장",
+        "도지사",
+        "지사",
+        "교육감",
+        "구청장",
+        "군수",
+    )
+    question_tokens = (
+        "왜",
+        "어떻게",
+        "무엇",
+        "누가",
+        "될까",
+        "있을까",
+        "흔들리나",
+        "밀리나",
+        "앞섰나",
+        "앞서나",
+    )
+    directional_tokens = (
+        "가능성",
+        "경쟁력",
+        "승산",
+        "우세",
+        "우위",
+        "리드",
+        "약진",
+        "접전",
+        "앞선",
+        "앞서",
+        "앞섰",
+        "보여준",
+        "드러난",
+        "확인",
+        "입증",
+    )
+
+    has_contest_context = any(token in title_text for token in contest_tokens)
+    has_question_frame = "?" in str(title or "") or any(token in title_text for token in question_tokens)
+    has_directional_frame = any(token in title_text for token in directional_tokens)
+
+    if required_people and len(matched_people) < required_people:
+        return {
+            "score": 0,
+            "style": "",
+            "matchedPeople": matched_people,
+            "requiredPeople": required_people,
+            "hasContestContext": has_contest_context,
+            "hasQuestionFrame": has_question_frame,
+            "hasDirectionalFrame": has_directional_frame,
+        }
+    if not has_contest_context or not (has_question_frame or has_directional_frame):
+        return {
+            "score": 0,
+            "style": "",
+            "matchedPeople": matched_people,
+            "requiredPeople": required_people,
+            "hasContestContext": has_contest_context,
+            "hasQuestionFrame": has_question_frame,
+            "hasDirectionalFrame": has_directional_frame,
+        }
+
+    score = 60
+    if required_people and len(matched_people) >= required_people:
+        score += 10
+    if has_question_frame:
+        score += 10
+    if has_directional_frame:
+        score += 10
+    if any(token in title_text for token in ("양자대결", "가상대결", "맞대결", "대결", "접전")):
+        score += 5
+
+    style = "aggressive_question" if has_question_frame else "comparison"
+    return {
+        "score": min(score, 85),
+        "style": style,
+        "matchedPeople": matched_people,
+        "requiredPeople": required_people,
+        "hasContestContext": has_contest_context,
+        "hasQuestionFrame": has_question_frame,
+        "hasDirectionalFrame": has_directional_frame,
+    }
+
+
 def validate_theme_and_content(topic: str, content: str, title: str = '') -> Dict[str, Any]:
     try:
         if not topic or not content:
@@ -2183,6 +2376,15 @@ def validate_theme_and_content(topic: str, content: str, title: str = '') -> Dic
         title_missing: List[str] = []
         title_overlap_score = 0
         effective_title_score = content_overlap_score
+        frame_alignment_meta: Dict[str, Any] = {
+            "score": 0,
+            "style": "",
+            "matchedPeople": [],
+            "requiredPeople": 0,
+            "hasContestContext": False,
+            "hasQuestionFrame": False,
+            "hasDirectionalFrame": False,
+        }
 
         if content_overlap_score < 50:
             mismatch_reasons.append(f"주제 핵심어 중 {len(missing_keywords)}개가 본문에 없음: {', '.join(missing_keywords)}")
@@ -2196,7 +2398,12 @@ def validate_theme_and_content(topic: str, content: str, title: str = '') -> Dic
                     title_missing.append(kw)
             title_overlap_score = round(len(title_matched_keywords) / len(topic_keywords) * 100) if topic_keywords else 0
             effective_title_score = round((title_overlap_score * 0.8) + (content_overlap_score * 0.2))
-            if len(title_missing) > len(topic_keywords) * 0.5:
+            frame_alignment_meta = _assess_title_frame_alignment(topic, title_text)
+            effective_title_score = max(
+                effective_title_score,
+                int(frame_alignment_meta.get("score") or 0),
+            )
+            if len(title_missing) > len(topic_keywords) * 0.5 and int(frame_alignment_meta.get("score") or 0) < 70:
                 mismatch_reasons.append(f"제목에 주제 핵심어 부족: {', '.join(title_missing[:3])}")
 
         return {
@@ -2211,6 +2418,9 @@ def validate_theme_and_content(topic: str, content: str, title: str = '') -> Dic
             'contentOverlapScore': content_overlap_score,
             'titleOverlapScore': title_overlap_score,
             'effectiveTitleScore': effective_title_score,
+            'frameAlignmentScore': int(frame_alignment_meta.get("score") or 0),
+            'frameAlignmentStyle': str(frame_alignment_meta.get("style") or ""),
+            'frameMatchedPeople': list(frame_alignment_meta.get("matchedPeople") or []),
         }
     except:
         return {
@@ -2219,6 +2429,9 @@ def validate_theme_and_content(topic: str, content: str, title: str = '') -> Dic
             'contentOverlapScore': 100,
             'titleOverlapScore': 100,
             'effectiveTitleScore': 100,
+            'frameAlignmentScore': 100,
+            'frameAlignmentStyle': 'fallback',
+            'frameMatchedPeople': [],
             'mismatchReasons': [],
         }
 

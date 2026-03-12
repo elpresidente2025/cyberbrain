@@ -287,12 +287,46 @@ def test_validate_theme_and_content_uses_title_alignment_not_only_content_overla
     )
 
     weak = validate_theme_and_content(topic, content, "주진우 부산시장 왜 거론되나?")
+    aggressive = validate_theme_and_content(topic, content, "주진우 부산시장 출마? 왜 이재성에게 흔들리나")
     strong = validate_theme_and_content(topic, content, "주진우와 양자대결, 이재성이 왜 앞섰나")
 
     assert int(weak["contentOverlapScore"] or 0) == 100
+    assert int(weak.get("frameAlignmentScore") or 0) == 0
+    assert int(aggressive.get("frameAlignmentScore") or 0) >= 70
+    assert int(aggressive["effectiveTitleScore"] or 0) > int(weak["effectiveTitleScore"] or 0)
     assert int(weak["titleOverlapScore"] or 0) < int(strong["titleOverlapScore"] or 0)
-    assert int(weak["effectiveTitleScore"] or 0) < int(strong["effectiveTitleScore"] or 0)
+    assert int(aggressive["effectiveTitleScore"] or 0) <= int(strong["effectiveTitleScore"] or 0)
     assert len(weak.get("titleMatchedKeywords") or []) < len(strong.get("titleMatchedKeywords") or [])
+    assert all("제목에 주제 핵심어 부족" not in reason for reason in aggressive.get("mismatchReasons") or [])
+
+
+def test_guard_title_after_editor_keeps_allowed_aggressive_question_frame() -> None:
+    role_keyword_policy = build_role_keyword_policy(
+        ["주진우", "주진우 부산시장"],
+        person_roles={"주진우": "국회의원"},
+        source_texts=[
+            "부산시장 양자대결에서 주진우 의원과 이재성 전 위원장이 맞붙었다.",
+        ],
+    )
+    restored, info = _guard_title_after_editor(
+        candidate_title="주진우 부산시장 출마? 왜 이재성에게 흔들리나",
+        previous_title="이재성, 양자대결서 드러난 가능성",
+        topic="부산시장 선거 양자대결에서 주진우보다 우세를 점한 이재성의 가능성",
+        content=(
+            "이재성은 부산시장 양자대결에서 주진우 의원보다 근소하게 앞서며 "
+            "경쟁력과 가능성을 보여줬다."
+        ),
+        user_keywords=["주진우", "주진우 부산시장"],
+        full_name="이재성",
+        category="current-affairs",
+        status="campaign",
+        context_analysis={},
+        role_keyword_policy=role_keyword_policy,
+    )
+
+    assert restored == "주진우 부산시장 출마? 왜 이재성에게 흔들리나"
+    assert info["accepted"] is True
+    assert info["source"] == "candidate"
 
 
 def test_guard_title_after_editor_falls_back_to_previous_topic_aligned_title() -> None:
@@ -413,11 +447,14 @@ def test_calculate_title_quality_score_blocks_direct_role_surface_but_allows_int
 
     invalid = calculate_title_quality_score("주진우 부산시장, 이재성에게 왜 밀리나?", params)
     valid = calculate_title_quality_score("주진우 부산시장 출마? 양자대결서 이재성 가능성", params)
+    aggressive = calculate_title_quality_score("주진우 부산시장 출마? 왜 이재성에게 흔들리나", params)
 
     assert invalid["passed"] is False
     assert int(invalid["score"] or 0) == 0
     assert "출마" in str((invalid.get("suggestions") or [""])[0] or "")
     assert int(valid["score"] or 0) > 0
+    assert aggressive["passed"] is True
+    assert int(((aggressive.get("breakdown") or {}).get("topicMatch") or {}).get("score") or 0) >= 15
 
 
 def test_blocked_role_keyword_is_not_required_in_title_gate_or_prompt() -> None:
@@ -1150,6 +1187,10 @@ def main() -> None:
         (
             "validate_theme_and_content_uses_title_alignment_not_only_content_overlap",
             test_validate_theme_and_content_uses_title_alignment_not_only_content_overlap,
+        ),
+        (
+            "guard_title_after_editor_keeps_allowed_aggressive_question_frame",
+            test_guard_title_after_editor_keeps_allowed_aggressive_question_frame,
         ),
         (
             "guard_title_after_editor_falls_back_to_previous_topic_aligned_title",

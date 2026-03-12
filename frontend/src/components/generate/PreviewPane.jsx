@@ -46,6 +46,33 @@ export default function PreviewPane({ draft }) {
     return matches ? matches.length : 0;
   };
 
+  const getKeywordTokens = (keyword) => {
+    if (!keyword) return [];
+    return keyword.split(/\s+/).map(token => token.trim()).filter(Boolean);
+  };
+
+  const splitKeywordSentenceUnits = (content) => {
+    if (!content) return [];
+    const normalized = content.replace(/\s+/g, ' ').trim();
+    if (!normalized) return [];
+    return normalized
+      .split(/(?<=[.!?。])\s+|\n+/)
+      .map(unit => unit.trim())
+      .filter(Boolean);
+  };
+
+  const countKeywordSentenceReflections = (content, keyword) => {
+    const tokens = getKeywordTokens(keyword).map(token => token.replace(/\s+/g, ''));
+    if (tokens.length < 2) return 0;
+    return splitKeywordSentenceUnits(content).reduce((total, unit) => {
+      const compactUnit = unit.replace(/\s+/g, '');
+      if (compactUnit && tokens.every(token => compactUnit.includes(token))) {
+        return total + 1;
+      }
+      return total;
+    }, 0);
+  };
+
   const getKeywordStats = () => {
     if (!draft.keywords) return null;
     const keywords = draft.keywords.split(',').map(k => k.trim()).filter(k => k);
@@ -53,7 +80,8 @@ export default function PreviewPane({ draft }) {
 
     return keywords.map(keyword => ({
       keyword,
-      count: countKeywordOccurrences(textContent, keyword)
+      exactCount: countKeywordOccurrences(textContent, keyword),
+      sentenceCoverageCount: countKeywordSentenceReflections(textContent, keyword),
     }));
   };
 
@@ -192,16 +220,31 @@ export default function PreviewPane({ draft }) {
               {keywordStats && keywordStats.length > 0 && (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                   <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-                    검색어 삽입 횟수:
+                    검색어 반영 횟수:
                   </Typography>
                   {keywordStats.map((stat, index) => {
                     // 🔑 백엔드 검증 결과 우선 사용
                     const backendValidation = draft.keywordValidation?.[stat.keyword];
-                    const backendExactCount = Number(backendValidation?.exactCount);
-                    const backendCount = Number(backendValidation?.count);
-                    const displayCount = Number.isFinite(backendExactCount)
+                    const backendExactCount = Number(
+                      backendValidation?.exclusiveCount ?? backendValidation?.exactCount
+                    );
+                    const backendSentenceCoverageCount = Number(backendValidation?.sentenceCoverageCount);
+                    const backendGateCount = Number(backendValidation?.gateCount ?? backendValidation?.count);
+                    const fallbackExactCount = Number(stat.exactCount);
+                    const fallbackSentenceCoverageCount = Number(stat.sentenceCoverageCount);
+                    const fallbackGateCount = Math.max(
+                      Number.isFinite(fallbackExactCount) ? fallbackExactCount : 0,
+                      Number.isFinite(fallbackSentenceCoverageCount) ? fallbackSentenceCoverageCount : 0
+                    );
+                    const displayCount = Number.isFinite(backendGateCount)
+                      ? backendGateCount
+                      : fallbackGateCount;
+                    const exactCount = Number.isFinite(backendExactCount)
                       ? backendExactCount
-                      : (Number.isFinite(backendCount) ? backendCount : stat.count);
+                      : fallbackExactCount;
+                    const sentenceCoverageCount = Number.isFinite(backendSentenceCoverageCount)
+                      ? backendSentenceCoverageCount
+                      : fallbackSentenceCoverageCount;
                     const fallbackMinCount = keywordStats.length >= 2 ? 3 : 5;
                     const fallbackMaxCount = fallbackMinCount + 1;
 
@@ -229,6 +272,10 @@ export default function PreviewPane({ draft }) {
                     const statusLabel = validationStatus === 'insufficient'
                       ? ' (\uBD80\uC871)'
                       : (validationStatus === 'spam_risk' ? ' (\uACFC\uB2E4)' : '');
+                    const hasMultipleTokens = getKeywordTokens(stat.keyword).length >= 2;
+                    const detailLabel = hasMultipleTokens
+                      ? ` (정확 ${Number.isFinite(exactCount) ? exactCount : 0}회 / 문장 반영 ${Number.isFinite(sentenceCoverageCount) ? sentenceCoverageCount : 0}회)`
+                      : '';
 
                     return (
                       <Typography
@@ -240,7 +287,7 @@ export default function PreviewPane({ draft }) {
                           pl: 1
                         }}
                       >
-                        "{stat.keyword}": {displayCount}회{statusLabel}
+                        "{stat.keyword}": {displayCount}회{statusLabel}{detailLabel}
                       </Typography>
                     );
                   })}

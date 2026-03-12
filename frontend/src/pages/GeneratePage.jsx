@@ -579,7 +579,7 @@ const GeneratePage = () => {
               )}
             </Box>
             <Box sx={{ display: 'flex', gap: `${spacing.xs}px` }}>
-              <Button onClick={() => setSelectedDraft(null)}>
+              <Button onClick={() => setSelectedDraft(null)} sx={{ color: (theme) => theme.palette.mode === 'dark' ? '#ffffff' : undefined }}>
                 취소
               </Button>
               <Button
