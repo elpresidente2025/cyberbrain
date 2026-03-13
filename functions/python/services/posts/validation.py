@@ -2711,6 +2711,46 @@ def _is_keyword_reference_sentence(
     return _looks_like_keyword_reference_sentence(normalized_sentence)
 
 
+def _is_poll_fact_sentence_for_keyword_reduction(sentence: Any) -> bool:
+    normalized = _normalize_sentence_for_compare(sentence)
+    if not normalized:
+        return False
+
+    has_metric_signal = bool(
+        re.search(
+            r"(?:\d+(?:\.\d+)?\s*(?:%|%p|명|포인트)|±\s*\d+(?:\.\d+)?\s*(?:%p|포인트))",
+            normalized,
+            re.IGNORECASE,
+        )
+    )
+    has_poll_signal = any(
+        token in normalized
+        for token in (
+            "여론조사",
+            "조사",
+            "지지율",
+            "응답률",
+            "표본오차",
+            "오차 범위",
+            "정당 지지율",
+            "표본수",
+        )
+    )
+    has_matchup_signal = any(
+        token in normalized
+        for token in (
+            "가상대결",
+            "양자대결",
+            "맞대결",
+            "대결",
+            "접전",
+        )
+    )
+    return bool(has_metric_signal and (has_poll_signal or has_matchup_signal)) or bool(
+        has_matchup_signal and has_poll_signal
+    )
+
+
 def _score_keyword_sentence_for_reduction(sentence: str, keyword: str) -> int:
     normalized = _normalize_sentence_for_compare(sentence)
     if not normalized:
@@ -2719,9 +2759,7 @@ def _score_keyword_sentence_for_reduction(sentence: str, keyword: str) -> int:
         return 0
 
     score = 4
-    has_poll_fact_signal = bool(re.search(r"\d|%", normalized)) or any(
-        token in normalized for token in ("여론조사", "오차 범위", "표본오차", "응답률", "지지율", "조사")
-    )
+    has_poll_fact_signal = _is_poll_fact_sentence_for_keyword_reduction(normalized)
     if any(token in normalized for token in LOW_SIGNAL_KEYWORD_TOKENS):
         score = min(score, 1)
     if len(normalized) < 40:
@@ -2752,7 +2790,9 @@ def _rewrite_sentence_to_reduce_keyword(
 
     protected, protected_mapping = _protect_shadowed_keywords(original, shadowed_by)
     rewritten = protected
+    poll_fact_sentence = _is_poll_fact_sentence_for_keyword_reduction(_strip_html(rewritten))
 
+    role_fragment = r"(?:\s*(?:전\s*)?(?:국회의원|의원|지사|도지사|시장|위원장|대표|장관|예비후보|후보))?"
     first_person_negation_patterns = (
         re.compile(
             rf"{re.escape(normalized_keyword)}(?:이|가|은|는)?\s+아닌\s+(?P<speaker>저는|제가|저의|제)",
@@ -2764,15 +2804,41 @@ def _rewrite_sentence_to_reduce_keyword(
             rf"{re.escape(normalized_keyword)}\s*(?:과|와)\s+달리\s+(?P<speaker>저는|제가)",
         ),
     )
+    first_person_competitor_clause_patterns = (
+        re.compile(
+            rf"{re.escape(normalized_keyword)}{role_fragment}\s*(?:과|와)\s+비교했(?:을\s+)?때\s*,?\s*",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            rf"{re.escape(normalized_keyword)}{role_fragment}\s*(?:과|와)의?\s+경쟁을\s+통해\s*",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            rf"{re.escape(normalized_keyword)}{role_fragment}\s*이\s+제시하지\s+못(?:한|하는)\s+",
+            re.IGNORECASE,
+        ),
+    )
 
-    for pattern in first_person_negation_patterns:
-        rewritten, count = pattern.subn(lambda match: str(match.group("speaker") or ""), rewritten, count=1)
-        if count > 0:
-            rewritten = re.sub(r"\s{2,}", " ", rewritten).strip()
-            rewritten = _restore_shadowed_keywords(rewritten, protected_mapping)
-            return rewritten if rewritten else original
+    if not poll_fact_sentence:
+        for pattern in first_person_negation_patterns:
+            rewritten, count = pattern.subn(lambda match: str(match.group("speaker") or ""), rewritten, count=1)
+            if count > 0:
+                rewritten = re.sub(r"\s{2,}", " ", rewritten).strip()
+                rewritten = _restore_shadowed_keywords(rewritten, protected_mapping)
+                return rewritten if rewritten else original
 
-    if _is_keyword_reference_sentence(_strip_html(rewritten), normalized_keyword):
+        plain_rewritten = _strip_html(rewritten)
+        if re.search(r"(?:저는|제가|저의|제)\s*", plain_rewritten):
+            for pattern in first_person_competitor_clause_patterns:
+                updated_text, count = pattern.subn("", rewritten, count=1)
+                if count > 0:
+                    updated_text = re.sub(r"^\s*,\s*", "", updated_text)
+                    updated_text = re.sub(r"\s{2,}", " ", updated_text).strip()
+                    updated_text = _normalize_reduced_reference_particles(updated_text)
+                    updated_text = _restore_shadowed_keywords(updated_text, protected_mapping)
+                    return updated_text if updated_text else original
+
+    if not poll_fact_sentence and _is_keyword_reference_sentence(_strip_html(rewritten), normalized_keyword):
         if re.search(
             rf"[\"']?{re.escape(normalized_keyword)}[\"']?\s*(검색어|키워드|표현|문구)",
             rewritten,
@@ -2825,10 +2891,20 @@ def _rewrite_sentence_to_reduce_keyword(
         replacements += count
 
     if replacements == 0 and re.search(re.escape(normalized_keyword), rewritten):
-        bare_fallback = _build_keyword_replacement_pool(
+        replacement_pool = _build_keyword_replacement_pool(
             normalized_keyword,
             role_keyword_policy=role_keyword_policy,
-        )[0]
+        )
+        if poll_fact_sentence:
+            replacement_pool = [
+                candidate
+                for candidate in replacement_pool
+                if candidate not in {"상대", "관련 사안", "이 사안"}
+            ]
+            if not replacement_pool:
+                rewritten = _restore_shadowed_keywords(rewritten, protected_mapping)
+                return rewritten if rewritten else original
+        bare_fallback = replacement_pool[0]
         rewritten, count = re.subn(
             re.escape(normalized_keyword),
             bare_fallback,
@@ -2880,6 +2956,7 @@ def _remove_low_signal_keyword_sentence_once(
             candidates.append(
                 {
                     "priority": _score_keyword_sentence_for_reduction(sentence_plain, normalized_keyword),
+                    "isPollFact": _is_poll_fact_sentence_for_keyword_reduction(sentence_plain),
                     "contribution": contribution,
                     "paragraphIndex": paragraph_index,
                     "sentenceIndex": sentence_index,
@@ -2947,7 +3024,11 @@ def _remove_low_signal_keyword_sentence_once(
             "mode": "rewrite",
         }
 
-    candidate = ordered_candidates[0]
+    removable_candidates = [item for item in ordered_candidates if not bool(item.get("isPollFact"))]
+    if not removable_candidates:
+        return {"content": working, "edited": False}
+
+    candidate = removable_candidates[0]
 
     paragraph_inner = str(candidate.get("paragraphInner") or "")
     sentence_start = int(candidate.get("sentenceStart") or 0)
@@ -3125,8 +3206,6 @@ def enforce_keyword_requirements(
 
         reductions_applied = False
         for keyword in user_keywords:
-            if keyword in skipped_user_keyword_set:
-                continue
             keyword_info = details.get(keyword) or {}
             current_count = int(
                 keyword_info.get("exclusiveCount")

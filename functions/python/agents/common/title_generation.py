@@ -2345,6 +2345,38 @@ def _assess_title_frame_alignment(topic: str, title: str) -> Dict[str, Any]:
     }
 
 
+def _has_unsupported_reversal_frame(title: str) -> bool:
+    title_text = str(title or "").strip()
+    if not title_text:
+        return False
+
+    reversal_tokens = (
+        "뒤집나",
+        "뒤집을까",
+        "뒤집을까?",
+        "역전하나",
+        "역전할까",
+        "반전하나",
+    )
+    if not any(token in title_text for token in reversal_tokens):
+        return False
+
+    support_tokens = (
+        "열세",
+        "밀리던",
+        "추격",
+        "추격전",
+        "만회",
+        "좁히",
+        "따라붙",
+        "판세",
+        "흐름",
+        "역전승",
+        "반전 카드",
+    )
+    return not any(token in title_text for token in support_tokens)
+
+
 def validate_theme_and_content(topic: str, content: str, title: str = '') -> Dict[str, Any]:
     try:
         if not topic or not content:
@@ -2403,6 +2435,9 @@ def validate_theme_and_content(topic: str, content: str, title: str = '') -> Dic
                 effective_title_score,
                 int(frame_alignment_meta.get("score") or 0),
             )
+            if _has_unsupported_reversal_frame(title_text):
+                effective_title_score = min(effective_title_score, 55)
+                mismatch_reasons.append("제목에 역전 전제가 부족합니다. 열세·추격 같은 근거 없이 '뒤집나/역전하나' 표현을 쓰지 마세요.")
             if len(title_missing) > len(topic_keywords) * 0.5 and int(frame_alignment_meta.get("score") or 0) < 70:
                 mismatch_reasons.append(f"제목에 주제 핵심어 부족: {', '.join(title_missing[:3])}")
 
