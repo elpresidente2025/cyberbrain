@@ -15,6 +15,9 @@ from typing import Any, Dict
 
 from firebase_functions import https_fn
 
+from services.posts.poll_focus_bundle import build_poll_focus_bundle
+from services.posts.poll_fact_guard import build_poll_matchup_fact_table
+
 logger = logging.getLogger(__name__)
 
 ADDITIONAL_CONTEXT_TASK_TIMEOUT_SEC = {
@@ -707,6 +710,36 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
             data.get("donationEnabled"),
             bool(user_profile.get("donationEnabled") is True),
         )
+        full_name = str(
+            data.get("fullName")
+            or user_profile.get("fullName")
+            or user_profile.get("name")
+            or ""
+        ).strip()
+        poll_fact_table = build_poll_matchup_fact_table(
+            [
+                news_data_text,
+                stance_text,
+                instructions_text,
+                _normalize_text(additional_context.get("newsContext", data.get("newsContext", ""))),
+            ],
+            known_names=[
+                full_name,
+                *normalized_user_keywords,
+            ],
+        )
+        poll_focus_bundle = build_poll_focus_bundle(
+            topic=topic,
+            user_keywords=normalized_user_keywords,
+            full_name=full_name,
+            text_sources=[
+                news_data_text,
+                stance_text,
+                instructions_text,
+                _normalize_text(additional_context.get("newsContext", data.get("newsContext", ""))),
+            ],
+            poll_fact_table=poll_fact_table,
+        )
 
         input_data = {
             "uid": uid,
@@ -731,6 +764,9 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
             "references": _normalize_reference_list(data.get("references", [])),
             "factAllowlist": data.get("factAllowlist", []),
             "targetWordCount": data.get("targetWordCount", 2000),
+            "recentTitles": data.get("recentTitles", []),
+            "previousTitles": data.get("previousTitles", []),
+            "pollFocusBundle": poll_focus_bundle,
             "slogan": slogan,
             "sloganEnabled": slogan_enabled,
             "donationInfo": donation_info,

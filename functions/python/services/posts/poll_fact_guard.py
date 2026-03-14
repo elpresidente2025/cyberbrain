@@ -20,15 +20,21 @@ _PAIR_WITH_AND_RE = re.compile(
 )
 _SCORE_RE = re.compile(r"([0-9]{1,2}(?:\.[0-9])?)\s*%\s*(?:대|vs|VS|:)\s*([0-9]{1,2}(?:\.[0-9])?)\s*%")
 _TITLE_MARGIN_RE = re.compile(
-    r"(?P<margin>[0-9]{1,2}(?:\.[0-9])?)\s*%\s*(?P<verb>"
+    r"(?P<margin>[0-9]{1,2}(?:\.[0-9])?)\s*%\s*(?:를|을)?\s*(?P<verb>"
     r"앞섰(?:나|는가|을까|을)?|앞서(?:나|는가|고)?|우세(?:였나|인가|일까)?|"
     r"밀렸(?:나|는가|을까|을)?|뒤졌(?:나|는가|을까|을)?|뒤진(?:건가|걸까)?|"
-    r"이겼(?:나|는가|을까|을)?|졌(?:나|는가|을까|을)?|패했(?:나|는가|을까|을)?"
+    r"이겼(?:나|는가|을까|을)?|졌(?:나|는가|을까|을)?|패했(?:나|는가|을까|을)?|"
+    r"내줬(?:나|는가|을까|을)?|내준(?:건가|걸까)?"
     r")",
     re.IGNORECASE,
 )
 _LEADING_MARGIN_VERB_TOKENS = ("앞섰", "앞서", "우세", "이겼")
-_TRAILING_MARGIN_VERB_TOKENS = ("밀렸", "뒤졌", "뒤진", "졌", "패했")
+_TRAILING_MARGIN_VERB_TOKENS = ("밀렸", "뒤졌", "뒤진", "졌", "패했", "내줬", "내준")
+_TITLE_PERCENT_RE = re.compile(r"([0-9]{1,2}(?:\.[0-9])?)\s*%")
+_TITLE_CONTEST_CUE_PATTERN = re.compile(
+    r"(?:가상대결|양자대결|대결|접전|승부|판세|앞섰|앞서|밀렸|내줬|우세|리드|가능성|경쟁력)",
+    re.IGNORECASE,
+)
 
 
 def _normalize_text(value: object) -> str:
@@ -250,6 +256,46 @@ def _repair_title_margin_phrase(
     return updated_text, repair, ""
 
 
+def _check_title_single_percent_binding(
+    text: str,
+    *,
+    left: str,
+    right: str,
+    left_score: float,
+    right_score: float,
+) -> str:
+    normalized_text = str(text or "")
+    if not normalized_text:
+        return ""
+    if left not in normalized_text or right not in normalized_text:
+        return ""
+    if not _TITLE_CONTEST_CUE_PATTERN.search(normalized_text):
+        return ""
+
+    raw_percents = [
+        _to_float(match.group(1))
+        for match in _TITLE_PERCENT_RE.finditer(normalized_text)
+    ]
+    title_percents = [value for value in raw_percents if value >= 0]
+    if not title_percents:
+        return ""
+
+    allowed_values = (
+        round(left_score, 1),
+        round(right_score, 1),
+        round(abs(left_score - right_score), 1),
+    )
+    for detected in title_percents:
+        if any(abs(detected - allowed) <= 0.05 for allowed in allowed_values):
+            continue
+        allowed_text = ", ".join(f"{value:.1f}%" for value in allowed_values)
+        return (
+            f"{left}-{right} 대결 문맥의 제목 수치 {detected:.1f}%가 입력 근거와 맞지 않습니다 "
+            f"(허용: {allowed_text})."
+        )
+    return ""
+
+
 def enforce_poll_fact_consistency(
     text: object,
     poll_fact_table: Dict[str, Any] | None,
@@ -304,6 +350,18 @@ def enforce_poll_fact_consistency(
                 result["repairs"].append(title_repair)
             elif title_issue:
                 result["blockingIssues"].append(title_issue)
+
+        if field == "title":
+            single_percent_issue = _check_title_single_percent_binding(
+                lowered_text,
+                left=left,
+                right=right,
+                left_score=left_score,
+                right_score=right_score,
+            )
+            if single_percent_issue:
+                result["blockingIssues"].append(single_percent_issue)
+                continue
 
         left_in = left in lowered_text
         right_in = right in lowered_text

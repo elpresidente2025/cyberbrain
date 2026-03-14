@@ -1373,6 +1373,102 @@ def _title_similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, norm_a, norm_b).ratio()
 
 
+def _extract_title_repeat_signature(title: str) -> Dict[str, Any]:
+    title_text = str(title or '').strip()
+    compact_title = re.sub(r'\s+', '', title_text)
+    if not compact_title:
+        return {}
+
+    normalized_prefix = title_text
+    for separator in (',', ':', ';'):
+        if separator in normalized_prefix:
+            normalized_prefix = normalized_prefix.split(separator, 1)[0]
+            break
+    normalized_prefix = normalized_prefix.split('?', 1)[0].split('？', 1)[0]
+    prefix = _normalize_title_for_similarity(normalized_prefix)[:18]
+
+    intent = 'none'
+    if any(token in compact_title for token in ('출마론', '출마', '거론', '구도', '변수')):
+        intent = 'role_intent'
+
+    question = 'none'
+    question_groups = (
+        ('why', ('왜', '이유')),
+        ('how', ('어떻게',)),
+        ('what', ('무엇', '뭐가', '무슨')),
+        ('whether', ('일까', '인가', '되나')),
+    )
+    for label, tokens in question_groups:
+        if any(token in title_text for token in tokens):
+            question = label
+            break
+
+    direction = 'none'
+    direction_groups = (
+        ('wobble', ('흔들리나', '흔들렸나', '밀리나', '주춤', '휘청')),
+        ('rise', ('약진', '부상', '급부상')),
+        ('lead', ('앞섰나', '앞서', '우세', '리드')),
+        ('contest', ('접전', '각축', '초접전')),
+        ('viability', ('가능성', '경쟁력')),
+    )
+    for label, tokens in direction_groups:
+        if any(token in title_text for token in tokens):
+            direction = label
+            break
+
+    contest = 'none'
+    if any(token in title_text for token in ('양자대결', '가상대결', '대결', '맞대결', '접전')):
+        contest = 'contest'
+
+    percent_count = len(re.findall(r'([0-9]{1,2}(?:\.[0-9])?)\s*%', title_text))
+    percent_shape = 'pair' if percent_count >= 2 else ('single' if percent_count == 1 else 'none')
+
+    return {
+        'prefix': prefix,
+        'intent': intent,
+        'question': question,
+        'direction': direction,
+        'contest': contest,
+        'percentShape': percent_shape,
+    }
+
+
+def _compare_title_repeat_signature(title: str, previous_title: str) -> Dict[str, Any]:
+    signature = _extract_title_repeat_signature(title)
+    previous_signature = _extract_title_repeat_signature(previous_title)
+    if not signature or not previous_signature:
+        return {'score': 0, 'reasons': []}
+
+    score = 0
+    reasons: List[str] = []
+    if (
+        signature.get('prefix')
+        and signature.get('prefix') == previous_signature.get('prefix')
+        and len(str(signature.get('prefix') or '')) >= 8
+    ):
+        score += 3
+        reasons.append('same_prefix')
+    if signature.get('intent') != 'none' and signature.get('intent') == previous_signature.get('intent'):
+        score += 2
+        reasons.append('same_intent')
+    if signature.get('question') != 'none' and signature.get('question') == previous_signature.get('question'):
+        score += 2
+        reasons.append('same_question')
+    if signature.get('direction') != 'none' and signature.get('direction') == previous_signature.get('direction'):
+        score += 2
+        reasons.append('same_direction')
+    if signature.get('contest') != 'none' and signature.get('contest') == previous_signature.get('contest'):
+        score += 1
+        reasons.append('same_contest')
+    if (
+        signature.get('percentShape') != 'none'
+        and signature.get('percentShape') == previous_signature.get('percentShape')
+    ):
+        score += 1
+        reasons.append('same_percent_shape')
+    return {'score': score, 'reasons': reasons}
+
+
 def _build_title_candidate_prompt(
     base_prompt: str,
     attempt: int,
@@ -1426,10 +1522,21 @@ def _compute_similarity_penalty(
     max_penalty: int,
 ) -> Dict[str, Any]:
     if not title or not previous_titles or max_penalty <= 0:
-        return {'penalty': 0, 'maxSimilarity': 0.0, 'against': ''}
+        return {
+            'penalty': 0,
+            'maxSimilarity': 0.0,
+            'against': '',
+            'framePenalty': 0,
+            'frameScore': 0,
+            'frameAgainst': '',
+            'frameReasons': [],
+        }
 
     best_similarity = 0.0
     against = ''
+    best_frame_score = 0
+    frame_against = ''
+    frame_reasons: List[str] = []
     for prev in previous_titles:
         if not prev:
             continue
@@ -1437,14 +1544,33 @@ def _compute_similarity_penalty(
         if similarity > best_similarity:
             best_similarity = similarity
             against = prev
+        frame_meta = _compare_title_repeat_signature(title, prev)
+        frame_score = int(frame_meta.get('score') or 0)
+        if frame_score > best_frame_score:
+            best_frame_score = frame_score
+            frame_against = prev
+            frame_reasons = list(frame_meta.get('reasons') or [])
 
-    if best_similarity < threshold:
-        return {'penalty': 0, 'maxSimilarity': round(best_similarity, 3), 'against': against}
+    penalty = 0
+    if best_similarity >= threshold:
+        span = max(0.01, 1.0 - threshold)
+        ratio = (best_similarity - threshold) / span
+        penalty = max(1, min(max_penalty, int(round(ratio * max_penalty))))
 
-    span = max(0.01, 1.0 - threshold)
-    ratio = (best_similarity - threshold) / span
-    penalty = max(1, min(max_penalty, int(round(ratio * max_penalty))))
-    return {'penalty': penalty, 'maxSimilarity': round(best_similarity, 3), 'against': against}
+    frame_penalty = 0
+    if best_frame_score >= 5:
+        frame_penalty = min(max_penalty, 4 + max(0, best_frame_score - 5) * 2)
+
+    total_penalty = min(max_penalty, penalty + frame_penalty)
+    return {
+        'penalty': total_penalty,
+        'maxSimilarity': round(best_similarity, 3),
+        'against': against,
+        'framePenalty': frame_penalty,
+        'frameScore': best_frame_score,
+        'frameAgainst': frame_against,
+        'frameReasons': frame_reasons,
+    }
 
 
 def resolve_title_purpose(topic: str, params: Dict[str, Any]) -> str:
@@ -1504,6 +1630,129 @@ def build_event_title_policy_instruction(params: Dict[str, Any]) -> str:
   <rule>SEO 검색어는 제목 앞부분에서 자연스럽게 사용하십시오: {keyword_line}</rule>
 </title_goal>
 """.strip()
+
+
+def build_poll_focus_title_instruction(params: Dict[str, Any]) -> str:
+    bundle = params.get('pollFocusBundle') if isinstance(params.get('pollFocusBundle'), dict) else {}
+    if str(bundle.get('scope') or '').strip().lower() != 'matchup':
+        return ''
+
+    primary_pair = bundle.get('primaryPair') if isinstance(bundle.get('primaryPair'), dict) else {}
+    speaker = str(primary_pair.get('speaker') or '').strip()
+    opponent = str(primary_pair.get('opponent') or '').strip()
+    speaker_percent = str(primary_pair.get('speakerPercent') or primary_pair.get('speakerScore') or '').strip()
+    opponent_percent = str(primary_pair.get('opponentPercent') or primary_pair.get('opponentScore') or '').strip()
+    if not speaker or not opponent or not speaker_percent or not opponent_percent:
+        return ''
+
+    allowed_title_lanes = bundle.get('allowedTitleLanes') if isinstance(bundle.get('allowedTitleLanes'), list) else []
+    forbidden_metrics = bundle.get('forbiddenMetrics') if isinstance(bundle.get('forbiddenMetrics'), list) else []
+    forbidden_xml = "\n".join(
+        f"  <metric>{str(item).strip()}</metric>"
+        for item in forbidden_metrics[:5]
+        if str(item).strip()
+    ) or "  <metric>정당 지지율</metric>"
+
+    secondary_pairs = bundle.get('secondaryPairs') if isinstance(bundle.get('secondaryPairs'), list) else []
+    secondary_xml_lines: List[str] = []
+    for idx, raw_pair in enumerate(secondary_pairs[:2], start=1):
+        pair = raw_pair if isinstance(raw_pair, dict) else {}
+        pair_speaker = str(pair.get('speaker') or '').strip()
+        pair_opponent = str(pair.get('opponent') or '').strip()
+        pair_speaker_score = str(pair.get('speakerPercent') or pair.get('speakerScore') or '').strip()
+        pair_opponent_score = str(pair.get('opponentPercent') or pair.get('opponentScore') or '').strip()
+        if not pair_speaker or not pair_opponent or not pair_speaker_score or not pair_opponent_score:
+            continue
+        secondary_xml_lines.append(
+            f'  <pair index="{idx}">{pair_speaker} vs {pair_opponent} ({pair_speaker_score} 대 {pair_opponent_score})</pair>'
+        )
+    secondary_xml = "\n".join(secondary_xml_lines) if secondary_xml_lines else '  <pair index="0">없음</pair>'
+
+    lane_xml_lines: List[str] = []
+    for raw_lane in allowed_title_lanes[:3]:
+        lane = raw_lane if isinstance(raw_lane, dict) else {}
+        lane_id = str(lane.get('id') or '').strip()
+        lane_label = str(lane.get('label') or lane_id).strip()
+        lane_template = str(lane.get('template') or '').strip()
+        if not lane_id or not lane_template:
+            continue
+        lane_xml_lines.append(
+            f'  <lane id="{lane_id}" label="{lane_label}">{lane_template}</lane>'
+        )
+    lane_xml = "\n".join(lane_xml_lines) if lane_xml_lines else '  <lane id="fact_direct" label="fact_direct">없음</lane>'
+
+    return f"""
+<poll_focus_title priority="critical">
+  <primary_pair>{speaker} vs {opponent} ({speaker_percent} 대 {opponent_percent})</primary_pair>
+  <secondary_pairs>
+{secondary_xml}
+  </secondary_pairs>
+  <allowed_lanes>
+{lane_xml}
+  </allowed_lanes>
+  <forbidden_metrics>
+{forbidden_xml}
+  </forbidden_metrics>
+  <rules>
+    <rule>제목은 allowed_lanes 중 하나의 문법을 따르고, 정당 지지율이나 당내 경선 수치로 중심을 바꾸지 않습니다.</rule>
+    <rule>질문형을 쓰더라도 판세 전환형 표현('역전', '뒤집힘', '흔들림')은 사용하지 않습니다. 접전이나 경쟁력 수준에서만 해석합니다.</rule>
+    <rule>단일 수치를 넣을 때는 primary_pair 또는 secondary_pairs의 실제 수치만 사용합니다.</rule>
+  </rules>
+</poll_focus_title>
+""".strip()
+
+
+def _assess_poll_focus_title_lane(title: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    bundle = params.get('pollFocusBundle') if isinstance(params.get('pollFocusBundle'), dict) else {}
+    if str(bundle.get('scope') or '').strip().lower() != 'matchup':
+        return {'passed': True, 'lane': '', 'reason': ''}
+
+    primary_pair = bundle.get('primaryPair') if isinstance(bundle.get('primaryPair'), dict) else {}
+    speaker = str(primary_pair.get('speaker') or '').strip()
+    opponent = str(primary_pair.get('opponent') or '').strip()
+    speaker_percent = str(primary_pair.get('speakerPercent') or '').strip()
+    opponent_percent = str(primary_pair.get('opponentPercent') or '').strip()
+    if not speaker or not opponent:
+        return {'passed': True, 'lane': '', 'reason': ''}
+
+    normalized_title = re.sub(r'\s+', '', str(title or ''))
+    allowed_lanes = bundle.get('allowedTitleLanes') if isinstance(bundle.get('allowedTitleLanes'), list) else []
+    allowed_lane_ids = {
+        str(item.get('id') or '').strip()
+        for item in allowed_lanes
+        if isinstance(item, dict) and str(item.get('id') or '').strip()
+    }
+    if not allowed_lane_ids:
+        allowed_lane_ids = {'intent_fact', 'fact_direct', 'contest_observation'}
+
+    has_pair_names = speaker in normalized_title and opponent in normalized_title
+    has_pair_score = bool(speaker_percent and opponent_percent and speaker_percent in title and opponent_percent in title)
+    has_contest = any(token in title for token in ('가상대결', '양자대결', '대결', '접전', '경쟁력'))
+    has_intent = any(token in title for token in ('출마', '출마론', '거론', '구도', '변수'))
+    has_soft_direction = any(token in title for token in ('접전', '경쟁력', '약진', '우세', '앞서', '앞선'))
+    has_reversal = bool(re.search(r'(역전|뒤집|흔들리|밀리|휘청|내줬|역전당)', title))
+
+    lane = 'unknown'
+    if has_intent and (has_pair_score or has_contest or has_pair_names):
+        lane = 'intent_fact'
+    elif has_pair_score or (has_pair_names and has_contest):
+        lane = 'fact_direct'
+    elif has_pair_names and has_soft_direction:
+        lane = 'contest_observation'
+
+    if has_reversal:
+        return {
+            'passed': False,
+            'lane': lane,
+            'reason': 'poll focus 기준 제목은 역전·뒤집힘 같은 판세 전환형 표현 대신 접전·경쟁력 수준으로 서술해야 합니다.',
+        }
+    if lane == 'unknown' or lane not in allowed_lane_ids:
+        return {
+            'passed': False,
+            'lane': lane,
+            'reason': 'poll focus 기준 허용된 제목 레인(intent_fact, fact_direct, contest_observation) 안에서 제목을 구성해야 합니다.',
+        }
+    return {'passed': True, 'lane': lane, 'reason': ''}
 
 
 def validate_event_announcement_title(title: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -1757,6 +2006,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     if title_purpose == 'event_announcement':
         return _build_event_title_prompt(params)
     event_title_policy = build_event_title_policy_instruction(params) if title_purpose == 'event_announcement' else ''
+    poll_focus_title_policy = build_poll_focus_title_instruction(params)
     
     avoid_local_in_title = bool(title_scope and title_scope.get('avoidLocalInTitle'))
     detected_type_id = None
@@ -1925,6 +2175,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 </rules>
 
 {event_title_policy}
+{poll_focus_title_policy}
 {election_compliance}
 {keyword_strategy}
 {number_validation['instruction']}
@@ -1979,7 +2230,12 @@ def extract_topic_keywords(topic: str) -> List[str]:
         
     return list(set(keywords))
 
-def validate_theme_and_content(topic: str, content: str, title: str = '') -> Dict[str, Any]:
+def validate_theme_and_content(
+    topic: str,
+    content: str,
+    title: str = '',
+    params: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     try:
         if not topic or not content:
             return {
@@ -2345,6 +2601,116 @@ def _assess_title_frame_alignment(topic: str, title: str) -> Dict[str, Any]:
     }
 
 
+def _assess_poll_title_numeric_binding(topic: str, content: str, title: str) -> Dict[str, Any]:
+    title_text = str(title or "").strip()
+    if "%" not in title_text:
+        return {"passed": True, "reason": "", "allowedPercents": [], "pair": []}
+
+    topic_people = _extract_topic_person_names(topic)
+    if len(topic_people) < 2:
+        return {"passed": True, "reason": "", "allowedPercents": [], "pair": []}
+
+    compact_title = re.sub(r"\s+", "", title_text)
+    matched_people = [name for name in topic_people if name and name in compact_title]
+    if len(matched_people) < 2:
+        return {"passed": True, "reason": "", "allowedPercents": [], "pair": []}
+
+    contest_cues = ("양자대결", "가상대결", "대결", "접전", "승부", "판세", "앞섰", "밀렸", "내줬", "경쟁력")
+    if not any(token in title_text or token in str(topic or "") for token in contest_cues):
+        return {"passed": True, "reason": "", "allowedPercents": [], "pair": []}
+
+    try:
+        from services.posts.poll_fact_guard import build_poll_matchup_fact_table
+    except Exception:
+        return {"passed": True, "reason": "", "allowedPercents": [], "pair": []}
+
+    poll_fact_table = build_poll_matchup_fact_table([content], known_names=topic_people)
+    pairs = poll_fact_table.get("pairs") if isinstance(poll_fact_table, dict) else {}
+    if not isinstance(pairs, dict) or not pairs:
+        return {"passed": True, "reason": "", "allowedPercents": [], "pair": []}
+
+    selected_pair: Dict[str, Any] = {}
+    best_score = -1
+    for row in pairs.values():
+        if not isinstance(row, dict):
+            continue
+        left = str(row.get("left") or "").strip()
+        right = str(row.get("right") or "").strip()
+        if left not in topic_people or right not in topic_people:
+            continue
+        score = 0
+        if left in compact_title:
+            score += 2
+        if right in compact_title:
+            score += 2
+        if score > best_score:
+            selected_pair = row
+            best_score = score
+
+    if not selected_pair:
+        return {"passed": True, "reason": "", "allowedPercents": [], "pair": []}
+
+    try:
+        left_score = round(float(str(selected_pair.get("leftScore"))), 1)
+        right_score = round(float(str(selected_pair.get("rightScore"))), 1)
+    except (TypeError, ValueError):
+        return {"passed": True, "reason": "", "allowedPercents": [], "pair": []}
+
+    allowed_values = [left_score, right_score, round(abs(left_score - right_score), 1)]
+    title_percents = [
+        round(float(match), 1)
+        for match in re.findall(r"([0-9]{1,2}(?:\.[0-9])?)\s*%", title_text)
+    ]
+    if not title_percents:
+        return {
+            "passed": True,
+            "reason": "",
+            "allowedPercents": allowed_values,
+            "pair": [selected_pair.get("left"), selected_pair.get("right")],
+        }
+
+    for detected in title_percents:
+        if any(abs(detected - allowed) <= 0.05 for allowed in allowed_values):
+            continue
+        pair_label = f"{selected_pair.get('left')}-{selected_pair.get('right')}"
+        allowed_text = ", ".join(f"{value:.1f}%" for value in allowed_values)
+        return {
+            "passed": False,
+            "reason": f'제목의 {detected:.1f}%는 {pair_label} 대결 수치와 연결되지 않습니다. 허용 수치: {allowed_text}',
+            "allowedPercents": allowed_values,
+            "pair": [selected_pair.get("left"), selected_pair.get("right")],
+        }
+
+    return {
+        "passed": True,
+        "reason": "",
+        "allowedPercents": allowed_values,
+        "pair": [selected_pair.get("left"), selected_pair.get("right")],
+    }
+
+
+def _has_awkward_single_score_question_frame(title: str) -> bool:
+    title_text = str(title or "").strip()
+    if not title_text:
+        return False
+
+    title_percents = re.findall(r"([0-9]{1,2}(?:\.[0-9])?)\s*%", title_text)
+    if len(title_percents) != 1:
+        return False
+    if re.search(r"\d+(?:\.\d+)?%\s*(?:대|vs|VS|:)", title_text):
+        return False
+    if not any(token in title_text for token in ("왜", "어떻게", "앞섰", "앞서", "우세", "리드", "밀렸", "접전")):
+        return False
+
+    return bool(
+        re.search(
+            r"[가-힣]{2,8}\s+[0-9]{1,2}(?:\.[0-9])?%\s*(?:왜|어떻게|앞섰|앞서|우세|리드|밀렸)",
+            title_text,
+            re.IGNORECASE,
+        )
+    )
+
+
 def _has_unsupported_reversal_frame(title: str) -> bool:
     title_text = str(title or "").strip()
     if not title_text:
@@ -2354,8 +2720,12 @@ def _has_unsupported_reversal_frame(title: str) -> bool:
         "뒤집나",
         "뒤집을까",
         "뒤집을까?",
+        "뒤집혔나",
+        "뒤집혔을까",
         "역전하나",
         "역전할까",
+        "역전했나",
+        "역전당했나",
         "반전하나",
     )
     if not any(token in title_text for token in reversal_tokens):
@@ -2377,7 +2747,25 @@ def _has_unsupported_reversal_frame(title: str) -> bool:
     return not any(token in title_text for token in support_tokens)
 
 
-def validate_theme_and_content(topic: str, content: str, title: str = '') -> Dict[str, Any]:
+def _has_broken_numeric_subject_frame(title: str) -> bool:
+    title_text = str(title or "").strip()
+    if not title_text:
+        return False
+    return bool(
+        re.search(
+            r"\d+(?:\.\d+)?%\s*(?:가|를|을)\s*(?:흔들리|흔들렸|밀리|밀렸|앞서|앞섰|뒤집|역전|반전|내줬|내준)",
+            title_text,
+            re.IGNORECASE,
+        )
+    )
+
+
+def validate_theme_and_content(
+    topic: str,
+    content: str,
+    title: str = '',
+    params: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     try:
         if not topic or not content:
             return {
@@ -2393,6 +2781,7 @@ def validate_theme_and_content(topic: str, content: str, title: str = '') -> Dic
 
         topic_keywords = extract_topic_keywords(topic)
         content_text = str(content or '')
+        params_dict = params if isinstance(params, dict) else {}
         matched_keywords = []
         missing_keywords = []
 
@@ -2438,6 +2827,20 @@ def validate_theme_and_content(topic: str, content: str, title: str = '') -> Dic
             if _has_unsupported_reversal_frame(title_text):
                 effective_title_score = min(effective_title_score, 55)
                 mismatch_reasons.append("제목에 역전 전제가 부족합니다. 열세·추격 같은 근거 없이 '뒤집나/역전하나' 표현을 쓰지 마세요.")
+            poll_focus_lane = _assess_poll_focus_title_lane(title_text, params_dict)
+            if not poll_focus_lane.get("passed", True):
+                effective_title_score = min(effective_title_score, 35)
+                mismatch_reasons.append(str(poll_focus_lane.get("reason") or "poll focus 제목 레인과 맞지 않습니다."))
+            if _has_broken_numeric_subject_frame(title_text):
+                effective_title_score = min(effective_title_score, 45)
+                mismatch_reasons.append("제목에서 수치가 주어처럼 흔들리거나 밀리는 표현은 사용할 수 없습니다.")
+            if _has_awkward_single_score_question_frame(title_text):
+                effective_title_score = min(effective_title_score, 45)
+                mismatch_reasons.append("제목에서 단일 득표율만 떼어 '왜 앞섰나'처럼 쓰지 말고, 격차나 양자 수치를 함께 드러내세요.")
+            numeric_binding = _assess_poll_title_numeric_binding(topic, content_text, title_text)
+            if not numeric_binding.get("passed", True):
+                effective_title_score = min(effective_title_score, 40)
+                mismatch_reasons.append(str(numeric_binding.get("reason") or "제목 수치가 대결 문맥과 맞지 않습니다."))
             if len(title_missing) > len(topic_keywords) * 0.5 and int(frame_alignment_meta.get("score") or 0) < 70:
                 mismatch_reasons.append(f"제목에 주제 핵심어 부족: {', '.join(title_missing[:3])}")
 
@@ -2456,6 +2859,7 @@ def validate_theme_and_content(topic: str, content: str, title: str = '') -> Dic
             'frameAlignmentScore': int(frame_alignment_meta.get("score") or 0),
             'frameAlignmentStyle': str(frame_alignment_meta.get("style") or ""),
             'frameMatchedPeople': list(frame_alignment_meta.get("matchedPeople") or []),
+            'pollFocusTitleLane': str(poll_focus_lane.get("lane") or "") if title else "",
         }
     except:
         return {
@@ -2955,6 +3359,7 @@ def calculate_title_quality_score(
         content_numbers_res = extract_numbers_from_content(content)
         safe_content_numbers = content_numbers_res.get('numbers', [])
         content_number_tokens = [_normalize_digit_token(c_num) for c_num in safe_content_numbers]
+        numeric_binding = _assess_poll_title_numeric_binding(topic, content, title)
 
         allowed_event_tokens: set[str] = set()
         if title_purpose == 'event_announcement':
@@ -2962,6 +3367,7 @@ def calculate_title_quality_score(
             allowed_event_tokens.update(_extract_digit_tokens(event_anchor_context.get('dateHint', '')))
 
         title_numbers = re.findall(r'\d+(?:억|만원|%|명|건|가구|곳)?', title)
+        awkward_single_score = _has_awkward_single_score_question_frame(title)
 
         # Check if all title numbers exist in content (fuzzy match)
         all_valid = True
@@ -2981,17 +3387,20 @@ def calculate_title_quality_score(
                 all_valid = False
                 break
 
-        if all_valid:
+        if all_valid and numeric_binding.get('passed', True) and not awkward_single_score:
                 breakdown['numbers'] = {'score': 15, 'max': 15, 'status': '검증됨'}
         else:
                 breakdown['numbers'] = {'score': 5, 'max': 15, 'status': '미검증'}
-                suggestions.append('제목의 숫자가 본문에서 확인되지 않았습니다.')
+                if awkward_single_score:
+                    suggestions.append('단일 득표율만 떼어 쓰지 말고, 격차 또는 양자대결 수치를 함께 드러내세요.')
+                else:
+                    suggestions.append(str(numeric_binding.get('reason') or '제목의 숫자가 본문에서 확인되지 않았습니다.'))
     else:
         breakdown['numbers'] = {'score': 8, 'max': 15, 'status': '없음'}
         
     # 4. Topic Match (Max 25)
     if topic:
-        theme_val = validate_theme_and_content(topic, content, title)
+        theme_val = validate_theme_and_content(topic, content, title, params=params)
         title_topic_score = int(theme_val.get('effectiveTitleScore') or theme_val.get('titleOverlapScore') or theme_val.get('overlapScore') or 0)
         content_topic_score = int(theme_val.get('contentOverlapScore') or theme_val.get('overlapScore') or 0)
         if title_topic_score >= 75:

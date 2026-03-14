@@ -83,6 +83,22 @@ ROLE_FALLBACK_LABELS: tuple[tuple[str, str], ...] = (
     ("대표", "상대 대표"),
     ("장관", "상대 장관"),
 )
+KEYWORD_INJECTION_RISK_PERSON_ROLE_PATTERN = re.compile(
+    r"[가-힣]{2,8}\s*(?:현\s*|전\s*)?(?:국회의원|의원|도지사|지사|시장|위원장|대표|장관|예비후보|후보)",
+    re.IGNORECASE,
+)
+KEYWORD_INJECTION_RISK_NUMERIC_TOKEN_PATTERN = re.compile(
+    r"\d{1,4}(?:\.\d+)?(?:%|명|일|월|년)?",
+    re.IGNORECASE,
+)
+KEYWORD_INJECTION_RISK_MARKERS: tuple[str, ...] = (
+    "후보군",
+    "적합도",
+    "가상대결",
+    "양자대결",
+    "대결",
+    "오차 범위",
+)
 PERSON_ROLE_REDUCTION_PATTERN_TEMPLATE = (
     r"{keyword}\s*(?P<modifier>(?:현|전)\s*)?"
     r"(?P<role>(?:[가-힣]{{1,8}}도지사|도지사|지사|국회의원|[가-힣]{{1,8}}시장|시장|의원|위원장|대표|장관|예비후보|후보))"
@@ -1890,6 +1906,28 @@ def _is_non_editable_sentence(text: str) -> bool:
     return False
 
 
+def _is_keyword_injection_risky_paragraph(text: str) -> bool:
+    plain = re.sub(r"\s+", " ", _strip_html(str(text or ""))).strip()
+    if not plain:
+        return True
+    if re.search(r"\d+\.\s+\d", plain):
+        return True
+    if "의 입니다" in plain or "상대장" in plain:
+        return True
+
+    numeric_tokens = KEYWORD_INJECTION_RISK_NUMERIC_TOKEN_PATTERN.findall(plain)
+    person_role_tokens = KEYWORD_INJECTION_RISK_PERSON_ROLE_PATTERN.findall(plain)
+    if len(numeric_tokens) >= 3 and len(person_role_tokens) >= 2:
+        return True
+    if (
+        len(numeric_tokens) >= 2
+        and len(person_role_tokens) >= 1
+        and any(marker in plain for marker in KEYWORD_INJECTION_RISK_MARKERS)
+    ):
+        return True
+    return False
+
+
 def _is_unnatural_location_phrase(text: str, keyword: str) -> bool:
     normalized = re.sub(r"\s+", " ", str(text or "")).strip()
     normalized_keyword = str(keyword or "").strip()
@@ -2296,7 +2334,7 @@ def _build_keyword_replacement_pool(
 ) -> list[str]:
     normalized_keyword = _normalize_user_keyword(keyword)
     if not normalized_keyword:
-        return ["관련 사안"]
+        return ["이 흐름"]
     person_name = _extract_person_name_from_keyword(normalized_keyword) or (
         normalized_keyword if _looks_like_compact_person_keyword(normalized_keyword) else ""
     )
@@ -2338,13 +2376,13 @@ def _build_keyword_replacement_pool(
         extras.append(short_reference)
     if generic_reference != "상대" and generic_reference not in extras:
         extras.append(generic_reference)
-    for item in [*extras, *variants, "관련 사안", "이 사안"]:
+    for item in [*extras, *variants]:
         normalized_item = _normalize_user_keyword(item)
         if not normalized_item or normalized_item == normalized_keyword or normalized_item in seen:
             continue
         seen.add(normalized_item)
         deduped.append(normalized_item)
-    return deduped or ["관련 사안"]
+    return deduped or ["이 흐름"]
 
 
 def _protect_shadowed_keywords(
@@ -2487,6 +2525,8 @@ def _inject_keyword_into_section(
     for paragraph_index in paragraph_indexes:
         paragraph_match = paragraph_matches[paragraph_index]
         paragraph_inner = str(paragraph_match.group(1) or "")
+        if _is_keyword_injection_risky_paragraph(paragraph_inner):
+            continue
         sentence_matches = list(re.finditer(r"[^.!?。]+[.!?。]?", paragraph_inner))
         if not sentence_matches:
             continue
@@ -2553,6 +2593,8 @@ def _inject_keyword_into_section(
                 paragraph_inner = str(paragraph_match.group(1) or "")
                 plain_paragraph = _strip_html(paragraph_inner)
                 if not plain_paragraph or len(plain_paragraph) < 20:
+                    continue
+                if _is_keyword_injection_risky_paragraph(plain_paragraph):
                     continue
                 if normalized_keyword in plain_paragraph:
                     continue
@@ -3161,6 +3203,32 @@ def enforce_keyword_requirements(
         if _normalize_user_keyword(item)
     }
 
+    def _has_pending_user_keyword_work(keyword_details: Mapping[str, Any]) -> bool:
+        for keyword in user_keywords:
+            keyword_info = keyword_details.get(keyword) or {}
+            current_count = int(
+                keyword_info.get("exclusiveCount")
+                or keyword_info.get("count")
+                or keyword_info.get("coverage")
+                or 0
+            )
+            max_allowed = int(keyword_info.get("max") or _keyword_user_threshold(len(user_keywords))[1])
+            if current_count > max_allowed:
+                return True
+            if keyword in skipped_user_keyword_set:
+                continue
+
+            expected = int(keyword_info.get("expected") or _keyword_user_threshold(len(user_keywords))[0])
+            gate_count = int(keyword_info.get("gateCount") or keyword_info.get("count") or keyword_info.get("coverage") or 0)
+            deficit = max(0, expected - gate_count)
+            body_expected = int(keyword_info.get("bodyExpected") or 0)
+            body_count = int(keyword_info.get("bodyCount") or 0)
+            body_deficit = max(0, body_expected - body_count)
+            exact_shortfall = int(keyword_info.get("exactShortfall") or 0)
+            if max(deficit, body_deficit, exact_shortfall) > 0:
+                return True
+        return False
+
     initial_result = validate_keyword_insertion(
         working_content,
         user_keywords,
@@ -3171,7 +3239,7 @@ def enforce_keyword_requirements(
         user_keyword_expected_overrides=user_keyword_expected_overrides,
         user_keyword_max_overrides=user_keyword_max_overrides,
     )
-    if not working_content or (not user_keywords and not auto_keywords):
+    if not working_content or not user_keywords:
         return {
             "content": working_content,
             "edited": False,
@@ -3184,6 +3252,14 @@ def enforce_keyword_requirements(
         for keyword in user_keywords
         if keyword not in skipped_user_keyword_set
     )
+    initial_user_repair_pending = _has_pending_user_keyword_work(initial_details)
+    if not initial_user_repair_pending:
+        return {
+            "content": working_content,
+            "edited": False,
+            "insertions": [],
+            "keywordResult": initial_result,
+        }
     if initial_result.get("valid") and not initial_exact_preference_pending:
         return {
             "content": working_content,
@@ -3202,6 +3278,8 @@ def enforce_keyword_requirements(
         details = (current_result.get("details") or {}).get("keywords") or {}
         sections = _parse_keyword_sections(working_content)
         if not details or not sections:
+            break
+        if not _has_pending_user_keyword_work(details):
             break
 
         reductions_applied = False
@@ -3263,11 +3341,11 @@ def enforce_keyword_requirements(
         insertion_plan: Dict[int, List[Dict[str, Any]]] = {}
         needs_fix = False
 
-        for keyword in [*user_keywords, *auto_keywords]:
+        for keyword in user_keywords:
             if keyword in skipped_user_keyword_set:
                 continue
             keyword_info = details.get(keyword) or {}
-            expected = int(keyword_info.get("expected") or (1 if keyword in auto_keywords else _keyword_user_threshold(len(user_keywords))[0]))
+            expected = int(keyword_info.get("expected") or _keyword_user_threshold(len(user_keywords))[0])
             gate_count = int(keyword_info.get("gateCount") or keyword_info.get("count") or keyword_info.get("coverage") or 0)
             deficit = max(0, expected - gate_count)
             body_expected = int(keyword_info.get("bodyExpected") or 0)

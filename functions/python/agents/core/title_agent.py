@@ -85,6 +85,9 @@ class TitleAgent(Agent):
         status = context.get('status', 'active') # Election status
         title_scope = (context.get('config') or {}).get('titleScope', {})
         background_text = context.get('background', '')
+        poll_focus_bundle = context.get('pollFocusBundle')
+        if not isinstance(poll_focus_bundle, dict):
+            poll_focus_bundle = {}
         
         # 🔑 [NEW] 입장문(심층 주제) 추출 - 제목에 핵심 주장 반영
         stance_text = context.get('stanceText', '')
@@ -103,6 +106,7 @@ class TitleAgent(Agent):
             'backgroundText': background_text,
             'stanceText': stance_text,  # 🔑 [NEW] 입장문 전달
             'contextAnalysis': context_analysis,
+            'pollFocusBundle': poll_focus_bundle,
             'roleKeywordPolicy': build_role_keyword_policy(
                 user_keywords,
                 person_roles=person_roles,

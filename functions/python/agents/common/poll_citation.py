@@ -82,6 +82,14 @@ _REFERENCE_DATE_PATTERNS: tuple[re.Pattern[str], ...] = (
         r"(?:입력|등록|작성|수정)\s*[:：]?\s*(?P<year>\d{4})년\s*(?P<month>\d{1,2})월\s*(?P<day>\d{1,2})일",
         re.IGNORECASE,
     ),
+    re.compile(
+        r"(?P<year>20\d{2})[./-]\s*(?P<month>\d{1,2})[./-]\s*(?P<day>\d{1,2})(?!\d)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?P<year>20\d{2})년\s*(?P<month>\d{1,2})월\s*(?P<day>\d{1,2})일",
+        re.IGNORECASE,
+    ),
 )
 
 

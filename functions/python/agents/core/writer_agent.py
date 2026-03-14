@@ -41,6 +41,87 @@ TEMPLATE_BUILDERS = {
     'analytical_writing': build_local_issues_prompt
 }
 
+STANCE_META_SOURCE_CUE_PATTERN = re.compile(
+    r"(?:\b(?:KBS|MBC|SBS|JTBC|TV조선|채널A|YTN|KNN|연합뉴스|뉴시스|뉴스1)\b|뉴스)",
+    re.IGNORECASE,
+)
+STANCE_META_TIME_CUE_PATTERN = re.compile(
+    r"(?:\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{1,2}월\s*\d{1,2}일|\d{1,2}시(?:\s*\d{1,2}분)?|\d{1,2}:\d{2})"
+)
+STANCE_META_LABEL_CUE_PATTERN = re.compile(
+    r"(?:방송분|기사|보도|앵커|기자|CG|촬영|편집|입력|수정)",
+    re.IGNORECASE,
+)
+STANCE_BRANDING_CERTAINTY_PATTERN = re.compile(
+    r"(?:충분히|반드시|끝내|기필코|확실히).*(?:이깁니다|승리합니다|해냅니다|해낼\s*수\s*있습니다|됩니다)"
+)
+STANCE_BRANDING_RECOGNITION_PATTERN = re.compile(
+    r"(?:조금씩|점점|확실히|분명히).*(?:알려지고|주목받고|인지도가)"
+)
+
+
+def _normalize_stance_text(value: Any) -> str:
+    return re.sub(r'\s+', ' ', str(value or '')).strip()
+
+
+def _compact_stance_text(value: Any) -> str:
+    return re.sub(r'[^0-9A-Za-z가-힣]', '', _normalize_stance_text(value))
+
+
+def _normalize_person_hint(value: Any) -> str:
+    return re.sub(r'\s+', '', re.sub(r'[^0-9A-Za-z가-힣\s]', '', str(value or ''))).strip()
+
+
+def _looks_like_stance_meta_line(candidate: Any) -> bool:
+    normalized = _normalize_stance_text(candidate)
+    if not normalized:
+        return False
+
+    stripped = normalized.lstrip('*-• ').strip()
+    if re.fullmatch(r'(?:앵커|기자|CG)\s*[가-힣A-Za-z]{2,12}', stripped, re.IGNORECASE):
+        return True
+
+    has_source = bool(STANCE_META_SOURCE_CUE_PATTERN.search(stripped))
+    has_time = bool(STANCE_META_TIME_CUE_PATTERN.search(stripped))
+    has_label = bool(STANCE_META_LABEL_CUE_PATTERN.search(stripped))
+    if stripped != normalized and (has_source or has_time or has_label):
+        return True
+    if has_source and (has_time or has_label):
+        return True
+    if re.fullmatch(r'(?:입력|수정)\s*:?\s*.+', stripped) and has_time:
+        return True
+    return False
+
+
+def _looks_like_branding_stance_line(candidate: Any, author_name: Any = "") -> bool:
+    normalized = _normalize_stance_text(candidate)
+    compact = _compact_stance_text(normalized)
+    author = _normalize_person_hint(author_name)
+    if not compact or not author:
+        return False
+    if author not in compact:
+        return False
+    if '는' in compact and compact.endswith(f'{author}입니다'):
+        return True
+    if STANCE_BRANDING_CERTAINTY_PATTERN.search(normalized):
+        return True
+    if STANCE_BRANDING_RECOGNITION_PATTERN.search(normalized):
+        return True
+    return False
+
+
+def _should_keep_must_include_stance(candidate: Any, author_name: Any = "") -> bool:
+    normalized = _normalize_stance_text(candidate)
+    if len(normalized) < 8:
+        return False
+    if normalized.startswith(('⚠️', '우선순위:', '예시 패턴:', '→ 실제')):
+        return False
+    if _looks_like_stance_meta_line(normalized):
+        return False
+    if _looks_like_branding_stance_line(normalized, author_name):
+        return False
+    return True
+
 class WriterAgent:
     def __init__(self):
         from ..common.gemini_client import get_client, DEFAULT_MODEL
@@ -259,11 +340,9 @@ class WriterAgent:
                              elif isinstance(item, str):
                                  candidate = item.strip()
 
-                             if (
-                                 len(candidate) >= 5
-                                 and not candidate.startswith(('⚠️', '우선순위:', '예시 패턴:', '→ 실제'))
-                             ):
-                                 filtered_stance.append(candidate)
+                             normalized_candidate = _normalize_stance_text(candidate)
+                             if _should_keep_must_include_stance(normalized_candidate, author_name):
+                                 filtered_stance.append(normalized_candidate)
 
                          news_quotes = context_analysis.get('newsQuotes') or []
                          facts, filtered_stance, news_quotes = self._dedupe_material_lists(

@@ -192,6 +192,15 @@ class JobManager:
         auto_keywords = input_data.get("autoKeywords", [])
         if not isinstance(auto_keywords, list):
             auto_keywords = []
+        recent_titles = input_data.get("recentTitles", [])
+        if not isinstance(recent_titles, list):
+            recent_titles = []
+        previous_titles = input_data.get("previousTitles", recent_titles)
+        if not isinstance(previous_titles, list):
+            previous_titles = recent_titles
+        poll_focus_bundle = input_data.get("pollFocusBundle", {})
+        if not isinstance(poll_focus_bundle, dict):
+            poll_focus_bundle = {}
 
         slogan = str(input_data.get("slogan") or user_profile.get("slogan") or "")
         slogan_enabled = bool(
@@ -229,6 +238,9 @@ class JobManager:
             "references": input_data.get("references", []),
             "factAllowlist": input_data.get("factAllowlist", []),
             "targetWordCount": input_data.get("targetWordCount", 2000),
+            "recentTitles": recent_titles,
+            "previousTitles": previous_titles,
+            "pollFocusBundle": poll_focus_bundle,
             "slogan": slogan,
             "sloganEnabled": slogan_enabled,
             "donationInfo": donation_info,

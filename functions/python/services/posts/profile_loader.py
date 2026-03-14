@@ -30,6 +30,91 @@ def _safe_list(value: Any) -> list[Any]:
     return []
 
 
+def _normalize_recent_titles(values: Any, *, limit: int = 5) -> list[str]:
+    titles: list[str] = []
+    seen: set[str] = set()
+
+    for raw_value in _safe_list(values):
+        title = ""
+        if isinstance(raw_value, dict):
+            title = str(raw_value.get("title") or "").strip()
+        else:
+            title = str(raw_value or "").strip()
+        if not title or title in seen:
+            continue
+        seen.add(title)
+        titles.append(title)
+        if len(titles) >= limit:
+            break
+    return titles
+
+
+def peek_active_generation_session(
+    uid: str,
+    *,
+    is_admin: bool = False,
+) -> Dict[str, Any]:
+    if not uid:
+        return {
+            "sessionId": None,
+            "attempts": 0,
+            "maxAttempts": 3,
+            "isNewSession": False,
+            "recentTitles": [],
+            "category": "",
+            "topic": "",
+        }
+
+    if is_admin:
+        return {
+            "sessionId": "admin",
+            "attempts": 0,
+            "maxAttempts": 3,
+            "isNewSession": False,
+            "recentTitles": [],
+            "category": "",
+            "topic": "",
+        }
+
+    db = firestore.client()
+    user_ref = db.collection("users").document(uid)
+
+    try:
+        user_doc = user_ref.get()
+        user_data = _safe_dict(user_doc.to_dict()) if user_doc.exists else {}
+        active_session = _safe_dict(user_data.get("activeGenerationSession"))
+        if not active_session:
+            return {
+                "sessionId": None,
+                "attempts": 0,
+                "maxAttempts": 3,
+                "isNewSession": False,
+                "recentTitles": [],
+                "category": "",
+                "topic": "",
+            }
+        return {
+            "sessionId": str(active_session.get("id") or f"session_{uid}"),
+            "attempts": int(active_session.get("attempts") or 0),
+            "maxAttempts": 3,
+            "isNewSession": False,
+            "recentTitles": _normalize_recent_titles(active_session.get("recentTitles")),
+            "category": str(active_session.get("category") or ""),
+            "topic": str(active_session.get("topic") or ""),
+        }
+    except Exception as exc:
+        logger.warning("[ProfileLoader] active session peek failed: %s", exc)
+        return {
+            "sessionId": None,
+            "attempts": 0,
+            "maxAttempts": 3,
+            "isNewSession": False,
+            "recentTitles": [],
+            "category": "",
+            "topic": "",
+        }
+
+
 def _is_admin(user_profile: Dict[str, Any]) -> bool:
     role = str(user_profile.get("role", "")).strip().lower()
     return bool(user_profile.get("isAdmin") is True or role == "admin")
@@ -157,6 +242,7 @@ def get_or_create_session(
     is_tester: bool = False,
     category: str = "",
     topic: str = "",
+    seed_recent_titles: Any = None,
 ) -> Dict[str, Any]:
     """
     Python-side session helper (non-destructive, basic parity with Node).
@@ -174,6 +260,7 @@ def get_or_create_session(
         user_doc = user_ref.get()
         user_data = _safe_dict(user_doc.to_dict()) if user_doc.exists else {}
         active_session = _safe_dict(user_data.get("activeGenerationSession"))
+        seeded_recent_titles = _normalize_recent_titles(seed_recent_titles)
 
         if active_session:
             attempts = int(active_session.get("attempts") or 0)
@@ -182,6 +269,7 @@ def get_or_create_session(
                 "attempts": attempts,
                 "maxAttempts": 3,
                 "isNewSession": False,
+                "recentTitles": _normalize_recent_titles(active_session.get("recentTitles")),
             }
 
         session_id = f"session_{int(time.time() * 1000)}"
@@ -194,14 +282,27 @@ def get_or_create_session(
                     "category": category,
                     "topic": topic,
                     "isTester": bool(is_tester),
+                    "recentTitles": seeded_recent_titles,
                 }
             },
             merge=True,
         )
-        return {"sessionId": session_id, "attempts": 0, "maxAttempts": 3, "isNewSession": True}
+        return {
+            "sessionId": session_id,
+            "attempts": 0,
+            "maxAttempts": 3,
+            "isNewSession": True,
+            "recentTitles": seeded_recent_titles,
+        }
     except Exception as exc:
         logger.warning("[ProfileLoader] session lookup/create failed: %s", exc)
-        return {"sessionId": None, "attempts": 0, "maxAttempts": 3, "isNewSession": False}
+        return {
+            "sessionId": None,
+            "attempts": 0,
+            "maxAttempts": 3,
+            "isNewSession": False,
+            "recentTitles": [],
+        }
 
 
 def increment_session_attempts(
@@ -247,6 +348,50 @@ def increment_session_attempts(
     return {**session, "attempts": attempts_after}
 
 
+def remember_session_generated_title(
+    uid: str,
+    session: Dict[str, Any] | None,
+    title: str,
+    *,
+    is_admin: bool = False,
+    limit: int = 5,
+) -> Dict[str, Any]:
+    session = _safe_dict(session)
+    normalized_title = str(title or "").strip()
+    if not normalized_title:
+        return session
+
+    current_recent = _normalize_recent_titles(session.get("recentTitles"), limit=limit)
+    updated_recent = [normalized_title]
+    updated_recent.extend(item for item in current_recent if item != normalized_title)
+    updated_recent = updated_recent[:limit]
+
+    if not uid or is_admin:
+        return {**session, "recentTitles": updated_recent}
+
+    session_id = str(session.get("sessionId") or session.get("id") or "").strip()
+    db = firestore.client()
+    user_ref = db.collection("users").document(uid)
+
+    try:
+        user_doc = user_ref.get()
+        user_data = _safe_dict(user_doc.to_dict()) if user_doc.exists else {}
+        active_session = _safe_dict(user_data.get("activeGenerationSession"))
+        active_session_id = str(active_session.get("id") or "").strip()
+        if session_id and active_session_id and active_session_id != session_id:
+            return {**session, "recentTitles": updated_recent}
+
+        remote_recent = _normalize_recent_titles(active_session.get("recentTitles"), limit=limit)
+        merged_recent = [normalized_title]
+        merged_recent.extend(item for item in remote_recent if item != normalized_title)
+        merged_recent = merged_recent[:limit]
+        user_ref.update({"activeGenerationSession.recentTitles": merged_recent})
+        return {**session, "recentTitles": merged_recent}
+    except Exception as exc:
+        logger.warning("[ProfileLoader] recent title update failed: %s", exc)
+        return {**session, "recentTitles": updated_recent}
+
+
 def end_session(uid: str) -> None:
     """Clear activeGenerationSession after save."""
     if not uid:
@@ -266,4 +411,6 @@ def end_session(uid: str) -> None:
 loadUserProfile = load_user_profile
 getOrCreateSession = get_or_create_session
 incrementSessionAttempts = increment_session_attempts
+rememberSessionGeneratedTitle = remember_session_generated_title
+peekActiveGenerationSession = peek_active_generation_session
 endSession = end_session

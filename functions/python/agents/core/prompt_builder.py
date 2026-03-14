@@ -141,6 +141,122 @@ def build_material_uniqueness_guard(
 """.strip()
 
 
+def build_poll_focus_bundle_section(bundle: Optional[Dict[str, Any]]) -> str:
+    if not isinstance(bundle, dict):
+        return ""
+    if str(bundle.get("scope") or "").strip().lower() != "matchup":
+        return ""
+
+    primary_pair = bundle.get("primaryPair") if isinstance(bundle.get("primaryPair"), dict) else {}
+    primary_fact_template = (
+        bundle.get("primaryFactTemplate") if isinstance(bundle.get("primaryFactTemplate"), dict) else {}
+    )
+    speaker = normalize_context_text(primary_pair.get("speaker"))
+    opponent = normalize_context_text(primary_pair.get("opponent"))
+    speaker_score = normalize_context_text(primary_pair.get("speakerPercent") or primary_pair.get("speakerScore"))
+    opponent_score = normalize_context_text(primary_pair.get("opponentPercent") or primary_pair.get("opponentScore"))
+    if not speaker or not opponent or not speaker_score or not opponent_score:
+        return ""
+
+    secondary_pairs = bundle.get("secondaryPairs") if isinstance(bundle.get("secondaryPairs"), list) else []
+    allowed_title_lanes = (
+        bundle.get("allowedTitleLanes") if isinstance(bundle.get("allowedTitleLanes"), list) else []
+    )
+    allowed_h2_kinds = bundle.get("allowedH2Kinds") if isinstance(bundle.get("allowedH2Kinds"), list) else []
+    forbidden_metrics = bundle.get("forbiddenMetrics") if isinstance(bundle.get("forbiddenMetrics"), list) else []
+    focused_source_text = normalize_context_text(bundle.get("focusedSourceText"), sep="\n")
+    primary_fact_sentence = normalize_context_text(primary_fact_template.get("sentence"))
+    primary_heading = normalize_context_text(primary_fact_template.get("heading"))
+
+    secondary_lines: List[str] = []
+    for idx, raw_pair in enumerate(secondary_pairs[:2], start=1):
+        pair = raw_pair if isinstance(raw_pair, dict) else {}
+        pair_speaker = normalize_context_text(pair.get("speaker"))
+        pair_opponent = normalize_context_text(pair.get("opponent"))
+        pair_speaker_score = normalize_context_text(pair.get("speakerPercent") or pair.get("speakerScore"))
+        pair_opponent_score = normalize_context_text(pair.get("opponentPercent") or pair.get("opponentScore"))
+        if not pair_speaker or not pair_opponent or not pair_speaker_score or not pair_opponent_score:
+            continue
+        secondary_lines.append(
+            f'    <pair index="{idx}">{_xml_text(pair_speaker)} vs {_xml_text(pair_opponent)} '
+            f'({_xml_text(pair_speaker_score)} 대 {_xml_text(pair_opponent_score)})</pair>'
+        )
+    secondary_xml = "\n".join(secondary_lines) if secondary_lines else '    <pair index="0">없음</pair>'
+
+    forbidden_lines = "\n".join(
+        f"    <metric>{_xml_text(item)}</metric>"
+        for item in forbidden_metrics[:5]
+        if normalize_context_text(item)
+    )
+    if not forbidden_lines:
+        forbidden_lines = "    <metric>정당 지지율</metric>"
+
+    title_lane_lines: List[str] = []
+    for raw_lane in allowed_title_lanes[:3]:
+        lane = raw_lane if isinstance(raw_lane, dict) else {}
+        lane_id = normalize_context_text(lane.get("id"))
+        lane_label = normalize_context_text(lane.get("label"))
+        lane_template = normalize_context_text(lane.get("template"))
+        if not lane_id or not lane_template:
+            continue
+        title_lane_lines.append(
+            f'    <lane id="{_xml_text(lane_id)}" label="{_xml_text(lane_label or lane_id)}">'
+            f"{_xml_text(lane_template)}</lane>"
+        )
+    title_lane_xml = "\n".join(title_lane_lines) if title_lane_lines else (
+        '    <lane id="fact_direct" label="fact_direct">없음</lane>'
+    )
+
+    h2_kind_lines: List[str] = []
+    for raw_kind in allowed_h2_kinds[:5]:
+        kind = raw_kind if isinstance(raw_kind, dict) else {}
+        kind_id = normalize_context_text(kind.get("id"))
+        kind_label = normalize_context_text(kind.get("label"))
+        kind_template = normalize_context_text(kind.get("template"))
+        if not kind_id or not kind_template:
+            continue
+        h2_kind_lines.append(
+            f'    <kind id="{_xml_text(kind_id)}" label="{_xml_text(kind_label or kind_id)}">'
+            f"{_xml_text(kind_template)}</kind>"
+        )
+    h2_kind_xml = "\n".join(h2_kind_lines) if h2_kind_lines else (
+        '    <kind id="primary_matchup" label="주대결 결과">없음</kind>'
+    )
+
+    return f"""
+<poll_focus_bundle priority="critical">
+  <scope>matchup</scope>
+  <primary_pair>
+    <speaker>{_xml_text(speaker)}</speaker>
+    <opponent>{_xml_text(opponent)}</opponent>
+    <score>{_xml_text(speaker_score)} 대 {_xml_text(opponent_score)}</score>
+    <heading_template>{_xml_text(primary_heading or f"{opponent}과의 가상대결, {speaker} {speaker_score} 대 {opponent_score}")}</heading_template>
+    <sentence_template>{_xml_text(primary_fact_sentence or f"{speaker}·{opponent} 가상대결에서는 {speaker_score} 대 {opponent_score}로 나타났습니다.")}</sentence_template>
+  </primary_pair>
+  <secondary_pairs>
+{secondary_xml}
+  </secondary_pairs>
+  <allowed_title_lanes>
+{title_lane_xml}
+  </allowed_title_lanes>
+  <allowed_h2_kinds>
+{h2_kind_xml}
+  </allowed_h2_kinds>
+  <forbidden_metrics>
+{forbidden_lines}
+  </forbidden_metrics>
+  <rules>
+    <rule order="1">도입과 핵심 본문은 primary_pair를 중심으로 작성하고, 정당 지지율이나 당내 경선 수치로 중심을 바꾸지 않습니다.</rule>
+    <rule order="2">주대결을 설명하는 첫 문장은 sentence_template 구조를 따르며, 인물 이름과 수치를 절단하거나 뒤섞지 않습니다.</rule>
+    <rule order="3">소제목(H2)은 allowed_h2_kinds 범위 안에서만 고르고, 브랜딩 문구를 그대로 H2로 쓰지 않습니다.</rule>
+    <rule order="4">결론 문단은 미완성 절로 끝내지 말고, 모든 문장을 완결된 서술형으로 마무리합니다.</rule>
+    <rule order="5">secondary_pairs는 보조 근거로만 짧게 언급하고, 글의 중심 논지를 primary_pair에서 이탈시키지 않습니다.</rule>
+  </rules>
+  <focused_reference>{_xml_cdata(focused_source_text)}</focused_reference>
+</poll_focus_bundle>
+""".strip()
+
+
 # ---------------------------------------------------------------------------
 # build_retry_directive
 # ---------------------------------------------------------------------------
@@ -612,6 +728,9 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
         context_analysis,
         body_sections=body_section_count,
     )
+    poll_focus_bundle_section = build_poll_focus_bundle_section(
+        params.get('pollFocusBundle') if isinstance(params.get('pollFocusBundle'), dict) else {}
+    )
 
     intro_line_1 = '<p>1문단: 입장문/페이스북 글의 핵심 주장으로 바로 시작하고 자기소개는 1문장 이내로 제한</p>'
     intro_line_2 = '<p>2문단: 입장문 핵심 주장(원문 요지)을 재작성하여 글의 목적을 명확히 제시</p>'
@@ -756,6 +875,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     <rule id="causal_clarity">성과 언급 시 본인의 구체적 역할/직책 명시. "40% 득표율을 이끌어냈다" → "시당위원장으로서 지역 조직을 총괄하며 40% 득표율 달성에 기여했습니다"</rule>
   </mandatory_rules>
 {material_uniqueness_guard}
+{poll_focus_bundle_section}
 {event_mode_rules}
 {intro_stance_rules}
 

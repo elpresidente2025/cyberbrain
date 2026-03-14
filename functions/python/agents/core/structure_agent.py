@@ -660,12 +660,14 @@ class StructureAgent(Agent):
         # 🔑 [NEW] 입장문과 뉴스/데이터 분리
         stance_text = normalize_context_text(context.get('stanceText', ''))
         news_data_text = normalize_context_text(context.get('newsDataText', ''))
+        poll_focus_bundle = context.get('pollFocusBundle') if isinstance(context.get('pollFocusBundle'), dict) else {}
+        focused_news_context = normalize_context_text(poll_focus_bundle.get('focusedSourceText'), sep="\n")
         source_instructions = normalize_context_text(stance_text)
         if not strip_html(source_instructions):
             source_instructions = normalize_context_text(instructions)
         if not strip_html(source_instructions):
             source_instructions = normalize_context_text(topic)
-        effective_news_context = news_data_text or news_context
+        effective_news_context = focused_news_context or news_data_text or news_context
         target_word_count = context.get('targetWordCount', int(STRUCTURE_SPEC['idealTotalMin']))
         user_keywords = context.get('userKeywords', [])
         personalized_hints = normalize_context_text(context.get('personalizedHints', ''), sep="\n")
@@ -811,6 +813,7 @@ class StructureAgent(Agent):
             'profileSubstituteContext': profile_substitute.get('contextText') if isinstance(profile_substitute, dict) else '',
             'newsSourceMode': news_source_mode,
             'userKeywords': user_keywords,
+            'pollFocusBundle': poll_focus_bundle,
             'lengthSpec': length_spec,
             'outputMode': 'json',
         }
