@@ -7,6 +7,13 @@ from ..common.natural_tone import build_natural_tone_prompt
 
 logger = logging.getLogger(__name__)
 
+STYLE_FINGERPRINT_MIN_CONFIDENCE = 0.55
+STYLE_GUIDE_MAX_CHARS = 700
+STYLE_POLISH_LIMITS = {
+    "light": {"max_sentences": 3, "max_ratio": "20%"},
+    "medium": {"max_sentences": 6, "max_ratio": "30%"},
+}
+
 # 선거법 위반 표현 패턴 (Regex)
 PLEDGE_REPLACEMENTS = [
     (r'약속드?립니다', '필요성을 말씀드립니다'),
@@ -50,6 +57,17 @@ class EditorAgent(Agent):
         target_word_count = context.get('targetWordCount', 2000)
         polish_mode = bool(context.get('polishMode') is True)
         speaker_name = str(context.get('fullName') or context.get('speakerName') or '').strip()
+        style_guide = str(context.get('styleGuide') or '').strip()
+        style_fingerprint = context.get('styleFingerprint')
+        if not isinstance(style_fingerprint, dict):
+            style_fingerprint = {}
+        style_polish_mode = str(context.get('stylePolishMode') or '').strip().lower()
+        style_instruction = self._build_style_polish_instruction(
+            style_guide=style_guide,
+            style_fingerprint=style_fingerprint,
+            mode=style_polish_mode,
+            enabled=polish_mode,
+        )
 
         # 1. Apply Hard Constraints First (Pre-LLM cleanups if any? Node.js does it post-LLM usually, but applyHardConstraintsOnly uses it)
         # We will use LLM first, then apply hard constraints as fallback/final polish.
@@ -65,6 +83,7 @@ class EditorAgent(Agent):
             target_word_count=target_word_count,
             speaker_name=speaker_name,
             polish_mode=polish_mode,
+            style_instruction=style_instruction,
         )
 
         if not self._client:
@@ -101,9 +120,16 @@ class EditorAgent(Agent):
                 content=constrained['content'],
                 title=constrained['title'],
                 speaker_name=speaker_name,
+                style_instruction=style_instruction,
             )
             constrained['content'] = humanized.get('content', constrained['content'])
             constrained['editSummary'] = constrained['editSummary'] + humanized.get('changes', [])
+            if (
+                style_instruction
+                and constrained['content'] != content
+                and "사용자 문체 일부 반영" not in constrained['editSummary']
+            ):
+                constrained['editSummary'].append("사용자 문체 일부 반영")
 
             return constrained
 
@@ -123,6 +149,7 @@ class EditorAgent(Agent):
         target_word_count,
         speaker_name: str = "",
         polish_mode: bool = False,
+        style_instruction: str = "",
     ):
         issues = []
         
@@ -207,7 +234,134 @@ class EditorAgent(Agent):
   "editSummary": ["수정 사항 1", "수정 사항 2"]
 }}"""
 
-    async def _humanize_pass(self, content: str, title: str, speaker_name: str = "") -> Dict[str, Any]:
+    def _build_style_polish_instruction(
+        self,
+        *,
+        style_guide: str,
+        style_fingerprint: Dict[str, Any],
+        mode: str = "",
+        enabled: bool = False,
+    ) -> str:
+        if not enabled:
+            return ""
+
+        normalized_mode = mode if mode in STYLE_POLISH_LIMITS else "light"
+        limits = STYLE_POLISH_LIMITS[normalized_mode]
+
+        metadata = style_fingerprint.get("analysisMetadata") or {}
+        try:
+            confidence = float(metadata.get("confidence") or 0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+
+        normalized_guide = re.sub(r"\s+", " ", str(style_guide or "")).strip()
+        if not normalized_guide and confidence < STYLE_FINGERPRINT_MIN_CONFIDENCE:
+            return ""
+
+        lines = [
+            (
+                f"- 전체 재작성은 금지하고 도입, 문단 연결, 강조, 결론 문장 위주로만 "
+                f"최대 {limits['max_sentences']}문장 또는 전체의 {limits['max_ratio']} 이내에서 조정합니다."
+            ),
+            "- 숫자, 날짜, 인명, 지명, 인용, 정책 주장, 법적 표현, 필수 키워드는 절대 바꾸지 않습니다.",
+            "- 내용과 논리 구조는 유지하고 말맛과 호흡만 사용자답게 다듬습니다.",
+        ]
+
+        if normalized_guide:
+            guide_excerpt = normalized_guide[:STYLE_GUIDE_MAX_CHARS]
+            if len(normalized_guide) > STYLE_GUIDE_MAX_CHARS:
+                guide_excerpt += "..."
+            lines.append(f"- 사용자 문체 가이드: {guide_excerpt}")
+
+        if confidence >= STYLE_FINGERPRINT_MIN_CONFIDENCE:
+            phrases = style_fingerprint.get("characteristicPhrases") or {}
+            patterns = style_fingerprint.get("sentencePatterns") or {}
+            tone = style_fingerprint.get("toneProfile") or {}
+            alts = style_fingerprint.get("aiAlternatives") or {}
+
+            signature_candidates = []
+            for key in ("signatures", "emphatics", "conclusions"):
+                raw_values = phrases.get(key) or []
+                if isinstance(raw_values, list):
+                    signature_candidates.extend(
+                        str(item).strip() for item in raw_values if str(item).strip()
+                    )
+            deduped_signatures: List[str] = []
+            seen_signatures = set()
+            for item in signature_candidates:
+                if item in seen_signatures:
+                    continue
+                seen_signatures.add(item)
+                deduped_signatures.append(item)
+                if len(deduped_signatures) >= 5:
+                    break
+            if deduped_signatures:
+                lines.append(f"- 선호 표현 예시: {', '.join(deduped_signatures)}")
+
+            starters = patterns.get("preferredStarters") or []
+            if isinstance(starters, list):
+                preferred_starters = [str(item).strip() for item in starters if str(item).strip()][:3]
+                if preferred_starters:
+                    lines.append(f"- 문장 시작 습관: {', '.join(preferred_starters)}")
+
+            avg_length = patterns.get("avgLength")
+            clause_complexity = str(patterns.get("clauseComplexity") or "").strip()
+            if avg_length or clause_complexity:
+                lines.append(
+                    f"- 문장 호흡: 평균 {avg_length or 45}자 안팎, 복잡도 {clause_complexity or 'medium'}"
+                )
+
+            tone_tags: List[str] = []
+            try:
+                formality = float(tone.get("formality") or 0)
+            except (TypeError, ValueError):
+                formality = 0.0
+            try:
+                directness = float(tone.get("directness") or 0)
+            except (TypeError, ValueError):
+                directness = 0.0
+            try:
+                optimism = float(tone.get("optimism") or 0)
+            except (TypeError, ValueError):
+                optimism = 0.0
+            if formality >= 0.6:
+                tone_tags.append("격식 있는 존댓말")
+            elif formality and formality <= 0.4:
+                tone_tags.append("조금 더 구어적인 호흡")
+            if directness >= 0.6:
+                tone_tags.append("직설적인 전달")
+            if optimism >= 0.6:
+                tone_tags.append("희망과 확신의 어조")
+            tone_description = str(tone.get("toneDescription") or "").strip()
+            if tone_tags or tone_description:
+                tone_text = ", ".join(tone_tags) if tone_tags else tone_description
+                if tone_description and tone_description not in tone_text:
+                    tone_text = f"{tone_text}, {tone_description}"
+                lines.append(f"- 어조 목표: {tone_text}")
+
+            replacement_pairs: List[str] = []
+            for raw_key, raw_value in list(alts.items())[:4]:
+                replacement = str(raw_value or "").strip()
+                if not replacement:
+                    continue
+                source = str(raw_key or "").replace("instead_of_", "").replace("_", " ").strip()
+                if not source:
+                    continue
+                replacement_pairs.append(f'"{source}" -> "{replacement}"')
+                if len(replacement_pairs) >= 2:
+                    break
+            if replacement_pairs:
+                lines.append(f"- AI 상투어 대체 예시: {', '.join(replacement_pairs)}")
+
+        return "\n".join(lines)
+
+    async def _humanize_pass(
+        self,
+        content: str,
+        title: str,
+        speaker_name: str = "",
+        style_instruction: str = "",
+    ) -> Dict[str, Any]:
         """oh-my-humanizer 스타일 2차 LLM 패스.
 
         1단계(감지): AI 투 표현 식별
@@ -216,7 +370,12 @@ class EditorAgent(Agent):
         """
         from ..common.gemini_client import generate_json_async
 
-        prompt = self._build_humanize_prompt(content, title, speaker_name)
+        prompt = self._build_humanize_prompt_v2(
+            content,
+            title,
+            speaker_name,
+            style_instruction=style_instruction,
+        )
         try:
             result = await generate_json_async(
                 prompt,
@@ -235,7 +394,13 @@ class EditorAgent(Agent):
             logger.warning(f"humanize_pass 실패 (원본 유지): {e}")
             return {'content': content, 'changes': []}
 
-    def _build_humanize_prompt(self, content: str, title: str, speaker_name: str = "") -> str:
+    def _build_humanize_prompt(
+        self,
+        content: str,
+        title: str,
+        speaker_name: str = "",
+        style_instruction: str = "",
+    ) -> str:
         speaker_note = f'화자는 "{speaker_name}"입니다. 화자 정체성을 바꾸지 마세요.' if speaker_name else ""
         return f"""당신은 AI가 생성한 한국어 텍스트를 인간이 쓴 것처럼 자연스럽게 다듬는 전문가입니다.
 {speaker_note}
@@ -282,6 +447,63 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
 {{
   "content": "수정된 본문 (HTML 태그 유지)",
   "changes": ["교체한 표현 1: BAD → GOOD", "교체한 표현 2: BAD → GOOD"]
+}}"""
+
+    def _build_humanize_prompt_v2(
+        self,
+        content: str,
+        title: str,
+        speaker_name: str = "",
+        style_instruction: str = "",
+    ) -> str:
+        speaker_note = (
+            f'화자는 "{speaker_name}"입니다. 화자 정체성을 바꾸지 마세요.'
+            if speaker_name
+            else ""
+        )
+        style_note = ""
+        if style_instruction:
+            style_note = f"""
+[사용자 문체 덧씌우기]
+{style_instruction}
+- 이 지시는 필요한 문장에만 부분 적용합니다.
+- 특히 도입, 연결, 강조, 결론에 우선 적용하고 나머지는 최소한으로 손봅니다.
+""".strip()
+
+        return f"""당신은 AI가 생성한 한국어 정치 원고를 더 사람답고 자연스럽게 다듬는 편집자입니다.
+{speaker_note}
+
+{style_note}
+
+아래 원고를 3단계로 처리하세요.
+
+[1단계 - 감지]
+다음과 같은 AI 티 표현을 찾으세요.
+- 과도한 대칭 구조와 추상적 수식
+- 뜻은 약한데 그럴듯해 보이는 표현
+- 결론과 다짐 문장이 지나치게 형식적인 경우
+- 연결어가 기계적으로 반복되는 경우
+
+[2단계 - 교정]
+- 의미, 사실, 수치, 고유명사, 정치적 입장은 유지합니다.
+- 문장 흐름, 연결, 호흡, 어미 반복만 더 자연스럽게 바꿉니다.
+- 사용자 문체 지시가 있으면 전체 재작성 없이 일부 문장에만 반영합니다.
+- 5단 구조와 HTML 형식은 유지합니다.
+
+[3단계 - 검증]
+- 수정 후에도 원문 의미가 바뀌지 않았는지 다시 확인하세요.
+- 과장되거나 캐릭터화된 말투는 피하세요.
+
+[원문 제목]
+{title}
+
+[원문 본문]
+{content}
+
+반드시 다음 JSON만 반환하세요.
+{{
+  "content": "수정된 본문 (HTML 유지)",
+  "changes": ["수정 사항 1", "수정 사항 2"]
 }}"""
 
     def apply_hard_constraints(self, content: str, title: str, user_keywords: List[str], status: str, previous_summary: List[str] = [], error: str = None) -> Dict[str, Any]:
