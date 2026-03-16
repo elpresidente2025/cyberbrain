@@ -201,8 +201,77 @@ TARGETED_POLISH_NUMERIC_TOKEN_PATTERN = re.compile(
     re.IGNORECASE,
 )
 SENTENCE_LIKE_UNIT_PATTERN = re.compile(r"(?:\d+\.\d+|[^.!?。])+(?:[.!?。](?!\d)|$)")
-TARGETED_POLISH_MAX_CANDIDATES = 4
+TARGETED_POLISH_MAX_CANDIDATES = 6
 TARGETED_POLISH_MAX_TEXT_LENGTH = 180
+TARGETED_POLISH_STYLE_FINGERPRINT_MIN_CONFIDENCE = 0.55
+TARGETED_POLISH_STYLE_GUIDE_MAX_CHARS = 500
+TARGETED_POLISH_STYLE_LIMITS: dict[str, dict[str, Any]] = {
+    "light": {"max_sentences": 3, "max_ratio": "20%"},
+    "medium": {"max_sentences": 6, "max_ratio": "30%"},
+}
+TARGETED_POLISH_EXCLUDED_MARKERS: tuple[str, ...] = (
+    "후원계좌",
+    "예금주",
+    "영수증",
+    "입금 후",
+    "조사개요",
+    "응답률",
+    "신뢰수준",
+    "중앙선거여론조사심의위원회",
+    "전화면접",
+    "ARS",
+)
+TARGETED_POLISH_INTRO_MARKERS: tuple[str, ...] = (
+    "오늘 저는",
+    "이 자리에 섰습니다",
+    "여러분과 함께 나누겠습니다",
+)
+TARGETED_POLISH_TRANSITION_MARKERS: tuple[str, ...] = (
+    "하지만 저는",
+    "무엇보다",
+    "아울러",
+    "나아가",
+    "앞으로도",
+    "이번 여론조사 결과는",
+)
+TARGETED_POLISH_CONCLUSION_MARKERS: tuple[str, ...] = (
+    "감사합니다",
+    "힘을 모아주십시오",
+    "지지를 부탁드립니다",
+    "기대해 주십시오",
+    "함께라면 우리는",
+    "약속드립니다",
+)
+TARGETED_POLISH_BOILERPLATE_MARKERS: tuple[str, ...] = (
+    "가능성을 보여줍니다",
+    "겸허히 받아들이고",
+    "기대를 뛰어넘는",
+    "더 나은 내일",
+    "목소리에 귀 기울이고",
+    "많은 관심과 지지",
+    "열망을 현실로",
+    "풍요로운 삶",
+    "실질적인 변화를",
+    "고무적인 일",
+)
+TARGETED_POLISH_REASON_HINTS: dict[str, str] = {
+    "heading_first_person_topic": "1인칭이 섞인 소제목을 더 기사형으로 정리",
+    "matchup_result_clause": "깨진 가상대결 결과 문장을 자연스럽게 복원",
+    "matchup_result_clause_spaced": "띄어쓰기와 조사 때문에 깨진 결과 문장을 복원",
+    "intro_voice_overlay": "도입부 1~2문장에 사용자 말맛을 일부 반영",
+    "transition_voice_overlay": "문단 연결문을 덜 상투적으로 정리",
+    "closing_voice_overlay": "마무리 문장을 사용자답게 다듬기",
+    "boilerplate_voice_overlay": "AI스러운 상투 표현을 완화",
+}
+_UNSUPPORTED_COMPARISON_FIRST_PERSON_RE = re.compile(
+    r"(?:저는|제가|저의)(?:[^%。.!?\d]{2,60})(?:보다|에 비해|보다 더|더 나은|더 구체적|더 실질적|더 현실적)",
+)
+_ORPHAN_BOILERPLATE_RE_LIST: tuple[re.Pattern, ...] = (
+    re.compile(r"저에게\s+큰\s+기회가\s+될\s+수\s+있습니다"),
+    re.compile(r"저에게\s+큰\s+힘이\s+됩니다"),
+    re.compile(r"이는.{2,60}저에게.{2,40}됩니다"),
+    re.compile(r"이것은.{2,60}저에게.{2,40}됩니다"),
+)
 SUBHEADING_SUBJECT_NOISE_MARKERS: tuple[str, ...] = (
     "조사개요",
     "조사기관",
@@ -3463,16 +3532,217 @@ def _detect_targeted_sentence_polish_issue(text: str, *, tag: str) -> str:
     return ""
 
 
-def _collect_targeted_sentence_polish_candidates(content: str) -> list[Dict[str, Any]]:
+def _targeted_sentence_reason_hint(reason: str) -> str:
+    return TARGETED_POLISH_REASON_HINTS.get(str(reason or "").strip(), "")
+
+
+def _targeted_sentence_reason_priority(reason: str) -> int:
+    normalized = str(reason or "").strip().lower()
+    if normalized in {"matchup_result_clause", "matchup_result_clause_spaced"}:
+        return 100
+    if normalized == "heading_first_person_topic":
+        return 95
+    if normalized == "intro_voice_overlay":
+        return 85
+    if normalized == "closing_voice_overlay":
+        return 80
+    if normalized == "boilerplate_voice_overlay":
+        return 75
+    if normalized == "transition_voice_overlay":
+        return 70
+    return 50
+
+
+def _contains_targeted_style_marker(text: str, markers: tuple[str, ...]) -> bool:
+    candidate = _normalize_inline_whitespace(text)
+    if not candidate:
+        return False
+    return any(marker and marker in candidate for marker in markers)
+
+
+def _is_targeted_style_candidate_safe(text: str) -> bool:
+    candidate = _normalize_inline_whitespace(text)
+    if not candidate:
+        return False
+    if len(candidate) < 10 or len(candidate) > TARGETED_POLISH_MAX_TEXT_LENGTH:
+        return False
+    if _extract_targeted_polish_numeric_tokens(candidate):
+        return False
+    if QUOTE_CHAR_PATTERN.search(candidate):
+        return False
+    if any(marker in candidate for marker in TARGETED_POLISH_EXCLUDED_MARKERS):
+        return False
+    return True
+
+
+def _detect_targeted_sentence_style_issue(
+    text: str,
+    *,
+    paragraph_index: int,
+    paragraph_count: int,
+    sentence_index: int,
+    sentence_count: int,
+) -> str:
+    candidate = _normalize_inline_whitespace(text)
+    if not _is_targeted_style_candidate_safe(candidate):
+        return ""
+
+    if paragraph_index == 0 and sentence_index < min(2, max(1, sentence_count)):
+        return "intro_voice_overlay"
+
+    if _contains_targeted_style_marker(candidate, TARGETED_POLISH_CONCLUSION_MARKERS):
+        return "closing_voice_overlay"
+
+    if paragraph_count > 0 and paragraph_index >= max(0, paragraph_count - 2):
+        if sentence_index >= max(0, sentence_count - 1):
+            return "closing_voice_overlay"
+
+    if _contains_targeted_style_marker(candidate, TARGETED_POLISH_BOILERPLATE_MARKERS):
+        return "boilerplate_voice_overlay"
+
+    if _contains_targeted_style_marker(candidate, TARGETED_POLISH_TRANSITION_MARKERS):
+        return "transition_voice_overlay"
+
+    if _contains_targeted_style_marker(candidate, TARGETED_POLISH_INTRO_MARKERS):
+        return "intro_voice_overlay"
+
+    return ""
+
+
+def _build_targeted_sentence_style_instruction(
+    *,
+    style_guide: str = "",
+    style_fingerprint: Optional[Dict[str, Any]] = None,
+    mode: str = "",
+) -> str:
+    fingerprint = _safe_dict(style_fingerprint)
+    normalized_mode = mode if mode in TARGETED_POLISH_STYLE_LIMITS else "light"
+    limits = TARGETED_POLISH_STYLE_LIMITS[normalized_mode]
+
+    normalized_guide = re.sub(r"\s+", " ", str(style_guide or "")).strip()
+    metadata = _safe_dict(fingerprint.get("analysisMetadata"))
+    try:
+        confidence = float(metadata.get("confidence") or 0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+
+    if not normalized_guide and confidence < TARGETED_POLISH_STYLE_FINGERPRINT_MIN_CONFIDENCE:
+        return ""
+
+    lines = [
+        (
+            f"- 선택된 fragment 중 최대 {limits['max_sentences']}문장 또는 전체의 "
+            f"{limits['max_ratio']} 안에서만 사용자 말맛을 덧입힙니다."
+        ),
+        "- 사실, 숫자, 날짜, 이름, 직함, 인용, 정책 주장, 법적 표현, 필수 검색어는 그대로 둡니다.",
+        "- 전체 문단을 새로 쓰지 말고 조사, 어미, 문장 호흡, 상투 표현 치환만 조정합니다.",
+    ]
+
+    if normalized_guide:
+        guide_excerpt = normalized_guide[:TARGETED_POLISH_STYLE_GUIDE_MAX_CHARS]
+        if len(normalized_guide) > TARGETED_POLISH_STYLE_GUIDE_MAX_CHARS:
+            guide_excerpt += "..."
+        lines.append(f"- 사용자 문체 가이드: {guide_excerpt}")
+
+    if confidence >= TARGETED_POLISH_STYLE_FINGERPRINT_MIN_CONFIDENCE:
+        phrases = _safe_dict(fingerprint.get("characteristicPhrases"))
+        sentence_patterns = _safe_dict(fingerprint.get("sentencePatterns"))
+        tone = _safe_dict(fingerprint.get("toneProfile"))
+        ai_alternatives = _safe_dict(fingerprint.get("aiAlternatives"))
+
+        phrase_examples: list[str] = []
+        for key in ("signatures", "emphatics", "conclusions"):
+            raw_values = phrases.get(key) or []
+            if not isinstance(raw_values, list):
+                continue
+            for raw_value in raw_values:
+                value = str(raw_value or "").strip()
+                if value and value not in phrase_examples:
+                    phrase_examples.append(value)
+                if len(phrase_examples) >= 5:
+                    break
+            if len(phrase_examples) >= 5:
+                break
+        if phrase_examples:
+            lines.append(f"- 선호 표현 예시: {', '.join(phrase_examples[:5])}")
+
+        starters = sentence_patterns.get("preferredStarters") or []
+        if isinstance(starters, list):
+            preferred_starters = [str(item).strip() for item in starters if str(item).strip()][:3]
+            if preferred_starters:
+                lines.append(f"- 문장 시작 습관: {', '.join(preferred_starters)}")
+
+        tone_tags: list[str] = []
+        try:
+            formality = float(tone.get("formality") or 0)
+        except (TypeError, ValueError):
+            formality = 0.0
+        try:
+            directness = float(tone.get("directness") or 0)
+        except (TypeError, ValueError):
+            directness = 0.0
+        try:
+            optimism = float(tone.get("optimism") or 0)
+        except (TypeError, ValueError):
+            optimism = 0.0
+        if formality >= 0.6:
+            tone_tags.append("격식을 유지하되 딱딱하지 않음")
+        elif 0 < formality <= 0.4:
+            tone_tags.append("조금 더 구어적인 호흡")
+        if directness >= 0.6:
+            tone_tags.append("직설적인 전달")
+        if optimism >= 0.6:
+            tone_tags.append("낙관과 자신감이 묻어남")
+        tone_description = str(tone.get("toneDescription") or "").strip()
+        if tone_tags or tone_description:
+            tone_text = ", ".join(tone_tags) if tone_tags else tone_description
+            if tone_description and tone_description not in tone_text:
+                tone_text = f"{tone_text}, {tone_description}"
+            lines.append(f"- 어조 목표: {tone_text}")
+
+        replacement_pairs: list[str] = []
+        for raw_key, raw_value in list(ai_alternatives.items())[:4]:
+            replacement = str(raw_value or "").strip()
+            source = str(raw_key or "").replace("instead_of_", "").replace("_", " ").strip()
+            if not replacement or not source:
+                continue
+            replacement_pairs.append(f'"{source}" -> "{replacement}"')
+            if len(replacement_pairs) >= 2:
+                break
+        if replacement_pairs:
+            lines.append(f"- AI 상투어 대체 예시: {', '.join(replacement_pairs)}")
+
+    return "\n".join(lines)
+
+
+def _collect_targeted_sentence_polish_candidates(
+    content: str,
+    *,
+    style_instruction: str = "",
+) -> list[Dict[str, Any]]:
     base = str(content or "")
     if not base.strip():
         return []
 
     candidates: list[Dict[str, Any]] = []
-    for block_index, match in enumerate(CONTENT_BLOCK_WITH_TAG_PATTERN.finditer(base)):
-        if len(candidates) >= TARGETED_POLISH_MAX_CANDIDATES:
-            break
+    style_enabled = bool(str(style_instruction or "").strip())
+    paragraph_order: Dict[str, int] = {}
 
+    paragraph_counter = 0
+    for block_index, match in enumerate(CONTENT_BLOCK_WITH_TAG_PATTERN.finditer(base)):
+        tag = str(match.group("tag") or "").strip().lower()
+        if tag != "p":
+            continue
+        raw_inner = str(match.group("inner") or "")
+        if "<" in raw_inner:
+            continue
+        normalized_inner = _normalize_inline_whitespace(raw_inner)
+        if not normalized_inner:
+            continue
+        paragraph_order[f"{tag}-{block_index}"] = paragraph_counter
+        paragraph_counter += 1
+
+    for block_index, match in enumerate(CONTENT_BLOCK_WITH_TAG_PATTERN.finditer(base)):
         tag = str(match.group("tag") or "").strip().lower()
         raw_inner = str(match.group("inner") or "")
         plain_inner = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", raw_inner))
@@ -3488,7 +3758,11 @@ def _collect_targeted_sentence_polish_candidates(content: str) -> list[Dict[str,
                         "id": block_key,
                         "tag": tag,
                         "reason": reason,
+                        "hint": _targeted_sentence_reason_hint(reason),
+                        "priority": _targeted_sentence_reason_priority(reason),
                         "text": plain_inner,
+                        "blockIndex": block_index,
+                        "sentenceIndex": -1,
                         "blockKey": block_key,
                         "blockInner": plain_inner,
                         "innerStart": match.start("inner"),
@@ -3504,13 +3778,23 @@ def _collect_targeted_sentence_polish_candidates(content: str) -> list[Dict[str,
         if not normalized_inner:
             continue
 
-        for sentence_index, sentence in enumerate(_split_sentence_like_units(normalized_inner)):
-            if len(candidates) >= TARGETED_POLISH_MAX_CANDIDATES:
-                break
+        paragraph_index = int(paragraph_order.get(block_key, -1))
+        sentences = _split_sentence_like_units(normalized_inner)
+        sentence_count = len(sentences)
+
+        for sentence_index, sentence in enumerate(sentences):
             if len(sentence) > TARGETED_POLISH_MAX_TEXT_LENGTH:
                 continue
 
             reason = _detect_targeted_sentence_polish_issue(sentence, tag=tag)
+            if not reason and style_enabled:
+                reason = _detect_targeted_sentence_style_issue(
+                    sentence,
+                    paragraph_index=paragraph_index,
+                    paragraph_count=paragraph_counter,
+                    sentence_index=sentence_index,
+                    sentence_count=sentence_count,
+                )
             if not reason:
                 continue
 
@@ -3519,14 +3803,25 @@ def _collect_targeted_sentence_polish_candidates(content: str) -> list[Dict[str,
                     "id": f"{block_key}-s{sentence_index}",
                     "tag": tag,
                     "reason": reason,
+                    "hint": _targeted_sentence_reason_hint(reason),
+                    "priority": _targeted_sentence_reason_priority(reason),
                     "text": sentence,
+                    "blockIndex": block_index,
+                    "sentenceIndex": sentence_index,
                     "blockKey": block_key,
                     "blockInner": normalized_inner,
                     "innerStart": match.start("inner"),
                     "innerEnd": match.end("inner"),
                 }
             )
-    return candidates
+    candidates.sort(
+        key=lambda item: (
+            -int(item.get("priority") or 0),
+            int(item.get("blockIndex") or 0),
+            int(item.get("sentenceIndex") or -1),
+        )
+    )
+    return candidates[:TARGETED_POLISH_MAX_CANDIDATES]
 
 
 def _normalize_numeric_token(text: Any) -> str:
@@ -3645,7 +3940,8 @@ def _apply_targeted_sentence_rewrites(
             "innerEnd": int(candidate.get("innerEnd") or 0),
             "originalInner": original_block_inner,
         }
-        actions.append(f"targeted_sentence_llm:{candidate_id}")
+        candidate_reason = str(candidate.get("reason") or "").strip() or "generic"
+        actions.append(f"targeted_sentence_llm:{candidate_id}:{candidate_reason}")
 
     repaired = base
     for block_key, info in sorted(
@@ -3675,12 +3971,23 @@ def _rewrite_targeted_sentence_issues_once(
     *,
     user_keywords: Optional[list[str]] = None,
     known_names: Optional[list[str]] = None,
+    style_guide: str = "",
+    style_fingerprint: Optional[Dict[str, Any]] = None,
+    style_polish_mode: str = "",
 ) -> Dict[str, Any]:
     base = str(content or "")
     if not base.strip():
         return {"content": base, "edited": False, "actions": []}
 
-    candidates = _collect_targeted_sentence_polish_candidates(base)
+    style_instruction = _build_targeted_sentence_style_instruction(
+        style_guide=style_guide,
+        style_fingerprint=style_fingerprint,
+        mode=style_polish_mode,
+    )
+    candidates = _collect_targeted_sentence_polish_candidates(
+        base,
+        style_instruction=style_instruction,
+    )
     if not candidates:
         return {"content": base, "edited": False, "actions": []}
 
@@ -3689,20 +3996,26 @@ def _rewrite_targeted_sentence_issues_once(
             "id": str(candidate.get("id") or ""),
             "tag": str(candidate.get("tag") or ""),
             "reason": str(candidate.get("reason") or ""),
+            "hint": str(candidate.get("hint") or ""),
             "text": str(candidate.get("text") or ""),
         }
         for candidate in candidates
     ]
+    style_block = ""
+    if style_instruction:
+        style_block = f"\n[사용자 문체 반영 지침]\n{style_instruction}\n"
     prompt = (
-        "당신은 한국어 정치 원고의 파손 문장 교정기입니다.\n"
+        "당신은 한국어 정치 원고의 마지막 문장 단위 교정기입니다.\n"
         "아래 fragment만 최소 수정으로 자연스럽게 고치세요.\n"
         "규칙:\n"
         "1. 각 fragment는 하나의 소제목 또는 한 문장만 다룹니다.\n"
-        "2. 의미, 정치적 입장, 고유명사, 직함, 수치, 검색어를 유지하세요.\n"
-        "3. 새 사실을 추가하지 마세요.\n"
+        "2. 사실, 정치적 입장, 고유명사, 직함, 수치, 날짜, 검색어를 유지하세요.\n"
+        "3. 새 사실을 추가하거나 논지의 방향을 바꾸지 마세요.\n"
         "4. HTML 태그를 넣지 마세요.\n"
-        "5. 가능한 한 조사/어순만 고치고 과하게 다시 쓰지 마세요.\n"
-        "6. id는 그대로 두고 text만 반환하세요.\n\n"
+        "5. 가능한 한 조사, 어미, 문장 호흡, 상투 표현만 손보고 전체를 새로 쓰지 마세요.\n"
+        "6. reason이 intro/transition/closing/boilerplate 계열이면 일부 표현에만 사용자 말맛을 덧입혀도 됩니다.\n"
+        "7. id는 그대로 두고 text만 반환하세요.\n"
+        f"{style_block}\n"
         f"입력 JSON:\n{json.dumps(prompt_items, ensure_ascii=False, indent=2)}\n\n"
         '반드시 다음 JSON만 반환하세요: {"rewrites":[{"id":"...","text":"..."}]}'
     )
@@ -3770,6 +4083,12 @@ def _rewrite_targeted_sentence_issues_once(
         known_names=[str(item or "").strip() for item in (known_names or []) if str(item or "").strip()],
     )
     actions = [f"targeted_sentence_candidates:{len(candidates)}"]
+    if style_instruction:
+        style_candidate_count = sum(
+            1 for candidate in candidates if str(candidate.get("reason") or "").endswith("_voice_overlay")
+        )
+        actions.append(f"targeted_sentence_style_mode:{style_polish_mode or 'light'}")
+        actions.append(f"targeted_sentence_style_candidates:{style_candidate_count}")
     apply_actions = apply_result.get("actions")
     if isinstance(apply_actions, list):
         for action in apply_actions:
@@ -3957,6 +4276,140 @@ def _drop_incomplete_paragraph_tail_once(content: str) -> Dict[str, Any]:
     }
 
 
+def _count_poll_focus_token_hits(text: str, tokens: tuple[str, ...]) -> int:
+    normalized = _normalize_inline_whitespace(text)
+    if not normalized:
+        return 0
+    return sum(1 for token in tokens if token and token in normalized)
+
+
+def _is_unsupported_comparison_sentence(
+    text: str,
+    *,
+    opponent_names: list[str],
+    poll_number_tokens: tuple[str, ...] = (),
+) -> bool:
+    """원문 소스에 없는 경쟁자 비교 문장인지 판단한다.
+
+    opponent_names 중 하나를 포함하고, 1인칭 비교 표현이 있으나
+    소스 수치(poll_number_tokens)가 없으면 unsupported 비교로 간주한다.
+    """
+    normalized = _normalize_inline_whitespace(text)
+    if not normalized or len(normalized) < 10:
+        return False
+    if not any(name and name in normalized for name in opponent_names):
+        return False
+    if not any(fp in normalized for fp in ("저는", "제가", "저의")):
+        return False
+    if not _UNSUPPORTED_COMPARISON_FIRST_PERSON_RE.search(normalized):
+        return False
+    if any(token and token in normalized for token in poll_number_tokens):
+        return False
+    return True
+
+
+def _is_orphan_boilerplate_sentence(text: str) -> bool:
+    """앞 근거 문장이 제거되면 의미를 잃는 고아 상투 문장인지 판단한다."""
+    normalized = _normalize_inline_whitespace(text)
+    if not normalized:
+        return False
+    return any(pattern.search(normalized) for pattern in _ORPHAN_BOILERPLATE_RE_LIST)
+
+
+def _remove_groundedness_violations_from_section(
+    section_html: str,
+    *,
+    opponent_names: list[str] = (),
+    poll_number_tokens: tuple[str, ...] = (),
+) -> Dict[str, Any]:
+    """섹션 HTML에서 소스 없는 비교 문장과 고아 상투 문장을 제거한다."""
+    base = str(section_html or "")
+    if not base.strip():
+        return {"content": base, "edited": False, "actions": []}
+
+    opponent_names_clean = [s for s in (str(n or "").strip() for n in opponent_names) if s]
+    poll_tokens_clean = tuple(s for s in (str(t or "").strip() for t in poll_number_tokens) if s)
+
+    replacements: list[tuple[int, int, str]] = []
+    for para_match in PARAGRAPH_TAG_PATTERN.finditer(base):
+        inner = str(para_match.group(1) or "")
+        if "<" in inner:
+            continue
+        plain_inner = _normalize_inline_whitespace(inner)
+        if not plain_inner:
+            continue
+
+        sentences = _split_sentence_like_units(plain_inner)
+        kept: list[str] = []
+        for sentence in sentences:
+            remove = False
+            if opponent_names_clean:
+                remove = _is_unsupported_comparison_sentence(
+                    sentence,
+                    opponent_names=opponent_names_clean,
+                    poll_number_tokens=poll_tokens_clean,
+                )
+            if not remove:
+                remove = _is_orphan_boilerplate_sentence(sentence)
+            if not remove:
+                kept.append(sentence)
+
+        if len(kept) == len(sentences):
+            continue
+
+        new_inner = " ".join(kept).strip()
+        if not new_inner:
+            replacements.append((para_match.start(), para_match.end(), ""))
+        else:
+            replacements.append((para_match.start(1), para_match.end(1), new_inner))
+
+    if not replacements:
+        return {"content": base, "edited": False, "actions": []}
+
+    repaired = base
+    for start, end, replacement in sorted(replacements, key=lambda x: -x[0]):
+        repaired = repaired[:start] + replacement + repaired[end:]
+
+    edited = repaired != base
+    removed_count = len(replacements)
+    actions: list[str] = [f"groundedness_removed:{removed_count}"] if edited else []
+    return {"content": repaired, "edited": edited, "actions": actions}
+
+
+def _rewrite_first_paragraph_with_answer_lead(
+    section_html: str,
+    answer_lead: str,
+    *,
+    replace_whole_paragraph: bool = False,
+) -> Dict[str, Any]:
+    base = str(section_html or "")
+    lead = _normalize_inline_whitespace(answer_lead)
+    if not base or not lead:
+        return {"content": base, "edited": False}
+
+    paragraph_match = PARAGRAPH_TAG_PATTERN.search(base)
+    if not paragraph_match:
+        return {"content": base, "edited": False}
+
+    inner = str(paragraph_match.group(1) or "")
+    plain_inner = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", inner))
+    if not plain_inner or plain_inner.startswith(lead):
+        return {"content": base, "edited": False}
+
+    if replace_whole_paragraph:
+        updated_inner = lead
+    else:
+        sentences = _split_sentence_like_units(plain_inner)
+        remainder = " ".join(sentences[1:]).strip() if len(sentences) > 1 else ""
+        updated_inner = lead if not remainder else f"{lead} {remainder}"
+
+    if not updated_inner or _normalize_inline_whitespace(updated_inner) == plain_inner:
+        return {"content": base, "edited": False}
+
+    updated = base[: paragraph_match.start(1)] + updated_inner + base[paragraph_match.end(1) :]
+    return {"content": updated, "edited": updated != base}
+
+
 def _apply_poll_focus_contract_once(
     content: str,
     *,
@@ -3978,13 +4431,17 @@ def _apply_poll_focus_contract_once(
         return {"content": base, "edited": False, "actions": []}
 
     allowed_h2_kinds = bundle.get("allowedH2Kinds") if isinstance(bundle.get("allowedH2Kinds"), list) else []
-    h2_template_map: Dict[str, str] = {}
+    h2_config_map: Dict[str, Dict[str, str]] = {}
     for raw_kind in allowed_h2_kinds:
         kind = raw_kind if isinstance(raw_kind, dict) else {}
         kind_id = str(kind.get("id") or "").strip()
         kind_template = str(kind.get("template") or "").strip()
-        if kind_id and kind_template and kind_id not in h2_template_map:
-            h2_template_map[kind_id] = kind_template
+        kind_answer_lead = str(kind.get("answerLead") or "").strip()
+        if kind_id and kind_template and kind_id not in h2_config_map:
+            h2_config_map[kind_id] = {
+                "template": kind_template,
+                "answerLead": kind_answer_lead,
+            }
 
     contest_tokens = ("가상대결", "양자대결", "대결", "접전", "경쟁력", "약진")
     policy_tokens = ("경제", "비전", "정책", "산업", "일자리", "미래", "혁신", "발전")
@@ -3995,86 +4452,168 @@ def _apply_poll_focus_contract_once(
     actions: list[str] = []
     h2_matches = list(H2_TAG_PATTERN.finditer(base))
     total_h2 = len(h2_matches)
-    for index in range(total_h2 - 1, -1, -1):
-        match = h2_matches[index]
-        next_start = h2_matches[index + 1].start() if index + 1 < total_h2 else len(repaired)
-        section_html = repaired[match.end():next_start]
+    if not h2_matches:
+        return {"content": base, "edited": False, "actions": []}
+
+    section_infos: list[Dict[str, Any]] = []
+    used_kinds: set[str] = set()
+    available_kinds = list(h2_config_map.keys())
+
+    for index, match in enumerate(h2_matches):
+        next_start = h2_matches[index + 1].start() if index + 1 < total_h2 else len(base)
+        section_html = base[match.end():next_start]
         h2_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(match.group(1) or "")))
         section_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", section_html))
+        combined_plain = _normalize_inline_whitespace(f"{h2_plain} {section_plain}")
 
-        section_kind = ""
-        if index == total_h2 - 1 and h2_template_map.get("closing"):
-            section_kind = "closing"
-        if not section_kind:
+        candidate_scores: Dict[str, int] = {}
+        if index == total_h2 - 1 and "closing" in h2_config_map:
+            candidate_scores["closing"] = 120
+
+        if (
+            primary_opponent
+            and primary_opponent in section_plain
+            and (
+                speaker_percent in section_plain
+                or opponent_percent in section_plain
+                or any(token in section_plain for token in contest_tokens)
+            )
+        ):
+            both_percents_present = (
+                speaker_percent
+                and opponent_percent
+                and speaker_percent in section_plain
+                and opponent_percent in section_plain
+            )
+            candidate_scores["primary_matchup"] = 130 if both_percents_present else 110
+
+        matched_secondary_pair: Optional[Dict[str, Any]] = None
+        for pair in secondary_pairs[:2]:
+            pair_dict = pair if isinstance(pair, dict) else {}
+            secondary_opponent = str(pair_dict.get("opponent") or "").strip()
+            secondary_speaker_percent = str(pair_dict.get("speakerPercent") or pair_dict.get("speakerScore") or "").strip()
+            secondary_opponent_percent = str(pair_dict.get("opponentPercent") or pair_dict.get("opponentScore") or "").strip()
             if (
-                primary_opponent
-                and primary_opponent in section_plain
+                secondary_opponent
+                and secondary_opponent in section_plain
                 and (
-                    speaker_percent in section_plain
-                    or opponent_percent in section_plain
+                    secondary_speaker_percent in section_plain
+                    or secondary_opponent_percent in section_plain
                     or any(token in section_plain for token in contest_tokens)
                 )
             ):
-                section_kind = "primary_matchup"
-            else:
-                for pair in secondary_pairs[:2]:
-                    pair_dict = pair if isinstance(pair, dict) else {}
-                    secondary_opponent = str(pair_dict.get("opponent") or "").strip()
-                    secondary_speaker_percent = str(pair_dict.get("speakerPercent") or pair_dict.get("speakerScore") or "").strip()
-                    secondary_opponent_percent = str(pair_dict.get("opponentPercent") or pair_dict.get("opponentScore") or "").strip()
-                    if (
-                        secondary_opponent
-                        and secondary_opponent in section_plain
-                        and (
-                            secondary_speaker_percent in section_plain
-                            or secondary_opponent_percent in section_plain
-                            or any(token in section_plain for token in contest_tokens)
-                        )
-                    ):
-                        section_kind = "secondary_matchup"
-                        break
-        if not section_kind:
-            if any(token in f"{h2_plain} {section_plain}" for token in policy_tokens):
-                section_kind = "policy"
-            elif any(token in f"{h2_plain} {section_plain}" for token in recognition_tokens):
-                section_kind = "recognition"
-            elif index == total_h2 - 1 or any(token in f"{h2_plain} {section_plain}" for token in closing_tokens):
-                section_kind = "closing"
+                matched_secondary_pair = pair_dict
+                candidate_scores["secondary_matchup"] = 100
+                break
 
-        h2_template = h2_template_map.get(section_kind)
+        policy_score = _count_poll_focus_token_hits(combined_plain, policy_tokens)
+        recognition_score = _count_poll_focus_token_hits(combined_plain, recognition_tokens)
+        closing_score = _count_poll_focus_token_hits(combined_plain, closing_tokens)
+
+        if policy_score:
+            candidate_scores["policy"] = max(candidate_scores.get("policy", 0), 20 + policy_score)
+        if recognition_score:
+            candidate_scores["recognition"] = max(candidate_scores.get("recognition", 0), 20 + recognition_score)
+        if closing_score:
+            bonus = 15 if index >= total_h2 - 2 else 0
+            candidate_scores["closing"] = max(candidate_scores.get("closing", 0), 20 + closing_score + bonus)
+
+        ranked_candidates = sorted(candidate_scores.items(), key=lambda item: (-item[1], item[0]))
+        section_kind = ""
+        for candidate, _ in ranked_candidates:
+            if candidate in h2_config_map and candidate not in used_kinds:
+                section_kind = candidate
+                break
+
+        if not section_kind:
+            fallback_order: list[str]
+            if index == 0:
+                fallback_order = ["primary_matchup", "recognition", "policy", "secondary_matchup", "closing"]
+            elif index == total_h2 - 1:
+                fallback_order = ["closing", "secondary_matchup", "policy", "recognition"]
+            else:
+                fallback_order = ["recognition", "policy", "secondary_matchup", "closing"]
+            for fallback_kind in fallback_order:
+                if fallback_kind in h2_config_map and fallback_kind not in used_kinds:
+                    section_kind = fallback_kind
+                    break
+
+        if not section_kind and ranked_candidates:
+            section_kind = ranked_candidates[0][0]
+        if section_kind:
+            used_kinds.add(section_kind)
+
+        section_infos.append(
+            {
+                "index": index,
+                "match_start": match.start(1),
+                "match_end": match.end(1),
+                "content_start": match.end(),
+                "content_end": next_start,
+                "h2_plain": h2_plain,
+                "section_plain": section_plain,
+                "section_kind": section_kind,
+                "secondary_pair": matched_secondary_pair,
+            }
+        )
+
+    for info in reversed(section_infos):
+        section_kind = str(info.get("section_kind") or "").strip()
+        if not section_kind:
+            continue
+
+        section_html = repaired[info["content_start"] : info["content_end"]]
+        h2_plain = str(info.get("h2_plain") or "").strip()
+        config = h2_config_map.get(section_kind) or {}
+        h2_template = str(config.get("template") or "").strip()
+        answer_lead = str(config.get("answerLead") or "").strip()
         updated_h2_inner = h2_plain
         if h2_template and h2_plain and h2_plain != h2_template:
             updated_h2_inner = h2_template
             actions.append(f"poll_focus_h2:{section_kind}")
 
-        first_paragraph_match = PARAGRAPH_TAG_PATTERN.search(section_html)
         updated_section_html = section_html
-        if first_paragraph_match:
-            replacement_sentence = ""
-            if section_kind == "primary_matchup":
-                replacement_sentence = primary_sentence
-            elif section_kind == "secondary_matchup" and secondary_pairs:
-                replacement_sentence = _build_poll_focus_pair_sentence(secondary_pairs[0])
+        replace_whole_paragraph = section_kind in {"primary_matchup", "secondary_matchup"}
+        if section_kind == "primary_matchup":
+            answer_lead = primary_sentence
+        elif section_kind == "secondary_matchup":
+            answer_lead = _build_poll_focus_pair_sentence(info.get("secondary_pair"))
 
-            if replacement_sentence:
-                paragraph_plain = _normalize_inline_whitespace(
-                    re.sub(r"<[^>]*>", " ", str(first_paragraph_match.group(1) or ""))
+        if answer_lead:
+            answer_rewrite = _rewrite_first_paragraph_with_answer_lead(
+                updated_section_html,
+                answer_lead,
+                replace_whole_paragraph=replace_whole_paragraph,
+            )
+            if answer_rewrite.get("edited"):
+                updated_section_html = str(answer_rewrite.get("content") or updated_section_html)
+                actions.append(
+                    f"{'poll_focus_fact' if replace_whole_paragraph else 'poll_focus_answer'}:{section_kind}"
                 )
-                if (
-                    paragraph_plain != replacement_sentence
-                    and any(token in paragraph_plain for token in (primary_opponent, speaker_percent, opponent_percent, *contest_tokens))
-                ):
-                    updated_section_html = (
-                        section_html[:first_paragraph_match.start(1)]
-                        + replacement_sentence
-                        + section_html[first_paragraph_match.end(1):]
-                    )
-                    actions.append(f"poll_focus_fact:{section_kind}")
+
+        all_opponent_names = [primary_opponent] + [
+            str(p.get("opponent") or "").strip()
+            for p in secondary_pairs
+            if str(p.get("opponent") or "").strip()
+        ]
+        poll_tokens_for_check = tuple(
+            t for t in (speaker_percent, opponent_percent) if t
+        )
+        groundedness_result = _remove_groundedness_violations_from_section(
+            updated_section_html,
+            opponent_names=all_opponent_names,
+            poll_number_tokens=poll_tokens_for_check,
+        )
+        if groundedness_result.get("edited"):
+            updated_section_html = str(groundedness_result.get("content") or updated_section_html)
+            for g_action in groundedness_result.get("actions") or []:
+                if g_action:
+                    actions.append(f"{g_action}:{section_kind}")
 
         if updated_section_html != section_html:
-            repaired = repaired[:match.end()] + updated_section_html + repaired[next_start:]
+            repaired = repaired[: info["content_start"]] + updated_section_html + repaired[info["content_end"] :]
         if updated_h2_inner != h2_plain:
-            repaired = repaired[:match.start(1)] + updated_h2_inner + repaired[match.end(1):]
+            repaired = repaired[: info["match_start"]] + updated_h2_inner + repaired[info["match_end"] :]
 
     completion_repair = _drop_incomplete_paragraph_tail_once(repaired)
     if completion_repair.get("edited"):
@@ -4099,6 +4638,9 @@ def _apply_final_sentence_polish_once(
     role_facts: Optional[Dict[str, str]] = None,
     poll_fact_table: Optional[Dict[str, Any]] = None,
     poll_focus_bundle: Optional[Dict[str, Any]] = None,
+    style_guide: str = "",
+    style_fingerprint: Optional[Dict[str, Any]] = None,
+    style_polish_mode: str = "",
 ) -> Dict[str, Any]:
     """최종 단계에서 문장 파손 가능성이 낮은 경량 윤문만 1회 적용한다."""
     base = str(content or "")
@@ -4203,6 +4745,9 @@ def _apply_final_sentence_polish_once(
         repaired,
         user_keywords=user_keywords or [],
         known_names=known_person_names,
+        style_guide=style_guide,
+        style_fingerprint=style_fingerprint,
+        style_polish_mode=style_polish_mode,
     )
     targeted_actions = targeted_rewrite.get("actions")
     if isinstance(targeted_actions, list):
@@ -5720,6 +6265,8 @@ def _guard_draft_title_nonfatal(
     status: str,
     context_analysis: Dict[str, Any],
     role_keyword_policy: Optional[Dict[str, Any]] = None,
+    recent_titles: Optional[list[str]] = None,
+    poll_fact_table: Optional[Dict[str, Any]] = None,
     poll_focus_bundle: Optional[Dict[str, Any]] = None,
 ) -> tuple[str, Dict[str, Any]]:
     candidate = _normalize_title_surface_local(candidate_title)
@@ -5739,13 +6286,88 @@ def _guard_draft_title_nonfatal(
             poll_focus_bundle=poll_focus_bundle,
         )
         guard_info["phase"] = phase
+        guard_info["nonFatal"] = True
+        guard_info["validated"] = True
         return guarded_title, guard_info
     except ApiError as exc:
         reason = str(exc or "").strip()
         if reason.startswith("제목 검증 실패:"):
             reason = reason.split(":", 1)[1].strip()
-        fallback_title = previous or candidate
-        fallback_source = "previous_fallback" if previous else "candidate_fallback"
+
+        def _try_guarded_fallback(fallback_title: str, source: str) -> Optional[tuple[str, Dict[str, Any]]]:
+            normalized_fallback = _normalize_title_surface_local(fallback_title)
+            if not normalized_fallback:
+                return None
+            try:
+                guarded_title, guarded_info = _guard_title_after_editor(
+                    candidate_title=normalized_fallback,
+                    previous_title="",
+                    topic=topic,
+                    content=content,
+                    user_keywords=user_keywords,
+                    full_name=full_name,
+                    category=category,
+                    status=status,
+                    context_analysis=context_analysis,
+                    role_keyword_policy=role_keyword_policy,
+                    poll_focus_bundle=poll_focus_bundle,
+                )
+                return guarded_title, {
+                    **guarded_info,
+                    "accepted": True,
+                    "source": source,
+                    "reason": reason or str(guarded_info.get("reason") or "draft_title_guard_failed"),
+                    "phase": phase,
+                    "nonFatal": True,
+                    "fallbackUsed": True,
+                    "validated": True,
+                }
+            except ApiError:
+                return None
+
+        fallback_candidates: list[tuple[str, str]] = []
+        seen_fallbacks: set[str] = set()
+
+        def _append_fallback(raw_title: str, source: str) -> None:
+            normalized = _normalize_title_surface_local(raw_title)
+            if not normalized or normalized in seen_fallbacks:
+                return
+            seen_fallbacks.add(normalized)
+            fallback_candidates.append((normalized, source))
+
+        _append_fallback(previous, "previous_fallback")
+
+        repeat_safe = _build_repeat_safe_title_fallback(
+            current_title="",
+            recent_titles=_normalize_recent_title_memory_values(recent_titles or []),
+            topic=topic,
+            content=content,
+            user_keywords=user_keywords,
+            full_name=full_name,
+            category=category,
+            status=status,
+            context_analysis=context_analysis,
+            role_keyword_policy=role_keyword_policy,
+            poll_fact_table=poll_fact_table,
+            poll_focus_bundle=poll_focus_bundle,
+        )
+        _append_fallback(str(repeat_safe.get("title") or ""), "repeat_safe_fallback")
+
+        for fallback_title, fallback_source in fallback_candidates:
+            guarded_fallback = _try_guarded_fallback(fallback_title, fallback_source)
+            if guarded_fallback is not None:
+                logger.warning(
+                    "Draft title guard failure downgraded to guarded fallback (phase=%s, source=%s, reason=%s)",
+                    phase,
+                    fallback_source,
+                    reason,
+                )
+                return guarded_fallback
+
+        fallback_title = repeat_safe.get("title") or previous or candidate
+        fallback_source = "unsafe_repeat_safe_fallback" if repeat_safe.get("title") else (
+            "previous_fallback" if previous else "candidate_fallback"
+        )
         logger.warning(
             "Draft title guard failure downgraded to fallback (phase=%s, source=%s, reason=%s)",
             phase,
@@ -5761,6 +6383,7 @@ def _guard_draft_title_nonfatal(
             "phase": phase,
             "nonFatal": True,
             "fallbackUsed": True,
+            "validated": False,
         }
 
 
@@ -5993,6 +6616,9 @@ def _run_editor_repair_once(
     keyword_validation: Dict[str, Any],
     extra_issues: Optional[list[str]] = None,
     purpose: str = "repair",
+    style_guide: str = "",
+    style_fingerprint: Optional[Dict[str, Any]] = None,
+    style_polish_mode: str = "",
 ) -> Dict[str, Any]:
     """기준 미충족 시 EditorAgent로 1회 교정 시도."""
     base_content = str(content or "")
@@ -6011,7 +6637,19 @@ def _run_editor_repair_once(
                     feedback_issues.append(tagged_issue)
             keyword_feedback["issues"] = feedback_issues
             keyword_feedback["passed"] = False
+    else:
+        normalized_extra_issues = []
     normalized_purpose = str(purpose or "repair").strip().lower()
+    resolved_style_fingerprint = style_fingerprint if isinstance(style_fingerprint, dict) else {}
+    resolved_style_guide = str(style_guide or "").strip()
+    resolved_style_polish_mode = str(style_polish_mode or "").strip().lower()
+    if resolved_style_polish_mode not in {"light", "medium"}:
+        resolved_style_polish_mode = "light"
+    allow_style_polish = (
+        normalized_purpose == "polish"
+        and not normalized_extra_issues
+        and bool(resolved_style_guide or resolved_style_fingerprint)
+    )
 
     try:
         from agents.core.editor_agent import EditorAgent
@@ -6027,6 +6665,9 @@ def _run_editor_repair_once(
             "status": status,
             "targetWordCount": int(target_word_count or 2000),
             "polishMode": normalized_purpose == "polish",
+            "styleGuide": resolved_style_guide if allow_style_polish else "",
+            "styleFingerprint": resolved_style_fingerprint if allow_style_polish else {},
+            "stylePolishMode": resolved_style_polish_mode if allow_style_polish else "",
         }
         result = _run_async_sync(agent.run(editor_input))
         if not isinstance(result, dict):
@@ -6209,6 +6850,14 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     daily_limit_warning = _calc_daily_limit_warning(user_profile)
     editor_polish_enabled = _to_bool(data.get("editorPolish"), False)
     editor_second_pass_enabled = _to_bool(data.get("editorSecondPass"), False)
+    style_guide = str(data.get("styleGuide") or profile_bundle.get("styleGuide") or "").strip()
+    raw_style_fingerprint = data.get("styleFingerprint")
+    if not isinstance(raw_style_fingerprint, dict):
+        raw_style_fingerprint = profile_bundle.get("styleFingerprint")
+    style_fingerprint = _safe_dict(raw_style_fingerprint)
+    style_polish_mode = str(data.get("stylePolishMode") or "light").strip().lower()
+    if style_polish_mode not in {"light", "medium"}:
+        style_polish_mode = "light"
 
     requested_session_id = str(data.get("sessionId") or "").strip()
     prior_session_snapshot: Dict[str, Any] = {}
@@ -6445,7 +7094,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     stance_count = _extract_stance_count(pipeline_result)
     min_required_chars = _calc_min_required_chars(target_word_count, stance_count)
     status_for_validation = str(data.get("status") or user_profile.get("status") or "")
-    title_last_valid = generated_title
+    title_last_valid = ""
     title_guard_trace: list[Dict[str, Any]] = []
     independent_final_title: Dict[str, Any] = {
         "attempted": False,
@@ -6922,6 +7571,9 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             keyword_validation=keyword_validation,
             extra_issues=pre_editor_extra_issues,
             purpose=editor_purpose,
+            style_guide=style_guide,
+            style_fingerprint=style_fingerprint,
+            style_polish_mode=style_polish_mode,
         )
         editor_auto_repair["error"] = editor_fix.get("error")
         summary = editor_fix.get("editSummary")
@@ -6944,11 +7596,13 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     status=status_for_validation,
                     context_analysis=context_analysis_for_title,
                     role_keyword_policy=role_keyword_policy,
+                    recent_titles=request_recent_title_memory,
+                    poll_fact_table=poll_fact_table,
                     poll_focus_bundle=poll_focus_bundle,
                 )
                 title_guard_trace.append(guard_info)
                 generated_title = guarded_title
-                if guard_info.get("source") == "candidate":
+                if guard_info.get("validated") is True:
                     title_last_valid = generated_title
                 elif guard_info.get("source") != "candidate":
                     logger.info(
@@ -7077,6 +7731,9 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             keyword_validation=keyword_validation,
             extra_issues=residual_extra_issues,
             purpose="repair",
+            style_guide=style_guide,
+            style_fingerprint=style_fingerprint,
+            style_polish_mode=style_polish_mode,
         )
         editor_second_pass["error"] = second_editor_fix.get("error")
         second_summary = second_editor_fix.get("editSummary")
@@ -7103,11 +7760,13 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     status=status_for_validation,
                     context_analysis=context_analysis_for_title,
                     role_keyword_policy=role_keyword_policy,
+                    recent_titles=request_recent_title_memory,
+                    poll_fact_table=poll_fact_table,
                     poll_focus_bundle=poll_focus_bundle,
                 )
                 title_guard_trace.append(guard_info)
                 generated_title = guarded_title
-                if guard_info.get("source") == "candidate":
+                if guard_info.get("validated") is True:
                     title_last_valid = generated_title
                 elif guard_info.get("source") != "candidate":
                     logger.info(
@@ -7257,11 +7916,13 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         status=status_for_validation,
         context_analysis=context_analysis_for_title,
         role_keyword_policy=role_keyword_policy,
+        recent_titles=request_recent_title_memory,
+        poll_fact_table=poll_fact_table,
         poll_focus_bundle=poll_focus_bundle,
     )
     title_guard_trace.append(final_title_guard)
     generated_title = final_guarded_title
-    if final_title_guard.get("source") == "candidate":
+    if final_title_guard.get("validated") is True:
         title_last_valid = generated_title
     elif final_title_guard.get("source") != "candidate":
         logger.info(
@@ -7524,6 +8185,9 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         role_facts=role_facts,
         poll_fact_table=poll_fact_table,
         poll_focus_bundle=poll_focus_bundle,
+        style_guide=style_guide,
+        style_fingerprint=style_fingerprint,
+        style_polish_mode=style_polish_mode,
     )
     sentence_polish_candidate = str(sentence_polish_result.get("content") or generated_content).strip()
     final_sentence_polish["actions"] = list(sentence_polish_result.get("actions") or [])
@@ -7629,6 +8293,9 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 keyword_validation=keyword_validation,
                 extra_issues=final_blocking_integrity_issues,
                 purpose="polish",
+                style_guide=style_guide,
+                style_fingerprint=style_fingerprint,
+                style_polish_mode=style_polish_mode,
             )
             integrity_editor_repair["error"] = integrity_fix.get("error")
             summary_items = integrity_fix.get("editSummary")
@@ -7680,11 +8347,13 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 status=status_for_validation,
                 context_analysis=context_analysis_for_title,
                 role_keyword_policy=role_keyword_policy,
+                recent_titles=request_recent_title_memory,
+                poll_fact_table=poll_fact_table,
                 poll_focus_bundle=poll_focus_bundle,
             )
             title_guard_trace.append(guard_info)
             generated_title = guarded_title
-            if guard_info.get("source") == "candidate":
+            if guard_info.get("validated") is True:
                 title_last_valid = generated_title
 
             integrity_postprocess = _apply_last_mile_postprocess(
@@ -7838,8 +8507,26 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     generated_title,
                     stabilized_final_title,
                 )
-                generated_title = stabilized_final_title
-                title_last_valid = generated_title
+                guarded_repeat_title, repeat_guard_info = _guard_draft_title_nonfatal(
+                    phase="independent_final_repeat_fallback",
+                    candidate_title=stabilized_final_title,
+                    previous_title=title_last_valid,
+                    topic=topic,
+                    content=generated_content,
+                    user_keywords=user_keywords,
+                    full_name=full_name,
+                    category=category,
+                    status=status_for_validation,
+                    context_analysis=context_analysis_for_title,
+                    role_keyword_policy=role_keyword_policy,
+                    recent_titles=recent_title_memory,
+                    poll_fact_table=poll_fact_table,
+                    poll_focus_bundle=poll_focus_bundle,
+                )
+                title_guard_trace.append(repeat_guard_info)
+                generated_title = guarded_repeat_title
+                if repeat_guard_info.get("validated") is True:
+                    title_last_valid = generated_title
 
             independent_final_title["applied"] = True
         except Exception as exc:
@@ -7859,7 +8546,26 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 poll_fact_table=poll_fact_table,
                 poll_focus_bundle=poll_focus_bundle,
             )
-            generated_title = rollback_title
+            rollback_guarded_title, rollback_guard_info = _guard_draft_title_nonfatal(
+                phase="independent_final_rollback",
+                candidate_title=rollback_title,
+                previous_title=title_last_valid,
+                topic=topic,
+                content=generated_content,
+                user_keywords=user_keywords,
+                full_name=full_name,
+                category=category,
+                status=status_for_validation,
+                context_analysis=context_analysis_for_title,
+                role_keyword_policy=role_keyword_policy,
+                recent_titles=recent_title_memory,
+                poll_fact_table=poll_fact_table,
+                poll_focus_bundle=poll_focus_bundle,
+            )
+            title_guard_trace.append(rollback_guard_info)
+            generated_title = rollback_guarded_title
+            if rollback_guard_info.get("validated") is True:
+                title_last_valid = generated_title
             if rollback_repeat_meta.get("applied"):
                 _append_quality_warning(
                     quality_warnings,

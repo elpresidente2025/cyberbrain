@@ -31,6 +31,9 @@ from handlers.generate_posts import (
     _ensure_user_keyword_in_subheading_once,
     _guard_draft_title_nonfatal,
     _guard_title_after_editor,
+    _is_orphan_boilerplate_sentence,
+    _is_unsupported_comparison_sentence,
+    _remove_groundedness_violations_from_section,
     _remove_off_topic_poll_sentences_once,
     _repair_intent_only_role_keyword_mentions_once,
     _repair_competitor_policy_phrase_once,
@@ -552,7 +555,7 @@ def test_guard_draft_title_nonfatal_downgrades_failure_to_previous_fallback() ->
     restored, info = _guard_draft_title_nonfatal(
         phase="draft_output",
         candidate_title="부산 선거",
-        previous_title="이재성, 양자대결서 드러난 가능성",
+        previous_title="주진우와 양자대결서 드러난 이재성 가능성",
         topic="부산시장 선거 양자대결에서 주진우보다 우세를 점한 이재성의 가능성",
         content=(
             "이재성은 부산시장 선거 양자대결에서 경쟁력을 보였고 "
@@ -565,11 +568,58 @@ def test_guard_draft_title_nonfatal_downgrades_failure_to_previous_fallback() ->
         context_analysis={},
     )
 
-    assert restored == "이재성, 양자대결서 드러난 가능성"
+    assert restored
+    assert restored != "부산 선거"
     assert info["accepted"] is True
     assert info["nonFatal"] is True
-    assert info["source"] == "previous_fallback"
     assert info["phase"] == "draft_output"
+
+
+def test_guard_draft_title_nonfatal_uses_repeat_safe_intent_fallback_for_direct_role_surface() -> None:
+    role_keyword_policy = build_role_keyword_policy(
+        ["주진우", "주진우 부산시장"],
+        person_roles={"주진우": "국회의원"},
+        source_texts=[
+            "부산시장 양자대결에서 주진우 의원과 이재성 전 위원장이 맞붙었다.",
+            "이재성 전 위원장과 주진우 국회의원의 가상대결은 31.7% 대 30.3%로 나타났다.",
+        ],
+    )
+    poll_fact_table = build_poll_matchup_fact_table(
+        [
+            "이재성 전 위원장과 주진우 국회의원의 가상대결은 31.7% 대 30.3%로 나타났다.",
+        ],
+        known_names=["이재성", "주진우"],
+    )
+
+    restored, info = _guard_draft_title_nonfatal(
+        phase="draft_output",
+        candidate_title="주진우 부산시장, 이재성에게 왜 밀리고 있나?",
+        previous_title="",
+        topic="부산시장 선거 양자대결에서 주진우보다 우세를 점한 이재성의 가능성",
+        content=(
+            "이재성은 주진우 의원과의 가상대결에서 31.7% 대 30.3%를 기록하며 "
+            "경쟁력과 가능성을 보여줬다."
+        ),
+        user_keywords=["주진우", "주진우 부산시장"],
+        full_name="이재성",
+        category="current-affairs",
+        status="campaign",
+        context_analysis={},
+        role_keyword_policy=role_keyword_policy,
+        recent_titles=[
+            "주진우 부산시장 출마? 왜 이재성에게 흔들리나",
+            "주진우 부산시장 출마? 왜 이재성이 약진했을까",
+        ],
+        poll_fact_table=poll_fact_table,
+    )
+
+    assert restored
+    assert restored != "주진우 부산시장, 이재성에게 왜 밀리고 있나?"
+    assert "주진우 부산시장," not in restored
+    assert info["accepted"] is True
+    assert info["nonFatal"] is True
+    assert info["phase"] == "draft_output"
+    assert info["source"] != "candidate"
 
 
 def test_should_carry_recent_titles_from_prior_session_only_when_scope_matches() -> None:
@@ -652,7 +702,13 @@ def test_build_poll_focus_bundle_selects_primary_matchup_and_excludes_party_supp
         "fact_direct",
         "contest_observation",
     ]
-    assert any(item.get("id") == "primary_matchup" for item in bundle.get("allowedH2Kinds") or [])
+    h2_map = {item.get("id"): item for item in bundle.get("allowedH2Kinds") or []}
+    assert h2_map["primary_matchup"]["template"] == "왜 이재성이 주진우와의 가상대결에서 앞섰나"
+    assert h2_map["primary_matchup"]["answerLead"] == "이재성·주진우 가상대결에서는 31.7% 대 30.3%로 나타났습니다."
+    assert h2_map["secondary_matchup"]["template"] == "박형준과의 접전은 무엇을 보여주나"
+    assert h2_map["policy"]["template"] == "부산 경제를 살릴 이재성의 해법은 무엇인가"
+    assert h2_map["recognition"]["template"] == "이재성 인지도는 왜 부산 시민 사이에서 확장되고 있나"
+    assert h2_map["closing"]["template"] == "왜 지금 이재성의 가능성에 주목해야 하나"
 
 
 def test_build_structure_prompt_includes_poll_focus_bundle_rules() -> None:
@@ -703,7 +759,9 @@ def test_build_structure_prompt_includes_poll_focus_bundle_rules() -> None:
     assert "31.7% 대 30.3%" in prompt
     assert "정당 지지율" in prompt
     assert "<allowed_h2_kinds>" in prompt
-    assert "주대결을 설명하는 첫 문장은 sentence_template 구조" in prompt
+    assert "<answer_lead>" in prompt
+    assert "질문형 또는 문제제기형으로 씁니다" in prompt
+    assert "각 H2 바로 아래 첫 문장은 해당 kind의 answer_lead처럼 질문에 직접 답하는 문장으로 시작합니다." in prompt
 
 
 def test_build_title_prompt_includes_poll_focus_title_rules() -> None:
@@ -1808,11 +1866,92 @@ def test_final_sentence_polish_applies_poll_focus_contract_to_primary_fact_and_c
     )
     updated = str(repaired.get("content") or "")
 
-    assert "<h2>주진우과의 가상대결, 이재성 31.7% 대 30.3%</h2>" not in updated
-    assert "<h2>주진우와의 가상대결, 이재성 31.7% 대 30.3%</h2>" in updated
+    assert "<h2>왜 이재성이 주진우와의 가상대결에서 앞섰나</h2>" in updated
     assert "이재성·주진우 가상대결에서는 31.7% 대 30.3%로 나타났습니다." in updated
+    assert "<h2>왜 지금 이재성의 가능성에 주목해야 하나</h2>" in updated
+    assert "지금 이재성의 가능성에 주목해야 하는 이유는 여론조사에서 확인된 경쟁력과 변화 요구가 함께 드러났기 때문입니다." in updated
     assert "저는 이 모든 결과에 깊이" not in updated
     assert repaired.get("edited") is True
+
+
+def test_final_sentence_polish_uses_distinct_question_h2_lanes_and_keeps_intro_line() -> None:
+    bundle = build_poll_focus_bundle(
+        topic="부산시장 선거 양자대결에서 주진우보다 우세를 보인 이재성의 가능성",
+        user_keywords=["주진우 부산시장", "주진우"],
+        full_name="이재성",
+        text_sources=[
+            "이재성 전 위원장과 주진우 국회의원의 가상대결은 31.7% 대 30.3%로 나타났습니다.",
+            "이재성 전 위원장과 박형준 현 부산시장의 양자대결은 30.9% 대 31.3%였습니다.",
+        ],
+    )
+    content = (
+        "<p>이재성, 충분히 이깁니다.</p>"
+        "<h2>주진우 국회의원과의 가상대결, 이재성의 약진</h2>"
+        "<p>최근 KNN이 서던포스트에 의뢰해 실시한 여론조사 결과는 저에게 큰 의미가 있습니다. "
+        "이재성 전 위원장과 주진우 의원과의 31.7% 대 30.3%로 제가 치열한 승부를 벌일 것으로 나타났습니다.</p>"
+        "<h2>이재성, 부산 시민에게 확실히 각인되고 있습니다</h2>"
+        "<p>저의 이름이 부산 시민 여러분께 조금씩 확실히 알려지고 있다는 것은 매우 고무적인 일입니다. "
+        "이는 제가 그동안 시민들과 직접 소통해 온 결과입니다.</p>"
+        "<h2>부산 경제, 이재성이 새로운 활력을 불어넣겠습니다</h2>"
+        "<p>현재 부산 경제는 새로운 활력을 필요로 합니다. 저는 해양 물류와 일자리 중심 정책을 통해 변화를 만들겠습니다.</p>"
+        "<h2>박형준 시장과의 가상대결, 오차 범위 내 접전</h2>"
+        "<p>최근 여론조사 결과는 저의 가능성을 다시 확인시켜 주었습니다. "
+        "이재성 더불어민주당 전 부산시당위원장과 박형준 현 부산시장의 양자대결에서는 30.9% 대 31.3%로 오차 범위 안에서 각축을 벌였습니다.</p>"
+        "<h2>함께 만들어갈 부산의 밝은 미래</h2>"
+        "<p>최근 여론조사에서 주진우 의원과의 가상대결에서 제가 앞서고 있다는 사실은 시민들의 변화 요구를 보여줍니다.</p>"
+    )
+
+    repaired = _apply_final_sentence_polish_once(
+        content,
+        full_name="이재성",
+        poll_focus_bundle=bundle,
+    )
+    updated = str(repaired.get("content") or "")
+
+    assert "<p>이재성, 충분히 이깁니다.</p>" in updated
+    assert updated.count("왜 이재성이 주진우와의 가상대결에서 앞섰나") == 1
+    assert updated.count("이재성 인지도는 왜 부산 시민 사이에서 확장되고 있나") == 1
+    assert updated.count("부산 경제를 살릴 이재성의 해법은 무엇인가") == 1
+    assert updated.count("박형준과의 접전은 무엇을 보여주나") == 1
+    assert updated.count("왜 지금 이재성의 가능성에 주목해야 하나") == 1
+    assert "이재성의 정책 비전, 지역 발전 해법" not in updated
+    assert "이 흐름은 이재성의 이름과 메시지가 부산 시민 사이에서 조금씩 더 알려지고 있음을 보여줍니다." in updated
+    assert "부산 경제를 살릴 해법은 지역 산업과 일자리 문제를 함께 풀 수 있는 실질적 정책에 있습니다." in updated
+    assert "이재성·박형준 가상대결에서는 30.9% 대 31.3%로 나타났습니다." in updated
+
+
+def test_remove_groundedness_violations_removes_unsupported_comparison_sentence() -> None:
+    section_html = (
+        "<p>이재성·주진우 가상대결에서는 31.7% 대 30.3%로 나타났습니다. "
+        "주진우 의원은 부산 경제 비전을 제시했지만, 저는 그보다 더 구체적이고 실현 가능한 방안을 가지고 있습니다.</p>"
+    )
+    result = _remove_groundedness_violations_from_section(
+        section_html,
+        opponent_names=["주진우"],
+        poll_number_tokens=("31.7%", "30.3%"),
+    )
+    updated = str(result.get("content") or "")
+
+    assert result.get("edited") is True
+    assert "그보다 더 구체적이고 실현 가능한 방안" not in updated
+    assert "이재성·주진우 가상대결에서는 31.7% 대 30.3%로 나타났습니다." in updated
+
+
+def test_remove_groundedness_violations_removes_orphan_boilerplate_sentence() -> None:
+    section_html = (
+        "<p>이 흐름은 이재성의 이름과 메시지가 부산 시민 사이에서 조금씩 더 알려지고 있음을 보여줍니다. "
+        "이는 특정 정당에 얽매이지 않고 오직 부산의 발전만을 생각하는 저에게 큰 기회가 될 수 있습니다.</p>"
+    )
+    result = _remove_groundedness_violations_from_section(
+        section_html,
+        opponent_names=[],
+        poll_number_tokens=(),
+    )
+    updated = str(result.get("content") or "")
+
+    assert result.get("edited") is True
+    assert "저에게 큰 기회가 될 수 있습니다" not in updated
+    assert "이 흐름은 이재성의 이름과 메시지가 부산 시민 사이에서 조금씩 더 알려지고 있음을 보여줍니다." in updated
 
 
 def test_remove_low_signal_keyword_sentence_once_keeps_poll_fact_sentence_body() -> None:
@@ -2105,6 +2244,10 @@ def main() -> None:
             test_guard_draft_title_nonfatal_downgrades_failure_to_previous_fallback,
         ),
         (
+            "guard_draft_title_nonfatal_uses_repeat_safe_intent_fallback_for_direct_role_surface",
+            test_guard_draft_title_nonfatal_uses_repeat_safe_intent_fallback_for_direct_role_surface,
+        ),
+        (
             "should_carry_recent_titles_from_prior_session_only_when_scope_matches",
             test_should_carry_recent_titles_from_prior_session_only_when_scope_matches,
         ),
@@ -2311,6 +2454,18 @@ def main() -> None:
         (
             "final_sentence_polish_applies_poll_focus_contract_to_primary_fact_and_conclusion",
             test_final_sentence_polish_applies_poll_focus_contract_to_primary_fact_and_conclusion,
+        ),
+        (
+            "final_sentence_polish_uses_distinct_question_h2_lanes_and_keeps_intro_line",
+            test_final_sentence_polish_uses_distinct_question_h2_lanes_and_keeps_intro_line,
+        ),
+        (
+            "remove_groundedness_violations_removes_unsupported_comparison_sentence",
+            test_remove_groundedness_violations_removes_unsupported_comparison_sentence,
+        ),
+        (
+            "remove_groundedness_violations_removes_orphan_boilerplate_sentence",
+            test_remove_groundedness_violations_removes_orphan_boilerplate_sentence,
         ),
         (
             "remove_low_signal_keyword_sentence_once_keeps_poll_fact_sentence_body",

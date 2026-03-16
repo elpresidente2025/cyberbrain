@@ -213,14 +213,17 @@ def build_poll_focus_bundle_section(bundle: Optional[Dict[str, Any]]) -> str:
         kind_id = normalize_context_text(kind.get("id"))
         kind_label = normalize_context_text(kind.get("label"))
         kind_template = normalize_context_text(kind.get("template"))
+        kind_answer_lead = normalize_context_text(kind.get("answerLead"))
         if not kind_id or not kind_template:
             continue
         h2_kind_lines.append(
             f'    <kind id="{_xml_text(kind_id)}" label="{_xml_text(kind_label or kind_id)}">'
-            f"{_xml_text(kind_template)}</kind>"
+            f"<title>{_xml_text(kind_template)}</title>"
+            f"<answer_lead>{_xml_text(kind_answer_lead)}</answer_lead>"
+            f"</kind>"
         )
     h2_kind_xml = "\n".join(h2_kind_lines) if h2_kind_lines else (
-        '    <kind id="primary_matchup" label="주대결 결과">없음</kind>'
+        '    <kind id="primary_matchup" label="주대결 결과"><title>없음</title><answer_lead>없음</answer_lead></kind>'
     )
 
     return f"""
@@ -248,9 +251,11 @@ def build_poll_focus_bundle_section(bundle: Optional[Dict[str, Any]]) -> str:
   <rules>
     <rule order="1">도입과 핵심 본문은 primary_pair를 중심으로 작성하고, 정당 지지율이나 당내 경선 수치로 중심을 바꾸지 않습니다.</rule>
     <rule order="2">주대결을 설명하는 첫 문장은 sentence_template 구조를 따르며, 인물 이름과 수치를 절단하거나 뒤섞지 않습니다.</rule>
-    <rule order="3">소제목(H2)은 allowed_h2_kinds 범위 안에서만 고르고, 브랜딩 문구를 그대로 H2로 쓰지 않습니다.</rule>
-    <rule order="4">결론 문단은 미완성 절로 끝내지 말고, 모든 문장을 완결된 서술형으로 마무리합니다.</rule>
-    <rule order="5">secondary_pairs는 보조 근거로만 짧게 언급하고, 글의 중심 논지를 primary_pair에서 이탈시키지 않습니다.</rule>
+    <rule order="3">소제목(H2)은 allowed_h2_kinds 범위 안에서만 고르고, 검색 의도를 바로 보여주는 질문형 또는 문제제기형으로 씁니다.</rule>
+    <rule order="4">각 H2 바로 아래 첫 문장은 해당 kind의 answer_lead처럼 질문에 직접 답하는 문장으로 시작합니다.</rule>
+    <rule order="5">브랜딩 문구를 그대로 H2로 쓰지 말고, 같은 H2 의미를 반복하지 않습니다.</rule>
+    <rule order="6">결론 문단은 미완성 절로 끝내지 말고, 모든 문장을 완결된 서술형으로 마무리합니다.</rule>
+    <rule order="7">secondary_pairs는 보조 근거로만 짧게 언급하고, 글의 중심 논지를 primary_pair에서 이탈시키지 않습니다.</rule>
   </rules>
   <focused_reference>{_xml_cdata(focused_source_text)}</focused_reference>
 </poll_focus_bundle>

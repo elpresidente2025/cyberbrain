@@ -99,6 +99,20 @@ def _extract_keyword_names(user_keywords: Iterable[Any]) -> List[str]:
     return names[:4]
 
 
+def _extract_source_names(text_sources: Iterable[Any]) -> List[str]:
+    names: List[str] = []
+    for raw in text_sources or []:
+        source_text = _normalize_text(raw)
+        if not source_text:
+            continue
+        for token in _PERSON_RE.findall(source_text):
+            if token in _GENERIC_NAME_TOKENS:
+                continue
+            if token not in names:
+                names.append(token)
+    return names[:8]
+
+
 def _format_percent(value: Any) -> str:
     try:
         number = round(float(value), 1)
@@ -173,6 +187,42 @@ def _build_pair_heading(record: Dict[str, Any]) -> str:
     return f"{_with_particle(opponent, '과', '와')}의 가상대결, {speaker} {speaker_percent} 대 {opponent_percent}"
 
 
+def _to_float(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_speaker_ahead(record: Dict[str, Any]) -> bool:
+    speaker_score = _to_float(record.get("speakerScore"))
+    opponent_score = _to_float(record.get("opponentScore"))
+    if speaker_score is None or opponent_score is None:
+        return False
+    return speaker_score > opponent_score
+
+
+def _build_primary_matchup_question(record: Dict[str, Any]) -> str:
+    speaker = str(record.get("speaker") or "").strip()
+    opponent = str(record.get("opponent") or "").strip()
+    if not speaker or not opponent:
+        return ""
+    subject = _with_particle(speaker, "이", "가")
+    if _is_speaker_ahead(record):
+        return f"왜 {subject} {opponent}와의 가상대결에서 앞섰나"
+    return f"왜 {subject} {opponent}와의 가상대결에서 접전을 만들었나"
+
+
+def _build_secondary_matchup_question(record: Dict[str, Any]) -> str:
+    opponent = str(record.get("opponent") or "").strip()
+    if not opponent:
+        return ""
+    margin = _to_float(record.get("margin"))
+    if margin is not None and margin <= 3.1:
+        return f"{opponent}과의 접전은 무엇을 보여주나"
+    return f"{opponent}과의 대결은 무엇을 보여주나"
+
+
 def _build_title_lanes(primary_pair: Dict[str, Any]) -> List[Dict[str, str]]:
     speaker = str(primary_pair.get("speaker") or "").strip()
     opponent = str(primary_pair.get("opponent") or "").strip()
@@ -206,44 +256,60 @@ def _build_allowed_h2_kinds(
     speaker: str,
 ) -> List[Dict[str, str]]:
     allowed: List[Dict[str, str]] = []
-    primary_heading = _build_pair_heading(primary_pair)
-    if primary_heading:
+    primary_question = _build_primary_matchup_question(primary_pair)
+    primary_answer = _build_pair_fact_sentence(primary_pair)
+    if primary_question:
         allowed.append(
             {
                 "id": "primary_matchup",
                 "label": "주대결 결과",
-                "template": primary_heading,
+                "template": primary_question,
+                "answerLead": primary_answer,
             }
         )
     allowed.append(
         {
             "id": "recognition",
-            "label": "인지도/확장 해석",
-            "template": f"{speaker} 인지도 상승, 시민 접점 확대",
+            "label": "인지도 확장 해석",
+            "template": f"{speaker} 인지도는 왜 부산 시민 사이에서 확장되고 있나",
+            "answerLead": (
+                f"이 흐름은 {speaker}의 이름과 메시지가 부산 시민 사이에서 "
+                "조금씩 더 알려지고 있음을 보여줍니다."
+            ),
         }
     )
     allowed.append(
         {
             "id": "policy",
             "label": "정책 비전",
-            "template": f"{speaker}의 정책 비전, 지역 발전 해법",
+            "template": f"부산 경제를 살릴 {speaker}의 해법은 무엇인가",
+            "answerLead": (
+                "부산 경제를 살릴 해법은 지역 산업과 일자리 문제를 함께 풀 수 있는 "
+                "실질적 정책에 있습니다."
+            ),
         }
     )
     if secondary_pairs:
-        secondary_heading = _build_pair_heading(secondary_pairs[0])
-        if secondary_heading:
+        secondary_question = _build_secondary_matchup_question(secondary_pairs[0])
+        secondary_answer = _build_pair_fact_sentence(secondary_pairs[0])
+        if secondary_question:
             allowed.append(
                 {
                     "id": "secondary_matchup",
                     "label": "보조 대결",
-                    "template": secondary_heading,
+                    "template": secondary_question,
+                    "answerLead": secondary_answer,
                 }
             )
     allowed.append(
         {
             "id": "closing",
             "label": "마무리",
-            "template": f"{speaker}, 더 나은 미래를 향한 약속",
+            "template": f"왜 지금 {speaker}의 가능성에 주목해야 하나",
+            "answerLead": (
+                f"지금 {speaker}의 가능성에 주목해야 하는 이유는 "
+                "여론조사에서 확인된 경쟁력과 변화 요구가 함께 드러났기 때문입니다."
+            ),
         }
     )
     return allowed
@@ -260,7 +326,8 @@ def build_poll_focus_bundle(
     speaker = _normalize_person_name(full_name)
     topic_names = _extract_topic_names(topic)
     keyword_names = _extract_keyword_names(user_keywords)
-    seed_names = _unique_names([speaker, *topic_names, *keyword_names])
+    source_names = _extract_source_names(text_sources)
+    seed_names = _unique_names([speaker, *topic_names, *keyword_names, *source_names])
 
     table = poll_fact_table if isinstance(poll_fact_table, dict) else None
     if not table or not isinstance(table.get("pairs"), dict) or not table.get("pairs"):
@@ -281,7 +348,9 @@ def build_poll_focus_bundle(
             "focusedSourceText": "",
         }
 
-    focus_names = _unique_names([speaker, *topic_names, *keyword_names, *((table or {}).get("knownNames") or [])])
+    focus_names = _unique_names(
+        [speaker, *topic_names, *keyword_names, *source_names, *((table or {}).get("knownNames") or [])]
+    )
     pair_candidates: List[tuple[tuple[int, int, float], Dict[str, Any]]] = []
     for raw_entry in pairs.values():
         entry = raw_entry if isinstance(raw_entry, dict) else {}
