@@ -556,6 +556,90 @@ def _validate_role_keyword_title_policy(title: str, role_keyword_policy: Dict[st
     return {"passed": True}
 
 
+def _compose_repaired_title_surface(base_title: str, start: int, end: int, replacement: str) -> str:
+    prefix = str(base_title[:start] or "").rstrip(" ,·:;!?")
+    suffix = re.sub(r"^[\s,·:;!?]+", "", str(base_title[end:] or ""))
+    parts = [part for part in (prefix, str(replacement or "").strip(), suffix) if str(part or "").strip()]
+    candidate_surface = " ".join(parts).strip()
+    return normalize_title_surface(candidate_surface) or candidate_surface
+
+
+def _iter_role_policy_title_repair_candidates(title: str, role_keyword_policy: Optional[Dict[str, Any]]) -> List[str]:
+    normalized_title = normalize_title_surface(title)
+    entries = role_keyword_policy.get("entries") if isinstance(role_keyword_policy, dict) else {}
+    if not normalized_title or not isinstance(entries, dict) or not entries:
+        return []
+
+    candidates: List[str] = []
+    seen_candidates: set[str] = set()
+
+    for keyword, raw_entry in entries.items():
+        entry = raw_entry if isinstance(raw_entry, dict) else {}
+        normalized_keyword = str(keyword or "").strip()
+        if not normalized_keyword or normalized_keyword not in normalized_title:
+            continue
+
+        start_index = normalized_title.find(normalized_keyword)
+        end_index = start_index + len(normalized_keyword)
+        mode = str(entry.get("mode") or "").strip().lower()
+
+        replacements: List[str] = []
+        if mode == "intent_only" and not is_role_keyword_intent_surface(
+            normalized_title,
+            start_index,
+            end_index,
+        ):
+            replacements = [
+                build_role_keyword_intent_text(normalized_keyword, context="title", variant_index=0),
+                build_role_keyword_intent_text(normalized_keyword, context="title", variant_index=1),
+                build_role_keyword_intent_text(normalized_keyword, context="title", variant_index=2),
+            ]
+        elif mode == "blocked":
+            source_role = str(entry.get("sourceRole") or "").strip()
+            person_name = str(entry.get("name") or "").strip()
+            if source_role and person_name:
+                replacements = [f"{person_name} {source_role}", person_name]
+            elif person_name:
+                replacements = [person_name]
+
+        for replacement in replacements:
+            repaired_candidate = _compose_repaired_title_surface(
+                normalized_title,
+                start_index,
+                end_index,
+                replacement,
+            )
+            if (
+                not repaired_candidate
+                or repaired_candidate == normalized_title
+                or repaired_candidate in seen_candidates
+            ):
+                continue
+            if not (TITLE_LENGTH_HARD_MIN <= len(repaired_candidate) <= TITLE_LENGTH_HARD_MAX):
+                continue
+            seen_candidates.add(repaired_candidate)
+            candidates.append(repaired_candidate)
+
+    return candidates
+
+
+def _repair_title_for_role_keyword_policy(
+    title: str,
+    role_keyword_policy: Optional[Dict[str, Any]],
+    user_keywords: Optional[List[str]] = None,
+) -> str:
+    filtered_keywords = [str(item or "").strip() for item in (user_keywords or []) if str(item or "").strip()]
+    for repaired_candidate in _iter_role_policy_title_repair_candidates(title, role_keyword_policy):
+        role_gate = _validate_role_keyword_title_policy(repaired_candidate, role_keyword_policy or {})
+        if not role_gate.get("passed"):
+            continue
+        keyword_gate = _validate_user_keyword_title_requirements(repaired_candidate, filtered_keywords)
+        severity = str(keyword_gate.get("severity") or "").strip().lower()
+        if keyword_gate.get("passed") or severity == "soft":
+            return repaired_candidate
+    return ""
+
+
 def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[str], role_keyword_policy: Optional[Dict[str, Any]] = None) -> str:
     try:
         filtered_user_keywords = _filter_required_title_keywords(user_keywords, role_keyword_policy)
@@ -3568,6 +3652,11 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
     similarity_threshold = min(max(similarity_threshold, 0.50), 0.95)
     max_similarity_penalty = max(0, int(options.get('maxSimilarityPenalty', 18)))
     on_progress = options.get('onProgress')
+    role_keyword_policy = params.get('roleKeywordPolicy') if isinstance(params.get('roleKeywordPolicy'), dict) else {}
+    user_keywords = _filter_required_title_keywords(
+        params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else [],
+        role_keyword_policy,
+    )
 
     option_recent_titles = options.get('recentTitles') if isinstance(options.get('recentTitles'), list) else []
     param_recent_titles = params.get('recentTitles') if isinstance(params.get('recentTitles'), list) else []
@@ -3684,6 +3773,29 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
                 params,
                 {'autoFitLength': False},
             )
+            role_repaired_title = _repair_title_for_role_keyword_policy(
+                initial_generated_title,
+                role_keyword_policy,
+                user_keywords,
+            )
+            if role_repaired_title and role_repaired_title != initial_generated_title:
+                repaired_score_result = calculate_title_quality_score(
+                    role_repaired_title,
+                    params,
+                    {'autoFitLength': False},
+                )
+                if (
+                    repaired_score_result.get('passed')
+                    or int(repaired_score_result.get('score', 0)) > int(score_result.get('score', 0))
+                ):
+                    logger.info(
+                        "[TitleGen] role policy repair 적용(후보 %s): \"%s\" -> \"%s\"",
+                        idx,
+                        initial_generated_title,
+                        role_repaired_title,
+                    )
+                    score_result = repaired_score_result
+                    initial_generated_title = role_repaired_title
             repaired_title = str(score_result.get('repairedTitle') or '').strip()
             candidate_title = initial_generated_title
             if repaired_title and repaired_title != candidate_title:

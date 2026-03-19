@@ -6,6 +6,7 @@ Node.js `functions/services/posts/personalization.js` 포팅.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
@@ -58,8 +59,301 @@ LOCAL_CONNECTION_MAP = {
     "귀농": "고향으로 돌아온",
 }
 
+STYLE_GUIDE_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
+STYLE_GUIDE_TRANSITION_PREFIXES = ("이제", "그리고", "그러나", "하지만", "무엇보다", "그래서", "또한", "먼저", "결국", "저는")
+STYLE_GUIDE_POSITIONING_MARKERS = ("태어나", "자라", "출신", "로서", "경험", "기업인", "전문가", "막내", "아들", "딸", "사람")
+STYLE_GUIDE_EMOTION_MARKERS = ("반드시", "분명", "책임", "약속", "희망", "감사", "애정", "소중", "지키겠습니다", "해내겠습니다")
 
-def _build_style_guide_prompt(style_fingerprint: Dict[str, Any], compact: bool = False) -> str:
+
+def _normalize_guide_sentence(text: Any) -> str:
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def _truncate_guide_sentence(text: Any, max_length: int = 90) -> str:
+    normalized = _normalize_guide_sentence(text)
+    if len(normalized) <= max_length:
+        return normalized
+    return normalized[: max(1, max_length - 1)].rstrip() + "…"
+
+
+def _split_guide_sentences(text: str, *, limit: int = 40) -> List[str]:
+    if not text or not isinstance(text, str):
+        return []
+    return [
+        item for item in (
+            _normalize_guide_sentence(part)
+            for part in STYLE_GUIDE_SENTENCE_SPLIT_RE.split(text)
+        )
+        if len(item) >= 18
+    ][:limit]
+
+
+def _collect_guide_examples(
+    sentences: List[str],
+    predicate,
+    used: set[str],
+    *,
+    limit: int = 2,
+) -> List[str]:
+    results: List[str] = []
+    for sentence in sentences:
+        key = sentence.lower()
+        if key in used or not predicate(sentence):
+            continue
+        used.add(key)
+        results.append(_truncate_guide_sentence(sentence))
+        if len(results) >= limit:
+            break
+    return results
+
+
+def _extract_style_guide_examples(style_fingerprint: Dict[str, Any], source_text: str = "") -> Dict[str, Any]:
+    sentences = _split_guide_sentences(source_text)
+    if not sentences:
+        return {
+            "transitionExamples": [],
+            "concretizationExamples": [],
+            "shortExample": "",
+            "longExample": "",
+            "positioningExamples": [],
+            "emotionExamples": [],
+        }
+
+    phrases = style_fingerprint.get("characteristicPhrases") or {}
+    sentence_patterns = style_fingerprint.get("sentencePatterns") or {}
+    vocab = style_fingerprint.get("vocabularyProfile") or {}
+    rhetoric = style_fingerprint.get("rhetoricalDevices") or {}
+    used: set[str] = set()
+
+    transition_tokens = [
+        _normalize_guide_sentence(item)
+        for item in [*(phrases.get("transitions") or []), *(sentence_patterns.get("preferredStarters") or []), *STYLE_GUIDE_TRANSITION_PREFIXES]
+        if _normalize_guide_sentence(item)
+    ]
+    vocab_tokens = [
+        _normalize_guide_sentence(item)
+        for item in [*(vocab.get("localTerms") or []), *(vocab.get("frequentWords") or []), *(vocab.get("preferredVerbs") or [])]
+        if _normalize_guide_sentence(item)
+    ]
+    emotion_tokens = [
+        _normalize_guide_sentence(item)
+        for item in [*(phrases.get("emphatics") or []), *(phrases.get("conclusions") or []), *STYLE_GUIDE_EMOTION_MARKERS]
+        if _normalize_guide_sentence(item)
+    ]
+    signature_tokens = [
+        _normalize_guide_sentence(item)
+        for item in (phrases.get("signatures") or [])
+        if _normalize_guide_sentence(item)
+    ]
+
+    transition_examples = _collect_guide_examples(
+        sentences,
+        lambda sentence: any(token in sentence for token in transition_tokens),
+        used,
+        limit=2,
+    )
+    concretization_examples = _collect_guide_examples(
+        sentences,
+        lambda sentence: bool(re.search(r"\d", sentence))
+        or any(token in sentence for token in vocab_tokens)
+        or (24 <= len(sentence) <= 95 and bool(re.search(r"(일자리|골목|아이|항만|주거|교육|복지|경제)", sentence))),
+        used,
+        limit=2,
+    )
+    positioning_examples = _collect_guide_examples(
+        sentences,
+        lambda sentence: any(token in sentence for token in signature_tokens)
+        or (
+            bool(re.match(r"^(?:저는|저 이|저는 바로|이재성은|저는 부산)", sentence))
+            and any(token in sentence for token in STYLE_GUIDE_POSITIONING_MARKERS)
+        ),
+        used,
+        limit=2,
+    )
+    emotion_examples = _collect_guide_examples(
+        sentences,
+        lambda sentence: any(token in sentence for token in emotion_tokens),
+        used,
+        limit=2,
+    )
+    short_example = (_collect_guide_examples(sentences, lambda sentence: len(sentence) <= 38, used, limit=1) or [""])[0]
+    long_example = (_collect_guide_examples(sentences, lambda sentence: len(sentence) >= 58, used, limit=1) or [""])[0]
+
+    if not transition_examples:
+        for item in (rhetoric.get("examplePatterns") or [])[:2]:
+            normalized = _truncate_guide_sentence(item)
+            key = normalized.lower()
+            if not normalized or key in used:
+                continue
+            used.add(key)
+            transition_examples.append(normalized)
+            if len(transition_examples) >= 2:
+                break
+
+    return {
+        "transitionExamples": transition_examples,
+        "concretizationExamples": concretization_examples,
+        "shortExample": short_example,
+        "longExample": long_example,
+        "positioningExamples": positioning_examples,
+        "emotionExamples": emotion_examples,
+    }
+
+
+def _compose_style_guide_prompt(
+    *,
+    transitions: List[str],
+    example_patterns: List[str],
+    signature_phrases: List[str],
+    emphatics: List[str],
+    conclusions: List[str],
+    starters: List[str],
+    endings: List[str],
+    frequent_words: List[str],
+    preferred_verbs: List[str],
+    preferred_adjectives: List[str],
+    local_terms: List[str],
+    unique_features: List[str],
+    tone: Dict[str, Any],
+    vocab: Dict[str, Any],
+    sentence_patterns: Dict[str, Any],
+    analysis: Dict[str, Any],
+    style_fingerprint: Dict[str, Any],
+    source_examples: Dict[str, Any],
+    compact: bool,
+) -> str:
+    if compact:
+        tone_tags: list[str] = []
+        if float(tone.get("formality") or 0) > 0.6:
+            tone_tags.append("격식체")
+        if float(tone.get("directness") or 0) > 0.6:
+            tone_tags.append("직접적")
+        if float(tone.get("optimism") or 0) > 0.6:
+            tone_tags.append("낙관적")
+        avg_length = sentence_patterns.get("avgLength") or 45
+        base = "[문체] "
+        if signature_phrases:
+            base += f"표현: {', '.join(f'\"{s}\"' for s in signature_phrases[:3])}. "
+        if transitions:
+            base += f"전환: {', '.join(f'\"{s}\"' for s in transitions[:2])}. "
+        if example_patterns:
+            base += f"전개 예시: {', '.join(f'\"{s}\"' for s in example_patterns[:2])}. "
+        if source_examples.get("transitionExamples"):
+            base += f"실제 문장: {', '.join(f'\"{s}\"' for s in source_examples['transitionExamples'][:2])}. "
+        if tone_tags:
+            base += f"어조: {'/'.join(tone_tags)}. "
+        base += f"문장 {avg_length}자 내외."
+        return base
+
+    sections: list[str] = []
+
+    if transitions or example_patterns or source_examples.get("transitionExamples"):
+        transition_lines: list[str] = []
+        if transitions:
+            transition_lines.append(f"- 선언 뒤 연결: {', '.join(f'\"{item}\"' for item in transitions)}")
+        if example_patterns:
+            transition_lines.append(f"- 실제 전개 예시: {', '.join(f'\"{item}\"' for item in example_patterns)}")
+        if source_examples.get("transitionExamples"):
+            transition_lines.append(
+                f"- 실제 사용자 문장: {', '.join(f'\"{item}\"' for item in source_examples['transitionExamples'])}"
+            )
+        sections.append("1. 전환 패턴:\n  " + "\n  ".join(transition_lines))
+
+    avg_len = sentence_patterns.get("avgLength") or 45
+    clause = sentence_patterns.get("clauseComplexity") or "medium"
+    concretization_lines = [
+        f"- 추상 주장을 풀어내는 문장 길이: {avg_len}자 내외",
+        f"- 절 복잡도: {clause}",
+        f"- 사실/정책 설명 수준: {vocab.get('technicalLevel') or 'accessible'}",
+    ]
+    concretization_vocab = local_terms or frequent_words
+    if concretization_vocab:
+        concretization_lines.append(f"- 생활/현장 어휘: {', '.join(concretization_vocab)}")
+    if preferred_verbs:
+        concretization_lines.append(f"- 행동 동사: {', '.join(preferred_verbs)}")
+    if source_examples.get("concretizationExamples"):
+        concretization_lines.append(
+            f"- 실제 사용자 문장: {', '.join(f'\"{item}\"' for item in source_examples['concretizationExamples'])}"
+        )
+    sections.append("2. 구체화 패턴:\n  " + "\n  ".join(concretization_lines))
+
+    rhythm_lines = [f"- 문장 길이: {avg_len}자 내외", f"- 문장 복잡도: {clause}"]
+    if starters:
+        rhythm_lines.append(f"- 선호 시작어: {', '.join(f'\"{s}\"' for s in starters)}")
+    if endings:
+        rhythm_lines.append(f"- 문단/문장 마감: {', '.join(endings)}")
+    if source_examples.get("shortExample"):
+        rhythm_lines.append(f"- 짧은 실제 문장: \"{source_examples['shortExample']}\"")
+    if source_examples.get("longExample"):
+        rhythm_lines.append(f"- 긴 실제 문장: \"{source_examples['longExample']}\"")
+    sections.append("3. 리듬 패턴:\n  " + "\n  ".join(rhythm_lines))
+
+    vocab_lines: list[str] = []
+    if preferred_verbs:
+        vocab_lines.append(f"- 반복 동사: {', '.join(preferred_verbs)}")
+    if frequent_words:
+        vocab_lines.append(f"- 생활 명사/전달 어휘: {', '.join(frequent_words)}")
+    if local_terms:
+        vocab_lines.append(f"- 지역/현장 어휘: {', '.join(local_terms)}")
+    if signature_phrases or emphatics or preferred_adjectives:
+        cluster_items = signature_phrases + emphatics + preferred_adjectives
+        vocab_lines.append(f"- 시그니처 표현: {', '.join(f'\"{item}\"' for item in cluster_items[:6])}")
+    if vocab_lines:
+        sections.append("4. 선호 어휘 클러스터:\n  " + "\n  ".join(vocab_lines))
+
+    positioning_lines: list[str] = []
+    dominant_style = str(analysis.get("dominantStyle") or "").strip()
+    if dominant_style:
+        positioning_lines.append(f"- 기본 자기 포지셔닝: {dominant_style}")
+    if unique_features:
+        positioning_lines.append(f"- 구별되는 정체성 요소: {', '.join(unique_features)}")
+    if signature_phrases:
+        positioning_lines.append(f"- 자기 소개/선언 표현: {', '.join(f'\"{item}\"' for item in signature_phrases[:3])}")
+    if source_examples.get("positioningExamples"):
+        positioning_lines.append(
+            f"- 실제 자기 선언 문장: {', '.join(f'\"{item}\"' for item in source_examples['positioningExamples'])}"
+        )
+    if positioning_lines:
+        sections.append("5. 화자 포지셔닝 방식:\n  " + "\n  ".join(positioning_lines))
+
+    tone_desc: list[str] = []
+    if float(tone.get("formality") or 0) > 0.6:
+        tone_desc.append("격식체")
+    elif float(tone.get("formality") or 0) < 0.4:
+        tone_desc.append("구어체")
+    if float(tone.get("directness") or 0) > 0.6:
+        tone_desc.append("직접적")
+    if float(tone.get("optimism") or 0) > 0.6:
+        tone_desc.append("낙관적")
+    emotion_lines: list[str] = []
+    if tone_desc:
+        emotion_lines.append(f"- 어조: {', '.join(tone_desc)}")
+    tone_description = str(tone.get("toneDescription") or "").strip()
+    if tone_description:
+        emotion_lines.append(f"- 감정 표현 설명: {tone_description}")
+    if emphatics or conclusions:
+        emotion_lines.append(f"- 확신/마감 표현: {', '.join(f'\"{item}\"' for item in (emphatics + conclusions)[:5])}")
+    if source_examples.get("emotionExamples"):
+        emotion_lines.append(
+            f"- 실제 감정/선언 문장: {', '.join(f'\"{item}\"' for item in source_examples['emotionExamples'])}"
+        )
+    if emotion_lines:
+        sections.append("6. 감정 표현 방식:\n  " + "\n  ".join(emotion_lines))
+
+    ai_alternatives = style_fingerprint.get("aiAlternatives") or {}
+    alternative_lines: list[str] = []
+    for raw_key, raw_value in list(ai_alternatives.items())[:4]:
+        source = str(raw_key or "").replace("instead_of_", "").replace("_", " ").strip()
+        target = str(raw_value or "").strip()
+        if source and target:
+            alternative_lines.append(f'- "{source}" 대신 "{target}"')
+    if alternative_lines:
+        sections.append("7. AI 상투어 대체:\n  " + "\n  ".join(alternative_lines))
+
+    return "\n".join(sections)
+
+
+def _build_style_guide_prompt(style_fingerprint: Dict[str, Any], compact: bool = False, source_text: str = "") -> str:
     """stylometry 모듈이 없을 때 사용하는 경량 스타일 가이드 생성기."""
     if not style_fingerprint:
         return ""
@@ -73,9 +367,46 @@ def _build_style_guide_prompt(style_fingerprint: Dict[str, Any], compact: bool =
     sentence_patterns = style_fingerprint.get("sentencePatterns") or {}
     vocab = style_fingerprint.get("vocabularyProfile") or {}
     tone = style_fingerprint.get("toneProfile") or {}
+    rhetoric = style_fingerprint.get("rhetoricalDevices") or {}
+    analysis = style_fingerprint.get("analysisMetadata") or {}
+
+    transitions = [item for item in (phrases.get("transitions") or []) if item][:4]
+    example_patterns = [item for item in (rhetoric.get("examplePatterns") or []) if item][:3]
+    signature_phrases = [item for item in (phrases.get("signatures") or []) if item][:4]
+    emphatics = [item for item in (phrases.get("emphatics") or []) if item][:3]
+    conclusions = [item for item in (phrases.get("conclusions") or []) if item][:3]
+    starters = [item for item in (sentence_patterns.get("preferredStarters") or []) if item][:3]
+    endings = [item for item in (sentence_patterns.get("endingPatterns") or []) if item][:3]
+    frequent_words = [item for item in (vocab.get("frequentWords") or []) if item][:5]
+    preferred_verbs = [item for item in (vocab.get("preferredVerbs") or []) if item][:4]
+    preferred_adjectives = [item for item in (vocab.get("preferredAdjectives") or []) if item][:3]
+    local_terms = [item for item in (vocab.get("localTerms") or []) if item][:4]
+    unique_features = [item for item in (analysis.get("uniqueFeatures") or []) if item][:3]
+    source_examples = _extract_style_guide_examples(style_fingerprint, source_text)
+
+    return _compose_style_guide_prompt(
+        transitions=transitions,
+        example_patterns=example_patterns,
+        signature_phrases=signature_phrases,
+        emphatics=emphatics,
+        conclusions=conclusions,
+        starters=starters,
+        endings=endings,
+        frequent_words=frequent_words,
+        preferred_verbs=preferred_verbs,
+        preferred_adjectives=preferred_adjectives,
+        local_terms=local_terms,
+        unique_features=unique_features,
+        tone=tone,
+        vocab=vocab,
+        sentence_patterns=sentence_patterns,
+        analysis=analysis,
+        style_fingerprint=style_fingerprint,
+        source_examples=source_examples,
+        compact=compact,
+    )
 
     if compact:
-        signatures = (phrases.get("signatures") or [])[:3]
         tone_tags: list[str] = []
         if float(tone.get("formality") or 0) > 0.6:
             tone_tags.append("격식체")
@@ -85,35 +416,86 @@ def _build_style_guide_prompt(style_fingerprint: Dict[str, Any], compact: bool =
             tone_tags.append("희망적")
         avg_length = sentence_patterns.get("avgLength") or 45
         base = "[문체] "
-        if signatures:
-            base += f"표현: {', '.join(f'\"{s}\"' for s in signatures)}. "
+        if signature_phrases:
+            base += f"표현: {', '.join(f'\"{s}\"' for s in signature_phrases[:3])}. "
+        if transitions:
+            base += f"전환: {', '.join(f'\"{s}\"' for s in transitions[:2])}. "
+        if example_patterns:
+            base += f"전개 예시: {', '.join(f'\"{s}\"' for s in example_patterns[:2])}. "
+        if source_examples["transitionExamples"]:
+            base += f"실제 문장: {', '.join(f'\"{s}\"' for s in source_examples['transitionExamples'][:2])}. "
         if tone_tags:
             base += f"어조: {'/'.join(tone_tags)}. "
         base += f"문장 {avg_length}자 내외."
         return base
 
     sections: list[str] = []
-    signature_phrases = (phrases.get("signatures") or [])[:5]
-    emphatics = (phrases.get("emphatics") or [])[:3]
-    if signature_phrases or emphatics:
-        all_phrases = signature_phrases + emphatics
-        sections.append(f"1. 특징적 표현: {', '.join(f'\"{item}\"' for item in all_phrases)}")
+    if transitions or example_patterns or source_examples["transitionExamples"]:
+        transition_lines: list[str] = []
+        if transitions:
+            transition_lines.append(f"- 선언 뒤 연결: {', '.join(f'\"{item}\"' for item in transitions)}")
+        if example_patterns:
+            transition_lines.append(f"- 실제 전개 예시: {', '.join(f'\"{item}\"' for item in example_patterns)}")
+        sections.append("1. 전환 패턴:\n  " + "\n  ".join(transition_lines))
+
+    if transitions or example_patterns or source_examples["transitionExamples"]:
+        transition_lines: list[str] = []
+        if transitions:
+            transition_lines.append(f"- 선언 뒤 연결: {', '.join(f'\"{item}\"' for item in transitions)}")
+        if example_patterns:
+            transition_lines.append(f"- 실제 전개 예시: {', '.join(f'\"{item}\"' for item in example_patterns)}")
+        if source_examples["transitionExamples"]:
+            transition_lines.append(
+                f"- 실제 사용자 문장: {', '.join(f'\"{item}\"' for item in source_examples['transitionExamples'])}"
+            )
+        sections.append("1. 전환 패턴:\n  " + "\n  ".join(transition_lines))
 
     avg_len = sentence_patterns.get("avgLength") or 45
-    starters = (sentence_patterns.get("preferredStarters") or [])[:3]
     clause = sentence_patterns.get("clauseComplexity") or "medium"
-    sentence_lines = [f"- 문장 길이: {avg_len}자 내외", f"- 복잡도: {clause}"]
-    if starters:
-        sentence_lines.insert(1, f"- 시작 표현: {', '.join(f'\"{s}\"' for s in starters)}")
-    sections.append("2. 문장 구조:\n  " + "\n  ".join(sentence_lines))
+    concretization_lines = [f"- 추상 주장을 풀어내는 밀도: 문장 {avg_len}자 내외, 복잡도 {clause}"]
+    concretization_vocab = local_terms or frequent_words
+    if concretization_vocab:
+        concretization_lines.append(f"- 생활/현장 언어: {', '.join(concretization_vocab)}")
+    if preferred_verbs:
+        concretization_lines.append(f"- 행동 동사: {', '.join(preferred_verbs)}")
+    technical_level = vocab.get("technicalLevel") or "accessible"
+    concretization_lines.append(f"- 사실·정책 설명 수준: {technical_level}")
+    sections.append("2. 구체화 패턴:\n  " + "\n  ".join(concretization_lines))
 
-    frequent_words = (vocab.get("frequentWords") or [])[:5]
+    rhythm_lines = [f"- 문장 길이: {avg_len}자 내외", f"- 문장 복잡도: {clause}"]
+    if starters:
+        rhythm_lines.append(f"- 선호 시작어: {', '.join(f'\"{s}\"' for s in starters)}")
+    if endings:
+        rhythm_lines.append(f"- 단락/문장 마감: {', '.join(endings)}")
+    if bool(rhetoric.get("usesRepetition")):
+        rhythm_lines.append("- 반복 구조를 활용하는 편")
+    if bool(rhetoric.get("usesEnumeration")):
+        rhythm_lines.append("- 나열형 전개를 활용하는 편")
+    sections.append("3. 리듬 패턴:\n  " + "\n  ".join(rhythm_lines))
+
+    vocab_lines: list[str] = []
+    if preferred_verbs:
+        vocab_lines.append(f"- 반복 동사: {', '.join(preferred_verbs)}")
     if frequent_words:
-        sections.append(
-            "3. 어휘 선택:\n"
-            f"  - 선호 단어: {', '.join(frequent_words)}\n"
-            f"  - 전문성: {vocab.get('technicalLevel') or 'accessible'}"
-        )
+        vocab_lines.append(f"- 생활 명사/핵심 단어: {', '.join(frequent_words)}")
+    if local_terms:
+        vocab_lines.append(f"- 지역/현장 용어: {', '.join(local_terms)}")
+    if signature_phrases or emphatics or preferred_adjectives:
+        cluster_items = signature_phrases + emphatics + preferred_adjectives
+        vocab_lines.append(f"- 시그니처 표현: {', '.join(f'\"{item}\"' for item in cluster_items[:6])}")
+    if vocab_lines:
+        sections.append("4. 선호 어휘 클러스터:\n  " + "\n  ".join(vocab_lines))
+
+    positioning_lines: list[str] = []
+    dominant_style = str(analysis.get("dominantStyle") or "").strip()
+    if dominant_style:
+        positioning_lines.append(f"- 기본 포지셔닝: {dominant_style}")
+    if unique_features:
+        positioning_lines.append(f"- 두드러진 정체성 요소: {', '.join(unique_features)}")
+    if signature_phrases:
+        positioning_lines.append(f"- 자기 소개/선언 표현: {', '.join(f'\"{item}\"' for item in signature_phrases[:3])}")
+    if positioning_lines:
+        sections.append("5. 화자 포지셔닝 방식:\n  " + "\n  ".join(positioning_lines))
 
     tone_desc: list[str] = []
     if float(tone.get("formality") or 0) > 0.6:
@@ -124,8 +506,33 @@ def _build_style_guide_prompt(style_fingerprint: Dict[str, Any], compact: bool =
         tone_desc.append("직접적")
     if float(tone.get("optimism") or 0) > 0.6:
         tone_desc.append("희망적")
+    emotionality = float(tone.get("emotionality") or 0)
+    emotion_lines: list[str] = []
     if tone_desc:
-        sections.append(f"4. 어조: {', '.join(tone_desc)}")
+        emotion_lines.append(f"- 어조: {', '.join(tone_desc)}")
+    tone_description = str(tone.get("toneDescription") or "").strip()
+    if tone_description:
+        emotion_lines.append(f"- 감정 표현 설명: {tone_description}")
+    if emotionality >= 0.6:
+        emotion_lines.append("- 감정을 직접 드러내는 편")
+    elif emotionality <= 0.4:
+        emotion_lines.append("- 감정보다 사실과 단정으로 밀어붙이는 편")
+    if emphatics or conclusions:
+        emotion_lines.append(f"- 확신/마감 표현: {', '.join(f'\"{item}\"' for item in (emphatics + conclusions)[:5])}")
+    if emotion_lines:
+        sections.append("6. 감정 표현 방식:\n  " + "\n  ".join(emotion_lines))
+
+    ai_alternatives = style_fingerprint.get("aiAlternatives") or {}
+    alternative_lines: list[str] = []
+    for raw_key, raw_value in list(ai_alternatives.items())[:4]:
+        source = str(raw_key or "").replace("instead_of_", "").replace("_", " ").strip()
+        target = str(raw_value or "").strip()
+        if source and target:
+            alternative_lines.append(f'- "{source}" 대신 "{target}"')
+    if alternative_lines:
+        sections.append(
+            "7. AI 상투어 대체:\n  " + "\n  ".join(alternative_lines)
+        )
 
     if not sections:
         return ""
@@ -291,7 +698,11 @@ def generate_style_hints(style_fingerprint: Dict[str, Any] | None, options: Dict
         return ""
 
     compact = bool(options.get("compact", False))
-    style_guide = _build_style_guide_prompt(style_fingerprint, compact=compact)
+    style_guide = _build_style_guide_prompt(
+        style_fingerprint,
+        compact=compact,
+        source_text=str(options.get("sourceText") or ""),
+    )
     if style_guide:
         logger.info("[Style] 문체 가이드 생성 완료 (%s자)", len(style_guide))
     return style_guide
@@ -308,7 +719,13 @@ def generate_all_personalization_hints(params: Dict[str, Any] | None) -> Dict[st
 
     bio_hints = generate_personalized_hints(bio_metadata)
     persona_hints = generate_persona_hints(user_profile, category, topic)
-    style_guide = generate_style_hints(style_fingerprint, {"compact": False})
+    style_guide = generate_style_hints(
+        style_fingerprint,
+        {
+            "compact": False,
+            "sourceText": params.get("bioContent") or user_profile.get("bio") or "",
+        },
+    )
 
     personalized_hints = " | ".join(
         hint.strip() for hint in (bio_hints, persona_hints) if isinstance(hint, str) and hint.strip()
@@ -339,4 +756,3 @@ __all__ = [
     "generateStyleHints",
     "generateAllPersonalizationHints",
 ]
-

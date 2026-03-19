@@ -1,11 +1,46 @@
 const admin = require('firebase-admin');
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { HttpsError } = require('firebase-functions/v2/https');
 const wrap = require('../common/wrap').wrap;
 const { auth } = require('../common/auth');
+const { extractStyleFingerprint, buildStyleGuidePrompt } = require('../services/stylometry');
+
+const MIN_BIO_STYLE_CONTENT_LENGTH = 100;
+
+const buildConsolidatedBioContent = (bioData = {}) => {
+  const entries = Array.isArray(bioData.entries) ? bioData.entries : [];
+  let consolidatedContent = '';
+
+  entries.forEach((entry) => {
+    const content = String(entry?.content || '').trim();
+    if (!content) return;
+    const type = String(entry?.type || 'content').trim().toUpperCase();
+    const title = String(entry?.title || '').trim();
+    consolidatedContent += `\n[${type}] ${title}: ${content}\n`;
+  });
+
+  if (!consolidatedContent.trim()) {
+    consolidatedContent = String(bioData.content || '').trim();
+  }
+
+  return consolidatedContent.trim();
+};
+
+const getAdminRequesterContext = async (uid) => {
+  const db = admin.firestore();
+  const requesterDoc = await db.collection('users').doc(uid).get();
+  const userData = requesterDoc.data() || {};
+  const isAdmin = userData.role === 'admin' || userData.isAdmin === true;
+
+  if (!requesterDoc.exists || !isAdmin) {
+    throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
+  }
+
+  return { db, requesterDoc, userData };
+};
 
 // 모든 사용자 조회 (관리자 전용)
 const getAllUsers = wrap(async (request) => {
-  const { uid, token } = await auth(request);
+  const { uid } = await auth(request);
 
   try {
     const db = admin.firestore();
@@ -63,7 +98,7 @@ const getAllUsers = wrap(async (request) => {
 
 // 사용자 계정 비활성화 (관리자 전용)
 const deactivateUser = wrap(async (request) => {
-  const { uid, token } = await auth(request);
+  const { uid } = await auth(request);
   const { userId } = request.data;
 
   if (!userId) {
@@ -117,7 +152,7 @@ const deactivateUser = wrap(async (request) => {
 
 // 사용자 계정 재활성화 (관리자 전용)
 const reactivateUser = wrap(async (request) => {
-  const { uid, token } = await auth(request);
+  const { uid } = await auth(request);
   const { userId } = request.data;
 
   if (!userId) {
@@ -166,7 +201,7 @@ const reactivateUser = wrap(async (request) => {
 
 // 사용자 계정 완전 삭제 (관리자 전용)
 const deleteUser = wrap(async (request) => {
-  const { uid, token } = await auth(request);
+  const { uid } = await auth(request);
   const { userId } = request.data;
 
   if (!userId) {
@@ -249,9 +284,132 @@ const deleteUser = wrap(async (request) => {
   }
 });
 
+// 사용자 바이오 문체 분석 일괄 실행 (관리자 전용)
+const batchAnalyzeBioStyles = wrap(async (request) => {
+  const { uid } = await auth(request);
+  const { db } = await getAdminRequesterContext(uid);
+
+  const requestData = request.data || {};
+  const rawLimit = Number.parseInt(requestData.limit, 10);
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 20) : 10;
+  const startAfter = String(requestData.startAfter || '').trim();
+  const rawMinConfidence = Number.parseFloat(requestData.minConfidence);
+  const minConfidence = Number.isFinite(rawMinConfidence)
+    ? Math.min(Math.max(rawMinConfidence, 0), 1)
+    : 0.7;
+  const force = requestData.force === true;
+
+  let query = db.collection('bios')
+    .orderBy(admin.firestore.FieldPath.documentId())
+    .limit(limit);
+
+  if (startAfter) {
+    query = query.startAfter(startAfter);
+  }
+
+  const snapshot = await query.get();
+  if (snapshot.empty) {
+    return {
+      success: true,
+      processedCount: 0,
+      successCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      noContentCount: 0,
+      hasMore: false,
+      lastUid: '',
+      message: '처리할 bio 문서가 없습니다.'
+    };
+  }
+
+  let successCount = 0;
+  let skippedCount = 0;
+  let failedCount = 0;
+  let noContentCount = 0;
+  const failures = [];
+
+  for (const doc of snapshot.docs) {
+    const bioData = doc.data() || {};
+    const existingConfidence = Number(bioData?.styleFingerprint?.analysisMetadata?.confidence || 0);
+
+    if (!force && existingConfidence >= minConfidence) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const consolidatedContent = buildConsolidatedBioContent(bioData);
+    if (!consolidatedContent || consolidatedContent.length < MIN_BIO_STYLE_CONTENT_LENGTH) {
+      noContentCount += 1;
+      continue;
+    }
+
+    try {
+      const styleFingerprint = await extractStyleFingerprint(consolidatedContent, {
+        userName: String(bioData.userName || bioData.name || '').trim(),
+        region: String(bioData.region || '').trim()
+      });
+
+      if (!styleFingerprint) {
+        failedCount += 1;
+        failures.push({ uid: doc.id, reason: 'empty-result' });
+        continue;
+      }
+
+      const styleGuide = buildStyleGuidePrompt(styleFingerprint, {
+        compact: false,
+        sourceText: consolidatedContent
+      });
+
+      await doc.ref.update({
+        styleFingerprint,
+        styleGuide,
+        styleFingerprintUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        styleGuideUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastAnalyzed: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      const userRef = db.collection('users').doc(doc.id);
+      const userSnap = await userRef.get();
+      if (userSnap.exists) {
+        await userRef.set({
+          styleGuide,
+          styleGuideUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      }
+
+      successCount += 1;
+    } catch (error) {
+      failedCount += 1;
+      failures.push({
+        uid: doc.id,
+        reason: error?.message || 'unknown-error'
+      });
+      console.error(`batchAnalyzeBioStyles failed for ${doc.id}:`, error);
+    }
+  }
+
+  const lastUid = snapshot.docs[snapshot.docs.length - 1]?.id || '';
+  const hasMore = snapshot.docs.length === limit && Boolean(lastUid);
+
+  return {
+    success: true,
+    processedCount: snapshot.size,
+    successCount,
+    skippedCount,
+    failedCount,
+    noContentCount,
+    hasMore,
+    lastUid,
+    failures: failures.slice(0, 10),
+    minConfidence,
+    force
+  };
+});
+
 module.exports = {
   getAllUsers,
   deactivateUser,
   reactivateUser,
-  deleteUser
+  deleteUser,
+  batchAnalyzeBioStyles
 };

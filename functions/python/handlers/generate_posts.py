@@ -201,13 +201,17 @@ TARGETED_POLISH_NUMERIC_TOKEN_PATTERN = re.compile(
     re.IGNORECASE,
 )
 SENTENCE_LIKE_UNIT_PATTERN = re.compile(r"(?:\d+\.\d+|[^.!?。])+(?:[.!?。](?!\d)|$)")
-TARGETED_POLISH_MAX_CANDIDATES = 6
+TARGETED_POLISH_MAX_CANDIDATES = 10
 TARGETED_POLISH_MAX_TEXT_LENGTH = 180
 TARGETED_POLISH_STYLE_FINGERPRINT_MIN_CONFIDENCE = 0.55
 TARGETED_POLISH_STYLE_GUIDE_MAX_CHARS = 500
 TARGETED_POLISH_STYLE_LIMITS: dict[str, dict[str, Any]] = {
     "light": {"max_sentences": 3, "max_ratio": "20%"},
     "medium": {"max_sentences": 6, "max_ratio": "30%"},
+}
+TARGETED_POLISH_JEONIM_RESERVED_SLOTS: dict[str, int] = {
+    "light": 1,
+    "medium": 2,
 }
 TARGETED_POLISH_EXCLUDED_MARKERS: tuple[str, ...] = (
     "후원계좌",
@@ -225,6 +229,11 @@ TARGETED_POLISH_INTRO_MARKERS: tuple[str, ...] = (
     "오늘 저는",
     "이 자리에 섰습니다",
     "여러분과 함께 나누겠습니다",
+    "이번 결과를 겸허히",
+    "이 자리를 빌려",
+    "먼저 감사",
+    "여러분께 말씀드리고자",
+    "이번 선거를 통해",
 )
 TARGETED_POLISH_TRANSITION_MARKERS: tuple[str, ...] = (
     "하지만 저는",
@@ -233,6 +242,14 @@ TARGETED_POLISH_TRANSITION_MARKERS: tuple[str, ...] = (
     "나아가",
     "앞으로도",
     "이번 여론조사 결과는",
+    "이를 위해 저는",
+    "저는 앞으로",
+    "저는 이미",
+    "더불어",
+    "또한 저는",
+    "특히 저는",
+    "이에 저는",
+    "그래서 저는",
 )
 TARGETED_POLISH_CONCLUSION_MARKERS: tuple[str, ...] = (
     "감사합니다",
@@ -241,27 +258,77 @@ TARGETED_POLISH_CONCLUSION_MARKERS: tuple[str, ...] = (
     "기대해 주십시오",
     "함께라면 우리는",
     "약속드립니다",
+    "여러분께 약속드립니다",
+    "반드시 보답하겠습니다",
+    "끝까지 함께하겠습니다",
 )
 TARGETED_POLISH_BOILERPLATE_MARKERS: tuple[str, ...] = (
     "가능성을 보여줍니다",
     "겸허히 받아들이고",
     "기대를 뛰어넘는",
     "더 나은 내일",
+    "더 나은 미래",
+    "진정성",
     "목소리에 귀 기울이고",
     "많은 관심과 지지",
     "열망을 현실로",
     "풍요로운 삶",
     "실질적인 변화를",
     "고무적인 일",
+    "최선을 다하겠습니다",
+    "반드시 실현하겠습니다",
+    "함께 만들어 가겠습니다",
+    "보다 나은 미래",
+    "여러분의 목소리",
+    "도전과 변화",
+    "새로운 도약",
+    "지역 발전을 위해",
+    "미래를 열어가겠습니다",
+    "책임지는 정치",
+    "현장의 목소리",
+    "기대에 부응",
+    "소통하고 협력",
+    "적극적으로 추진",
+    "신뢰받는 정치인",
+)
+# 저는/제가 시작 반복 감지 (중간 본문 대상)
+TARGETED_POLISH_JEONIM_START_RE = re.compile(r"^(?:저는|제가|저의)\s")
+TARGETED_POLISH_BOILERPLATE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"귀\s*기울이(?:는|고|며|어|여|았|었|왔|겠습니다|도록|려)", re.IGNORECASE),
+    re.compile(r"이러한\s+[^.!?]{0,36}(?:전달되|이어지|움직이)[^.!?]{0,16}", re.IGNORECASE),
+    re.compile(r"이는\s+[^.!?]{2,40}(?:이어집니다|됩니다|요인입니다)", re.IGNORECASE),
+    re.compile(
+        r"(?:이러한|저의)\s+[^.!?]{0,32}(?:접근|배경|진심|전문성|실력|행보|노력)[^.!?]{0,24}마음을\s+움직이",
+        re.IGNORECASE,
+    ),
+    re.compile(r"단순(?:히|한)\s+[^.!?]{0,12}[을를]\s*넘어", re.IGNORECASE),
+    re.compile(r"이는\s+단순한\s+(?:숫자|수치)(?:가)?\s+아니라", re.IGNORECASE),
+    re.compile(r"단순히\s+숫자(?:로만)?", re.IGNORECASE),
+    re.compile(r"단순한\s+구호(?:가\s+아니라)?", re.IGNORECASE),
+    re.compile(r"단순히\s+[^.!?]{0,16}그치지\s+않", re.IGNORECASE),
+    re.compile(
+        r"(?:저의\s+)?이러한\s+[^.!?]{0,36}(?:진정성|접근|비전|실천\s*의지|전문성|실력|행보|노력)[^.!?]{0,24}전달되",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:단계별로\s+정리|우선순위를\s+명확히|자원과\s+일정을\s+현실적(?:으로)?\s+맞추|즉시\s+보완|완성도를\s+높이)",
+        re.IGNORECASE,
+    ),
+)
+TARGETED_POLISH_POLICY_ACTION_RE = re.compile(
+    r"(?:추진|확대|유치|창출|개선|지원|해결|약속|실현|모색|집중|강화|정비|점검|보완|제시|준비|만들겠|하겠|하겠습니다)",
+    re.IGNORECASE,
 )
 TARGETED_POLISH_REASON_HINTS: dict[str, str] = {
     "heading_first_person_topic": "1인칭이 섞인 소제목을 더 기사형으로 정리",
     "matchup_result_clause": "깨진 가상대결 결과 문장을 자연스럽게 복원",
     "matchup_result_clause_spaced": "띄어쓰기와 조사 때문에 깨진 결과 문장을 복원",
+    "ai_alternative_voice_overlay": "등록된 사용자 대체 표현을 우선 적용",
     "intro_voice_overlay": "도입부 1~2문장에 사용자 말맛을 일부 반영",
     "transition_voice_overlay": "문단 연결문을 덜 상투적으로 정리",
     "closing_voice_overlay": "마무리 문장을 사용자답게 다듬기",
     "boilerplate_voice_overlay": "AI스러운 상투 표현을 완화",
+    "jeonim_voice_overlay": "본문 중간 '저는/제가' 반복 시작 패턴을 다양화",
 }
 _UNSUPPORTED_COMPARISON_FIRST_PERSON_RE = re.compile(
     r"(?:저는|제가|저의)(?:[^%。.!?\d]{2,60})(?:보다|에 비해|보다 더|더 나은|더 구체적|더 실질적|더 현실적)",
@@ -1050,6 +1117,142 @@ def _extract_name_from_signature_text(raw_text: Any) -> str:
             if candidate:
                 return candidate
     return ""
+
+
+def _is_identity_signature_text(raw_text: Any) -> bool:
+    text = str(raw_text or "").strip()
+    if not text:
+        return False
+
+    plain = re.sub(r"<[^>]*>", " ", text)
+    plain = re.sub(r"\s+", " ", plain).strip()
+    if not plain:
+        return False
+
+    if _extract_name_from_signature_text(plain):
+        return True
+
+    return any(
+        token in plain
+        for token in (
+            "뼛속까지",
+            "이재성입니다",
+            "이재성!",
+            "저 이재성",
+            "저는",
+            "저 ",
+        )
+    )
+
+
+def _collect_style_phrase_examples(
+    phrases: Dict[str, Any],
+) -> tuple[list[str], list[str]]:
+    generic_phrases: list[str] = []
+    identity_signatures: list[str] = []
+
+    raw_signatures = phrases.get("signatures") or []
+    if isinstance(raw_signatures, list):
+        for raw_value in raw_signatures:
+            value = str(raw_value or "").strip()
+            if not value:
+                continue
+            if _is_identity_signature_text(value):
+                if value not in identity_signatures:
+                    identity_signatures.append(value)
+                continue
+            if value not in generic_phrases:
+                generic_phrases.append(value)
+            if len(generic_phrases) >= 5:
+                break
+
+    for key in ("emphatics", "conclusions"):
+        raw_values = phrases.get(key) or []
+        if not isinstance(raw_values, list):
+            continue
+        for raw_value in raw_values:
+            value = str(raw_value or "").strip()
+            if value and value not in generic_phrases:
+                generic_phrases.append(value)
+            if len(generic_phrases) >= 5:
+                break
+        if len(generic_phrases) >= 5:
+            break
+
+    return generic_phrases, identity_signatures
+
+
+_SELF_ANALYTICAL_STORY_TAIL_PATTERN = re.compile(
+    r"(?P<prefix>[^.!?]{0,160}?)\s*"
+    r"(?P<label>(?:저의|나의|이러한\s+저의)\s+(?:이야기|서사|배경|경험|행보|삶))"
+    r"(?:는|은)\s+"
+    r"(?:시민들[^.!?]{0,40})?"
+    r"(?:마음을\s+움직이는\s+강력한\s+힘이\s+됩니다|"
+    r"마음을\s+움직이는\s+힘이\s+됩니다|"
+    r"마음을\s+움직입니다|"
+    r"공감과\s+희망을\s+줍니다|"
+    r"공감과\s+희망을\s+주는\s+힘이\s+됩니다|"
+    r"기대감을\s+키웁니다|"
+    r"기대감을\s+높입니다)"
+    r"\.?",
+    re.IGNORECASE,
+)
+
+
+def _normalize_story_effect_prefix(prefix: str, label: str) -> str:
+    text = re.sub(r"\s+", " ", str(prefix or "")).strip(" ,")
+    if not text:
+        return ""
+
+    replacements = (
+        ("함께 해온", "함께 해왔습니다"),
+        ("함께해온", "함께해왔습니다"),
+        ("해온", "해왔습니다"),
+        ("살아온", "살아왔습니다"),
+        ("걸어온", "걸어왔습니다"),
+        ("지켜온", "지켜왔습니다"),
+        ("다져온", "다져왔습니다"),
+        ("이어온", "이어왔습니다"),
+        ("만들어온", "만들어왔습니다"),
+        ("키워온", "키워왔습니다"),
+        ("겪어온", "겪어왔습니다"),
+        ("보아온", "보아왔습니다"),
+        ("봐온", "봐왔습니다"),
+        ("배워온", "배워왔습니다"),
+    )
+    for source, target in replacements:
+        if text.endswith(source):
+            return f"{text[:-len(source)]}{target}."
+
+    if text.endswith("입니다") or text.endswith("입니다."):
+        return text if text.endswith(".") else f"{text}."
+    if text.endswith("했습니다") or text.endswith("했습니다."):
+        return text if text.endswith(".") else f"{text}."
+    if text.endswith("해왔습니다") or text.endswith("해왔습니다."):
+        return text if text.endswith(".") else f"{text}."
+
+    normalized_label = re.sub(r"\s+", " ", str(label or "")).strip()
+    if text.endswith(normalized_label):
+        text = text[: -len(normalized_label)].rstrip(" ,")
+        if text.endswith("해온"):
+            return f"{text[:-2]}해왔습니다."
+        if text.endswith("해왔습니다"):
+            return f"{text}."
+
+    if text.endswith("이야기") or text.endswith("서사") or text.endswith("배경") or text.endswith("경험"):
+        return f"{text}입니다."
+
+    return f"{text}."
+
+
+def _strip_self_analytical_story_effect_tail(text: str) -> tuple[str, int]:
+    def _replace(match: re.Match[str]) -> str:
+        prefix = str(match.group("prefix") or "")
+        label = str(match.group("label") or "")
+        normalized = _normalize_story_effect_prefix(prefix, label)
+        return normalized or prefix.strip()
+
+    return _SELF_ANALYTICAL_STORY_TAIL_PATTERN.subn(_replace, str(text or ""))
 
 
 def _resolve_full_name(
@@ -3304,6 +3507,37 @@ def _repair_integrity_noise_once(content: str) -> Dict[str, Any]:
     if not original_base.strip():
         return {"content": original_base, "edited": False, "actions": []}
 
+    integrity_clause_repairs: tuple[tuple[re.Pattern[str], str, str], ...] = (
+        (
+            re.compile(
+                r"((?:[가-힣]{1,8}\s*(?:의원|국회의원|시장|후보|위원장)?과의\s+)?"
+                r"(?:가상대결|양자대결|대결))에서\s+제가\s+결과(?:는|가)\s+",
+                re.IGNORECASE,
+            ),
+            r"\1 결과는 ",
+            "integrity_matchup_result_clause_after_i",
+        ),
+        (
+            re.compile(
+                r"((?:[가-힣]{1,8}\s*(?:의원|국회의원|시장|후보|위원장)?과의\s+)?"
+                r"(?:가상대결|양자대결|대결))에서\s+(?:제가\s*)?여론조사\s+결과(?:는|가)\s+",
+                re.IGNORECASE,
+            ),
+            r"\1의 여론조사 결과는 ",
+            "integrity_poll_result_clause_after_matchup",
+        ),
+        (
+            re.compile(r"에서\s+제가\s+결과(?:는|가)\s+", re.IGNORECASE),
+            "에서 결과가 ",
+            "integrity_result_clause_after_i",
+        ),
+        (
+            re.compile(r"제가\s+결과(?:는|가)\s+", re.IGNORECASE),
+            "결과가 ",
+            "integrity_result_clause",
+        ),
+    )
+
     person_role_token_html_fragment = (
         rf"[가-힣]{{2,8}}{_HTML_INLINE_GAP_FRAGMENT}(?:의원|위원장|장관|후보|시장)"
     )
@@ -3475,10 +3709,16 @@ def _repair_integrity_noise_once(content: str) -> Dict[str, Any]:
             residue_actions = residue_fix.get("actions")
             if isinstance(residue_actions, list):
                 for action in residue_actions:
-                    action_text = str(action).strip()
-                    if action_text:
-                        actions.append(action_text)
+                        action_text = str(action).strip()
+                        if action_text:
+                            actions.append(action_text)
             changed = True
+
+        for pattern, replacement, action_label in integrity_clause_repairs:
+            updated_inner, repair_count = pattern.subn(replacement, updated_inner)
+            if repair_count > 0:
+                actions.append(f"{action_label}:{repair_count}")
+                changed = True
 
         if not changed:
             continue
@@ -3542,6 +3782,8 @@ def _targeted_sentence_reason_priority(reason: str) -> int:
         return 100
     if normalized == "heading_first_person_topic":
         return 95
+    if normalized == "ai_alternative_voice_overlay":
+        return 90
     if normalized == "intro_voice_overlay":
         return 85
     if normalized == "closing_voice_overlay":
@@ -3550,7 +3792,301 @@ def _targeted_sentence_reason_priority(reason: str) -> int:
         return 75
     if normalized == "transition_voice_overlay":
         return 70
+    if normalized == "jeonim_voice_overlay":
+        return 65
     return 50
+
+
+def _is_targeted_voice_overlay_reason(reason: str) -> bool:
+    return str(reason or "").strip().endswith("_voice_overlay")
+
+
+def _is_targeted_uncapped_style_reason(reason: str) -> bool:
+    return str(reason or "").strip().lower() == "ai_alternative_voice_overlay"
+
+
+def _resolve_targeted_sentence_style_limits(mode: str) -> Dict[str, Any]:
+    normalized_mode = str(mode or "").strip().lower()
+    if normalized_mode not in TARGETED_POLISH_STYLE_LIMITS:
+        normalized_mode = "light"
+    return TARGETED_POLISH_STYLE_LIMITS[normalized_mode]
+
+
+def _extract_targeted_sentence_ai_alternative_rules(
+    style_fingerprint: Optional[Dict[str, Any]] = None,
+) -> list[Dict[str, str]]:
+    fingerprint = _safe_dict(style_fingerprint)
+    ai_alternatives = _safe_dict(fingerprint.get("aiAlternatives"))
+    rules: list[Dict[str, str]] = []
+    seen_sources: set[str] = set()
+
+    for raw_key, raw_value in ai_alternatives.items():
+        replacement = _normalize_inline_whitespace(raw_value)
+        source = _normalize_inline_whitespace(
+            str(raw_key or "").replace("instead_of_", "").replace("_", " ").strip()
+        )
+        if not source or not replacement or source == replacement or source in seen_sources:
+            continue
+        seen_sources.add(source)
+        rules.append({"source": source, "target": replacement})
+
+    rules.sort(key=lambda item: (-len(str(item.get("source") or "")), str(item.get("source") or "")))
+    return rules
+
+
+def _find_targeted_sentence_ai_alternative_rules(
+    text: str,
+    rules: list[Dict[str, str]],
+) -> list[Dict[str, str]]:
+    candidate = _normalize_inline_whitespace(text)
+    if not candidate or not rules:
+        return []
+    return [
+        {"source": str(rule.get("source") or ""), "target": str(rule.get("target") or "")}
+        for rule in rules
+        if str(rule.get("source") or "") and str(rule.get("source") or "") in candidate
+    ]
+
+
+def _apply_targeted_sentence_ai_alternative_rules(
+    text: str,
+    rules: list[Dict[str, str]],
+) -> tuple[str, list[tuple[str, str]]]:
+    updated = _normalize_inline_whitespace(text)
+    if not updated or not rules:
+        return updated, []
+
+    applied: list[tuple[str, str]] = []
+    for rule in rules:
+        source = str(rule.get("source") or "").strip()
+        target = str(rule.get("target") or "").strip()
+        if not source or not target or source not in updated:
+            continue
+        updated = updated.replace(source, target)
+        applied.append((source, target))
+    return updated, applied
+
+
+def _apply_global_style_ai_alternative_rules_once(
+    content: str,
+    style_fingerprint: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    base = str(content or "")
+    if not base.strip():
+        return {"content": base, "edited": False, "actions": []}
+
+    rules = _extract_targeted_sentence_ai_alternative_rules(style_fingerprint)
+    if not rules:
+        return {"content": base, "edited": False, "actions": []}
+
+    repaired = base
+    actions: list[str] = []
+    for match in reversed(list(CONTENT_BLOCK_WITH_TAG_PATTERN.finditer(base))):
+        raw_inner = str(match.group("inner") or "")
+        plain_inner = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", raw_inner))
+        if not plain_inner:
+            continue
+        if any(marker in plain_inner for marker in TARGETED_POLISH_EXCLUDED_MARKERS):
+            continue
+        if QUOTE_CHAR_PATTERN.search(plain_inner):
+            continue
+
+        matched_rules = _find_targeted_sentence_ai_alternative_rules(plain_inner, rules)
+        if not matched_rules:
+            continue
+
+        updated_inner = raw_inner
+        applied_pairs: list[tuple[str, str]] = []
+        for rule in matched_rules:
+            source = str(rule.get("source") or "").strip()
+            target = str(rule.get("target") or "").strip()
+            if not source or not target or source not in updated_inner:
+                continue
+            updated_inner = updated_inner.replace(source, target)
+            applied_pairs.append((source, target))
+
+        if not applied_pairs or updated_inner == raw_inner:
+            continue
+
+        repaired = repaired[: match.start("inner")] + updated_inner + repaired[match.end("inner") :]
+        actions.append(
+            "global_style_ai_alternative:" + "|".join(f"{source}→{target}" for source, target in applied_pairs)
+        )
+
+    return {
+        "content": repaired,
+        "edited": repaired != base,
+        "actions": actions,
+    }
+
+
+def _build_section_overlap_tokens(text: str) -> set[str]:
+    normalized = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(text or "")))
+    if not normalized:
+        return set()
+    stopwords = {
+        "그리고",
+        "하지만",
+        "그러나",
+        "이번",
+        "최근",
+        "이재성",
+        "부산",
+        "시민",
+        "가능성",
+        "주목해야",
+        "이유는",
+    }
+    return {
+        token
+        for token in re.findall(r"[가-힣A-Za-z0-9%]{2,}", normalized)
+        if token and token not in stopwords
+    }
+
+
+def _section_overlap_score(text_a: str, text_b: str) -> float:
+    tokens_a = _build_section_overlap_tokens(text_a)
+    tokens_b = _build_section_overlap_tokens(text_b)
+    if not tokens_a or not tokens_b:
+        return 0.0
+    overlap = len(tokens_a & tokens_b)
+    baseline = max(1, min(len(tokens_a), len(tokens_b)))
+    return overlap / baseline
+
+
+def _dedupe_overlapping_sections_once(content: str) -> Dict[str, Any]:
+    base = str(content or "")
+    if not base.strip():
+        return {"content": base, "edited": False, "actions": []}
+
+    h2_matches = list(H2_TAG_PATTERN.finditer(base))
+    if len(h2_matches) < 2:
+        return {"content": base, "edited": False, "actions": []}
+
+    seen_headings: dict[str, Dict[str, Any]] = {}
+    seen_first_sentences: dict[str, Dict[str, Any]] = {}
+    removals: list[tuple[int, int]] = []
+    actions: list[str] = []
+
+    for index, match in enumerate(h2_matches):
+        section_start = match.start()
+        section_end = h2_matches[index + 1].start() if index + 1 < len(h2_matches) else len(base)
+        heading_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(match.group(1) or "")))
+        section_html = base[match.end() : section_end]
+        section_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", section_html))
+        if not heading_plain or not section_plain:
+            continue
+
+        first_paragraph_match = PARAGRAPH_TAG_PATTERN.search(section_html)
+        first_paragraph_plain = ""
+        if first_paragraph_match:
+            first_paragraph_plain = _normalize_inline_whitespace(
+                re.sub(r"<[^>]*>", " ", str(first_paragraph_match.group(1) or ""))
+            )
+        lead_sentences = _split_sentence_like_units(first_paragraph_plain or section_plain)
+        lead_sentence = str(lead_sentences[0] or "").strip() if lead_sentences else ""
+        signature_source = lead_sentence or section_plain[:140]
+
+        duplicate_reason = ""
+        previous_heading = seen_headings.get(heading_plain)
+        if previous_heading:
+            if lead_sentence and lead_sentence == str(previous_heading.get("leadSentence") or ""):
+                duplicate_reason = "duplicate_heading_and_lead"
+            elif _section_overlap_score(
+                signature_source,
+                str(previous_heading.get("signatureSource") or ""),
+            ) >= 0.72:
+                duplicate_reason = "duplicate_heading_overlap"
+
+        if not duplicate_reason and lead_sentence:
+            previous_lead = seen_first_sentences.get(lead_sentence)
+            if previous_lead and _section_overlap_score(
+                section_plain,
+                str(previous_lead.get("sectionPlain") or ""),
+            ) >= 0.72:
+                duplicate_reason = "duplicate_lead_section"
+
+        if duplicate_reason:
+            removals.append((section_start, section_end))
+            actions.append(f"section_dedupe:{duplicate_reason}:{heading_plain}")
+            continue
+
+        info = {
+            "headingPlain": heading_plain,
+            "leadSentence": lead_sentence,
+            "signatureSource": signature_source,
+            "sectionPlain": section_plain,
+        }
+        seen_headings.setdefault(heading_plain, info)
+        if lead_sentence and lead_sentence not in seen_first_sentences:
+            seen_first_sentences[lead_sentence] = info
+
+    if not removals:
+        return {"content": base, "edited": False, "actions": []}
+
+    repaired = base
+    for start, end in sorted(removals, key=lambda item: item[0], reverse=True):
+        repaired = repaired[:start] + repaired[end:]
+    repaired = re.sub(r"\n{3,}", "\n\n", repaired).strip()
+    return {
+        "content": repaired,
+        "edited": repaired != base,
+        "actions": actions,
+    }
+
+
+def _dedupe_closing_appeal_sentences_once(content: str) -> Dict[str, Any]:
+    base = str(content or "")
+    if not base.strip():
+        return {"content": base, "edited": False, "actions": []}
+
+    appeal_pattern = re.compile(
+        r"(?:많은\s+관심과\s+(?:응원|지지)|많은\s+지지와\s+성원).{0,8}부탁드립니다",
+        re.IGNORECASE,
+    )
+    seen_appeal = False
+    removed_count = 0
+
+    def _rewrite_inner(inner: str) -> str:
+        nonlocal seen_appeal, removed_count
+        sentence_matches = list(SENTENCE_LIKE_UNIT_PATTERN.finditer(str(inner or "")))
+        if not sentence_matches:
+            return str(inner or "")
+
+        if not any(
+            appeal_pattern.search(
+                _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(match.group(0) or "")))
+            )
+            for match in sentence_matches
+        ):
+            return str(inner or "")
+
+        kept_sentences: list[str] = []
+        for match in reversed(sentence_matches):
+            sentence_html = str(match.group(0) or "")
+            plain_sentence = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", sentence_html))
+            if appeal_pattern.search(plain_sentence):
+                if seen_appeal:
+                    removed_count += 1
+                    continue
+                seen_appeal = True
+            kept_sentences.append(sentence_html.strip())
+
+        kept_sentences.reverse()
+        rebuilt = " ".join(item for item in kept_sentences if item)
+        rebuilt = re.sub(r"\s{2,}", " ", rebuilt).strip()
+        rebuilt = re.sub(r"\s+([,.;!?])", r"\1", rebuilt)
+        return rebuilt
+
+    repaired = _rewrite_paragraph_blocks(base, _rewrite_inner)
+    repaired = re.sub(r"<p\b[^>]*>\s*</p\s*>", "", repaired, flags=re.IGNORECASE)
+    repaired = re.sub(r"\n{3,}", "\n\n", repaired)
+    actions = [f"closing_appeal_dedupe:{removed_count}"] if removed_count > 0 else []
+    return {
+        "content": repaired,
+        "edited": repaired != base,
+        "actions": actions,
+    }
 
 
 def _contains_targeted_style_marker(text: str, markers: tuple[str, ...]) -> bool:
@@ -3558,6 +4094,20 @@ def _contains_targeted_style_marker(text: str, markers: tuple[str, ...]) -> bool
     if not candidate:
         return False
     return any(marker and marker in candidate for marker in markers)
+
+
+def _contains_targeted_style_pattern(text: str, patterns: tuple[re.Pattern[str], ...]) -> bool:
+    candidate = _normalize_inline_whitespace(text)
+    if not candidate:
+        return False
+    return any(pattern.search(candidate) for pattern in patterns)
+
+
+def _contains_targeted_beyond_boilerplate(text: str) -> bool:
+    candidate = _normalize_inline_whitespace(text)
+    if not candidate:
+        return False
+    return bool(re.search(r"단순(?:히|한)\s+[^.!?]{0,12}[을를]\s*넘어", candidate, re.IGNORECASE))
 
 
 def _is_targeted_style_candidate_safe(text: str) -> bool:
@@ -3582,10 +4132,16 @@ def _detect_targeted_sentence_style_issue(
     paragraph_count: int,
     sentence_index: int,
     sentence_count: int,
+    paragraph_jeonim_count: int = 0,
+    adjacent_jeonim: bool = False,
+    ai_alternative_sources: tuple[str, ...] = (),
 ) -> str:
     candidate = _normalize_inline_whitespace(text)
     if not _is_targeted_style_candidate_safe(candidate):
         return ""
+
+    if _contains_targeted_style_marker(candidate, ai_alternative_sources):
+        return "ai_alternative_voice_overlay"
 
     if paragraph_index == 0 and sentence_index < min(2, max(1, sentence_count)):
         return "intro_voice_overlay"
@@ -3597,7 +4153,12 @@ def _detect_targeted_sentence_style_issue(
         if sentence_index >= max(0, sentence_count - 1):
             return "closing_voice_overlay"
 
-    if _contains_targeted_style_marker(candidate, TARGETED_POLISH_BOILERPLATE_MARKERS):
+    if (
+        _contains_targeted_style_marker(candidate, TARGETED_POLISH_BOILERPLATE_MARKERS)
+        or _contains_targeted_style_pattern(candidate, TARGETED_POLISH_BOILERPLATE_PATTERNS)
+        or _contains_targeted_beyond_boilerplate(candidate)
+        or _is_orphan_boilerplate_sentence(candidate)
+    ):
         return "boilerplate_voice_overlay"
 
     if _contains_targeted_style_marker(candidate, TARGETED_POLISH_TRANSITION_MARKERS):
@@ -3605,6 +4166,17 @@ def _detect_targeted_sentence_style_issue(
 
     if _contains_targeted_style_marker(candidate, TARGETED_POLISH_INTRO_MARKERS):
         return "intro_voice_overlay"
+
+    # 본문 중간에서 저는/제가 시작 반복 감지 (도입·마무리는 위에서 이미 처리됨)
+    if (
+        paragraph_count > 3
+        and 0 < paragraph_index < paragraph_count - 1
+        and paragraph_jeonim_count >= 2
+        and (adjacent_jeonim or paragraph_jeonim_count >= 3)
+        and TARGETED_POLISH_JEONIM_START_RE.match(candidate)
+        and not TARGETED_POLISH_POLICY_ACTION_RE.search(candidate)
+    ):
+        return "jeonim_voice_overlay"
 
     return ""
 
@@ -3631,47 +4203,76 @@ def _build_targeted_sentence_style_instruction(
 
     lines = [
         (
-            f"- 선택된 fragment 중 최대 {limits['max_sentences']}문장 또는 전체의 "
-            f"{limits['max_ratio']} 안에서만 사용자 말맛을 덧입힙니다."
+            f"- 최대 {limits['max_sentences']}문장 또는 전체의 {limits['max_ratio']} 이내에서만 적용."
         ),
-        "- 사실, 숫자, 날짜, 이름, 직함, 인용, 정책 주장, 법적 표현, 필수 검색어는 그대로 둡니다.",
-        "- 전체 문단을 새로 쓰지 말고 조사, 어미, 문장 호흡, 상투 표현 치환만 조정합니다.",
+        "- 사실·숫자·날짜·이름·직함·인용·정책·검색어는 절대 변경 금지.",
+        "- 전체 문장 재작성 금지 — 어미·조사·상투 구절 치환만.",
     ]
 
     if normalized_guide:
         guide_excerpt = normalized_guide[:TARGETED_POLISH_STYLE_GUIDE_MAX_CHARS]
         if len(normalized_guide) > TARGETED_POLISH_STYLE_GUIDE_MAX_CHARS:
             guide_excerpt += "..."
-        lines.append(f"- 사용자 문체 가이드: {guide_excerpt}")
+        lines.append(f"\n[문체 방향]\n{guide_excerpt}")
 
     if confidence >= TARGETED_POLISH_STYLE_FINGERPRINT_MIN_CONFIDENCE:
         phrases = _safe_dict(fingerprint.get("characteristicPhrases"))
         sentence_patterns = _safe_dict(fingerprint.get("sentencePatterns"))
         tone = _safe_dict(fingerprint.get("toneProfile"))
-        ai_alternatives = _safe_dict(fingerprint.get("aiAlternatives"))
+        ai_alternative_rules = _extract_targeted_sentence_ai_alternative_rules(fingerprint)
 
-        phrase_examples: list[str] = []
-        for key in ("signatures", "emphatics", "conclusions"):
-            raw_values = phrases.get(key) or []
-            if not isinstance(raw_values, list):
+        # 치환 규칙 (가장 구체적·실행 가능한 규칙을 앞에)
+        replacement_pairs: list[str] = []
+        for rule in ai_alternative_rules[:5]:
+            source = str(rule.get("source") or "").strip()
+            replacement = str(rule.get("target") or "").strip()
+            if not replacement or not source:
                 continue
-            for raw_value in raw_values:
-                value = str(raw_value or "").strip()
-                if value and value not in phrase_examples:
-                    phrase_examples.append(value)
-                if len(phrase_examples) >= 5:
-                    break
-            if len(phrase_examples) >= 5:
+            replacement_pairs.append(f'"{source}"→"{replacement}"')
+            if len(replacement_pairs) >= 5:
                 break
-        if phrase_examples:
-            lines.append(f"- 선호 표현 예시: {', '.join(phrase_examples[:5])}")
+        if replacement_pairs:
+            lines.append(f"- 치환 규칙: {', '.join(replacement_pairs)}")
 
+        # 금지/회피 표현 (fingerprint avoidances)
+        avoid_phrases: list[str] = []
+        raw_phrase_avoidances = phrases.get("avoidances") or []
+        if isinstance(raw_phrase_avoidances, list):
+            for raw_val in raw_phrase_avoidances:
+                val = str(raw_val or "").strip()
+                if val and val not in avoid_phrases:
+                    avoid_phrases.append(val)
+                if len(avoid_phrases) >= 5:
+                    break
+        raw_top_avoidances = fingerprint.get("avoidances") or []
+        if isinstance(raw_top_avoidances, list):
+            for raw_val in raw_top_avoidances:
+                val = str(raw_val or "").strip()
+                if val and val not in avoid_phrases:
+                    avoid_phrases.append(val)
+                if len(avoid_phrases) >= 5:
+                    break
+        if avoid_phrases:
+            lines.append(f"- 금지/회피 표현: {', '.join(avoid_phrases[:5])}")
+
+        # 허용 시그니처 표현
+        phrase_examples, identity_signatures = _collect_style_phrase_examples(phrases)
+        if phrase_examples:
+            lines.append(f"- 허용 시그니처: {', '.join(phrase_examples[:5])}")
+        if identity_signatures:
+            lines.append(
+                "- 정체성 시그니처는 자기 이름/1인칭 선언 문장(도입·마감)에서만 사용하고 "
+                f"타인 묘사·복수형·수식어로 변형하지 마세요: {', '.join(identity_signatures[:3])}"
+            )
+
+        # 선호 시작어
         starters = sentence_patterns.get("preferredStarters") or []
         if isinstance(starters, list):
             preferred_starters = [str(item).strip() for item in starters if str(item).strip()][:3]
             if preferred_starters:
-                lines.append(f"- 문장 시작 습관: {', '.join(preferred_starters)}")
+                lines.append(f"- 선호 시작어: {', '.join(preferred_starters)}")
 
+        # 어조
         tone_tags: list[str] = []
         try:
             formality = float(tone.get("formality") or 0)
@@ -3686,31 +4287,19 @@ def _build_targeted_sentence_style_instruction(
         except (TypeError, ValueError):
             optimism = 0.0
         if formality >= 0.6:
-            tone_tags.append("격식을 유지하되 딱딱하지 않음")
+            tone_tags.append("격식 유지, 딱딱하지 않게")
         elif 0 < formality <= 0.4:
-            tone_tags.append("조금 더 구어적인 호흡")
+            tone_tags.append("구어적 호흡 허용")
         if directness >= 0.6:
-            tone_tags.append("직설적인 전달")
+            tone_tags.append("직설적 전달")
         if optimism >= 0.6:
-            tone_tags.append("낙관과 자신감이 묻어남")
+            tone_tags.append("낙관·자신감 표현")
         tone_description = str(tone.get("toneDescription") or "").strip()
         if tone_tags or tone_description:
             tone_text = ", ".join(tone_tags) if tone_tags else tone_description
             if tone_description and tone_description not in tone_text:
-                tone_text = f"{tone_text}, {tone_description}"
-            lines.append(f"- 어조 목표: {tone_text}")
-
-        replacement_pairs: list[str] = []
-        for raw_key, raw_value in list(ai_alternatives.items())[:4]:
-            replacement = str(raw_value or "").strip()
-            source = str(raw_key or "").replace("instead_of_", "").replace("_", " ").strip()
-            if not replacement or not source:
-                continue
-            replacement_pairs.append(f'"{source}" -> "{replacement}"')
-            if len(replacement_pairs) >= 2:
-                break
-        if replacement_pairs:
-            lines.append(f"- AI 상투어 대체 예시: {', '.join(replacement_pairs)}")
+                tone_text = f"{tone_text}. {tone_description}"
+            lines.append(f"- 어조: {tone_text}")
 
     return "\n".join(lines)
 
@@ -3719,6 +4308,8 @@ def _collect_targeted_sentence_polish_candidates(
     content: str,
     *,
     style_instruction: str = "",
+    style_polish_mode: str = "",
+    style_fingerprint: Optional[Dict[str, Any]] = None,
 ) -> list[Dict[str, Any]]:
     base = str(content or "")
     if not base.strip():
@@ -3726,6 +4317,11 @@ def _collect_targeted_sentence_polish_candidates(
 
     candidates: list[Dict[str, Any]] = []
     style_enabled = bool(str(style_instruction or "").strip())
+    style_limits = _resolve_targeted_sentence_style_limits(style_polish_mode)
+    ai_alternative_rules = (
+        _extract_targeted_sentence_ai_alternative_rules(style_fingerprint) if style_enabled else []
+    )
+    ai_alternative_sources = tuple(str(rule.get("source") or "") for rule in ai_alternative_rules)
     paragraph_order: Dict[str, int] = {}
 
     paragraph_counter = 0
@@ -3781,11 +4377,18 @@ def _collect_targeted_sentence_polish_candidates(
         paragraph_index = int(paragraph_order.get(block_key, -1))
         sentences = _split_sentence_like_units(normalized_inner)
         sentence_count = len(sentences)
+        jeonim_sentence_indexes = {
+            idx
+            for idx, item in enumerate(sentences)
+            if TARGETED_POLISH_JEONIM_START_RE.match(_normalize_inline_whitespace(item))
+        }
+        paragraph_jeonim_count = len(jeonim_sentence_indexes)
 
         for sentence_index, sentence in enumerate(sentences):
             if len(sentence) > TARGETED_POLISH_MAX_TEXT_LENGTH:
                 continue
 
+            matched_style_rules = _find_targeted_sentence_ai_alternative_rules(sentence, ai_alternative_rules)
             reason = _detect_targeted_sentence_polish_issue(sentence, tag=tag)
             if not reason and style_enabled:
                 reason = _detect_targeted_sentence_style_issue(
@@ -3794,26 +4397,33 @@ def _collect_targeted_sentence_polish_candidates(
                     paragraph_count=paragraph_counter,
                     sentence_index=sentence_index,
                     sentence_count=sentence_count,
+                    paragraph_jeonim_count=paragraph_jeonim_count,
+                    adjacent_jeonim=(
+                        (sentence_index - 1) in jeonim_sentence_indexes
+                        or (sentence_index + 1) in jeonim_sentence_indexes
+                    ),
+                    ai_alternative_sources=ai_alternative_sources,
                 )
             if not reason:
                 continue
 
-            candidates.append(
-                {
-                    "id": f"{block_key}-s{sentence_index}",
-                    "tag": tag,
-                    "reason": reason,
-                    "hint": _targeted_sentence_reason_hint(reason),
-                    "priority": _targeted_sentence_reason_priority(reason),
-                    "text": sentence,
-                    "blockIndex": block_index,
-                    "sentenceIndex": sentence_index,
-                    "blockKey": block_key,
-                    "blockInner": normalized_inner,
-                    "innerStart": match.start("inner"),
-                    "innerEnd": match.end("inner"),
-                }
-            )
+            candidate = {
+                "id": f"{block_key}-s{sentence_index}",
+                "tag": tag,
+                "reason": reason,
+                "hint": _targeted_sentence_reason_hint(reason),
+                "priority": _targeted_sentence_reason_priority(reason),
+                "text": sentence,
+                "blockIndex": block_index,
+                "sentenceIndex": sentence_index,
+                "blockKey": block_key,
+                "blockInner": normalized_inner,
+                "innerStart": match.start("inner"),
+                "innerEnd": match.end("inner"),
+            }
+            if matched_style_rules:
+                candidate["styleRulePairs"] = matched_style_rules
+            candidates.append(candidate)
     candidates.sort(
         key=lambda item: (
             -int(item.get("priority") or 0),
@@ -3821,7 +4431,66 @@ def _collect_targeted_sentence_polish_candidates(
             int(item.get("sentenceIndex") or -1),
         )
     )
-    return candidates[:TARGETED_POLISH_MAX_CANDIDATES]
+
+    if not style_enabled:
+        return candidates[:TARGETED_POLISH_MAX_CANDIDATES]
+
+    overlay_limit = int(style_limits.get("max_sentences") or 0)
+    non_overlay_candidates = [
+        candidate
+        for candidate in candidates
+        if not _is_targeted_voice_overlay_reason(str(candidate.get("reason") or ""))
+    ]
+    overlay_candidates = [
+        candidate
+        for candidate in candidates
+        if _is_targeted_voice_overlay_reason(str(candidate.get("reason") or ""))
+    ]
+    mandatory_overlay_candidates = [
+        candidate
+        for candidate in overlay_candidates
+        if _is_targeted_uncapped_style_reason(str(candidate.get("reason") or ""))
+    ]
+    capped_overlay_candidates = [
+        candidate
+        for candidate in overlay_candidates
+        if not _is_targeted_uncapped_style_reason(str(candidate.get("reason") or ""))
+    ]
+    normalized_mode = str(style_polish_mode or "").strip().lower()
+    if normalized_mode not in TARGETED_POLISH_JEONIM_RESERVED_SLOTS:
+        normalized_mode = "light"
+    jeonim_reserved = min(
+        overlay_limit,
+        int(TARGETED_POLISH_JEONIM_RESERVED_SLOTS.get(normalized_mode) or 0),
+    )
+    selected_capped_overlay_candidates: list[Dict[str, Any]] = []
+    if overlay_limit > 0:
+        jeonim_candidates = [
+            candidate
+            for candidate in capped_overlay_candidates
+            if str(candidate.get("reason") or "").strip() == "jeonim_voice_overlay"
+        ]
+        selected_capped_overlay_candidates.extend(jeonim_candidates[:jeonim_reserved])
+        remaining_overlay_slots = max(0, overlay_limit - len(selected_capped_overlay_candidates))
+        for candidate in capped_overlay_candidates:
+            if remaining_overlay_slots <= 0:
+                break
+            if candidate in selected_capped_overlay_candidates:
+                continue
+            selected_capped_overlay_candidates.append(candidate)
+            remaining_overlay_slots -= 1
+
+    selected_overlay_candidates = mandatory_overlay_candidates + selected_capped_overlay_candidates
+    non_overlay_limit = max(0, TARGETED_POLISH_MAX_CANDIDATES - len(selected_overlay_candidates))
+    selected = non_overlay_candidates[:non_overlay_limit] + selected_overlay_candidates
+    selected.sort(
+        key=lambda item: (
+            -int(item.get("priority") or 0),
+            int(item.get("blockIndex") or 0),
+            int(item.get("sentenceIndex") or -1),
+        )
+    )
+    return selected[:TARGETED_POLISH_MAX_CANDIDATES]
 
 
 def _normalize_numeric_token(text: Any) -> str:
@@ -3893,30 +4562,31 @@ def _apply_targeted_sentence_rewrites(
     *,
     user_keywords: list[str],
     known_names: list[str],
+    style_fingerprint: Optional[Dict[str, Any]] = None,
+    style_polish_mode: str = "",
 ) -> Dict[str, Any]:
     base = str(content or "")
-    if not base.strip() or not candidates or not rewrite_map:
+    style_rules = _extract_targeted_sentence_ai_alternative_rules(style_fingerprint)
+    if not base.strip() or not candidates or (not rewrite_map and not style_rules):
         return {"content": base, "edited": False, "actions": []}
 
     block_updates: Dict[str, str] = {}
     block_positions: Dict[str, Dict[str, Any]] = {}
     actions: list[str] = []
+    style_limits = _resolve_targeted_sentence_style_limits(style_polish_mode)
+    style_limit = int(style_limits.get("max_sentences") or 0)
+    style_applied_count = 0
 
     for candidate in candidates:
         candidate_id = str(candidate.get("id") or "").strip()
-        rewritten = _normalize_inline_whitespace(rewrite_map.get(candidate_id))
-        if not candidate_id or not rewritten:
+        candidate_reason = str(candidate.get("reason") or "").strip() or "generic"
+        is_style_overlay = _is_targeted_voice_overlay_reason(candidate_reason)
+        is_uncapped_style_overlay = _is_targeted_uncapped_style_reason(candidate_reason)
+        if not candidate_id:
             continue
 
-        valid, reason = _validate_targeted_sentence_rewrite(
-            str(candidate.get("text") or ""),
-            rewritten,
-            tag=str(candidate.get("tag") or ""),
-            user_keywords=user_keywords,
-            known_names=known_names,
-        )
-        if not valid:
-            actions.append(f"targeted_sentence_llm_skip:{candidate_id}:{reason}")
+        if is_style_overlay and not is_uncapped_style_overlay and style_applied_count >= style_limit:
+            actions.append(f"targeted_sentence_style_skip_cap:{candidate_id}:{candidate_reason}")
             continue
 
         block_key = str(candidate.get("blockKey") or "").strip()
@@ -3925,22 +4595,64 @@ def _apply_targeted_sentence_rewrites(
             continue
 
         current_inner = block_updates.get(block_key, original_block_inner)
-        if str(candidate.get("tag") or "").lower() == "h2":
-            updated_inner = rewritten
-        else:
-            original_fragment = str(candidate.get("text") or "")
-            updated_inner = current_inner.replace(original_fragment, rewritten, 1)
-            if updated_inner == current_inner:
-                actions.append(f"targeted_sentence_llm_skip:{candidate_id}:replace_miss")
-                continue
+        original_fragment = str(candidate.get("text") or "")
 
-        block_updates[block_key] = updated_inner
-        block_positions[block_key] = {
-            "innerStart": int(candidate.get("innerStart") or 0),
-            "innerEnd": int(candidate.get("innerEnd") or 0),
-            "originalInner": original_block_inner,
-        }
-        candidate_reason = str(candidate.get("reason") or "").strip() or "generic"
+        def _apply_rewrite_to_block(rewritten_text: str) -> tuple[bool, str]:
+            nonlocal style_applied_count
+            valid_local, reason_local = _validate_targeted_sentence_rewrite(
+                original_fragment,
+                rewritten_text,
+                tag=str(candidate.get("tag") or ""),
+                user_keywords=user_keywords,
+                known_names=known_names,
+            )
+            if not valid_local:
+                return False, reason_local
+
+            if str(candidate.get("tag") or "").lower() == "h2":
+                updated_inner_local = rewritten_text
+            else:
+                updated_inner_local = current_inner.replace(original_fragment, rewritten_text, 1)
+                if updated_inner_local == current_inner:
+                    return False, "replace_miss"
+
+            block_updates[block_key] = updated_inner_local
+            block_positions[block_key] = {
+                "innerStart": int(candidate.get("innerStart") or 0),
+                "innerEnd": int(candidate.get("innerEnd") or 0),
+                "originalInner": original_block_inner,
+            }
+            if is_style_overlay and not is_uncapped_style_overlay:
+                style_applied_count += 1
+            return True, ""
+
+        matched_style_rules = candidate.get("styleRulePairs")
+        if not isinstance(matched_style_rules, list) or not matched_style_rules:
+            matched_style_rules = _find_targeted_sentence_ai_alternative_rules(original_fragment, style_rules)
+        if is_style_overlay and isinstance(matched_style_rules, list) and matched_style_rules:
+            rule_rewrite, applied_pairs = _apply_targeted_sentence_ai_alternative_rules(
+                original_fragment,
+                matched_style_rules,
+            )
+            if applied_pairs and rule_rewrite != _normalize_inline_whitespace(original_fragment):
+                applied, apply_reason = _apply_rewrite_to_block(rule_rewrite)
+                if applied:
+                    pair_text = "|".join(f"{source}→{target}" for source, target in applied_pairs)
+                    actions.append(
+                        f"targeted_sentence_rule_apply:{candidate_id}:{pair_text}:{candidate_reason}"
+                    )
+                    continue
+                actions.append(f"targeted_sentence_rule_skip:{candidate_id}:{apply_reason}")
+
+        rewritten = _normalize_inline_whitespace(rewrite_map.get(candidate_id))
+        if not rewritten:
+            continue
+
+        applied, apply_reason = _apply_rewrite_to_block(rewritten)
+        if not applied:
+            actions.append(f"targeted_sentence_llm_skip:{candidate_id}:{apply_reason}")
+            continue
+
         actions.append(f"targeted_sentence_llm:{candidate_id}:{candidate_reason}")
 
     repaired = base
@@ -3987,6 +4699,8 @@ def _rewrite_targeted_sentence_issues_once(
     candidates = _collect_targeted_sentence_polish_candidates(
         base,
         style_instruction=style_instruction,
+        style_polish_mode=style_polish_mode,
+        style_fingerprint=style_fingerprint,
     )
     if not candidates:
         return {"content": base, "edited": False, "actions": []}
@@ -4013,7 +4727,9 @@ def _rewrite_targeted_sentence_issues_once(
         "3. 새 사실을 추가하거나 논지의 방향을 바꾸지 마세요.\n"
         "4. HTML 태그를 넣지 마세요.\n"
         "5. 가능한 한 조사, 어미, 문장 호흡, 상투 표현만 손보고 전체를 새로 쓰지 마세요.\n"
-        "6. reason이 intro/transition/closing/boilerplate 계열이면 일부 표현에만 사용자 말맛을 덧입혀도 됩니다.\n"
+        "6. reason이 *_voice_overlay 계열이면 [사용자 문체 반영 지침]의 치환 규칙을 먼저 적용하세요.\n"
+        "   - intro/closing: 비교적 적극적으로 다듬되 전체 재작성은 금지.\n"
+        "   - transition/boilerplate/jeonim: 상투 구절과 어미만 치환, 내용은 그대로.\n"
         "7. id는 그대로 두고 text만 반환하세요.\n"
         f"{style_block}\n"
         f"입력 JSON:\n{json.dumps(prompt_items, ensure_ascii=False, indent=2)}\n\n"
@@ -4081,20 +4797,62 @@ def _rewrite_targeted_sentence_issues_once(
         rewrite_map,
         user_keywords=[str(item or "").strip() for item in (user_keywords or []) if str(item or "").strip()],
         known_names=[str(item or "").strip() for item in (known_names or []) if str(item or "").strip()],
+        style_fingerprint=style_fingerprint,
+        style_polish_mode=style_polish_mode,
     )
     actions = [f"targeted_sentence_candidates:{len(candidates)}"]
     if style_instruction:
+        style_limits = _resolve_targeted_sentence_style_limits(style_polish_mode)
         style_candidate_count = sum(
-            1 for candidate in candidates if str(candidate.get("reason") or "").endswith("_voice_overlay")
+            1
+            for candidate in candidates
+            if _is_targeted_voice_overlay_reason(str(candidate.get("reason") or ""))
+        )
+        boilerplate_candidate_count = sum(
+            1 for candidate in candidates
+            if str(candidate.get("reason") or "") in {"boilerplate_voice_overlay", "jeonim_voice_overlay"}
+        )
+        ai_alternative_candidate_count = sum(
+            1
+            for candidate in candidates
+            if str(candidate.get("reason") or "") == "ai_alternative_voice_overlay"
         )
         actions.append(f"targeted_sentence_style_mode:{style_polish_mode or 'light'}")
+        actions.append(f"targeted_sentence_style_cap:{int(style_limits.get('max_sentences') or 0)}")
         actions.append(f"targeted_sentence_style_candidates:{style_candidate_count}")
+        actions.append(f"targeted_sentence_boilerplate_candidates:{boilerplate_candidate_count}")
+        actions.append(f"targeted_sentence_ai_alternative_candidates:{ai_alternative_candidate_count}")
+        for candidate in candidates:
+            candidate_reason = str(candidate.get("reason") or "").strip()
+            if not _is_targeted_voice_overlay_reason(candidate_reason):
+                continue
+            actions.append(
+                f"targeted_sentence_style_selected:{str(candidate.get('id') or '').strip()}:{candidate_reason}"
+            )
     apply_actions = apply_result.get("actions")
     if isinstance(apply_actions, list):
         for action in apply_actions:
             action_text = str(action).strip()
             if action_text:
                 actions.append(action_text)
+        applied_count = sum(
+            1
+            for action in apply_actions
+            if str(action).startswith("targeted_sentence_llm:")
+            or str(action).startswith("targeted_sentence_rule_apply:")
+        )
+        actions.append(f"targeted_sentence_applied:{applied_count}")
+    if style_instruction and isinstance(apply_actions, list):
+        style_applied_count = sum(
+            1
+            for action in apply_actions
+            if (
+                str(action).startswith("targeted_sentence_llm:")
+                or str(action).startswith("targeted_sentence_rule_apply:")
+            )
+            and _is_targeted_voice_overlay_reason(str(action).rsplit(":", 1)[-1])
+        )
+        actions.append(f"targeted_sentence_style_applied:{style_applied_count}")
     return {
         "content": str(apply_result.get("content") or base),
         "edited": bool(apply_result.get("edited")),
@@ -4538,8 +5296,6 @@ def _apply_poll_focus_contract_once(
                     section_kind = fallback_kind
                     break
 
-        if not section_kind and ranked_candidates:
-            section_kind = ranked_candidates[0][0]
         if section_kind:
             used_kinds.add(section_kind)
 
@@ -4652,6 +5408,10 @@ def _apply_final_sentence_polish_once(
     if repaired != base:
         actions.append("grammar_pattern_rewrite")
 
+    repaired, story_effect_trimmed = _strip_self_analytical_story_effect_tail(repaired)
+    if story_effect_trimmed > 0:
+        actions.append(f"strip_self_analytical_story_effect_tail:{story_effect_trimmed}")
+
     safe_patterns: list[tuple[re.Pattern[str], str, str]] = [
         (
             re.compile(r"선거까지\s+남은\s+결코\s+", re.IGNORECASE),
@@ -4729,11 +5489,92 @@ def _apply_final_sentence_polish_once(
             r"향후 \1",
             "awkward_future_role_fragment",
         ),
+        (
+            re.compile(r"단순(?:히|한)\s+[^.!?]{0,16}[을를]\s+넘어[,，]?\s*", re.IGNORECASE),
+            "",
+            "strip_beyond_boilerplate",
+        ),
+        (
+            re.compile(r"이는\s+단순한\s+(?:숫자|수치)(?:가)?\s+아니라[,，]?\s*", re.IGNORECASE),
+            "이 숫자는 ",
+            "strip_numeric_evidence_frame",
+        ),
+        (
+            re.compile(r"단순히\s+숫자(?:로만)?", re.IGNORECASE),
+            "숫자로만",
+            "strip_numeric_only_boilerplate",
+        ),
+        (
+            re.compile(r"단순한\s+구호가\s+아니라", re.IGNORECASE),
+            "말이 아니라",
+            "strip_generic_slogan_frame",
+        ),
+        (
+            re.compile(r"단순한\s+구호(?:가)?\s+아닌[,，]?\s*", re.IGNORECASE),
+            "",
+            "strip_generic_slogan_variant",
+        ),
+        (
+            re.compile(r"단순히\s+[^.!?]{0,16}그치지\s+않습니다", re.IGNORECASE),
+            "말로만 그치지 않습니다",
+            "strip_slogan_plateau_boilerplate",
+        ),
+        (
+            re.compile(r"진정성\s+있는", re.IGNORECASE),
+            "직접적인",
+            "strip_generic_sincerity_modifier",
+        ),
+        (
+            re.compile(r"(?:저의\s+)?진정성과\s+전문성", re.IGNORECASE),
+            "실력과 전문성",
+            "strip_generic_sincerity_pair",
+        ),
+        (
+            re.compile(
+                r"(?:이러한|저의)\s+[^.!?]{0,32}(?:접근|배경|진심|전문성|실력|행보|노력)[^.!?]{0,24}(?:시민(?:들)?의\s+)?마음을\s+움직이고\s+있습니다",
+                re.IGNORECASE,
+            ),
+            "현장의 반응이 달라지고 있습니다",
+            "strip_self_analytical_impact_claim",
+        ),
+        (
+            re.compile(
+                r"(?:저의\s+)?이러한\s+[^.!?]{0,36}(?:진정성|접근|비전|실천\s*의지|전문성|실력|행보|노력)[^.!?]{0,24}전달되고\s+있습니다",
+                re.IGNORECASE,
+            ),
+            "현장의 반응이 달라지고 있습니다",
+            "strip_self_analytical_delivery_claim",
+        ),
+        (
+            re.compile(r"부산의\s+부산경제", re.IGNORECASE),
+            "부산경제",
+            "dedupe_busan_branding_phrase",
+        ),
+        (
+            re.compile(r"((?:부산항\s+)?부두\s+노동자의)\s+막내들", re.IGNORECASE),
+            r"\1 자녀들",
+            "repair_awkward_signature_plural",
+        ),
+        (
+            re.compile(r"뼛속까지\s+부산사람들(?=(?:과|과 함께|과의|이))", re.IGNORECASE),
+            "부산 사람들",
+            "repair_identity_signature_plural_misuse",
+        ),
     ]
     for pattern, replacement, action_name in safe_patterns:
         repaired, changed = pattern.subn(replacement, repaired)
         if changed > 0:
             actions.append(f"{action_name}:{changed}")
+
+    pre_section_dedupe = _dedupe_overlapping_sections_once(repaired)
+    pre_section_dedupe_actions = pre_section_dedupe.get("actions")
+    if isinstance(pre_section_dedupe_actions, list):
+        for action in pre_section_dedupe_actions:
+            action_text = str(action).strip()
+            if action_text:
+                actions.append(action_text)
+    if pre_section_dedupe.get("edited"):
+        repaired = str(pre_section_dedupe.get("content") or repaired)
 
     known_person_names = _collect_known_person_names(
         full_name=full_name,
@@ -4790,6 +5631,26 @@ def _apply_final_sentence_polish_once(
                 actions.append(action_text)
     if poll_focus_contract_repair.get("edited"):
         repaired = str(poll_focus_contract_repair.get("content") or repaired)
+
+    post_section_dedupe = _dedupe_overlapping_sections_once(repaired)
+    post_section_dedupe_actions = post_section_dedupe.get("actions")
+    if isinstance(post_section_dedupe_actions, list):
+        for action in post_section_dedupe_actions:
+            action_text = str(action).strip()
+            if action_text:
+                actions.append(action_text)
+    if post_section_dedupe.get("edited"):
+        repaired = str(post_section_dedupe.get("content") or repaired)
+
+    closing_appeal_dedupe = _dedupe_closing_appeal_sentences_once(repaired)
+    closing_appeal_actions = closing_appeal_dedupe.get("actions")
+    if isinstance(closing_appeal_actions, list):
+        for action in closing_appeal_actions:
+            action_text = str(action).strip()
+            if action_text:
+                actions.append(action_text)
+    if closing_appeal_dedupe.get("edited"):
+        repaired = str(closing_appeal_dedupe.get("content") or repaired)
 
     poll_dedupe = _dedupe_poll_explanation_sentences_once(repaired)
     poll_dedupe_actions = poll_dedupe.get("actions")
@@ -7257,6 +8118,18 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             logger.info(
                 "무결성 노이즈 자동 보정 적용: actions=%s",
                 integrity_repair.get("actions"),
+            )
+
+    style_generation_scrub = _apply_global_style_ai_alternative_rules_once(
+        generated_content,
+        style_fingerprint=style_fingerprint,
+    )
+    if style_generation_scrub.get("edited"):
+        style_generation_candidate = str(style_generation_scrub.get("content") or generated_content)
+        if _apply_content_repair("style_generation_scrub", style_generation_candidate):
+            logger.info(
+                "초안 단계 문체 대체표현 사전 치환 적용: actions=%s",
+                style_generation_scrub.get("actions"),
             )
 
     initial_keyword_gate_ok, initial_keyword_gate_msg = _validate_keyword_gate(keyword_validation, gate_user_keywords)

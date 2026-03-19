@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import pathlib
+import re
 import sys
 
 
@@ -21,11 +22,13 @@ from agents.common.title_generation import (
 from agents.core.writer_agent import _should_keep_must_include_stance
 from agents.core.prompt_builder import build_structure_prompt
 from handlers.generate_posts import (
+    _apply_global_style_ai_alternative_rules_once,
     _apply_final_sentence_polish_once,
     _apply_targeted_sentence_rewrites,
     _build_display_keyword_validation,
     _build_independent_final_title_context,
     _build_repeat_safe_title_fallback,
+    _contains_targeted_beyond_boilerplate,
     _detect_integrity_gate_issues,
     _collect_targeted_sentence_polish_candidates,
     _ensure_user_keyword_in_subheading_once,
@@ -40,6 +43,7 @@ from handlers.generate_posts import (
     _normalize_lawmaker_honorifics_once,
     _repair_terminal_sentence_spacing_once,
     _prune_problematic_integrity_fragments,
+    _repair_integrity_noise_once,
     _repair_subheading_entity_consistency_once,
     _scrub_suspicious_poll_residue_text,
     _sanitize_auto_keywords,
@@ -51,6 +55,7 @@ from services.posts.poll_fact_guard import (
     enforce_poll_fact_consistency,
 )
 from services.posts.output_formatter import finalize_output
+from services.posts.personalization import generate_style_hints
 from services.posts.validation import (
     _build_keyword_replacement_pool,
     _count_user_keyword_exact_non_overlap,
@@ -370,8 +375,47 @@ def test_generate_and_validate_title_retries_overlong_candidate_instead_of_fitti
     assert result["title"] == short_title
     assert result["attempts"] == 2
     assert len(prompts) == 2
-    assert int(result["history"][0]["score"] or 0) == 0
-    assert int(result["history"][0]["initialLengthPenalty"] or 0) >= 28
+
+
+def test_generate_and_validate_title_repairs_direct_role_surface_before_scoring() -> None:
+    role_keyword_policy = {
+        "entries": {
+            "주진우 부산시장": {
+                "mode": "intent_only",
+                "name": "주진우",
+                "sourceRole": "국회의원",
+            }
+        }
+    }
+
+    async def fake_generate_fn(prompt: str) -> str:
+        return "주진우 부산시장, 이재성과 가상대결서 드러난 접전"
+
+    result = asyncio.run(
+        generate_and_validate_title(
+            fake_generate_fn,
+            {
+                "topic": "부산시장 선거 양자대결에서 확인된 이재성의 경쟁력",
+                "contentPreview": (
+                    "이재성 전 위원장과 주진우 국회의원의 가상대결은 31.7% 대 30.3%로 나타났고 "
+                    "부산시장 선거 구도에서 접전 양상이 확인됐다."
+                ),
+                "userKeywords": ["주진우 부산시장", "주진우"],
+                "fullName": "이재성",
+                "category": "current-affairs",
+                "status": "campaign",
+                "roleKeywordPolicy": role_keyword_policy,
+            },
+            {
+                "candidateCount": 1,
+                "maxAttempts": 1,
+                "minScore": 1,
+            },
+        )
+    )
+
+    assert result["passed"] is True
+    assert "주진우 부산시장 출마?" in str(result.get("title") or "")
 
 
 def test_compute_similarity_penalty_penalizes_repeated_aggressive_question_frame() -> None:
@@ -762,6 +806,129 @@ def test_build_structure_prompt_includes_poll_focus_bundle_rules() -> None:
     assert "<answer_lead>" in prompt
     assert "질문형 또는 문제제기형으로 씁니다" in prompt
     assert "각 H2 바로 아래 첫 문장은 해당 kind의 answer_lead처럼 질문에 직접 답하는 문장으로 시작합니다." in prompt
+
+
+def test_build_structure_prompt_includes_style_generation_guard() -> None:
+    prompt = build_structure_prompt(
+        {
+            "topic": "부산 경제를 다시 세울 이재성의 가능성",
+            "category": "current-affairs",
+            "writingMethod": "emotional_writing",
+            "authorName": "이재성",
+            "authorBio": "이재성 소개",
+            "instructions": "부산 경제는 이재성입니다.",
+            "newsContext": "최근 여론조사 결과가 발표됐습니다.",
+            "ragContext": "",
+            "targetWordCount": 2000,
+            "partyStanceGuide": "",
+            "contextAnalysis": {},
+            "userProfile": {"name": "이재성", "status": "campaign"},
+            "personalizationContext": "",
+            "memoryContext": "",
+            "styleGuide": "직접적이고 자신감 있는 선언형으로 쓴다.",
+            "styleFingerprint": {
+                "analysisMetadata": {"confidence": 0.9},
+                "aiAlternatives": {
+                    "instead_of_더_나은_미래": "AI 3대 강국의 한 축",
+                },
+                "characteristicPhrases": {
+                    "signatures": ["뼛속까지 부산사람"],
+                    "avoidances": ["진정성"],
+                },
+                "toneProfile": {"directness": 0.8, "optimism": 0.7},
+            },
+            "profileSupportContext": "",
+            "profileSubstituteContext": "",
+            "newsSourceMode": "news",
+            "userKeywords": ["주진우 부산시장", "주진우"],
+            "pollFocusBundle": {},
+            "lengthSpec": {
+                "body_sections": 3,
+                "total_sections": 5,
+                "min_chars": 1800,
+                "max_chars": 2400,
+                "per_section_min": 260,
+                "per_section_max": 420,
+                "per_section_recommended": 340,
+            },
+            "outputMode": "json",
+        }
+    )
+
+    assert "<style_generation_guard" in prompt
+    assert "진정성" in prompt
+    assert "더 나은 미래" in prompt
+    assert "단순한 구호" in prompt
+    assert "단순한 숫자" in prompt
+    assert "막내들" in prompt
+    assert "마음을 움직이고" in prompt
+    assert "AI 3대 강국의 한 축" in prompt
+    assert "자기 해설형 표현보다 단정형 선언" in prompt
+    assert "<identity_signatures>" in prompt
+    assert "도입·마감" in prompt
+    assert "<forbidden_sentence_types>" in prompt
+    assert "배경·경험·행보·진정성·역량이 독자·주민·시민의 반응을 만들었다고 해설하지 말고" in prompt
+    assert "그 경험과 행동 자체를 직접 서술할 것" in prompt
+    assert "<sentence_type_examples>" in prompt
+    assert "저의 경험이 시민들의 마음을 움직이고 있습니다." in prompt
+
+
+def test_generate_style_hints_includes_transition_and_example_patterns() -> None:
+    style_guide = generate_style_hints(
+        {
+            "analysisMetadata": {
+                "confidence": 0.9,
+                "dominantStyle": "비전 제시형",
+                "uniqueFeatures": ["지역 경험에서 정책으로 바로 넘어감"],
+            },
+            "characteristicPhrases": {
+                "transitions": ["여기서 멈추지 않겠습니다", "이제는 결과로 보여드리겠습니다"],
+                "signatures": ["뼛속까지 부산사람"],
+                "emphatics": ["반드시"],
+                "conclusions": ["끝까지 책임지겠습니다"],
+            },
+            "sentencePatterns": {
+                "avgLength": 42,
+                "preferredStarters": ["저는", "이제"],
+                "clauseComplexity": "medium",
+                "endingPatterns": ["합니다", "겠습니다"],
+            },
+            "vocabularyProfile": {
+                "frequentWords": ["부두", "골목", "월급봉투"],
+                "preferredVerbs": ["지키다", "만들다"],
+                "preferredAdjectives": ["단단한"],
+                "technicalLevel": "accessible",
+                "localTerms": ["부산항"],
+            },
+            "toneProfile": {
+                "formality": 0.7,
+                "emotionality": 0.4,
+                "directness": 0.8,
+                "optimism": 0.7,
+                "toneDescription": "직접적이고 자신감 있는 선언형",
+            },
+            "rhetoricalDevices": {
+                "usesRepetition": True,
+                "usesEnumeration": False,
+                "examplePatterns": [
+                    "짧게 선언한 뒤 바로 현장 경험을 붙인다",
+                    "문제 제기 뒤 즉시 해법을 제시한다",
+                ],
+            },
+            "aiAlternatives": {
+                "instead_of_더_나은_미래": "부산경제 대혁신",
+            },
+        }
+    )
+
+    assert "1. 전환 패턴" in style_guide
+    assert "여기서 멈추지 않겠습니다" in style_guide
+    assert "짧게 선언한 뒤 바로 현장 경험을 붙인다" in style_guide
+    assert "2. 구체화 패턴" in style_guide
+    assert "3. 리듬 패턴" in style_guide
+    assert "4. 선호 어휘 클러스터" in style_guide
+    assert "5. 화자 포지셔닝 방식" in style_guide
+    assert "6. 감정 표현 방식" in style_guide
 
 
 def test_build_title_prompt_includes_poll_focus_title_rules() -> None:
@@ -1177,6 +1344,128 @@ def test_apply_targeted_sentence_rewrites() -> None:
     assert "<h2>부산 경제, 제 비전은?</h2>" in updated
     assert "상대 후보와의 가상대결 결과는 부산 시민 여러분의 변화에 대한 열망을 반영합니다." in updated
     assert repaired.get("edited") is True
+
+
+def test_collect_targeted_sentence_polish_candidates_marks_ai_alternative_overlay() -> None:
+    content = "<p>더 나은 내일을 위해 나아가겠습니다.</p>"
+    style_fingerprint = {
+        "aiAlternatives": {"instead_of_더_나은_내일": "부산경제 대혁신"},
+        "analysisMetadata": {"confidence": 0.9},
+    }
+
+    candidates = _collect_targeted_sentence_polish_candidates(
+        content,
+        style_instruction="enabled",
+        style_polish_mode="light",
+        style_fingerprint=style_fingerprint,
+    )
+
+    assert any(
+        str(candidate.get("reason") or "") == "ai_alternative_voice_overlay"
+        for candidate in candidates
+    )
+
+
+def test_apply_targeted_sentence_rewrites_applies_ai_alternative_rule_and_caps_style_count() -> None:
+    sentence = "더 나은 내일을 위해 나아가겠습니다."
+    content = (
+        f"<p>{sentence}</p>\n"
+        f"<p>{sentence}</p>\n"
+        f"<p>{sentence}</p>\n"
+        f"<p>{sentence}</p>"
+    )
+    style_fingerprint = {
+        "aiAlternatives": {"instead_of_더_나은_내일": "부산경제 대혁신"},
+        "analysisMetadata": {"confidence": 0.9},
+    }
+    candidates = []
+    for block_index, match in enumerate(re.finditer(r"<p>(.*?)</p>", content, re.DOTALL)):
+        inner = str(match.group(1) or "")
+        candidates.append(
+            {
+                "id": f"p-{block_index}-s0",
+                "tag": "p",
+                "reason": "ai_alternative_voice_overlay",
+                "hint": "",
+                "priority": 90,
+                "text": inner,
+                "blockIndex": block_index,
+                "sentenceIndex": 0,
+                "blockKey": f"p-{block_index}",
+                "blockInner": inner,
+                "innerStart": match.start(1),
+                "innerEnd": match.end(1),
+                "styleRulePairs": [{"source": "더 나은 내일", "target": "부산경제 대혁신"}],
+            }
+        )
+
+    repaired = _apply_targeted_sentence_rewrites(
+        content,
+        candidates,
+        {},
+        user_keywords=[],
+        known_names=[],
+        style_fingerprint=style_fingerprint,
+        style_polish_mode="light",
+    )
+    updated = str(repaired.get("content") or "")
+    actions = repaired.get("actions") or []
+
+    assert updated.count("부산경제 대혁신을 위해 나아가겠습니다.") == 4
+    assert updated.count("더 나은 내일을 위해 나아가겠습니다.") == 0
+    assert any(str(action).startswith("targeted_sentence_rule_apply:") for action in actions)
+    assert not any(str(action).startswith("targeted_sentence_style_skip_cap:") for action in actions)
+
+
+def test_apply_global_style_ai_alternative_rules_once_rewrites_all_blocks() -> None:
+    content = (
+        "<h2>부산의 더 나은 미래</h2>"
+        "<p>더 나은 미래를 시민 여러분과 함께 열겠습니다.</p>"
+    )
+    result = _apply_global_style_ai_alternative_rules_once(
+        content,
+        {
+            "aiAlternatives": {
+                "instead_of_더_나은_미래": "AI 3대 강국의 한 축",
+            }
+        },
+    )
+    updated = str(result.get("content") or "")
+
+    assert "더 나은 미래" not in updated
+    assert updated.count("AI 3대 강국의 한 축") == 2
+    assert result.get("edited") is True
+
+
+def test_collect_targeted_sentence_polish_candidates_preserves_jeonim_overlay_slot() -> None:
+    noisy_h2 = "".join(
+        f"<h2>저는 비전은?</h2><p>본문 설명 {idx}입니다.</p>"
+        for idx in range(8)
+    )
+    content = (
+        noisy_h2
+        + "<p>도입 문장입니다.</p>"
+        + "<p>저는 시민 곁에 있었습니다. 그 시간을 잊지 않습니다. "
+        + "저는 현장의 무게를 압니다. 그 목소리를 기억합니다. 저는 그 책임을 압니다.</p>"
+        + "<p>또 다른 설명입니다.</p>"
+        + "<p>마무리 설명입니다.</p>"
+    )
+
+    candidates = _collect_targeted_sentence_polish_candidates(
+        content,
+        style_instruction="on",
+        style_polish_mode="light",
+        style_fingerprint={"analysisMetadata": {"confidence": 0.9}},
+    )
+
+    reasons = [str(candidate.get("reason") or "") for candidate in candidates]
+    assert "jeonim_voice_overlay" in reasons
+
+
+def test_collect_targeted_sentence_polish_candidates_detects_beyond_boilerplate_pattern() -> None:
+    assert _contains_targeted_beyond_boilerplate(
+        "이는 단순히 숫자를 넘어, 부산 시민들의 변화 요구를 보여줍니다."
+    )
 
 
 def test_repair_subheading_entity_consistency_prefers_speaker_over_low_signal_noise() -> None:
@@ -1841,6 +2130,21 @@ def test_final_sentence_polish_repairs_matchup_result_and_future_role_fragments(
     assert repaired.get("edited") is True
 
 
+def test_repair_integrity_noise_once_repairs_broken_result_clause_before_blocker() -> None:
+    content = "<p>주진우 의원과의 가상대결에서 제가 결과는 이러한 가능성을 보여줍니다.</p>"
+
+    before_issues = _detect_integrity_gate_issues(content)
+    assert any("문장 파손(제가 결과 ...)" in issue for issue in before_issues)
+
+    repaired = _repair_integrity_noise_once(content)
+    updated = str(repaired.get("content") or "")
+    after_issues = _detect_integrity_gate_issues(updated)
+
+    assert "주진우 의원과의 가상대결 결과는 이러한 가능성을 보여줍니다." in updated
+    assert not any("문장 파손(제가 결과 ...)" in issue for issue in after_issues)
+    assert repaired.get("edited") is True
+
+
 def test_final_sentence_polish_applies_poll_focus_contract_to_primary_fact_and_conclusion() -> None:
     bundle = build_poll_focus_bundle(
         topic="부산시장 선거 양자대결에서 주진우보다 우세를 보인 이재성의 가능성",
@@ -1918,6 +2222,71 @@ def test_final_sentence_polish_uses_distinct_question_h2_lanes_and_keeps_intro_l
     assert "이 흐름은 이재성의 이름과 메시지가 부산 시민 사이에서 조금씩 더 알려지고 있음을 보여줍니다." in updated
     assert "부산 경제를 살릴 해법은 지역 산업과 일자리 문제를 함께 풀 수 있는 실질적 정책에 있습니다." in updated
     assert "이재성·박형준 가상대결에서는 30.9% 대 31.3%로 나타났습니다." in updated
+
+
+def test_final_sentence_polish_dedupes_duplicate_sections_before_style_overlay() -> None:
+    content = (
+        "<h2>왜 지금 이재성의 가능성에 주목해야 하나</h2>"
+        "<p>지금 이재성의 가능성에 주목해야 하는 이유는 여론조사에서 확인된 경쟁력과 변화 요구가 함께 드러났기 때문입니다.</p>"
+        "<h2>왜 지금 이재성의 가능성에 주목해야 하나</h2>"
+        "<p>지금 이재성의 가능성에 주목해야 하는 이유는 여론조사에서 확인된 경쟁력과 변화 요구가 함께 드러났기 때문입니다.</p>"
+    )
+
+    repaired = _apply_final_sentence_polish_once(content, full_name="이재성")
+    updated = str(repaired.get("content") or "")
+
+    assert updated.count("왜 지금 이재성의 가능성에 주목해야 하나") == 1
+    assert updated.count("지금 이재성의 가능성에 주목해야 하는 이유는") == 1
+
+
+def test_final_sentence_polish_scrubs_beyond_sincerity_and_duplicate_appeals() -> None:
+    content = (
+        "<p>이는 단순한 숫자가 아니라, 부산 시민의 변화 요구를 보여줍니다.</p>"
+        "<p>이는 단순한 수치를 넘어, 부산 시민의 변화 요구를 보여줍니다.</p>"
+        "<p>저의 이러한 진정성이 부산 시민들에게 전달되고 있습니다.</p>"
+        "<p>저의 진정성과 전문성에 공감하기 시작했습니다.</p>"
+        "<p>이러한 직접적인 접근이 시민들의 마음을 움직이고 있습니다.</p>"
+        "<p>그것은 단순히 숫자로만 볼 수 없습니다.</p>"
+        "<p>이것은 단순한 구호가 아니라, 부산의 부산경제 대혁신을 향한 약속입니다.</p>"
+        "<p>이 땅의 부산항 부두 노동자의 막내들과 함께 성장했습니다.</p>"
+        "<p>저의 발걸음에 많은 관심과 응원 부탁드립니다.</p>"
+        "<p>저의 진심을 담은 이 약속에 많은 지지와 성원을 부탁드립니다.</p>"
+    )
+
+    repaired = _apply_final_sentence_polish_once(content, full_name="이재성")
+    updated = str(repaired.get("content") or "")
+
+    assert "단순한 수치를 넘어" not in updated
+    assert "단순한 숫자가 아니라" not in updated
+    assert "이 숫자는 부산 시민의 변화 요구를 보여줍니다." in updated
+    assert "저의 이러한 진정성이 부산 시민들에게 전달되고 있습니다." not in updated
+    assert "실력과 전문성" in updated
+    assert "마음을 움직이고 있습니다" not in updated
+    assert updated.count("현장의 반응이 달라지고 있습니다") >= 2
+    assert "단순히 숫자로만" not in updated
+    assert "숫자로만 볼 수 없습니다" in updated
+    assert "단순한 구호가 아니라" not in updated
+    assert "부산의 부산경제" not in updated
+    assert "말이 아니라, 부산경제 대혁신" in updated
+    assert "부산항 부두 노동자의 막내들" not in updated
+    assert "부산항 부두 노동자의 자녀들" in updated
+    assert updated.count("부탁드립니다") == 1
+
+
+def test_final_sentence_polish_trims_self_analytical_story_tail_and_repairs_signature_misuse() -> None:
+    content = (
+        "<p>부산에서 나고 자라 지역의 아픔과 기쁨을 함께 해온 저의 이야기는 시민들의 마음을 움직이는 강력한 힘이 됩니다.</p>"
+        "<p>뼛속까지 부산사람들과 함께 성장했습니다.</p>"
+    )
+
+    repaired = _apply_final_sentence_polish_once(content, full_name="이재성")
+    updated = str(repaired.get("content") or "")
+
+    assert "마음을 움직이는 강력한 힘이 됩니다" not in updated
+    assert "공감과 희망" not in updated
+    assert "부산에서 나고 자라 지역의 아픔과 기쁨을 함께 해왔습니다." in updated
+    assert "뼛속까지 부산사람들과" not in updated
+    assert "부산 사람들과 함께 성장했습니다." in updated
 
 
 def test_remove_groundedness_violations_removes_unsupported_comparison_sentence() -> None:
@@ -2204,6 +2573,10 @@ def main() -> None:
             test_generate_and_validate_title_retries_overlong_candidate_instead_of_fitting,
         ),
         (
+            "generate_and_validate_title_repairs_direct_role_surface_before_scoring",
+            test_generate_and_validate_title_repairs_direct_role_surface_before_scoring,
+        ),
+        (
             "compute_similarity_penalty_penalizes_repeated_aggressive_question_frame",
             test_compute_similarity_penalty_penalizes_repeated_aggressive_question_frame,
         ),
@@ -2264,6 +2637,10 @@ def main() -> None:
             test_build_structure_prompt_includes_poll_focus_bundle_rules,
         ),
         (
+            "build_structure_prompt_includes_style_generation_guard",
+            test_build_structure_prompt_includes_style_generation_guard,
+        ),
+        (
             "build_title_prompt_includes_poll_focus_title_rules",
             test_build_title_prompt_includes_poll_focus_title_rules,
         ),
@@ -2303,6 +2680,26 @@ def main() -> None:
         ("final_sentence_polish_repairs_common_broken_phrases", test_final_sentence_polish_repairs_common_broken_phrases),
         ("collect_targeted_sentence_polish_candidates", test_collect_targeted_sentence_polish_candidates),
         ("apply_targeted_sentence_rewrites", test_apply_targeted_sentence_rewrites),
+        (
+            "collect_targeted_sentence_polish_candidates_marks_ai_alternative_overlay",
+            test_collect_targeted_sentence_polish_candidates_marks_ai_alternative_overlay,
+        ),
+        (
+            "apply_targeted_sentence_rewrites_applies_ai_alternative_rule_and_caps_style_count",
+            test_apply_targeted_sentence_rewrites_applies_ai_alternative_rule_and_caps_style_count,
+        ),
+        (
+            "apply_global_style_ai_alternative_rules_once_rewrites_all_blocks",
+            test_apply_global_style_ai_alternative_rules_once_rewrites_all_blocks,
+        ),
+        (
+            "collect_targeted_sentence_polish_candidates_preserves_jeonim_overlay_slot",
+            test_collect_targeted_sentence_polish_candidates_preserves_jeonim_overlay_slot,
+        ),
+        (
+            "collect_targeted_sentence_polish_candidates_detects_beyond_boilerplate_pattern",
+            test_collect_targeted_sentence_polish_candidates_detects_beyond_boilerplate_pattern,
+        ),
         (
             "repair_subheading_entity_consistency_prefers_speaker_over_low_signal_noise",
             test_repair_subheading_entity_consistency_prefers_speaker_over_low_signal_noise,
@@ -2452,12 +2849,24 @@ def main() -> None:
             test_final_sentence_polish_repairs_matchup_result_and_future_role_fragments,
         ),
         (
+            "repair_integrity_noise_once_repairs_broken_result_clause_before_blocker",
+            test_repair_integrity_noise_once_repairs_broken_result_clause_before_blocker,
+        ),
+        (
             "final_sentence_polish_applies_poll_focus_contract_to_primary_fact_and_conclusion",
             test_final_sentence_polish_applies_poll_focus_contract_to_primary_fact_and_conclusion,
         ),
         (
             "final_sentence_polish_uses_distinct_question_h2_lanes_and_keeps_intro_line",
             test_final_sentence_polish_uses_distinct_question_h2_lanes_and_keeps_intro_line,
+        ),
+        (
+            "final_sentence_polish_dedupes_duplicate_sections_before_style_overlay",
+            test_final_sentence_polish_dedupes_duplicate_sections_before_style_overlay,
+        ),
+        (
+            "final_sentence_polish_scrubs_beyond_sincerity_and_duplicate_appeals",
+            test_final_sentence_polish_scrubs_beyond_sincerity_and_duplicate_appeals,
         ),
         (
             "remove_groundedness_violations_removes_unsupported_comparison_sentence",

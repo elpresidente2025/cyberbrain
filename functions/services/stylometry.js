@@ -348,6 +348,143 @@ function validateStyleFingerprint(fingerprint, sourceLength, textStats = null) {
   return validated;
 }
 
+const STYLE_GUIDE_SENTENCE_SPLIT_RE = /(?<=[.!?])\s+|\n+/;
+const STYLE_GUIDE_TRANSITION_PREFIXES = ['이제', '그리고', '그러나', '하지만', '무엇보다', '그래서', '또한', '먼저', '결국', '저는'];
+const STYLE_GUIDE_POSITIONING_MARKERS = ['태어나', '자라', '출신', '로서', '경험', '기업인', '전문가', '막내', '아들', '딸', '사람'];
+const STYLE_GUIDE_EMOTION_MARKERS = ['반드시', '분명', '책임', '약속', '희망', '감사', '애정', '소중', '지키겠습니다', '해내겠습니다'];
+
+function normalizeGuideSentence(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+function truncateGuideSentence(text, maxLength = 90) {
+  const normalized = normalizeGuideSentence(text);
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(1, maxLength - 1)).trim()}…`;
+}
+
+function splitGuideSentences(text, maxItems = 40) {
+  if (!text || typeof text !== 'string') {
+    return [];
+  }
+
+  return text
+    .split(STYLE_GUIDE_SENTENCE_SPLIT_RE)
+    .map(normalizeGuideSentence)
+    .filter(sentence => sentence.length >= 18)
+    .slice(0, maxItems);
+}
+
+function collectGuideExamples(sentences, predicate, used, limit = 2) {
+  const results = [];
+  for (const sentence of sentences) {
+    const key = sentence.toLowerCase();
+    if (used.has(key) || !predicate(sentence)) {
+      continue;
+    }
+    used.add(key);
+    results.push(truncateGuideSentence(sentence));
+    if (results.length >= limit) {
+      break;
+    }
+  }
+  return results;
+}
+
+function buildSourceStyleExamples(fingerprint, sourceText = '') {
+  const sentences = splitGuideSentences(sourceText);
+  if (sentences.length === 0) {
+    return {
+      transitionExamples: [],
+      concretizationExamples: [],
+      shortExample: '',
+      longExample: '',
+      positioningExamples: [],
+      emotionExamples: [],
+    };
+  }
+
+  const phrases = fingerprint.characteristicPhrases || {};
+  const patterns = fingerprint.sentencePatterns || {};
+  const vocab = fingerprint.vocabularyProfile || {};
+  const rhetoric = fingerprint.rhetoricalDevices || {};
+  const used = new Set();
+
+  const transitionTokens = [
+    ...(phrases.transitions || []),
+    ...(patterns.preferredStarters || []),
+    ...STYLE_GUIDE_TRANSITION_PREFIXES,
+  ].filter(Boolean).map(normalizeGuideSentence);
+  const vocabTokens = [
+    ...(vocab.localTerms || []),
+    ...(vocab.frequentWords || []),
+    ...(vocab.preferredVerbs || []),
+  ].filter(Boolean).map(normalizeGuideSentence);
+  const emotionTokens = [
+    ...(phrases.emphatics || []),
+    ...(phrases.conclusions || []),
+    ...STYLE_GUIDE_EMOTION_MARKERS,
+  ].filter(Boolean).map(normalizeGuideSentence);
+  const signatureTokens = (phrases.signatures || []).filter(Boolean).map(normalizeGuideSentence);
+
+  const transitionExamples = collectGuideExamples(
+    sentences,
+    sentence => transitionTokens.some(token => token && sentence.includes(token)),
+    used,
+    2
+  );
+  const concretizationExamples = collectGuideExamples(
+    sentences,
+    sentence => /\d/.test(sentence)
+      || vocabTokens.some(token => token && sentence.includes(token))
+      || ((sentence.length >= 24 && sentence.length <= 95) && /(일자리|골목|아이|항만|주거|교육|복지|경제)/.test(sentence)),
+    used,
+    2
+  );
+  const positioningExamples = collectGuideExamples(
+    sentences,
+    sentence => signatureTokens.some(token => token && sentence.includes(token))
+      || (/^(?:저는|저 이|저는 바로|이재성은|저는 부산)/.test(sentence)
+        && STYLE_GUIDE_POSITIONING_MARKERS.some(token => sentence.includes(token))),
+    used,
+    2
+  );
+  const emotionExamples = collectGuideExamples(
+    sentences,
+    sentence => emotionTokens.some(token => token && sentence.includes(token)),
+    used,
+    2
+  );
+  const shortExample = collectGuideExamples(sentences, sentence => sentence.length <= 38, used, 1)[0] || '';
+  const longExample = collectGuideExamples(sentences, sentence => sentence.length >= 58, used, 1)[0] || '';
+
+  if (!transitionExamples.length && rhetoric.examplePatterns?.length) {
+    for (const item of rhetoric.examplePatterns.slice(0, 2)) {
+      const normalized = truncateGuideSentence(item);
+      const key = normalized.toLowerCase();
+      if (!normalized || used.has(key)) {
+        continue;
+      }
+      used.add(key);
+      transitionExamples.push(normalized);
+      if (transitionExamples.length >= 2) {
+        break;
+      }
+    }
+  }
+
+  return {
+    transitionExamples,
+    concretizationExamples,
+    shortExample,
+    longExample,
+    positioningExamples,
+    emotionExamples,
+  };
+}
+
 /**
  * Style Fingerprint를 프롬프트 주입용 텍스트로 변환
  * @param {Object} fingerprint - Style Fingerprint 객체
@@ -360,88 +497,161 @@ function buildStyleGuidePrompt(fingerprint, options = {}) {
     return ''; // 신뢰도 낮으면 스타일 가이드 생략
   }
 
-  const { compact = false } = options;
+  const { compact = false, sourceText = '' } = options;
+  const phrases = fingerprint.characteristicPhrases || {};
+  const patterns = fingerprint.sentencePatterns || {};
+  const vocab = fingerprint.vocabularyProfile || {};
+  const tone = fingerprint.toneProfile || {};
+  const rhetoric = fingerprint.rhetoricalDevices || {};
+  const analysis = fingerprint.analysisMetadata || {};
+  const punctuation = fingerprint.punctuationProfile || {};
+
+  const transitions = (phrases.transitions || []).filter(Boolean).slice(0, 4);
+  const examplePatterns = (rhetoric.examplePatterns || []).filter(Boolean).slice(0, 3);
+  const signatures = (phrases.signatures || []).filter(Boolean).slice(0, 4);
+  const emphatics = (phrases.emphatics || []).filter(Boolean).slice(0, 3);
+  const conclusions = (phrases.conclusions || []).filter(Boolean).slice(0, 3);
+  const starters = (patterns.preferredStarters || []).filter(Boolean).slice(0, 3);
+  const endings = (patterns.endingPatterns || []).filter(Boolean).slice(0, 3);
+  const frequentWords = (vocab.frequentWords || []).filter(Boolean).slice(0, 5);
+  const preferredVerbs = (vocab.preferredVerbs || []).filter(Boolean).slice(0, 4);
+  const preferredAdjectives = (vocab.preferredAdjectives || []).filter(Boolean).slice(0, 3);
+  const localTerms = (vocab.localTerms || []).filter(Boolean).slice(0, 4);
+  const uniqueFeatures = (analysis.uniqueFeatures || []).filter(Boolean).slice(0, 3);
+  const sourceExamples = buildSourceStyleExamples(fingerprint, sourceText);
 
   if (compact) {
     // 간소화 버전 (토큰 절약)
-    return buildCompactStyleGuide(fingerprint);
+    return buildCompactStyleGuide(fingerprint, { sourceText });
   }
 
   // 전체 버전
   const sections = [];
-
-  // 1. 특징적 표현
-  const phrases = fingerprint.characteristicPhrases;
-  const allPhrases = [
-    ...phrases.signatures,
-    ...phrases.emphatics,
-    ...phrases.conclusions
-  ].filter(p => p).slice(0, 7);
-
-  if (allPhrases.length > 0) {
-    sections.push(`1. 특징적 표현 사용:\n   ${allPhrases.map(p => `"${p}"`).join(', ')}`);
-  }
-
-  // 2. 문장 구조 (📊 통계 기반)
-  const patterns = fingerprint.sentencePatterns;
-  const starters = patterns.preferredStarters.slice(0, 3);
-
-  // 문장 길이 정보 구성
   const lengthInfo = patterns.lengthRange
     ? `${patterns.avgLength}자 내외 (${patterns.lengthRange})`
-    : `${patterns.avgLength}자 내외`;
+    : `${patterns.avgLength || 45}자 내외`;
 
-  const structureLines = [
-    `- 문장 길이: ${lengthInfo}`
+  if (transitions.length > 0 || examplePatterns.length > 0 || sourceExamples.transitionExamples.length > 0) {
+    const transitionLines = [];
+    if (sourceExamples.transitionExamples.length > 0) {
+      transitionLines.push(`- 실제 사용자 문장 예시: ${sourceExamples.transitionExamples.map(item => `"${item}"`).join(', ')}`);
+    }
+    if (transitions.length > 0) {
+      transitionLines.push(`- 선언 뒤 연결: ${transitions.map(item => `"${item}"`).join(', ')}`);
+    }
+    if (examplePatterns.length > 0) {
+      transitionLines.push(`- 실제 전개 예시: ${examplePatterns.map(item => `"${item}"`).join(', ')}`);
+    }
+    sections.push(`1. 전환 패턴:\n   ${transitionLines.join('\n   ')}`);
+  }
+
+  const concretizationLines = [
+    `- 추상 주장을 푸는 밀도: ${lengthInfo}, 복잡도 ${patterns.clauseComplexity || 'medium'}`
   ];
+  const concretizationWords = localTerms.length > 0 ? localTerms : frequentWords;
+  if (sourceExamples.concretizationExamples.length > 0) {
+    concretizationLines.push(`- 실제 사용자 문장 예시: ${sourceExamples.concretizationExamples.map(item => `"${item}"`).join(', ')}`);
+  }
+  if (concretizationWords.length > 0) {
+    concretizationLines.push(`- 생활/현장 언어: ${concretizationWords.join(', ')}`);
+  }
+  if (preferredVerbs.length > 0) {
+    concretizationLines.push(`- 행동 동사: ${preferredVerbs.join(', ')}`);
+  }
+  concretizationLines.push(`- 사실·정책 설명 수준: ${vocab.technicalLevel || 'accessible'}`);
+  sections.push(`2. 구체화 패턴:\n   ${concretizationLines.join('\n   ')}`);
 
+  const rhythmLines = [
+    `- 문장 길이: ${lengthInfo}`,
+    `- 문장 복잡도: ${patterns.clauseComplexity || 'medium'}`
+  ];
   if (starters.length > 0) {
-    structureLines.push(`- 시작 표현: ${starters.map(s => `"${s}"`).join(', ')}`);
+    rhythmLines.push(`- 선호 시작어: ${starters.map(item => `"${item}"`).join(', ')}`);
   }
-  structureLines.push(`- 복잡도: ${patterns.clauseComplexity}`);
+  if (endings.length > 0) {
+    rhythmLines.push(`- 단락/문장 마감: ${endings.join(', ')}`);
+  }
+  if (rhetoric.usesRepetition) rhythmLines.push('- 반복 구조를 활용하는 편');
+  if (rhetoric.usesEnumeration) rhythmLines.push('- 나열형 전개를 활용하는 편');
+  if (punctuation.commaGuidance) rhythmLines.push(`- 콤마: ${punctuation.commaGuidance}`);
+  sections.push(`3. 리듬 패턴:\n   ${rhythmLines.join('\n   ')}`);
 
-  // 📊 구두점 가이드 추가
-  const punctuation = fingerprint.punctuationProfile;
-  if (punctuation) {
-    structureLines.push(`- 콤마: ${punctuation.commaGuidance}`);
+  const vocabLines = [];
+  if (preferredVerbs.length > 0) {
+    vocabLines.push(`- 반복 동사: ${preferredVerbs.join(', ')}`);
+  }
+  if (frequentWords.length > 0) {
+    vocabLines.push(`- 생활 명사/핵심 단어: ${frequentWords.join(', ')}`);
+  }
+  if (localTerms.length > 0) {
+    vocabLines.push(`- 지역/현장 용어: ${localTerms.join(', ')}`);
+  }
+  const phraseCluster = [...signatures, ...emphatics, ...preferredAdjectives].filter(Boolean).slice(0, 6);
+  if (phraseCluster.length > 0) {
+    vocabLines.push(`- 시그니처 표현: ${phraseCluster.map(item => `"${item}"`).join(', ')}`);
+  }
+  if (vocabLines.length > 0) {
+    sections.push(`4. 선호 어휘 클러스터:\n   ${vocabLines.join('\n   ')}`);
   }
 
-  sections.push(`2. 문장 구조:\n   ${structureLines.join('\n   ')}`);
-
-  // 3. 어휘 선택
-  const vocab = fingerprint.vocabularyProfile;
-  const words = vocab.frequentWords.slice(0, 5);
-  if (words.length > 0) {
-    sections.push(`3. 어휘 선택:\n   - 선호 단어: ${words.join(', ')}\n   - 전문성: ${vocab.technicalLevel}`);
+  const positioningLines = [];
+  if (analysis.dominantStyle) {
+    positioningLines.push(`- 기본 포지셔닝: ${analysis.dominantStyle}`);
+  }
+  if (uniqueFeatures.length > 0) {
+    positioningLines.push(`- 두드러진 정체성 요소: ${uniqueFeatures.join(', ')}`);
+  }
+  if (signatures.length > 0) {
+    positioningLines.push(`- 자기 소개/선언 표현: ${signatures.map(item => `"${item}"`).join(', ')}`);
+  }
+  if (sourceExamples.positioningExamples.length > 0) {
+    positioningLines.push(`- 실제 자기 선언 예시: ${sourceExamples.positioningExamples.map(item => `"${item}"`).join(', ')}`);
+  }
+  if (positioningLines.length > 0) {
+    sections.push(`5. 화자 포지셔닝 방식:\n   ${positioningLines.join('\n   ')}`);
   }
 
-  // 4. 어조
-  const tone = fingerprint.toneProfile;
   const toneDesc = [];
   if (tone.formality > 0.6) toneDesc.push('격식체');
   else if (tone.formality < 0.4) toneDesc.push('친근체');
   if (tone.directness > 0.6) toneDesc.push('직접적');
   if (tone.optimism > 0.6) toneDesc.push('희망적');
-
-  if (toneDesc.length > 0 || tone.toneDescription) {
-    sections.push(`4. 어조:\n   - ${toneDesc.join(', ') || tone.toneDescription}`);
+  const emotionLines = [];
+  if (toneDesc.length > 0) {
+    emotionLines.push(`- 어조: ${toneDesc.join(', ')}`);
+  }
+  if (tone.toneDescription) {
+    emotionLines.push(`- 감정 표현 설명: ${tone.toneDescription}`);
+  }
+  if ((tone.emotionality || 0) >= 0.6) {
+    emotionLines.push('- 감정을 직접 드러내는 편');
+  } else if ((tone.emotionality || 0) <= 0.4) {
+    emotionLines.push('- 감정보다 사실과 단정으로 밀어붙이는 편');
+  }
+  const emotionPhrases = [...emphatics, ...conclusions].filter(Boolean).slice(0, 5);
+  if (emotionPhrases.length > 0) {
+    emotionLines.push(`- 확신/마감 표현: ${emotionPhrases.map(item => `"${item}"`).join(', ')}`);
+  }
+  if (sourceExamples.emotionExamples.length > 0) {
+    emotionLines.push(`- 실제 감정/선언 문장: ${sourceExamples.emotionExamples.map(item => `"${item}"`).join(', ')}`);
+  }
+  if (emotionLines.length > 0) {
+    sections.push(`6. 감정 표현 방식:\n   ${emotionLines.join('\n   ')}`);
   }
 
-  // 5. AI 상투어 대체
-  const alts = fingerprint.aiAlternatives;
-  const altLines = [];
-  if (alts['instead_of_평범한_이웃'] !== '주민 여러분') {
-    altLines.push(`"평범한 이웃" → "${alts['instead_of_평범한_이웃']}"`);
-  }
-  if (alts['instead_of_함께_힘을_모아'] !== '함께 만들어가겠습니다') {
-    altLines.push(`"함께 힘을 모아" → "${alts['instead_of_함께_힘을_모아']}"`);
-  }
-  if (alts['instead_of_더_나은_내일'] !== '실질적인 변화') {
-    altLines.push(`"더 나은 내일" → "${alts['instead_of_더_나은_내일']}"`);
-  }
+  const alts = fingerprint.aiAlternatives || {};
+  const altLines = Object.entries(alts)
+    .map(([rawKey, rawValue]) => {
+      const source = String(rawKey || '').replace('instead_of_', '').replaceAll('_', ' ').trim();
+      const target = String(rawValue || '').trim();
+      if (!source || !target) return '';
+      return `- "${source}" 대신 "${target}"`;
+    })
+    .filter(Boolean)
+    .slice(0, 4);
 
   if (altLines.length > 0) {
-    sections.push(`5. AI 상투어 대체:\n   ${altLines.join('\n   ')}`);
+    sections.push(`7. AI 상투어 대체:\n   ${altLines.join('\n   ')}`);
   }
 
   if (sections.length === 0) {
@@ -461,15 +671,30 @@ ${sections.join('\n\n')}
 /**
  * 간소화된 스타일 가이드 (토큰 절약)
  */
-function buildCompactStyleGuide(fingerprint) {
-  const phrases = fingerprint.characteristicPhrases.signatures.slice(0, 3);
-  const tone = fingerprint.toneProfile;
-  const patterns = fingerprint.sentencePatterns;
+function buildCompactStyleGuide(fingerprint, options = {}) {
+  const characteristicPhrases = fingerprint.characteristicPhrases || {};
+  const phrases = (characteristicPhrases.signatures || []).slice(0, 3);
+  const transitions = (characteristicPhrases.transitions || []).slice(0, 2);
+  const rhetoric = fingerprint.rhetoricalDevices || {};
+  const examplePatterns = (rhetoric.examplePatterns || []).slice(0, 2);
+  const tone = fingerprint.toneProfile || {};
+  const patterns = fingerprint.sentencePatterns || {};
+  const sourceExamples = buildSourceStyleExamples(fingerprint, options.sourceText || '');
 
   let guide = `[문체] `;
 
   if (phrases.length > 0) {
     guide += `표현: ${phrases.map(p => `"${p}"`).join(', ')}. `;
+  }
+  if (transitions.length > 0) {
+    guide += `전환: ${transitions.map(p => `"${p}"`).join(', ')}. `;
+  }
+  if (examplePatterns.length > 0) {
+    guide += `전개 예시: ${examplePatterns.map(p => `"${p}"`).join(', ')}. `;
+  }
+
+  if (sourceExamples.transitionExamples.length > 0) {
+    guide += `실제 문장: ${sourceExamples.transitionExamples.map(p => `"${p}"`).join(', ')}. `;
   }
 
   const toneWords = [];
@@ -484,7 +709,7 @@ function buildCompactStyleGuide(fingerprint) {
   // 📊 문장 길이 (범위 포함)
   const lengthInfo = patterns.lengthRange
     ? `${patterns.avgLength}자(${patterns.lengthRange})`
-    : `${patterns.avgLength}자`;
+    : `${patterns.avgLength || 45}자`;
   guide += `문장 ${lengthInfo}.`;
 
   // 📊 콤마 가이드 (있으면)

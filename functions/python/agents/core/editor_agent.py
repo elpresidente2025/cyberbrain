@@ -14,6 +14,17 @@ STYLE_POLISH_LIMITS = {
     "medium": {"max_sentences": 6, "max_ratio": "30%"},
 }
 
+
+def _is_identity_signature_phrase(text: str) -> bool:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return False
+    return any(
+        token in normalized
+        for token in ("뼛속까지", "입니다", "저 ", "저는", "이재성!", "저 이재성")
+    )
+
+
 # 선거법 위반 표현 패턴 (Regex)
 PLEDGE_REPLACEMENTS = [
     (r'약속드?립니다', '필요성을 말씀드립니다'),
@@ -280,12 +291,19 @@ class EditorAgent(Agent):
             alts = style_fingerprint.get("aiAlternatives") or {}
 
             signature_candidates = []
+            identity_signatures: List[str] = []
             for key in ("signatures", "emphatics", "conclusions"):
                 raw_values = phrases.get(key) or []
                 if isinstance(raw_values, list):
-                    signature_candidates.extend(
-                        str(item).strip() for item in raw_values if str(item).strip()
-                    )
+                    for item in raw_values:
+                        value = str(item).strip()
+                        if not value:
+                            continue
+                        if key == "signatures" and _is_identity_signature_phrase(value):
+                            if value not in identity_signatures:
+                                identity_signatures.append(value)
+                            continue
+                        signature_candidates.append(value)
             deduped_signatures: List[str] = []
             seen_signatures = set()
             for item in signature_candidates:
@@ -297,6 +315,11 @@ class EditorAgent(Agent):
                     break
             if deduped_signatures:
                 lines.append(f"- 선호 표현 예시: {', '.join(deduped_signatures)}")
+            if identity_signatures:
+                lines.append(
+                    "- 정체성 시그니처는 자기 이름/1인칭 선언 문장(도입·마감)에서만 사용: "
+                    f"{', '.join(identity_signatures[:3])}"
+                )
 
             starters = patterns.get("preferredStarters") or []
             if isinstance(starters, list):

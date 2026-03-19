@@ -673,6 +673,8 @@ class StructureAgent(Agent):
         personalized_hints = normalize_context_text(context.get('personalizedHints', ''), sep="\n")
         memory_context = normalize_context_text(context.get('memoryContext', ''), sep="\n")
         personalization_context = normalize_context_text([personalized_hints, memory_context], sep="\n")
+        style_guide = normalize_context_text(context.get('styleGuide', ''), sep="\n")
+        style_fingerprint = context.get('styleFingerprint') if isinstance(context.get('styleFingerprint'), dict) else {}
         profile_support_context = self._build_profile_support_context(user_profile)
         has_news_source = bool(strip_html(effective_news_context))
         profile_substitute = self._build_profile_substitute_context(user_profile, target_items=3) if not has_news_source else {}
@@ -809,6 +811,8 @@ class StructureAgent(Agent):
             'userProfile': user_profile,
             'personalizationContext': personalization_context,
             'memoryContext': memory_context,
+            'styleGuide': style_guide,
+            'styleFingerprint': style_fingerprint,
             'profileSupportContext': profile_support_context,
             'profileSubstituteContext': profile_substitute.get('contextText') if isinstance(profile_substitute, dict) else '',
             'newsSourceMode': news_source_mode,

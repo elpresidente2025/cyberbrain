@@ -168,6 +168,7 @@ def load_user_profile(
     user_profile: Dict[str, Any] = {}
     bio_metadata = None
     style_fingerprint = None
+    stored_style_guide = ""
     bio_content = ""
     bio_entries: list[Any] = []
 
@@ -188,6 +189,7 @@ def load_user_profile(
             bio_metadata = _safe_dict(extracted) if isinstance(extracted, dict) else None
             style_raw = bio_data.get("styleFingerprint")
             style_fingerprint = _safe_dict(style_raw) if isinstance(style_raw, dict) else None
+            stored_style_guide = str(bio_data.get("styleGuide") or "").strip()
     except Exception as exc:
         logger.warning("[ProfileLoader] bios/%s lookup failed: %s", uid, exc)
 
@@ -204,11 +206,14 @@ def load_user_profile(
             "userProfile": user_profile,
             "category": category,
             "topic": topic,
+            "bioContent": bio_content,
         }
     )
     personalized_hints = str(hints_bundle.get("personalizedHints") or "").strip()
     style_guide = str(hints_bundle.get("styleGuide") or "").strip()
 
+    if stored_style_guide:
+        style_guide = stored_style_guide
     if not style_guide:
         style_guide = str(user_profile.get("styleGuide") or "").strip()
 

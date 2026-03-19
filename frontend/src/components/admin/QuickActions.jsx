@@ -14,7 +14,8 @@ import {
   People,
   Api,
   ToggleOn,
-  Psychology
+  Psychology,
+  Style
 } from '@mui/icons-material';
 import UserListModal from './UserListModal';
 import StatusUpdateModal from './StatusUpdateModal';
@@ -30,6 +31,8 @@ function QuickActions() {
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
   const [ragIndexing, setRagIndexing] = useState(false);
   const [ragProgress, setRagProgress] = useState('');
+  const [styleBatching, setStyleBatching] = useState(false);
+  const [styleBatchProgress, setStyleBatchProgress] = useState('');
 
   // cleanup ref
   const isMountedRef = useRef(true);
@@ -207,6 +210,74 @@ function QuickActions() {
       );
     } finally {
       setRagIndexing(false);
+    }
+  }, [showNotification]);
+
+  const batchAnalyzeStyles = useCallback(async () => {
+    if (!window.confirm(
+      '전체 사용자 bio를 순차적으로 읽어 문체 분석(styleFingerprint)을 다시 계산합니다.\n\n' +
+      '• 이미 신뢰도 0.7 이상인 사용자는 자동으로 건너뜁니다.\n' +
+      '• 사용자 수에 따라 여러 배치로 나누어 수 분 이상 걸릴 수 있습니다.\n\n' +
+      '계속하시겠습니까?'
+    )) return;
+
+    const forceReanalysis = window.confirm(
+      '기존에 신뢰도 0.7 이상 문체 분석이 있는 사용자까지 포함해 강제 재분석할까요?\n\n' +
+      '확인을 누르면 전체 bio를 다시 분석하고, 취소를 누르면 기존 고신뢰 사용자는 건너뜁니다.'
+    );
+    const modeLabel = forceReanalysis ? '강제 재분석' : '일반 분석';
+
+    setStyleBatching(true);
+    setStyleBatchProgress(`${modeLabel} 준비 중...`);
+
+    let totalSuccess = 0;
+    let totalSkipped = 0;
+    let totalFailed = 0;
+    let totalNoContent = 0;
+    let batchNumber = 0;
+    let startAfter = '';
+    let hasMore = true;
+
+    try {
+      while (hasMore) {
+        batchNumber += 1;
+        setStyleBatchProgress(
+          `${modeLabel} 배치 ${batchNumber} 진행 중... (성공: ${totalSuccess}, 스킵: ${totalSkipped}, 실패: ${totalFailed})`
+        );
+
+        const result = await callFunctionWithRetry(
+          'batchAnalyzeBioStyles',
+          {
+            limit: 10,
+            minConfidence: 0.7,
+            force: forceReanalysis,
+            ...(startAfter ? { startAfter } : {})
+          },
+          { timeoutMs: 300000, retries: 1 }
+        );
+
+        totalSuccess += result?.successCount || 0;
+        totalSkipped += result?.skippedCount || 0;
+        totalFailed += result?.failedCount || 0;
+        totalNoContent += result?.noContentCount || 0;
+        startAfter = result?.lastUid || '';
+        hasMore = result?.hasMore === true && Boolean(startAfter);
+      }
+
+      setStyleBatchProgress('');
+      showNotification(
+        `문체 분석 완료: 성공 ${totalSuccess}명, 스킵 ${totalSkipped}명, 콘텐츠 부족 ${totalNoContent}명, 실패 ${totalFailed}명`,
+        totalFailed > 0 ? 'warning' : 'success'
+      );
+    } catch (error) {
+      console.error('문체 일괄 분석 실패:', error);
+      setStyleBatchProgress('');
+      showNotification(
+        `문체 일괄 분석 오류: ${error.message} (성공: ${totalSuccess}, 실패: ${totalFailed})`,
+        'error'
+      );
+    } finally {
+      setStyleBatching(false);
     }
   }, [showNotification]);
 
@@ -451,6 +522,29 @@ function QuickActions() {
                 }}
               >
                 {ragIndexing ? ragProgress || 'RAG 색인 중...' : 'RAG 일괄 색인'}
+              </Button>
+            </Grid>
+            <Grid item>
+              <Button
+                size="small"
+                variant="text"
+                startIcon={<Style aria-hidden="true" sx={{ fontSize: 18 }} />}
+                onClick={batchAnalyzeStyles}
+                disabled={styleBatching}
+                aria-label="전체 사용자 문체 일괄 분석"
+                sx={{
+                  color: '#8C2F39',
+                  '&:focus-visible': {
+                    outline: '2px solid #8C2F39',
+                    outlineOffset: '2px'
+                  },
+                  '&.Mui-disabled': {
+                    color: '#8C2F39',
+                    opacity: 0.7
+                  }
+                }}
+              >
+                {styleBatching ? styleBatchProgress || '문체 분석 중...' : '문체 일괄 분석'}
               </Button>
             </Grid>
           </Grid>

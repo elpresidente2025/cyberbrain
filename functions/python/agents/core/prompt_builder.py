@@ -58,6 +58,163 @@ def is_current_lawmaker(user_profile: Dict) -> bool:
     return any(k in text_to_check for k in elected_keywords)
 
 
+def _is_identity_signature_phrase(text: str) -> bool:
+    normalized = normalize_context_text(text)
+    if not normalized:
+        return False
+    return any(
+        token in normalized
+        for token in ("뼛속까지", "입니다", "저 ", "저는", "이재성!", "저 이재성")
+    )
+
+
+def _build_style_generation_guard(
+    style_fingerprint: Optional[Dict[str, Any]] = None,
+    style_guide: str = "",
+) -> str:
+    fingerprint = style_fingerprint if isinstance(style_fingerprint, dict) else {}
+    normalized_guide = normalize_context_text(style_guide, sep="\n")
+    metadata = fingerprint.get("analysisMetadata") or {}
+    try:
+        confidence = float(metadata.get("confidence") or 0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+
+    static_forbidden = [
+        "진정성",
+        "울림",
+        "열정과 헌신",
+        "더 나은 미래",
+        "단순한 구호",
+        "단순한 숫자",
+        "단순한 수치",
+        "단순히 숫자",
+        "저의 이러한 진정성",
+        "마음을 움직이고",
+        "막내들",
+        "강력한 힘이 됩니다",
+        "공감과 희망을 줍니다",
+        "우선순위를 명확히 하고",
+        "일정을 현실적으로 맞추겠습니다",
+    ]
+    forbidden_phrases: List[str] = []
+    preferred_replacements: List[str] = []
+    preferred_signatures: List[str] = []
+    identity_signatures: List[str] = []
+    tone_rules: List[str] = []
+    sentence_type_rules = [
+        "화자의 배경·경험·행보·진정성·역량이 독자·주민·시민의 반응을 만들었다고 해설하지 말고, 경험 자체나 행동 자체를 직접 서술할 것.",
+        "사람들이 화자의 특성을 알아봐 준다거나 기대가 커지고 있다고 추측하지 말고, 확인 가능한 사실과 행동만 쓸 것.",
+        "'단순히/단순한 ... 아니라/아닌/넘어/머무르지 않고' 같은 추상 대비 문형을 쓰지 말고, 남길 주장만 직접 선언할 것.",
+    ]
+    sentence_type_examples = [
+        (
+            "저의 경험이 시민들의 마음을 움직이고 있습니다.",
+            "저는 그 현장에서 그 어려움을 직접 겪었습니다.",
+        ),
+        (
+            "사람들이 저의 진정성과 역량을 알아봐 주고 있습니다.",
+            "저는 말한 것을 했습니다. 그게 전부입니다.",
+        ),
+        (
+            "이는 단순한 수치가 아니라 변화의 증거입니다.",
+            "이 수치는 변화 요구를 보여줍니다.",
+        ),
+    ]
+
+    for phrase in static_forbidden:
+        if phrase not in forbidden_phrases:
+            forbidden_phrases.append(phrase)
+
+    phrases = fingerprint.get("characteristicPhrases") or {}
+    ai_alternatives = fingerprint.get("aiAlternatives") or {}
+    for raw_value in (phrases.get("avoidances") or []):
+        value = normalize_context_text(raw_value)
+        if value and value not in forbidden_phrases:
+            forbidden_phrases.append(value)
+        if len(forbidden_phrases) >= 12:
+            break
+    for raw_value in (fingerprint.get("avoidances") or []):
+        value = normalize_context_text(raw_value)
+        if value and value not in forbidden_phrases:
+            forbidden_phrases.append(value)
+        if len(forbidden_phrases) >= 12:
+            break
+
+    for raw_key, raw_value in ai_alternatives.items():
+        source = normalize_context_text(str(raw_key or "").replace("instead_of_", "").replace("_", " "))
+        target = normalize_context_text(raw_value)
+        if source and source not in forbidden_phrases:
+            forbidden_phrases.append(source)
+        if source and target:
+            preferred_replacements.append(f'"{source}" 대신 "{target}"')
+
+    for bucket in ("signatures", "emphatics"):
+        for raw_value in (phrases.get(bucket) or []):
+            value = normalize_context_text(raw_value)
+            if not value:
+                continue
+            if bucket == "signatures" and _is_identity_signature_phrase(value):
+                if value not in identity_signatures:
+                    identity_signatures.append(value)
+                continue
+            if value not in preferred_signatures:
+                preferred_signatures.append(value)
+            if len(preferred_signatures) >= 4:
+                break
+        if len(preferred_signatures) >= 4:
+            break
+
+    tone = fingerprint.get("toneProfile") or {}
+    try:
+        directness = float(tone.get("directness") or 0)
+    except (TypeError, ValueError):
+        directness = 0.0
+    try:
+        optimism = float(tone.get("optimism") or 0)
+    except (TypeError, ValueError):
+        optimism = 0.0
+    if directness >= 0.6:
+        tone_rules.append("자기 해설형 표현보다 단정형 선언을 우선할 것.")
+    if optimism >= 0.6:
+        tone_rules.append("비장한 호소보다 자신감 있는 미래 선언형을 우선할 것.")
+
+    forbidden_xml = "".join(f"<phrase>{_xml_text(item)}</phrase>" for item in forbidden_phrases[:12])
+    replacement_xml = "".join(f"<item>{_xml_text(item)}</item>" for item in preferred_replacements[:8])
+    signature_xml = "".join(f"<item>{_xml_text(item)}</item>" for item in preferred_signatures[:4])
+    tone_rule_xml = "".join(f"<rule>{_xml_text(item)}</rule>" for item in tone_rules[:3])
+    sentence_type_rule_xml = "".join(
+        f"<rule>{_xml_text(item)}</rule>" for item in sentence_type_rules
+    )
+    sentence_type_examples_xml = "".join(
+        f"<example><bad>{_xml_text(bad)}</bad><good>{_xml_text(good)}</good></example>"
+        for bad, good in sentence_type_examples
+    )
+    guide_xml = f"<style_guide>{_xml_cdata(normalized_guide[:1800])}</style_guide>" if normalized_guide else ""
+
+    return f"""
+<style_generation_guard priority="high" confidence="{confidence:.2f}">
+  <rule id="no_generic_political_boilerplate">아래 금지 표현은 초안 생성 단계에서 직접 쓰지 말 것.</rule>
+  <rule id="prefer_registered_replacements">등록된 대체 표현이 있으면 원문 표현 대신 대체 표현을 우선 사용할 것.</rule>
+  <rule id="no_self_analysis_tone">화자의 진정성/열정/울림을 3인칭 해설처럼 설명하지 말고, 바로 주장과 선언으로 말할 것.</rule>
+  <rule id="no_sentence_type_reuse">금지 단어만 피하지 말고, 금지된 문장 유형 자체를 피할 것.</rule>
+  <rule id="describe_experience_not_effect">내 배경·경험·행보가 사람들에게 어떤 영향을 줬다고 해설하지 말고, 그 경험과 행동 자체를 직접 서술할 것.</rule>
+  <rule id="examples_are_direction_only">예시는 문장 구조의 방향만 참고하고 그대로 복사하지 말 것.</rule>
+  <rule id="follow_style_guide_examples">style guide에 실제 사용자 문장이 있으면, 범용 정치문 표현보다 그 전환·호흡·마감 방식을 먼저 따를 것. 다만 문장을 그대로 복사하지 말고 구조와 리듬만 참고할 것.</rule>
+  {'<rule id="identity_signature_only">정체성 시그니처는 자기 이름/1인칭 선언 문장(도입·마감)에서만 쓰고, 타인 묘사·복수형·수식어로 변형하지 말 것.</rule>' if identity_signatures else ''}
+  {'<rule id="tone_directness">' + _xml_text(tone_rules[0]) + '</rule>' if tone_rules else ''}
+  {'<rule id="tone_confidence">' + _xml_text(tone_rules[1]) + '</rule>' if len(tone_rules) > 1 else ''}
+  <forbidden_phrases>{forbidden_xml}</forbidden_phrases>
+  <forbidden_sentence_types>{sentence_type_rule_xml}</forbidden_sentence_types>
+  <sentence_type_examples>{sentence_type_examples_xml}</sentence_type_examples>
+  {'<preferred_replacements>' + replacement_xml + '</preferred_replacements>' if replacement_xml else ''}
+  {'<preferred_signatures>' + signature_xml + '</preferred_signatures>' if signature_xml else ''}
+  {'<identity_signatures>' + ''.join(f'<item>{_xml_text(item)}</item>' for item in identity_signatures[:3]) + '</identity_signatures>' if identity_signatures else ''}
+  {guide_xml}
+</style_generation_guard>
+""".strip()
+
+
 # ---------------------------------------------------------------------------
 # build_material_uniqueness_guard
 # ---------------------------------------------------------------------------
@@ -443,6 +600,8 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
         params.get('personalizationContext') or params.get('memoryContext'),
         sep="\n",
     )
+    style_guide = normalize_context_text(params.get('styleGuide'), sep="\n")
+    style_fingerprint = params.get('styleFingerprint') if isinstance(params.get('styleFingerprint'), dict) else {}
 
     # Build base template prompt
     template_prompt = template_builder({
@@ -895,6 +1054,10 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
   <output_format>{_xml_text(output_format_rule)}</output_format>
 </structure_guide>
 """
+    style_generation_guard = _build_style_generation_guard(
+        style_fingerprint=style_fingerprint,
+        style_guide=style_guide,
+    )
 
     # SEO 지침 생성
     seo_instruction = build_seo_instruction({
@@ -923,6 +1086,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
   {context_injection_xml}
   {bio_warning}
   {structure_enforcement}
+  {style_generation_guard}
   {natural_tone_guide}
 </structure_agent_prompt>
 """.strip()

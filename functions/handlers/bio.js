@@ -409,11 +409,16 @@ async function extractEntriesMetadataAsync(uid, entries) {
 
     // 🎨 Stylometry 분석 (Style Fingerprint 추출)
     let styleFingerprint = null;
+    let styleGuide = '';
     try {
       console.log(`🎨 [Stylometry] 분석 시작: ${uid}`);
       styleFingerprint = await extractStyleFingerprint(consolidatedContent, {
         userName: '',
         region: ''
+      });
+      styleGuide = buildStyleGuidePrompt(styleFingerprint, {
+        compact: false,
+        sourceText: consolidatedContent
       });
       console.log(`✅ [Stylometry] 분석 완료: ${uid} (신뢰도: ${styleFingerprint?.analysisMetadata?.confidence || 0})`);
     } catch (styleError) {
@@ -426,6 +431,7 @@ async function extractEntriesMetadataAsync(uid, entries) {
       optimizationHints: hints,
       // 🎨 Style Fingerprint 저장
       styleFingerprint: styleFingerprint || null,
+      styleGuide: styleGuide || '',
       metadataStatus: 'completed',
       lastAnalyzed: admin.firestore.FieldValue.serverTimestamp(),
 
@@ -439,6 +445,11 @@ async function extractEntriesMetadataAsync(uid, entries) {
         lastProcessedAt: admin.firestore.FieldValue.serverTimestamp()
       }
     });
+
+    await db.collection('users').doc(uid).set({
+      styleGuide: styleGuide || '',
+      styleGuideUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
 
     console.log(`✅ 다중 엔트리 메타데이터 추출 완료: ${uid}`, {
       entriesProcessed: entries.length,

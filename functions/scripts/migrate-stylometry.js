@@ -29,7 +29,7 @@ admin.initializeApp({
 const db = admin.firestore();
 
 // Stylometry 모듈 로드
-const { extractStyleFingerprint } = require('../services/stylometry');
+const { extractStyleFingerprint, buildStyleGuidePrompt } = require('../services/stylometry');
 
 // 명령줄 인자 파싱
 const args = process.argv.slice(2);
@@ -163,12 +163,21 @@ async function processBatch(batch, stats, dryRun) {
 
       const confidence = styleFingerprint.analysisMetadata?.confidence || 0;
       console.log(`✅ [${uid}] 분석 완료 (신뢰도: ${confidence})`);
+      const styleGuide = buildStyleGuidePrompt(styleFingerprint, {
+        compact: false,
+        sourceText: consolidatedContent
+      });
 
       if (!dryRun) {
         await db.collection('bios').doc(uid).update({
           styleFingerprint,
+          styleGuide,
           styleFingerprintUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
+        await db.collection('users').doc(uid).set({
+          styleGuide,
+          styleGuideUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
         console.log(`💾 [${uid}] 저장 완료`);
       } else {
         console.log(`🏃 [${uid}] DRY RUN - 저장 생략`);
