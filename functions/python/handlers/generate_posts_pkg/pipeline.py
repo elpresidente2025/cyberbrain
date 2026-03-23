@@ -6552,6 +6552,8 @@ def _ensure_nonempty_h2_sections_once(
                 full_name=full_name,
             )
         if not answer_lead:
+            replacements.append((match.start(), section_end, ""))
+            actions.append(f"drop_empty_section:{index + 1}")
             continue
 
         insertion = f"\n<p>{answer_lead}</p>\n"

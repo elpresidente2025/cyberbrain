@@ -514,6 +514,9 @@ class SectionNormalizerMixin:
                 log_label='intro',
             )
 
+        def _has_renderable_paragraphs(paragraphs: List[str]) -> bool:
+            return any(self._clean_plain_text(paragraph) for paragraph in paragraphs)
+
         intro_paragraphs = _clean_intro_audience_reaction_paragraphs(intro_paragraphs)
 
         for paragraph in intro_paragraphs:
@@ -537,6 +540,12 @@ class SectionNormalizerMixin:
                 contract=contract,
                 section_label=f"본론 {index + 1}",
             )
+            if not _has_renderable_paragraphs(section_paragraph_list):
+                print(
+                    f"⚠️ [StructureAgent] 본론 {index + 1} 본문이 비어 섹션을 드롭합니다: "
+                    f"'{heading}'"
+                )
+                continue
             heading = self._repair_low_alignment_heading(
                 heading=heading,
                 paragraphs=section_paragraph_list,
@@ -559,6 +568,13 @@ class SectionNormalizerMixin:
             contract=conclusion_contract,
             section_label='결론',
         )
+        if not _has_renderable_paragraphs(conclusion_paragraphs):
+            print(
+                f"⚠️ [StructureAgent] 결론 본문이 비어 섹션을 드롭합니다: "
+                f"'{conclusion_heading}'"
+            )
+            content = "\n".join(html_parts).strip()
+            return content, title
         conclusion_heading = self._repair_low_alignment_heading(
             heading=conclusion_heading,
             paragraphs=conclusion_paragraphs,
