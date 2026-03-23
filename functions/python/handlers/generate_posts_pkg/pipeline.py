@@ -51,8 +51,13 @@ from services.posts.output_formatter import (
     build_keyword_validation,
     count_without_space,
     finalize_output,
+    insert_donation_info,
+    insert_poll_citation,
+    insert_slogan,
     normalize_ascii_double_quotes,
     normalize_book_title_notation,
+    strip_generated_addons,
+    strip_generated_poll_citation,
 )
 from services.posts.poll_fact_guard import (
     build_poll_matchup_fact_table,
@@ -1058,6 +1063,58 @@ def _apply_terminal_section_length_backstop_once(
         "actions": actions,
         "beforeLengths": before_lengths,
         "afterLengths": after_lengths,
+    }
+
+
+def _restore_terminal_output_addons_once(
+    content: str,
+    *,
+    output_options: Optional[Dict[str, Any]] = None,
+    content_meta: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    base = normalize_ascii_double_quotes(str(content or "").strip())
+    if not base:
+        return {"content": base, "edited": False, "actions": []}
+
+    options = output_options if isinstance(output_options, dict) else {}
+    meta = content_meta if isinstance(content_meta, dict) else {}
+
+    slogan = str(options.get("slogan") or "").strip()
+    slogan_enabled = bool(options.get("sloganEnabled") is True and slogan)
+    donation_info = str(options.get("donationInfo") or "").strip()
+    donation_enabled = bool(options.get("donationEnabled") is True and donation_info)
+    poll_citation = str(meta.get("pollCitation") or options.get("pollCitation") or "").strip()
+    poll_enabled = bool(
+        poll_citation
+        and (
+            options.get("embedPollCitation") is True
+            or meta.get("pollCitationForced") is True
+        )
+    )
+
+    updated = strip_generated_addons(
+        base,
+        slogan=slogan,
+        donation_info=donation_info,
+    )
+    updated = strip_generated_poll_citation(updated)
+
+    actions: list[str] = []
+    if donation_enabled:
+        updated = insert_donation_info(updated, normalize_ascii_double_quotes(donation_info))
+        actions.append("terminal_donation_info")
+    if slogan_enabled:
+        updated = insert_slogan(updated, normalize_ascii_double_quotes(slogan))
+        actions.append("terminal_slogan")
+    if poll_enabled:
+        updated = insert_poll_citation(updated, normalize_ascii_double_quotes(poll_citation))
+        actions.append("terminal_poll_citation")
+
+    updated = normalize_ascii_double_quotes(updated)
+    return {
+        "content": updated,
+        "edited": updated != base,
+        "actions": actions,
     }
 
 
@@ -11461,6 +11518,18 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     progress.step_validating()
     progress.step_finalizing()
     progress.complete()
+
+    terminal_output_addons = _restore_terminal_output_addons_once(
+        generated_content,
+        output_options=output_format_options,
+        content_meta=content_meta,
+    )
+    if terminal_output_addons.get("edited"):
+        generated_content = str(terminal_output_addons.get("content") or generated_content)
+        logger.info(
+            "Terminal output addons restored: %s",
+            terminal_output_addons.get("actions") or [],
+        )
 
     generated_at = datetime.utcnow().isoformat() + "Z"
     now_ms = int(time.time() * 1000)
