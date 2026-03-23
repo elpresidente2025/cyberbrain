@@ -1,21 +1,16 @@
 
-import re
 import logging
-import time
 import random
-from typing import Dict, Any, Optional, List, Tuple
+import re
+import time
+from typing import Any, Dict, List, Optional, Tuple
 
 # API Call Timeout (seconds)
 LLM_CALL_TIMEOUT = 120  # 2분 타임아웃
 CONTEXT_ANALYZER_TIMEOUT = 60  # 1분 타임아웃
 
-# Local imports
-from ..common.classifier import classify_topic
-from ..common.theminjoo import get_party_stance
-from ..common.constants import resolve_writing_method
 from ..common.editorial import STRUCTURE_SPEC
-from ..common.h2_guide import H2_MIN_LENGTH, H2_MAX_LENGTH
-from ..templates.intelligent_selector import select_prompt_parameters
+from ..common.section_contract import infer_sentence_role, validate_section_contract
 
 logger = logging.getLogger(__name__)
 
@@ -23,31 +18,64 @@ logger = logging.getLogger(__name__)
 from ..base_agent import Agent
 
 from .structure_utils import (
-    strip_html, normalize_artifacts, normalize_html_structure_tags,
-    normalize_context_text, split_into_context_items
+    normalize_context_text,
+    split_into_context_items,
+    strip_html,
 )
-from .prompt_builder import build_structure_prompt, build_retry_directive
 from .content_validator import ContentValidator
 from .content_repair import ContentRepairAgent
 from .context_analyzer import ContextAnalyzer
-from .structure_normalizer import normalize_structure
+from .section_normalizer import SectionNormalizerMixin, _coerce_int_option
+from .section_repair import SectionRepairMixin
 
 
-def _coerce_int_option(
-    value: Any,
-    *,
-    default: int,
-    minimum: int,
-    maximum: int,
-) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        parsed = default
-    return max(minimum, min(parsed, maximum))
-
-
-class StructureAgent(Agent):
+class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
+    _HEADING_ALIGNMENT_STOPWORDS = {
+        "이유",
+        "배경",
+        "무엇",
+        "무엇인가",
+        "무엇을",
+        "어떻게",
+        "왜",
+        "지금",
+        "해야",
+        "하나",
+        "대한",
+        "위한",
+        "통한",
+        "관련",
+        "에서",
+        "하는",
+    }
+    _HEADING_ALIGNMENT_SUFFIXES = (
+        "에서는",
+        "과의",
+        "와의",
+        "으로는",
+        "에게는",
+        "에서",
+        "으로",
+        "에게",
+        "에는",
+        "부터",
+        "까지",
+        "처럼",
+        "보다",
+        "과",
+        "와",
+        "은",
+        "는",
+        "이",
+        "가",
+        "을",
+        "를",
+        "의",
+        "에",
+        "로",
+        "도",
+        "만",
+    )
     _BANNED_FIRST_PERSON_HEADING_PATTERN = re.compile(r"(?:^|[\s,])(?:저는|제가|나는|내가)(?:[\s,]|$)")
 
     def __init__(self, name: str = 'StructureAgent', options: Optional[Dict[str, Any]] = None):
@@ -515,6 +543,8 @@ class StructureAgent(Agent):
             "    <rule>body 각 항목은 heading 1개 + paragraphs 배열로 작성.</rule>\n"
             "    <rule>conclusion은 heading 1개 + paragraphs 배열로 작성.</rule>\n"
             "    <rule>각 paragraphs 원소는 완결 문장 2~3개로 구성하고 최소 120자 이상 작성.</rule>\n"
+            "    <rule>각 body/conclusion 항목은 paragraphs를 먼저 완성한 뒤 heading을 마지막에 작성.</rule>\n"
+            "    <rule>heading은 바로 아래 paragraphs 첫 2문장이 실제로 말한 핵심을 선언형 또는 명사형으로 요약할 것. 본문 없이 heading을 먼저 확정하지 말 것.</rule>\n"
             "    <rule>소제목은 10~25자, \"위한/향한/만드는/통한/대한\" 수식어 금지.</rule>\n"
             "    <rule>소제목에 '저는/제가/나는/내가' 같은 1인칭 표현 금지.</rule>\n"
             "    <rule>JSON 문자열 안에 큰따옴표(\")를 직접 쓰지 말 것. 인용이 필요하면 작은따옴표(') 또는 괄호를 사용.</rule>\n"
@@ -533,688 +563,6 @@ class StructureAgent(Agent):
             "  ]]></json_shape>\n"
             "</json_output_contract>"
         )
-
-    def _clean_plain_text(self, value: Any) -> str:
-        text = normalize_context_text(value, sep=' ')
-        text = re.sub(r'<[^>]*>', ' ', text)
-        text = re.sub(r'\s+', ' ', text).strip()
-        return text
-
-    def _sanitize_heading_text(self, heading: Any) -> str:
-        text = self._clean_plain_text(heading)
-        if not text:
-            raise ValueError("구조 JSON 계약 위반: 소제목이 비어 있습니다.")
-        if self._BANNED_FIRST_PERSON_HEADING_PATTERN.search(text):
-            raise ValueError(f"구조 JSON 계약 위반: 소제목 1인칭 표현 금지('{text}')")
-        text = re.sub(r'(위한|향한|만드는|통한|대한)(\s|$)', ' ', text)
-        text = re.sub(r'\s+', ' ', text).strip(' -_.,')
-        if len(text) > H2_MAX_LENGTH:
-            text = text[:H2_MAX_LENGTH].rstrip(' -_.,')
-        if len(text) < H2_MIN_LENGTH:
-            raise ValueError(f"구조 JSON 계약 위반: 소제목 길이 부족({len(text)}자)")
-        return text
-
-    def _normalize_section_paragraphs(
-        self,
-        paragraphs: Any,
-        *,
-        target_count: int,
-    ) -> List[str]:
-        candidates = paragraphs if isinstance(paragraphs, list) else [paragraphs]
-        cleaned_list: List[str] = []
-        for item in candidates:
-            cleaned = self._clean_plain_text(item)
-            if cleaned:
-                cleaned_list.append(cleaned)
-
-        if len(cleaned_list) > target_count:
-            keep = cleaned_list[: target_count - 1]
-            tail = " ".join(cleaned_list[target_count - 1 :]).strip()
-            if tail:
-                keep.append(tail)
-            cleaned_list = keep
-
-        if len(cleaned_list) < target_count:
-            print(
-                f"⚠️ [StructureAgent] 문단 수 부족({len(cleaned_list)}개, "
-                f"요구 {target_count}개) — 있는 만큼 사용, normalize_section_p_count가 보정"
-            )
-
-        return cleaned_list[:target_count]
-
-    def _build_html_from_structure_json(
-        self,
-        payload: Dict[str, Any],
-        *,
-        length_spec: Dict[str, int],
-        topic: str,
-    ) -> Tuple[str, str]:
-        section_paragraphs = _coerce_int_option(
-            length_spec.get('paragraphs_per_section'),
-            default=int(STRUCTURE_SPEC['paragraphsPerSection']),
-            minimum=2,
-            maximum=4,
-        )
-        body_sections = max(1, int(length_spec.get('body_sections') or 1))
-
-        title = self._clean_plain_text(payload.get('title'))
-        if not title:
-            title = (topic or "새 원고").strip()[:40]
-
-        intro_payload = payload.get('intro')
-        if not isinstance(intro_payload, dict):
-            raise ValueError("구조 JSON 계약 위반: intro 객체가 누락되었습니다.")
-        intro_paragraphs = self._normalize_section_paragraphs(
-            intro_payload.get('paragraphs'),
-            target_count=section_paragraphs,
-        )
-
-        body_payload = payload.get('body')
-        if not isinstance(body_payload, list):
-            raise ValueError("구조 JSON 계약 위반: body 배열이 누락되었습니다.")
-        conclusion_payload = payload.get('conclusion')
-        if not isinstance(conclusion_payload, dict):
-            raise ValueError("구조 JSON 계약 위반: conclusion 객체가 누락되었습니다.")
-
-        html_parts: List[str] = []
-        for paragraph in intro_paragraphs:
-            html_parts.append(f"<p>{paragraph}</p>")
-
-        for index in range(body_sections):
-            if index >= len(body_payload) or not isinstance(body_payload[index], dict):
-                raise ValueError(
-                    f"구조 JSON 계약 위반: 본론 섹션 누락({index + 1}/{body_sections})"
-                )
-            section = body_payload[index]
-            heading = self._sanitize_heading_text(section.get('heading'))
-            html_parts.append(f"<h2>{heading}</h2>")
-            section_paragraph_list = self._normalize_section_paragraphs(
-                section.get('paragraphs'),
-                target_count=section_paragraphs,
-            )
-            for paragraph in section_paragraph_list:
-                html_parts.append(f"<p>{paragraph}</p>")
-
-        conclusion_heading = self._sanitize_heading_text(conclusion_payload.get('heading'))
-        html_parts.append(f"<h2>{conclusion_heading}</h2>")
-        conclusion_paragraphs = self._normalize_section_paragraphs(
-            conclusion_payload.get('paragraphs'),
-            target_count=section_paragraphs,
-        )
-        for paragraph in conclusion_paragraphs:
-            html_parts.append(f"<p>{paragraph}</p>")
-
-        content = "\n".join(html_parts).strip()
-        return content, title
-
-    async def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        topic = context.get('topic', '')
-        user_profile = context.get('userProfile', {})
-        # 방어 코드 - list로 전달되는 경우 방어
-        if not isinstance(user_profile, dict):
-            user_profile = {}
-        category = context.get('category', '')
-        sub_category = context.get('subCategory', '')
-        instructions = normalize_context_text(context.get('instructions', ''))
-        news_context = normalize_context_text(context.get('newsContext', ''))
-        # 🔑 [NEW] 입장문과 뉴스/데이터 분리
-        stance_text = normalize_context_text(context.get('stanceText', ''))
-        news_data_text = normalize_context_text(context.get('newsDataText', ''))
-        poll_focus_bundle = context.get('pollFocusBundle') if isinstance(context.get('pollFocusBundle'), dict) else {}
-        focused_news_context = normalize_context_text(poll_focus_bundle.get('focusedSourceText'), sep="\n")
-        source_instructions = normalize_context_text(stance_text)
-        if not strip_html(source_instructions):
-            source_instructions = normalize_context_text(instructions)
-        if not strip_html(source_instructions):
-            source_instructions = normalize_context_text(topic)
-        effective_news_context = focused_news_context or news_data_text or news_context
-        target_word_count = context.get('targetWordCount', int(STRUCTURE_SPEC['idealTotalMin']))
-        user_keywords = context.get('userKeywords', [])
-        personalized_hints = normalize_context_text(context.get('personalizedHints', ''), sep="\n")
-        memory_context = normalize_context_text(context.get('memoryContext', ''), sep="\n")
-        personalization_context = normalize_context_text([personalized_hints, memory_context], sep="\n")
-        style_guide = normalize_context_text(context.get('styleGuide', ''), sep="\n")
-        style_fingerprint = context.get('styleFingerprint') if isinstance(context.get('styleFingerprint'), dict) else {}
-        profile_support_context = self._build_profile_support_context(user_profile)
-        has_news_source = bool(strip_html(effective_news_context))
-        profile_substitute = self._build_profile_substitute_context(user_profile, target_items=3) if not has_news_source else {}
-        analyzer_news_context = effective_news_context
-        news_source_mode = 'news'
-        if not has_news_source:
-            news_source_mode = 'profile_fallback'
-            substitute_text = normalize_context_text(profile_substitute.get('contextText'))
-            if not substitute_text and profile_support_context:
-                fallback_items = split_into_context_items(
-                    profile_support_context,
-                    min_len=12,
-                    max_items=3,
-                )
-                if fallback_items:
-                    substitute_text = "\n".join(f"- {item}" for item in fallback_items)
-                    if isinstance(profile_substitute, dict):
-                        profile_substitute["selectedItems"] = fallback_items
-                        profile_substitute["contextText"] = substitute_text
-                        profile_substitute["usedBioCount"] = max(
-                            int(profile_substitute.get("usedBioCount") or 0),
-                            len(fallback_items),
-                        )
-                    print(
-                        "⚠️ [StructureAgent] 프로필 추가정보가 부족하여 Bio 보강 1차 문맥을 대체자료로 사용합니다."
-                    )
-            analyzer_news_context = f"[사용자 추가정보 대체자료]\n{substitute_text}" if substitute_text else ""
-
-        print(f"🚀 [StructureAgent] 시작 - 카테고리: {category or '(자동)'}, 주제: {topic}")
-        print(f"📊 [StructureAgent] 입장문: {len(stance_text)}자, 뉴스/데이터: {len(news_data_text)}자")
-        if news_source_mode == 'news':
-            print(f"🧭 [StructureAgent] ContextAnalyzer 소스: 뉴스/데이터 사용 ({len(strip_html(effective_news_context))}자)")
-        else:
-            print(
-                "🧭 [StructureAgent] ContextAnalyzer 소스: 프로필 대체 "
-                f"(추가정보 풀 {profile_substitute.get('additionalPoolCount', 0)}개, "
-                f"사용 추가정보 {profile_substitute.get('usedAdditionalCount', 0)}개, "
-                f"bio 보충 {profile_substitute.get('usedBioCount', 0)}개)"
-            )
-
-        # 1. Determine Writing Method
-        writing_method = ''
-        if category and category != 'auto':
-            writing_method = resolve_writing_method(category, sub_category)
-            print(f"✍️ [StructureAgent] 작법 선택 (카테고리 기반): {writing_method}")
-        else:
-            classification = await classify_topic(topic)
-            writing_method = classification['writingMethod']
-            print(f"🤖 [StructureAgent] 작법 자동 추론: {writing_method} (신뢰도: {classification.get('confidence')}, 소스: {classification.get('source')})")
-
-        # 2. Build Author Bio
-        author_bio, author_name = self.build_author_bio(user_profile)
-
-        # 3. Get Party Stance
-        party_stance_guide = None
-        try:
-             party_stance_guide = get_party_stance(topic)
-        except Exception as e:
-             print(f"⚠️ [StructureAgent] 당론 조회 실패: {str(e)}")
-
-        # 4. ContextAnalyzer (입장문/뉴스 분리 처리)
-        analyzer_stance_text = source_instructions
-        if len(strip_html(analyzer_stance_text)) < 24:
-            analyzer_stance_text = normalize_context_text([analyzer_stance_text, topic], sep="\n\n")
-        analyzer_news_text = analyzer_news_context
-
-        context_analysis = await self.run_context_analyzer(
-            analyzer_stance_text,
-            analyzer_news_text,
-            author_name
-        )
-        if isinstance(context_analysis, dict):
-            context_analysis = self._normalize_context_analysis_materials(context_analysis)
-        # validate_output 호출에 사용하는 이벤트 컨텍스트 힌트는
-        # process 스코프에서 항상 초기화되어야 한다.
-        is_event_announcement = False
-        event_date_hint = ''
-        event_location_hint = ''
-        if isinstance(context_analysis, dict):
-            analysis_intent = str(context_analysis.get('intent') or '').strip().lower()
-            must_preserve = context_analysis.get('mustPreserve')
-            if analysis_intent == 'event_announcement':
-                is_event_announcement = True
-                if isinstance(must_preserve, dict):
-                    event_date_hint = str(must_preserve.get('eventDate') or '').strip()
-                    event_location_hint = str(must_preserve.get('eventLocation') or '').strip()
-
-        reference_text_len = (
-            len(strip_html(stance_text))
-            + len(strip_html(news_data_text))
-            + len(strip_html(instructions))
-        )
-        stance_count = len(context_analysis.get('mustIncludeFromStance', [])) if context_analysis else 0
-        length_spec = self._build_length_spec(
-            target_word_count,
-            stance_count,
-            reference_text_len=reference_text_len,
-        )
-        print(
-            f"📏 [StructureAgent] 분량 계획: {length_spec['total_sections']}섹션, "
-            f"{length_spec['min_chars']}~{length_spec['max_chars']}자 "
-            f"(섹션당 {length_spec['per_section_recommended']}자)"
-        )
-
-        prompt_variation_params: Dict[str, Any] = {}
-        if category == 'educational-content':
-            try:
-                selected = select_prompt_parameters(
-                    category='educational-content',
-                    topic=topic,
-                    instructions=source_instructions,
-                )
-                if isinstance(selected, dict):
-                    prompt_variation_params = selected
-                if prompt_variation_params:
-                    print(f"🎛️ [StructureAgent] 교육 카테고리 배리에이션 적용: {prompt_variation_params}")
-            except Exception as e:
-                print(f"⚠️ [StructureAgent] 교육 카테고리 배리에이션 선택 실패: {str(e)}")
-
-        # 5. Build Prompt
-        rag_context = normalize_context_text(context.get('ragContext', ''))
-        prompt_params: Dict[str, Any] = {
-            'topic': topic,
-            'category': category,
-            'writingMethod': writing_method,
-            'authorName': author_name,
-            'authorBio': author_bio,
-            'instructions': source_instructions,
-            'newsContext': effective_news_context,
-            'ragContext': rag_context,
-            'targetWordCount': target_word_count,
-            'partyStanceGuide': party_stance_guide,
-            'contextAnalysis': context_analysis,
-            'userProfile': user_profile,
-            'personalizationContext': personalization_context,
-            'memoryContext': memory_context,
-            'styleGuide': style_guide,
-            'styleFingerprint': style_fingerprint,
-            'profileSupportContext': profile_support_context,
-            'profileSubstituteContext': profile_substitute.get('contextText') if isinstance(profile_substitute, dict) else '',
-            'newsSourceMode': news_source_mode,
-            'userKeywords': user_keywords,
-            'pollFocusBundle': poll_focus_bundle,
-            'lengthSpec': length_spec,
-            'outputMode': 'json',
-        }
-        if prompt_variation_params:
-            prompt_params.update(prompt_variation_params)
-        prompt = build_structure_prompt(prompt_params)
-
-        print(f"📝 [StructureAgent] 프롬프트 생성 완료 ({len(prompt)}자)")
-
-        # 6. Retry Loop
-        max_retries = self.max_retries
-        attempt = 0
-        feedback = ''
-        retry_directive = ''
-        validation: Dict[str, Any] = {}
-        last_error = None
-        best_candidate: Dict[str, Any] = {}
-        structural_recoverable_codes = {
-            'H2_SHORT',
-            'H2_LONG',
-            'P_SHORT',
-            'P_LONG',
-            'SECTION_P_COUNT',
-            'H2_MALFORMED',
-            'P_MALFORMED',
-            'TAG_DISALLOWED',
-            'DUPLICATE_SENTENCE',
-            'PHRASE_REPEAT',
-            'VERB_REPEAT',
-            'PHRASE_REPEAT_CAP',
-            'MATERIAL_REUSE',
-            'INTRO_STANCE_MISSING',
-            'INTRO_CONCLUSION_ECHO',
-            'LOCATION_ORPHAN_REPEAT',
-            'META_PROMPT_LEAK',
-            'EVENT_FACT_REPEAT',
-            'EVENT_INVITE_REDUNDANT',
-            'SECTION_LENGTH',
-            'H2_TEXT_LONG',
-            'H2_TEXT_MODIFIER',
-            'H2_TEXT_FIRST_PERSON',
-            'H2_TEXT_SHORT',
-        }
-
-        def _candidate_rank(candidate_validation: Dict[str, Any], candidate_content: str) -> tuple:
-            plain_len = len(strip_html(candidate_content or ''))
-            code = str(candidate_validation.get('code') or '')
-            penalties = {
-                'LENGTH_SHORT': 8,
-                'LENGTH_LONG': 7,
-                'H2_SHORT': 4,
-                'H2_LONG': 4,
-                'P_SHORT': 5,
-                'P_LONG': 5,
-                'H2_MALFORMED': 6,
-                'P_MALFORMED': 6,
-                'TAG_DISALLOWED': 6,
-            }
-            penalty = penalties.get(code, 5)
-            return (
-                1 if bool(candidate_validation.get('passed')) else 0,
-                1 if plain_len >= int(length_spec.get('min_chars') or 0) else 0,
-                1 if plain_len <= int(length_spec.get('max_chars') or 999999) else 0,
-                -penalty,
-                -abs(plain_len - int(length_spec.get('min_chars') or 0)),
-                plain_len,
-            )
-
-        def _remember_best(
-            candidate_content: str,
-            candidate_title: str,
-            candidate_validation: Dict[str, Any],
-            source: str,
-            source_attempt: int,
-        ) -> None:
-            nonlocal best_candidate
-            if not candidate_content:
-                return
-            rank = _candidate_rank(candidate_validation, candidate_content)
-            if (not best_candidate) or rank > tuple(best_candidate.get('rank') or ()):
-                best_candidate = {
-                    'content': candidate_content,
-                    'title': candidate_title,
-                    'validation': dict(candidate_validation or {}),
-                    'rank': rank,
-                    'plain_len': len(strip_html(candidate_content or '')),
-                    'source': source,
-                    'attempt': source_attempt,
-                }
-
-        def _evaluate_candidate_with_normalizer(
-            candidate_content: str,
-            candidate_title: str,
-            *,
-            source: str,
-            source_attempt: int,
-        ) -> Tuple[str, Dict[str, Any], str]:
-            structural_gate_codes = {
-                'LENGTH_SHORT',
-                'LENGTH_LONG',
-                'H2_SHORT',
-                'H2_LONG',
-                'SECTION_P_COUNT',
-                'P_SHORT',
-                'P_LONG',
-                'SECTION_LENGTH',
-                'H2_MALFORMED',
-                'P_MALFORMED',
-                'TAG_DISALLOWED',
-                'H2_TEXT_SHORT',
-                'H2_TEXT_LONG',
-                'H2_TEXT_MODIFIER',
-                'H2_TEXT_FIRST_PERSON',
-            }
-
-            def _failure_stage(validation_result: Dict[str, Any]) -> int:
-                if validation_result.get('passed'):
-                    return 3
-                code = str(validation_result.get('code') or '')
-                if code in structural_gate_codes:
-                    return 0
-                return 1
-
-            base_content = normalize_artifacts(candidate_content)
-            base_content = normalize_html_structure_tags(base_content)
-            raw_validation = self.validator.validate(
-                base_content,
-                length_spec,
-                context_analysis=context_analysis,
-                is_event_announcement=is_event_announcement,
-                event_date_hint=event_date_hint,
-                event_location_hint=event_location_hint,
-            )
-            raw_rank = _candidate_rank(raw_validation, base_content)
-            raw_source = f"{source}-raw"
-            _remember_best(base_content, candidate_title, raw_validation, source=raw_source, source_attempt=source_attempt)
-
-            normalized_content = normalize_structure(
-                base_content,
-                length_spec,
-                user_keywords=user_keywords,
-                context_analysis=context_analysis,
-            )
-            normalized_validation = self.validator.validate(
-                normalized_content,
-                length_spec,
-                context_analysis=context_analysis,
-                is_event_announcement=is_event_announcement,
-                event_date_hint=event_date_hint,
-                event_location_hint=event_location_hint,
-            )
-            normalized_rank = _candidate_rank(normalized_validation, normalized_content)
-            _remember_best(normalized_content, candidate_title, normalized_validation, source=source, source_attempt=source_attempt)
-
-            if raw_validation.get('passed') and not normalized_validation.get('passed'):
-                print(
-                    f"⚠️ [StructureAgent] 정규화 후 품질 퇴행 감지: "
-                    f"raw=PASS, normalized=FAIL({normalized_validation.get('code')})"
-                )
-                return base_content, raw_validation, raw_source
-
-            if normalized_validation.get('passed') and not raw_validation.get('passed'):
-                print(
-                    f"✅ [StructureAgent] 정규화 교정 성공: "
-                    f"raw=FAIL({raw_validation.get('code')}), normalized=PASS"
-                )
-                return normalized_content, normalized_validation, source
-
-            raw_stage = _failure_stage(raw_validation)
-            normalized_stage = _failure_stage(normalized_validation)
-            if normalized_stage > raw_stage:
-                if raw_validation.get('code') != normalized_validation.get('code'):
-                    print(
-                        f"🧭 [StructureAgent] 단계 우선 선택(normalized): "
-                        f"raw={raw_validation.get('code')} / normalized={normalized_validation.get('code')}"
-                    )
-                return normalized_content, normalized_validation, source
-            if raw_stage > normalized_stage:
-                if raw_validation.get('code') != normalized_validation.get('code'):
-                    print(
-                        f"🧭 [StructureAgent] 단계 우선 선택(raw): "
-                        f"raw={raw_validation.get('code')} / normalized={normalized_validation.get('code')}"
-                    )
-                return base_content, raw_validation, raw_source
-
-            if raw_rank >= normalized_rank:
-                if raw_validation.get('code') != normalized_validation.get('code'):
-                    print(
-                        f"🧪 [StructureAgent] 후보 선택(raw 우선): "
-                        f"raw={raw_validation.get('code')} / normalized={normalized_validation.get('code')}"
-                    )
-                return base_content, raw_validation, raw_source
-
-            if raw_validation.get('code') != normalized_validation.get('code'):
-                print(
-                    f"🧪 [StructureAgent] 후보 선택(normalized 우선): "
-                    f"raw={raw_validation.get('code')} / normalized={normalized_validation.get('code')}"
-                )
-            return normalized_content, normalized_validation, source
-
-        while attempt <= max_retries:
-            attempt += 1
-            print(f"🔄 [StructureAgent] 생성 시도 {attempt}/{max_retries + 1}")
-
-            current_prompt = prompt
-            if feedback:
-                retry_block = f"\n\n{retry_directive}" if retry_directive else ""
-                current_prompt += (
-                    f"\n\n🚨 [중요 - 재작성 지시] 이전 작성본이 다음 이유로 반려되었습니다:\n"
-                    f"\"{feedback}\"{retry_block}"
-                )
-
-            try:
-                json_prompt = self._build_structure_json_prompt(
-                    prompt=current_prompt,
-                    length_spec=length_spec,
-                )
-                response_schema = self._build_structure_json_schema(length_spec)
-                payload = await self.call_llm_json_contract(
-                    json_prompt,
-                    response_schema=response_schema,
-                    required_keys=("title", "intro", "body", "conclusion"),
-                    stage="structure",
-                    max_output_tokens=8192,
-                )
-                raw_content, title = self._build_html_from_structure_json(
-                    payload,
-                    length_spec=length_spec,
-                    topic=topic,
-                )
-                raw_content = normalize_artifacts(raw_content)
-                raw_content = normalize_html_structure_tags(raw_content)
-                title = normalize_artifacts(title)
-
-                plain_len = len(strip_html(raw_content))
-                body_sections = len(payload.get('body') or []) if isinstance(payload, dict) else 0
-                print(
-                    f"📐 [StructureAgent] 시도 {attempt} 길이: "
-                    f"json_body_sections={body_sections}, parsed={len(raw_content)}자, plain={plain_len}자"
-                )
-                if plain_len < 400:
-                    raise Exception(f"JSON 구조 결과가 비정상적으로 짧습니다 ({plain_len}자)")
-
-                content, validation, selected_source = _evaluate_candidate_with_normalizer(
-                    raw_content,
-                    title,
-                    source='draft',
-                    source_attempt=attempt,
-                )
-
-                if validation['passed']:
-                    print(f"✅ [StructureAgent] 검증 통과({selected_source}): {len(strip_html(content))}자")
-                    if not title.strip():
-                        title = topic[:20] if topic else '새 원고'
-                    return {
-                        'content': content,
-                        'title': title,
-                        'writingMethod': writing_method,
-                        'contextAnalysis': context_analysis
-                    }
-
-                print(
-                    f"⚠️ [StructureAgent] 검증 실패: code={validation.get('code')} "
-                    f"reason={validation['reason']}"
-                )
-                if str(validation.get('code') or '') == 'DUPLICATE_SENTENCE':
-                    dup_samples = validation.get('duplicateSamples') or []
-                    dup_count = validation.get('duplicateCount')
-                    print(
-                        f"🔎 [StructureAgent] DUPLICATE_SENTENCE details: "
-                        f"count={dup_count}, samples={dup_samples}"
-                    )
-                if str(validation.get('code') or '') == 'INTRO_CONCLUSION_ECHO':
-                    dup_samples = validation.get('duplicatePhrases') or []
-                    dup_count = validation.get('duplicateCount')
-                    print(
-                        f"🔎 [StructureAgent] INTRO_CONCLUSION_ECHO details: "
-                        f"count={dup_count}, samples={dup_samples}"
-                    )
-
-                recovery_code = str(validation.get('code') or '')
-                recovery_content = content
-                recovery_title = title
-                recovery_validation = dict(validation or {})
-                if recovery_code == 'LENGTH_SHORT':
-                    max_recovery_rounds = self.length_recovery_rounds
-                elif recovery_code in structural_recoverable_codes:
-                    max_recovery_rounds = self.structural_recovery_rounds
-                else:
-                    max_recovery_rounds = 0
-
-                # 후반 시도에서는 복구 루프를 1회로 제한해 꼬리 지연을 줄인다.
-                if attempt >= self.late_recovery_start_attempt:
-                    max_recovery_rounds = min(max_recovery_rounds, self.late_recovery_cap)
-
-                for recovery_round in range(1, max_recovery_rounds + 1):
-                    current_code = str(recovery_validation.get('code') or '')
-                    recovery_result: Optional[Tuple[str, str]] = None
-
-                    if current_code == 'LENGTH_SHORT':
-                        recovery_result = await self.repairer.recover_length_shortfall(
-                            content=recovery_content,
-                            title=recovery_title,
-                            topic=topic,
-                            length_spec=length_spec,
-                            author_bio=author_bio,
-                        )
-                    elif current_code in structural_recoverable_codes:
-                        recovery_result = await self.repairer.recover_structural_shortfall(
-                            content=recovery_content,
-                            title=recovery_title,
-                            topic=topic,
-                            length_spec=length_spec,
-                            author_bio=author_bio,
-                            failed_code=current_code,
-                            failed_reason=str(recovery_validation.get('reason') or ''),
-                            failed_feedback=str(recovery_validation.get('feedback') or ''),
-                            failed_meta=dict(recovery_validation or {}),
-                        )
-
-                    if not recovery_result:
-                        break
-
-                    recovered_content, recovered_title = recovery_result
-                    recovered_content, recovered_validation, recovered_source = _evaluate_candidate_with_normalizer(
-                        recovered_content,
-                        recovered_title,
-                        source='repair',
-                        source_attempt=attempt,
-                    )
-                    if recovered_validation.get('passed'):
-                        print(
-                            f"✅ [StructureAgent] 복구 검증 통과({recovered_source}): "
-                            f"{len(strip_html(recovered_content))}자"
-                        )
-                        if not recovered_title.strip():
-                            recovered_title = topic[:20] if topic else '새 원고'
-                        return {
-                            'content': recovered_content,
-                            'title': recovered_title,
-                            'writingMethod': writing_method,
-                            'contextAnalysis': context_analysis
-                        }
-
-                    next_code = str(recovered_validation.get('code') or '')
-                    print(
-                        f"⚠️ [StructureAgent] 복구 시도 {recovery_round}/{max_recovery_rounds} 실패: "
-                        f"code={next_code} reason={recovered_validation.get('reason')}"
-                    )
-
-                    same_code = next_code == current_code
-                    unchanged_text = strip_html(recovered_content) == strip_html(recovery_content)
-                    recovery_content = recovered_content
-                    recovery_title = recovered_title
-                    recovery_validation = dict(recovered_validation or {})
-
-                    if same_code and unchanged_text:
-                        print(
-                            "⚠️ [StructureAgent] 복구 결과가 동일해 추가 복구를 중단합니다."
-                        )
-                        break
-
-                content = recovery_content
-                title = recovery_title
-                validation = recovery_validation
-
-                feedback = str(validation.get('feedback') or validation.get('reason') or '')
-                retry_directive = build_retry_directive(validation, length_spec)
-                last_error = None
-
-            except Exception as e:
-                error_msg = str(e)
-                print(f"❌ [StructureAgent] 에러 발생: {error_msg}")
-                feedback = error_msg
-                retry_directive = ''
-                last_error = error_msg
-
-            if attempt > max_retries:
-                if best_candidate:
-                    best_content = best_candidate.get('content', '')
-                    best_title = best_candidate.get('title') or topic[:20] or '새 원고'
-                    best_validation = best_candidate.get('validation') or {}
-                    best_code = str(best_validation.get('code') or '').strip()
-                    best_len = int(best_candidate.get('plain_len') or 0)
-                    print(
-                        f"⚠️ [StructureAgent] 검증 미통과 — best-effort 반환: "
-                        f"code={best_code}, len={best_len}, "
-                        f"source={best_candidate.get('source')}"
-                    )
-                    return {
-                        'content': best_content,
-                        'title': best_title,
-                        'writingMethod': writing_method,
-                        'contextAnalysis': context_analysis,
-                    }
-                final_reason = last_error or validation.get('reason', '알 수 없는 오류')
-                raise Exception(f"StructureAgent 실패 ({max_retries}회 재시도 후): {final_reason}")
 
     async def call_llm_json(self, prompt: str, *, length_spec: Dict[str, int]) -> Dict[str, Any]:
         response_schema = self._build_structure_json_schema(length_spec)

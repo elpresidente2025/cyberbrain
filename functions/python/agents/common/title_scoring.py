@@ -1,0 +1,752 @@
+"""?? ?? ??? ?? ??? ??."""
+
+import re
+from typing import Any, Dict, List, Optional
+
+from .title_common import (
+    SLOT_PLACEHOLDER_NAMES,
+    TITLE_LENGTH_HARD_MAX,
+    TITLE_LENGTH_HARD_MIN,
+    TITLE_LENGTH_OPTIMAL_MAX,
+    TITLE_LENGTH_OPTIMAL_MIN,
+    _compare_title_repeat_signature,
+    _detect_truncated_title_reason,
+    _title_similarity,
+    _filter_required_title_keywords,
+    _fit_title_length,
+    normalize_title_surface,
+    extract_numbers_from_content,
+)
+from .title_metadata import (
+    _contains_date_hint,
+    _extract_book_title,
+    _extract_date_hint,
+    _extract_digit_tokens,
+    _normalize_digit_token,
+    _normalize_generated_title,
+    _normalize_generated_title_without_fit,
+    _split_hint_tokens,
+    resolve_title_purpose,
+)
+from .title_keywords import (
+    _assess_poll_title_numeric_binding,
+    _has_awkward_single_score_question_frame,
+    validate_theme_and_content,
+)
+from .title_repairers import (
+    _assess_competitor_intent_title_tail,
+    _assess_title_first_person_usage,
+    _repair_competitor_intent_title_tail,
+    _repair_title_for_missing_keywords,
+    _validate_role_keyword_title_policy,
+    _validate_user_keyword_title_requirements,
+)
+from .title_validators import validate_event_announcement_title
+
+def _assess_initial_title_length_discipline(title: str) -> Dict[str, Any]:
+    normalized = normalize_title_surface(title)
+    title_length = len(normalized)
+    if not normalized:
+        return {
+            'length': 0,
+            'penalty': 0,
+            'status': 'empty',
+            'requiresRetry': True,
+            'inOptimalRange': False,
+        }
+
+    if TITLE_LENGTH_OPTIMAL_MIN <= title_length <= TITLE_LENGTH_OPTIMAL_MAX:
+        return {
+            'length': title_length,
+            'penalty': 0,
+            'status': 'optimal',
+            'requiresRetry': False,
+            'inOptimalRange': True,
+        }
+
+    if TITLE_LENGTH_HARD_MIN <= title_length < TITLE_LENGTH_OPTIMAL_MIN:
+        return {
+            'length': title_length,
+            'penalty': 8,
+            'status': 'short_borderline',
+            'requiresRetry': True,
+            'inOptimalRange': False,
+        }
+
+    if TITLE_LENGTH_OPTIMAL_MAX < title_length <= TITLE_LENGTH_HARD_MAX:
+        return {
+            'length': title_length,
+            'penalty': 12,
+            'status': 'long_borderline',
+            'requiresRetry': True,
+            'inOptimalRange': False,
+        }
+
+    return {
+        'length': title_length,
+        'penalty': 28,
+        'status': 'hard_violation',
+        'requiresRetry': True,
+        'inOptimalRange': False,
+    }
+
+def _compute_similarity_penalty(
+    title: str,
+    previous_titles: List[str],
+    threshold: float,
+    max_penalty: int,
+) -> Dict[str, Any]:
+    if not title or not previous_titles or max_penalty <= 0:
+        return {
+            'penalty': 0,
+            'maxSimilarity': 0.0,
+            'against': '',
+            'framePenalty': 0,
+            'frameScore': 0,
+            'frameAgainst': '',
+            'frameReasons': [],
+        }
+
+    best_similarity = 0.0
+    against = ''
+    best_frame_score = 0
+    frame_against = ''
+    frame_reasons: List[str] = []
+    for prev in previous_titles:
+        if not prev:
+            continue
+        similarity = _title_similarity(title, prev)
+        if similarity > best_similarity:
+            best_similarity = similarity
+            against = prev
+        frame_meta = _compare_title_repeat_signature(title, prev)
+        frame_score = int(frame_meta.get('score') or 0)
+        if frame_score > best_frame_score:
+            best_frame_score = frame_score
+            frame_against = prev
+            frame_reasons = list(frame_meta.get('reasons') or [])
+
+    penalty = 0
+    if best_similarity >= threshold:
+        span = max(0.01, 1.0 - threshold)
+        ratio = (best_similarity - threshold) / span
+        penalty = max(1, min(max_penalty, int(round(ratio * max_penalty))))
+
+    frame_penalty = 0
+    if best_frame_score >= 5:
+        frame_penalty = min(max_penalty, 4 + max(0, best_frame_score - 5) * 2)
+
+    total_penalty = min(max_penalty, penalty + frame_penalty)
+    return {
+        'penalty': total_penalty,
+        'maxSimilarity': round(best_similarity, 3),
+        'against': against,
+        'framePenalty': frame_penalty,
+        'frameScore': best_frame_score,
+        'frameAgainst': frame_against,
+        'frameReasons': frame_reasons,
+    }
+
+def calculate_title_quality_score(
+    title: str,
+    params: Dict[str, Any],
+    options: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    # No try/except blocking logic here. Let it propagate.
+    score_options = options if isinstance(options, dict) else {}
+    auto_fit_length = bool(score_options.get('autoFitLength', True))
+    topic = params.get('topic', '')
+    content = params.get('contentPreview', '')
+    role_keyword_policy = params.get('roleKeywordPolicy') if isinstance(params.get('roleKeywordPolicy'), dict) else {}
+    user_keywords = _filter_required_title_keywords(
+        params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else [],
+        role_keyword_policy,
+    )
+    author_name = params.get('fullName', '')
+    repaired_title: Optional[str] = None
+    keyword_gate_soft_reason = ''
+    
+    if not title:
+        return {'score': 0, 'breakdown': {}, 'passed': False, 'suggestions': ['제목이 없습니다']}
+        
+    # 0. Critical Failure Checks
+    has_html_tag = bool(re.search(r'<\s*/?\s*[a-zA-Z][^>]*>', title))
+    has_slot_placeholder = any(f'[{name}]' in title for name in SLOT_PLACEHOLDER_NAMES)
+    looks_like_content = (
+        '여러분' in title or
+        has_html_tag or
+        has_slot_placeholder or
+        title.endswith('입니다') or
+        title.endswith('습니다') or
+        title.endswith('습니까') or
+        title.endswith('니다') or
+        len(title) > 50
+    )
+    
+    if looks_like_content:
+        reason = (
+            '호칭("여러분") 포함' if '여러분' in title else
+            ('HTML 태그 포함' if has_html_tag else
+             ('슬롯 플레이스홀더 포함' if has_slot_placeholder else
+              ('50자 초과' if len(title) > 50 else '서술형 종결어미')))
+        )
+        return {
+            'score': 0,
+            'breakdown': {'contentPattern': {'score': 0, 'max': 100, 'status': '실패', 'reason': reason}},
+            'passed': False,
+            'suggestions': [f'제목이 본문처럼 보입니다 ({reason}). 검색어 중심의 간결한 제목으로 다시 작성하세요.']
+        }
+        
+    if '...' in title or '…' in title or title.endswith('..'):
+        return {
+            'score': 0,
+            'breakdown': {'ellipsis': {'score': 0, 'max': 100, 'status': '실패', 'reason': '말줄임표 포함'}},
+            'passed': False,
+            'suggestions': ['말줄임표("...", "…") 사용 금지. 내용을 자르지 말고 완결된 제목을 작성하세요.']
+        }
+
+    truncated_reason = _detect_truncated_title_reason(title)
+    if truncated_reason:
+        return {
+            'score': 0,
+            'breakdown': {
+                'truncatedTitle': {
+                    'score': 0,
+                    'max': 100,
+                    'status': '실패',
+                    'reason': truncated_reason,
+                }
+            },
+            'passed': False,
+            'suggestions': [f'제목이 중간에 잘린 것처럼 보입니다 ({truncated_reason}). 완결된 제목으로 다시 작성하세요.'],
+        }
+
+    normalized_author = re.sub(r"\s+", "", str(author_name or "")).strip()
+    normalized_title = re.sub(r"\s+", "", str(title or "")).strip()
+    if normalized_author and ("그의" in title or "그녀의" in title) and normalized_author not in normalized_title:
+        return {
+            'score': 0,
+            'breakdown': {
+                'speakerFocus': {
+                    'score': 0,
+                    'max': 100,
+                    'status': '실패',
+                    'reason': '3인칭 소유 표현으로 화자 중심성이 약화됨',
+                }
+            },
+            'passed': False,
+            'suggestions': ['제목에서 "그의/그녀의" 같은 3인칭 소유 표현을 제거하고 화자 중심으로 작성하세요.'],
+        }
+
+    title_purpose = resolve_title_purpose(topic, params)
+    if title_purpose != 'event_announcement':
+        first_person_title = _assess_title_first_person_usage(title, params)
+        if not first_person_title.get('passed', True):
+            repaired_candidate = str(first_person_title.get("repairedTitle") or "").strip()
+            return {
+                'score': 0,
+                'breakdown': {
+                    'firstPersonTitle': {
+                        'score': 0,
+                        'max': 100,
+                        'status': '실패',
+                        'reason': str(first_person_title.get('reason') or '메인 제목에 1인칭 표현이 포함됐습니다.'),
+                        'matched': str(first_person_title.get('matched') or ''),
+                    }
+                },
+                'passed': False,
+                'suggestions': [str(first_person_title.get('reason') or '메인 제목의 1인칭 표현을 제거하세요.')],
+                **({'repairedTitle': repaired_candidate} if repaired_candidate else {}),
+            }
+
+    # 0-b. Topic 직복 감지: 주제 텍스트와 지나치게 유사한 제목은 hard fail
+    if topic and len(topic) >= 12:
+        topic_sim_threshold = 0.85 if title_purpose == 'event_announcement' else 0.75
+        topic_sim = _title_similarity(title, topic)
+        if topic_sim >= topic_sim_threshold:
+            return {
+                'score': 0,
+                'breakdown': {
+                    'topicCopy': {
+                        'score': 0, 'max': 100, 'status': '실패',
+                        'reason': f'주제와 유사도 {topic_sim:.0%} (임계 {topic_sim_threshold:.0%})',
+                    },
+                },
+                'passed': False,
+                'suggestions': [
+                    '주제(topic) 텍스트를 그대로 제목으로 사용하지 마세요. '
+                    '표현과 어순을 새롭게 구성하세요.',
+                ],
+            }
+
+    if title_purpose == 'event_announcement':
+        event_validation = validate_event_announcement_title(title, params)
+        if not event_validation.get('passed'):
+            return {
+                'score': 0,
+                'breakdown': {
+                    'eventPurpose': {
+                        'score': 0,
+                        'max': 100,
+                        'status': '실패',
+                        'reason': str(event_validation.get('reason') or '행사 안내 목적 불일치')
+                    }
+                },
+                'passed': False,
+                'suggestions': [str(event_validation.get('reason') or '행사 안내 목적에 맞게 제목을 다시 작성하세요.')]
+            }
+
+    competitor_tail_validation = _assess_competitor_intent_title_tail(title, params)
+    if not competitor_tail_validation.get('passed', True):
+        repaired_candidate = _repair_competitor_intent_title_tail(title, params)
+        return {
+            'score': 0,
+            'breakdown': {
+                'competitorIntentTail': {
+                    'score': 0,
+                    'max': 100,
+                    'status': '실패',
+                    'reason': str(
+                        competitor_tail_validation.get('reason')
+                        or '경쟁자 intent 제목의 쉼표 뒤 표현이 상투적입니다.'
+                    ),
+                    'tail': str(competitor_tail_validation.get('tail') or ''),
+                    'forbiddenTokens': list(competitor_tail_validation.get('forbiddenTokens') or []),
+                }
+            },
+            'passed': False,
+            'suggestions': [str(competitor_tail_validation.get('reason') or '경쟁자 intent 제목의 쉼표 뒤를 본문 논지로 다시 작성하세요.')],
+            **({'repairedTitle': repaired_candidate} if repaired_candidate else {}),
+        }
+
+    keyword_gate = _validate_user_keyword_title_requirements(title, user_keywords)
+    if not keyword_gate.get('passed'):
+        repaired_candidate = _repair_title_for_missing_keywords(title, keyword_gate, params)
+        if repaired_candidate:
+            re_gate = _validate_user_keyword_title_requirements(repaired_candidate, user_keywords)
+            if re_gate.get('passed'):
+                keyword_gate = re_gate
+                repaired_title = repaired_candidate
+                title = repaired_candidate
+            else:
+                keyword_reason = str(re_gate.get('reason') or keyword_gate.get('reason') or '사용자 검색어 반영 실패')
+                severity = str(re_gate.get('severity') or keyword_gate.get('severity') or '').strip().lower()
+                if severity == 'soft':
+                    keyword_gate_soft_reason = keyword_reason
+                else:
+                    return {
+                        'score': 0,
+                        'breakdown': {
+                            'keywordRequirement': {
+                                'score': 0,
+                                'max': 100,
+                                'status': '실패',
+                                'reason': keyword_reason,
+                            }
+                        },
+                        'passed': False,
+                        'suggestions': [keyword_reason],
+                    }
+        else:
+            keyword_reason = str(keyword_gate.get('reason') or '사용자 검색어 반영 실패')
+            severity = str(keyword_gate.get('severity') or '').strip().lower()
+            if severity == 'soft':
+                keyword_gate_soft_reason = keyword_reason
+            else:
+                return {
+                    'score': 0,
+                    'breakdown': {
+                        'keywordRequirement': {
+                            'score': 0,
+                            'max': 100,
+                            'status': '실패',
+                            'reason': keyword_reason,
+                        }
+                    },
+                        'passed': False,
+                        'suggestions': [keyword_reason],
+                    }
+
+    role_keyword_gate = _validate_role_keyword_title_policy(title, role_keyword_policy)
+    if not role_keyword_gate.get('passed'):
+        role_reason = str(role_keyword_gate.get('reason') or '역할형 검색어 제목 정책 위반')
+        return {
+            'score': 0,
+            'breakdown': {
+                'roleKeywordPolicy': {
+                    'score': 0,
+                    'max': 100,
+                    'status': '실패',
+                    'reason': role_reason,
+                }
+            },
+            'passed': False,
+            'suggestions': [role_reason],
+        }
+
+    event_anchor_context: Dict[str, Any] = {
+        'dateHint': '',
+        'bookTitle': '',
+        'authorName': '',
+    }
+    if title_purpose == 'event_announcement':
+        context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
+        must_preserve = context_analysis.get('mustPreserve') if isinstance(context_analysis.get('mustPreserve'), dict) else {}
+        event_date = str(must_preserve.get('eventDate') or '').strip()
+        event_anchor_context = {
+            'dateHint': _extract_date_hint(event_date) or _extract_date_hint(topic),
+            'bookTitle': _extract_book_title(topic, params),
+            'authorName': str(author_name or '').strip(),
+        }
+        
+    breakdown = {}
+    suggestions = []
+    title_length = len(title)
+
+    # 일반 검증 경로에서는 길이 초과를 한 번 축약해볼 수 있지만,
+    # 제목 생성 경로에서는 auto_fit_length=False로 두고 초기 생성본을 그대로 평가한다.
+    if auto_fit_length and title_length > TITLE_LENGTH_HARD_MAX:
+        fitted_title = _fit_title_length(title)
+        if fitted_title and fitted_title != title:
+            fitted_gate = _validate_user_keyword_title_requirements(fitted_title, user_keywords)
+            fitted_severity = str(fitted_gate.get('severity') or '').strip().lower()
+            fitted_gate_passed = bool(fitted_gate.get('passed')) or fitted_severity == 'soft'
+            if not fitted_gate.get('passed'):
+                recovered_title = _repair_title_for_missing_keywords(fitted_title, fitted_gate, params)
+                if recovered_title:
+                    recovered_gate = _validate_user_keyword_title_requirements(recovered_title, user_keywords)
+                    recovered_severity = str(recovered_gate.get('severity') or '').strip().lower()
+                    recovered_gate_passed = bool(recovered_gate.get('passed')) or recovered_severity == 'soft'
+                    if recovered_gate_passed:
+                        fitted_title = recovered_title
+                        fitted_gate = recovered_gate
+                        fitted_gate_passed = True
+
+            if fitted_gate_passed:
+                title = fitted_title
+                repaired_title = fitted_title
+                title_length = len(title)
+
+    # Hard fail length check
+    if title_length < TITLE_LENGTH_HARD_MIN or title_length > TITLE_LENGTH_HARD_MAX:
+             return {
+            'score': 0,
+            'breakdown': {'length': {'score': 0, 'max': 100, 'status': '실패', 'reason': f'{title_length}자 ({TITLE_LENGTH_HARD_MIN}-{TITLE_LENGTH_HARD_MAX}자 필요)'}},
+            'passed': False,
+            'suggestions': [f'제목이 {title_length}자입니다. {TITLE_LENGTH_HARD_MIN}-{TITLE_LENGTH_HARD_MAX}자 범위로 작성하세요.']
+        }
+
+    if keyword_gate_soft_reason:
+        breakdown['keywordRequirement'] = {
+            'score': 6,
+            'max': 10,
+            'status': '보완 필요',
+            'reason': keyword_gate_soft_reason,
+        }
+        suggestions.append(keyword_gate_soft_reason)
+    else:
+        breakdown['keywordRequirement'] = {'score': 10, 'max': 10, 'status': '충족'}
+
+    # 1. Length Score (Max 20)
+    if TITLE_LENGTH_OPTIMAL_MIN <= title_length <= TITLE_LENGTH_OPTIMAL_MAX:
+        breakdown['length'] = {'score': 20, 'max': 20, 'status': '최적'}
+    elif TITLE_LENGTH_HARD_MIN <= title_length < TITLE_LENGTH_OPTIMAL_MIN:
+        breakdown['length'] = {'score': 12, 'max': 20, 'status': '짧음'}
+        suggestions.append(f'제목이 {title_length}자입니다. {TITLE_LENGTH_OPTIMAL_MIN}자 이상 권장.')
+    elif TITLE_LENGTH_OPTIMAL_MAX < title_length <= TITLE_LENGTH_HARD_MAX:
+        breakdown['length'] = {'score': 12, 'max': 20, 'status': '경계'}
+        suggestions.append(f'제목이 {title_length}자입니다. {TITLE_LENGTH_OPTIMAL_MAX}자 이하가 클릭률 최고.')
+    else:
+        breakdown['length'] = {'score': 0, 'max': 20, 'status': '부적정'}
+        suggestions.append(f'제목이 {title_length}자입니다. {TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자 범위로 작성하세요.')
+        
+    # 2. Keyword Position (Max 20)
+    if user_keywords:
+        # Check positions
+        keyword_infos = []
+        for kw in user_keywords:
+            idx = title.find(kw)
+            keyword_infos.append({
+                'keyword': kw,
+                'index': idx,
+                'inFront10': 0 <= idx <= 10
+            })
+            
+        any_in_front10 = any(k['inFront10'] for k in keyword_infos)
+        any_in_title = any(k['index'] >= 0 for k in keyword_infos)
+        front_keyword = next((k['keyword'] for k in keyword_infos if k['inFront10']), '')
+        any_keyword = next((k['keyword'] for k in keyword_infos if k['index'] >= 0), '')
+        
+        # 키워드 뒤 구분자 검증: 쉼표, 물음표, 조사 등으로 분리되어야 함
+        # 단, 유사 키워드가 중첩되는 경우(예: "부산 디즈니랜드 유치" / "부산 디즈니랜드")
+        # 짧은 키워드의 중간 매칭은 구분자 검증에서 제외한다.
+        matched_spans = []
+        for info in keyword_infos:
+            idx = int(info.get('index', -1))
+            keyword = str(info.get('keyword') or '')
+            if idx < 0 or not keyword:
+                continue
+            matched_spans.append({
+                'keyword': keyword,
+                'start': idx,
+                'end': idx + len(keyword),
+            })
+
+        kw_delimiter_ok = True
+        delimiters = (',', '?', '!', '.', '에', '의', '을', '를', '은', '는', '이', '가', ':', ' ')
+        for span in matched_spans:
+            is_shadowed = any(
+                other['start'] == span['start'] and other['end'] > span['end']
+                for other in matched_spans
+            )
+            if is_shadowed:
+                continue
+
+            end_pos = span['end']
+            if end_pos >= len(title):
+                continue
+
+            next_char = title[end_pos]
+            if next_char not in delimiters:
+                kw_delimiter_ok = False
+                continue
+
+            if next_char == ' ':
+                # 공백 뒤에 바로 한글(이름 등)이 오면 구분자 부족
+                if end_pos + 1 < len(title) and '\uac00' <= title[end_pos + 1] <= '\ud7a3':
+                    kw_delimiter_ok = False
+
+        # 듀얼 키워드 보너스: 1순위 키워드가 제목 시작에 있으면 가산점
+        dual_kw_bonus = 0
+        if len(user_keywords) >= 2:
+            kw1 = user_keywords[0]
+            kw1_idx = title.find(kw1)
+            kw1_starts_title = 0 <= kw1_idx <= 2  # 제목 맨 앞(0~2자 내)
+            if kw1_starts_title:
+                dual_kw_bonus = 3
+
+        if any_in_front10:
+            score = min(20, max(0, (20 if kw_delimiter_ok else 15) + dual_kw_bonus))
+            status = '최적' if kw_delimiter_ok else '최적(구분자 부족)'
+            breakdown['keywordPosition'] = {'score': score, 'max': 20, 'status': status, 'keyword': front_keyword}
+            if not kw_delimiter_ok:
+                suggestions.append(f'키워드 "{front_keyword}" 뒤에 쉼표나 조사를 넣어 다음 단어와 분리하세요. (예: "부산 지방선거, ~")')
+        elif any_in_title:
+            score = 12
+            breakdown['keywordPosition'] = {'score': score, 'max': 20, 'status': '포함됨', 'keyword': any_keyword}
+            suggestions.append(f'키워드 "{any_keyword}"를 제목 앞쪽(10자 내)으로 이동하면 SEO 효과 증가.')
+        else:
+            breakdown['keywordPosition'] = {'score': 0, 'max': 20, 'status': '없음'}
+            suggestions.append(f'키워드 중 하나라도 제목에 포함하세요: {", ".join(user_keywords[:2])}')
+    else:
+        breakdown['keywordPosition'] = {'score': 10, 'max': 20, 'status': '키워드없음'}
+             
+    # 3. Numbers Score (Max 15)
+    has_numbers = bool(re.search(r'\d+(?:억|만원|%|명|건|가구|곳)?', title))
+    if has_numbers:
+        content_numbers_res = extract_numbers_from_content(content)
+        safe_content_numbers = content_numbers_res.get('numbers', [])
+        content_number_tokens = [_normalize_digit_token(c_num) for c_num in safe_content_numbers]
+        numeric_binding = _assess_poll_title_numeric_binding(topic, content, title)
+
+        allowed_event_tokens: set[str] = set()
+        if title_purpose == 'event_announcement':
+            allowed_event_tokens.update(_extract_digit_tokens(topic))
+            allowed_event_tokens.update(_extract_digit_tokens(event_anchor_context.get('dateHint', '')))
+
+        title_numbers = re.findall(r'\d+(?:억|만원|%|명|건|가구|곳)?', title)
+        awkward_single_score = _has_awkward_single_score_question_frame(title)
+
+        # Check if all title numbers exist in content (fuzzy match)
+        all_valid = True
+        for t_num in title_numbers:
+            t_val = _normalize_digit_token(t_num)
+            if not t_val:
+                continue
+
+            # Check if t_val exists inside any content number OR any content number exists inside t_val
+            in_content = any(
+                t_val in c_token or c_token in t_val
+                for c_token in content_number_tokens
+                if c_token
+            )
+            in_event_hint = t_val in allowed_event_tokens
+            if not in_content and not in_event_hint:
+                all_valid = False
+                break
+
+        if all_valid and numeric_binding.get('passed', True) and not awkward_single_score:
+                breakdown['numbers'] = {'score': 15, 'max': 15, 'status': '검증됨'}
+        else:
+                breakdown['numbers'] = {'score': 5, 'max': 15, 'status': '미검증'}
+                if awkward_single_score:
+                    suggestions.append('단일 득표율만 떼어 쓰지 말고, 격차 또는 양자대결 수치를 함께 드러내세요.')
+                else:
+                    suggestions.append(str(numeric_binding.get('reason') or '제목의 숫자가 본문에서 확인되지 않았습니다.'))
+    else:
+        breakdown['numbers'] = {'score': 8, 'max': 15, 'status': '없음'}
+        
+    # 4. Topic Match (Max 25)
+    if topic:
+        theme_val = validate_theme_and_content(topic, content, title, params=params)
+        title_topic_score = int(theme_val.get('effectiveTitleScore') or theme_val.get('titleOverlapScore') or theme_val.get('overlapScore') or 0)
+        content_topic_score = int(theme_val.get('contentOverlapScore') or theme_val.get('overlapScore') or 0)
+        if title_topic_score >= 75:
+            breakdown['topicMatch'] = {
+                'score': 25,
+                'max': 25,
+                'status': '높음',
+                'overlap': title_topic_score,
+                'contentOverlap': content_topic_score,
+            }
+        elif title_topic_score >= 65:
+            breakdown['topicMatch'] = {
+                'score': 15,
+                'max': 25,
+                'status': '보통',
+                'overlap': title_topic_score,
+                'contentOverlap': content_topic_score,
+            }
+            if theme_val['mismatchReasons']:
+                suggestions.append(theme_val['mismatchReasons'][0])
+        else:
+            breakdown['topicMatch'] = {
+                'score': 5,
+                'max': 25,
+                'status': '낮음',
+                'overlap': title_topic_score,
+                'contentOverlap': content_topic_score,
+            }
+            suggestions.append('제목이 주제와 많이 다릅니다. 주제 핵심어를 반영하세요.')
+    else:
+        breakdown['topicMatch'] = {'score': 15, 'max': 25, 'status': '주제없음'}
+        
+    # 5. Author Inclusion (Max 10)
+    if author_name:
+        category_text = str(params.get('category') or '').strip().lower()
+        commentary_purposes = {'commentary', 'issue_analysis', 'current_affairs'}
+        commentary_categories = {'current-affairs', 'bipartisan-cooperation'}
+        prefers_relationship_style = (
+            title_purpose in commentary_purposes or category_text in commentary_categories
+        )
+
+        if author_name in title:
+            escaped_author_name = re.escape(author_name)
+            speaker_patterns = [
+                f"{escaped_author_name}이 본", f"{escaped_author_name}가 본",
+                f"{escaped_author_name}의 평가", f"{escaped_author_name}의 시각",
+                f"칭찬한 {escaped_author_name}", f"질타한 {escaped_author_name}",
+                f"{escaped_author_name} [\"'`]"
+            ]
+            has_pattern = any(re.search(p, title) for p in speaker_patterns)
+
+            if prefers_relationship_style:
+                if has_pattern:
+                    breakdown['authorIncluded'] = {'score': 10, 'max': 10, 'status': '패턴 적용'}
+                else:
+                    breakdown['authorIncluded'] = {'score': 6, 'max': 10, 'status': '단순 포함'}
+                    suggestions.append(f'"{author_name}이 본", "칭찬한 {author_name}" 등 관계형 표현 권장.')
+            else:
+                breakdown['authorIncluded'] = {'score': 10, 'max': 10, 'status': '포함'}
+        else:
+            # 행사 안내형 제목은 인물명 누락을 치명 감점으로 보지 않는다.
+            if title_purpose == 'event_announcement':
+                breakdown['authorIncluded'] = {'score': 6, 'max': 10, 'status': '행사형 예외'}
+            elif prefers_relationship_style:
+                breakdown['authorIncluded'] = {'score': 0, 'max': 10, 'status': '미포함'}
+                suggestions.append(f'화자 "{author_name}"를 제목에 포함하면 브랜딩에 도움됩니다.')
+            else:
+                breakdown['authorIncluded'] = {'score': 5, 'max': 10, 'status': '선택'}
+    else:
+        breakdown['authorIncluded'] = {'score': 5, 'max': 10, 'status': '해당없음'}
+
+    # 행사형 제목은 고유 앵커(날짜/인물명/도서명)를 가산해
+    # 사용자 few-shot 기반의 구체 제목이 점수에서 불리하지 않도록 보정한다.
+    if title_purpose == 'event_announcement':
+        anchor_score = 0
+        matched_anchors: List[str] = []
+        date_hint = str(event_anchor_context.get('dateHint') or '')
+        if date_hint and _contains_date_hint(title, date_hint):
+            anchor_score += 4
+            matched_anchors.append('date')
+        book_title = str(event_anchor_context.get('bookTitle') or '').strip()
+        if book_title:
+            book_tokens = _split_hint_tokens(book_title)
+            if book_tokens and any(token in title for token in book_tokens):
+                anchor_score += 3
+                matched_anchors.append('book')
+        author_hint = str(event_anchor_context.get('authorName') or '').strip()
+        if author_hint and author_hint in title:
+            anchor_score += 3
+            matched_anchors.append('author')
+
+        breakdown['eventAnchors'] = {
+            'score': min(anchor_score, 10),
+            'max': 10,
+            'status': '충분' if anchor_score >= 6 else ('보통' if anchor_score >= 3 else '부족'),
+            'matched': matched_anchors,
+        }
+        if anchor_score == 0:
+            suggestions.append('행사 고유 정보(날짜/인물명/도서명)를 1개 이상 넣으면 품질 점수가 상승합니다.')
+
+    # 6. Impact (Max 10) - 서사적 긴장감 패턴 포함
+    impact_score = 0
+    impact_features = []
+
+    if '?' in title or title.endswith('나') or title.endswith('까'):
+        impact_score += 3
+        impact_features.append('질문/미완결')
+    if re.search(r"'.*'|\".*\"", title):
+        impact_score += 3
+        impact_features.append('인용문')
+    if re.search(r"vs|\bvs\b|→|대비", title):
+        impact_score += 2
+        impact_features.append('대비구조')
+    if re.search(r"이 본|가 본", title):
+        impact_score += 2
+        impact_features.append('관점표현')
+    # 서사적 긴장감 패턴
+    if re.search(r'(은|는|카드는|답은|선택|한 수|이유)$', title):
+        impact_score += 2
+        impact_features.append('미완결서사')
+    if re.search(r'에서.*까지', title):
+        impact_score += 2
+        impact_features.append('서사아크')
+    if re.search(r'왜\s|어떻게\s', title):
+        impact_score += 2
+        impact_features.append('원인질문')
+    # 정보 과밀 패널티: 실질 요소(2글자 이상 단어)가 7개 이상이면 감점
+    substantive_elements = [e for e in re.findall(r'[가-힣A-Za-z0-9]{2,}', title)]
+    if len(substantive_elements) >= 7:
+        impact_score -= 2
+        impact_features.append('정보과밀(-2)')
+    if title_purpose == 'event_announcement':
+        if any(token in title for token in ('현장', '직접', '일정', '안내', '초대', '만남', '참석')):
+            impact_score += 3
+            impact_features.append('행사형후킹')
+        
+    breakdown['impact'] = {
+        'score': min(impact_score, 10),
+        'max': 10,
+        'status': '있음' if impact_score > 0 else '없음',
+        'features': impact_features
+    }
+    
+    # Total Score
+    total_score = sum(item.get('score', 0) for item in breakdown.values())
+    max_possible = sum(item.get('max', 0) for item in breakdown.values())
+    
+    # Normalize to 100
+    normalized_score = round(total_score / max_possible * 100) if max_possible > 0 else 0
+    
+    result = {
+        'score': normalized_score,
+        'rawScore': total_score,
+        'maxScore': max_possible,
+        'breakdown': breakdown,
+        'passed': normalized_score >= 70,
+        'suggestions': suggestions[:3]
+    }
+    if repaired_title:
+        result['repairedTitle'] = repaired_title
+    return result

@@ -9,64 +9,33 @@ import logging
 import re
 from typing import Any, Dict, List
 
+from .personalization_constants import (
+    CAREER_RELEVANCE,
+    COMMITTEE_KEYWORDS,
+    FAMILY_STATUS_MAP,
+    LOCAL_CONNECTION_MAP,
+    POLICY_NAMES,
+    POLITICAL_EXPERIENCE_MAP,
+    STYLE_GUIDE_CLOSING_ENDING_RE,
+    STYLE_GUIDE_EMOTION_MARKERS,
+    STYLE_GUIDE_LABEL_PREFIX_RE,
+    STYLE_GUIDE_MEANING_MARKERS,
+    STYLE_GUIDE_NARRATIVE_MARKERS,
+    STYLE_GUIDE_POLICY_MARKERS,
+    STYLE_GUIDE_POSITIONING_MARKERS,
+    STYLE_GUIDE_SENTENCE_SPLIT_RE,
+    STYLE_GUIDE_SOURCE_PREFIX_RE,
+    STYLE_GUIDE_TRANSITION_PREFIXES,
+)
+
 logger = logging.getLogger(__name__)
 
 
-# Node.js `functions/utils/posts/constants.js` 포팅
-POLICY_NAMES = {
-    "economy": "경제정책",
-    "education": "교육정책",
-    "welfare": "복지정책",
-    "environment": "환경정책",
-    "security": "안보정책",
-    "culture": "문화정책",
-}
-
-FAMILY_STATUS_MAP = {
-    "미혼": "싱글 생활의 경험을 가진",
-    "기혼(자녀 있음)": "자녀 양육 가정의 경험을 가진",
-    "기혼(자녀 없음)": "가정을 꾸리며",
-    "한부모": "한부모 가정의 경험을 가진",
-}
-
-CAREER_RELEVANCE = {
-    "교육자": ["교육", "학생", "학교", "교사"],
-    "사업가": ["경제", "중소상공인", "영업", "창업"],
-    "공무원": ["행정", "정책", "공공서비스"],
-    "의료인": ["의료", "건강", "코로나", "보건"],
-    "법조인": ["법", "제도", "정의", "권리"],
-}
-
-POLITICAL_EXPERIENCE_MAP = {
-    "초선": "초선 의원으로서 신선한 관점에서",
-    "재선": "의정 경험을 바탕으로",
-    "3선이상": "다선 의정 경험으로",
-    "정치 신인": "새로운 시각에서",
-}
-
-COMMITTEE_KEYWORDS = {
-    "교육위원회": ["교육", "학생", "학교", "대학"],
-    "보건복지위원회": ["복지", "의료", "건강", "연금"],
-    "국토교통위원회": ["교통", "주거", "도로", "건설"],
-    "환경노동위원회": ["환경", "노동", "일자리"],
-    "여성가족위원회": ["여성", "가족", "육아", "출산"],
-}
-
-LOCAL_CONNECTION_MAP = {
-    "토박이": "지역 토박이로서",
-    "오래 거주": "오랫동안 이 지역에 거주해",
-    "이주민": "이 지역에서 새로운 삶을 시작한 고향으로 일구",
-    "귀농": "고향으로 돌아온",
-}
-
-STYLE_GUIDE_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
-STYLE_GUIDE_TRANSITION_PREFIXES = ("이제", "그리고", "그러나", "하지만", "무엇보다", "그래서", "또한", "먼저", "결국", "저는")
-STYLE_GUIDE_POSITIONING_MARKERS = ("태어나", "자라", "출신", "로서", "경험", "기업인", "전문가", "막내", "아들", "딸", "사람")
-STYLE_GUIDE_EMOTION_MARKERS = ("반드시", "분명", "책임", "약속", "희망", "감사", "애정", "소중", "지키겠습니다", "해내겠습니다")
-
-
 def _normalize_guide_sentence(text: Any) -> str:
-    return re.sub(r"\s+", " ", str(text or "")).strip()
+    normalized = re.sub(r"\s+", " ", str(text or "")).strip()
+    normalized = STYLE_GUIDE_SOURCE_PREFIX_RE.sub("", normalized)
+    normalized = STYLE_GUIDE_LABEL_PREFIX_RE.sub("", normalized)
+    return normalized.strip(" -")
 
 
 def _truncate_guide_sentence(text: Any, max_length: int = 90) -> str:
@@ -105,6 +74,102 @@ def _collect_guide_examples(
         if len(results) >= limit:
             break
     return results
+
+
+def _dedupe_guide_examples(items: List[str], *, limit: int | None = None) -> List[str]:
+    results: List[str] = []
+    seen: set[str] = set()
+    for item in items:
+        normalized = _normalize_guide_sentence(item)
+        if not normalized:
+            continue
+        key = normalized.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(normalized)
+        if limit is not None and len(results) >= limit:
+            break
+    return results
+
+
+def _contains_style_marker(text: str, markers: tuple[str, ...]) -> bool:
+    return any(marker in text for marker in markers)
+
+
+def _build_style_role_pairs(
+    left_items: List[str],
+    right_items: List[str],
+    *,
+    left_key: str,
+    right_key: str,
+    max_pairs: int = 2,
+) -> List[Dict[str, str]]:
+    pairs: List[Dict[str, str]] = []
+    for idx, left in enumerate(left_items[:max_pairs]):
+        if not left:
+            continue
+        right = right_items[idx] if idx < len(right_items) else (right_items[0] if right_items else "")
+        if not right:
+            continue
+        pairs.append({left_key: left, right_key: right})
+    return pairs
+
+
+def _build_source_role_examples(source_examples: Dict[str, Any], example_patterns: List[str]) -> Dict[str, Any]:
+    transition_examples = _dedupe_guide_examples(
+        list(source_examples.get("transitionExamples") or []) + list(example_patterns or []),
+        limit=2,
+    )
+    concretization_examples = _dedupe_guide_examples(list(source_examples.get("concretizationExamples") or []))
+    positioning_examples = _dedupe_guide_examples(list(source_examples.get("positioningExamples") or []))
+    emotion_examples = _dedupe_guide_examples(list(source_examples.get("emotionExamples") or []))
+
+    narrative_candidates = [
+        item
+        for item in _dedupe_guide_examples(
+            list(source_examples.get("transitionExamples") or [])
+            + list(source_examples.get("concretizationExamples") or [])
+            + positioning_examples
+        )
+        if _contains_style_marker(item, STYLE_GUIDE_NARRATIVE_MARKERS)
+    ]
+    policy_candidates = [
+        item
+        for item in _dedupe_guide_examples(list(example_patterns or []) + positioning_examples + emotion_examples)
+        if _contains_style_marker(item, STYLE_GUIDE_POLICY_MARKERS)
+    ]
+    evidence_candidates = [
+        item
+        for item in _dedupe_guide_examples(concretization_examples + list(source_examples.get("transitionExamples") or []))
+        if re.search(r"\d", item) or _contains_style_marker(item, ("부산", "시민", "현장", "기업", "경제"))
+    ]
+    meaning_candidates = [
+        item
+        for item in _dedupe_guide_examples(list(example_patterns or []) + positioning_examples + emotion_examples)
+        if _contains_style_marker(item, STYLE_GUIDE_MEANING_MARKERS)
+    ]
+    closing_examples = _dedupe_guide_examples(
+        emotion_examples + [item for item in example_patterns if STYLE_GUIDE_CLOSING_ENDING_RE.search(item)],
+        limit=2,
+    )
+
+    return {
+        "declarationBridgeExamples": transition_examples,
+        "narrativeToPolicyPairs": _build_style_role_pairs(
+            narrative_candidates,
+            policy_candidates,
+            left_key="narrative",
+            right_key="policy",
+        ),
+        "evidenceToMeaningPairs": _build_style_role_pairs(
+            evidence_candidates,
+            meaning_candidates,
+            left_key="evidence",
+            right_key="meaning",
+        ),
+        "closingExamples": closing_examples,
+    }
 
 
 def _extract_style_guide_examples(style_fingerprint: Dict[str, Any], source_text: str = "") -> Dict[str, Any]:
@@ -222,6 +287,8 @@ def _compose_style_guide_prompt(
     source_examples: Dict[str, Any],
     compact: bool,
 ) -> str:
+    role_examples = _build_source_role_examples(source_examples, example_patterns)
+
     if compact:
         tone_tags: list[str] = []
         if float(tone.get("formality") or 0) > 0.6:
@@ -240,12 +307,50 @@ def _compose_style_guide_prompt(
             base += f"전개 예시: {', '.join(f'\"{s}\"' for s in example_patterns[:2])}. "
         if source_examples.get("transitionExamples"):
             base += f"실제 문장: {', '.join(f'\"{s}\"' for s in source_examples['transitionExamples'][:2])}. "
+        if role_examples.get("closingExamples"):
+            base += f"마감: {', '.join(f'\"{s}\"' for s in role_examples['closingExamples'][:1])}. "
         if tone_tags:
             base += f"어조: {'/'.join(tone_tags)}. "
         base += f"문장 {avg_length}자 내외."
         return base
 
     sections: list[str] = []
+
+    def append_section(title: str, lines: List[str]) -> None:
+        if not lines:
+            return
+        sections.append(f"{len(sections) + 1}. {title}:\n  " + "\n  ".join(lines))
+
+    role_lines: list[str] = []
+    if role_examples.get("declarationBridgeExamples"):
+        role_lines.append(
+            "- 선언 뒤 연결: "
+            + ", ".join(f'"{item}"' for item in role_examples["declarationBridgeExamples"])
+        )
+    if role_examples.get("narrativeToPolicyPairs"):
+        role_lines.append(
+            "- 개인 서사 -> 정책 전환: "
+            + " / ".join(
+                f'서사 "{item["narrative"]}" | 선언 "{item["policy"]}"'
+                for item in role_examples["narrativeToPolicyPairs"]
+                if item.get("narrative") and item.get("policy")
+            )
+        )
+    if role_examples.get("evidenceToMeaningPairs"):
+        role_lines.append(
+            "- 수치/증거 -> 의미 해석: "
+            + " / ".join(
+                f'근거 "{item["evidence"]}" | 해석 "{item["meaning"]}"'
+                for item in role_examples["evidenceToMeaningPairs"]
+                if item.get("evidence") and item.get("meaning")
+            )
+        )
+    if role_examples.get("closingExamples"):
+        role_lines.append(
+            "- 문단 마감: "
+            + ", ".join(f'"{item}"' for item in role_examples["closingExamples"])
+        )
+    append_section("문장 역할별 실제 예시", role_lines)
 
     if transitions or example_patterns or source_examples.get("transitionExamples"):
         transition_lines: list[str] = []
@@ -257,7 +362,7 @@ def _compose_style_guide_prompt(
             transition_lines.append(
                 f"- 실제 사용자 문장: {', '.join(f'\"{item}\"' for item in source_examples['transitionExamples'])}"
             )
-        sections.append("1. 전환 패턴:\n  " + "\n  ".join(transition_lines))
+        append_section("전환 패턴", transition_lines)
 
     avg_len = sentence_patterns.get("avgLength") or 45
     clause = sentence_patterns.get("clauseComplexity") or "medium"
@@ -275,7 +380,7 @@ def _compose_style_guide_prompt(
         concretization_lines.append(
             f"- 실제 사용자 문장: {', '.join(f'\"{item}\"' for item in source_examples['concretizationExamples'])}"
         )
-    sections.append("2. 구체화 패턴:\n  " + "\n  ".join(concretization_lines))
+    append_section("구체화 패턴", concretization_lines)
 
     rhythm_lines = [f"- 문장 길이: {avg_len}자 내외", f"- 문장 복잡도: {clause}"]
     if starters:
@@ -286,7 +391,7 @@ def _compose_style_guide_prompt(
         rhythm_lines.append(f"- 짧은 실제 문장: \"{source_examples['shortExample']}\"")
     if source_examples.get("longExample"):
         rhythm_lines.append(f"- 긴 실제 문장: \"{source_examples['longExample']}\"")
-    sections.append("3. 리듬 패턴:\n  " + "\n  ".join(rhythm_lines))
+    append_section("리듬 패턴", rhythm_lines)
 
     vocab_lines: list[str] = []
     if preferred_verbs:
@@ -298,8 +403,7 @@ def _compose_style_guide_prompt(
     if signature_phrases or emphatics or preferred_adjectives:
         cluster_items = signature_phrases + emphatics + preferred_adjectives
         vocab_lines.append(f"- 시그니처 표현: {', '.join(f'\"{item}\"' for item in cluster_items[:6])}")
-    if vocab_lines:
-        sections.append("4. 선호 어휘 클러스터:\n  " + "\n  ".join(vocab_lines))
+    append_section("선호 어휘 클러스터", vocab_lines)
 
     positioning_lines: list[str] = []
     dominant_style = str(analysis.get("dominantStyle") or "").strip()
@@ -313,8 +417,7 @@ def _compose_style_guide_prompt(
         positioning_lines.append(
             f"- 실제 자기 선언 문장: {', '.join(f'\"{item}\"' for item in source_examples['positioningExamples'])}"
         )
-    if positioning_lines:
-        sections.append("5. 화자 포지셔닝 방식:\n  " + "\n  ".join(positioning_lines))
+    append_section("화자 포지셔닝 방식", positioning_lines)
 
     tone_desc: list[str] = []
     if float(tone.get("formality") or 0) > 0.6:
@@ -337,8 +440,7 @@ def _compose_style_guide_prompt(
         emotion_lines.append(
             f"- 실제 감정/선언 문장: {', '.join(f'\"{item}\"' for item in source_examples['emotionExamples'])}"
         )
-    if emotion_lines:
-        sections.append("6. 감정 표현 방식:\n  " + "\n  ".join(emotion_lines))
+    append_section("감정 표현 방식", emotion_lines)
 
     ai_alternatives = style_fingerprint.get("aiAlternatives") or {}
     alternative_lines: list[str] = []
@@ -347,8 +449,7 @@ def _compose_style_guide_prompt(
         target = str(raw_value or "").strip()
         if source and target:
             alternative_lines.append(f'- "{source}" 대신 "{target}"')
-    if alternative_lines:
-        sections.append("7. AI 상투어 대체:\n  " + "\n  ".join(alternative_lines))
+    append_section("AI 상투어 대체", alternative_lines)
 
     return "\n".join(sections)
 
@@ -405,138 +506,6 @@ def _build_style_guide_prompt(style_fingerprint: Dict[str, Any], compact: bool =
         source_examples=source_examples,
         compact=compact,
     )
-
-    if compact:
-        tone_tags: list[str] = []
-        if float(tone.get("formality") or 0) > 0.6:
-            tone_tags.append("격식체")
-        if float(tone.get("directness") or 0) > 0.6:
-            tone_tags.append("직접적")
-        if float(tone.get("optimism") or 0) > 0.6:
-            tone_tags.append("희망적")
-        avg_length = sentence_patterns.get("avgLength") or 45
-        base = "[문체] "
-        if signature_phrases:
-            base += f"표현: {', '.join(f'\"{s}\"' for s in signature_phrases[:3])}. "
-        if transitions:
-            base += f"전환: {', '.join(f'\"{s}\"' for s in transitions[:2])}. "
-        if example_patterns:
-            base += f"전개 예시: {', '.join(f'\"{s}\"' for s in example_patterns[:2])}. "
-        if source_examples["transitionExamples"]:
-            base += f"실제 문장: {', '.join(f'\"{s}\"' for s in source_examples['transitionExamples'][:2])}. "
-        if tone_tags:
-            base += f"어조: {'/'.join(tone_tags)}. "
-        base += f"문장 {avg_length}자 내외."
-        return base
-
-    sections: list[str] = []
-    if transitions or example_patterns or source_examples["transitionExamples"]:
-        transition_lines: list[str] = []
-        if transitions:
-            transition_lines.append(f"- 선언 뒤 연결: {', '.join(f'\"{item}\"' for item in transitions)}")
-        if example_patterns:
-            transition_lines.append(f"- 실제 전개 예시: {', '.join(f'\"{item}\"' for item in example_patterns)}")
-        sections.append("1. 전환 패턴:\n  " + "\n  ".join(transition_lines))
-
-    if transitions or example_patterns or source_examples["transitionExamples"]:
-        transition_lines: list[str] = []
-        if transitions:
-            transition_lines.append(f"- 선언 뒤 연결: {', '.join(f'\"{item}\"' for item in transitions)}")
-        if example_patterns:
-            transition_lines.append(f"- 실제 전개 예시: {', '.join(f'\"{item}\"' for item in example_patterns)}")
-        if source_examples["transitionExamples"]:
-            transition_lines.append(
-                f"- 실제 사용자 문장: {', '.join(f'\"{item}\"' for item in source_examples['transitionExamples'])}"
-            )
-        sections.append("1. 전환 패턴:\n  " + "\n  ".join(transition_lines))
-
-    avg_len = sentence_patterns.get("avgLength") or 45
-    clause = sentence_patterns.get("clauseComplexity") or "medium"
-    concretization_lines = [f"- 추상 주장을 풀어내는 밀도: 문장 {avg_len}자 내외, 복잡도 {clause}"]
-    concretization_vocab = local_terms or frequent_words
-    if concretization_vocab:
-        concretization_lines.append(f"- 생활/현장 언어: {', '.join(concretization_vocab)}")
-    if preferred_verbs:
-        concretization_lines.append(f"- 행동 동사: {', '.join(preferred_verbs)}")
-    technical_level = vocab.get("technicalLevel") or "accessible"
-    concretization_lines.append(f"- 사실·정책 설명 수준: {technical_level}")
-    sections.append("2. 구체화 패턴:\n  " + "\n  ".join(concretization_lines))
-
-    rhythm_lines = [f"- 문장 길이: {avg_len}자 내외", f"- 문장 복잡도: {clause}"]
-    if starters:
-        rhythm_lines.append(f"- 선호 시작어: {', '.join(f'\"{s}\"' for s in starters)}")
-    if endings:
-        rhythm_lines.append(f"- 단락/문장 마감: {', '.join(endings)}")
-    if bool(rhetoric.get("usesRepetition")):
-        rhythm_lines.append("- 반복 구조를 활용하는 편")
-    if bool(rhetoric.get("usesEnumeration")):
-        rhythm_lines.append("- 나열형 전개를 활용하는 편")
-    sections.append("3. 리듬 패턴:\n  " + "\n  ".join(rhythm_lines))
-
-    vocab_lines: list[str] = []
-    if preferred_verbs:
-        vocab_lines.append(f"- 반복 동사: {', '.join(preferred_verbs)}")
-    if frequent_words:
-        vocab_lines.append(f"- 생활 명사/핵심 단어: {', '.join(frequent_words)}")
-    if local_terms:
-        vocab_lines.append(f"- 지역/현장 용어: {', '.join(local_terms)}")
-    if signature_phrases or emphatics or preferred_adjectives:
-        cluster_items = signature_phrases + emphatics + preferred_adjectives
-        vocab_lines.append(f"- 시그니처 표현: {', '.join(f'\"{item}\"' for item in cluster_items[:6])}")
-    if vocab_lines:
-        sections.append("4. 선호 어휘 클러스터:\n  " + "\n  ".join(vocab_lines))
-
-    positioning_lines: list[str] = []
-    dominant_style = str(analysis.get("dominantStyle") or "").strip()
-    if dominant_style:
-        positioning_lines.append(f"- 기본 포지셔닝: {dominant_style}")
-    if unique_features:
-        positioning_lines.append(f"- 두드러진 정체성 요소: {', '.join(unique_features)}")
-    if signature_phrases:
-        positioning_lines.append(f"- 자기 소개/선언 표현: {', '.join(f'\"{item}\"' for item in signature_phrases[:3])}")
-    if positioning_lines:
-        sections.append("5. 화자 포지셔닝 방식:\n  " + "\n  ".join(positioning_lines))
-
-    tone_desc: list[str] = []
-    if float(tone.get("formality") or 0) > 0.6:
-        tone_desc.append("격식체")
-    elif float(tone.get("formality") or 0) < 0.4:
-        tone_desc.append("친근체")
-    if float(tone.get("directness") or 0) > 0.6:
-        tone_desc.append("직접적")
-    if float(tone.get("optimism") or 0) > 0.6:
-        tone_desc.append("희망적")
-    emotionality = float(tone.get("emotionality") or 0)
-    emotion_lines: list[str] = []
-    if tone_desc:
-        emotion_lines.append(f"- 어조: {', '.join(tone_desc)}")
-    tone_description = str(tone.get("toneDescription") or "").strip()
-    if tone_description:
-        emotion_lines.append(f"- 감정 표현 설명: {tone_description}")
-    if emotionality >= 0.6:
-        emotion_lines.append("- 감정을 직접 드러내는 편")
-    elif emotionality <= 0.4:
-        emotion_lines.append("- 감정보다 사실과 단정으로 밀어붙이는 편")
-    if emphatics or conclusions:
-        emotion_lines.append(f"- 확신/마감 표현: {', '.join(f'\"{item}\"' for item in (emphatics + conclusions)[:5])}")
-    if emotion_lines:
-        sections.append("6. 감정 표현 방식:\n  " + "\n  ".join(emotion_lines))
-
-    ai_alternatives = style_fingerprint.get("aiAlternatives") or {}
-    alternative_lines: list[str] = []
-    for raw_key, raw_value in list(ai_alternatives.items())[:4]:
-        source = str(raw_key or "").replace("instead_of_", "").replace("_", " ").strip()
-        target = str(raw_value or "").strip()
-        if source and target:
-            alternative_lines.append(f'- "{source}" 대신 "{target}"')
-    if alternative_lines:
-        sections.append(
-            "7. AI 상투어 대체:\n  " + "\n  ".join(alternative_lines)
-        )
-
-    if not sections:
-        return ""
-    return "\n".join(sections)
 
 
 def generate_personalized_hints(bio_metadata: Dict[str, Any] | None) -> str:

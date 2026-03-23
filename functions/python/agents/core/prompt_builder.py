@@ -1,37 +1,33 @@
-"""StructureAgent 프롬프트 조립 로직 분리 모듈.
+﻿"""StructureAgent 프롬프트 조립 로직 분리 모듈.
 
 모든 함수는 stateless 순수 함수로, StructureAgent에서 추출되었다.
 """
 
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List
 
 from ..common.warnings import generate_non_lawmaker_warning
 from ..common.seo import build_seo_instruction
-from ..common.h2_guide import (
-    build_h2_examples,
-    H2_MIN_LENGTH,
-    H2_MAX_LENGTH,
-    H2_OPTIMAL_MIN,
-    H2_OPTIMAL_MAX,
-)
+from ..common.h2_guide import build_h2_examples
 from ..common.election_rules import get_prompt_instruction
 from ..common.natural_tone import build_natural_tone_prompt
-from ..common.editorial import STRUCTURE_SPEC, KEYWORD_SPEC, QUALITY_SPEC
+from ..common.editorial import KEYWORD_SPEC, QUALITY_SPEC, STRUCTURE_SPEC
+from ..common.section_contract import build_shared_contract_rules
 
-from ..templates.daily_communication import build_daily_communication_prompt
 from ..templates.activity_report import build_activity_report_prompt
-from ..templates.policy_proposal import build_policy_proposal_prompt
 from ..templates.current_affairs import build_critical_writing_prompt, build_diagnosis_writing_prompt
+from ..templates.daily_communication import build_daily_communication_prompt
 from ..templates.local_issues import build_local_issues_prompt
+from ..templates.policy_proposal import build_policy_proposal_prompt
 
-from .structure_utils import (
-    strip_html, normalize_context_text, _xml_text, _xml_cdata,
-    material_key, split_into_context_items,
+from .prompt_guards import (
+    _build_style_generation_guard,
+    build_material_uniqueness_guard,
+    build_poll_focus_bundle_section,
+    build_retry_directive,
 )
+from .structure_utils import _xml_cdata, _xml_text, normalize_context_text, split_into_context_items
+from .style_guide_builder import build_style_role_priority_summary
 
-# ---------------------------------------------------------------------------
-# Template Builders Mapping
-# ---------------------------------------------------------------------------
 TEMPLATE_BUILDERS = {
     'emotional_writing': build_daily_communication_prompt,
     'logical_writing': build_policy_proposal_prompt,
@@ -40,11 +36,6 @@ TEMPLATE_BUILDERS = {
     'diagnostic_writing': build_diagnosis_writing_prompt,
     'analytical_writing': build_local_issues_prompt,
 }
-
-
-# ---------------------------------------------------------------------------
-# Utility helpers (extracted from StructureAgent)
-# ---------------------------------------------------------------------------
 
 def is_current_lawmaker(user_profile: Dict) -> bool:
     """사용자가 현직 의원/단체장인지 판별한다."""
@@ -57,525 +48,6 @@ def is_current_lawmaker(user_profile: Dict) -> bool:
     text_to_check = status + position + title
     return any(k in text_to_check for k in elected_keywords)
 
-
-def _is_identity_signature_phrase(text: str) -> bool:
-    normalized = normalize_context_text(text)
-    if not normalized:
-        return False
-    return any(
-        token in normalized
-        for token in ("뼛속까지", "입니다", "저 ", "저는", "이재성!", "저 이재성")
-    )
-
-
-def _build_style_generation_guard(
-    style_fingerprint: Optional[Dict[str, Any]] = None,
-    style_guide: str = "",
-) -> str:
-    fingerprint = style_fingerprint if isinstance(style_fingerprint, dict) else {}
-    normalized_guide = normalize_context_text(style_guide, sep="\n")
-    metadata = fingerprint.get("analysisMetadata") or {}
-    try:
-        confidence = float(metadata.get("confidence") or 0)
-    except (TypeError, ValueError):
-        confidence = 0.0
-
-    static_forbidden = [
-        "진정성",
-        "울림",
-        "열정과 헌신",
-        "더 나은 미래",
-        "단순한 구호",
-        "단순한 숫자",
-        "단순한 수치",
-        "단순히 숫자",
-        "저의 이러한 진정성",
-        "마음을 움직이고",
-        "막내들",
-        "강력한 힘이 됩니다",
-        "공감과 희망을 줍니다",
-        "우선순위를 명확히 하고",
-        "일정을 현실적으로 맞추겠습니다",
-    ]
-    forbidden_phrases: List[str] = []
-    preferred_replacements: List[str] = []
-    preferred_signatures: List[str] = []
-    identity_signatures: List[str] = []
-    tone_rules: List[str] = []
-    sentence_type_rules = [
-        "화자의 배경·경험·행보·진정성·역량이 독자·주민·시민의 반응을 만들었다고 해설하지 말고, 경험 자체나 행동 자체를 직접 서술할 것.",
-        "사람들이 화자의 특성을 알아봐 준다거나 기대가 커지고 있다고 추측하지 말고, 확인 가능한 사실과 행동만 쓸 것.",
-        "'단순히/단순한 ... 아니라/아닌/넘어/머무르지 않고' 같은 추상 대비 문형을 쓰지 말고, 남길 주장만 직접 선언할 것.",
-    ]
-    sentence_type_examples = [
-        (
-            "저의 경험이 시민들의 마음을 움직이고 있습니다.",
-            "저는 그 현장에서 그 어려움을 직접 겪었습니다.",
-        ),
-        (
-            "사람들이 저의 진정성과 역량을 알아봐 주고 있습니다.",
-            "저는 말한 것을 했습니다. 그게 전부입니다.",
-        ),
-        (
-            "이는 단순한 수치가 아니라 변화의 증거입니다.",
-            "이 수치는 변화 요구를 보여줍니다.",
-        ),
-    ]
-
-    for phrase in static_forbidden:
-        if phrase not in forbidden_phrases:
-            forbidden_phrases.append(phrase)
-
-    phrases = fingerprint.get("characteristicPhrases") or {}
-    ai_alternatives = fingerprint.get("aiAlternatives") or {}
-    for raw_value in (phrases.get("avoidances") or []):
-        value = normalize_context_text(raw_value)
-        if value and value not in forbidden_phrases:
-            forbidden_phrases.append(value)
-        if len(forbidden_phrases) >= 12:
-            break
-    for raw_value in (fingerprint.get("avoidances") or []):
-        value = normalize_context_text(raw_value)
-        if value and value not in forbidden_phrases:
-            forbidden_phrases.append(value)
-        if len(forbidden_phrases) >= 12:
-            break
-
-    for raw_key, raw_value in ai_alternatives.items():
-        source = normalize_context_text(str(raw_key or "").replace("instead_of_", "").replace("_", " "))
-        target = normalize_context_text(raw_value)
-        if source and source not in forbidden_phrases:
-            forbidden_phrases.append(source)
-        if source and target:
-            preferred_replacements.append(f'"{source}" 대신 "{target}"')
-
-    for bucket in ("signatures", "emphatics"):
-        for raw_value in (phrases.get(bucket) or []):
-            value = normalize_context_text(raw_value)
-            if not value:
-                continue
-            if bucket == "signatures" and _is_identity_signature_phrase(value):
-                if value not in identity_signatures:
-                    identity_signatures.append(value)
-                continue
-            if value not in preferred_signatures:
-                preferred_signatures.append(value)
-            if len(preferred_signatures) >= 4:
-                break
-        if len(preferred_signatures) >= 4:
-            break
-
-    tone = fingerprint.get("toneProfile") or {}
-    try:
-        directness = float(tone.get("directness") or 0)
-    except (TypeError, ValueError):
-        directness = 0.0
-    try:
-        optimism = float(tone.get("optimism") or 0)
-    except (TypeError, ValueError):
-        optimism = 0.0
-    if directness >= 0.6:
-        tone_rules.append("자기 해설형 표현보다 단정형 선언을 우선할 것.")
-    if optimism >= 0.6:
-        tone_rules.append("비장한 호소보다 자신감 있는 미래 선언형을 우선할 것.")
-
-    forbidden_xml = "".join(f"<phrase>{_xml_text(item)}</phrase>" for item in forbidden_phrases[:12])
-    replacement_xml = "".join(f"<item>{_xml_text(item)}</item>" for item in preferred_replacements[:8])
-    signature_xml = "".join(f"<item>{_xml_text(item)}</item>" for item in preferred_signatures[:4])
-    tone_rule_xml = "".join(f"<rule>{_xml_text(item)}</rule>" for item in tone_rules[:3])
-    sentence_type_rule_xml = "".join(
-        f"<rule>{_xml_text(item)}</rule>" for item in sentence_type_rules
-    )
-    sentence_type_examples_xml = "".join(
-        f"<example><bad>{_xml_text(bad)}</bad><good>{_xml_text(good)}</good></example>"
-        for bad, good in sentence_type_examples
-    )
-    guide_xml = f"<style_guide>{_xml_cdata(normalized_guide[:1800])}</style_guide>" if normalized_guide else ""
-
-    return f"""
-<style_generation_guard priority="high" confidence="{confidence:.2f}">
-  <rule id="no_generic_political_boilerplate">아래 금지 표현은 초안 생성 단계에서 직접 쓰지 말 것.</rule>
-  <rule id="prefer_registered_replacements">등록된 대체 표현이 있으면 원문 표현 대신 대체 표현을 우선 사용할 것.</rule>
-  <rule id="no_self_analysis_tone">화자의 진정성/열정/울림을 3인칭 해설처럼 설명하지 말고, 바로 주장과 선언으로 말할 것.</rule>
-  <rule id="no_sentence_type_reuse">금지 단어만 피하지 말고, 금지된 문장 유형 자체를 피할 것.</rule>
-  <rule id="describe_experience_not_effect">내 배경·경험·행보가 사람들에게 어떤 영향을 줬다고 해설하지 말고, 그 경험과 행동 자체를 직접 서술할 것.</rule>
-  <rule id="examples_are_direction_only">예시는 문장 구조의 방향만 참고하고 그대로 복사하지 말 것.</rule>
-  <rule id="follow_style_guide_examples">style guide에 실제 사용자 문장이 있으면, 범용 정치문 표현보다 그 전환·호흡·마감 방식을 먼저 따를 것. 다만 문장을 그대로 복사하지 말고 구조와 리듬만 참고할 것.</rule>
-  {'<rule id="identity_signature_only">정체성 시그니처는 자기 이름/1인칭 선언 문장(도입·마감)에서만 쓰고, 타인 묘사·복수형·수식어로 변형하지 말 것.</rule>' if identity_signatures else ''}
-  {'<rule id="tone_directness">' + _xml_text(tone_rules[0]) + '</rule>' if tone_rules else ''}
-  {'<rule id="tone_confidence">' + _xml_text(tone_rules[1]) + '</rule>' if len(tone_rules) > 1 else ''}
-  <forbidden_phrases>{forbidden_xml}</forbidden_phrases>
-  <forbidden_sentence_types>{sentence_type_rule_xml}</forbidden_sentence_types>
-  <sentence_type_examples>{sentence_type_examples_xml}</sentence_type_examples>
-  {'<preferred_replacements>' + replacement_xml + '</preferred_replacements>' if replacement_xml else ''}
-  {'<preferred_signatures>' + signature_xml + '</preferred_signatures>' if signature_xml else ''}
-  {'<identity_signatures>' + ''.join(f'<item>{_xml_text(item)}</item>' for item in identity_signatures[:3]) + '</identity_signatures>' if identity_signatures else ''}
-  {guide_xml}
-</style_generation_guard>
-""".strip()
-
-
-# ---------------------------------------------------------------------------
-# build_material_uniqueness_guard
-# ---------------------------------------------------------------------------
-
-def build_material_uniqueness_guard(
-    context_analysis: Optional[Dict[str, Any]],
-    *,
-    body_sections: int,
-) -> str:
-    """소재 카드 중복 사용 방지 XML 가드를 생성한다."""
-    if not isinstance(context_analysis, dict):
-        return ""
-
-    cards: List[Dict[str, str]] = []
-    seen: set[str] = set()
-
-    def add_card(card_type: str, raw_text: Any) -> None:
-        text = normalize_context_text(raw_text)
-        if len(strip_html(text)) < 8:
-            return
-        key = material_key(text)
-        if not key or key in seen:
-            return
-        seen.add(key)
-        cards.append({"type": card_type, "text": text})
-
-    for item in context_analysis.get('mustIncludeFromStance') or []:
-        if isinstance(item, dict):
-            add_card("stance", item.get('topic'))
-        else:
-            add_card("stance", item)
-    for item in context_analysis.get('mustIncludeFacts') or []:
-        add_card("fact", item)
-    for item in context_analysis.get('newsQuotes') or []:
-        add_card("quote", item)
-
-    if not cards:
-        return ""
-
-    body_count = max(1, int(body_sections or 1))
-    max_cards = max(4, min(len(cards), body_count + 3))
-    selected = cards[:max_cards]
-    lines: List[str] = []
-    for idx, card in enumerate(selected):
-        section_slot = (idx % body_count) + 1
-        lines.append(
-            f'    <material id="M{idx + 1}" type="{card["type"]}" '
-            f'section_hint="body_{section_slot}">{_xml_text(card["text"])}</material>'
-        )
-
-    allocated_count = min(body_count, len(selected))
-    allocation_lines: List[str] = []
-    for idx in range(allocated_count):
-        allocation_lines.append(
-            f'    <section index="{idx + 1}" use="M{idx + 1}" mode="exclusive_once"/>'
-        )
-
-    if body_count > allocated_count:
-        banned_ids = ",".join(f"M{idx + 1}" for idx in range(allocated_count))
-        for idx in range(allocated_count, body_count):
-            allocation_lines.append(
-                f'    <section index="{idx + 1}" use="DERIVED" mode="new_evidence_only" '
-                f'ban_ids="{banned_ids}"/>'
-            )
-
-    lines_text = "\n".join(lines)
-    allocation_text = "\n".join(allocation_lines)
-    return f"""
-<material_uniqueness_guard priority="critical">
-  <rule id="one_material_one_use">소재 카드는 본문 전체에서 1회만 사용합니다.</rule>
-  <rule id="follow_section_allocation">section_allocation 지시를 그대로 따르고, 이미 사용한 material id는 재사용 금지합니다.</rule>
-  <rule id="no_recycled_quote">동일 인용/일화/근거 문장을 다른 섹션에서 다시 쓰지 않습니다.</rule>
-  <rule id="body_diversity">각 본론 섹션은 서로 다른 근거를 사용해 논지를 전개합니다.</rule>
-  <materials>
-{lines_text}
-  </materials>
-  <section_allocation>
-{allocation_text}
-  </section_allocation>
-</material_uniqueness_guard>
-""".strip()
-
-
-def build_poll_focus_bundle_section(bundle: Optional[Dict[str, Any]]) -> str:
-    if not isinstance(bundle, dict):
-        return ""
-    if str(bundle.get("scope") or "").strip().lower() != "matchup":
-        return ""
-
-    primary_pair = bundle.get("primaryPair") if isinstance(bundle.get("primaryPair"), dict) else {}
-    primary_fact_template = (
-        bundle.get("primaryFactTemplate") if isinstance(bundle.get("primaryFactTemplate"), dict) else {}
-    )
-    speaker = normalize_context_text(primary_pair.get("speaker"))
-    opponent = normalize_context_text(primary_pair.get("opponent"))
-    speaker_score = normalize_context_text(primary_pair.get("speakerPercent") or primary_pair.get("speakerScore"))
-    opponent_score = normalize_context_text(primary_pair.get("opponentPercent") or primary_pair.get("opponentScore"))
-    if not speaker or not opponent or not speaker_score or not opponent_score:
-        return ""
-
-    secondary_pairs = bundle.get("secondaryPairs") if isinstance(bundle.get("secondaryPairs"), list) else []
-    allowed_title_lanes = (
-        bundle.get("allowedTitleLanes") if isinstance(bundle.get("allowedTitleLanes"), list) else []
-    )
-    allowed_h2_kinds = bundle.get("allowedH2Kinds") if isinstance(bundle.get("allowedH2Kinds"), list) else []
-    forbidden_metrics = bundle.get("forbiddenMetrics") if isinstance(bundle.get("forbiddenMetrics"), list) else []
-    focused_source_text = normalize_context_text(bundle.get("focusedSourceText"), sep="\n")
-    primary_fact_sentence = normalize_context_text(primary_fact_template.get("sentence"))
-    primary_heading = normalize_context_text(primary_fact_template.get("heading"))
-
-    secondary_lines: List[str] = []
-    for idx, raw_pair in enumerate(secondary_pairs[:2], start=1):
-        pair = raw_pair if isinstance(raw_pair, dict) else {}
-        pair_speaker = normalize_context_text(pair.get("speaker"))
-        pair_opponent = normalize_context_text(pair.get("opponent"))
-        pair_speaker_score = normalize_context_text(pair.get("speakerPercent") or pair.get("speakerScore"))
-        pair_opponent_score = normalize_context_text(pair.get("opponentPercent") or pair.get("opponentScore"))
-        if not pair_speaker or not pair_opponent or not pair_speaker_score or not pair_opponent_score:
-            continue
-        secondary_lines.append(
-            f'    <pair index="{idx}">{_xml_text(pair_speaker)} vs {_xml_text(pair_opponent)} '
-            f'({_xml_text(pair_speaker_score)} 대 {_xml_text(pair_opponent_score)})</pair>'
-        )
-    secondary_xml = "\n".join(secondary_lines) if secondary_lines else '    <pair index="0">없음</pair>'
-
-    forbidden_lines = "\n".join(
-        f"    <metric>{_xml_text(item)}</metric>"
-        for item in forbidden_metrics[:5]
-        if normalize_context_text(item)
-    )
-    if not forbidden_lines:
-        forbidden_lines = "    <metric>정당 지지율</metric>"
-
-    title_lane_lines: List[str] = []
-    for raw_lane in allowed_title_lanes[:3]:
-        lane = raw_lane if isinstance(raw_lane, dict) else {}
-        lane_id = normalize_context_text(lane.get("id"))
-        lane_label = normalize_context_text(lane.get("label"))
-        lane_template = normalize_context_text(lane.get("template"))
-        if not lane_id or not lane_template:
-            continue
-        title_lane_lines.append(
-            f'    <lane id="{_xml_text(lane_id)}" label="{_xml_text(lane_label or lane_id)}">'
-            f"{_xml_text(lane_template)}</lane>"
-        )
-    title_lane_xml = "\n".join(title_lane_lines) if title_lane_lines else (
-        '    <lane id="fact_direct" label="fact_direct">없음</lane>'
-    )
-
-    h2_kind_lines: List[str] = []
-    for raw_kind in allowed_h2_kinds[:5]:
-        kind = raw_kind if isinstance(raw_kind, dict) else {}
-        kind_id = normalize_context_text(kind.get("id"))
-        kind_label = normalize_context_text(kind.get("label"))
-        kind_template = normalize_context_text(kind.get("template"))
-        kind_answer_lead = normalize_context_text(kind.get("answerLead"))
-        if not kind_id or not kind_template:
-            continue
-        h2_kind_lines.append(
-            f'    <kind id="{_xml_text(kind_id)}" label="{_xml_text(kind_label or kind_id)}">'
-            f"<title>{_xml_text(kind_template)}</title>"
-            f"<answer_lead>{_xml_text(kind_answer_lead)}</answer_lead>"
-            f"</kind>"
-        )
-    h2_kind_xml = "\n".join(h2_kind_lines) if h2_kind_lines else (
-        '    <kind id="primary_matchup" label="주대결 결과"><title>없음</title><answer_lead>없음</answer_lead></kind>'
-    )
-
-    return f"""
-<poll_focus_bundle priority="critical">
-  <scope>matchup</scope>
-  <primary_pair>
-    <speaker>{_xml_text(speaker)}</speaker>
-    <opponent>{_xml_text(opponent)}</opponent>
-    <score>{_xml_text(speaker_score)} 대 {_xml_text(opponent_score)}</score>
-    <heading_template>{_xml_text(primary_heading or f"{opponent}과의 가상대결, {speaker} {speaker_score} 대 {opponent_score}")}</heading_template>
-    <sentence_template>{_xml_text(primary_fact_sentence or f"{speaker}·{opponent} 가상대결에서는 {speaker_score} 대 {opponent_score}로 나타났습니다.")}</sentence_template>
-  </primary_pair>
-  <secondary_pairs>
-{secondary_xml}
-  </secondary_pairs>
-  <allowed_title_lanes>
-{title_lane_xml}
-  </allowed_title_lanes>
-  <allowed_h2_kinds>
-{h2_kind_xml}
-  </allowed_h2_kinds>
-  <forbidden_metrics>
-{forbidden_lines}
-  </forbidden_metrics>
-  <rules>
-    <rule order="1">도입과 핵심 본문은 primary_pair를 중심으로 작성하고, 정당 지지율이나 당내 경선 수치로 중심을 바꾸지 않습니다.</rule>
-    <rule order="2">주대결을 설명하는 첫 문장은 sentence_template 구조를 따르며, 인물 이름과 수치를 절단하거나 뒤섞지 않습니다.</rule>
-    <rule order="3">소제목(H2)은 allowed_h2_kinds 범위 안에서만 고르고, 검색 의도를 바로 보여주는 질문형 또는 문제제기형으로 씁니다.</rule>
-    <rule order="4">각 H2 바로 아래 첫 문장은 해당 kind의 answer_lead처럼 질문에 직접 답하는 문장으로 시작합니다.</rule>
-    <rule order="5">브랜딩 문구를 그대로 H2로 쓰지 말고, 같은 H2 의미를 반복하지 않습니다.</rule>
-    <rule order="6">결론 문단은 미완성 절로 끝내지 말고, 모든 문장을 완결된 서술형으로 마무리합니다.</rule>
-    <rule order="7">secondary_pairs는 보조 근거로만 짧게 언급하고, 글의 중심 논지를 primary_pair에서 이탈시키지 않습니다.</rule>
-  </rules>
-  <focused_reference>{_xml_cdata(focused_source_text)}</focused_reference>
-</poll_focus_bundle>
-""".strip()
-
-
-# ---------------------------------------------------------------------------
-# build_retry_directive
-# ---------------------------------------------------------------------------
-
-def build_retry_directive(
-    validation: Dict[str, Any],
-    length_spec: Dict[str, int],
-) -> str:
-    """검증 실패 코드에 따른 재시도 지시문을 생성한다."""
-    code = validation.get('code')
-    total_sections = length_spec['total_sections']
-    body_sections = length_spec['body_sections']
-    min_chars = length_spec['min_chars']
-    max_chars = length_spec['max_chars']
-    per_section_recommended = length_spec['per_section_recommended']
-    expected_h2 = length_spec['expected_h2']
-    section_min_delta = int(STRUCTURE_SPEC['sectionCharTarget']) - int(STRUCTURE_SPEC['sectionCharMin'])
-    section_max_delta = int(STRUCTURE_SPEC['sectionCharMax']) - int(STRUCTURE_SPEC['sectionCharTarget'])
-
-    if code == 'LENGTH_SHORT':
-        return (
-            f"재작성 시 총 분량을 {min_chars}~{max_chars}자로 맞추십시오. "
-            f"총 섹션은 도입 1 + 본론 {body_sections} + 결론 1(총 {total_sections})로 유지하고, "
-            f"섹션당 {per_section_recommended}자 내외로 보강하십시오."
-        )
-
-    if code == 'LENGTH_LONG':
-        return (
-            f"재작성 시 총 분량을 {max_chars}자 이하로 압축하십시오(절대 초과 금지). "
-            f"중복 문장, 수식어, 유사 사례를 제거하고 섹션당 {per_section_recommended}자 내외로 간결하게 작성하십시오."
-        )
-
-    if code in {'H2_SHORT', 'H2_LONG'}:
-        return (
-            f"섹션 구조를 정확히 맞추십시오: 도입 1 + 본론 {body_sections} + 결론 1. "
-            f"<h2>는 본론과 결론에만 사용하여 총 {expected_h2}개로 작성하십시오. "
-            f"소제목 태그는 속성 없이 반드시 <h2>텍스트</h2> 형식만 허용됩니다."
-        )
-
-    if code in {'P_SHORT', 'P_LONG'}:
-        return (
-            f"문단 수를 조정하십시오. 총 {total_sections}개 섹션 기준으로 문단은 2~3개씩 유지하고, "
-            f"군더더기 없는 문장으로 길이 범위({min_chars}~{max_chars}자)를 지키십시오."
-        )
-
-    if code == 'EVENT_INVITE_REDUNDANT':
-        return (
-            "행사 안내 문구 반복을 줄이십시오. \"직접 만나\", \"진솔한 소통\", \"기다리겠습니다\" 류 표현은 "
-            "각 2회 이하로 제한하고, 중복된 문장은 행사 핵심 정보(일시/장소/참여 방법)나 새로운 근거로 치환하십시오."
-        )
-
-    if code == 'EVENT_FACT_REPEAT':
-        return (
-            "행사 일시+장소가 결합된 안내 문장은 도입 1회, 결론 1회까지만 허용됩니다. "
-            "3회째부터는 \"이번 행사 현장\"처럼 변형하여 반복 구문을 해소하십시오."
-        )
-
-    if code == 'META_PROMPT_LEAK':
-        return (
-            "프롬프트 규칙 설명 문장을 본문에 쓰지 마십시오. "
-            "\"문제는~점검\"류 메타 문장을 제거하고 실제 사실/근거 문장으로 바꿔 작성하십시오."
-        )
-
-    if code == 'PHRASE_REPEAT_CAP':
-        return (
-            f"상투 구문 반복이 과다합니다. 동일 어구는 최대 {int(QUALITY_SPEC['phrase3wordMax'])}회로 제한하고, "
-            "초과 구간은 새로운 근거·수치·사례 중심 문장으로 재작성하십시오."
-        )
-
-    if code == 'MATERIAL_REUSE':
-        return (
-            "같은 소재(인용/일화/근거)를 여러 번 재사용했습니다. "
-            "본론 섹션마다 서로 다른 소재 카드를 배정하고, 각 카드는 1회만 사용하십시오."
-        )
-
-    if code == 'H2_TEXT_LONG':
-        return (
-            f"소제목(<h2>)이 {H2_MAX_LENGTH}자를 초과했습니다. "
-            f"각 소제목을 {H2_OPTIMAL_MIN}~{H2_MAX_LENGTH}자 이내로 줄이십시오. "
-            "질문형('~인가?', '~할까?') 또는 핵심 키워드 중심 명사구로 작성하고, "
-            "수식어(~위한, ~향한, ~통한, ~에 대한)를 삭제하십시오."
-        )
-
-    if code == 'H2_TEXT_SHORT':
-        return (
-            f"소제목(<h2>)이 {H2_MIN_LENGTH}자 미만으로 너무 짧습니다. "
-            f"각 소제목을 {H2_OPTIMAL_MIN}~{H2_OPTIMAL_MAX}자로 작성하십시오. "
-            "핵심 키워드를 앞에 배치하고, 구체적 정보(수치/대상/장소)를 포함하십시오."
-        )
-
-    if code == 'H2_TEXT_MODIFIER':
-        return (
-            "소제목에 금지 수식어(위한/향한/만드는/통한/대한)가 포함되어 있습니다. "
-            "해당 수식어를 제거하고 '명사+명사' 또는 '명사, 명사' 형태로 간결하게 재작성하십시오."
-        )
-
-    if code == 'H2_TEXT_FIRST_PERSON':
-        return (
-            "소제목에 1인칭 표현(저는/제가/나는/내가)이 포함되어 있습니다. "
-            "소제목은 헤드라인형으로 작성하고, 대결/비교 문맥이면 'vs 주진우, 이재성의 약진'처럼 "
-            "인물명+쟁점 중심 명사형으로 바꾸십시오."
-        )
-
-    if code == 'SECTION_LENGTH':
-        return (
-            f"원문 구조는 유지한 채 실패한 섹션만 부분 수정하십시오. "
-            f"섹션별 글자 수를 {per_section_recommended}자 내외({per_section_recommended - section_min_delta}~{per_section_recommended + section_max_delta}자)로 조정하십시오. "
-            f"결론부가 너무 짧으면 행동 제안이나 핵심 메시지를 보강하고, "
-            f"특정 섹션이 너무 길면 마지막 문장부터 압축해 균형을 맞추십시오."
-        )
-
-    if code == 'SECTION_P_COUNT':
-        return (
-            "실패한 섹션의 문단 수만 부분 수정하십시오. "
-            "서론은 1~4개, 나머지 섹션은 2~4개의 <p>를 유지하고, "
-            "기존 사실/근거 문장은 최대한 보존하십시오."
-        )
-
-    if code == 'INTRO_STANCE_MISSING':
-        return (
-            "서론 첫 1~2문단에 입장문 핵심 주장/문제의식을 1~2문장으로 보강하십시오. "
-            "본론/결론은 유지하고 서론만 부분 수정하십시오."
-        )
-
-    if code == 'INTRO_CONCLUSION_ECHO':
-        return (
-            "서론-결론의 중복 문구만 변형하십시오. "
-            "결론 문장 중 반복 구간만 치환하고, 나머지 구조와 근거는 유지하십시오."
-        )
-
-    if code == 'DUPLICATE_SENTENCE':
-        return (
-            "동일 문장이 반복되었습니다. "
-            "같은 의미를 전달하더라도 표현을 반드시 변형하여 재작성하십시오."
-        )
-
-    if code == 'PHRASE_REPEAT':
-        return (
-            "3어절 이상의 동일 구문이 과다 반복되었습니다. "
-            "핵심 메시지는 결론에서 1회만, 본론에서는 구체적 정책/사례로 대체하십시오."
-        )
-
-    if code == 'VERB_REPEAT':
-        return (
-            "동일 동사/구문이 과다 반복되었습니다. "
-            "동의어로 교체하십시오 (예: '던지면서' → '제시하며', '약속하며', '보여드리며')."
-        )
-
-    return (
-        f"총 {total_sections}개 섹션 구조와 분량 범위({min_chars}~{max_chars}자)를 준수하되, "
-        "전면 재작성보다 부분 수정을 우선하십시오."
-    )
-
-
-# ---------------------------------------------------------------------------
-# build_structure_prompt
-# ---------------------------------------------------------------------------
 
 def build_structure_prompt(params: Dict[str, Any]) -> str:
     """StructureAgent용 XML 프롬프트를 조립한다.
@@ -962,6 +434,19 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
             "필수 키: title, intro, body, conclusion."
         )
 
+    shared_contract_rule_lines = "\n".join(
+        f'    <rule order="{idx + 3}">{_xml_text(rule)}</rule>'
+        for idx, rule in enumerate(build_shared_contract_rules())
+    )
+    genre_contract = f"""
+  <genre_contract name="정치인 블로그 글 기본 규칙">
+    <identity>정치인이 직접 쓰는 블로그 글이다.</identity>
+    <rule order="1">경험과 사실을 말하고, 그 의미에 대한 최종 판단은 독자에게 맡길 것.</rule>
+    <rule order="2">독자 반응을 대신 해석하거나 화자의 역량을 스스로 인증하지 말고, 확인 가능한 사실과 행동을 우선 쓸 것.</rule>
+{shared_contract_rule_lines}
+  </genre_contract>
+""".strip()
+
     structure_enforcement = f"""
 <structure_guide mode="strict">
   <strategy>E-A-T (전문성-권위-신뢰) 전략으로 작성</strategy>
@@ -1017,10 +502,12 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
       </type>
     </types>
     <banned>추상적 표현("노력", "열전", "마음"), 모호한 지시어("이것", "그것", "관련 내용"), 과장 표현("최고", "혁명적", "놀라운"), 서술어 포함("~에 대한 설명", "~을 알려드립니다"), 키워드 없는 짧은 제목("정책", "방법", "소개")</banned>
-    <aeo_rule>H2 바로 아래 첫 문장(40~60자)은 해당 질문/주제에 대한 직접 답변으로 작성할 것.</aeo_rule>
+    <aeo_rule>H2는 해당 섹션 첫 2문장을 먼저 쓴 뒤, 그 문단이 이미 답한 핵심 질문의 직접 답변으로 작성할 것.</aeo_rule>
   </h2_strategy>
 
 {build_h2_examples()}
+
+  {genre_contract}
 
   <mandatory_rules>
     <rule id="html_tags">소제목은 &lt;h2&gt;, 문단은 &lt;p&gt; 태그만 사용 (마크다운 문법 금지)</rule>
@@ -1035,8 +522,9 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     <rule id="no_single_sentence_echo">같은 구조의 단문 문장을 섹션 말미마다 반복 금지. 특히 "이 만남은 ~", "이 자리는 ~", "이 뜻깊은 자리는 ~", "이번 만남은 ~" 패턴은 한 번만 사용.</rule>
     <rule id="no_datetime_location_ngram_repeat">일시+장소가 함께 들어간 구문(예: "3월 1일(일) 오후 2시, 서면...")은 같은 어순으로 3회 이상 반복 금지. 2회를 넘으면 어순/표현을 반드시 변형할 것.</rule>
     <rule id="no_meta_prompt_leak">프롬프트/규칙 설명 문장을 본문에 복사하지 말 것. "문제는~점검" 같은 규칙성 메타 문장 생성 금지.</rule>
-    <rule id="paragraph_min_sentences">원칙적으로 각 <p>는 최소 2문장으로 구성. 예외는 결론의 마지막 CTA 문단 1개만 허용.</rule>
+    <rule id="paragraph_min_sentences">원칙적으로 각 &lt;p&gt;는 최소 2문장으로 구성. 예외는 결론의 마지막 CTA 문단 1개만 허용.</rule>
     <rule id="causal_clarity">성과 언급 시 본인의 구체적 역할/직책 명시. "40% 득표율을 이끌어냈다" → "시당위원장으로서 지역 조직을 총괄하며 40% 득표율 달성에 기여했습니다"</rule>
+    <rule id="h2_semantic_uniqueness">같은 의미를 다른 말로 반복하지 말 것. 같은 주제를 둘로 쪼개지 말고, 각 본론 H2는 서로 다른 질문과 직접 답을 가져야 한다.</rule>
   </mandatory_rules>
 {material_uniqueness_guard}
 {poll_focus_bundle_section}
@@ -1057,6 +545,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     style_generation_guard = _build_style_generation_guard(
         style_fingerprint=style_fingerprint,
         style_guide=style_guide,
+        user_profile=user_profile,
     )
 
     # SEO 지침 생성
@@ -1090,3 +579,12 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
   {natural_tone_guide}
 </structure_agent_prompt>
 """.strip()
+
+
+__all__ = [
+    'TEMPLATE_BUILDERS',
+    'build_retry_directive',
+    'build_structure_prompt',
+    'build_style_role_priority_summary',
+    'is_current_lawmaker',
+]
