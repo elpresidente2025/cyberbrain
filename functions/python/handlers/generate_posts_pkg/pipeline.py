@@ -6452,13 +6452,21 @@ def _apply_poll_focus_contract_once(
         poll_tokens_for_check = tuple(
             t for t in (speaker_percent, opponent_percent) if t
         )
+        had_paragraphs_before_groundedness = bool(PARAGRAPH_TAG_PATTERN.search(updated_section_html))
         groundedness_result = _remove_groundedness_violations_from_section(
             updated_section_html,
             opponent_names=all_opponent_names,
             poll_number_tokens=poll_tokens_for_check,
         )
         if groundedness_result.get("edited"):
-            updated_section_html = str(groundedness_result.get("content") or updated_section_html)
+            groundedness_content = str(groundedness_result.get("content") or updated_section_html)
+            if had_paragraphs_before_groundedness and not PARAGRAPH_TAG_PATTERN.search(groundedness_content):
+                print(
+                    f"⚠️ [PostQA] groundedness 제거 후 섹션 본문이 비었습니다: "
+                    f"kind={section_kind or 'unknown'}, heading='{h2_plain}'"
+                )
+                actions.append(f"groundedness_emptied_section:{section_kind or 'unknown'}")
+            updated_section_html = groundedness_content
             for g_action in groundedness_result.get("actions") or []:
                 if g_action:
                     actions.append(f"{g_action}:{section_kind}")

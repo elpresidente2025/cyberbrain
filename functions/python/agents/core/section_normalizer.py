@@ -517,6 +517,19 @@ class SectionNormalizerMixin:
         def _has_renderable_paragraphs(paragraphs: List[str]) -> bool:
             return any(self._clean_plain_text(paragraph) for paragraph in paragraphs)
 
+        def _log_empty_section_drop(
+            *,
+            section_label: str,
+            heading_text: str,
+            reason: str,
+            before_count: int,
+            after_count: int,
+        ) -> None:
+            print(
+                f"⚠️ [StructureAgent] {section_label} 본문이 비어 섹션을 드롭합니다: "
+                f"'{heading_text}' (reason={reason}, before={before_count}, after={after_count})"
+            )
+
         intro_paragraphs = _clean_intro_audience_reaction_paragraphs(intro_paragraphs)
 
         for paragraph in intro_paragraphs:
@@ -533,7 +546,17 @@ class SectionNormalizerMixin:
                 section.get('paragraphs'),
                 target_count=section_paragraphs,
             )
+            if not _has_renderable_paragraphs(section_paragraph_list):
+                _log_empty_section_drop(
+                    section_label=f"본론 {index + 1}",
+                    heading_text=heading,
+                    reason="empty_after_normalize",
+                    before_count=0,
+                    after_count=len(section_paragraph_list),
+                )
+                continue
             contract = body_contracts[index] if index < len(body_contracts) else None
+            section_paragraph_count_before_contract = len(section_paragraph_list)
             section_paragraph_list = _validate_section_contract_or_raise(
                 heading_text=heading,
                 paragraphs=section_paragraph_list,
@@ -541,9 +564,12 @@ class SectionNormalizerMixin:
                 section_label=f"본론 {index + 1}",
             )
             if not _has_renderable_paragraphs(section_paragraph_list):
-                print(
-                    f"⚠️ [StructureAgent] 본론 {index + 1} 본문이 비어 섹션을 드롭합니다: "
-                    f"'{heading}'"
+                _log_empty_section_drop(
+                    section_label=f"본론 {index + 1}",
+                    heading_text=heading,
+                    reason="emptied_after_contract_cleanup",
+                    before_count=section_paragraph_count_before_contract,
+                    after_count=len(section_paragraph_list),
                 )
                 continue
             heading = self._repair_low_alignment_heading(
@@ -562,6 +588,17 @@ class SectionNormalizerMixin:
             conclusion_payload.get('paragraphs'),
             target_count=section_paragraphs,
         )
+        if not _has_renderable_paragraphs(conclusion_paragraphs):
+            _log_empty_section_drop(
+                section_label='결론',
+                heading_text=conclusion_heading,
+                reason="empty_after_normalize",
+                before_count=0,
+                after_count=len(conclusion_paragraphs),
+            )
+            content = "\n".join(html_parts).strip()
+            return content, title
+        conclusion_paragraph_count_before_contract = len(conclusion_paragraphs)
         conclusion_paragraphs = _validate_section_contract_or_raise(
             heading_text=conclusion_heading,
             paragraphs=conclusion_paragraphs,
@@ -569,9 +606,12 @@ class SectionNormalizerMixin:
             section_label='결론',
         )
         if not _has_renderable_paragraphs(conclusion_paragraphs):
-            print(
-                f"⚠️ [StructureAgent] 결론 본문이 비어 섹션을 드롭합니다: "
-                f"'{conclusion_heading}'"
+            _log_empty_section_drop(
+                section_label='결론',
+                heading_text=conclusion_heading,
+                reason="emptied_after_contract_cleanup",
+                before_count=conclusion_paragraph_count_before_contract,
+                after_count=len(conclusion_paragraphs),
             )
             content = "\n".join(html_parts).strip()
             return content, title

@@ -464,6 +464,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
 
     def _build_structure_json_schema(self, length_spec: Dict[str, int]) -> Dict[str, Any]:
         paragraph_schema: Dict[str, Any] = {"type": "string"}
+        body_sections = max(1, int(length_spec.get('body_sections') or 1))
 
         return {
             "type": "object",
@@ -476,12 +477,15 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                     "properties": {
                         "paragraphs": {
                             "type": "array",
+                            "minItems": 1,
                             "items": paragraph_schema,
                         }
                     },
                 },
                 "body": {
                     "type": "array",
+                    "minItems": body_sections,
+                    "maxItems": body_sections,
                     "items": {
                         "type": "object",
                         "required": ["heading", "paragraphs"],
@@ -491,6 +495,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                             },
                             "paragraphs": {
                                 "type": "array",
+                                "minItems": 1,
                                 "items": paragraph_schema,
                             },
                         },
@@ -505,6 +510,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                         },
                         "paragraphs": {
                             "type": "array",
+                            "minItems": 1,
                             "items": paragraph_schema,
                         },
                     },
