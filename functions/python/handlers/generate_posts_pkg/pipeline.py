@@ -22,6 +22,7 @@ from typing import Any, Dict, Optional
 from firebase_admin import firestore
 from firebase_functions import https_fn
 
+from agents.common.editorial import STRUCTURE_SPEC
 from agents.common.poll_citation import build_poll_citation_text
 from agents.common.role_keyword_policy import (
     ROLE_KEYWORD_PATTERN as COMMON_ROLE_KEYWORD_PATTERN,
@@ -36,6 +37,7 @@ from agents.common.role_keyword_policy import (
     normalize_role_label as normalize_role_label_common,
     roles_equivalent as roles_equivalent_common,
 )
+from agents.core.structure_normalizer import _join_sections, _pad_short_section, _plain_len, _split_into_sections
 from services.memory import get_recent_selected_titles
 from services.posts.content_processor import cleanup_post_content, remove_grammatical_errors
 from services.posts.profile_loader import (
@@ -962,6 +964,101 @@ def _calc_min_required_chars(target_word_count: int, stance_count: int = 0) -> i
     per_section_recommended = max(360, min(420, round(target_chars / total_sections)))
     per_section_min = max(320, per_section_recommended - 50)
     return max(int(target_chars * 0.88), total_sections * per_section_min)
+
+
+def _build_terminal_section_length_spec(target_word_count: int, stance_count: int = 0) -> Dict[str, int]:
+    target_chars = max(1600, min(int(target_word_count or DEFAULT_TARGET_WORD_COUNT), 3200))
+    section_char_target = int(STRUCTURE_SPEC["sectionCharTarget"])
+    section_char_min = int(STRUCTURE_SPEC["sectionCharMin"])
+    section_char_max = int(STRUCTURE_SPEC["sectionCharMax"])
+    min_sections = int(STRUCTURE_SPEC["minSections"])
+    max_sections = int(STRUCTURE_SPEC["maxSections"])
+
+    total_sections = round(target_chars / section_char_target)
+    total_sections = max(min_sections, min(max_sections, total_sections))
+    if stance_count > 0:
+        total_sections = max(total_sections, min(max_sections, stance_count + 2))
+
+    per_section_recommended = max(
+        section_char_min,
+        min(section_char_max, round(target_chars / total_sections)),
+    )
+    per_section_min = max(section_char_min - 50, per_section_recommended - 50)
+    per_section_max = min(section_char_max + 50, per_section_recommended + 50)
+    return {
+        "total_sections": total_sections,
+        "expected_h2": max(1, total_sections - 1),
+        "per_section_min": per_section_min,
+        "per_section_max": per_section_max,
+    }
+
+
+def _apply_terminal_section_length_backstop_once(
+    content: str,
+    *,
+    length_spec: Optional[Dict[str, int]] = None,
+) -> Dict[str, Any]:
+    base = str(content or "")
+    if not base.strip():
+        return {"content": base, "edited": False, "actions": []}
+
+    spec = length_spec if isinstance(length_spec, dict) else {}
+    section_min = int(spec.get("per_section_min") or max(320, int(STRUCTURE_SPEC["sectionCharMin"]) - 50))
+    sections = _split_into_sections(base)
+    if len(sections) < 2:
+        return {"content": base, "edited": False, "actions": []}
+
+    actions: list[str] = []
+    before_lengths = [_plain_len(section.get("html", "")) for section in sections]
+
+    for index, section in enumerate(sections):
+        if not section.get("has_h2"):
+            continue
+        effective_min = min(section_min, 130) if index == len(sections) - 1 else section_min
+        section_html = str(section.get("html") or "")
+        before_len = _plain_len(section_html)
+        if before_len >= effective_min:
+            continue
+
+        updated_html = section_html
+        for _ in range(6):
+            current_len = _plain_len(updated_html)
+            if current_len >= effective_min:
+                break
+            updated_html = _pad_short_section(updated_html, index + 1, effective_min - current_len)
+
+        after_len = _plain_len(updated_html)
+        if updated_html != section_html:
+            section["html"] = updated_html
+            actions.append(f"section_length_backstop:{index + 1}:{before_len}->{after_len}")
+            logger.warning(
+                "Final section length backstop applied: section=%s before=%s after=%s min=%s",
+                index + 1,
+                before_len,
+                after_len,
+                effective_min,
+            )
+
+    if not actions:
+        return {"content": base, "edited": False, "actions": []}
+
+    repaired = _join_sections(sections)
+    if repaired == base:
+        return {"content": base, "edited": False, "actions": []}
+
+    after_lengths = [_plain_len(section.get("html", "")) for section in sections]
+    logger.info(
+        "Final section length backstop summary: before=%s after=%s",
+        before_lengths,
+        after_lengths,
+    )
+    return {
+        "content": repaired,
+        "edited": True,
+        "actions": actions,
+        "beforeLengths": before_lengths,
+        "afterLengths": after_lengths,
+    }
 
 
 def _extract_stance_count(pipeline_result: Dict[str, Any]) -> int:
@@ -9490,6 +9587,11 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         "actions": [],
         "skippedReason": "",
     }
+    final_section_length_backstop: Dict[str, Any] = {
+        "attempted": False,
+        "applied": False,
+        "actions": [],
+    }
     subheading_entity_gate: Dict[str, Any] = {
         "attempted": False,
         "applied": False,
@@ -11190,6 +11292,23 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             "최종 문장부호 공백 복원 적용: %s",
             terminal_spacing_cleanup.get("actions") or [],
         )
+    final_section_length_backstop["attempted"] = True
+    section_length_backstop_result = _apply_terminal_section_length_backstop_once(
+        generated_content,
+        length_spec=_build_terminal_section_length_spec(
+            target_word_count=target_word_count,
+            stance_count=stance_count,
+        ),
+    )
+    final_section_length_backstop["actions"] = list(section_length_backstop_result.get("actions") or [])
+    if section_length_backstop_result.get("edited"):
+        generated_content = str(section_length_backstop_result.get("content") or generated_content)
+        final_section_length_backstop["applied"] = True
+        _refresh_terminal_validation_state()
+        final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
+            keyword_validation,
+            gate_user_keywords,
+        )
     if not final_keyword_gate_ok:
         _append_quality_warning(
             quality_warnings,
@@ -11246,6 +11365,11 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         _append_quality_warning(
             quality_warnings,
             "최종 문장 윤문 안전망이 적용되었습니다.",
+        )
+    if final_section_length_backstop.get("applied") is True:
+        _append_quality_warning(
+            quality_warnings,
+            "최종 섹션 길이 보정이 적용되었습니다.",
         )
     if subheading_entity_gate.get("applied") is True:
         _append_quality_warning(
