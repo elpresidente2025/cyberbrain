@@ -93,9 +93,12 @@ export default function DraftGrid({
                 component="div"
                 gutterBottom
                 sx={{
-                  color: '#ffffff',
+                  color: '#ffffff !important',
                   textAlign: 'center',
-                  fontWeight: 'bold'
+                  fontWeight: 'bold',
+                  '&, & *': {
+                    color: '#ffffff !important'
+                  }
                 }}
               >
                 초안 {index + 1}
