@@ -7,6 +7,7 @@ import re
 from typing import Any, Dict, Iterable, List, Optional
 
 from agents.common.role_keyword_policy import extract_role_keyword_parts
+from agents.common.section_contract import build_matchup_allowed_h2_kinds
 
 from .poll_fact_guard import build_poll_matchup_fact_table
 
@@ -202,25 +203,26 @@ def _is_speaker_ahead(record: Dict[str, Any]) -> bool:
     return speaker_score > opponent_score
 
 
-def _build_primary_matchup_question(record: Dict[str, Any]) -> str:
+def _build_primary_matchup_heading(record: Dict[str, Any]) -> str:
     speaker = str(record.get("speaker") or "").strip()
     opponent = str(record.get("opponent") or "").strip()
     if not speaker or not opponent:
         return ""
     subject = _with_particle(speaker, "이", "가")
     if _is_speaker_ahead(record):
-        return f"왜 {subject} {opponent}와의 가상대결에서 앞섰나"
-    return f"왜 {subject} {opponent}와의 가상대결에서 접전을 만들었나"
+        return f"{subject} {opponent}와의 가상대결에서 앞선 이유"
+    return f"{subject} {opponent}와의 가상대결에서 접전을 만든 배경"
 
 
-def _build_secondary_matchup_question(record: Dict[str, Any]) -> str:
+def _build_secondary_matchup_heading(record: Dict[str, Any]) -> str:
+    speaker = str(record.get("speaker") or "").strip()
     opponent = str(record.get("opponent") or "").strip()
-    if not opponent:
+    if not speaker or not opponent:
         return ""
     margin = _to_float(record.get("margin"))
     if margin is not None and margin <= 3.1:
-        return f"{opponent}과의 접전은 무엇을 보여주나"
-    return f"{opponent}과의 대결은 무엇을 보여주나"
+        return f"{opponent}과의 접전에서 확인된 {speaker} 경쟁력"
+    return f"{opponent}과의 대결에서 드러난 {speaker} 구도"
 
 
 def _build_title_lanes(primary_pair: Dict[str, Any]) -> List[Dict[str, str]]:
@@ -250,71 +252,6 @@ def _build_title_lanes(primary_pair: Dict[str, Any]) -> List[Dict[str, str]]:
     ]
 
 
-def _build_allowed_h2_kinds(
-    primary_pair: Dict[str, Any],
-    secondary_pairs: List[Dict[str, Any]],
-    speaker: str,
-) -> List[Dict[str, str]]:
-    allowed: List[Dict[str, str]] = []
-    primary_question = _build_primary_matchup_question(primary_pair)
-    primary_answer = _build_pair_fact_sentence(primary_pair)
-    if primary_question:
-        allowed.append(
-            {
-                "id": "primary_matchup",
-                "label": "주대결 결과",
-                "template": primary_question,
-                "answerLead": primary_answer,
-            }
-        )
-    allowed.append(
-        {
-            "id": "recognition",
-            "label": "인지도 확장 해석",
-            "template": f"{speaker} 인지도는 왜 부산 시민 사이에서 확장되고 있나",
-            "answerLead": (
-                f"이 흐름은 {speaker}의 이름과 메시지가 부산 시민 사이에서 "
-                "조금씩 더 알려지고 있음을 보여줍니다."
-            ),
-        }
-    )
-    allowed.append(
-        {
-            "id": "policy",
-            "label": "정책 비전",
-            "template": f"부산 경제를 살릴 {speaker}의 해법은 무엇인가",
-            "answerLead": (
-                "부산 경제를 살릴 해법은 지역 산업과 일자리 문제를 함께 풀 수 있는 "
-                "실질적 정책에 있습니다."
-            ),
-        }
-    )
-    if secondary_pairs:
-        secondary_question = _build_secondary_matchup_question(secondary_pairs[0])
-        secondary_answer = _build_pair_fact_sentence(secondary_pairs[0])
-        if secondary_question:
-            allowed.append(
-                {
-                    "id": "secondary_matchup",
-                    "label": "보조 대결",
-                    "template": secondary_question,
-                    "answerLead": secondary_answer,
-                }
-            )
-    allowed.append(
-        {
-            "id": "closing",
-            "label": "마무리",
-            "template": f"왜 지금 {speaker}의 가능성에 주목해야 하나",
-            "answerLead": (
-                f"지금 {speaker}의 가능성에 주목해야 하는 이유는 "
-                "여론조사에서 확인된 경쟁력과 변화 요구가 함께 드러났기 때문입니다."
-            ),
-        }
-    )
-    return allowed
-
-
 def build_poll_focus_bundle(
     *,
     topic: str,
@@ -328,6 +265,7 @@ def build_poll_focus_bundle(
     keyword_names = _extract_keyword_names(user_keywords)
     source_names = _extract_source_names(text_sources)
     seed_names = _unique_names([speaker, *topic_names, *keyword_names, *source_names])
+    title_name_priority = _unique_names([speaker, *keyword_names, *topic_names, *source_names])
 
     table = poll_fact_table if isinstance(poll_fact_table, dict) else None
     if not table or not isinstance(table.get("pairs"), dict) or not table.get("pairs"):
@@ -339,6 +277,8 @@ def build_poll_focus_bundle(
             "scope": "",
             "speaker": speaker,
             "focusNames": seed_names,
+            "titleNamePriority": title_name_priority,
+            "titleNameRepeatLimit": 1,
             "primaryPair": {},
             "secondaryPairs": [],
             "primaryFactTemplate": {},
@@ -379,6 +319,8 @@ def build_poll_focus_bundle(
             "scope": "",
             "speaker": speaker,
             "focusNames": focus_names,
+            "titleNamePriority": title_name_priority,
+            "titleNameRepeatLimit": 1,
             "primaryPair": {},
             "secondaryPairs": [],
             "primaryFactTemplate": {},
@@ -397,7 +339,7 @@ def build_poll_focus_bundle(
         "heading": _build_pair_heading(primary_pair),
     }
     allowed_title_lanes = _build_title_lanes(primary_pair)
-    allowed_h2_kinds = _build_allowed_h2_kinds(primary_pair, secondary_pairs, speaker)
+    allowed_h2_kinds = build_matchup_allowed_h2_kinds(primary_pair, secondary_pairs, speaker)
 
     focused_lines: List[str] = []
     if primary_fact_template["sentence"]:
@@ -414,6 +356,8 @@ def build_poll_focus_bundle(
         "scope": "matchup",
         "speaker": speaker,
         "focusNames": focus_names,
+        "titleNamePriority": title_name_priority,
+        "titleNameRepeatLimit": 1,
         "primaryPair": primary_pair,
         "secondaryPairs": secondary_pairs,
         "primaryFactTemplate": primary_fact_template,

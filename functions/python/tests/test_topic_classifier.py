@@ -1,0 +1,67 @@
+from __future__ import annotations
+
+import asyncio
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from services import topic_classifier
+from handlers.generate_posts_pkg import pipeline as generate_pipeline
+
+
+def test_classify_topic_prefers_topic_for_primary_category() -> None:
+    result = asyncio.run(topic_classifier.classify_topic("부산 교통 민원 해결 방안"))
+
+    assert result["category"] == "local-issues"
+    assert result["writingMethod"] == "analytical_writing"
+
+
+def test_classify_topic_refines_policy_topic_with_stance_text() -> None:
+    result = asyncio.run(
+        topic_classifier.classify_topic(
+            "기초연금 정책",
+            stance_text="기초연금 신청 방법과 지원 대상을 쉽게 설명드리겠습니다.",
+        )
+    )
+
+    assert result["category"] == "educational-content"
+    assert result["subCategory"] == "policy_explanation"
+    assert result["writingMethod"] == "logical_writing"
+
+
+def test_resolve_request_intent_uses_only_first_instruction_as_secondary_signal() -> None:
+    result = asyncio.run(
+        topic_classifier.resolve_request_intent(
+            "기초연금 정책",
+            {
+                "category": "",
+                "instructions": [
+                    "기초연금 신청 방법과 지원 대상을 쉽게 설명드리겠습니다.",
+                    "오늘 간담회 결과와 예산 확보 성과를 보고드립니다.",
+                ],
+            },
+        )
+    )
+
+    assert result["category"] == "educational-content"
+    assert result["subCategory"] == "policy_explanation"
+
+
+def test_resolve_request_category_uses_stance_text_when_category_missing() -> None:
+    topic, category, sub_category = generate_pipeline._resolve_request_category(
+        {
+            "topic": "기초연금 정책",
+            "instructions": [
+                "기초연금 신청 방법과 지원 대상을 쉽게 설명드리겠습니다.",
+                "오늘 간담회 결과와 예산 확보 성과를 보고드립니다.",
+            ],
+        }
+    )
+
+    assert topic == "기초연금 정책"
+    assert category == "educational-content"
+    assert sub_category == "policy_explanation"

@@ -1,9 +1,11 @@
 # functions/python/agents/common/h2_guide.py
 """AEO+SEO 최적화 H2 소제목 단일 원칙 소스 (Single Source of Truth)
 
-모든 H2 관련 상수, 규칙, few-shot 예시를 이 파일에서 관리한다.
+모든 H2 관련 상수, 규칙, few-shot 예시, 길이 보정 로직을 이 파일에서 관리한다.
 소비처: prompt_builder.py (StructureAgent), SubheadingAgent, content_validator.py, structure_normalizer.py
 """
+
+import re
 
 # ---------------------------------------------------------------------------
 # 상수 (validator, normalizer, agent 공통)
@@ -13,6 +15,103 @@ H2_MAX_LENGTH = 25      # content_validator: 이 초과이면 H2_TEXT_LONG
 H2_OPTIMAL_MIN = 12     # 프롬프트 권장 최소
 H2_OPTIMAL_MAX = 25     # 프롬프트 권장 최대
 H2_BEST_RANGE = "15~22" # 네이버 최적 범위
+H2_TRUNCATION_RSTRIP_CHARS = " -_.,:;!?"
+H2_DUPLICATED_PARTICLES = (
+    "으로",
+    "에게",
+    "에서",
+    "까지",
+    "부터",
+    "처럼",
+    "보다",
+    "은",
+    "는",
+    "이",
+    "가",
+    "을",
+    "를",
+    "과",
+    "와",
+    "의",
+    "도",
+    "만",
+    "에",
+    "로",
+)
+_H2_DUPLICATED_PARTICLE_RE = re.compile(
+    rf"(?P<stem>[가-힣A-Za-z0-9]+?)(?P<particle>{'|'.join(H2_DUPLICATED_PARTICLES)})(?P=particle)(?=$|[\s,.:;!?])"
+)
+_H2_CONSECUTIVE_DUPLICATE_TOKEN_RE = re.compile(
+    r"\b(?P<token>[가-힣A-Za-z0-9]{2,})\s+(?P=token)\b"
+)
+_H2_TRAILING_INCOMPLETE_ENDING_RE = re.compile(
+    r"(?:"
+    r"으로|에서|에게|까지|부터|처럼|보다|과|와|의|은|는|이|가|을|를|에|도|만|로|"
+    r"겠(?:다|습)?|하는|있는|없는"
+    r")$"
+)
+
+
+def normalize_h2_style(style: str = 'aeo') -> str:
+    """지원하는 H2 스타일 키를 정규화한다."""
+    normalized = str(style or '').strip().lower()
+    return 'assertive' if normalized == 'assertive' else 'aeo'
+
+
+def has_incomplete_h2_ending(text: str) -> bool:
+    """조사/미완결 어미/잘린 한 글자 토큰으로 끝나는 H2를 감지한다."""
+    candidate = re.sub(r'\s+', ' ', str(text or '').strip())
+    if not candidate:
+        return True
+
+    last_token = candidate.split(' ')[-1]
+    if len(last_token) <= 1:
+        return True
+
+    return bool(_H2_TRAILING_INCOMPLETE_ENDING_RE.search(last_token))
+
+
+def sanitize_h2_text(
+    text: str,
+    *,
+    min_length: int = H2_MIN_LENGTH,
+    max_length: int = H2_MAX_LENGTH,
+) -> str:
+    """H2 길이/공백/잘림 정책을 공통 정규화한다."""
+    candidate = re.sub(r'\s+', ' ', str(text or '').strip().strip('"\'')) 
+    candidate = candidate.strip(H2_TRUNCATION_RSTRIP_CHARS)
+    if not candidate:
+        raise ValueError("h2 텍스트가 비어 있습니다.")
+
+    for _ in range(3):
+        repaired = _H2_DUPLICATED_PARTICLE_RE.sub(
+            lambda match: f"{match.group('stem')}{match.group('particle')}",
+            candidate,
+        )
+        repaired = _H2_CONSECUTIVE_DUPLICATE_TOKEN_RE.sub(
+            lambda match: str(match.group("token") or ""),
+            repaired,
+        )
+        repaired = re.sub(r"\s+", " ", repaired).strip()
+        if repaired == candidate:
+            break
+        candidate = repaired
+
+    should_trim_at_boundary = len(candidate) > max_length
+    if len(candidate) == max_length and has_incomplete_h2_ending(candidate):
+        should_trim_at_boundary = True
+
+    if should_trim_at_boundary:
+        truncated = candidate[:max_length]
+        last_space = truncated.rfind(' ')
+        if last_space >= min_length:
+            truncated = truncated[:last_space]
+        candidate = truncated.rstrip(H2_TRUNCATION_RSTRIP_CHARS)
+
+    candidate = re.sub(r'\s+', ' ', candidate).strip()
+    if len(candidate) < min_length:
+        raise ValueError(f"h2 텍스트 길이가 {min_length}자 미만입니다.")
+    return candidate
 
 
 # ---------------------------------------------------------------------------
@@ -24,9 +123,14 @@ def build_h2_rules(style: str = 'aeo') -> str:
     Args:
         style: 'aeo' (일반 AEO+SEO) 또는 'assertive' (논평/시사 주장형)
     """
-    if style == 'assertive':
-        return _build_assertive_rules()
-    return _build_aeo_rules()
+    normalized_style = normalize_h2_style(style)
+    if normalized_style == 'assertive':
+        return f"""{_build_assertive_rules()}
+
+{build_h2_examples(normalized_style)}"""
+    return f"""{_build_aeo_rules()}
+
+{build_h2_examples(normalized_style)}"""
 
 
 def _build_aeo_rules() -> str:
@@ -65,12 +169,11 @@ def _build_aeo_rules() -> str:
     서술어 포함("~에 대한 설명", "~을 알려드립니다"),
     키워드 없는 짧은 제목("정책", "방법", "소개"),
     1인칭 표현("저는", "제가", "나는", "내가")
+    후보명+약속형 선언("이름이 반드시 해내겠습니다" 등 - 소제목은 주장형이 아닌 정보형)
   </banned>
 
   <aeo_rule>H2 바로 아래 첫 문장(40~60자)은 해당 질문/주제에 대한 직접 답변으로 작성할 것.</aeo_rule>
-</h2_rules>
-
-{build_h2_examples()}"""
+</h2_rules>"""
 
 
 def _build_assertive_rules() -> str:
@@ -99,8 +202,14 @@ def _build_assertive_rules() -> str:
 # ---------------------------------------------------------------------------
 # build_h2_examples: few-shot 교정 예시 (50개)
 # ---------------------------------------------------------------------------
-def build_h2_examples() -> str:
+def build_h2_examples(style: str = 'aeo') -> str:
     """H2 소제목 few-shot 예시 XML 블록을 반환한다."""
+    if normalize_h2_style(style) == 'assertive':
+        return _build_assertive_examples()
+    return _build_aeo_examples()
+
+
+def _build_aeo_examples() -> str:
     return """
 <h2_examples name="소제목 교정 예시 (bad → good)">
   <type name="질문형" strength="AEO 최강">
@@ -171,6 +280,45 @@ def build_h2_examples() -> str:
     <ban>키워드 없는 추상적 표현 ("노력", "열심히")</ban>
     <ban>"~에 대한", "~관련" 등 불필요한 접속사</ban>
     <ban>"저는/제가/나는/내가" 같은 1인칭 표현</ban>
+  </checklist>
+</h2_examples>
+"""
+
+
+def _build_assertive_examples() -> str:
+    return """
+<h2_examples name="논평용 소제목 교정 예시 (bad → good)">
+  <type name="단정형" strength="입장 선명화">
+    <good>특검은 정치 보복이 아니다</good>
+    <good>당당하면 피할 이유 없다</good>
+    <good>권한 남용은 바로잡아야 한다</good>
+    <correction before="특검에 대해 생각해 봅시다" after="특검은 정치 보복이 아니다"/>
+    <correction before="이 사안을 어떻게 봐야 할까?" after="권한 남용은 바로잡아야 한다"/>
+  </type>
+
+  <type name="비판형" strength="쟁점 압축">
+    <good>진실 규명을 거부하는 태도</good>
+    <good>책임 회피로는 해명되지 않는다</good>
+    <good>국민 신뢰를 무너뜨린 결정</good>
+    <correction before="문제가 있어 보입니다" after="국민 신뢰를 무너뜨린 결정"/>
+    <correction before="여러 논란이 이어지고 있습니다" after="책임 회피로는 해명되지 않는다"/>
+  </type>
+
+  <type name="명사형" strength="핵심 쟁점 명시">
+    <good>특검법의 정당성과 의의</good>
+    <good>거짓 해명의 구조적 한계</good>
+    <good>민주주의 질서를 지키는 기준</good>
+    <correction before="논평" after="특검법의 정당성과 의의"/>
+    <correction before="관련 입장 정리" after="거짓 해명의 구조적 한계"/>
+  </type>
+
+  <checklist>
+    <must>12~25자 범위 (네이버 최적 15~22자)</must>
+    <must>질문형 대신 주장형 또는 명사형 사용</must>
+    <must>핵심 쟁점을 직접 드러내는 표현 사용</must>
+    <ban>"~인가요?", "~일까요?" 같은 질문형 어미</ban>
+    <ban>"생각해 봅시다", "함께 보시죠" 같은 완곡한 유도문</ban>
+    <ban>"정책", "입장", "논평"처럼 내용 없는 추상 제목</ban>
   </checklist>
 </h2_examples>
 """

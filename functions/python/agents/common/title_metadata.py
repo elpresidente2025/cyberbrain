@@ -15,7 +15,7 @@ def _detect_event_label(topic: str) -> str:
     for marker in EVENT_NAME_MARKERS:
         if marker in (topic or ''):
             return marker
-    return '행사'
+    return ''
 
 def _extract_date_hint(text: str) -> str:
     if not text:
@@ -74,29 +74,105 @@ def _split_hint_tokens(text: str) -> List[str]:
             result.append(token)
     return result
 
+
+_EVENT_PURPOSE_EXTRA_MARKERS = (
+    '안내',
+    '초대',
+    '방송토론',
+    '간담회',
+    '기자회견',
+    '토크콘서트',
+    '북토크',
+    '출판기념회',
+    '설명회',
+)
+
+_EVENT_PURPOSE_PLACE_MARKERS = (
+    'KNN',
+    '유튜브',
+    '강당',
+    '회관',
+    '센터',
+    '홀',
+    '광장',
+)
+
+_EVENT_PURPOSE_INVITE_MARKERS = (
+    '모십니다',
+    '초대합니다',
+    '함께해',
+    '열립니다',
+    '개최',
+)
+
+_EVENT_PURPOSE_GENERIC_MARKERS = (
+    '행사',
+    '안내',
+    '초대',
+    '개최',
+    '열리는',
+    '열립니다',
+)
+
+
+def _extract_time_hint(text: str) -> str:
+    if not text:
+        return ''
+    match = re.search(r'(\d{1,2}\s*시(?:\s*\d{1,2}\s*분)?)', str(text))
+    if match:
+        return re.sub(r'\s+', ' ', str(match.group(1) or '')).strip()
+    if any(token in str(text) for token in ('오전', '오후')):
+        return '오전/오후'
+    return ''
+
+
+def _has_event_metadata(params: Dict[str, Any]) -> bool:
+    context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
+    must_preserve = context_analysis.get('mustPreserve') if isinstance(context_analysis.get('mustPreserve'), dict) else {}
+    return bool(str(must_preserve.get('eventDate') or '').strip() or str(must_preserve.get('eventLocation') or '').strip())
+
+
+def _looks_like_event_announcement_text(text: str, *, allow_generic_markers: bool = True) -> bool:
+    normalized = re.sub(r'\s+', ' ', str(text or '')).strip()
+    if not normalized:
+        return False
+
+    has_date_hint = bool(_extract_date_hint(normalized))
+    has_time_hint = bool(_extract_time_hint(normalized))
+    has_place_hint = any(token in normalized for token in _EVENT_PURPOSE_PLACE_MARKERS)
+    has_invite_hint = any(token in normalized for token in _EVENT_PURPOSE_INVITE_MARKERS)
+    has_schedule_hint = has_date_hint or has_time_hint
+    has_named_event = any(marker in normalized for marker in EVENT_NAME_MARKERS)
+    has_generic_event = any(marker in normalized for marker in _EVENT_PURPOSE_GENERIC_MARKERS)
+
+    if has_named_event and (has_schedule_hint or (has_place_hint and has_invite_hint)):
+        return True
+    if allow_generic_markers and has_generic_event and has_schedule_hint and (has_place_hint or has_invite_hint):
+        return True
+    return False
+
 def resolve_title_purpose(topic: str, params: Dict[str, Any]) -> str:
-    event_markers = EVENT_NAME_MARKERS + (
-        '행사',
-        '개최',
-        '열리는',
-        '열립니다',
-        '초대',
-        '참석',
+    topic_text = str(topic or '').strip()
+    if topic_text and _looks_like_event_announcement_text(topic_text):
+        return 'event_announcement'
+
+    if _has_event_metadata(params):
+        return 'event_announcement'
+
+    purpose_source = " ".join(
+        str(params.get(key) or '').strip()
+        for key in ('topic', 'stanceText', 'contentPreview', 'backgroundText')
+        if str(params.get(key) or '').strip()
     )
-    if any(marker in (topic or '') for marker in event_markers):
+    if (
+        (not topic_text and _looks_like_event_announcement_text(purpose_source))
+        or (topic_text and _looks_like_event_announcement_text(purpose_source, allow_generic_markers=False))
+    ):
         return 'event_announcement'
 
     context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
     intent = str(context_analysis.get('intent') or '').strip().lower()
-    offline_intents = {
-        'event_announcement',
-        'offline_engagement',
-        'event_participation',
-        'event_attendance',
-        'brief_notice',
-        'schedule_notice',
-    }
-    if intent in offline_intents:
+    if intent == 'event_announcement':
         return 'event_announcement'
     if intent:
         return intent

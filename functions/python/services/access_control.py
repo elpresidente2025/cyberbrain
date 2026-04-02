@@ -4,6 +4,8 @@ from typing import Any, Optional
 from firebase_admin import firestore
 from google.api_core import exceptions as gcloud_exceptions
 
+from services.system_config import get_test_mode_config
+
 logger = logging.getLogger(__name__)
 
 def get_current_month_key() -> str:
@@ -50,6 +52,24 @@ def _normalize_subscription_status(user_data: dict) -> str:
         return "trial"
     status = str(raw).strip().lower()
     return status or "trial"
+
+
+def _check_test_mode_permission(user_data: dict, *, monthly_limit: int) -> dict:
+    current_month = get_current_month_key()
+    used = _get_monthly_used(user_data, current_month)
+
+    if used >= monthly_limit:
+        return {
+            "allowed": False,
+            "reason": "monthly_limit_exceeded",
+            "message": f"데모 모드 이번 달 생성 한도({monthly_limit}회)를 모두 사용했습니다."
+        }
+
+    return {
+        "allowed": True,
+        "reason": "demo",
+        "remaining": monthly_limit - used,
+    }
 
 
 def _parse_trial_expires_at(value: Any) -> Optional[datetime]:
@@ -146,8 +166,18 @@ async def check_generation_permission(user_id: str, db_client: firestore.Client)
             logger.info(f"✅ 테스터 권한: {user_id}, used={used}, limit={limit}")
             return {"allowed": True, "reason": "tester", "remaining": limit - used}
 
-        # 1. 무료 체험 사용자
         subscription_status = _normalize_subscription_status(user_data)
+        test_mode_config = get_test_mode_config(db_client)
+        test_mode_enabled = bool(test_mode_config.get("enabled") is True)
+        test_mode_limit = _safe_int(test_mode_config.get("freeMonthlyLimit"), 8)
+        if test_mode_limit <= 0:
+            test_mode_limit = 8
+
+        # 데모 모드에서는 비구독 사용자를 월간 무료 한도로 처리한다.
+        if test_mode_enabled and subscription_status != "active":
+            return _check_test_mode_permission(user_data, monthly_limit=test_mode_limit)
+
+        # 1. 무료 체험 사용자
         if subscription_status == "trial":
             # generationsRemaining 우선, 없으면 trialPostsRemaining, 그외 기본 8
             remaining_raw = user_data.get("generationsRemaining")

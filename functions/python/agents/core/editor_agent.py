@@ -170,8 +170,33 @@ class EditorAgent(Agent):
              details = validation_result.get('details', {})
 
              # Election Law
-             if details.get('electionLaw', {}).get('violations'):
-                  violations = ", ".join(details['electionLaw']['violations'])
+             election_law = details.get('electionLaw', {}) or {}
+             election_items = election_law.get('items') or []
+             if isinstance(election_items, list) and election_items:
+                  election_lines = []
+                  for item in election_items[:3]:
+                       if not isinstance(item, dict):
+                            continue
+                       reason = str(item.get('reason') or '선거법 위반 위험').strip()
+                       sentence = str(item.get('sentence') or '').strip()
+                       repair_hint = str(item.get('repairHint') or '').strip()
+                       matched_text = str(item.get('matchedText') or '').strip()
+                       detail_parts = [reason]
+                       if sentence:
+                            detail_parts.append(f'문제 문장: "{sentence}"')
+                       if matched_text:
+                            detail_parts.append(f'문제 표현: "{matched_text}"')
+                       if repair_hint:
+                            detail_parts.append(f'수정 가이드: {repair_hint}')
+                       election_lines.append("   - " + " | ".join(detail_parts))
+                  if election_lines:
+                       issues.append(
+                            "[CRITICAL] 선거법 위반 표현 발견:\n"
+                            + "\n".join(election_lines)
+                            + "\n   → 문제 문장만 최소 수정하되, 전언/소문/간접전언 표현은 완전히 제거"
+                       )
+             elif election_law.get('violations'):
+                  violations = ", ".join(election_law['violations'])
                   issues.append(f"[CRITICAL] 선거법 위반 표현 발견: {violations}\n   → 선거법을 준수하는 완곡한 표현으로 수정 (예: '~하겠습니다' -> '~추진합니다')")
 
              # Repetition

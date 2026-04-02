@@ -14,7 +14,7 @@ from agents.core.structure_normalizer import _plain_len, _split_into_sections
 from handlers.generate_posts_pkg.pipeline import _apply_terminal_section_length_backstop_once
 
 
-def test_terminal_section_length_backstop_pads_underfilled_body_section() -> None:
+def test_terminal_section_length_backstop_does_not_pad_underfilled_body_section_with_generic_text() -> None:
     content = dedent(
         """
     <p>We need a clear explanation of the economic direction before asking voters to compare competing plans.</p>
@@ -39,12 +39,11 @@ def test_terminal_section_length_backstop_pads_underfilled_body_section() -> Non
         },
     )
     updated = str(repaired.get("content") or "")
-    after_sections = _split_into_sections(updated)
-    after_body_len = _plain_len(after_sections[1]["html"])
 
-    assert repaired.get("edited") is True
-    assert any(str(action).startswith("section_length_backstop:2:") for action in repaired.get("actions") or [])
-    assert after_body_len >= 320
+    assert repaired.get("edited") is False
+    assert list(repaired.get("actions") or []) == []
+    assert "행정 절차와 예산 흐름까지 살펴 실현 가능한 해법으로 다듬겠습니다." not in updated
+    assert "현장 목소리를 꾸준히 듣고 미흡한 지점은 빠르게 손보겠습니다." not in updated
 
 
 def test_terminal_section_length_backstop_keeps_short_but_valid_conclusion() -> None:
@@ -78,8 +77,8 @@ def test_terminal_section_length_backstop_keeps_short_but_valid_conclusion() -> 
 def main() -> None:
     tests = [
         (
-            "terminal_section_length_backstop_pads_underfilled_body_section",
-            test_terminal_section_length_backstop_pads_underfilled_body_section,
+            "terminal_section_length_backstop_does_not_pad_underfilled_body_section_with_generic_text",
+            test_terminal_section_length_backstop_does_not_pad_underfilled_body_section_with_generic_text,
         ),
         (
             "terminal_section_length_backstop_keeps_short_but_valid_conclusion",

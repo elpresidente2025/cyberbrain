@@ -12,6 +12,35 @@ from .election_law import detect_election_law_violation, detect_election_law_vio
 from .repetition_checker import detect_near_duplicate_sentences, detect_phrase_repetition, detect_sentence_repetition, extract_sentences
 from .title_quality import validate_title_quality
 
+
+def _format_election_law_issue_text(
+    election_result: Dict[str, Any],
+    *,
+    label: str = "선거법 위반 표현",
+) -> str:
+    items = election_result.get("items") if isinstance(election_result, dict) else []
+    if isinstance(items, list) and items:
+        summaries = []
+        for item in items[:2]:
+            if not isinstance(item, dict):
+                continue
+            reason = str(item.get("reason") or "선거법 위반 위험").strip()
+            sentence = str(item.get("sentence") or "").strip()
+            repair_hint = str(item.get("repairHint") or "").strip()
+            parts = [reason]
+            if sentence:
+                parts.append(f'문제 문장: "{sentence}"')
+            if repair_hint:
+                parts.append(f"수정 가이드: {repair_hint}")
+            summaries.append(" | ".join(parts))
+        if summaries:
+            return f"⚠️ {label}: {'; '.join(summaries)}"
+
+    violations = election_result.get("violations") if isinstance(election_result, dict) else []
+    if isinstance(violations, list) and violations:
+        return f"⚠️ {label}: {', '.join(str(item) for item in violations[:2])}"
+    return f"⚠️ {label}"
+
 def detect_ai_writing_patterns(content: str) -> Dict[str, Any]:
     """BLACKLIST_PATTERNS 기준으로 AI 투 패턴을 감지한다.
 
@@ -83,7 +112,7 @@ def run_heuristic_validation_sync(
 
     election_result = detect_election_law_violation(content, status, title)
     if not election_result.get("passed", True):
-        issues.append(f"⚠️ 선거법 위반 표현: {', '.join(election_result.get('violations', []))}")
+        issues.append(_format_election_law_issue_text(election_result))
 
     fact_check_result = None
     if fact_allowlist:
@@ -146,15 +175,11 @@ async def run_heuristic_validation(
             model_name=model_name,
         )
         if not election_result.get("passed", True):
-            violation_summary = ", ".join(
-                f"\"{item.get('sentence', '')}\" ({item.get('reason', '')})"
-                for item in (election_result.get("violations") or [])
-            )
-            issues.append(f"⚠️ 선거법 위반: {violation_summary}")
+            issues.append(_format_election_law_issue_text(election_result, label="선거법 위반"))
     else:
         election_result = detect_election_law_violation(content, status, title)
         if not election_result.get("passed", True):
-            issues.append(f"⚠️ 선거법 위반 표현: {', '.join(election_result.get('violations', []))}")
+            issues.append(_format_election_law_issue_text(election_result))
 
     title_result = validate_title_quality(
         title,

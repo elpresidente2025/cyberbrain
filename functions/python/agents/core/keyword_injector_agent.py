@@ -12,6 +12,8 @@ _ALLOWED_BARE_NAME_FOLLOWING_PATTERN = re.compile(
     r"관련|측|캠프|후보군"
     r")(?:(?:은|는|이|가|을|를|의|에|와|과|도|만|보다|까지|부터|로|으로){1,2})?$"
 )
+_SENTENCE_ENDING_CHARS = ".!?。…"
+_WORDISH_CHAR_PATTERN = re.compile(r"[가-힣A-Za-z0-9]")
 
 from ..base_agent import Agent
 from ..common.gemini_client import StructuredOutputError, generate_json_async
@@ -746,18 +748,21 @@ class KeywordInjectorAgent(Agent):
             return []
 
     def _replace_first_occurrence(self, text: str, target: str, replacement: str) -> tuple[str, bool]:
-        if target in text:
-            return text.replace(target, replacement, 1), True
+        direct_start, direct_end = self._find_boundary_aware_substring_span(text, target)
+        if direct_start >= 0:
+            return text[:direct_start] + replacement + text[direct_end:], True
 
         target_tokens = [re.escape(token) for token in re.split(r'\s+', target.strip()) if token]
         if not target_tokens:
             return text, False
 
         pattern = re.compile(r'\s+'.join(target_tokens))
-        if not pattern.search(text):
+        match = self._find_boundary_aware_pattern_match(text, pattern)
+        if not match:
             return text, False
 
-        return pattern.sub(replacement, text, count=1), True
+        start, end = match.span()
+        return text[:start] + replacement + text[end:], True
 
     def _delete_first_occurrence(self, text: str, target: str) -> tuple[str, bool]:
         replaced, changed = self._replace_first_occurrence(text, target, '')
@@ -766,10 +771,91 @@ class KeywordInjectorAgent(Agent):
         replaced = re.sub(r'\s{2,}', ' ', replaced)
         return replaced, True
 
+    def _is_wordish_char(self, char: str) -> bool:
+        return bool(char and _WORDISH_CHAR_PATTERN.fullmatch(char))
+
+    def _has_safe_match_boundaries(self, text: str, start: int, end: int) -> bool:
+        if start < 0 or end < start:
+            return False
+        left_char = text[start - 1] if start > 0 else ''
+        right_char = text[end] if end < len(text) else ''
+        return (not self._is_wordish_char(left_char)) and (not self._is_wordish_char(right_char))
+
+    def _find_boundary_aware_substring_span(self, text: str, target: str) -> tuple[int, int]:
+        if not text or not target:
+            return -1, -1
+        start_at = 0
+        while True:
+            idx = text.find(target, start_at)
+            if idx < 0:
+                return -1, -1
+            end = idx + len(target)
+            if self._has_safe_match_boundaries(text, idx, end):
+                return idx, end
+            start_at = idx + 1
+
+    def _find_boundary_aware_pattern_match(self, text: str, pattern: re.Pattern[str]) -> Optional[re.Match[str]]:
+        if not text:
+            return None
+        for match in pattern.finditer(text):
+            start, end = match.span()
+            if self._has_safe_match_boundaries(text, start, end):
+                return match
+        return None
+
+    def _is_whitespace_gap_insert_position(self, text: str, insert_at: int) -> bool:
+        left_char = text[insert_at - 1] if insert_at > 0 else ''
+        right_char = text[insert_at] if insert_at < len(text) else ''
+        return bool((left_char and left_char.isspace()) or (right_char and right_char.isspace()))
+
+    def _is_sentence_boundary_insert_position(self, text: str, insert_at: int) -> bool:
+        if insert_at <= 0:
+            return True
+        suffix = str(text[insert_at:] or "")
+        stripped_suffix = suffix.lstrip()
+        if not stripped_suffix or stripped_suffix.startswith("<"):
+            return True
+        prefix = str(text[:insert_at] or "").rstrip()
+        last_visible = prefix[-1] if prefix else ""
+        if last_visible in _SENTENCE_ENDING_CHARS:
+            return True
+        next_visible = stripped_suffix[0]
+        if next_visible in "<)]}>\"'”’":
+            return True
+        return False
+
+    def _accept_safe_candidate(
+        self,
+        before_text: str,
+        candidate_text: str,
+        changed: bool,
+        keywords: Optional[List[str]],
+        *,
+        section_idx: int,
+        action_label: str,
+    ) -> tuple[str, bool]:
+        if not changed:
+            return before_text, False
+        if (
+            self._introduces_bare_keyword_attachment(before_text, candidate_text, keywords)
+            or self._introduces_particle_break(before_text, candidate_text, keywords)
+        ):
+            print(
+                f"[KeywordInjectorAgent][WARN] 섹션 {section_idx} {action_label} 롤백"
+                "(bare-name attach / particle-break)"
+            )
+            return before_text, False
+        return candidate_text, True
+
     def _insert_after_anchor(self, text: str, anchor: str, sentence: str) -> tuple[str, bool]:
-        idx = text.find(anchor)
-        if idx >= 0:
-            insert_at = idx + len(anchor)
+        direct_start, direct_end = self._find_boundary_aware_substring_span(text, anchor)
+        if direct_start >= 0:
+            insert_at = direct_end
+            if (
+                not self._is_whitespace_gap_insert_position(text, insert_at)
+                or not self._is_sentence_boundary_insert_position(text, insert_at)
+            ):
+                return text, False
             separator = '' if (insert_at > 0 and text[insert_at - 1].isspace()) else ' '
             return text[:insert_at] + separator + sentence + text[insert_at:], True
 
@@ -778,11 +864,16 @@ class KeywordInjectorAgent(Agent):
             return text, False
 
         pattern = re.compile(r'\s+'.join(anchor_tokens))
-        match = pattern.search(text)
+        match = self._find_boundary_aware_pattern_match(text, pattern)
         if not match:
             return text, False
 
         insert_at = match.end()
+        if (
+            not self._is_whitespace_gap_insert_position(text, insert_at)
+            or not self._is_sentence_boundary_insert_position(text, insert_at)
+        ):
+            return text, False
         separator = '' if (insert_at > 0 and text[insert_at - 1].isspace()) else ' '
         return text[:insert_at] + separator + sentence + text[insert_at:], True
 
@@ -875,12 +966,14 @@ class KeywordInjectorAgent(Agent):
                     if not target or not replacement:
                         continue
                     candidate_html, changed = self._replace_first_occurrence(section_html, target, replacement)
-                    if changed and (
-                        self._introduces_bare_keyword_attachment(section_html, candidate_html, user_keywords)
-                        or self._introduces_particle_break(section_html, candidate_html, user_keywords)
-                    ):
-                        print(f"[KeywordInjectorAgent][WARN] 섹션 {section_idx} 치환 스킵(bare-name attach / particle-break)")
-                        continue
+                    candidate_html, changed = self._accept_safe_candidate(
+                        section_html,
+                        candidate_html,
+                        changed,
+                        user_keywords,
+                        section_idx=section_idx,
+                        action_label='치환',
+                    )
                     section_html = candidate_html
                     if changed:
                         print(f"[KeywordInjectorAgent] 섹션 {section_idx} 치환 적용")
@@ -907,12 +1000,14 @@ class KeywordInjectorAgent(Agent):
                     if self._is_low_context_insert_sentence(sentence):
                         continue
                     candidate_html, changed = self._insert_after_anchor(section_html, anchor, sentence)
-                    if changed and (
-                        self._introduces_bare_keyword_attachment(section_html, candidate_html, user_keywords)
-                        or self._introduces_particle_break(section_html, candidate_html, user_keywords)
-                    ):
-                        print(f"[KeywordInjectorAgent][WARN] 섹션 {section_idx} anchor 삽입 스킵(bare-name attach / particle-break)")
-                        continue
+                    candidate_html, changed = self._accept_safe_candidate(
+                        section_html,
+                        candidate_html,
+                        changed,
+                        user_keywords,
+                        section_idx=section_idx,
+                        action_label='anchor 삽입',
+                    )
                     section_html = candidate_html
                     if changed:
                         print(f"[KeywordInjectorAgent] 섹션 {section_idx} anchor 삽입 적용")

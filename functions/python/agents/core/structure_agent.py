@@ -510,7 +510,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                         },
                         "paragraphs": {
                             "type": "array",
-                            "minItems": 1,
+                            "minItems": 2,
                             "items": paragraph_schema,
                         },
                     },
@@ -547,12 +547,18 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule>코드블록(```) 금지, 설명문 금지, JSON 외 텍스트 금지.</rule>\n"
             "    <rule>intro에는 heading 필드를 넣지 말고 paragraphs만 작성.</rule>\n"
             "    <rule>body 각 항목은 heading 1개 + paragraphs 배열로 작성.</rule>\n"
-            "    <rule>conclusion은 heading 1개 + paragraphs 배열로 작성.</rule>\n"
+            "    <rule>conclusion은 heading 1개 + paragraphs 배열로 작성하고 paragraphs는 최소 2개 이상 작성.</rule>\n"
             "    <rule>각 paragraphs 원소는 완결 문장 2~3개로 구성하고 최소 120자 이상 작성.</rule>\n"
             "    <rule>각 body/conclusion 항목은 paragraphs를 먼저 완성한 뒤 heading을 마지막에 작성.</rule>\n"
             "    <rule>heading은 바로 아래 paragraphs 첫 2문장이 실제로 말한 핵심을 선언형 또는 명사형으로 요약할 것. 본문 없이 heading을 먼저 확정하지 말 것.</rule>\n"
+            "    <rule>heading을 확정하기 전에 조사나 단어가 중복되거나 의미가 덜 끝난 부분이 없는지 다시 읽고 고칠 것. 예: '도약을을', '민주당 민주당' 금지.</rule>\n"
+            "    <rule>소제목에 '[인물명]의 [형용사형 어구]' 구조를 쓰지 말 것. 예: '[인물명]의 경제 대전환'처럼 이름 뒤 소유격만 앞세우지 말고, '경제 대전환 로드맵', '경제 대전환, [인물명]의 전략'처럼 의미가 완결되게 다시 쓸 것.</rule>\n"
+            "    <rule>소제목이 '명사1과 명사2, 명사3 구도'처럼 서술어 없는 명사 나열로 끝나면 질문형('~은?', '~는?') 또는 서술형('~이다', '~해야')으로 바꿀 것.</rule>\n"
+            "    <rule>소제목에 조사나 술어가 어색하게 잘린 경우('확신을 길', '진짜 승' 등) 반드시 고친 뒤 출력할 것.</rule>\n"
             "    <rule>소제목은 10~25자, \"위한/향한/만드는/통한/대한\" 수식어 금지.</rule>\n"
             "    <rule>소제목에 '저는/제가/나는/내가' 같은 1인칭 표현 금지.</rule>\n"
+            "    <rule>어느 body/conclusion 섹션이 비어 보이거나 설명이 모자라면, 독자가 '그래서 구체적으로 어떻게 할 건데?'라고 물을 지점을 찾아 그 섹션에만 구체 문장 1개 이상을 더할 것. 어떤 후보나 어떤 선거에도 쓸 수 있는 일반 공약 문장은 추가하지 말 것.</rule>\n"
+            "    <rule>새 섹션 첫 문장을 쓸 때는 직전 섹션 마지막 2문장의 흐름을 이어받을 것. '이는', '이러한', '이것은'으로 시작한다면 그 지시 대상이 직전 섹션에 실제로 있는지 스스로 확인하고, 없으면 명시적 주어로 다시 쓸 것.</rule>\n"
             "    <rule>JSON 문자열 안에 큰따옴표(\")를 직접 쓰지 말 것. 인용이 필요하면 작은따옴표(') 또는 괄호를 사용.</rule>\n"
             "    <rule>각 문자열 값은 한 줄로 작성하고 줄바꿈 문자를 넣지 말 것.</rule>\n"
             "    <rule>역슬래시(\\)를 임의로 출력하지 말 것.</rule>\n"

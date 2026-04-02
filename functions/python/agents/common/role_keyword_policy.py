@@ -47,6 +47,13 @@ ROLE_INTENT_PATTERN = re.compile(
     r"^\s*(?:출마(?:설|론|가능성)?|거론(?:\s*이유|되나|되는)?|하마평|후보론|가능성|론|설|\?)",
     re.IGNORECASE,
 )
+TITLE_INTENT_ANCHOR_SUFFIXES: tuple[str, ...] = (
+    "출마론",
+    "거론",
+    "출마 가능성",
+    "거론 속",
+    "구도",
+)
 CANDIDATE_LABEL_PATTERN = r"(?:예비후보|후보(?!군|론|설))"
 PERSON_TARGET_CANDIDATE_PATTERN = re.compile(
     rf"(?P<name>[가-힣]{{2,8}})\s*(?P<target>{ROLE_SURFACE_PATTERN})\s*(?P<label>{CANDIDATE_LABEL_PATTERN})",
@@ -425,6 +432,7 @@ def build_role_keyword_policy(
             "targetRoleSupported": target_role_supported,
             "mode": mode,
             "reason": reason,
+            "allowTitleIntentAnchor": bool(mode == "blocked" and parts.get("name") and parts.get("role")),
         }
 
     return {
@@ -491,18 +499,16 @@ def build_role_keyword_intent_text(keyword: Any, *, context: str = "title", vari
             f"{normalized_keyword} 후보론",
             f"{normalized_keyword} 거론",
         )
+        return templates[int(variant_index) % len(templates)]
     elif normalized_context == "body":
-        templates = (
-            f"온라인에서는 {normalized_keyword} 출마 가능성도 함께 거론됩니다.",
-            f"이 흐름 속에서 {normalized_keyword} 후보론도 함께 언급됩니다.",
-            f"{normalized_keyword} 거론도 이어지고 있습니다.",
-        )
+        return ""
     elif normalized_context == "conclusion":
         templates = (
-            f"마지막까지 {normalized_keyword} 출마 가능성도 함께 거론됩니다.",
-            f"끝까지 {normalized_keyword} 후보론도 이어집니다.",
-            f"이 흐름에서 {normalized_keyword} 거론도 이어지고 있습니다.",
+            f"마지막까지 {normalized_keyword} 출마 가능성도 함께 언급됩니다.",
+            f"끝까지 {normalized_keyword} 후보론도 함께 거론됩니다.",
+            f"이 흐름에서 {normalized_keyword} 출마론도 이어집니다.",
         )
+        return templates[int(variant_index) % len(templates)]
     else:
         templates = (
             f"{normalized_keyword} 출마?",
@@ -512,9 +518,58 @@ def build_role_keyword_intent_text(keyword: Any, *, context: str = "title", vari
     return templates[int(variant_index) % len(templates)]
 
 
+def build_role_keyword_intent_anchor_text(keyword: Any, *, variant_index: int = 0) -> str:
+    normalized_keyword = _normalize_spaces(keyword)
+    if not normalized_keyword:
+        return ""
+    suffix = TITLE_INTENT_ANCHOR_SUFFIXES[int(variant_index) % len(TITLE_INTENT_ANCHOR_SUFFIXES)]
+    return f"{normalized_keyword} {suffix}"
+
+
+def extract_role_keyword_intent_anchor_suffix(title: Any, keyword: Any) -> str:
+    source = _normalize_spaces(title)
+    normalized_keyword = _normalize_spaces(keyword)
+    if not source or not normalized_keyword or normalized_keyword not in source:
+        return ""
+    start_index = source.find(normalized_keyword)
+    tail = source[start_index + len(normalized_keyword) :].lstrip(" ,:;!?")
+    for suffix in sorted(TITLE_INTENT_ANCHOR_SUFFIXES, key=len, reverse=True):
+        if tail.startswith(suffix):
+            return suffix
+    return ""
+
+
+def order_role_keyword_intent_anchor_candidates(
+    keyword: Any,
+    recent_titles: Iterable[Any] | None = None,
+    *,
+    limit_recent: int = 5,
+) -> list[str]:
+    normalized_keyword = _normalize_spaces(keyword)
+    if not normalized_keyword:
+        return []
+
+    recent_items = list(recent_titles or [])[:limit_recent]
+    used_suffixes: list[str] = []
+    seen_suffixes: set[str] = set()
+    for raw_title in recent_items:
+        suffix = extract_role_keyword_intent_anchor_suffix(raw_title, normalized_keyword)
+        if not suffix or suffix in seen_suffixes:
+            continue
+        seen_suffixes.add(suffix)
+        used_suffixes.append(suffix)
+
+    ordered_suffixes = [
+        *[suffix for suffix in TITLE_INTENT_ANCHOR_SUFFIXES if suffix not in seen_suffixes],
+        *used_suffixes,
+    ]
+    return [f"{normalized_keyword} {suffix}" for suffix in ordered_suffixes]
+
+
 __all__ = [
     "ROLE_KEYWORD_PATTERN",
     "ROLE_SURFACE_PATTERN",
+    "TITLE_INTENT_ANCHOR_SUFFIXES",
     "extract_role_keyword_parts",
     "extract_person_role_facts_from_text",
     "extract_target_role_contexts",
@@ -529,4 +584,7 @@ __all__ = [
     "normalize_role_label",
     "roles_equivalent",
     "build_role_keyword_intent_text",
+    "build_role_keyword_intent_anchor_text",
+    "extract_role_keyword_intent_anchor_suffix",
+    "order_role_keyword_intent_anchor_candidates",
 ]

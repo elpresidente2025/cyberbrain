@@ -23,7 +23,7 @@ def normalize_artifacts(text: str) -> str:
     cleaned = re.sub(r'["”]\s*$', '', cleaned)
     lines = cleaned.splitlines()
     metadata_line_re = re.compile(
-        r'^\s*\*{0,2}(카테고리|검색어 삽입 횟수|생성 시간)\*{0,2}\s*:\s*',
+        r'^\s*\*{0,2}(카테고리|검색어\s*(?:삽입|반영)\s*횟수|생성 시간)\*{0,2}\s*:\s*',
         re.IGNORECASE,
     )
     tail_cut_index = None

@@ -16,6 +16,35 @@ SIGNATURE_MARKERS = [
     '고맙습니다', '사랑합니다', '드림'
 ]
 
+DUPLICATED_PARTICLES = (
+    '으로',
+    '에게',
+    '에서',
+    '까지',
+    '부터',
+    '처럼',
+    '보다',
+    '은',
+    '는',
+    '이',
+    '가',
+    '을',
+    '를',
+    '과',
+    '와',
+    '의',
+    '도',
+    '만',
+    '에',
+    '로',
+)
+DUPLICATED_PARTICLE_REGEX = re.compile(
+    rf'(?P<stem>[가-힣A-Za-z0-9]+?)(?P<particle>{"|".join(DUPLICATED_PARTICLES)})(?P=particle)(?=$|[\s,.:;!?<])'
+)
+CONSECUTIVE_DUPLICATE_TOKEN_REGEX = re.compile(
+    r'\b(?P<token>[가-힣A-Za-z0-9]{2,})\s+(?P=token)\b'
+)
+
 # 비문 패턴 중앙 집중 처리
 GRAMMATICAL_ERROR_PATTERNS = [
     (re.compile(r'것이라는 점입니다'), '것입니다'),
@@ -102,9 +131,9 @@ def remove_artifacts(content: str) -> str:
             break
             
     # 2. 메타데이터 라인 제거
-    cleaned = re.sub(r'카테고리:[\s\S]*$', '', cleaned)
-    cleaned = re.sub(r'검색어 삽입 횟수:[\s\S]*$', '', cleaned)
-    cleaned = re.sub(r'생성 시간:[\s\S]*$', '', cleaned)
+    cleaned = re.sub(r'카테고리\s*:[\s\S]*$', '', cleaned)
+    cleaned = re.sub(r'검색어\s*(?:삽입|반영)\s*횟수\s*:[\s\S]*$', '', cleaned)
+    cleaned = re.sub(r'생성\s*시간\s*:[\s\S]*$', '', cleaned)
     
     # 3. JSON 키 잔여물 제거
     cleaned = re.sub(r'"content"\s*:\s*', '', cleaned)
@@ -120,6 +149,27 @@ def remove_grammatical_errors(content: str) -> str:
     for pattern, replacement in GRAMMATICAL_ERROR_PATTERNS:
         fixed = pattern.sub(replacement, fixed)
     return fixed
+
+
+def repair_duplicate_particles_and_tokens(content: str) -> str:
+    if not content:
+        return content
+
+    updated = str(content)
+    for _ in range(3):
+        repaired = DUPLICATED_PARTICLE_REGEX.sub(
+            lambda match: f"{match.group('stem')}{match.group('particle')}",
+            updated,
+        )
+        repaired = CONSECUTIVE_DUPLICATE_TOKEN_REGEX.sub(
+            lambda match: str(match.group('token') or ''),
+            repaired,
+        )
+        repaired = re.sub(r'\s{2,}', ' ', repaired)
+        if repaired == updated:
+            break
+        updated = repaired
+    return updated
 
 def ensure_paragraph_tags(content: str) -> str:
     """모든 문단을 <p> 태그로 감싸기 (이미 태그가 있는 경우 제외)"""
@@ -235,6 +285,7 @@ def cleanup_post_content(content: str) -> str:
     updated = strip_markdown_emphasis(updated)
     updated = ensure_paragraph_tags(updated) # ensure p tags first if strict
     updated = normalize_paragraph_endings(updated)
+    updated = repair_duplicate_particles_and_tokens(updated)
     updated = strip_empty_heading_sections(updated)
     
     # [2단계] 소수점 뒤 공백 제거 (0. 7% -> 0.7%)

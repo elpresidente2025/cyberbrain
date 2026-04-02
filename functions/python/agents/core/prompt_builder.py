@@ -3,11 +3,12 @@
 모든 함수는 stateless 순수 함수로, StructureAgent에서 추출되었다.
 """
 
+import logging
 from typing import Any, Dict, List
 
 from ..common.warnings import generate_non_lawmaker_warning
 from ..common.seo import build_seo_instruction
-from ..common.h2_guide import build_h2_examples
+from ..common.h2_guide import build_h2_rules
 from ..common.election_rules import get_prompt_instruction
 from ..common.natural_tone import build_natural_tone_prompt
 from ..common.editorial import KEYWORD_SPEC, QUALITY_SPEC, STRUCTURE_SPEC
@@ -27,6 +28,8 @@ from .prompt_guards import (
 )
 from .structure_utils import _xml_cdata, _xml_text, normalize_context_text, split_into_context_items
 from .style_guide_builder import build_style_role_priority_summary
+
+logger = logging.getLogger(__name__)
 
 TEMPLATE_BUILDERS = {
     'emotional_writing': build_daily_communication_prompt,
@@ -105,6 +108,11 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     instructions_text = normalize_context_text(params.get('instructions'))
     news_context_text = normalize_context_text(params.get('newsContext'))
     rag_context_text = normalize_context_text(params.get('ragContext'))
+    if news_context_text:
+        logger.info(
+            "[prompt_builder] newsContext preview (first 200 chars): %s",
+            news_context_text[:200],
+        )
     source_blocks = [instructions_text]
     if news_context_text:
         source_blocks.append(news_context_text)
@@ -140,12 +148,15 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
   </source_order>
   <source_body>{_xml_cdata(source_text[:6000])}</source_body>
   <processing_rules>
-    <rule order="1">정보 추출: 핵심 팩트, 수치, 논점만 사용</rule>
-    <rule order="2">재작성 필수: 참고자료 문장을 그대로 복사하지 않음</rule>
-    <rule order="3">구어체를 문어체로 변환</rule>
-    <rule order="4">창작 금지: 참고자료에 없는 팩트/수치 생성 금지</rule>
-    <rule order="5">주제 유지: 참고자료 핵심 주제 이탈 금지</rule>
-    <rule order="6">{_xml_text(bio_source_rule)}</rule>
+    <rule order="1">정보 추출: 참고자료에서는 핵심 팩트, 수치, 논점만 추출해 사용</rule>
+    <rule order="2">문장 이식 금지: 참고자료 문장 자체를 원고에 옮기지 않음. 문장은 버리고 사실 정보만 남겨 새 문장으로 다시 씀</rule>
+    <rule order="3">보도체 금지: 3인칭 보도 서술("형성되었습니다", "강조하고 있습니다", "나섰습니다", "선정했습니다")은 원고에 사용하지 않음</rule>
+    <rule order="4">화자 고정: 화자는 항상 '저'인 1인칭이며, 본인의 이미지·전략·포지셔닝을 외부 시선으로 서술하지 않음("이미지를 구축하며", "이미지를 확고히 구축하며", "당심 잡기에 나서고 있습니다", "민심과 당심을 사로잡기 위해 나섰습니다" 금지)</rule>
+    <rule order="5">초안 검토: 초안을 쓴 뒤 기자가 쓴 것처럼 들리는 문장(기관·제3자 주어 + 관찰 동사, "알려져 있습니다", "강조하고 있습니다", "나섰습니다")이 남아 있으면 모두 1인칭 화자 문장으로 다시 쓸 것</rule>
+    <rule order="6">구어체를 문어체로 변환</rule>
+    <rule order="7">창작 금지: 참고자료에 없는 팩트/수치 생성 금지</rule>
+    <rule order="8">주제 유지: 참고자료 핵심 주제 이탈 금지</rule>
+    <rule order="9">{_xml_text(bio_source_rule)}</rule>
   </processing_rules>
   <forbidden_examples>
     <example type="source">{_xml_cdata('정확하게 얘기를 하면 그래서 창의적이고 정말 압도적인...')}</example>
@@ -476,36 +487,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     <conclusion order="{total_section_count}" paragraphs="{STRUCTURE_SPEC['paragraphsPerSection']}" chars="{per_section_recommended}" heading="h2 필수"/>
   </sections>
 
-  <h2_strategy name="소제목 작성 전략 (AEO+SEO)">
-    <length min="12" max="30" optimal="15~22"/>
-    <types>
-      <type name="질문형" strength="AEO 최강" ratio="40% 이상 권장">
-        <good>청년 기본소득, 신청 방법은?</good>
-        <good>전세 사기 피해, 어떻게 보상받나요?</good>
-        <bad>이것을 꼭 알아야 합니다</bad>
-      </type>
-      <type name="명사형" strength="SEO 기본">
-        <good>분당구 정자동 주차장 신설 위치</good>
-        <bad>정책 안내</bad>
-      </type>
-      <type name="데이터" strength="신뢰성">
-        <good>청년 일자리 274명 창출 방법</good>
-        <bad>좋은 성과를 냈습니다</bad>
-      </type>
-      <type name="절차" strength="실용성">
-        <good>청년 기본소득 신청 3단계 절차</good>
-        <bad>신청하는 방법</bad>
-      </type>
-      <type name="비교" strength="차별화">
-        <good>기존 정책 대비 개선된 3가지</good>
-        <bad>비교해 보겠습니다</bad>
-      </type>
-    </types>
-    <banned>추상적 표현("노력", "열전", "마음"), 모호한 지시어("이것", "그것", "관련 내용"), 과장 표현("최고", "혁명적", "놀라운"), 서술어 포함("~에 대한 설명", "~을 알려드립니다"), 키워드 없는 짧은 제목("정책", "방법", "소개")</banned>
-    <aeo_rule>H2는 해당 섹션 첫 2문장을 먼저 쓴 뒤, 그 문단이 이미 답한 핵심 질문의 직접 답변으로 작성할 것.</aeo_rule>
-  </h2_strategy>
-
-{build_h2_examples()}
+  {build_h2_rules('aeo')}
 
   {genre_contract}
 
@@ -525,6 +507,9 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     <rule id="paragraph_min_sentences">원칙적으로 각 &lt;p&gt;는 최소 2문장으로 구성. 예외는 결론의 마지막 CTA 문단 1개만 허용.</rule>
     <rule id="causal_clarity">성과 언급 시 본인의 구체적 역할/직책 명시. "40% 득표율을 이끌어냈다" → "시당위원장으로서 지역 조직을 총괄하며 40% 득표율 달성에 기여했습니다"</rule>
     <rule id="h2_semantic_uniqueness">같은 의미를 다른 말로 반복하지 말 것. 같은 주제를 둘로 쪼개지 말고, 각 본론 H2는 서로 다른 질문과 직접 답을 가져야 한다.</rule>
+    <rule id="no_self_certification_claim">근거 문장 없이 '유일한 후보', '최고의 후보', '인정한 결과', '인정받은 결과', '완벽하게 준비되어 있습니다' 같은 자기 단정 표현을 쓰지 말 것. 자평이 필요하면 반드시 앞 문장의 사실 근거를 먼저 제시할 것.</rule>
+    <rule id="section_continuity">새 섹션 첫 문장은 직전 섹션의 흐름과 자연스럽게 이어질 것. "이는", "이러한", "이것은"으로 시작하려면 직전 섹션에 지시 대상이 실제로 있어야 하며, 없으면 명시적 주어로 다시 쓸 것.</rule>
+    <rule id="observer_voice_final_check">초안 완성 후 전체 원고를 다시 읽고 기관·제3자 주어로 대상을 관찰하는 보도체 문장은 모두 1인칭 화자 문장으로 재작성할 것.</rule>
   </mandatory_rules>
 {material_uniqueness_guard}
 {poll_focus_bundle_section}

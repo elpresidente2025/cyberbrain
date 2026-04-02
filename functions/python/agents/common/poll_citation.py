@@ -10,6 +10,7 @@ from collections.abc import Iterable
 _STOP_MARKERS: tuple[str, ...] = (
     "카테고리:",
     "검색어 삽입 횟수",
+    "검색어 반영 횟수",
     "생성 시간:",
 )
 

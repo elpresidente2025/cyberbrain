@@ -38,6 +38,7 @@ def get_default_memory() -> Dict[str, Any]:
             "selectionRate": 0,
             "categoryBreakdown": {},
         },
+        "recentSelectedTitles": [],
     }
 
 
@@ -72,6 +73,34 @@ def _update_pattern_list(existing: List[str], new_pattern: str | None, max_count
     return filtered[:max_count]
 
 
+def _normalize_recent_titles(existing: Any, *, limit: int = 5) -> List[str]:
+    titles: List[str] = []
+    seen: set[str] = set()
+    for raw_item in existing or []:
+        title = ""
+        if isinstance(raw_item, dict):
+            title = str(raw_item.get("title") or "").strip()
+        else:
+            title = str(raw_item or "").strip()
+        if not title or title in seen:
+            continue
+        seen.add(title)
+        titles.append(title)
+        if len(titles) >= limit:
+            break
+    return titles
+
+
+def _update_recent_titles(existing: Any, new_title: str | None, max_count: int = 5) -> List[str]:
+    normalized_title = str(new_title or "").strip()
+    current_titles = _normalize_recent_titles(existing, limit=max_count)
+    if not normalized_title:
+        return current_titles
+    updated_titles = [normalized_title]
+    updated_titles.extend(title for title in current_titles if title != normalized_title)
+    return updated_titles[:max_count]
+
+
 def _extract_effective_patterns(content: str) -> Dict[str, str | None]:
     if not content:
         return {"opening": None, "closing": None}
@@ -94,6 +123,11 @@ def get_user_memory(uid: str) -> Dict[str, Any]:
     except Exception as exc:
         logger.warning("[Memory] 메모리 조회 실패: %s", exc)
         return get_default_memory()
+
+
+def get_recent_selected_titles(uid: str, limit: int = 5) -> List[str]:
+    memory = get_user_memory(uid)
+    return _normalize_recent_titles(memory.get("recentSelectedTitles"), limit=limit)
 
 
 def save_best_post(uid: str, post_data: Dict[str, Any]) -> None:
@@ -187,6 +221,11 @@ def update_memory_on_selection(uid: str, post_data: Dict[str, Any]) -> None:
         preferences["favoriteKeywords"] = _update_keyword_frequency(
             preferences.get("favoriteKeywords", []),
             keywords,
+        )
+        memory["recentSelectedTitles"] = _update_recent_titles(
+            memory.get("recentSelectedTitles"),
+            title,
+            5,
         )
 
         memory["updatedAt"] = firestore.SERVER_TIMESTAMP

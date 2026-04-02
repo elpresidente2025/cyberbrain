@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
@@ -21,7 +22,7 @@ from .keyword_common import (
     find_shadowed_user_keywords,
 )
 from .keyword_context import _is_event_context_text, _is_location_keyword, _is_unsafe_location_context
-from .keyword_injection import _inject_keyword_into_section
+from .keyword_injection import _find_similar_sentence_in_content, _inject_keyword_into_section
 from .keyword_reduction import _reduce_excess_user_keyword_mentions
 from .keyword_reference import (
     _append_sentence_to_paragraph,
@@ -29,6 +30,9 @@ from .keyword_reference import (
     _should_allow_keyword_reference_fallback,
     _should_block_role_keyword_reference_sentence,
 )
+
+
+logger = logging.getLogger(__name__)
 
 def _section_priority(section_type: str) -> int:
     if section_type.startswith("body"):
@@ -40,15 +44,39 @@ def _section_priority(section_type: str) -> int:
     return 3
 
 
+def _keyword_state_summary(
+    keyword_details: Mapping[str, Any],
+    keywords: Sequence[str],
+) -> list[Dict[str, int | str]]:
+    summary: list[Dict[str, int | str]] = []
+    for keyword in keywords:
+        info = keyword_details.get(keyword) or {}
+        summary.append(
+            {
+                "keyword": keyword,
+                "gate": int(info.get("gateCount") or info.get("count") or info.get("coverage") or 0),
+                "expected": int(info.get("expected") or 0),
+                "body": int(info.get("bodyCount") or 0),
+                "bodyExpected": int(info.get("bodyExpected") or 0),
+                "exactShortfall": int(info.get("exactShortfall") or 0),
+            }
+        )
+    return summary
+
+
 def _select_keyword_section_indexes(
     sections: Sequence[Dict[str, Any]],
     keyword: str,
     needed: int,
+    *,
+    blocked_indexes: Optional[Sequence[int]] = None,
+    allow_existing_mentions: bool = False,
 ) -> List[int]:
     if not sections or needed <= 0:
         return []
 
-    indexed = list(enumerate(sections))
+    blocked = {int(item) for item in (blocked_indexes or [])}
+    indexed = [(idx, section) for idx, section in enumerate(sections) if idx not in blocked]
 
     def _location_section_penalty(section_content: str) -> int:
         plain = re.sub(r"<[^>]*>", " ", str(section_content or ""))
@@ -81,15 +109,22 @@ def _select_keyword_section_indexes(
     if not ranked:
         return []
 
+    zero_count_indexes = [
+        idx
+        for idx, section in ranked
+        if count_keyword_occurrences(str(section.get("content") or ""), keyword) <= 0
+    ]
+    if zero_count_indexes:
+        return zero_count_indexes[:needed]
+    if not allow_existing_mentions:
+        return []
+
     chosen: list[int] = []
-    while len(chosen) < needed:
-        progressed = False
-        for idx, _section in ranked:
-            chosen.append(idx)
-            progressed = True
-            if len(chosen) >= needed:
-                break
-        if not progressed:
+    for idx, _section in ranked:
+        if idx in chosen:
+            continue
+        chosen.append(idx)
+        if len(chosen) >= needed:
             break
     return chosen[:needed]
 
@@ -114,6 +149,20 @@ def enforce_keyword_requirements(
         for item in (skip_user_keywords or [])
         if _normalize_user_keyword(item)
     }
+
+    def _keyword_count_snapshot(text: str) -> Dict[str, int]:
+        return {
+            keyword: count_keyword_occurrences(text, keyword)
+            for keyword in user_keywords
+        }
+
+    def _finalize_response(payload: Dict[str, Any]) -> Dict[str, Any]:
+        if user_keywords:
+            logger.info(
+                "[enforce_keyword_requirements] exit keyword_counts=%s",
+                _keyword_count_snapshot(str(payload.get("content") or "")),
+            )
+        return payload
 
     def _has_pending_user_keyword_work(keyword_details: Mapping[str, Any]) -> bool:
         for keyword in user_keywords:
@@ -152,13 +201,21 @@ def enforce_keyword_requirements(
         user_keyword_max_overrides=user_keyword_max_overrides,
     )
     if not working_content or not user_keywords:
-        return {
+        return _finalize_response({
             "content": working_content,
             "edited": False,
             "insertions": [],
             "keywordResult": initial_result,
-        }
+        })
     initial_details = (initial_result.get("details") or {}).get("keywords") or {}
+    logger.info(
+        "[enforce_keyword_requirements] entry keyword_counts=%s",
+        _keyword_count_snapshot(working_content),
+    )
+    logger.info(
+        "Keyword enforcement start: states=%s",
+        _keyword_state_summary(initial_details, user_keywords),
+    )
     initial_exact_preference_pending = any(
         int(((initial_details.get(keyword) or {}).get("exactShortfall")) or 0) > 0
         for keyword in user_keywords
@@ -166,33 +223,41 @@ def enforce_keyword_requirements(
     )
     initial_user_repair_pending = _has_pending_user_keyword_work(initial_details)
     if not initial_user_repair_pending:
-        return {
+        return _finalize_response({
             "content": working_content,
             "edited": False,
             "insertions": [],
             "keywordResult": initial_result,
-        }
+        })
     if initial_result.get("valid") and not initial_exact_preference_pending:
-        return {
+        return _finalize_response({
             "content": working_content,
             "edited": False,
             "insertions": [],
             "keywordResult": initial_result,
-        }
+        })
 
     insertions: list[Dict[str, Any]] = []
     reductions: list[Dict[str, Any]] = []
+    rewrite_requests: list[Dict[str, Any]] = []
     per_keyword_insertions: Dict[str, int] = {}
+    locked_section_indexes_by_keyword: Dict[str, set[int]] = {}
     current_result = initial_result
     shadowed_map = find_shadowed_user_keywords(user_keywords)
 
-    for _ in range(max_iterations):
+    for iteration in range(max_iterations):
         details = (current_result.get("details") or {}).get("keywords") or {}
         sections = _parse_keyword_sections(working_content)
         if not details or not sections:
             break
         if not _has_pending_user_keyword_work(details):
             break
+
+        logger.info(
+            "Keyword enforcement iteration=%s states=%s",
+            iteration + 1,
+            _keyword_state_summary(details, user_keywords),
+        )
 
         reductions_applied = False
         for keyword in user_keywords:
@@ -270,11 +335,13 @@ def enforce_keyword_requirements(
 
             needs_fix = True
             planned_indexes: list[int] = []
+            locked_indexes = set(locked_section_indexes_by_keyword.get(keyword) or set())
             if body_deficit > 0:
                 body_sections = [
                     (idx, section)
                     for idx, section in enumerate(sections)
                     if str(section.get("type") or "").startswith("body")
+                    and idx not in locked_indexes
                 ]
                 ranked_body = sorted(
                     body_sections,
@@ -283,19 +350,40 @@ def enforce_keyword_requirements(
                         item[0],
                     ),
                 )
-                while len(planned_indexes) < body_deficit:
-                    progressed = False
-                    for section_idx, _section in ranked_body:
-                        planned_indexes.append(section_idx)
-                        progressed = True
-                        if len(planned_indexes) >= body_deficit:
-                            break
-                    if not progressed:
+                for section_idx, section in ranked_body:
+                    section_count = count_keyword_occurrences(str(section.get("content") or ""), keyword)
+                    if section_count > 0:
+                        continue
+                    planned_indexes.append(section_idx)
+                    locked_indexes.add(section_idx)
+                    if len(planned_indexes) >= body_deficit:
                         break
 
             remaining_deficit = max(0, total_deficit - len(planned_indexes))
             if remaining_deficit > 0:
-                planned_indexes.extend(_select_keyword_section_indexes(sections, keyword, remaining_deficit))
+                additional_indexes = _select_keyword_section_indexes(
+                    sections,
+                    keyword,
+                    remaining_deficit,
+                    blocked_indexes=locked_indexes,
+                    allow_existing_mentions=False,
+                )
+                planned_indexes.extend(additional_indexes)
+                locked_indexes.update(additional_indexes)
+
+            unresolved_deficit = max(0, total_deficit - len(planned_indexes))
+            if unresolved_deficit > 0:
+                rewrite_requests.append(
+                    {
+                        "keyword": keyword,
+                        "section": -1,
+                        "sectionType": "any",
+                        "variantIndex": int(per_keyword_insertions.get(keyword, 0)),
+                        "strategy": "section_rewrite_required",
+                        "reason": "no_safe_target_section",
+                        "remainingDeficit": unresolved_deficit,
+                    }
+                )
 
             for section_idx in planned_indexes:
                 if section_idx < 0 or section_idx >= len(sections):
@@ -303,6 +391,7 @@ def enforce_keyword_requirements(
                 section = sections[section_idx]
                 variant_index = per_keyword_insertions.get(keyword, 0)
                 per_keyword_insertions[keyword] = variant_index + 1
+                locked_section_indexes_by_keyword.setdefault(keyword, set()).add(section_idx)
                 insertion_plan.setdefault(section_idx, []).append(
                     {
                         "keyword": keyword,
@@ -340,9 +429,21 @@ def enforce_keyword_requirements(
                         user_keywords,
                         role_keyword_policy=role_keyword_policy,
                     ),
+                    existing_content=working_content,
                     role_keyword_policy=role_keyword_policy,
+                    section_index=section_idx,
                 )
                 if not edited:
+                    rewrite_requests.append(
+                        {
+                            "keyword": str(item.get("keyword") or ""),
+                            "section": section_idx,
+                            "sectionType": str(item.get("sectionType") or ""),
+                            "variantIndex": int(item.get("variantIndex") or 0),
+                            "strategy": "section_rewrite_required",
+                            "reason": "no_safe_keyword_variant",
+                        }
+                    )
                     continue
                 section_content = updated_section
                 item["sentence"] = applied_sentence
@@ -376,13 +477,14 @@ def enforce_keyword_requirements(
         if current_result.get("valid") and not exact_preference_pending:
             break
 
-    return {
+    return _finalize_response({
         "content": working_content,
         "edited": working_content != str(content or ""),
         "insertions": insertions,
         "reductions": reductions,
+        "rewriteRequests": rewrite_requests,
         "keywordResult": current_result,
-    }
+    })
 
 
 def build_fallback_draft(params: Optional[Dict[str, Any]] = None) -> str:
@@ -677,6 +779,8 @@ def force_insert_insufficient_keywords(
             role_keyword_policy=role_keyword_policy,
         ):
             continue
+        if _find_similar_sentence_in_content(sentence, working):
+            continue
 
         # min_required 충족할 때까지 반복 삽입 (최대 5회 guard)
         for _attempt in range(5):
@@ -693,6 +797,8 @@ def force_insert_insufficient_keywords(
                     inner = str(target_match.group(1) or "")
                     updated_inner = _append_sentence_to_paragraph(inner, sentence)
                     if updated_inner == inner:
+                        continue
+                    if _find_similar_sentence_in_content(sentence, working, exclude_sentences=[plain]):
                         continue
                     working = (
                         working[: target_match.start(1)]

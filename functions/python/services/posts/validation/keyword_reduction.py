@@ -27,6 +27,58 @@ from .keyword_reference import (
     _restore_shadowed_keywords,
 )
 
+_SELF_IDENTIFICATION_ROLE_FRAGMENT = r"(?:\s*(?:전\s*)?(?:국회의원|의원|지사|도지사|시장|위원장|대표|장관|예비후보|후보))?"
+
+
+def _extract_sentence_window(text: str, start: int, end: int) -> str:
+    base = str(text or "")
+    if not base:
+        return ""
+
+    left = 0
+    for match in re.finditer(r"(?<!\d)[.!?。](?!\d)", base[: max(0, start)]):
+        left = match.end()
+
+    right = len(base)
+    right_match = re.search(r"(?<!\d)[.!?。](?!\d)", base[max(0, end) :])
+    if right_match:
+        right = max(0, end) + right_match.end()
+
+    return base[left:right]
+
+
+def _looks_like_self_identification_sentence(text: str, keyword: str) -> bool:
+    normalized_keyword = _normalize_user_keyword(keyword)
+    plain = re.sub(r"\s+", " ", _strip_html(text)).strip()
+    if not plain or not normalized_keyword or normalized_keyword not in plain:
+        return False
+
+    identity_patterns = (
+        re.compile(
+            rf"(?:^|[,;:]\s*|[\"'“”‘’]\s*){re.escape(normalized_keyword)}"
+            rf"{_SELF_IDENTIFICATION_ROLE_FRAGMENT}\s*입니다[.!?。]?$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            rf"{re.escape(normalized_keyword)}{_SELF_IDENTIFICATION_ROLE_FRAGMENT}\s*입니다[.!?。]?$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            rf"(?:[가-힣]{{1,10}})?(?:국회의원|의원|지사|도지사|시장|위원장|대표|장관|예비후보|후보)\s+"
+            rf"{re.escape(normalized_keyword)}\s*(?:으로서|로서)",
+            re.IGNORECASE,
+        ),
+    )
+    return any(pattern.search(plain) for pattern in identity_patterns)
+
+
+def _match_within_self_identification_sentence(text: str, start: int, end: int, keyword: str) -> bool:
+    return _looks_like_self_identification_sentence(
+        _extract_sentence_window(text, start, end),
+        keyword,
+    )
+
+
 def _replace_last_keyword_occurrences(
     content: str,
     keyword: str,
@@ -56,7 +108,16 @@ def _replace_last_keyword_occurrences(
     while replaced < remove_count:
         rewritten = False
         if keyword_role_surface:
-            exact_matches = list(bare_pattern.finditer(working))
+            exact_matches = [
+                match
+                for match in bare_pattern.finditer(working)
+                if not _match_within_self_identification_sentence(
+                    working,
+                    match.start(),
+                    match.end(),
+                    normalized_keyword,
+                )
+            ]
             if exact_matches:
                 start, end = exact_matches[-1].span()
                 exact_replacements = _build_person_role_reduction_candidates(
@@ -73,7 +134,20 @@ def _replace_last_keyword_occurrences(
             continue
 
         role_pattern = _build_person_role_reduction_pattern(keyword_person_name or normalized_keyword)
-        matches = list(role_pattern.finditer(working)) if role_pattern is not None else []
+        matches = (
+            [
+                match
+                for match in role_pattern.finditer(working)
+                if not _match_within_self_identification_sentence(
+                    working,
+                    match.start(),
+                    match.end(),
+                    normalized_keyword,
+                )
+            ]
+            if role_pattern is not None
+            else []
+        )
         if matches:
             match = matches[-1]
             start, end = match.span()
@@ -99,7 +173,16 @@ def _replace_last_keyword_occurrences(
 
         for role, fallback in ROLE_FALLBACK_LABELS:
             pattern = re.compile(rf"{re.escape(normalized_keyword)}\s*{role}")
-            matches = list(pattern.finditer(working))
+            matches = [
+                match
+                for match in pattern.finditer(working)
+                if not _match_within_self_identification_sentence(
+                    working,
+                    match.start(),
+                    match.end(),
+                    normalized_keyword,
+                )
+            ]
             if not matches:
                 continue
             start, end = matches[-1].span()
@@ -112,11 +195,22 @@ def _replace_last_keyword_occurrences(
         if rewritten:
             continue
 
-        matches = list(bare_pattern.finditer(working))
+        matches = [
+            match
+            for match in bare_pattern.finditer(working)
+            if not _match_within_self_identification_sentence(
+                working,
+                match.start(),
+                match.end(),
+                normalized_keyword,
+            )
+        ]
         if not matches:
             break
         start, end = matches[-1].span()
         if start < 0 or end > len(working) or start >= end:
+            break
+        if not replacement_pool:
             break
         replacement = replacement_pool[(replaced if replaced >= 0 else 0) % len(replacement_pool)]
         working = working[:start] + replacement + working[end:]
@@ -210,6 +304,8 @@ def _rewrite_sentence_to_reduce_keyword(
     original = str(sentence_html or "")
     normalized_keyword = _normalize_user_keyword(keyword)
     if not original or not normalized_keyword:
+        return original
+    if _looks_like_self_identification_sentence(original, normalized_keyword):
         return original
 
     protected, protected_mapping = _protect_shadowed_keywords(original, shadowed_by)
@@ -319,6 +415,9 @@ def _rewrite_sentence_to_reduce_keyword(
             normalized_keyword,
             role_keyword_policy=role_keyword_policy,
         )
+        if not replacement_pool:
+            rewritten = _restore_shadowed_keywords(rewritten, protected_mapping)
+            return rewritten if rewritten else original
         if poll_fact_sentence:
             replacement_pool = [
                 candidate
@@ -369,6 +468,8 @@ def _remove_low_signal_keyword_sentence_once(
             sentence_html = str(sentence_match.group(0) or "")
             sentence_plain = _strip_html(sentence_html)
             if normalized_keyword not in sentence_plain:
+                continue
+            if _looks_like_self_identification_sentence(sentence_html, normalized_keyword):
                 continue
 
             contribution = int(

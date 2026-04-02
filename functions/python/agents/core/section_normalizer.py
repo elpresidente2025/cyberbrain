@@ -11,6 +11,18 @@ from ..common.section_contract import (
 from .structure_utils import strip_html, normalize_artifacts, normalize_context_text
 
 
+_HEADING_ALIGNMENT_GENERIC_IGNORE_TOKENS = {
+    "시장",
+    "부산시장",
+    "후보",
+    "예비후보",
+    "의원",
+    "국회의원",
+    "위원장",
+    "대표",
+}
+
+
 def _coerce_int_option(
     value: Any,
     *,
@@ -69,10 +81,21 @@ class SectionNormalizerMixin:
             return "possibility_focus"
         return ""
 
-    def _heading_alignment_tokens(self, value: Any) -> set[str]:
+    def _heading_alignment_tokens(
+        self,
+        value: Any,
+        *,
+        ignore_tokens: Optional[Sequence[str]] = None,
+    ) -> set[str]:
         text = self._clean_plain_text(value)
         if not text:
             return set()
+        ignored = {
+            re.sub(r"\s+", "", str(token or "").strip().lower())
+            for token in (ignore_tokens or [])
+            if str(token or "").strip()
+        }
+        ignored.update(_HEADING_ALIGNMENT_GENERIC_IGNORE_TOKENS)
         tokens: set[str] = set()
         for raw in re.findall(r"[0-9A-Za-z가-힣]{2,}", text):
             token = raw.lower().strip()
@@ -84,6 +107,8 @@ class SectionNormalizerMixin:
                 continue
             if token.isdigit():
                 continue
+            if token in ignored:
+                continue
             tokens.add(token)
         return tokens
 
@@ -93,8 +118,9 @@ class SectionNormalizerMixin:
         paragraphs: Any,
         *,
         use_all_paragraphs: bool = False,
+        ignore_tokens: Optional[Sequence[str]] = None,
     ) -> float:
-        heading_tokens = self._heading_alignment_tokens(heading)
+        heading_tokens = self._heading_alignment_tokens(heading, ignore_tokens=ignore_tokens)
         if not heading_tokens:
             return 0.0
         paragraph_list = paragraphs if isinstance(paragraphs, list) else [paragraphs]
@@ -103,7 +129,7 @@ class SectionNormalizerMixin:
             for item in (paragraph_list if use_all_paragraphs else paragraph_list[:2])
             if self._clean_plain_text(item)
         ).strip()
-        body_tokens = self._heading_alignment_tokens(lead_text)
+        body_tokens = self._heading_alignment_tokens(lead_text, ignore_tokens=ignore_tokens)
         if not body_tokens:
             return 0.0
         overlap = len(heading_tokens & body_tokens)
@@ -117,31 +143,38 @@ class SectionNormalizerMixin:
         contract: Optional[Dict[str, Any]],
         section_label: str,
         use_all_paragraphs: bool = False,
+        ignore_tokens: Optional[Sequence[str]] = None,
+        minimum_score: float = 0.24,
     ) -> str:
         alignment_score = self._heading_body_alignment_score(
             heading,
             paragraphs,
             use_all_paragraphs=use_all_paragraphs,
+            ignore_tokens=ignore_tokens,
         )
-        if alignment_score >= 0.24:
+        if alignment_score >= minimum_score:
             return heading
 
-        template = self._sanitize_heading_text((contract or {}).get('template'))
+        template = ""
+        raw_template = (contract or {}).get("template")
+        if self._clean_plain_text(raw_template):
+            template = self._sanitize_heading_text(raw_template)
         if template:
             template_score = self._heading_body_alignment_score(
                 template,
                 paragraphs,
                 use_all_paragraphs=use_all_paragraphs,
+                ignore_tokens=ignore_tokens,
             )
             print(
                 f"🩹 [StructureAgent] {section_label} 소제목 정합성 보정: "
-                f"'{heading}' -> '{template}' (score={alignment_score:.2f}->{template_score:.2f})"
+                f"'{heading}' -> '{template}' (score={alignment_score:.2f}->{template_score:.2f}, threshold={minimum_score:.2f})"
             )
             return template
 
         print(
             f"⚠️ [StructureAgent] {section_label} 소제목 정합성 낮음 유지: "
-            f"'{heading}' (score={alignment_score:.2f})"
+            f"'{heading}' (score={alignment_score:.2f}, threshold={minimum_score:.2f})"
         )
         return heading
 
@@ -378,6 +411,14 @@ class SectionNormalizerMixin:
         contract_opponent = normalize_context_text(
             primary_pair.get('opponent') if isinstance(primary_pair, dict) else ''
         )
+        alignment_ignore_tokens = [
+            token
+            for token in (
+                contract_speaker,
+                contract_opponent,
+            )
+            if token
+        ]
 
         def _register_heading_or_raise(heading_text: str) -> None:
             heading_key = self._heading_identity_key(heading_text)
@@ -577,6 +618,8 @@ class SectionNormalizerMixin:
                 paragraphs=section_paragraph_list,
                 contract=contract,
                 section_label=f"본론 {index + 1}",
+                ignore_tokens=alignment_ignore_tokens,
+                minimum_score=0.34,
             )
             _register_heading_or_raise(heading)
             html_parts.append(f"<h2>{heading}</h2>")
@@ -621,6 +664,8 @@ class SectionNormalizerMixin:
             contract=conclusion_contract,
             section_label='결론',
             use_all_paragraphs=True,
+            ignore_tokens=alignment_ignore_tokens,
+            minimum_score=0.24,
         )
         _register_heading_or_raise(conclusion_heading)
         html_parts.append(f"<h2>{conclusion_heading}</h2>")

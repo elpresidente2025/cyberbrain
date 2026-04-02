@@ -22,6 +22,7 @@ from typing import Any, Dict, Optional
 from firebase_admin import firestore
 from firebase_functions import https_fn
 
+from agents.common.election_rules import check_election_eligibility
 from agents.common.editorial import STRUCTURE_SPEC
 from agents.common.poll_citation import build_poll_citation_text
 from agents.common.role_keyword_policy import (
@@ -64,6 +65,7 @@ from services.posts.poll_fact_guard import (
     enforce_poll_fact_consistency,
 )
 from services.posts.poll_focus_bundle import build_poll_focus_bundle
+from services.system_config import get_test_mode_config
 from services.posts.validation import (
     enforce_repetition_requirements,
     enforce_keyword_requirements,
@@ -800,15 +802,7 @@ def _apply_usage_updates_after_success(
     current_month_key = _month_key()
     update_data: Dict[str, Any] = {}
 
-    # system/config testMode 조회
-    test_mode = False
-    try:
-        system_doc = db.collection("system").document("config").get()
-        if system_doc.exists:
-            system_data = _safe_dict(system_doc.to_dict())
-            test_mode = bool(system_data.get("testMode") is True)
-    except Exception:
-        test_mode = False
+    test_mode = bool(get_test_mode_config(db).get("enabled") is True)
 
     if is_tester or subscription_status == "active":
         update_data[f"monthlyUsage.{current_month_key}.generations"] = firestore.Increment(1)
@@ -832,6 +826,8 @@ def _extract_start_payload(
     *,
     topic: str,
     category: str,
+    sub_category: str,
+    classification_meta: Optional[Dict[str, Any]] = None,
     target_word_count: int,
     user_keywords: list[str],
     pipeline_route: str,
@@ -840,7 +836,9 @@ def _extract_start_payload(
     payload = dict(data)
     payload["topic"] = topic
     payload["category"] = category
-    payload["subCategory"] = str(data.get("subCategory") or "")
+    payload["subCategory"] = str(sub_category or "")
+    if isinstance(classification_meta, dict) and classification_meta:
+        payload["classificationMeta"] = dict(classification_meta)
     payload["targetWordCount"] = int(target_word_count)
     payload["uid"] = uid
     payload["userId"] = uid
@@ -943,6 +941,62 @@ def _ensure_user(uid: str) -> None:
     if not uid:
         raise ApiError("unauthenticated", "로그인이 필요합니다.")
 
+
+def _resolve_request_intent_with_meta(data: Dict[str, Any]) -> tuple[str, str, str, Dict[str, Any]]:
+    topic = str(data.get("prompt") or data.get("topic") or "").strip()
+    if not topic:
+        raise ApiError("invalid-argument", "주제를 입력해 주세요.")
+
+    requested_category = str(data.get("category") or "").strip()
+    requested_sub_category = str(data.get("subCategory") or "").strip()
+    instructions = data.get("instructions")
+    first_instruction = ""
+    if isinstance(instructions, list) and instructions:
+        first_instruction = str(instructions[0] or "").strip()
+    elif isinstance(instructions, str):
+        first_instruction = str(instructions).strip()
+
+    classifier_payload = {
+        "category": requested_category,
+        "subCategory": requested_sub_category,
+        "stanceText": str(data.get("stanceText") or first_instruction or "").strip(),
+    }
+
+    try:
+        from services.topic_classifier import resolve_request_intent
+
+        resolved = _run_async_sync(resolve_request_intent(topic, classifier_payload))
+    except Exception as exc:
+        logger.warning("Top-level request classification failed; using fallback: %s", exc)
+        resolved = {}
+
+    category = str(
+        resolved.get("category")
+        or classifier_payload.get("category")
+        or "daily-communication"
+    ).strip() or "daily-communication"
+    sub_category = str(
+        resolved.get("subCategory")
+        or classifier_payload.get("subCategory")
+        or ""
+    ).strip()
+    classification_meta = {
+        "requestedCategory": requested_category or "auto",
+        "requestedSubCategory": requested_sub_category,
+        "resolvedCategory": category,
+        "resolvedSubCategory": sub_category,
+        "writingMethod": str(resolved.get("writingMethod") or ""),
+        "source": str(resolved.get("source") or ""),
+        "confidence": round(float(resolved.get("confidence") or 0.0), 3),
+        "hasStanceSignal": bool(classifier_payload["stanceText"]),
+        "stanceLength": len(str(classifier_payload["stanceText"] or "")),
+    }
+    return topic, category, sub_category, classification_meta
+
+
+def _resolve_request_category(data: Dict[str, Any]) -> tuple[str, str, str]:
+    topic, category, sub_category, _classification_meta = _resolve_request_intent_with_meta(data)
+    return topic, category, sub_category
 
 def _topic_and_category(data: Dict[str, Any]) -> tuple[str, str]:
     topic = str(data.get("prompt") or data.get("topic") or "").strip()
@@ -1479,6 +1533,33 @@ _SELF_ANALYTICAL_LOW_SIGNAL_RE_LIST: tuple[re.Pattern[str], ...] = (
         re.IGNORECASE,
     ),
     re.compile(
+        r"(?:저는|제가)\s+[^.!?]{0,48}(?:유일한\s+후보|최고(?:의)?\s+후보)"
+        r"(?:라고\s+자부합니다|입니다|라고\s+생각합니다)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:이는|이러한\s+결과(?:는)?)\s+[^.!?]{0,72}"
+        r"(?:인정한\s+결과(?:라고\s+생각합니다|입니다)|비전과\s+[^.!?]{0,24}전문성을\s+인정한\s+결과)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:이는|이러한\s+결과(?:는)?)\s+[^.!?]{0,72}"
+        r"(?:인정받은\s+결과(?:라고\s+생각합니다|입니다)|평가받은\s+결과(?:라고\s+생각합니다|입니다))",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:저는|제가)\s+[^.!?]{0,72}"
+        r"(?:준비가\s+완벽(?:하게|히)\s+되어\s+있(?:습니다|다고\s+생각합니다)"
+        r"|완벽(?:하게|히)\s+준비되어\s+있(?:습니다|다고\s+생각합니다))",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:[^.!?]{0,48})?"
+        r"(?:준비가\s+완벽(?:하게|히)\s+되어\s+있(?:습니다|다고\s+생각합니다)"
+        r"|완벽(?:하게|히)\s+준비되어\s+있(?:습니다|다고\s+생각합니다))",
+        re.IGNORECASE,
+    ),
+    re.compile(
         r"(?:이러한\s+)?(?:저의\s+)?(?:경험|이력|행보|삶의\s+궤적|경영\s+경험)(?:은|이)\s+"
         r"[^.!?]{0,72}(?:역량|전문성|능력)[^.!?]{0,24}(?:저에게\s+)?(?:부여했습니다|주었습니다)",
         re.IGNORECASE,
@@ -1593,6 +1674,11 @@ _PROJECT_MANAGEMENT_SENTENCE_RE_LIST: tuple[re.Pattern[str], ...] = (
     ),
     re.compile(r"실행\s+과정에서\s+드러나는\s+한계(?:는|를)?\s+즉시\s+보완해\s+완성도를\s+높이겠습니다", re.IGNORECASE),
     re.compile(r"주민\s+의견을\s+수렴해\s+정책\s+방향을\s+구체화하고\s+실천\s+계획을\s+마련하겠습니다", re.IGNORECASE),
+    re.compile(r"행정\s+절차와\s+예산\s+흐름까지\s+살펴\s+실현\s+가능한\s+해법으로\s+다듬겠습니다", re.IGNORECASE),
+    re.compile(r"현장\s+목소리를\s+꾸준히\s+듣고\s+미흡한\s+지점은\s+빠르게\s+손보겠습니다", re.IGNORECASE),
+    re.compile(r"부산의\s+산업과\s+생활\s+문제를\s+함께\s+보며\s+해법을\s+더\s+구체화하겠습니다", re.IGNORECASE),
+    re.compile(r"사업\s+추진\s+현황을\s+투명하게\s+공개하고\s+결과로\s+증명하겠습니다", re.IGNORECASE),
+    re.compile(r"지역\s+현안에\s+대한\s+전문가\s+자문과\s+주민\s+토론을\s+병행하겠습니다", re.IGNORECASE),
 )
 
 _SELF_ANALYTICAL_CAUSE_TOKENS: tuple[str, ...] = (
@@ -1655,6 +1741,59 @@ _PROJECT_MANAGEMENT_SENTENCE_PHRASES: tuple[str, ...] = (
     "우선순위를 명확히 하고 필요한 자원과 일정을 현실적으로 맞추겠습니다",
     "실행 과정에서 드러나는 한계는 즉시 보완해 완성도를 높이겠습니다",
     "주민 의견을 수렴해 정책 방향을 구체화하고 실천 계획을 마련하겠습니다",
+    "행정 절차와 예산 흐름까지 살펴 실현 가능한 해법으로 다듬겠습니다",
+    "현장 목소리를 꾸준히 듣고 미흡한 지점은 빠르게 손보겠습니다",
+    "부산의 산업과 생활 문제를 함께 보며 해법을 더 구체화하겠습니다",
+    "사업 추진 현황을 투명하게 공개하고 결과로 증명하겠습니다",
+    "지역 현안에 대한 전문가 자문과 주민 토론을 병행하겠습니다",
+)
+
+_OBSERVER_FRAME_SENTENCE_RE_LIST: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"(?:이미지(?:를)?\s+(?:(?:더\s+)?(?:확고히|분명히|새롭게)\s+)?(?:구축|강화|부각|굳히)|포지셔닝|브랜딩)"
+        r"[^.!?]{0,56}(?:나서고\s+있|나섰|하고\s+있|전개하고\s+있|사로잡기\s+위해\s+나섰|사로잡고\s+있)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:당심|표심)\s+잡기(?:에)?\s+(?:나서고\s+있|나섰|돌입|주력)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:당심|민심|표심)(?:과\s*(?:당심|민심|표심))?"
+        r"[^.!?]{0,24}(?:동시에\s+)?사로잡(?:기\s+위해\s+나섰|고\s+있)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:정치적\s+무게감|중량감|혁신성)"
+        r"[^.!?]{0,56}(?:맞붙|맞부딪|대결\s+구도|구도가\s+형성)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:대결\s+구도|양자\s+대결\s+구도|삼자\s+대결\s+구도)"
+        r"[^.!?]{0,20}(?:형성되|만들어졌)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:공관위|후보\s+공모)"
+        r"[^.!?]{0,88}(?:경선\s+후보|후보)로\s+(?:선정|확정)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:민주당\s+)?공관위"
+        r"[^.!?]{0,120}(?:컨벤션\s+효과|선거\s+분위기)"
+        r"[^.!?]{0,72}(?:경선\s+실시를\s+결정|실시를\s+최종적으로\s+결정|최종적으로\s+경선\s+실시를\s+결정|결정했습니다)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:현역\s+의원의\s+['\"]?정치적\s+무게감['\"]?"
+        r"|영입\s+인재\s+출신\s+기업인의\s+['\"]?혁신성['\"]?)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:[가-힣]{2,4}\s+(?:전\s*)?(?:국회의원|의원|예비후보|후보|위원장|대표))"
+        r"[^.!?]{0,80}(?:강조합니다|내세웁니다|말합니다|설명합니다)",
+        re.IGNORECASE,
+    ),
 )
 
 _INCOMPLETE_SENTENCE_ENDINGS: tuple[str, ...] = (
@@ -1888,6 +2027,179 @@ def _drop_low_signal_analysis_sentences_once(content: str) -> Dict[str, Any]:
     return {"content": repaired, "edited": repaired != base, "actions": actions}
 
 
+def _drop_observer_frame_sentences_once(content: str) -> Dict[str, Any]:
+    base = str(content or "")
+    if not base.strip():
+        return {"content": base, "edited": False, "actions": []}
+
+    replacements: list[tuple[int, int, str]] = []
+    dropped_count = 0
+
+    for para_match in PARAGRAPH_TAG_PATTERN.finditer(base):
+        plain_inner = re.sub(r"<[^>]*>", " ", str(para_match.group(1) or ""))
+        plain_inner = re.sub(r"\s+", " ", plain_inner).strip()
+        if not plain_inner:
+            continue
+
+        updated_sentences: list[str] = []
+        for sentence in _split_sentence_like_units(plain_inner):
+            polished_sentence = _normalize_inline_whitespace(sentence).strip()
+            if not polished_sentence:
+                continue
+            if any(pattern.search(polished_sentence) for pattern in _OBSERVER_FRAME_SENTENCE_RE_LIST):
+                dropped_count += 1
+                continue
+            updated_sentences.append(polished_sentence)
+
+        rebuilt_inner = " ".join(updated_sentences).strip()
+        if rebuilt_inner == plain_inner:
+            continue
+        if not rebuilt_inner:
+            replacements.append((para_match.start(), para_match.end(), ""))
+        else:
+            replacements.append((para_match.start(1), para_match.end(1), rebuilt_inner))
+
+    if not replacements:
+        return {"content": base, "edited": False, "actions": []}
+
+    repaired = base
+    for start, end, replacement in sorted(replacements, key=lambda item: -item[0]):
+        repaired = repaired[:start] + replacement + repaired[end:]
+
+    return {
+        "content": repaired,
+        "edited": repaired != base,
+        "actions": [f"drop_observer_frame_sentence:{dropped_count}"] if dropped_count > 0 else [],
+    }
+
+
+_SECTION_LEADING_DEMONSTRATIVE_RE = re.compile(r"^(?P<lemma>이는|이것은)\s+(?P<rest>.+)$", re.IGNORECASE)
+_SECTION_LEADING_DEMONSTRATIVE_NOUN_RE = re.compile(
+    r"^(?:이러한|이런)\s+[^.!?]{0,28}?(?:은|는|이|가)\s+(?P<rest>.+)$",
+    re.IGNORECASE,
+)
+_SECTION_LEADING_DEMONSTRATIVE_CONTEXT_RE = re.compile(
+    r"^(?:(?:이는|이것은)\s+|(?:이러한|이런)\s+[^.!?]{0,28}?(?:은|는|이|가)\s+)"
+    r"[^.!?]{0,120}"
+    r"(?:선택지(?:를|가)?[^.!?]{0,24}\s+제공|선택의\s+기회(?:를|가)?[^.!?]{0,24}\s+제공|선택의\s+시작(?:을|이)?[^.!?]{0,24}\s+알리|제공하며|의미를\s+갖|보여주|이어지|흐름|전망|인정받은\s+결과|평가받은\s+결과)",
+    re.IGNORECASE,
+)
+_HEADING_SUBJECT_CANDIDATE_RE = re.compile(
+    r"([가-힣0-9][가-힣0-9\s]{0,24}(?:선택|해법|방안|비전|경선|선거|대결|변화|미래|전환|확정|시작))(?:은|는|이|가|을|를)?$",
+    re.IGNORECASE,
+)
+
+
+def _build_section_opening_subject_from_heading(h2_text: str) -> str:
+    heading = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(h2_text or ""))).strip(" .!?")
+    if not heading:
+        return ""
+
+    clauses = [clause.strip(" .!?") for clause in re.split(r"[,;:·]\s*", heading) if clause.strip(" .!?")]
+    if clauses and any(token in heading for token in ("확정", "시작")):
+        return f"{_normalize_inline_whitespace(clauses[0])}은"
+    for clause in reversed(clauses):
+        if re.search(r"(?:은|는)$", clause):
+            return _normalize_inline_whitespace(clause)
+        candidate_match = _HEADING_SUBJECT_CANDIDATE_RE.search(clause)
+        if candidate_match:
+            return f"{_normalize_inline_whitespace(candidate_match.group(1))}은"
+    if clauses:
+        first_clause = _normalize_inline_whitespace(clauses[0])
+        if any(token in first_clause for token in ("확정", "시작")):
+            return f"{first_clause}은"
+
+    if "경선" in heading:
+        return "이번 경선은"
+    if "선거" in heading:
+        return "이번 선거는"
+    if "대결" in heading:
+        return "이번 대결은"
+    if "해법" in heading:
+        return "해법은"
+    if "방안" in heading:
+        return "구체적 방안은"
+    if "비전" in heading:
+        return "비전은"
+    if "선택" in heading:
+        return "이 선택은"
+    return ""
+
+
+def _repair_contextless_section_openers_once(content: str) -> Dict[str, Any]:
+    base = str(content or "")
+    if not base.strip():
+        return {"content": base, "edited": False, "actions": []}
+
+    sections = _split_into_sections(base)
+    repaired_sections = list(sections)
+    repaired_count = 0
+
+    for index, section in enumerate(sections):
+        if index == 0 or not section.get("has_h2"):
+            continue
+
+        section_html = str(section.get("html") or "")
+        paragraph_match = PARAGRAPH_TAG_PATTERN.search(section_html)
+        if not paragraph_match:
+            continue
+
+        inner = str(paragraph_match.group(1) or "")
+        plain_inner = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", inner))
+        if not plain_inner:
+            continue
+
+        sentences = _split_sentence_like_units(plain_inner)
+        if not sentences:
+            continue
+
+        first_sentence = _normalize_inline_whitespace(sentences[0]).strip()
+        has_contextless_lead = bool(_SECTION_LEADING_DEMONSTRATIVE_CONTEXT_RE.search(first_sentence))
+        if (
+            not has_contextless_lead
+            and first_sentence.startswith(("이는 ", "이것은 "))
+            and "선택의 시작" in first_sentence
+            and "알리" in first_sentence
+        ):
+            has_contextless_lead = True
+        if not has_contextless_lead:
+            continue
+
+        subject = _build_section_opening_subject_from_heading(str(section.get("h2_text") or ""))
+        if not subject:
+            continue
+
+        noun_match = _SECTION_LEADING_DEMONSTRATIVE_NOUN_RE.match(first_sentence)
+        if noun_match:
+            updated_first = f"{subject} {str(noun_match.group('rest') or '').lstrip()}".strip()
+        else:
+            updated_first = _SECTION_LEADING_DEMONSTRATIVE_RE.sub(
+                lambda match: f"{subject} {str(match.group('rest') or '').lstrip()}",
+                first_sentence,
+                count=1,
+            ).strip()
+        if not updated_first or updated_first == first_sentence:
+            continue
+
+        rebuilt_inner = " ".join([updated_first, *sentences[1:]]).strip()
+        if not rebuilt_inner or rebuilt_inner == plain_inner:
+            continue
+
+        updated_html = section_html[: paragraph_match.start(1)] + rebuilt_inner + section_html[paragraph_match.end(1) :]
+        repaired_sections[index] = {**section, "html": updated_html}
+        repaired_count += 1
+
+    if repaired_count == 0:
+        return {"content": base, "edited": False, "actions": []}
+
+    repaired = _join_sections(repaired_sections)
+    return {
+        "content": repaired,
+        "edited": repaired != base,
+        "actions": [f"repair_contextless_section_opener:{repaired_count}"],
+    }
+
+
 def _resolve_full_name(
     *,
     data: Dict[str, Any],
@@ -1988,6 +2300,31 @@ def _extract_speaker_consistency_issues(content: str, full_name: str) -> list[st
         reverse_name = str(reverse_match.group(1) or "").strip()
         if reverse_name and not _is_same_speaker_name(reverse_name, speaker_name):
             issues.append(f"화자 앞 수식어로 \"{reverse_name}\" 인명이 사용됨")
+
+    unresolved_self_placeholder_patterns = (
+        re.compile(
+            r"저\s+이\s*(?:예비후보|후보|의원|위원장|대표)"
+            r"(?:께서는|께서|에게|으로서|로서|으로|로|은|는|이|가|을|를|의|와|과|도)?",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"이\s*(?:예비후보|후보|의원|위원장|대표)"
+            r"(?:께서는|께서|에게|으로서|로서|으로|로|은|는|이|가|을|를|의|와|과|도)?"
+            r"[^.!?]{0,40}(?:하겠습니다|이뤄내겠습니다|보여드리겠습니다|말씀드리겠습니다|약속드립니다)",
+            re.IGNORECASE,
+        ),
+    )
+    if any(pattern.search(plain) for pattern in unresolved_self_placeholder_patterns):
+        issues.append('1인칭 화자 이름이 "이 후보" placeholder로 남음')
+    if _has_generic_self_opponent_placeholder(plain):
+        issues.append('화자 이름이 "상대" placeholder로 남음')
+
+    named_pronoun_pattern = re.compile(
+        rf"{re.escape(speaker_name)}\s*(?:부산시장|시장후보|후보|예비후보|의원|위원장|대표)?\s*(?:은|는|이|가)?\s*(저는|제가|저의|제)\b",
+        re.IGNORECASE,
+    )
+    if named_pronoun_pattern.search(plain):
+        issues.append("화자 실명 뒤에 1인칭 대명사가 중복됨")
     return issues
 
 
@@ -2040,6 +2377,18 @@ def _repair_speaker_consistency_once(content: str, full_name: str) -> Dict[str, 
         return f"{pronoun} "
 
     repaired = self_object_pattern.sub(_replace_self_object, repaired)
+
+    named_pronoun_pattern = re.compile(
+        rf"{re.escape(speaker_name)}\s*(?:부산시장|시장후보|후보|예비후보|의원|위원장|대표)?\s*(?:은|는|이|가)?\s*(저는|제가|저의|제)\b",
+        re.IGNORECASE,
+    )
+
+    def _replace_named_pronoun(match: re.Match[str]) -> str:
+        pronoun = str(match.group(1) or "저는").strip()
+        applied_patterns.append("speaker_name_plus_pronoun")
+        return f"{pronoun}"
+
+    repaired = named_pronoun_pattern.sub(_replace_named_pronoun, repaired)
     repaired = re.sub(r"(저는|제가)\s*[,，]\s*", r"\1 ", repaired)
     repaired = re.sub(r"\s{2,}", " ", repaired)
 
@@ -2065,6 +2414,38 @@ def _extract_keyword_person_role(keyword: str) -> tuple[str, str]:
                 role_label = mapped
                 break
     return name, role_label
+
+
+def _apply_speaker_name_keyword_max_override(
+    user_keywords: Sequence[str],
+    full_name: str,
+    overrides: Dict[str, int],
+    *,
+    protected_max: int = 999,
+) -> Dict[str, int]:
+    if not isinstance(overrides, dict):
+        return {}
+
+    speaker_name = _clean_full_name_candidate(full_name)
+    if not speaker_name:
+        return overrides
+
+    for raw_keyword in user_keywords or []:
+        keyword = str(raw_keyword or "").strip()
+        if not keyword:
+            continue
+        keyword_name, _keyword_role = _extract_keyword_person_role(keyword)
+        candidate_name = keyword_name or _clean_full_name_candidate(keyword)
+        if not candidate_name or not _is_same_speaker_name(candidate_name, speaker_name):
+            continue
+        current_value = overrides.get(keyword)
+        try:
+            current_max = int(current_value) if current_value is not None else 0
+        except (TypeError, ValueError):
+            current_max = 0
+        overrides[keyword] = max(int(protected_max or 0), current_max)
+
+    return overrides
 
 
 def _find_conflicting_role_keyword(
@@ -2561,6 +2942,98 @@ def _build_subheading_role_surface(name: str, role_facts: Optional[Dict[str, str
     return normalized_name
 
 
+_CONSECUTIVE_HEADING_TOKEN_RE = re.compile(
+    r"(?<![0-9A-Za-z가-힣])(?P<token>[0-9A-Za-z가-힣]{2,})(?:\s+(?P=token))+(?![0-9A-Za-z가-힣])",
+    re.IGNORECASE,
+)
+_MISSING_OBJECT_PARTICLE_HEADING_RE = re.compile(
+    r"(?P<head>[0-9A-Za-z가-힣]{2,16})\s+위한\s+(?P<tail>[0-9A-Za-z가-힣]{2,24})",
+    re.IGNORECASE,
+)
+_LOW_SIGNAL_MATCHUP_HEADING_PREFIX_RE = re.compile(
+    r"^(?P<prefix>상대\s+후보|상대\s+주자|상대)\s*[,，]\s*(?P<tail>.+(?:구도|쟁점|대결|경쟁).*)$",
+    re.IGNORECASE,
+)
+
+
+def _pick_object_particle_surface(text: str) -> str:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return "을"
+    last_char = normalized[-1]
+    code = ord(last_char)
+    if 0xAC00 <= code <= 0xD7A3:
+        has_batchim = (code - 0xAC00) % 28 != 0
+        return "을" if has_batchim else "를"
+    return "을"
+
+
+def _repair_generic_subheading_surface_text(
+    heading_inner: str,
+) -> tuple[str, list[Dict[str, str]]]:
+    heading_plain = re.sub(r"<[^>]*>", " ", str(heading_inner or ""))
+    heading_plain = re.sub(r"\s+", " ", heading_plain).strip()
+    if not heading_plain:
+        return heading_inner, []
+
+    updated_heading = str(heading_inner)
+    replacements: list[Dict[str, str]] = []
+
+    prefix_repaired_heading, prefix_count = _LOW_SIGNAL_MATCHUP_HEADING_PREFIX_RE.subn(
+        lambda match: str(match.group("tail") or "").strip(),
+        updated_heading,
+        count=1,
+    )
+    if prefix_count > 0 and prefix_repaired_heading != updated_heading:
+        replacements.append(
+            {
+                "from": heading_plain,
+                "to": re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", prefix_repaired_heading)).strip(),
+                "type": "drop_low_signal_matchup_prefix",
+            }
+        )
+        updated_heading = prefix_repaired_heading
+        heading_plain = re.sub(r"<[^>]*>", " ", updated_heading)
+        heading_plain = re.sub(r"\s+", " ", heading_plain).strip()
+
+    deduped_heading, dedupe_count = _CONSECUTIVE_HEADING_TOKEN_RE.subn(
+        lambda match: str(match.group("token") or "").strip(),
+        updated_heading,
+    )
+    if dedupe_count > 0 and deduped_heading != updated_heading:
+        replacements.append(
+            {
+                "from": heading_plain,
+                "to": re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", deduped_heading)).strip(),
+                "type": "duplicate_heading_token",
+            }
+        )
+        updated_heading = deduped_heading
+        heading_plain = re.sub(r"<[^>]*>", " ", updated_heading)
+        heading_plain = re.sub(r"\s+", " ", heading_plain).strip()
+
+    repaired_heading, particle_count = _MISSING_OBJECT_PARTICLE_HEADING_RE.subn(
+        lambda match: (
+            f"{str(match.group('head') or '').strip()}"
+            f"{_pick_object_particle_surface(str(match.group('head') or '').strip())} "
+            f"위한 {str(match.group('tail') or '').strip()}"
+        ),
+        updated_heading,
+        count=1,
+    )
+    if particle_count > 0 and repaired_heading != updated_heading:
+        replacements.append(
+            {
+                "from": heading_plain,
+                "to": re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", repaired_heading)).strip(),
+                "type": "heading_missing_object_particle",
+            }
+        )
+        updated_heading = repaired_heading
+
+    return updated_heading, replacements
+
+
 def _repair_malformed_matchup_subheading_text(
     heading_inner: str,
     *,
@@ -2680,6 +3153,14 @@ def _repair_subheading_entity_consistency_once(
         heading_plain = re.sub(r"\s+", " ", heading_plain).strip()
         if not heading_plain:
             continue
+
+        generic_heading_inner, generic_replacements = _repair_generic_subheading_surface_text(heading_inner)
+        if generic_replacements:
+            repaired = repaired[:match.start(1)] + generic_heading_inner + repaired[match.end(1):]
+            replacements.extend(generic_replacements)
+            heading_inner = generic_heading_inner
+            heading_plain = re.sub(r"<[^>]*>", " ", heading_inner)
+            heading_plain = re.sub(r"\s+", " ", heading_plain).strip()
 
         updated_heading_inner, renamed_first_person = _third_personize_first_person_subheading_text(
             heading_inner,
@@ -2891,6 +3372,51 @@ def _find_valid_numeric_person_chain_match(text: Any) -> Optional[re.Match[str]]
 
 def _normalize_inline_whitespace(text: Any) -> str:
     return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def _content_log_preview(text: Any, limit: int = 220) -> str:
+    plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(text or "")))
+    if len(plain) <= limit:
+        return plain
+    return f"{plain[:limit].rstrip()}..."
+
+
+_NO_SPACE_COMPOUND_WARNING_RE = re.compile(r"(?P<token>[가-힣]{8,}(?:은|는|이|가|을|를|의))")
+
+
+def _warn_if_no_space_compound(content: Any, stage: str) -> None:
+    plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(content or "")))
+    if not plain:
+        return
+    for match in _NO_SPACE_COMPOUND_WARNING_RE.finditer(plain):
+        token = str(match.group("token") or "").strip()
+        if token:
+            logger.warning("[%s] 공백 없는 복합 접합 감지: %s", stage, token)
+            break
+
+
+def _keyword_gate_log_summary(
+    keyword_validation: Optional[Dict[str, Any]],
+    keywords: Optional[list[str]],
+) -> list[Dict[str, Any]]:
+    validation = keyword_validation if isinstance(keyword_validation, dict) else {}
+    user_keywords = [str(item).strip() for item in (keywords or []) if str(item).strip()]
+    summary: list[Dict[str, Any]] = []
+    for keyword in user_keywords:
+        info = validation.get(keyword) if isinstance(validation.get(keyword), dict) else {}
+        summary.append(
+            {
+                "keyword": keyword,
+                "status": str(info.get("status") or ""),
+                "count": int(info.get("count") or 0),
+                "gateCount": int(info.get("gateCount") or 0),
+                "expected": int(info.get("expected") or 0),
+                "bodyCount": int(info.get("bodyCount") or 0),
+                "bodyExpected": int(info.get("bodyExpected") or 0),
+                "exactShortfall": int(info.get("exactShortfall") or 0),
+            }
+        )
+    return summary
 
 
 def _is_datetime_only_numeric_run(text: Any) -> bool:
@@ -4120,6 +4646,184 @@ _IDENTITY_SIGNATURE_VARIANT_RE = re.compile(
     r"뼛속까지\s+부산(?:\s+사람|사람)(?:으로서|으로|인|이자)?",
     re.IGNORECASE,
 )
+_SELF_REFERENCE_PLACEHOLDER_RE = re.compile(
+    r"(?<![가-힣])이\s*(?P<label>예비후보|후보|의원|위원장|대표)"
+    r"(?P<particle>께서는|께서|에게|으로서|로서|으로|로|은|는|이|가|을|를|의|와|과|도)?"
+    r"(?=(?:\s|[,.!?]|$))",
+    re.IGNORECASE,
+)
+_SELF_GENERIC_OPPONENT_PLACEHOLDER_RE = re.compile(
+    r"(?<![가-힣])상대"
+    r"(?!\s*(?:후보|주자|진영|당|와(?:의)?|과(?:의)?|비교|공세|공격|비판))"
+    r"(?P<particle>입니다|이라|라는|께서는|께서|에게|으로서|로서|으로|로|은|는|이|가|을|를|의|와|과|도)?"
+    r"(?=(?:\s|[,.!?]|$))",
+    re.IGNORECASE,
+)
+_SELF_GENERIC_OPPONENT_EXCLUSION_RE = re.compile(
+    r"(?:상대\s*(?:후보|주자|진영|당)|상대(?:와|과)(?:의)?|상대\s*(?:비교|공세|공격|비판)|"
+    r"양자대결|가상대결|대결|경쟁|접전|승부|오차\s*범위)",
+    re.IGNORECASE,
+)
+_SELF_GENERIC_OPPONENT_CUE_RE = re.compile(
+    r"(?:뛰어온|헌신해\s+온|지켜온|활동해\s+온|함께해\s+온|매달려\s+온|소통해\s+온)\s+상대(?:입니다|은|는|이|가|으로서|로서)?|"
+    r"(?:광역시의원|시의원|도의원|국회의원|의원|위원장|대표|후보|예비후보)\s+상대(?:입니다|은|는|이|가|으로서|로서)?|"
+    r"것은\s+상대의\s+[^.!?]{0,24}(?:과제|역할|책무)|"
+    r"상대(?:입니다|이라|라는|으로서|로서)",
+    re.IGNORECASE,
+)
+_SELF_REFERENCE_PLEDGE_SIGNAL_RE = re.compile(
+    r"(?:저는|제가|저의|제|하겠습니다|이뤄내겠습니다|보여드리겠습니다|말씀드리겠습니다|"
+    r"약속드립니다|세우겠습니다|바꾸겠습니다|풀겠습니다|만들겠습니다)",
+    re.IGNORECASE,
+)
+
+
+def _has_generic_self_opponent_placeholder(text: Any) -> bool:
+    plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(text or "")))
+    if not plain or "상대" not in plain:
+        return False
+
+    for sentence in re.split(r"(?<=[.!?。])\s+|\n+", plain):
+        normalized_sentence = _normalize_inline_whitespace(sentence)
+        if not normalized_sentence or "상대" not in normalized_sentence:
+            continue
+        if _SELF_GENERIC_OPPONENT_EXCLUSION_RE.search(normalized_sentence):
+            continue
+        if not _SELF_GENERIC_OPPONENT_PLACEHOLDER_RE.search(normalized_sentence):
+            continue
+        if _SELF_GENERIC_OPPONENT_CUE_RE.search(normalized_sentence):
+            return True
+    return False
+
+
+def _build_first_person_surface_for_particle(particle: str) -> str:
+    normalized = str(particle or "").strip()
+    mapping = {
+        "": "저",
+        "께서는": "저는",
+        "께서": "제가",
+        "에게": "저에게",
+        "으로서": "저로서",
+        "로서": "저로서",
+        "으로": "저로",
+        "로": "저로",
+        "은": "저는",
+        "는": "저는",
+        "이": "제가",
+        "가": "제가",
+        "을": "저를",
+        "를": "저를",
+        "의": "저의",
+        "와": "저와",
+        "과": "저와",
+        "도": "저도",
+    }
+    return mapping.get(normalized, f"저{normalized}")
+
+
+def _build_named_self_reference_surface(name: str, label: str, particle: str) -> str:
+    base = f"{str(name or '').strip()} {str(label or '').strip()}".strip()
+    normalized_particle = str(particle or "").strip()
+    return f"{base}{normalized_particle}" if normalized_particle else base
+
+
+def _repair_self_reference_placeholders_once(
+    content: str,
+    *,
+    full_name: str = "",
+) -> Dict[str, Any]:
+    base = str(content or "")
+    speaker_name = _clean_full_name_candidate(full_name)
+    if not base.strip() or not speaker_name:
+        return {"content": base, "edited": False, "actions": []}
+
+    replacements: list[tuple[int, int, str]] = []
+    replaced_count = 0
+    prefixed_pattern = re.compile(
+        r"(?<![가-힣])(?:저는|제가|저의|저)\s*[, ]*\s*이\s*(?P<label>예비후보|후보|의원|위원장|대표)"
+        r"(?P<particle>께서는|께서|에게|으로서|로서|으로|로|은|는|이|가|을|를|의|와|과|도)?"
+        r"(?=(?:\s|[,.!?]|$))",
+        re.IGNORECASE,
+    )
+    first_person_context_pattern = re.compile(
+        r"(?<![가-힣])(?:저는|제가|저의|저)\b",
+        re.IGNORECASE,
+    )
+    placeholder_token_pattern = re.compile(
+        r"이\s*(?:예비후보|후보|의원|위원장|대표)",
+        re.IGNORECASE,
+    )
+
+    for match in reversed(list(CONTENT_BLOCK_WITH_TAG_PATTERN.finditer(base))):
+        tag = str(match.group("tag") or "").strip().lower()
+        inner = str(match.group("inner") or "")
+        plain_inner = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", inner))
+        if not plain_inner:
+            continue
+        if not (
+            placeholder_token_pattern.search(plain_inner)
+            or prefixed_pattern.search(plain_inner)
+            or _has_generic_self_opponent_placeholder(plain_inner)
+        ):
+            continue
+
+        updated_inner = inner
+        changed = False
+
+        updated_inner, prefixed_count = prefixed_pattern.subn(
+            lambda m: _build_first_person_surface_for_particle(m.group("particle") or ""),
+            updated_inner,
+        )
+        if prefixed_count > 0:
+            replaced_count += prefixed_count
+            changed = True
+
+        updated_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", updated_inner))
+        has_placeholder = bool(_SELF_REFERENCE_PLACEHOLDER_RE.search(updated_plain))
+        has_pledge_signal = bool(_SELF_REFERENCE_PLEDGE_SIGNAL_RE.search(updated_plain))
+        has_first_person_context = bool(first_person_context_pattern.search(updated_plain))
+        if has_placeholder:
+            if tag == "h2" or not (has_pledge_signal or has_first_person_context):
+                repl_fn = lambda m: _build_named_self_reference_surface(
+                    speaker_name,
+                    m.group("label") or "",
+                    m.group("particle") or "",
+                )
+            else:
+                repl_fn = lambda m: _build_first_person_surface_for_particle(m.group("particle") or "")
+            updated_inner, placeholder_count = _SELF_REFERENCE_PLACEHOLDER_RE.subn(repl_fn, updated_inner)
+            if placeholder_count > 0:
+                replaced_count += placeholder_count
+                changed = True
+
+        if _has_generic_self_opponent_placeholder(updated_plain):
+            updated_inner, generic_placeholder_count = _SELF_GENERIC_OPPONENT_PLACEHOLDER_RE.subn(
+                lambda m: _build_named_self_reference_surface(
+                    speaker_name,
+                    "",
+                    m.group("particle") or "",
+                ),
+                updated_inner,
+            )
+            if generic_placeholder_count > 0:
+                replaced_count += generic_placeholder_count
+                changed = True
+
+        if changed and updated_inner != inner:
+            replacements.append((match.start("inner"), match.end("inner"), updated_inner))
+
+    if not replacements:
+        return {"content": base, "edited": False, "actions": []}
+
+    repaired = base
+    for start, end, replacement in sorted(replacements, key=lambda item: -item[0]):
+        repaired = repaired[:start] + replacement + repaired[end:]
+
+    return {
+        "content": repaired,
+        "edited": repaired != base,
+        "actions": [f"repair_self_reference_placeholder:{replaced_count}"] if replaced_count > 0 else [],
+    }
 
 
 def _repair_identity_signature_exact_form_once(
@@ -4223,6 +4927,12 @@ def _ensure_identity_signature_present_once(
 
 _BROKEN_POLL_ROLE_FRAGMENT = r"(?:전\s*)?(?:국회의원|의원|시장|지사|도지사|대표|위원장|후보|예비후보)"
 _SAFE_SENTENCE_HTML_PATTERN = re.compile(r".+?(?:(?<!\d)[.!?。](?!\d)|$)", re.DOTALL)
+_INCOMPLETE_NEWS_FRAGMENT_RE = re.compile(
+    r"(?:(?:후보\s+공모|공모|경선|선거)[^.!?]{0,36})?"
+    r"(?:참여|등록|신청|출마)한\s+(?:이번|이|해당)\s+"
+    r"(?:결정|발표|선정|조치|결과)(?:은|는|으로)?",
+    re.IGNORECASE,
+)
 
 
 def _has_malformed_double_name_matchup_phrase(text: Any) -> bool:
@@ -4256,6 +4966,8 @@ def _looks_like_broken_poll_fragment_sentence(
     if not plain:
         return False
 
+    if _INCOMPLETE_NEWS_FRAGMENT_RE.search(plain):
+        return True
     if re.search(r"(?:제가|저의)\s+비전에\s+대한", plain, re.IGNORECASE):
         return True
     if re.search(r"^\d+(?:\.\d+)?%\s*보다", plain, re.IGNORECASE):
@@ -4420,7 +5132,7 @@ def _detect_integrity_gate_issues(content: str) -> list[str]:
     issues: list[str] = []
     if any(re.search(r"카테고리\s*:", line) for line in lines):
         issues.append("본문에 메타데이터 블록(카테고리/검색어/생성 시간)이 포함됨")
-    if any(re.search(r"검색어\s*삽입\s*횟수\s*:", line) for line in lines):
+    if any(re.search(r"검색어\s*(?:삽입|반영)\s*횟수\s*:", line) for line in lines):
         issues.append("본문에 메타데이터 블록(카테고리/검색어/생성 시간)이 포함됨")
     if any(re.search(r"생성\s*시간\s*:", line) for line in lines):
         issues.append("본문에 메타데이터 블록(카테고리/검색어/생성 시간)이 포함됨")
@@ -4454,6 +5166,10 @@ def _detect_integrity_gate_issues(content: str) -> list[str]:
         (
             re.compile(r"(?:제가|저의)\s+비전에\s+대한", re.IGNORECASE),
             "문장 파손(제가 비전에 대한 ...)",
+        ),
+        (
+            _INCOMPLETE_NEWS_FRAGMENT_RE,
+            "문장 파손(불완전 뉴스 절단 문장)",
         ),
     )
     for pattern, label in critical_sentence_patterns:
@@ -6732,6 +7448,143 @@ def _ensure_nonempty_h2_sections_once(
     return {"content": repaired, "edited": repaired != base, "actions": actions}
 
 
+def _build_closing_support_sentence(heading: str, body_text: str, *, full_name: str = "") -> str:
+    heading_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(heading or "")))
+    body_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(body_text or "")))
+    if not heading_plain:
+        heading_plain = ""
+    if not body_plain:
+        body_plain = ""
+
+    candidates: list[str] = []
+    if "주목" in heading_plain or "이유" in heading_plain:
+        candidates.append("남은 것은 확인된 경쟁력을 부산의 변화로 이어가는 실행입니다.")
+    if "함께" in heading_plain:
+        candidates.append("시민 여러분과 함께 약속한 변화를 생활의 결과로 보여드리겠습니다.")
+    if "이뤄내" in heading_plain or "해내" in heading_plain:
+        candidates.append("말보다 실행으로 결과를 증명하겠습니다.")
+    if "해법" in heading_plain or "비전" in heading_plain:
+        candidates.append("우선순위와 실행 순서를 분명히 제시해 체감할 변화를 만들겠습니다.")
+    candidates.append("결국 중요한 것은 시민의 삶에서 확인되는 변화와 실행입니다.")
+
+    normalized_body = body_plain.replace(" ", "")
+    for candidate in candidates:
+        normalized_candidate = candidate.replace(" ", "")
+        if normalized_candidate and normalized_candidate not in normalized_body:
+            return candidate
+    return ""
+
+
+def _build_generic_closing_answer_lead(heading: str, *, full_name: str = "") -> str:
+    heading_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(heading or "")))
+    if not heading_plain:
+        return "결국 중요한 것은 약속을 실행으로 연결해 시민이 체감할 변화를 만드는 일입니다."
+
+    if any(token in heading_plain for token in ("이뤄내", "해내", "완수", "약속")):
+        return "이 약속은 시민의 삶에 남는 결과로 이어질 때 비로소 의미를 갖습니다."
+    if any(token in heading_plain for token in ("대혁신", "혁신", "변화", "도약", "회복")):
+        return "변화는 구호가 아니라 생활 속에서 확인되는 실행과 성과로 증명되어야 합니다."
+    if "함께" in heading_plain:
+        return "결론은 시민 여러분과 함께 약속한 변화를 현실의 성과로 만드는 일입니다."
+    if "미래" in heading_plain:
+        return "부산의 미래는 선언이 아니라 준비된 실행과 책임 있는 추진으로 만들어집니다."
+
+    return "결국 중요한 것은 약속을 실행으로 연결해 시민이 체감할 변화를 만드는 일입니다."
+
+
+def _ensure_closing_section_min_sentences_once(content: str, *, full_name: str = "") -> Dict[str, Any]:
+    base = str(content or "")
+    if not base.strip():
+        return {"content": base, "edited": False, "actions": []}
+
+    h2_matches = list(H2_TAG_PATTERN.finditer(base))
+    if not h2_matches:
+        return {"content": base, "edited": False, "actions": []}
+
+    last_match = h2_matches[-1]
+    section_start = last_match.end()
+    section_end = len(base)
+    section_html = base[section_start:section_end]
+    heading_inner = str(last_match.group(1) or "").strip()
+    paragraph_matches = list(PARAGRAPH_TAG_PATTERN.finditer(section_html))
+    support_sentence = _build_closing_support_sentence(heading_inner, section_html, full_name=full_name)
+
+    if not paragraph_matches:
+        answer_lead = _build_heading_based_answer_lead(heading_inner, full_name=full_name)
+        if not answer_lead:
+            answer_lead = _build_generic_closing_answer_lead(heading_inner, full_name=full_name)
+        fallback_sentences: list[str] = []
+        for sentence in (answer_lead, support_sentence):
+            normalized_sentence = _normalize_inline_whitespace(str(sentence or ""))
+            if not normalized_sentence:
+                continue
+            if normalized_sentence not in fallback_sentences:
+                fallback_sentences.append(normalized_sentence)
+        if len(fallback_sentences) < 2:
+            backup_sentence = _build_generic_closing_answer_lead(heading_inner, full_name=full_name)
+            if backup_sentence and backup_sentence not in fallback_sentences:
+                fallback_sentences.append(backup_sentence)
+        if len(fallback_sentences) < 2:
+            return {"content": base, "edited": False, "actions": []}
+        insertion = f"\n<p>{' '.join(fallback_sentences[:2])}</p>\n"
+        repaired = base[:section_start] + insertion + section_html + base[section_end:]
+        return {
+            "content": repaired,
+            "edited": repaired != base,
+            "actions": ["restore_closing_min_sentences:empty_section"],
+        }
+
+    total_sentences = 0
+    for match in paragraph_matches:
+        plain_inner = re.sub(r"<[^>]*>", " ", str(match.group(1) or ""))
+        plain_inner = _normalize_inline_whitespace(plain_inner)
+        if not plain_inner:
+            continue
+        total_sentences += len(_split_sentence_like_units(plain_inner))
+
+    if total_sentences >= 2:
+        return {"content": base, "edited": False, "actions": []}
+
+    last_paragraph = paragraph_matches[-1]
+    last_inner = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(last_paragraph.group(1) or "")))
+    if not last_inner:
+        return {"content": base, "edited": False, "actions": []}
+
+    normalized_last_inner = last_inner.replace(" ", "")
+    supplement_candidates: list[str] = []
+    for candidate in (
+        support_sentence,
+        _build_generic_closing_answer_lead(heading_inner, full_name=full_name),
+        "시민의 삶에서 먼저 달라지는 변화로 끝까지 증명하겠습니다.",
+    ):
+        normalized_candidate = _normalize_inline_whitespace(str(candidate or ""))
+        if not normalized_candidate:
+            continue
+        compact_candidate = normalized_candidate.replace(" ", "")
+        if compact_candidate in normalized_last_inner:
+            continue
+        if normalized_candidate in supplement_candidates:
+            continue
+        supplement_candidates.append(normalized_candidate)
+
+    if not supplement_candidates:
+        return {"content": base, "edited": False, "actions": []}
+
+    needed = max(1, 2 - total_sentences)
+    updated_inner = f"{last_inner} {' '.join(supplement_candidates[:needed])}".strip()
+    repaired_section_html = (
+        section_html[: last_paragraph.start(1)]
+        + updated_inner
+        + section_html[last_paragraph.end(1) :]
+    )
+    repaired = base[:section_start] + repaired_section_html + base[section_end:]
+    return {
+        "content": repaired,
+        "edited": repaired != base,
+        "actions": ["restore_closing_min_sentences:append_sentence"],
+    }
+
+
 def _apply_final_sentence_polish_once(
     content: str,
     *,
@@ -6890,6 +7743,26 @@ def _apply_final_sentence_polish_once(
     if low_signal_repair.get("edited"):
         low_signal_content = low_signal_repair.get("content")
         repaired = str(low_signal_content if low_signal_content is not None else repaired)
+
+    observer_frame_repair = _drop_observer_frame_sentences_once(repaired)
+    observer_frame_actions = observer_frame_repair.get("actions")
+    if isinstance(observer_frame_actions, list):
+        for action in observer_frame_actions:
+            action_text = str(action).strip()
+            if action_text:
+                actions.append(action_text)
+    if observer_frame_repair.get("edited"):
+        repaired = str(observer_frame_repair.get("content") or repaired)
+
+    section_opener_repair = _repair_contextless_section_openers_once(repaired)
+    section_opener_actions = section_opener_repair.get("actions")
+    if isinstance(section_opener_actions, list):
+        for action in section_opener_actions:
+            action_text = str(action).strip()
+            if action_text:
+                actions.append(action_text)
+    if section_opener_repair.get("edited"):
+        repaired = str(section_opener_repair.get("content") or repaired)
 
     pre_section_dedupe = _dedupe_overlapping_sections_once(repaired)
     pre_section_dedupe_actions = pre_section_dedupe.get("actions")
@@ -7130,6 +8003,19 @@ def _apply_final_sentence_polish_once(
                 actions.append(action_text)
     if empty_section_repair.get("edited"):
         repaired = str(empty_section_repair.get("content") or repaired)
+
+    closing_sentence_repair = _ensure_closing_section_min_sentences_once(
+        repaired,
+        full_name=full_name,
+    )
+    closing_sentence_actions = closing_sentence_repair.get("actions")
+    if isinstance(closing_sentence_actions, list):
+        for action in closing_sentence_actions:
+            action_text = str(action).strip()
+            if action_text:
+                actions.append(action_text)
+    if closing_sentence_repair.get("edited"):
+        repaired = str(closing_sentence_repair.get("content") or repaired)
 
     return {
         "content": repaired,
@@ -8130,6 +9016,37 @@ def _recover_short_content_once(
         return {"content": base_content, "edited": False}
 
     max_chars = max(int(target_word_count * 1.2), min_required_chars + 220)
+    section_spec = _build_terminal_section_length_spec(target_word_count=target_word_count)
+    sections = _split_into_sections(base_content)
+    short_sections: list[str] = []
+    for index, section in enumerate(sections, start=1):
+        if not section.get("has_h2"):
+            continue
+        section_html = str(section.get("html") or "")
+        current_len = _plain_len(section_html)
+        effective_min = (
+            min(int(section_spec.get("per_section_min") or 0), 130)
+            if index == len(sections)
+            else int(section_spec.get("per_section_min") or 0)
+        )
+        if current_len >= effective_min or effective_min <= 0:
+            continue
+        heading_text = _normalize_inline_whitespace(str(section.get("h2_text") or "")).strip()
+        section_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", section_html))
+        short_sections.append(
+            f"""
+    <section index="{index}" current_chars="{current_len}" min_chars="{effective_min}">
+      <heading>{html.escape(heading_text or '(소제목 없음)')}</heading>
+      <body><![CDATA[{section_plain[:280]}]]></body>
+      <repair_focus>이 섹션을 읽은 독자가 '그래서 구체적으로 어떻게 할 건데?'라고 물을 지점을 찾아, 실행 방식이나 구체 근거를 드러내는 문장을 보강할 것</repair_focus>
+    </section>
+""".rstrip()
+        )
+    short_section_block = "\n".join(short_sections).strip()
+    default_short_section_block = (
+        "    <section index=\"0\"><repair_focus>짧은 h2 섹션이 특정되지 않으면 전체 흐름을 유지하며 "
+        "가장 설명이 부족한 문단을 구체화할 것</repair_focus></section>"
+    )
     prompt = f"""
 <length_repair_prompt version="xml-v1">
   <role>당신은 한국어 정치 콘텐츠 편집자입니다. 본문 의미를 유지한 채 분량만 확장하세요.</role>
@@ -8144,10 +9061,16 @@ def _recover_short_content_once(
     <rule order="3">같은 문장/같은 구문 반복으로 분량을 채우지 말 것.</rule>
     <rule order="4">행사 일시+장소 결합 문구는 2회를 넘기지 말 것.</rule>
     <rule order="5">키워드 과잉 삽입 금지.</rule>
+    <rule order="6">가능하면 아래 short_sections에 표시된 섹션부터 보강하고, 각 섹션에서 독자가 '그래서 구체적으로 어떻게 할 건데?'라고 물을 지점을 직접 답하는 문장을 추가할 것.</rule>
+    <rule order="7">어떤 후보나 어떤 선거에도 붙일 수 있는 일반 공약 문장으로 분량을 채우지 말 것.</rule>
+    <rule order="8">소제목과 이미 있는 사실을 기준으로 실행 방식, 대상, 순서, 근거 중 빠진 정보를 보강할 것.</rule>
   </rules>
   <topic>{topic}</topic>
   <title>{title}</title>
   <keywords>{', '.join(user_keywords)}</keywords>
+  <short_sections>
+{short_section_block or default_short_section_block}
+  </short_sections>
   <draft><![CDATA[{base_content}]]></draft>
   <output_contract>
     <format>XML</format>
@@ -8180,6 +9103,80 @@ def _recover_short_content_once(
     candidate_len = _count_chars_no_space(candidate)
     if candidate_len <= base_len:
         return {"content": base_content, "edited": False}
+
+    if candidate_len < min_required_chars:
+        retry_sections = _split_into_sections(candidate)
+        retry_short_sections: list[str] = []
+        for index, section in enumerate(retry_sections, start=1):
+            if not section.get("has_h2"):
+                continue
+            section_html = str(section.get("html") or "")
+            current_len = _plain_len(section_html)
+            effective_min = (
+                min(int(section_spec.get("per_section_min") or 0), 130)
+                if index == len(retry_sections)
+                else int(section_spec.get("per_section_min") or 0)
+            )
+            if current_len >= effective_min or effective_min <= 0:
+                continue
+            heading_text = _normalize_inline_whitespace(str(section.get("h2_text") or "")).strip()
+            section_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", section_html))
+            retry_short_sections.append(
+                f"""
+    <section index="{index}" current_chars="{current_len}" min_chars="{effective_min}">
+      <heading>{html.escape(heading_text or '(소제목 없음)')}</heading>
+      <body><![CDATA[{section_plain[:280]}]]></body>
+      <repair_focus>이 섹션에서 아직 빠진 실행 방식, 대상, 근거를 직접 보강할 것</repair_focus>
+    </section>
+""".rstrip()
+            )
+        retry_short_section_block = "\n".join(retry_short_sections).strip()
+        retry_remaining_chars = max(0, min_required_chars - candidate_len)
+        retry_prompt = prompt.replace(
+            f"<current_chars>{base_len}</current_chars>",
+            f"<current_chars>{candidate_len}</current_chars>",
+            1,
+        )
+        retry_prompt = retry_prompt.replace(
+            f"<short_sections>\n{short_section_block or default_short_section_block}\n  </short_sections>",
+            f"<short_sections>\n{retry_short_section_block or default_short_section_block}\n  </short_sections>",
+            1,
+        )
+        retry_prompt = retry_prompt.replace(
+            "  </rules>",
+            (
+                "    <rule order=\"9\">retry_hint가 있으면 부족한 글자 수를 실제로 메우도록 짧은 섹션부터 한 문장 이상 더 보강할 것.</rule>\n"
+                "  </rules>"
+            ),
+            1,
+        )
+        retry_prompt = retry_prompt.replace(
+            f"<draft><![CDATA[{base_content}]]></draft>",
+            (
+                f"<retry_hint>현재 초안이 최소 분량보다 {retry_remaining_chars}자 부족합니다. "
+                "이미 있는 문장을 축약하지 말고, 짧은 섹션부터 구체 문장을 더 보강하세요.</retry_hint>\n"
+                f"  <draft><![CDATA[{candidate}]]></draft>"
+            ),
+            1,
+        )
+        try:
+            from agents.common.gemini_client import DEFAULT_MODEL, generate_content_async
+
+            retry_response_text = _run_async_sync(
+                generate_content_async(
+                    retry_prompt,
+                    model_name=DEFAULT_MODEL,
+                    temperature=0.0,
+                    max_output_tokens=8192,
+                )
+            )
+            retry_candidate = _extract_content_payload(retry_response_text)
+            retry_len = _count_chars_no_space(retry_candidate) if retry_candidate else 0
+            if retry_candidate and retry_len > candidate_len:
+                candidate = retry_candidate
+                candidate_len = retry_len
+        except Exception as exc:
+            logger.warning("분량 자동 보정 2차 호출 실패: %s", exc)
 
     keyword_repair = _repair_keyword_gate_once(
         content=candidate,
@@ -8224,6 +9221,22 @@ def _repair_keyword_gate_once(
 ) -> Dict[str, Any]:
     """키워드 게이트 실패(부족/과다)를 1회 자동 보정한다."""
     base_content = str(content or "")
+    pre_validation = validate_keyword_insertion(
+        base_content,
+        user_keywords=user_keywords,
+        auto_keywords=auto_keywords,
+        target_word_count=target_word_count,
+        title_text=title_text,
+        body_min_overrides=body_min_overrides,
+        user_keyword_expected_overrides=user_keyword_expected_overrides,
+        user_keyword_max_overrides=user_keyword_max_overrides,
+    )
+    pre_keyword_validation = build_keyword_validation(pre_validation)
+    logger.info(
+        "Keyword gate repair snapshot: preview=%s states=%s",
+        _content_log_preview(base_content),
+        _keyword_gate_log_summary(pre_keyword_validation, list(user_keywords or [])),
+    )
     enforcement = enforce_keyword_requirements(
         base_content,
         user_keywords=user_keywords,
@@ -8239,6 +9252,7 @@ def _repair_keyword_gate_once(
     )
 
     repaired_content = str(enforcement.get("content") or base_content)
+    _warn_if_no_space_compound(repaired_content, "keyword_gate_repair")
     keyword_result = enforcement.get("keywordResult")
     if not isinstance(keyword_result, dict):
         keyword_result = validate_keyword_insertion(
@@ -8260,6 +9274,12 @@ def _repair_keyword_gate_once(
         if isinstance(info, dict)
     }
     reductions = enforcement.get("reductions") if isinstance(enforcement.get("reductions"), list) else []
+    logger.info(
+        "Keyword gate repair result: edited=%s preview=%s states=%s",
+        repaired_content != base_content,
+        _content_log_preview(repaired_content),
+        _keyword_gate_log_summary(keyword_validation, list(user_keywords or [])),
+    )
 
     return {
         "content": repaired_content,
@@ -8292,6 +9312,44 @@ def _extract_legal_gate_issues(heuristic_result: Dict[str, Any]) -> list[str]:
         for item in issues
         if isinstance(item, str) and any(keyword in item for keyword in legal_keywords)
     ]
+
+
+def _extract_legal_gate_items(heuristic_result: Dict[str, Any]) -> list[Dict[str, Any]]:
+    if not isinstance(heuristic_result, dict):
+        return []
+    details = heuristic_result.get("details")
+    if not isinstance(details, dict):
+        return []
+    election_law = details.get("electionLaw")
+    if not isinstance(election_law, dict):
+        return []
+    items = election_law.get("items")
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _format_legal_gate_item(item: Dict[str, Any]) -> str:
+    reason = str(item.get("reason") or "선거법 위반 위험").strip()
+    sentence = str(item.get("sentence") or "").strip()
+    matched_text = str(item.get("matchedText") or "").strip()
+    repair_hint = str(item.get("repairHint") or "").strip()
+
+    parts = [reason]
+    if sentence:
+        parts.append(f'문제 문장: "{sentence}"')
+    if matched_text:
+        parts.append(f'문제 표현: "{matched_text}"')
+    if repair_hint:
+        parts.append(f"수정 가이드: {repair_hint}")
+    return " | ".join(parts)
+
+
+def _extract_legal_gate_issue_summaries(heuristic_result: Dict[str, Any]) -> list[str]:
+    items = _extract_legal_gate_items(heuristic_result)
+    if items:
+        return [_format_legal_gate_item(item) for item in items]
+    return _extract_legal_gate_issues(heuristic_result)
 
 
 def _append_quality_warning(warnings: list[str], message: str) -> None:
@@ -8810,6 +9868,31 @@ def _guard_draft_title_nonfatal(
             seen_fallbacks.add(normalized)
             fallback_candidates.append((normalized, source))
 
+        try:
+            from agents.common.title_common import build_structured_title_candidates
+
+            structured_fallbacks = build_structured_title_candidates(
+                {
+                    "topic": topic,
+                    "contentPreview": content,
+                    "backgroundText": "",
+                    "stanceText": "",
+                    "keywords": [],
+                    "userKeywords": list(user_keywords or []),
+                    "fullName": full_name,
+                    "category": category,
+                    "status": status,
+                    "pollFocusBundle": poll_focus_bundle if isinstance(poll_focus_bundle, dict) else {},
+                    "roleKeywordPolicy": role_keyword_policy if isinstance(role_keyword_policy, dict) else {},
+                },
+                limit=4,
+            )
+        except Exception:
+            structured_fallbacks = []
+
+        for structured_title in structured_fallbacks:
+            _append_fallback(str(structured_title or ""), "structured_fallback")
+
         _append_fallback(previous, "previous_fallback")
 
         repeat_safe = _build_repeat_safe_title_fallback(
@@ -8843,9 +9926,7 @@ def _guard_draft_title_nonfatal(
         fallback_source = "unsafe_repeat_safe_fallback" if repeat_safe.get("title") else (
             "previous_fallback" if previous else "candidate_fallback"
         )
-        if not fallback_title and not requires_safe_fallback:
-            fallback_title = candidate
-        elif not fallback_title:
+        if not fallback_title:
             fallback_title = _normalize_title_surface_local(str(topic or "")) or candidate
             fallback_source = "topic_fallback"
         logger.warning(
@@ -9296,6 +10377,94 @@ def _recover_repetition_issues_once(
     }
 
 
+def _recover_legal_issues_once(
+    *,
+    content: str,
+    title: str,
+    legal_items: list[Dict[str, Any]],
+    status: str,
+    target_word_count: int,
+    user_keywords: list[str],
+) -> Dict[str, Any]:
+    """선거법 차단 이슈를 문장 단위로 1회 자동 교정."""
+    base_content = str(content or "").strip()
+    if not base_content or not legal_items:
+        return {"content": base_content, "edited": False, "summary": []}
+
+    issue_lines: list[str] = []
+    for item in legal_items[:4]:
+        if not isinstance(item, dict):
+            continue
+        issue_lines.append(f"- 사유: {str(item.get('reason') or '').strip()}")
+        sentence = str(item.get("sentence") or "").strip()
+        matched_text = str(item.get("matchedText") or "").strip()
+        repair_hint = str(item.get("repairHint") or "").strip()
+        if sentence:
+            issue_lines.append(f'  문제 문장: "{sentence}"')
+        if matched_text:
+            issue_lines.append(f'  문제 표현: "{matched_text}"')
+        if repair_hint:
+            issue_lines.append(f"  수정 가이드: {repair_hint}")
+    issue_block = "\n".join(issue_lines).strip()
+    keyword_text = ", ".join(str(item).strip() for item in user_keywords if str(item).strip())
+    prompt = f"""
+<election_law_repair_prompt version="xml-v1">
+  <role>당신은 대한민국 선거법 표현을 교정하는 한국어 정치 원고 편집자입니다.</role>
+  <goal>
+    <status>{status}</status>
+    <target_chars>{int(target_word_count * 0.9)}~{int(target_word_count * 1.2)}</target_chars>
+    <instruction>선거법에 걸린 문장만 최소 수정하고, 나머지 의미·사실·구조는 유지하세요.</instruction>
+  </goal>
+  <issues>
+{issue_block}
+  </issues>
+  <rules>
+    <rule order="1">문제 문장만 고치고, 새로운 인물·사실·수치·일정은 추가하지 말 것.</rule>
+    <rule order="2">"~라고 알려져", "~라는 말이 있다", "들은 바" 같은 전언/소문/간접전언 표현은 완전히 제거할 것.</rule>
+    <rule order="3">확인 가능한 사실은 직접 서술로, 확인이 어려운 평가는 삭제 또는 본인 판단 표현으로 축소할 것.</rule>
+    <rule order="4">허용 태그는 &lt;h2&gt;, &lt;p&gt;만 사용.</rule>
+    <rule order="5">제공된 키워드는 가능한 한 자연스럽게 유지할 것.</rule>
+    <rule order="6">문장만 고치고 원고 전체 구조를 다시 쓰지 말 것.</rule>
+  </rules>
+  <title>{title}</title>
+  <keywords>{keyword_text}</keywords>
+  <draft><![CDATA[{base_content}]]></draft>
+  <output_contract>
+    <format>XML</format>
+    <allowed_tags>content</allowed_tags>
+    <example><![CDATA[<content>...HTML 본문...</content>]]></example>
+  </output_contract>
+</election_law_repair_prompt>
+""".strip()
+
+    try:
+        from agents.common.gemini_client import DEFAULT_MODEL, generate_content_async
+
+        response_text = _run_async_sync(
+            generate_content_async(
+                prompt,
+                model_name=DEFAULT_MODEL,
+                temperature=0.1,
+                max_output_tokens=8192,
+            )
+        )
+    except Exception as exc:
+        logger.warning("선거법 자동 보정 호출 실패: %s", exc)
+        return {"content": base_content, "edited": False, "summary": [], "error": str(exc)}
+
+    candidate = _extract_content_payload(response_text)
+    if not candidate:
+        logger.warning("선거법 자동 보정 parse failed: no <content> payload extracted")
+        return {"content": base_content, "edited": False, "summary": []}
+
+    return {
+        "content": candidate,
+        "edited": candidate != base_content,
+        "summary": [_format_legal_gate_item(item) for item in legal_items[:3]],
+        "error": None,
+    }
+
+
 def _choose_pipeline_route(raw_route: Any, *, is_admin: bool, is_tester: bool) -> str:
     return str(raw_route or "modular").strip() or "modular"
 
@@ -9309,8 +10478,19 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     if isinstance(data.get("data"), dict):
         data = data["data"]
 
-    topic, category = _topic_and_category(data)
+    topic, category, sub_category, classification_meta = _resolve_request_intent_with_meta(data)
     target_word_count = _target_word_count(data, category)
+    logger.info(
+        "CATEGORY_CLASSIFICATION generate_posts requested=%s/%s resolved=%s/%s writingMethod=%s source=%s confidence=%.3f stance=%s",
+        classification_meta.get("requestedCategory"),
+        classification_meta.get("requestedSubCategory"),
+        classification_meta.get("resolvedCategory"),
+        classification_meta.get("resolvedSubCategory"),
+        classification_meta.get("writingMethod"),
+        classification_meta.get("source"),
+        float(classification_meta.get("confidence") or 0.0),
+        bool(classification_meta.get("hasStanceSignal")),
+    )
 
     progress_session_id = str(data.get("progressSessionId") or f"{uid}_{int(time.time() * 1000)}")
     progress = ProgressTracker(progress_session_id)
@@ -9321,6 +10501,14 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     user_profile = _safe_dict(profile_bundle.get("userProfile"))
     is_admin = bool(profile_bundle.get("isAdmin") is True)
     is_tester = bool(profile_bundle.get("isTester") is True)
+    if not is_admin and not is_tester:
+        eligibility = check_election_eligibility(user_profile)
+        if not eligibility.get("allowed"):
+            raise https_fn.HttpsError(
+                "permission-denied",
+                str(eligibility.get("message") or "원고 생성 자격이 없습니다."),
+                details={"reason": eligibility.get("reason")},
+            )
     full_name = str(
         data.get("fullName")
         or user_profile.get("fullName")
@@ -9403,6 +10591,8 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         data,
         topic=topic,
         category=category,
+        sub_category=sub_category,
+        classification_meta=classification_meta,
         target_word_count=target_word_count,
         user_keywords=user_keywords,
         pipeline_route=pipeline_route,
@@ -9432,6 +10622,11 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     generated_content = str(pipeline_result.get("content") or "").strip()
     if not generated_content:
         raise ApiError("internal", "원고 생성 실패 - 콘텐츠가 생성되지 않았습니다.")
+    logger.info(
+        "Raw draft snapshot captured: chars=%s preview=%s",
+        _count_chars_no_space(generated_content),
+        _content_log_preview(generated_content),
+    )
 
     full_name = _resolve_full_name(
         data=data,
@@ -9518,6 +10713,11 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 body_min_overrides[str(keyword)] = 0
                 user_keyword_expected_overrides[str(keyword)] = 0
                 user_keyword_max_overrides[str(keyword)] = 0
+    _apply_speaker_name_keyword_max_override(
+        user_keywords,
+        full_name,
+        user_keyword_max_overrides,
+    )
 
     quality_warnings: list[str] = []
     request_recent_title_memory = _collect_recent_title_memory(
@@ -9633,6 +10833,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     keyword_repair_applied = False
     repetition_rule_repair_applied = False
     repetition_llm_repair_applied = False
+    legal_repair_applied = False
     editor_keyword_repair_applied = False
     max_content_repair_steps = 4
     content_repair_steps = 0
@@ -9661,6 +10862,12 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         "error": None,
         "summary": [],
     }
+    legal_targeted_repair: Dict[str, Any] = {
+        "attempted": False,
+        "applied": False,
+        "summary": [],
+        "error": None,
+    }
 
     def _apply_content_repair(stage: str, candidate_content: str, *, force: bool = False) -> bool:
         nonlocal generated_content, word_count, content_repair_steps
@@ -9684,6 +10891,14 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             content_repair_rollbacks.append({"stage": stage, "reason": reason})
             return False
 
+        logger.info(
+            "Content repair apply(stage=%s): before_chars=%s after_chars=%s before=%s after=%s",
+            stage,
+            _count_chars_no_space(generated_content),
+            _count_chars_no_space(candidate),
+            _content_log_preview(generated_content),
+            _content_log_preview(candidate),
+        )
         generated_content = candidate
         word_count = _count_chars_no_space(generated_content)
         content_repair_steps += 1
@@ -10212,6 +11427,43 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         generated_title,
     )
     legal_issues = _extract_legal_gate_issues(final_heuristic)
+    if legal_issues:
+        legal_targeted_repair["attempted"] = True
+        legal_items_for_repair = _extract_legal_gate_items(final_heuristic)
+        logger.info(
+            "선거법 자동 보정 시작: %s",
+            "; ".join(_extract_legal_gate_issue_summaries(final_heuristic)[:2]),
+        )
+        legal_fix = _recover_legal_issues_once(
+            content=generated_content,
+            title=generated_title,
+            legal_items=legal_items_for_repair,
+            status=status_for_validation,
+            target_word_count=target_word_count,
+            user_keywords=user_keywords,
+        )
+        legal_targeted_repair["error"] = legal_fix.get("error")
+        legal_summary = legal_fix.get("summary")
+        if isinstance(legal_summary, list):
+            legal_targeted_repair["summary"] = [
+                str(item).strip()
+                for item in legal_summary
+                if str(item).strip()
+            ]
+        if legal_fix.get("edited"):
+            legal_candidate = str(legal_fix.get("content") or generated_content)
+            if _apply_content_repair("election_law_repair", legal_candidate):
+                legal_targeted_repair["applied"] = True
+                legal_repair_applied = True
+                logger.info("선거법 자동 보정 적용 완료")
+                final_heuristic = run_heuristic_validation_sync(
+                    generated_content,
+                    status_for_validation,
+                    generated_title,
+                )
+                legal_issues = _extract_legal_gate_issues(final_heuristic)
+            else:
+                logger.info("선거법 자동 보정 결과 미적용(stage=election_law_repair)")
     residual_repetition_issues = _extract_repetition_gate_issues(final_heuristic)
     residual_integrity_issues = _detect_integrity_gate_issues(generated_content)
     residual_speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
@@ -10219,12 +11471,13 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         generated_content,
         role_facts,
     )
+    residual_legal_issues = _extract_legal_gate_issue_summaries(final_heuristic)
     residual_extra_issues = [*residual_integrity_issues, *residual_speaker_issues, *residual_role_issues]
-    if editor_second_pass_enabled and (residual_repetition_issues or residual_extra_issues) and not legal_issues:
+    if editor_second_pass_enabled and (residual_repetition_issues or residual_extra_issues or residual_legal_issues):
         editor_second_pass["attempted"] = True
         logger.info(
             "EditorAgent second-pass repair triggered: %s",
-            "; ".join([*(residual_repetition_issues[:2]), *(residual_extra_issues[:2])]),
+            "; ".join([*(residual_repetition_issues[:2]), *(residual_extra_issues[:2]), *(residual_legal_issues[:2])]),
         )
         second_editor_fix = _run_editor_repair_once(
             content=generated_content,
@@ -10753,7 +12006,11 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             )
         else:
             subheading_entity_gate["skippedReason"] = str(reason or "corruption-risk")
-            logger.warning("Subheading entity repair skipped due to corruption risk: %s", reason)
+            logger.warning(
+                "Subheading entity repair BLOCKED by corruption check. replacements=%s reason=%s",
+                subheading_entity_gate.get("replacements"),
+                reason,
+            )
 
     final_integrity_issues = _detect_integrity_gate_issues(generated_content)
     final_blocking_integrity_issues = _extract_blocking_integrity_issues(final_integrity_issues)
@@ -11135,6 +12392,11 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(keyword_validation, gate_user_keywords)
     final_over_max_keywords = _collect_over_max_keywords(keyword_validation, user_keywords)
     if final_over_max_keywords:
+        logger.info(
+            "Keyword over-max repair snapshot: preview=%s states=%s",
+            _content_log_preview(generated_content),
+            _keyword_gate_log_summary(keyword_validation, user_keywords),
+        )
         over_max_repair = enforce_keyword_requirements(
             generated_content,
             user_keywords=user_keywords,
@@ -11151,6 +12413,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         over_max_candidate = str(over_max_repair.get("content") or generated_content)
         if over_max_candidate != generated_content:
             generated_content = over_max_candidate
+            _warn_if_no_space_compound(generated_content, "over_max_repair")
             _refresh_terminal_validation_state()
             final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
                 keyword_validation,
@@ -11173,6 +12436,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         )
         if backstop_content != generated_content:
             generated_content = backstop_content
+            _warn_if_no_space_compound(generated_content, "last_resort_backstop")
             _refresh_terminal_validation_state()
             final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
                 keyword_validation, gate_user_keywords
@@ -11183,6 +12447,11 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             )
     final_exact_preference_keywords = _collect_exact_preference_keywords(keyword_validation, gate_user_keywords)
     if final_exact_preference_keywords:
+        logger.info(
+            "Keyword exact-preference repair snapshot: preview=%s states=%s",
+            _content_log_preview(generated_content),
+            _keyword_gate_log_summary(keyword_validation, user_keywords),
+        )
         exact_preference_repair = enforce_keyword_requirements(
             generated_content,
             user_keywords=user_keywords,
@@ -11199,6 +12468,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         exact_preference_candidate = str(exact_preference_repair.get("content") or generated_content)
         if exact_preference_candidate != generated_content:
             generated_content = exact_preference_candidate
+            _warn_if_no_space_compound(generated_content, "exact_preference_repair")
             _refresh_terminal_validation_state()
             final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
                 keyword_validation,
@@ -11219,6 +12489,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         )
         if exact_backstop_content != generated_content:
             generated_content = exact_backstop_content
+            _warn_if_no_space_compound(generated_content, "exact_backstop")
             _refresh_terminal_validation_state()
             final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
                 keyword_validation,
@@ -11231,6 +12502,11 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         final_exact_preference_keywords = _collect_exact_preference_keywords(keyword_validation, gate_user_keywords)
     final_over_max_keywords = _collect_over_max_keywords(keyword_validation, user_keywords)
     if final_over_max_keywords:
+        logger.info(
+            "Keyword trailing over-max repair snapshot: preview=%s states=%s",
+            _content_log_preview(generated_content),
+            _keyword_gate_log_summary(keyword_validation, user_keywords),
+        )
         final_over_max_repair = enforce_keyword_requirements(
             generated_content,
             user_keywords=user_keywords,
@@ -11247,6 +12523,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         final_over_max_candidate = str(final_over_max_repair.get("content") or generated_content)
         if final_over_max_candidate != generated_content:
             generated_content = final_over_max_candidate
+            _warn_if_no_space_compound(generated_content, "final_over_max_repair")
             _refresh_terminal_validation_state()
             final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
                 keyword_validation,
@@ -11321,6 +12598,64 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             else:
                 logger.warning("Tail role consistency repair skipped due to corruption risk: %s", reason)
 
+    late_observer_scrub = _drop_observer_frame_sentences_once(generated_content)
+    if late_observer_scrub.get("edited"):
+        generated_content = str(late_observer_scrub.get("content") or generated_content)
+        _refresh_terminal_validation_state()
+        final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
+            keyword_validation,
+            gate_user_keywords,
+        )
+        logger.info(
+            "최종 관찰자 시점 문장 제거 적용: %s",
+            late_observer_scrub.get("actions") or [],
+        )
+
+    final_self_reference_repair = _repair_self_reference_placeholders_once(
+        generated_content,
+        full_name=full_name,
+    )
+    if final_self_reference_repair.get("edited"):
+        generated_content = str(final_self_reference_repair.get("content") or generated_content)
+        _refresh_terminal_validation_state()
+        final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
+            keyword_validation,
+            gate_user_keywords,
+        )
+        logger.info(
+            "최종 자기지시 placeholder 복원 적용: %s",
+            final_self_reference_repair.get("actions") or [],
+        )
+
+    final_identity_signature_repair = _repair_identity_signature_exact_form_once(
+        generated_content,
+        full_name=full_name,
+    )
+    if final_identity_signature_repair.get("edited"):
+        generated_content = str(final_identity_signature_repair.get("content") or generated_content)
+        _refresh_terminal_validation_state()
+        final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
+            keyword_validation,
+            gate_user_keywords,
+        )
+        logger.info(
+            "최종 정체성 시그니처 복원 적용: %s",
+            final_identity_signature_repair.get("actions") or [],
+        )
+
+    final_career_dedupe = _dedupe_repeated_career_fact_sentences_once(generated_content)
+    if final_career_dedupe.get("edited"):
+        generated_content = str(final_career_dedupe.get("content") or generated_content)
+        _refresh_terminal_validation_state()
+        final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
+            keyword_validation,
+            gate_user_keywords,
+        )
+        logger.info(
+            "최종 이력 문장 중복 제거 적용: %s",
+            final_career_dedupe.get("actions") or [],
+        )
+
     final_fragment_scrub = _scrub_broken_poll_fragments_once(
         generated_content,
         known_names=known_person_names,
@@ -11349,6 +12684,23 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             "최종 문장부호 공백 복원 적용: %s",
             terminal_spacing_cleanup.get("actions") or [],
         )
+
+    final_closing_sentence_repair = _ensure_closing_section_min_sentences_once(
+        generated_content,
+        full_name=full_name,
+    )
+    if final_closing_sentence_repair.get("edited"):
+        generated_content = str(final_closing_sentence_repair.get("content") or generated_content)
+        _refresh_terminal_validation_state()
+        final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
+            keyword_validation,
+            gate_user_keywords,
+        )
+        logger.info(
+            "최종 결론 최소 문장 복원 적용: %s",
+            final_closing_sentence_repair.get("actions") or [],
+        )
+
     final_section_length_backstop["attempted"] = True
     section_length_backstop_result = _apply_terminal_section_length_backstop_once(
         generated_content,
@@ -11366,6 +12718,18 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             keyword_validation,
             gate_user_keywords,
         )
+        post_backstop_low_signal = _drop_low_signal_analysis_sentences_once(generated_content)
+        if post_backstop_low_signal.get("edited"):
+            generated_content = str(post_backstop_low_signal.get("content") or generated_content)
+            _refresh_terminal_validation_state()
+            final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
+                keyword_validation,
+                gate_user_keywords,
+            )
+            logger.info(
+                "최종 길이 보정 후 generic 문장 제거 적용: %s",
+                post_backstop_low_signal.get("actions") or [],
+            )
     if not final_keyword_gate_ok:
         _append_quality_warning(
             quality_warnings,
@@ -11448,6 +12812,41 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             quality_warnings,
             "최종 무결성 게이트에서 문장 윤문 재검사가 자동 적용되었습니다.",
         )
+    if legal_targeted_repair.get("applied") is True:
+        _append_quality_warning(
+            quality_warnings,
+            "선거법 차단 표현을 문장 단위로 자동 보정했습니다.",
+        )
+
+    if final_speaker_issues and any("placeholder" in str(issue or "") for issue in final_speaker_issues):
+        terminal_self_reference_repair = _repair_self_reference_placeholders_once(
+            generated_content,
+            full_name=full_name,
+        )
+        terminal_self_reference_candidate = str(
+            terminal_self_reference_repair.get("content") or generated_content
+        ).strip()
+        if terminal_self_reference_candidate and terminal_self_reference_candidate != generated_content:
+            corrupted, reason = _detect_content_repair_corruption(
+                generated_content,
+                terminal_self_reference_candidate,
+            )
+            if not corrupted:
+                generated_content = terminal_self_reference_candidate
+                _refresh_terminal_validation_state()
+                final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
+                    keyword_validation,
+                    gate_user_keywords,
+                )
+                logger.info(
+                    "최종 speaker placeholder terminal repair 적용: %s",
+                    terminal_self_reference_repair.get("actions") or [],
+                )
+            else:
+                logger.warning(
+                    "Terminal speaker placeholder repair skipped due to corruption risk: %s",
+                    reason,
+                )
 
     # 하드 차단: 화자 정체성 불일치, 문장 무결성 치명 오류, 선거법 위반.
     if final_speaker_issues:
@@ -11476,11 +12875,12 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         )
 
     if legal_issues:
-        issue_text = "; ".join(legal_issues[:2])
+        legal_issue_summaries = _extract_legal_gate_issue_summaries(final_heuristic)
+        issue_text = "; ".join((legal_issue_summaries or legal_issues)[:2])
         logger.warning(
             "QUALITY_METRIC generate_posts outcome=blocked first_pass=%s blockers=%s warnings=%s repairs=%s",
             int(first_pass_passed),
-            len(legal_issues),
+            len(legal_issue_summaries or legal_issues),
             len(quality_warnings),
             int(
                 any(
@@ -11489,6 +12889,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                         keyword_repair_applied,
                         repetition_rule_repair_applied,
                         repetition_llm_repair_applied,
+                        legal_repair_applied,
                         bool(editor_auto_repair.get("applied")),
                         bool(editor_second_pass.get("applied")),
                         int(integrity_editor_repair.get("applied") or 0) > 0,
@@ -11561,7 +12962,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         "content": generated_content,
         "wordCount": word_count,
         "category": category,
-        "subCategory": str(data.get("subCategory") or ""),
+        "subCategory": str(sub_category or ""),
         "keywords": data.get("keywords") or "",
         "sourceInput": source_input,
         "sourceType": source_type,
@@ -11593,6 +12994,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     keyword_repair_applied,
                     repetition_rule_repair_applied,
                     repetition_llm_repair_applied,
+                    legal_repair_applied,
                     bool(editor_auto_repair.get("applied")),
                     bool(editor_second_pass.get("applied")),
                     editor_keyword_repair_applied,
@@ -11616,6 +13018,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             "generatedAt": generated_at,
             "userId": uid,
             "processingTime": started_ms,
+            "classification": pipeline_result.get("classificationMeta") or classification_meta,
             "multiAgent": {
                 "enabled": True,
                 "pipeline": "python-step-functions",
@@ -11665,6 +13068,10 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                         "keywordRepairApplied": keyword_repair_applied,
                         "repetitionRuleRepairApplied": repetition_rule_repair_applied,
                         "repetitionLlmRepairApplied": repetition_llm_repair_applied,
+                        "legalRepairApplied": legal_repair_applied,
+                        "legalTargetedRepairAttempted": bool(legal_targeted_repair.get("attempted")),
+                        "legalTargetedRepairSummary": list(legal_targeted_repair.get("summary") or []),
+                        "legalTargetedRepairError": str(legal_targeted_repair.get("error") or ""),
                         "editorKeywordRepairApplied": editor_keyword_repair_applied,
                         "editorSecondPassApplied": bool(editor_second_pass.get("applied")),
                         "finalSentencePolishApplied": bool(final_sentence_polish.get("applied")),

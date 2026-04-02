@@ -4,6 +4,14 @@ from typing import Dict, Any, List, Optional
 from ..base_agent import Agent
 
 # Local imports
+from ..common.h2_guide import (
+    H2_BEST_RANGE,
+    H2_MAX_LENGTH,
+    build_h2_rules,
+    has_incomplete_h2_ending,
+    normalize_h2_style,
+    sanitize_h2_text,
+)
 from ..common.gemini_client import StructuredOutputError, generate_json_async
 
 logger = logging.getLogger(__name__)
@@ -37,7 +45,7 @@ SUBHEADING_STYLES = {
     },
     # 정책 제안: 정보형/데이터형 소제목
     'policy-proposal': {
-        'style': 'informative',
+        'style': 'aeo',
         'description': '정책 제안 카테고리는 구체적인 정보형 소제목을 사용합니다.',
         'preferredTypes': ['데이터형', '명사형', '절차형'],
         'examples': [
@@ -48,7 +56,7 @@ SUBHEADING_STYLES = {
     },
     # 의정활동: 실적/성과 중심
     'activity-report': {
-        'style': 'achievement',
+        'style': 'aeo',
         'description': '의정활동 보고는 성과 중심 소제목을 사용합니다.',
         'preferredTypes': ['데이터형', '명사형'],
         'examples': [
@@ -59,7 +67,7 @@ SUBHEADING_STYLES = {
     },
     # 일상 소통: 친근한 질문형 허용
     'daily-communication': {
-        'style': 'friendly',
+        'style': 'aeo',
         'description': '일상 소통은 친근한 질문형도 허용됩니다.',
         'preferredTypes': ['질문형', '명사형'],
         'examples': [
@@ -70,7 +78,7 @@ SUBHEADING_STYLES = {
     },
     # 기본값
     'default': {
-        'style': 'aeo-optimized',
+        'style': 'aeo',
         'description': '기본 AEO 최적화 스타일을 사용합니다.',
         'preferredTypes': ['질문형', '명사형', '데이터형'],
         'examples': []
@@ -171,75 +179,50 @@ class SubheadingAgent(Agent):
     async def generate_aeo_subheadings(self, sections: List[str], style_config: Dict, full_name: str, full_region: str, stance_text: str = '') -> List[str]:
         entity_hints = ", ".join(filter(None, [full_name, full_region]))
         target_count = len(sections)
-        is_assertive = style_config.get('style') == 'assertive'
+        h2_style = normalize_h2_style(style_config.get('style'))
+        is_assertive = h2_style == 'assertive'
         
         # 🔑 [NEW] 입장문 요약 (소제목에 핵심 주장 반영용)
         stance_hint = f"**[입장문 핵심]**: {stance_text[:300]}..." if stance_text else ""
-
-        prompt = ""
-        
-        # 프롬프트 구성 (Node.js 로직 Mirroring)
-        if is_assertive:
-            prompt = f"""
+        style_description = str(style_config.get('description') or '').strip() or '(없음)'
+        preferred_types = ", ".join(
+            str(item).strip() for item in style_config.get('preferredTypes', []) if str(item).strip()
+        ) or '(없음)'
+        role_name = (
+            "정치 논평 전문 에디터"
+            if is_assertive
+            else "AEO(Answer Engine Optimization) & SEO 전문 카피라이터"
+        )
+        task_summary = (
+            "주어진 논평/입장문 단락들을 분석하여, 날카롭고 주장이 담긴 소제목(H2)을 생성해야 합니다."
+            if is_assertive
+            else "주어진 본문 단락들을 분석하여, 검색 엔진과 사용자 모두에게 매력적인 최적의 소제목(H2)을 생성해야 합니다."
+        )
+        prompt = f"""
 # Role Definition
-당신은 대한민국 최고의 **정치 논평 전문 에디터**입니다.
-주어진 논평/입장문 단락들을 분석하여, **날카롭고 주장이 담긴 소제목(H2)**을 생성해야 합니다.
+당신은 대한민국 최고의 **{role_name}**입니다.
+{task_summary}
 
 # Input Data
 - **Context**: {entity_hints or '(없음)'}
 - **Target Count**: {target_count} Headings
-- **글 유형**: 논평/입장문 (주장형 소제목 필수)
+- **Style Summary**: {style_description}
+- **Preferred Types**: {preferred_types}
 {stance_hint}
 
-# [CRITICAL] 논평용 H2 작성 가이드라인
-⚠️ 이 글은 논평/입장문입니다. 질문형 소제목은 절대 금지됩니다.
+# [CRITICAL] H2 Rulebook (SSOT)
+아래 XML 규칙 블록을 절대 우선으로 따르세요. 규칙, 금지어, few-shot 예시는 이 블록이 단일 원천입니다.
+{build_h2_rules(h2_style)}
 
-## 1. 필수 요소
-- **길이**: **12~25자** (네이버 최적: 15~22자)
-- **형식**: **주장형** 또는 **명사형** (질문형 절대 금지)
-- **어조**: 단정적, 비판적, 명확한 입장 표명
-
-## 2. ✅ 권장 유형 (주장형)
-- **유형 A (단정형)**: "~이다", "~해야 한다"
-  - ✅ "특검은 정치 보복이 아니다" (12자)
-  - ✅ "당당하면 피할 이유 없다" (12자)
-- **유형 B (비판형)**: 대상을 명시한 비판
-  - ✅ "진실 규명을 거부하는 태도" (13자)
-- **유형 C (명사형)**: 핵심 쟁점 명시
-  - ✅ "특검법의 정당성과 의의" (12자)
-
-## 3. ❌ 절대 금지 (질문형)
-- ❌ "~인가요?", "~일까요?", "~는?", "~할까?"
-- ❌ "어떻게 해소해야 하나?"
-
-# Input Paragraphs
-"""
-        else:
-            prompt = f"""
-# Role Definition
-당신은 대한민국 최고의 **AEO(Answer Engine Optimization) & SEO 전문 카피라이터**입니다.
-주어진 본문 단락들을 분석하여, 검색 엔진과 사용자 모두에게 매력적인 **최적의 소제목(H2)**을 생성해야 합니다.
-
-# Input Data
-- **Context**: {entity_hints or '(없음)'}
-- **Target Count**: {target_count} Headings
-{stance_hint}
-
-# [CRITICAL] AEO H2 작성 가이드라인
-아래 규칙을 위반할 경우 해고될 수 있습니다. 반드시 준수하세요.
-
-## 1. 필수 요소
-- **길이**: **12~25자** (네이버 최적: 15~22자)
-- **키워드**: 핵심 키워드를 **문장 앞쪽 1/3**에 배치할 것.
-- **형식**: 구체적인 **질문형** 또는 **명확한 명사형**.
-- **금지**: "~에 대한", "~관련", "좋은 성과", "이관훈은?" 같은 모호한 표현.
-
-## 2. AEO 최적화 유형 (상황에 맞춰 사용)
-- **유형 1 (질문형 - AEO 최강)**: 검색자의 의도를 저격. (예: "청년 일자리 부족, 원인은 무엇인가요?")
-- **유형 2 (명사형 - 구체적)**: 핵심 정보 제공. (예: "청년이 돌아오는 도시를 만드는 방법")
-- **유형 3 (데이터형 - 신뢰성)**: 숫자 포함. (예: "공공 임대 5만 호 공급 세부 계획")
-- **유형 4 (절차형 - 실용성)**: 단계별 가이드.
-- **유형 5 (비교형 - 차별화)**: 대조 분석.
+# Additional Constraints
+- 단락마다 소제목 1개씩만 생성하세요.
+- 입력 순서를 바꾸지 마세요.
+- 소제목 텍스트만 생성하고 번호, 따옴표, 불릿은 넣지 마세요.
+- {H2_MAX_LENGTH - 2}자를 넘기지 마세요. (네이버 최적 범위 {H2_BEST_RANGE}자 이내를 목표로 하세요.)
+- 소제목은 반드시 완결된 어절로 끝나야 합니다. 조사("를", "을", "의", "에서", "과" 등)나 미완결 어미("겠", "하는", "있는" 등)로 끝나는 소제목은 금지입니다.
+- 본문 구절("미래에 대한 확신을", "이뤄내겠습니다" 등)을 잘라 붙여 소제목을 만들지 마세요.
+- 생성한 소제목을 다시 읽고 조사나 단어가 중복되거나 의미가 어색한 부분이 있으면 고친 뒤 최종 결과만 출력하세요.
+- 같은 단어를 연속으로 반복하거나 "도약을을"처럼 조사 오타가 남은 소제목은 출력하지 마세요.
 
 # Input Paragraphs
 """
@@ -275,14 +258,20 @@ class SubheadingAgent(Agent):
                 raise StructuredOutputError("headings must be an array.")
 
             processed: List[str] = []
+            blocked_headings: List[str] = []
             for heading in headings:
-                heading_text = str(heading).strip().strip('"\'')
-                if not heading_text:
+                try:
+                    heading_text = sanitize_h2_text(str(heading))
+                except ValueError:
                     continue
-                if len(heading_text) > 28:
-                    heading_text = heading_text[:27] + "..."
+                if has_incomplete_h2_ending(heading_text):
+                    blocked_headings.append(heading_text)
+                    continue
                 processed.append(heading_text)
 
+            if blocked_headings:
+                logger.warning("[%s] Incomplete H2 surfaces blocked: %s", self.name, blocked_headings[:3])
+                raise StructuredOutputError(f"incomplete headings after normalization: {blocked_headings[:3]}")
             if not processed:
                 raise StructuredOutputError("headings array is empty after normalization.")
             return processed

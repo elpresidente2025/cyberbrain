@@ -155,7 +155,8 @@ TITLE_TYPES = {
             '【안티패턴: 이렇게 하면 안 된다】\n'
             '- ❌ 아무 문장 끝에 "~의 선택은?" 붙이기 (형식만 미완결, 내용은 공허)\n'
             '- ❌ 키워드 4개 이상 욱여넣기 (읽는 순간 피로)\n'
-            '- ❌ 예시 제목의 어미만 복사하기 (패턴 모방 ≠ 긴장감)',
+            '- ❌ 예시 제목의 어미만 복사하기 (패턴 모방 ≠ 긴장감)\n'
+            '- ❌ "이름+의+형용사형/동사형 수식어+명사" 구조 ("후보의 새로운 정책", "후보의 존중하는 비전") — 수식 대상이 불명확하고 의미가 미완결됨',
         'good': [
             {'title': '부산 지방선거, 왜 이 남자가 뛰어들었나', 'chars': 20, 'analysis': '왜 질문형 — 구체적 인물 + 미완결 질문'},
             {'title': '부산 지방선거에 뛰어든 부두 노동자의 아들', 'chars': 21, 'analysis': '서사 아크 — 출신 배경이 호기심 유발'},
@@ -167,7 +168,9 @@ TITLE_TYPES = {
             {'title': '부산 지방선거, AI 전문가 이재성이 경제를 바꾼다', 'problem': '선언형 — 답을 다 알려줘서 클릭할 이유 없음', 'fix': '부산 지방선거, 왜 이 남자가 뛰어들었나'},
             {'title': '이재성 부산 지방선거, AI 3대 강국?', 'problem': '키워드 나열 — 문장이 아님, 의미 불분명', 'fix': '부산 지방선거, 이재성은 왜 다른가'},
             {'title': '결국 터질 게 터졌습니다... 충격적 현실', 'problem': '낚시 자극 — 구체성 제로, 신뢰 파괴', 'fix': '부산 지방선거, 10만 청년이 떠난 도시의 반란'},
-            {'title': '부산 지방선거, 이재명 2호 이재성 원칙 내건 그의 선택은', 'problem': '기계적 모방 — 요소 과밀(5개) + 형식적 미완결 꼬리', 'fix': '부산 지방선거, 이재성은 왜 다른가'}
+            {'title': '부산 지방선거, 이재명 2호 이재성 원칙 내건 그의 선택은', 'problem': '기계적 모방 — 요소 과밀(5개) + 형식적 미완결 꼬리', 'fix': '부산 지방선거, 이재성은 왜 다른가'},
+            {'title': '후보의 존중하는 정책', 'problem': '소유격 + 수식어 나열 — "이름의 [형용사형어구]"는 무엇이 존중하는지 불분명, 의미 불완결', 'fix': '지방선거 경선 확정, 원칙이 가른 판세'},
+            {'title': '후보의 새로운 일자리', 'problem': '소유격 + 명사 나열 — 서사 없이 키워드만 접착, 클릭 동기 없음', 'fix': '지방선거, 일자리 공약으로 판 바꾼 새 얼굴'}
         ]
     },
     'DATA_BASED': {
@@ -204,7 +207,8 @@ TITLE_TYPES = {
         ],
         'bad': [
             {'title': '정책에 대해 설명드립니다', 'problem': '지루한 서술형', 'fix': '청년 지원 정책, 무엇이 달라졌나?'},
-            {'title': '궁금한 점을 해결해 드립니다', 'problem': '너무 범용적', 'fix': '아이 교육비, 지원 금액 얼마나?'}
+            {'title': '궁금한 점을 해결해 드립니다', 'problem': '너무 범용적', 'fix': '아이 교육비, 지원 금액 얼마나?'},
+            {'title': '후보의 되는 정책', 'problem': '본문 구절 조각을 이름 뒤에 붙여 의미가 끊김', 'fix': '지역 현안, 어떤 정책이 필요한가'}
         ]
     },
     'COMPARISON': {
@@ -312,10 +316,29 @@ TITLE_TYPES = {
          ],
          'bad': [
              {'title': '시장의 발언에 대해', 'problem': '누구? 내용?', 'fix': '이재성, 박형준 시장 발언 반박'},
-             {'title': '오늘의 논평입니다', 'problem': '정보 없음', 'fix': '이재성 "부산 예산 삭감 유감"'}
+             {'title': '오늘의 논평입니다', 'problem': '정보 없음', 'fix': '이재성 "부산 예산 삭감 유감"'},
+             {'title': '후보, 후보의 되는 정책', 'problem': '이름 반복 뒤에 본문 구절 조각을 접착한 비문', 'fix': '지역 현안, 후보가 말한 해법은'}
          ]
      }
 }
+
+COMMON_TITLE_ANTI_PATTERNS: List[Dict[str, str]] = [
+    {
+        'bad': '후보의 되는 정책',
+        'problem': '이름 뒤에 본문 구절 조각("되는 정책" 등)을 붙여 의미가 끊긴 비문',
+        'fix': '지역 현안, 어떤 정책이 필요한가',
+    },
+    {
+        'bad': '후보, 후보의 되는 정책',
+        'problem': '이름을 반복한 뒤 소유격 구조를 붙여 문장이 무너짐',
+        'fix': '지역 현안, 후보가 말한 해법은',
+    },
+    {
+        'bad': '후보의 하는 변화',
+        'problem': '형용사형 어구만 남아 수식 대상과 서술 관계가 불명확',
+        'fix': '지역 변화, 후보가 내놓은 방향은',
+    },
+]
 
 def _build_role_keyword_title_policy_instruction(role_keyword_policy: Dict[str, Any]) -> str:
     entries = role_keyword_policy.get("entries") if isinstance(role_keyword_policy, dict) else {}
@@ -468,6 +491,62 @@ def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[st
         return ''
 
 def _build_few_shot_slot_values(params: Dict[str, Any]) -> Dict[str, str]:
+    default_slot_values: Dict[str, str] = {
+        '지역명': '한빛시',
+        '장소명': '시민회관',
+        '인물명': '김민우',
+        '행사명': '정책간담회',
+        '날짜': '2026년 4월',
+        '주제명': '청년주거지원',
+        '정책명': '청년주거지원',
+        '사업명': '생활안전정비사업',
+        '수치': '10',
+        '수량': '10',
+        '금액': '120억',
+        '단위': '명',
+        '성과지표': '만족도',
+        '지원항목': '주거비',
+        '현안': '교통 혼잡',
+        '민원주제': '주차 민원',
+        '이슈명': '지역 순환버스',
+        '정책쟁점': '청년주거지원 기준',
+        '문제명': '보육 인프라 부족',
+        '대안수': '3',
+        '지표명': '처리 기간',
+        '이전값': '14일',
+        '현재값': '3일',
+        '개선폭': '78%',
+        '기존안': '현행 기준',
+        '개선안': '확대 기준',
+        '비용항목': '운영비',
+        '이전금액': '30억',
+        '현재금액': '18억',
+        '이전기간': '14일',
+        '현재기간': '3일',
+        '개관시기': '올해 하반기',
+        '기간': '6개월',
+        '개선수치': '35',
+        '법안명': '생활안전지원법',
+        '핵심지원': '지원 확대',
+        '조례명': '생활안전지원조례',
+        '핵심변경': '신청 기준 완화',
+        '숫자': '3',
+        '핵심혜택': '월 10만원 지원',
+        '핵심변화': '대상 확대',
+        '연도/분기': '2026년 상반기',
+        '보고서명': '활동 보고서',
+        '핵심성과수': '5',
+        '월/분기': '6월',
+        '업무명': '민원 처리',
+        '건수': '1,234',
+        '정기브리핑명': '월간 브리핑',
+        '월호': '7월호',
+        '핵심주제': '생활안전 정책',
+        '예산항목': '국비',
+        '혜택수치': '월 10만원',
+        '성과수': '5',
+        '업무': '현장 점검',
+    }
     topic = str(params.get('topic') or '')
     content_preview = str(params.get('contentPreview') or '')
     full_name = str(params.get('fullName') or '').strip()
@@ -485,67 +564,62 @@ def _build_few_shot_slot_values(params: Dict[str, Any]) -> Dict[str, str]:
     event_label = _detect_event_label(topic)
     topic_label = _extract_book_title(topic, params) or (topic[:14].strip() if topic else '')
     numbers = extract_numbers_from_content(content_preview).get('numbers', [])
-    first_number = str(numbers[0]).strip() if numbers else '수치'
+    first_number = str(numbers[0]).strip() if numbers else default_slot_values['수치']
 
-    return {
-        '지역명': primary_kw or location_hint or '지역명',
-        '장소명': location_hint or primary_kw or '장소명',
-        '인물명': full_name or '인물명',
-        '행사명': event_label or '행사명',
-        '날짜': date_hint or '날짜',
-        '주제명': topic_label or '주제명',
-        '정책명': topic_label or '정책명',
-        '사업명': topic_label or '사업명',
-        '수치': first_number,
-        '수량': first_number,
-        '금액': first_number,
-        '단위': '명',
-        '성과지표': '개선',
-        '지원항목': '지원',
-        '현안': topic_label or '현안',
-        '민원주제': topic_label or '민원 주제',
-        '이슈명': topic_label or '이슈명',
-        '정책쟁점': topic_label or '정책 쟁점',
-        '문제명': topic_label or '문제명',
-        '대안수': '3',
-        '이전값': '기존 수치',
-        '현재값': '개선 수치',
-        '개선폭': '대폭',
-        '기존안': '기존안',
-        '개선안': '개선안',
-        '비용항목': '운영비',
-        '이전금액': '기존 예산',
-        '현재금액': '절감 예산',
-        '개관시기': '올해 하반기',
-        '기간': '6개월',
-        '개선수치': '35',
-        '법안명': topic_label or '법안명',
-        '핵심지원': '지원 확대',
-        '조례명': topic_label or '조례명',
-        '핵심변경': '핵심 조항',
-        '숫자': '3',
-        '핵심혜택': '핵심 혜택',
-        '핵심변화': '핵심 변화',
-        '연도/분기': '2026년 상반기',
-        '보고서명': '활동 보고서',
-        '핵심성과수': '5',
-        '월/분기': '6월',
-        '업무명': '민원 처리',
-        '건수': '1,234',
-        '정기브리핑명': '월간 브리핑',
-        '월호': '7월호',
-        '핵심주제': topic_label or '핵심 주제',
-        '예산항목': '국비',
-        '혜택수치': '월 15만원',
-        '성과수': '5',
-        '업무': '핵심 업무',
-    }
+    slot_values = dict(default_slot_values)
+    slot_values.update(
+        {
+            '지역명': primary_kw or location_hint or default_slot_values['지역명'],
+            '장소명': location_hint or primary_kw or default_slot_values['장소명'],
+            '인물명': full_name or default_slot_values['인물명'],
+            '행사명': event_label or default_slot_values['행사명'],
+            '날짜': date_hint or default_slot_values['날짜'],
+            '주제명': topic_label or default_slot_values['주제명'],
+            '정책명': topic_label or default_slot_values['정책명'],
+            '사업명': topic_label or default_slot_values['사업명'],
+            '수치': first_number,
+            '수량': first_number,
+            '금액': first_number,
+            '현안': topic_label or default_slot_values['현안'],
+            '민원주제': topic_label or default_slot_values['민원주제'],
+            '이슈명': topic_label or default_slot_values['이슈명'],
+            '정책쟁점': topic_label or default_slot_values['정책쟁점'],
+            '문제명': topic_label or default_slot_values['문제명'],
+            '법안명': topic_label or default_slot_values['법안명'],
+            '조례명': topic_label or default_slot_values['조례명'],
+            '핵심주제': topic_label or default_slot_values['핵심주제'],
+        }
+    )
+    return slot_values
 
 def _render_slot_template(template: str, slot_values: Dict[str, str]) -> str:
     rendered = str(template or '')
     for slot_name, slot_value in slot_values.items():
         rendered = rendered.replace(f'[{slot_name}]', str(slot_value))
     return re.sub(r'\s+', ' ', rendered).strip()
+
+
+def build_common_title_anti_pattern_instruction() -> str:
+    examples_xml = '\n'.join(
+        f'  <example index="{idx}">'
+        f'<bad>{item.get("bad", "")}</bad>'
+        f'<problem>{item.get("problem", "")}</problem>'
+        f'<fix>{item.get("fix", "")}</fix>'
+        f'</example>'
+        for idx, item in enumerate(COMMON_TITLE_ANTI_PATTERNS, start=1)
+        if isinstance(item, dict)
+    )
+    return f"""
+<common_title_anti_patterns priority="critical">
+  <rule>"[인물명]의 되는/하는/있는 [명사]" 구조 금지. 본문 구절 조각을 이름 뒤에 붙이지 마세요.</rule>
+  <rule>"[인물명], [인물명]의 ..."처럼 이름을 반복한 뒤 소유격 구조를 붙이는 제목 금지.</rule>
+  <rule>content_preview의 구문 일부를 떼어 이름 뒤에 직접 접착하지 말고, 팩트와 논지를 새 문장으로 다시 구성하세요.</rule>
+  <examples>
+{examples_xml}
+  </examples>
+</common_title_anti_patterns>
+""".strip()
+
 
 def build_user_provided_few_shot_instruction(type_id: str, params: Optional[Dict[str, Any]] = None) -> str:
     requested_type_id = str(type_id or '').strip()
@@ -611,11 +685,18 @@ def build_poll_focus_title_instruction(params: Dict[str, Any]) -> str:
 
     allowed_title_lanes = bundle.get('allowedTitleLanes') if isinstance(bundle.get('allowedTitleLanes'), list) else []
     forbidden_metrics = bundle.get('forbiddenMetrics') if isinstance(bundle.get('forbiddenMetrics'), list) else []
+    title_name_priority = bundle.get('titleNamePriority') if isinstance(bundle.get('titleNamePriority'), list) else []
+    title_name_repeat_limit = max(1, int(bundle.get('titleNameRepeatLimit') or 1))
     forbidden_xml = "\n".join(
         f"  <metric>{str(item).strip()}</metric>"
         for item in forbidden_metrics[:5]
         if str(item).strip()
     ) or "  <metric>정당 지지율</metric>"
+    name_priority_xml = "\n".join(
+        f'  <name index="{idx}">{str(item).strip()}</name>'
+        for idx, item in enumerate(title_name_priority[:4], start=1)
+        if str(item).strip()
+    ) or f'  <name index="1">{speaker}</name>'
 
     secondary_pairs = bundle.get('secondaryPairs') if isinstance(bundle.get('secondaryPairs'), list) else []
     secondary_xml_lines: List[str] = []
@@ -654,6 +735,9 @@ def build_poll_focus_title_instruction(params: Dict[str, Any]) -> str:
   <allowed_lanes>
 {lane_xml}
   </allowed_lanes>
+  <title_name_priority>
+{name_priority_xml}
+  </title_name_priority>
   <forbidden_metrics>
 {forbidden_xml}
   </forbidden_metrics>
@@ -661,6 +745,8 @@ def build_poll_focus_title_instruction(params: Dict[str, Any]) -> str:
     <rule>제목은 allowed_lanes 중 하나의 문법을 따르고, 정당 지지율이나 당내 경선 수치로 중심을 바꾸지 않습니다.</rule>
     <rule>질문형을 쓰더라도 판세 전환형 표현('역전', '뒤집힘', '흔들림')은 사용하지 않습니다. 접전이나 경쟁력 수준에서만 해석합니다.</rule>
     <rule>단일 수치를 넣을 때는 primary_pair 또는 secondary_pairs의 실제 수치만 사용합니다.</rule>
+    <rule>인물명은 title_name_priority 순서를 우선 참고하고, speaker를 먼저 배치합니다.</rule>
+    <rule>동일 인물명은 제목에서 최대 {title_name_repeat_limit}회만 사용합니다. "전재수 이재성, 이재성"처럼 같은 이름을 반복하지 않습니다.</rule>
   </rules>
 </poll_focus_title>
 """.strip()

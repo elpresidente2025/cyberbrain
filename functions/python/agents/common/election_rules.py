@@ -2,6 +2,9 @@
 # 선거법 준수 표현 규칙 및 유틸리티 (Node.js election-rules.js 완전 이식)
 
 import re
+from datetime import date as _date
+from datetime import datetime as _datetime
+from zoneinfo import ZoneInfo
 from typing import List, Dict, Any, Optional, Tuple
 
 # ============================================================================
@@ -497,3 +500,130 @@ def get_violation_summary(content: str, status: str) -> str:
         lines.append(f"  {severity_emoji} [{v['category']}] \"{', '.join(v['matches'][:3])}\" ({v['count']}회)")
 
     return '\n'.join(lines)
+
+
+# ============================================================================
+# 원고 생성 자격 가드
+# ----------------------------------------------------------------------------
+# 아래 가드는 "선거법 표현 단계"와 별개로, 기존 원고 생성 파이프라인을 언제 허용할지
+# 판단하는 진입 조건이다. 기존 STAGE_1/2/3 로직은 표현 검증용 규칙이며, 여기의
+# 허용/차단 로직과 1:1로 대응하지 않는다.
+# ============================================================================
+
+_KST = ZoneInfo("Asia/Seoul")
+_LOCAL_ELECTION_BASE = _date(2026, 6, 3)  # 제9회 전국동시지방선거
+_NATIONAL_ELECTION_BASE = _date(2028, 4, 12)  # 제23대 국회의원선거
+_ELECTION_CYCLE_YEARS = 4
+_ELECTION_WINDOW_DAYS = 90
+
+
+def _today_kst() -> _date:
+    """서버 환경과 무관하게 KST 기준 오늘 날짜를 반환한다."""
+    return _datetime.now(_KST).date()
+
+
+def _normalize_candidate_status(user_profile: Dict[str, Any] | None) -> str:
+    """
+    생성 자격 판단용 후보 상태를 정규화한다.
+
+    기존 선거법 표현 단계와 분리된 규칙이므로, 여기서는 현역/예비/후보만
+    허용 상태로 취급한다.
+    """
+    profile = user_profile if isinstance(user_profile, dict) else {}
+    current_status = profile.get("currentStatus")
+
+    raw_candidates = [
+        profile.get("status"),
+        current_status.get("status") if isinstance(current_status, dict) else None,
+        current_status if isinstance(current_status, str) else None,
+    ]
+
+    status_map = {
+        "현역": "현역",
+        "예비": "예비",
+        "예비후보": "예비",
+        "후보": "후보",
+        "준비": "준비",
+        "active": "active",
+    }
+
+    for raw in raw_candidates:
+        normalized = str(raw or "").strip()
+        if not normalized:
+            continue
+        if normalized in status_map:
+            return status_map[normalized]
+        lowered = normalized.lower()
+        if lowered in status_map:
+            return status_map[lowered]
+        return normalized
+
+    return ""
+
+
+def _get_next_election_date(user_profile: Dict[str, Any] | None) -> _date:
+    """프론트 ElectionDDay와 같은 기준일/주기로 다음 선거일을 계산한다."""
+    profile = user_profile if isinstance(user_profile, dict) else {}
+    target = profile.get("targetElection") if isinstance(profile.get("targetElection"), dict) else {}
+    position = str(target.get("position") or profile.get("position") or "").strip()
+    normalized_position = position.lower()
+    is_national_assembly = "국회" in position or normalized_position == "국회의원" or "국회의원" in position
+
+    election_date = _NATIONAL_ELECTION_BASE if is_national_assembly else _LOCAL_ELECTION_BASE
+    today = _today_kst()
+    while election_date < today:
+        election_date = _date(
+            election_date.year + _ELECTION_CYCLE_YEARS,
+            election_date.month,
+            election_date.day,
+        )
+    return election_date
+
+
+def check_election_eligibility(user_profile: Dict[str, Any] | None) -> Dict[str, Any]:
+    """
+    기존 원고 생성 파이프라인 실행 자격을 검사한다.
+
+    허용 조건:
+    - 현역: 즉시 허용
+    - 예비/후보: 선거일까지 90일 이하일 때만 허용
+    """
+    profile = user_profile if isinstance(user_profile, dict) else {}
+    status = _normalize_candidate_status(profile)
+
+    if status == "현역":
+        return {
+            "allowed": True,
+            "reason": "현역",
+            "message": "",
+            "days_until_election": None,
+        }
+
+    if status not in ("예비", "후보"):
+        label = status or "미설정"
+        return {
+            "allowed": False,
+            "reason": "예비_후보_아님",
+            "message": f"예비후보 또는 후보 등록 후 이용 가능합니다. (현재 상태: {label})",
+            "days_until_election": None,
+        }
+
+    election_date = _get_next_election_date(profile)
+    days_until_election = (election_date - _today_kst()).days
+    if days_until_election > _ELECTION_WINDOW_DAYS:
+        return {
+            "allowed": False,
+            "reason": "선거일_초과",
+            "message": (
+                f"선거일 {_ELECTION_WINDOW_DAYS}일 이내에 이용 가능합니다. "
+                f"(현재 D-{days_until_election}, 선거일: {election_date.strftime('%Y-%m-%d')})"
+            ),
+            "days_until_election": days_until_election,
+        }
+
+    return {
+        "allowed": True,
+        "reason": "허용",
+        "message": "",
+        "days_until_election": days_until_election,
+    }

@@ -14,6 +14,7 @@ import re
 from typing import Any, Dict
 
 from agents.common.poll_citation import normalize_poll_citation_text
+from .content_processor import repair_duplicate_particles_and_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ DIAGNOSTIC_TAIL_MARKERS = [
 EMBEDDED_META_MARKERS = [
     "카테고리:",
     "검색어 삽입 횟수",
+    "검색어 반영 횟수",
     "생성 시간:",
     "조사개요",
     "조사요약",
@@ -65,7 +67,7 @@ EMBEDDED_META_MARKERS = [
 META_TAIL_MIN_RATIO = 0.40
 META_NOISE_LINE_REGEXES = (
     re.compile(r"^카테고리\s*:\s*.+$", re.IGNORECASE),
-    re.compile(r"^검색어\s*삽입\s*횟수\s*:?\s*$", re.IGNORECASE),
+    re.compile(r"^검색어\s*(?:삽입|반영)\s*횟수\s*:?\s*$", re.IGNORECASE),
     re.compile(r"^생성\s*시간\s*:\s*.+$", re.IGNORECASE),
     re.compile(r"^[\"'“”‘’][^\"'“”‘’\n]{1,80}[\"'“”‘’]\s*:\s*\d+\s*회$", re.IGNORECASE),
     re.compile(r"^[^:\n]{1,80}\s*:\s*\d+\s*회$", re.IGNORECASE),
@@ -253,7 +255,7 @@ def _extract_embedded_meta_tail(content: str) -> tuple[str, Dict[str, Any]]:
         meta["keywordInsertionCounts"] = keyword_counts
 
     poll_match = re.search(
-        r"조사개요\s*(.+?)(?:\n\s*(?:카테고리\s*:|검색어\s*삽입\s*횟수\s*:|생성\s*시간\s*:)|$)",
+        r"조사개요\s*(.+?)(?:\n\s*(?:카테고리\s*:|검색어\s*(?:삽입|반영)\s*횟수\s*:|생성\s*시간\s*:)|$)",
         plain_tail,
         flags=re.DOTALL,
     )
@@ -282,12 +284,12 @@ def _strip_meta_noise_lines(content: str) -> str:
 
         normalized_plain = re.sub(r"\s+", " ", plain).strip()
         if any(pattern.match(normalized_plain) for pattern in META_NOISE_LINE_REGEXES):
-            if "검색어 삽입 횟수" in normalized_plain:
+            if re.search(r"검색어\s*(?:삽입|반영)\s*횟수", normalized_plain, re.IGNORECASE):
                 in_keyword_count_block = True
             continue
 
-        if normalized_plain in {"카테고리", "검색어 삽입 횟수", "생성 시간", "조사개요", "조사요약"}:
-            if normalized_plain == "검색어 삽입 횟수":
+        if normalized_plain in {"카테고리", "검색어 삽입 횟수", "검색어 반영 횟수", "생성 시간", "조사개요", "조사요약"}:
+            if normalized_plain in {"검색어 삽입 횟수", "검색어 반영 횟수"}:
                 in_keyword_count_block = True
             continue
 
@@ -685,6 +687,23 @@ def trim_after_closing(content: str) -> str:
         line_end = content.find("\n", end_index)
         cut_index = end_index if line_end == -1 else line_end
         return content[:cut_index].strip()
+
+    return content
+
+
+def _strip_orphaned_trailing_h2(content: str) -> str:
+    """마지막 <h2> 이후에 <p> 태그가 없으면 해당 <h2>를 제거한다."""
+    if not content:
+        return content
+
+    h2_iter = list(re.finditer(r"<h2\b[^>]*>[\s\S]*?</h2\s*>", content, re.IGNORECASE))
+    if not h2_iter:
+        return content
+
+    last_h2 = h2_iter[-1]
+    tail = content[last_h2.end() :]
+    if not re.search(r"<p\b", tail, re.IGNORECASE):
+        return (content[: last_h2.start()] + content[last_h2.end() :]).strip()
 
     return content
 
@@ -1437,6 +1456,7 @@ def finalize_output(
     updated = trim_trailing_diagnostics(updated, allow_diagnostic_tail=allow_diagnostic_tail)
     after_diagnostic_trim = updated
     updated = trim_after_closing(updated)
+    updated = _strip_orphaned_trailing_h2(updated)
 
     # Guard against accidental hard cut by broad closing markers in the body.
     if _looks_over_trimmed(before_tail_trim, updated):
@@ -1532,6 +1552,7 @@ def finalize_output(
         final_meta["pollCitation"] = normalized_poll_body
         final_meta["pollCitationForced"] = True
         updated = insert_poll_citation(updated, normalized_poll_body)
+    updated = repair_duplicate_particles_and_tokens(updated)
     updated = normalize_ascii_double_quotes(updated)
 
     return {

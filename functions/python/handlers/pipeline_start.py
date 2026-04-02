@@ -15,6 +15,7 @@ from typing import Any, Dict
 
 from firebase_functions import https_fn
 
+from agents.common.election_rules import check_election_eligibility
 from services.posts.poll_focus_bundle import build_poll_focus_bundle
 from services.posts.poll_fact_guard import build_poll_matchup_fact_table
 
@@ -428,7 +429,10 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
         if not topic:
             return _json_response({"error": "topic is required", "code": "INVALID_INPUT"}, 400)
 
-        category = str(data.get("category") or "activity-report").strip() or "activity-report"
+        requested_category = str(data.get("category") or "auto").strip() or "auto"
+        requested_sub_category = str(data.get("subCategory") or "").strip()
+        category = requested_category
+        sub_category = requested_sub_category
         stance_text, news_data_text, instructions_text, declared_user_keywords = _split_reference_materials(data)
         request_keywords = data.get("keywords") if isinstance(data.get("keywords"), list) else []
         request_user_keywords = data.get("userKeywords") if isinstance(data.get("userKeywords"), list) else request_keywords
@@ -494,6 +498,49 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
         if not uid:
             return _json_response({"error": "User ID is required", "code": "UNAUTHENTICATED"}, 401)
 
+        try:
+            from services.topic_classifier import resolve_request_intent
+
+            resolved_intent = _run_async(
+                resolve_request_intent(
+                    topic,
+                    {
+                        "category": category,
+                        "subCategory": sub_category,
+                        "stanceText": stance_text,
+                    },
+                )
+            )
+        except Exception as exc:
+            logger.warning("Request classification failed; using fallback category: %s", exc)
+            resolved_intent = {}
+
+        category = str(resolved_intent.get("category") or category or "daily-communication").strip() or "daily-communication"
+        sub_category = str(resolved_intent.get("subCategory") or sub_category or "").strip()
+        classification_meta = {
+            "requestedCategory": requested_category,
+            "requestedSubCategory": requested_sub_category,
+            "resolvedCategory": category,
+            "resolvedSubCategory": sub_category,
+            "writingMethod": str(resolved_intent.get("writingMethod") or ""),
+            "source": str(resolved_intent.get("source") or ""),
+            "confidence": round(float(resolved_intent.get("confidence") or 0.0), 3),
+            "hasStanceSignal": bool(str(stance_text or "").strip()),
+            "stanceLength": len(str(stance_text or "").strip()),
+        }
+        logger.info(
+            "CATEGORY_CLASSIFICATION pipeline_start uid=%s requested=%s/%s resolved=%s/%s writingMethod=%s source=%s confidence=%.3f stance=%s",
+            uid,
+            classification_meta.get("requestedCategory"),
+            classification_meta.get("requestedSubCategory"),
+            classification_meta.get("resolvedCategory"),
+            classification_meta.get("resolvedSubCategory"),
+            classification_meta.get("writingMethod"),
+            classification_meta.get("source"),
+            float(classification_meta.get("confidence") or 0.0),
+            bool(classification_meta.get("hasStanceSignal")),
+        )
+
         # Load profile from Firestore and merge with request payload profile.
         profile_bundle = load_user_profile(uid, category=category, topic=topic)
         loaded_user_profile = profile_bundle.get("userProfile") if isinstance(profile_bundle, dict) else {}
@@ -502,6 +549,24 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
 
         user_profile = _merge_profiles(loaded_user_profile, input_user_profile)
         user_profile["uid"] = uid
+        is_admin = bool(profile_bundle.get("isAdmin") is True)
+        is_tester = bool(profile_bundle.get("isTester") is True)
+
+        if not is_admin and not is_tester:
+            eligibility_profile = dict(user_profile)
+            for key in ("status", "currentStatus", "position", "targetElection"):
+                if key in loaded_user_profile:
+                    eligibility_profile[key] = loaded_user_profile.get(key)
+            eligibility = check_election_eligibility(eligibility_profile)
+            if not eligibility.get("allowed"):
+                return _json_response(
+                    {
+                        "error": eligibility.get("message"),
+                        "code": "ELECTION_ELIGIBILITY_DENIED",
+                        "reason": eligibility.get("reason"),
+                    },
+                    403,
+                )
 
         db = firestore.client()
         try:
@@ -538,7 +603,6 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
                 "newsContext": _normalize_text(data.get("newsContext")),
                 "ragContext": _normalize_text(data.get("ragContext")),
                 "styleHints": {},
-                "classifiedCategory": None,
             }
 
             tasks: dict[str, Any] = {}
@@ -594,20 +658,6 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
                         return {}
 
                 tasks["style"] = asyncio.create_task(run_context_task("style", style_task()))
-
-            if category in ["auto", "general", "activity-report"] and topic:
-
-                async def classify_task() -> str | None:
-                    try:
-                        from services.topic_classifier import classify_topic
-
-                        result = await classify_topic(topic)
-                        return str(result.get("writingMethod") or "") or None
-                    except Exception as exc:
-                        logger.warning("Topic classification error: %s", exc)
-                        return None
-
-                tasks["classify"] = asyncio.create_task(run_context_task("classify", classify_task()))
 
             if not results["ragContext"] and topic and uid:
 
@@ -673,8 +723,6 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
                     results["newsContext"] = str(value)
                 elif key == "style" and isinstance(value, dict):
                     results["styleHints"] = value
-                elif key == "classify" and value:
-                    results["classifiedCategory"] = str(value)
                 elif key == "rag" and value:
                     results["ragContext"] = str(value)
 
@@ -685,10 +733,6 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
         except Exception as exc:
             logger.warning("Context preparation failed: %s", exc)
             additional_context = {}
-
-        if additional_context.get("classifiedCategory"):
-            category = str(additional_context["classifiedCategory"])
-            logger.info("Category auto-classified to: %s", category)
 
         memory_context = _normalize_text(data.get("memoryContext") or profile_bundle.get("memoryContext") or "")
         personalized_hints = _normalize_text(data.get("personalizedHints") or profile_bundle.get("personalizedHints") or "")
@@ -745,7 +789,8 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
             "uid": uid,
             "topic": topic,
             "category": category,
-            "subCategory": str(data.get("subCategory") or ""),
+            "subCategory": sub_category,
+            "classificationMeta": classification_meta,
             "keywords": merged_keywords,
             "userKeywords": normalized_user_keywords,
             "autoKeywords": auto_keywords,

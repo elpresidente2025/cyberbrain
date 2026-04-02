@@ -9,12 +9,16 @@ from .title_common import (
     TITLE_LENGTH_HARD_MIN,
     TITLE_LENGTH_OPTIMAL_MAX,
     TITLE_LENGTH_OPTIMAL_MIN,
+    are_keywords_similar,
+    assess_malformed_title_surface,
+    assess_title_focus_name_repetition,
     _compare_title_repeat_signature,
     _detect_truncated_title_reason,
     _title_similarity,
     _filter_required_title_keywords,
     _fit_title_length,
     normalize_title_surface,
+    repair_title_focus_name_repetition,
     extract_numbers_from_content,
 )
 from .title_metadata import (
@@ -42,6 +46,20 @@ from .title_repairers import (
     _validate_user_keyword_title_requirements,
 )
 from .title_validators import validate_event_announcement_title
+
+_ALLOWED_KEYWORD_SPACE_FOLLOWERS = (
+    '경선',
+    '경선확정',
+    '선거',
+    '토론',
+    '토론회',
+    '방송토론',
+    '행사',
+    '안내',
+    '후보',
+    '정책',
+    '공약',
+)
 
 def _assess_initial_title_length_discipline(title: str) -> Dict[str, Any]:
     normalized = normalize_title_surface(title)
@@ -165,6 +183,7 @@ def calculate_title_quality_score(
     author_name = params.get('fullName', '')
     repaired_title: Optional[str] = None
     keyword_gate_soft_reason = ''
+    event_topic_copy_soft_reason = ''
     
     if not title:
         return {'score': 0, 'breakdown': {}, 'passed': False, 'suggestions': ['제목이 없습니다']}
@@ -259,25 +278,113 @@ def calculate_title_quality_score(
                 **({'repairedTitle': repaired_candidate} if repaired_candidate else {}),
             }
 
+    focus_name_validation = assess_title_focus_name_repetition(title, params)
+    if not focus_name_validation.get('passed', True):
+        repaired_candidate = repair_title_focus_name_repetition(title, params)
+        return {
+            'score': 0,
+            'breakdown': {
+                'focusNameRepeat': {
+                    'score': 0,
+                    'max': 100,
+                    'status': '실패',
+                    'reason': str(
+                        focus_name_validation.get('reason')
+                        or '제목에 동일 인물명이 중복되어 의미가 무너집니다.'
+                    ),
+                    'duplicateNames': list(focus_name_validation.get('duplicateNames') or []),
+                }
+            },
+            'passed': False,
+            'suggestions': [
+                str(
+                    focus_name_validation.get('reason')
+                    or '동일 인물명 반복을 제거하고 제목 문장을 다시 완성하세요.'
+                )
+            ],
+            **({'repairedTitle': repaired_candidate} if repaired_candidate else {}),
+        }
+
+    malformed_surface = assess_malformed_title_surface(title, params)
+    if not malformed_surface.get('passed', True):
+        repaired_candidate = str(malformed_surface.get("repairedTitle") or "").strip()
+        return {
+            'score': 0,
+            'breakdown': {
+                'malformedSurface': {
+                    'score': 0,
+                    'max': 100,
+                    'status': '실패',
+                    'reason': str(
+                        malformed_surface.get('reason')
+                        or '제목 문장이 비문이거나 토큰이 잘못 결합됐습니다.'
+                    ),
+                    'issue': str(malformed_surface.get('issue') or ''),
+                }
+            },
+            'passed': False,
+            'suggestions': [
+                str(
+                    malformed_surface.get('reason')
+                    or '제목 문장을 자연스러운 의미 단위로 다시 완성하세요.'
+                )
+            ],
+            **({'repairedTitle': repaired_candidate} if repaired_candidate else {}),
+        }
+
     # 0-b. Topic 직복 감지: 주제 텍스트와 지나치게 유사한 제목은 hard fail
     if topic and len(topic) >= 12:
         topic_sim_threshold = 0.85 if title_purpose == 'event_announcement' else 0.75
         topic_sim = _title_similarity(title, topic)
         if topic_sim >= topic_sim_threshold:
-            return {
-                'score': 0,
-                'breakdown': {
-                    'topicCopy': {
-                        'score': 0, 'max': 100, 'status': '실패',
-                        'reason': f'주제와 유사도 {topic_sim:.0%} (임계 {topic_sim_threshold:.0%})',
+            if title_purpose == 'event_announcement':
+                distinguishing_tokens = []
+                if author_name and author_name in title and author_name not in topic:
+                    distinguishing_tokens.append(str(author_name))
+                for keyword in user_keywords[:2]:
+                    normalized_keyword = str(keyword or '').strip()
+                    if (
+                        normalized_keyword
+                        and normalized_keyword in title
+                        and normalized_keyword not in topic
+                    ):
+                        distinguishing_tokens.append(normalized_keyword)
+                if distinguishing_tokens:
+                    unique_tokens = list(dict.fromkeys(distinguishing_tokens))
+                    event_topic_copy_soft_reason = (
+                        '행사형 제목이 주제와 유사하지만 '
+                        f'추가 앵커({", ".join(unique_tokens)})를 포함해 허용했습니다.'
+                    )
+                else:
+                    return {
+                        'score': 0,
+                        'breakdown': {
+                            'topicCopy': {
+                                'score': 0, 'max': 100, 'status': '실패',
+                                'reason': f'주제와 유사도 {topic_sim:.0%} (임계 {topic_sim_threshold:.0%})',
+                            },
+                        },
+                        'passed': False,
+                        'suggestions': [
+                            '주제(topic) 텍스트를 그대로 제목으로 사용하지 마세요. '
+                            '표현과 어순을 새롭게 구성하세요.',
+                        ],
+                    }
+            else:
+                return {
+                    'score': 0,
+                    'breakdown': {
+                        'topicCopy': {
+                            'score': 0, 'max': 100, 'status': '실패',
+                            'reason': f'주제와 유사도 {topic_sim:.0%} (임계 {topic_sim_threshold:.0%})',
+                        },
                     },
-                },
-                'passed': False,
-                'suggestions': [
-                    '주제(topic) 텍스트를 그대로 제목으로 사용하지 마세요. '
-                    '표현과 어순을 새롭게 구성하세요.',
-                ],
-            }
+                    'passed': False,
+                    'suggestions': [
+                        '주제(topic) 텍스트를 그대로 제목으로 사용하지 마세요. '
+                        '표현과 어순을 새롭게 구성하세요.',
+                    ],
+                }
 
     if title_purpose == 'event_announcement':
         event_validation = validate_event_announcement_title(title, params)
@@ -402,6 +509,8 @@ def calculate_title_quality_score(
     breakdown = {}
     suggestions = []
     title_length = len(title)
+    if event_topic_copy_soft_reason:
+        suggestions.append(event_topic_copy_soft_reason)
 
     # 일반 검증 경로에서는 길이 초과를 한 번 축약해볼 수 있지만,
     # 제목 생성 경로에서는 auto_fit_length=False로 두고 초기 생성본을 그대로 평가한다.
@@ -476,6 +585,28 @@ def calculate_title_quality_score(
         any_in_title = any(k['index'] >= 0 for k in keyword_infos)
         front_keyword = next((k['keyword'] for k in keyword_infos if k['inFront10']), '')
         any_keyword = next((k['keyword'] for k in keyword_infos if k['index'] >= 0), '')
+        required_pair = [str(kw or '').strip() for kw in user_keywords[:2] if str(kw or '').strip()]
+        if (
+            len(required_pair) >= 2
+            and not are_keywords_similar(required_pair[0], required_pair[1])
+        ):
+            missing_keywords = [kw for kw in required_pair if title.find(kw) < 0]
+            if missing_keywords:
+                return {
+                    'score': 0,
+                    'breakdown': {
+                        'keywordCoverage': {
+                            'score': 0,
+                            'max': 100,
+                            'status': '실패',
+                            'reason': f'독립 검색어 2개 중 누락: {", ".join(missing_keywords)}',
+                            'required': required_pair,
+                            'missing': missing_keywords,
+                        }
+                    },
+                    'passed': False,
+                    'suggestions': [f'제목에 두 검색어를 모두 포함하세요: {", ".join(required_pair)}'],
+                }
         
         # 키워드 뒤 구분자 검증: 쉼표, 물음표, 조사 등으로 분리되어야 함
         # 단, 유사 키워드가 중첩되는 경우(예: "부산 디즈니랜드 유치" / "부산 디즈니랜드")
@@ -493,7 +624,7 @@ def calculate_title_quality_score(
             })
 
         kw_delimiter_ok = True
-        delimiters = (',', '?', '!', '.', '에', '의', '을', '를', '은', '는', '이', '가', ':', ' ')
+        delimiters = (',', '?', '!', '.', '·', '/', '|', '에', '의', '을', '를', '은', '는', '이', '가', ':', ' ')
         for span in matched_spans:
             is_shadowed = any(
                 other['start'] == span['start'] and other['end'] > span['end']
@@ -513,6 +644,9 @@ def calculate_title_quality_score(
 
             if next_char == ' ':
                 # 공백 뒤에 바로 한글(이름 등)이 오면 구분자 부족
+                trailing_text = title[end_pos + 1 : end_pos + 12].strip()
+                if any(trailing_text.startswith(token) for token in _ALLOWED_KEYWORD_SPACE_FOLLOWERS):
+                    continue
                 if end_pos + 1 < len(title) and '\uac00' <= title[end_pos + 1] <= '\ud7a3':
                     kw_delimiter_ok = False
 

@@ -218,6 +218,7 @@ class JobManager:
             "topic": input_data.get("topic"),
             "category": input_data.get("category", "activity-report"),
             "subCategory": input_data.get("subCategory", ""),
+            "classificationMeta": input_data.get("classificationMeta", {}),
             "keywords": keywords,
             "userKeywords": user_keywords,
             "autoKeywords": auto_keywords,

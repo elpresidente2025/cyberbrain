@@ -4,6 +4,7 @@ from .structure_utils import (
     strip_html,
     normalize_artifacts,
     normalize_html_structure_tags,
+    normalize_context_text,
     _xml_text,
     _xml_cdata,
     parse_response
@@ -210,6 +211,12 @@ class ContentRepairAgent:
             code_specific_rule = (
                 "결론의 중복 문구만 변형하고, 나머지 구조와 핵심 근거는 유지하십시오."
             )
+        elif failed_code == 'SECTION_ROLE_CONTRACT':
+            code_specific_rule = (
+                "실패한 섹션의 첫 문장은 소제목에 직접 답하는 사실·해법 문장으로 다시 쓰고, "
+                "경험 문장 다음의 자기 역량 인증·청중 반응 해설 문장은 삭제하거나 "
+                "당시 행동·구체 결과·현재 해법 연결 문장으로만 바꾸십시오."
+            )
 
         targeted_patch_prompt = f"""
 <structural_recovery_prompt version="xml-v1" mode="targeted_patch">
@@ -347,3 +354,116 @@ class ContentRepairAgent:
                 continue
 
         return None
+
+    async def recover_section_shortfall(
+        self,
+        *,
+        title: str,
+        topic: str,
+        section_heading: str,
+        section_html: str,
+        length_spec: Dict[str, int],
+        author_bio: str = '',
+        failed_code: str,
+        failed_reason: str,
+        failed_feedback: str,
+        failed_meta: Optional[Dict[str, Any]] = None,
+        section_contract: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
+        from ..common.gemini_client import generate_content_async
+
+        failed_meta = failed_meta if isinstance(failed_meta, dict) else {}
+        section_contract = section_contract if isinstance(section_contract, dict) else {}
+        per_section_min = int(length_spec.get('per_section_min', 0))
+        per_section_max = int(length_spec.get('per_section_max', 0))
+        expected_heading = normalize_context_text(section_heading)
+        answer_lead = normalize_context_text(section_contract.get('answerLead'))
+        body_writer_hint = normalize_context_text(section_contract.get('bodyWriterHint'))
+        first_sentence_roles = normalize_context_text(section_contract.get('firstSentenceRoles'), sep=", ")
+        followup_roles = normalize_context_text(section_contract.get('experienceFollowupRoles'), sep=", ")
+        violation_sentence = normalize_context_text(
+            (failed_meta.get('violation') or {}).get('sentence') if isinstance(failed_meta.get('violation'), dict) else ''
+        )
+        shortfall_focus_rule = ""
+        if failed_code in {"SECTION_LENGTH", "SECTION_P_COUNT"}:
+            shortfall_focus_rule = (
+                "이 섹션을 읽은 독자가 '그래서 구체적으로 어떻게 할 건데?'라고 물을 만한 지점을 찾아 "
+                "실행 방식, 대상, 순서, 근거 중 하나를 분명히 하는 구체 문장 1~2개를 보강하십시오. "
+                "어떤 후보나 어떤 선거에도 쓸 수 있는 일반 공약 문장은 금지합니다."
+            )
+        shortfall_focus_rule_line = (
+            f'    <rule order="5">{_xml_text(shortfall_focus_rule)}</rule>\n'
+            if shortfall_focus_rule
+            else ""
+        )
+
+        prompt = f"""
+<section_recovery_prompt version="xml-v1">
+  <role>당신은 구조 계약 위반 섹션만 다시 쓰는 엄격한 한국어 정치 에디터입니다.</role>
+  <goal>
+    <section_heading>{_xml_text(expected_heading)}</section_heading>
+    <section_chars>{per_section_min}~{per_section_max}</section_chars>
+    <rule>전체 원고를 다시 쓰지 말고, 아래 섹션 블록 하나만 다시 작성하십시오.</rule>
+  </goal>
+  <failure>
+    <code>{_xml_text(failed_code)}</code>
+    <reason>{_xml_cdata(failed_reason)}</reason>
+    <feedback>{_xml_cdata(failed_feedback)}</feedback>
+    <violation_sentence>{_xml_cdata(violation_sentence or '(없음)')}</violation_sentence>
+  </failure>
+  <contract>
+    <heading_exact>{_xml_text(expected_heading)}</heading_exact>
+    <answer_lead>{_xml_cdata(answer_lead or '(없음)')}</answer_lead>
+    <first_sentence_roles>{_xml_text(first_sentence_roles or '(없음)')}</first_sentence_roles>
+    <experience_followup_roles>{_xml_text(followup_roles or '(없음)')}</experience_followup_roles>
+    <body_writer_hint>{_xml_cdata(body_writer_hint or '(없음)')}</body_writer_hint>
+  </contract>
+  <rules>
+    <rule order="1">&lt;h2&gt; 텍스트는 정확히 "{_xml_text(expected_heading)}"로 유지하십시오.</rule>
+    <rule order="2">첫 문장은 answer_lead를 그대로 쓰거나, 같은 사실을 더 간결하게 다시 말하십시오.</rule>
+    <rule order="3">경험 문장 다음에는 사실, 당시 행동, 구체 결과, 현재 해법 연결만 허용합니다.</rule>
+    <rule order="4">자기 역량 인증, 청중 반응 해설, 인지도 자기서술은 금지합니다.</rule>
+{shortfall_focus_rule_line}    <rule order="6">최종 응답은 title/content XML만 출력하고, content 안에는 이 섹션 블록 하나만 넣으십시오.</rule>
+  </rules>
+  <topic>{_xml_cdata(topic)}</topic>
+  <title>{_xml_cdata(title)}</title>
+  <author_bio>{_xml_cdata((author_bio or '(없음)')[:1200])}</author_bio>
+  <current_section>{_xml_cdata(section_html)}</current_section>
+  <output_contract>
+    <format>XML</format>
+    <allowed_tags>title, content</allowed_tags>
+    <example>{_xml_cdata(f'<title>{title or "..."}</title>\\n<content><h2>{expected_heading}</h2><p>...</p><p>...</p></content>')}</example>
+  </output_contract>
+</section_recovery_prompt>
+""".strip()
+
+        try:
+            response_text = await generate_content_async(
+                prompt,
+                model_name=self.model_name,
+                temperature=0.0,
+                max_output_tokens=2048,
+                retries=1,
+            )
+            parsed = parse_response(response_text)
+            recovered_content = normalize_html_structure_tags(normalize_artifacts(parsed.get('content', '')))
+            if not recovered_content:
+                return None
+            if not re.search(r'<h2\b', recovered_content, re.IGNORECASE):
+                recovered_content = f"<h2>{expected_heading}</h2>\n{recovered_content}".strip()
+            recovered_heading_match = re.search(r'<h2[^>]*>(.*?)</h2>', recovered_content, re.IGNORECASE | re.DOTALL)
+            recovered_heading = strip_html(recovered_heading_match.group(1)).strip() if recovered_heading_match else ''
+            if recovered_heading and recovered_heading != expected_heading:
+                recovered_content = re.sub(
+                    r'<h2[^>]*>.*?</h2>',
+                    f"<h2>{expected_heading}</h2>",
+                    recovered_content,
+                    count=1,
+                    flags=re.IGNORECASE | re.DOTALL,
+                )
+            if not re.search(r'<p\b[^>]*>[\s\S]*?</p\s*>', recovered_content, re.IGNORECASE):
+                return None
+            return recovered_content.strip()
+        except Exception as e:
+            print(f"⚠️ [ContentRepairAgent] 섹션 복구 실패: {str(e)}")
+            return None

@@ -4,8 +4,159 @@ from .structure_utils import strip_html, material_key, normalize_context_text
 from .intro_echo_utils import find_intro_conclusion_duplicates
 from ..common.h2_guide import H2_MIN_LENGTH, H2_MAX_LENGTH
 from ..common.editorial import STRUCTURE_SPEC, QUALITY_SPEC
+from ..common.section_contract import (
+    get_section_contract_sequence,
+    validate_cross_section_contracts,
+    validate_section_contract,
+)
 
 class ContentValidator:
+    def _validate_bundle_section_contracts(
+        self,
+        content: str,
+        *,
+        poll_focus_bundle: Optional[Dict[str, Any]],
+        body_sections: int,
+    ) -> Optional[Dict[str, Any]]:
+        body_contracts, conclusion_contract = get_section_contract_sequence(
+            poll_focus_bundle,
+            body_sections=body_sections,
+        )
+        if not body_contracts and not conclusion_contract:
+            return None
+
+        first_h2_match = re.search(r'<h2\b', content, re.IGNORECASE)
+        if not first_h2_match:
+            return None
+
+        h2_blocks = [
+            block
+            for block in re.split(r'(?=<h2\b)', content[first_h2_match.start():], flags=re.IGNORECASE)
+            if block and block.strip()
+        ]
+        if not h2_blocks:
+            return None
+
+        primary_pair = (
+            poll_focus_bundle.get('primaryPair')
+            if isinstance(poll_focus_bundle, dict) and isinstance(poll_focus_bundle.get('primaryPair'), dict)
+            else {}
+        )
+        speaker = normalize_context_text(
+            primary_pair.get('speaker') if isinstance(primary_pair, dict) else ''
+        ) or normalize_context_text((poll_focus_bundle or {}).get('speaker') if isinstance(poll_focus_bundle, dict) else '')
+        opponent = normalize_context_text(
+            primary_pair.get('opponent') if isinstance(primary_pair, dict) else ''
+        )
+
+        def _parse_block(block: str) -> tuple[str, List[str]]:
+            heading_match = re.search(r'<h2[^>]*>(.*?)</h2>', block, re.IGNORECASE | re.DOTALL)
+            heading_text = strip_html(heading_match.group(1)).strip() if heading_match else ''
+            paragraphs = [
+                strip_html(item).strip()
+                for item in re.findall(r'<p\b[^>]*>([\s\S]*?)</p\s*>', block, re.IGNORECASE)
+                if strip_html(item).strip()
+            ]
+            return heading_text, paragraphs
+
+        body_blocks = h2_blocks[:-1] if conclusion_contract and len(h2_blocks) >= 2 else h2_blocks
+        parsed_sections: List[Dict[str, Any]] = []
+        for index, contract in enumerate(body_contracts):
+            if index >= len(body_blocks):
+                break
+            heading_text, paragraphs = _parse_block(body_blocks[index])
+            parsed_sections.append({"heading": heading_text, "paragraphs": paragraphs})
+            violation = validate_section_contract(
+                heading=heading_text,
+                paragraphs=paragraphs,
+                contract=contract,
+                speaker=speaker,
+                opponent=opponent,
+            )
+            if violation:
+                violation_code = normalize_context_text(violation.get('code'))
+                feedback = (
+                    f"본론 {index + 1}은 '{heading_text}'에 직접 답하는 첫 문장으로 시작하고, "
+                    "경험 문장 다음에는 사실·행동·구체 결과·해법 연결만 오도록 다시 작성하십시오."
+                )
+                if violation_code == 'section_disallowed_role':
+                    feedback = (
+                        f"본론 {index + 1}에는 타인 반응 해석형이나 경험 → 역량 인증형 문장을 넣지 마십시오. "
+                        "수치·사실·행동·구체 결과·해법 연결만 남기십시오."
+                    )
+                return {
+                    'passed': False,
+                    'code': 'SECTION_ROLE_CONTRACT',
+                    'reason': (
+                        f"본론 {index + 1} 허용 문장 계약 위반 "
+                        f"({normalize_context_text(violation.get('message')) or '구조 위반'})"
+                    ),
+                    'feedback': feedback,
+                    'sectionIndex': index + 1,
+                    'sectionHeading': heading_text,
+                    'violation': violation,
+                }
+
+        if conclusion_contract and h2_blocks:
+            heading_text, paragraphs = _parse_block(h2_blocks[-1])
+            parsed_sections.append({"heading": heading_text, "paragraphs": paragraphs})
+            violation = validate_section_contract(
+                heading=heading_text,
+                paragraphs=paragraphs,
+                contract=conclusion_contract,
+                speaker=speaker,
+                opponent=opponent,
+            )
+            if violation:
+                violation_code = normalize_context_text(violation.get('code'))
+                feedback = (
+                    "결론은 선언형 소제목과 직접 연결되는 요약/다짐 문장으로 시작하고, "
+                    "뒤 문장은 실행 계획이나 생활 변화 약속으로만 정리하십시오."
+                )
+                if violation_code == 'section_disallowed_role':
+                    feedback = (
+                        "결론에는 타인 반응 해석형과 경험 → 역량 인증형을 넣지 마십시오. "
+                        "요약, 실행 다짐, 생활 변화 약속만 남기십시오."
+                    )
+                return {
+                    'passed': False,
+                    'code': 'SECTION_ROLE_CONTRACT',
+                    'reason': (
+                        f"결론 허용 문장 계약 위반 "
+                        f"({normalize_context_text(violation.get('message')) or '구조 위반'})"
+                    ),
+                    'feedback': feedback,
+                    'sectionIndex': len(body_blocks) + 1,
+                    'sectionHeading': heading_text,
+                    'violation': violation,
+                }
+
+        duplicate_career_violation = validate_cross_section_contracts(
+            sections=parsed_sections,
+            speaker=speaker,
+            opponent=opponent,
+        )
+        if duplicate_career_violation:
+            section_index = int(duplicate_career_violation.get("sectionIndex") or 0) or None
+            heading_text = normalize_context_text(duplicate_career_violation.get("sectionHeading"))
+            return {
+                'passed': False,
+                'code': 'SECTION_ROLE_CONTRACT',
+                'reason': (
+                    f"섹션 {section_index or '?'} 허용 문장 계약 위반 "
+                    f"({normalize_context_text(duplicate_career_violation.get('message')) or '구조 위반'})"
+                ),
+                'feedback': (
+                    "같은 경력 나열은 원고 전체에서 한 번만 쓰십시오. "
+                    "다른 섹션에서는 그 경험이나 현장에서 익힌 판단·행동만 이어 쓰십시오."
+                ),
+                'sectionIndex': section_index,
+                'sectionHeading': heading_text,
+                'violation': duplicate_career_violation,
+            }
+
+        return None
+
     def _detect_material_reuse_issues(
         self,
         content: str,
@@ -174,6 +325,7 @@ class ContentValidator:
         event_date_hint: str = '',
         event_location_hint: str = '',
         user_keywords: Optional[List[str]] = None,
+        poll_focus_bundle: Optional[Dict[str, Any]] = None,
     ) -> Dict:
         if not content:
             return {'passed': False, 'code': 'EMPTY_CONTENT', 'reason': '내용 없음', 'feedback': '내용이 비어있습니다.'}
@@ -250,6 +402,9 @@ class ContentValidator:
         for section_index, section_content in enumerate(section_blocks, start=1):
             section_p_count = len(re.findall(r'<p\b[^>]*>[\s\S]*?</p\s*>', section_content, re.IGNORECASE))
             is_intro_section = bool(section_intro_flags[section_index - 1]) if section_index - 1 < len(section_intro_flags) else False
+            heading_match = re.search(r'<h2[^>]*>(.*?)</h2>', section_content, re.IGNORECASE | re.DOTALL)
+            section_heading = strip_html(heading_match.group(1)).strip() if heading_match else ''
+            section_block_index = section_index - 2 if not is_intro_section else -1
             min_p = 1 if is_intro_section else 2
             if section_p_count < min_p or section_p_count > 4:
                 return {
@@ -261,6 +416,9 @@ class ContentValidator:
                     'sectionParagraphCount': section_p_count,
                     'sectionParagraphMin': min_p,
                     'sectionParagraphMax': 4,
+                    'sectionHeading': section_heading,
+                    'sectionBlockIndex': section_block_index,
+                    'isIntroSection': is_intro_section,
                 }
             section_plain_length = section_plain_lengths[section_index - 1]
             sec_min = length_spec.get('per_section_min', int(STRUCTURE_SPEC['sectionCharMin'])) - int(STRUCTURE_SPEC['validatorSectionTolerance'])
@@ -293,7 +451,18 @@ class ContentValidator:
                     'sectionMin': sec_min,
                     'sectionMax': sec_max,
                     'sectionLengths': section_plain_lengths,
+                    'sectionHeading': section_heading,
+                    'sectionBlockIndex': section_block_index,
+                    'isIntroSection': is_intro_section,
                 }
+
+        section_contract_issue = self._validate_bundle_section_contracts(
+            content,
+            poll_focus_bundle=poll_focus_bundle,
+            body_sections=length_spec.get('body_sections', max(1, expected_h2 - 1)),
+        )
+        if section_contract_issue:
+            return section_contract_issue
 
         normalized_user_keywords: List[str] = []
         for keyword in user_keywords or []:

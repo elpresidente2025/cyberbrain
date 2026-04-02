@@ -15,11 +15,11 @@ from ..common.h2_guide import H2_MAX_LENGTH
 
 SECTION_PADDING_SENTENCES = (
     "현장에서 확인한 문제를 바탕으로 실행 가능한 대안을 분명히 제시하겠습니다.",
-    "핵심 과제를 단계별로 정리하고 성과가 보이도록 꾸준히 점검하겠습니다.",
-    "추상적 선언이 아니라 시민이 체감할 수 있는 변화를 만들겠습니다.",
-    "우선순위를 명확히 하고 필요한 자원과 일정을 현실적으로 맞추겠습니다.",
-    "실행 과정에서 드러나는 한계는 즉시 보완해 완성도를 높이겠습니다.",
-    "주민 의견을 수렴해 정책 방향을 구체화하고 실천 계획을 마련하겠습니다.",
+    "시민이 먼저 체감할 수 있는 변화부터 차근차근 만들겠습니다.",
+    "정책의 우선순위와 책임 주체를 분명히 세워 결과로 보여드리겠습니다.",
+    "행정 절차와 예산 흐름까지 살펴 실현 가능한 해법으로 다듬겠습니다.",
+    "현장 목소리를 꾸준히 듣고 미흡한 지점은 빠르게 손보겠습니다.",
+    "부산의 산업과 생활 문제를 함께 보며 해법을 더 구체화하겠습니다.",
     "사업 추진 현황을 투명하게 공개하고 결과로 증명하겠습니다.",
     "지역 현안에 대한 전문가 자문과 주민 토론을 병행하겠습니다.",
     "예산 집행의 효율성을 높이고 불필요한 낭비를 줄이겠습니다.",
@@ -30,6 +30,7 @@ SECTION_PADDING_SENTENCES = (
     "주민 참여 기회를 확대해 정책 수용성과 실효성을 동시에 높이겠습니다.",
     "단기 성과에 그치지 않고 장기적 관점에서 지속 가능한 방안을 마련하겠습니다.",
 )
+ALLOW_GENERIC_SECTION_PADDING = False
 
 CONCLUSION_REWRITE_TOKENS = (
     "이 과제",
@@ -145,6 +146,8 @@ def _ensure_sentence_ending(text: str) -> str:
 
 
 def _build_padding_text(section_index: int, deficit: int, existing_text: str = "") -> str:
+    if not ALLOW_GENERIC_SECTION_PADDING:
+        return ""
     existing_lower = existing_text.lower() if existing_text else ""
     if existing_lower:
         available = [s for s in SECTION_PADDING_SENTENCES if s.lower() not in existing_lower]
@@ -152,7 +155,7 @@ def _build_padding_text(section_index: int, deficit: int, existing_text: str = "
         available = list(SECTION_PADDING_SENTENCES)
     if not available:
         available = list(SECTION_PADDING_SENTENCES)
-    size = max(1, min(3, (deficit // 35) + 1))
+    size = 1
     start = max(0, section_index - 1) % len(available)
     parts: List[str] = []
     for offset in range(size):
@@ -162,6 +165,8 @@ def _build_padding_text(section_index: int, deficit: int, existing_text: str = "
 
 def _pad_short_section(section_html: str, section_index: int, deficit: int) -> str:
     if deficit <= 0:
+        return section_html
+    if not ALLOW_GENERIC_SECTION_PADDING:
         return section_html
 
     # 이미 사용된 패딩 문장은 스킵하여 중복 방지
@@ -438,6 +443,7 @@ def normalize_section_p_count(content: str) -> str:
 
     for sec_idx, section in enumerate(sections):
         is_intro = sec_idx == 0 and not section["has_h2"]
+        is_last_h2_section = sec_idx == len(sections) - 1 and section["has_h2"]
         min_p = 1 if is_intro else 2
         max_p = 4
 
@@ -462,12 +468,17 @@ def normalize_section_p_count(content: str) -> str:
                 elif sentences:
                     new_ps.append(f"<p>{' '.join(sentences).strip()}</p>")
                 else:
-                    full_text = " ".join(strip_html(s["html"]) for s in sections)
-                    new_ps.append(f"<p>{_build_padding_text(sec_idx + 1, 60, existing_text=full_text)}</p>")
+                    if not is_last_h2_section:
+                        full_text = " ".join(strip_html(s["html"]) for s in sections)
+                        supplement = _build_padding_text(sec_idx + 1, 60, existing_text=full_text)
+                        if supplement:
+                            new_ps.append(f"<p>{supplement}</p>")
 
-                while len(new_ps) < min_p:
+                while len(new_ps) < min_p and not is_last_h2_section:
                     full_text = " ".join(strip_html(s["html"]) for s in sections)
                     supplement = _build_padding_text(sec_idx + 1, 50 + len(new_ps) * 20, existing_text=full_text)
+                    if not supplement:
+                        break
                     new_ps.append(f"<p>{supplement}</p>")
 
                 section["html"] = ((h2_tag + "\n") if h2_tag else "") + "\n".join(new_ps)
@@ -480,15 +491,21 @@ def normalize_section_p_count(content: str) -> str:
                 left, right = split_pair
                 replacement = f"<p>{left}</p>\n<p>{right}</p>"
                 section["html"] = section["html"].replace(longest_p, replacement, 1)
+            elif is_last_h2_section:
+                break
             else:
                 full_text = " ".join(strip_html(s["html"]) for s in sections)
                 supplement = _build_padding_text(sec_idx + 1, 60, existing_text=full_text)
+                if not supplement:
+                    break
                 section["html"] = f"{section['html'].strip()}\n<p>{supplement}</p>".strip()
 
         p_blocks = _get_p_blocks(section["html"])
-        while len(p_blocks) < min_p:
+        while len(p_blocks) < min_p and not is_last_h2_section:
             full_text = " ".join(strip_html(s["html"]) for s in sections)
             supplement = _build_padding_text(sec_idx + 1, 60 + len(p_blocks) * 20, existing_text=full_text)
+            if not supplement:
+                break
             section["html"] = f"{section['html'].strip()}\n<p>{supplement}</p>".strip()
             p_blocks = _get_p_blocks(section["html"])
 
@@ -564,11 +581,12 @@ def normalize_section_length(content: str, min_chars: int = 200, max_chars: int 
                         continue
 
     for idx, section in enumerate(sections):
-        for _ in range(6):
-            sec_len = _plain_len(section["html"])
-            if sec_len >= min_chars:
-                break
-            section["html"] = _pad_short_section(section["html"], idx + 1, min_chars - sec_len)
+        if ALLOW_GENERIC_SECTION_PADDING:
+            for _ in range(6):
+                sec_len = _plain_len(section["html"])
+                if sec_len >= min_chars:
+                    break
+                section["html"] = _pad_short_section(section["html"], idx + 1, min_chars - sec_len)
         section["html"] = _compress_section_overflow(section["html"], max_chars)
         sections[idx] = section
 
@@ -596,7 +614,7 @@ def normalize_total_p_count(content: str, total_sections: int) -> str:
         candidates = [
             (idx, _count_p_tags(section["html"]))
             for idx, section in enumerate(sections)
-            if _count_p_tags(section["html"]) < 4
+            if _count_p_tags(section["html"]) < 4 and not (idx == len(sections) - 1 and section["has_h2"])
         ]
         if not candidates:
             break
@@ -606,6 +624,8 @@ def normalize_total_p_count(content: str, total_sections: int) -> str:
         deficit_hint = max(40, (expected_min_p - _total_p()) * 30)
         full_text = " ".join(strip_html(s["html"]) for s in sections)
         supplement = _build_padding_text(target_idx + 1, deficit_hint, existing_text=full_text)
+        if not supplement:
+            break
 
         p_blocks = _get_p_blocks(section["html"])
         if p_blocks:
@@ -689,10 +709,10 @@ def mitigate_intro_conclusion_echo(
         section_prefix = f"{h2_tag}\n" if h2_tag else ""
         sections[-1]["html"] = (
             section_prefix
-            + "<p>핵심 과제를 실행 중심으로 추진하고 과정과 결과를 투명하게 공개하겠습니다. "
+            + "<p>말보다 결과가 남도록 부산의 변화 과정을 끝까지 책임지겠습니다. "
             + "현장에서 확인한 문제를 바탕으로 실행 가능한 대안을 분명히 제시하겠습니다.</p>\n"
-            + "<p>성과를 주기적으로 점검하고 미흡한 부분은 즉시 보완해 책임 있게 완성하겠습니다. "
-            + "추상적 선언이 아니라 시민이 체감할 수 있는 변화를 만들겠습니다.</p>"
+            + "<p>시민의 일상에서 먼저 달라지는 지점을 만들고 그 성과를 꾸준히 확인하겠습니다. "
+            + "필요한 조정은 늦추지 않고 바로 손보겠습니다.</p>"
         )
 
     return _join_sections(sections)

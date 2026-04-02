@@ -37,6 +37,140 @@ def _topic_keyword_matches_text(keyword: str, text: str) -> bool:
         return False
     return any(variant.lower() in normalized_text for variant in _expand_topic_keyword_variants(keyword))
 
+
+_SURFACE_TOPIC_PARTICLE_SUFFIXES = (
+    "에서",
+    "보다",
+    "으로",
+    "로",
+    "에게",
+    "까지",
+    "부터",
+    "처럼",
+    "의",
+    "을",
+    "를",
+    "은",
+    "는",
+    "이",
+    "가",
+    "와",
+    "과",
+    "도",
+    "만",
+    "에",
+    "서",
+)
+
+_SURFACE_TOPIC_STOPWORDS = {
+    "그리고",
+    "그러나",
+    "하지만",
+    "또한",
+    "가장",
+    "정말",
+    "바로",
+    "앞으로도",
+    "앞으로",
+    "지금",
+    "이번",
+    "위해",
+    "위한",
+    "통해",
+    "대해",
+    "대한",
+    "관련",
+    "역할",
+    "해내겠습니다",
+    "하겠습니다",
+    "합니다",
+    "입니다",
+}
+
+_SURFACE_TOPIC_SIGNAL_SUFFIXES = (
+    "지역구",
+    "구민",
+    "시민",
+    "주민",
+    "청년",
+    "노동자",
+    "소상공인",
+    "학부모",
+    "의원",
+    "국회의원",
+    "시의원",
+    "도의원",
+    "광역시의원",
+    "위원장",
+    "민주당원",
+    "책임감",
+    "입법활동",
+    "의정활동",
+    "조례",
+    "예산",
+    "성과",
+    "활성화",
+    "민주주의",
+    "현안",
+    "정책",
+    "해법",
+    "변화",
+    "개혁",
+    "비전",
+)
+
+
+def _normalize_surface_topic_token(token: str) -> str:
+    cleaned = re.sub(r"<[^>]*>", " ", str(token or ""))
+    cleaned = re.sub(r"[#\"'“”‘’`~()\[\]{}<>]", " ", cleaned)
+    cleaned = re.sub(r"[,:;!?./\\|]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", "", cleaned).strip()
+    if not cleaned:
+        return ""
+
+    for suffix in _SURFACE_TOPIC_PARTICLE_SUFFIXES:
+        if cleaned.endswith(suffix) and len(cleaned) - len(suffix) >= 2:
+            cleaned = cleaned[: -len(suffix)]
+            break
+
+    if (
+        not cleaned
+        or len(cleaned) < 2
+        or cleaned in _SURFACE_TOPIC_STOPWORDS
+        or cleaned.isdigit()
+    ):
+        return ""
+
+    if re.search(r"(하겠|합니다|입니다|했다|하였다|되는|된다|되다|해내|한다|하며)$", cleaned):
+        return ""
+
+    return cleaned
+
+
+def _extract_surface_topic_tokens(text: str, *, limit: int = 4) -> List[str]:
+    normalized_text = re.sub(r"<[^>]*>", " ", str(text or ""))
+    normalized_text = re.sub(r"\s+", " ", normalized_text).strip()
+    if not normalized_text:
+        return []
+
+    scored_tokens: List[tuple[int, int, str]] = []
+    seen: set[str] = set()
+    for raw_token in normalized_text.split():
+        token = _normalize_surface_topic_token(raw_token)
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        priority = 0
+        if token.endswith(_SURFACE_TOPIC_SIGNAL_SUFFIXES):
+            priority += 5
+        if any(marker in token for marker in ("지역구", "구민", "시민", "의원", "책임감", "조례", "성과")):
+            priority += 2
+        priority += min(len(token), 8)
+        scored_tokens.append((priority, len(token), token))
+
+    scored_tokens.sort(key=lambda item: (-item[0], -item[1], item[2]))
+    return [token for _priority, _length, token in scored_tokens[:limit]]
+
 def extract_topic_keywords(topic: str) -> List[str]:
     topic_text = re.sub(r"\s+", " ", str(topic or "")).strip()
     normalized_topic = re.sub(r"\s+", "", topic_text)
@@ -505,6 +639,10 @@ def validate_theme_and_content(
             }
 
         topic_keywords = extract_topic_keywords(topic)
+        using_surface_topic_fallback = False
+        if not topic_keywords:
+            topic_keywords = _extract_surface_topic_tokens(topic, limit=4)
+            using_surface_topic_fallback = bool(topic_keywords)
         content_text = str(content or '')
         params_dict = params if isinstance(params, dict) else {}
         matched_keywords = []
@@ -532,7 +670,7 @@ def validate_theme_and_content(
             "hasDirectionalFrame": False,
         }
 
-        if content_overlap_score < 50:
+        if topic_keywords and content_overlap_score < 50:
             mismatch_reasons.append(f"주제 핵심어 중 {len(missing_keywords)}개가 본문에 없음: {', '.join(missing_keywords)}")
 
         if title:
@@ -575,7 +713,11 @@ def validate_theme_and_content(
             if not numeric_binding.get("passed", True):
                 effective_title_score = min(effective_title_score, 40)
                 mismatch_reasons.append(str(numeric_binding.get("reason") or "제목 수치가 대결 문맥과 맞지 않습니다."))
-            if len(title_missing) > len(topic_keywords) * 0.5 and int(frame_alignment_meta.get("score") or 0) < 70:
+            if (
+                topic_keywords
+                and len(title_missing) > len(topic_keywords) * 0.5
+                and int(frame_alignment_meta.get("score") or 0) < 70
+            ):
                 mismatch_reasons.append(f"제목에 주제 핵심어 부족: {', '.join(title_missing[:3])}")
 
         return {
@@ -593,6 +735,7 @@ def validate_theme_and_content(
             'frameAlignmentScore': int(frame_alignment_meta.get("score") or 0),
             'frameAlignmentStyle': str(frame_alignment_meta.get("style") or ""),
             'frameMatchedPeople': list(frame_alignment_meta.get("matchedPeople") or []),
+            'usedSurfaceTopicFallback': using_surface_topic_fallback,
             'pollFocusTitleLane': str(poll_focus_lane.get("lane") or "") if title else "",
         }
     except Exception as exc:
@@ -611,6 +754,7 @@ def validate_theme_and_content(
             'frameAlignmentScore': 0,
             'frameAlignmentStyle': 'error',
             'frameMatchedPeople': [],
+            'usedSurfaceTopicFallback': False,
             'pollFocusTitleLane': '',
             'mismatchReasons': ['제목-본문 정합성 검증 중 오류가 발생했습니다.'],
         }

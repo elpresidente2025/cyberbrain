@@ -363,21 +363,19 @@ def _build_keyword_replacement_pool(
         allow_candidate_label=bool(candidate_labels),
     )
     if _looks_like_compact_person_keyword(normalized_keyword):
+        safe_person_references: list[str] = []
         if short_reference and short_reference != normalized_keyword:
-            if generic_reference not in {"상대", short_reference}:
-                return [short_reference, generic_reference, "상대"]
-            return [short_reference, "상대"]
-        if generic_reference != "상대":
-            return [generic_reference, "상대"]
-        return ["상대"]
+            safe_person_references.append(short_reference)
+        if generic_reference not in {"", "상대"} and generic_reference not in safe_person_references:
+            safe_person_references.append(generic_reference)
+        return safe_person_references
     if _is_role_keyword(normalized_keyword):
+        safe_role_references: list[str] = []
         if short_reference and short_reference != normalized_keyword:
-            if generic_reference not in {"상대", short_reference}:
-                return [short_reference, generic_reference, "상대"]
-            return [short_reference, "상대"]
-        if generic_reference != "상대":
-            return [generic_reference, "상대"]
-        return ["상대"]
+            safe_role_references.append(short_reference)
+        if generic_reference not in {"", "상대"} and generic_reference not in safe_role_references:
+            safe_role_references.append(generic_reference)
+        return safe_role_references
 
     variants = build_keyword_variants(normalized_keyword)
     deduped: list[str] = []

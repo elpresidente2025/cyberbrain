@@ -28,9 +28,9 @@ def normalize_artifacts(text: str) -> str:
     cleaned = re.sub(r'^\s*[""]', '', cleaned)
     cleaned = re.sub(r'[""]\s*$', '', cleaned)
 
-    cleaned = re.sub(r'카테고리:[\s\S]*$', '', cleaned, flags=re.MULTILINE)
-    cleaned = re.sub(r'검색어 삽입 횟수:[\s\S]*$', '', cleaned, flags=re.MULTILINE)
-    cleaned = re.sub(r'생성 시간:[\s\S]*$', '', cleaned, flags=re.MULTILINE)
+    cleaned = re.sub(r'카테고리\s*:[\s\S]*$', '', cleaned, flags=re.MULTILINE)
+    cleaned = re.sub(r'검색어\s*(?:삽입|반영)\s*횟수\s*:[\s\S]*$', '', cleaned, flags=re.MULTILINE)
+    cleaned = re.sub(r'생성\s*시간\s*:[\s\S]*$', '', cleaned, flags=re.MULTILINE)
     cleaned = re.sub(r'^\s*\d+\s*자\s*$', '', cleaned, flags=re.MULTILINE)
 
     return cleaned.strip()
