@@ -39,7 +39,10 @@ DUPLICATED_PARTICLES = (
     '로',
 )
 DUPLICATED_PARTICLE_REGEX = re.compile(
-    rf'(?P<stem>[가-힣A-Za-z0-9]+?)(?P<particle>{"|".join(DUPLICATED_PARTICLES)})(?P=particle)(?=$|[\s,.:;!?<])'
+    rf'(?P<stem>[가-힣A-Za-z0-9]{{2,}}?)(?P<particle>{"|".join(DUPLICATED_PARTICLES)})(?P=particle)(?=$|[\s,.:;!?<])'
+)
+MIXED_DUPLICATED_PARTICLE_REGEX = re.compile(
+    r'(?P<stem>[가-힣A-Za-z0-9]{2,}?)(?P<first>은|는|을|를)(?P<second>은|는|을|를)(?=$|[\s,.:;!?<])'
 )
 CONSECUTIVE_DUPLICATE_TOKEN_REGEX = re.compile(
     r'\b(?P<token>[가-힣A-Za-z0-9]{2,})\s+(?P=token)\b'
@@ -151,6 +154,25 @@ def remove_grammatical_errors(content: str) -> str:
     return fixed
 
 
+def _has_final_consonant(text: str) -> bool:
+    stripped = str(text or "").strip()
+    if not stripped:
+        return False
+    last = stripped[-1]
+    if not ("가" <= last <= "힣"):
+        return False
+    return (ord(last) - ord("가")) % 28 != 0
+
+
+def _pick_particle_variant(stem: str, first: str, second: str) -> str:
+    pair = {str(first or ""), str(second or "")}
+    if pair == {"을", "를"}:
+        return "을" if _has_final_consonant(stem) else "를"
+    if pair == {"은", "는"}:
+        return "은" if _has_final_consonant(stem) else "는"
+    return str(second or first or "")
+
+
 def repair_duplicate_particles_and_tokens(content: str) -> str:
     if not content:
         return content
@@ -160,6 +182,13 @@ def repair_duplicate_particles_and_tokens(content: str) -> str:
         repaired = DUPLICATED_PARTICLE_REGEX.sub(
             lambda match: f"{match.group('stem')}{match.group('particle')}",
             updated,
+        )
+        repaired = MIXED_DUPLICATED_PARTICLE_REGEX.sub(
+            lambda match: (
+                f"{match.group('stem')}"
+                f"{_pick_particle_variant(match.group('stem'), match.group('first'), match.group('second'))}"
+            ),
+            repaired,
         )
         repaired = CONSECUTIVE_DUPLICATE_TOKEN_REGEX.sub(
             lambda match: str(match.group('token') or ''),

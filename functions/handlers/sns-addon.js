@@ -8,67 +8,10 @@ const { callGenerativeModel } = require('../services/gemini');
 const { buildFactAllowlist, findUnsupportedNumericTokens } = require('../utils/fact-guard');
 const { buildSNSPrompt, SNS_LIMITS } = require('../prompts/builders/sns-conversion');
 const { rankAndSelect, withTimeout, extractFirstBalancedJson } = require('../services/sns-ranker');
-
-// Base62 definition for shortener
-const CHARS = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-function generateCode(length = 6) {
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += CHARS.charAt(Math.floor(Math.random() * CHARS.length));
-  }
-  return result;
-}
-
-/**
- * Generate Short URL (Internal Helper)
- */
-async function generateShortLink(originalUrl, uid, postId, platform) {
-  if (!originalUrl) return '';
-
-  try {
-    // Check for existing link for this exact context to avoid duplicates?
-    // For simplicity and speed, just generate new one.
-
-    let shortCode;
-    let isUnique = false;
-    let attempts = 0;
-
-    // Retry loop for uniqueness
-    while (!isUnique && attempts < 3) {
-      shortCode = generateCode(6);
-      const doc = await db.collection('short_links').doc(shortCode).get();
-      if (!doc.exists) isUnique = true;
-      attempts++;
-    }
-
-    if (!isUnique) return originalUrl; // Fallback to original if fails
-
-    await db.collection('short_links').doc(shortCode).set({
-      originalUrl,
-      shortCode,
-      userId: uid || 'system',
-      postId: postId || null,
-      platform: platform || 'sns-autogen',
-      clicks: 0,
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    // Return the relative path, frontend/client handles domain
-    // Or if we know the domain... 
-    // Construct absolute URL if possible, or just returned simplified one.
-    // For CTA text, absolute URL is needed.
-    // We'll use a placeholder domain or relative if the client fills it?
-    // "https://ai-secretary-6e9c8.web.app/s/" + shortCode
-    // Better to use a configured base URL.
-    // For now hardcode the hosting URL since I saw it in logs: https://ai-secretary-6e9c8.web.app
-    const baseUrl = 'https://ai-secretary-6e9c8.web.app';
-    return `${baseUrl}/s/${shortCode}`;
-
-  } catch (error) {
-    console.error('Short link generation failed:', error);
-    return originalUrl;
-  }
-}
+const {
+  normalizeBlogUrl,
+  enforceThreadBlogUrlAtEnd
+} = require('../utils/sns-thread-posts');
 
 /**
  * 공백 제외 글자수 계산
@@ -137,51 +80,8 @@ function getThreadLengthAdjustment(posts, minLength, minPosts) {
   };
 }
 
-function normalizeBlogUrl(url) {
-  if (!url) return '';
-  const trimmed = String(url).trim();
-  if (!trimmed || trimmed === 'undefined' || trimmed === 'null') return '';
-  return trimmed;
-}
-
-function buildThreadCtaText(blogUrl) {
-  if (!blogUrl) return '';
-  return `더 자세한 내용은 블로그에서 확인해주세요: ${blogUrl}`;
-}
-
-async function applyThreadCtaToLastPost(posts, blogUrl, platform, platformConfig, context = {}) {
-  const normalizedUrl = normalizeBlogUrl(blogUrl);
-  if (!normalizedUrl || !Array.isArray(posts) || posts.length === 0) return posts;
-
-  // 🔗 Generate Short Link
-  const shortUrl = await generateShortLink(
-    normalizedUrl,
-    context.uid,
-    context.postId,
-    platform
-  );
-
-  const ctaText = buildThreadCtaText(shortUrl);
-  if (!ctaText) return posts;
-
-  const lastIndex = posts.length - 1;
-  const lastPost = posts[lastIndex] || {};
-  const lastContent = (lastPost.content || '').trim();
-
-  // Check if original URL is already there (unlikely if we just generated short one)
-  if (lastContent.includes(normalizedUrl)) return posts;
-
-  const separator = lastContent ? '\n' : '';
-  const nextContent = `${lastContent}${separator}${ctaText}`.trim();
-
-  return posts.map((post, index) => {
-    if (index !== lastIndex) return post;
-    return {
-      ...post,
-      content: nextContent,
-      wordCount: countWithoutSpace(nextContent)
-    };
-  });
+async function applyThreadCtaToLastPost(posts, blogUrl) {
+  return enforceThreadBlogUrlAtEnd(posts, blogUrl);
 }
 
 // SNS 플랫폼별 제한사항은 prompts/builders/sns-conversion.js에서 import
@@ -473,10 +373,7 @@ exports.convertToSNS = wrap(async (req) => {
         // CTA 추가 (숏링크 생성 포함, Async)
         const threadPosts = await applyThreadCtaToLastPost(
           basePosts,
-          blogUrl,
-          platform,
-          platformConfig,
-          { uid, postId: postIdStr }
+          blogUrl
         );
         const totalWordCount = threadPosts.reduce((sum, post) => sum + countWithoutSpace(post.content), 0);
         convertedResult = {

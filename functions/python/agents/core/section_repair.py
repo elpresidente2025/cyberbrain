@@ -381,6 +381,7 @@ class SectionRepairMixin:
             raw_validation = self.validator.validate(
                 base_content,
                 length_spec,
+                category=category,
                 context_analysis=context_analysis,
                 is_event_announcement=is_event_announcement,
                 event_date_hint=event_date_hint,
@@ -400,6 +401,7 @@ class SectionRepairMixin:
             normalized_validation = self.validator.validate(
                 normalized_content,
                 length_spec,
+                category=category,
                 context_analysis=context_analysis,
                 is_event_announcement=is_event_announcement,
                 event_date_hint=event_date_hint,

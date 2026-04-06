@@ -10,11 +10,12 @@ from .title_common import (
     TITLE_LENGTH_OPTIMAL_MIN,
     are_keywords_similar,
     build_structured_title_candidates,
-    detect_content_type,
     extract_numbers_from_content,
     get_election_compliance_instruction,
     logger,
     normalize_title_surface,
+    resolve_title_family,
+    select_title_family,
     _filter_required_title_keywords,
 )
 from .title_keywords import (
@@ -148,19 +149,12 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     title_constraint_text = str(params.get('titleConstraintText') or '').strip()
     
     avoid_local_in_title = bool(title_scope and title_scope.get('avoidLocalInTitle'))
-    detected_type_id = None
-    
-    if forced_type and forced_type in TITLE_TYPES:
-        detected_type_id = forced_type
-    else:
-        detected_type_id = detect_content_type(content_preview, category)
-        if avoid_local_in_title and detected_type_id == 'LOCAL_FOCUSED':
-            detected_type_id = 'ISSUE_ANALYSIS' # avoidLocalInTitle 정책 적용
-            
+    family_meta = select_title_family(params)
+    detected_type_id = forced_type if forced_type and forced_type in TITLE_TYPES else resolve_title_family(params)
+    if avoid_local_in_title and detected_type_id == 'LOCAL_FOCUSED' and not forced_type:
+        detected_type_id = 'ISSUE_ANALYSIS'
+
     primary_type = TITLE_TYPES.get(detected_type_id) or TITLE_TYPES['DATA_BASED']
-    # If default was chosen but really we want Viral Hook for general cases:
-    if detected_type_id == 'VIRAL_HOOK':
-         primary_type = TITLE_TYPES['VIRAL_HOOK']
     
     number_validation = extract_numbers_from_content(content_preview)
     election_compliance = get_election_compliance_instruction(status)
@@ -191,6 +185,29 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
   <rule>Do NOT use district/town names (gu/gun/dong/eup/myeon) in the title.</rule>
   <metro_region>{title_scope.get('regionMetro', 'the city/province') if title_scope else 'the city/province'}</metro_region>
 </title_region_scope>
+"""
+    family_reasons = family_meta.get('reasons') if isinstance(family_meta.get('reasons'), dict) else {}
+    selected_family_reasons = family_reasons.get(detected_type_id) if isinstance(family_reasons, dict) else []
+    family_reason_lines = "\n".join(
+        f"  <reason>{str(reason).strip()}</reason>"
+        for reason in list(selected_family_reasons or [])[:4]
+        if str(reason).strip()
+    ) or "  <reason>no explicit selector reason</reason>"
+    family_score_lines = "\n".join(
+        f'    <family id="{family_id}" score="{int(score or 0)}" />'
+        for family_id, score in sorted(
+            (family_meta.get('scores') or {}).items(),
+            key=lambda item: int(item[1] or 0),
+            reverse=True,
+        )[:4]
+    )
+    family_selection_xml = f"""
+<title_family_selection selected="{detected_type_id}" prior="{str(family_meta.get('prior') or '').strip() or 'none'}">
+{family_reason_lines}
+  <top_candidates>
+{family_score_lines or '    <family id="none" score="0" />'}
+  </top_candidates>
+</title_family_selection>
 """
 
     good_lines = []
@@ -283,6 +300,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
   <pattern>{primary_type['pattern']}</pattern>
   <naver_tip>{primary_type['naverTip']}</naver_tip>
 </content_type>
+{family_selection_xml}
 
 {narrative_principle_xml}
 

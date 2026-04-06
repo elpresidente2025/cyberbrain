@@ -44,6 +44,8 @@ def _is_title_compliance_failure(error: Exception) -> bool:
         "비문",
         "동일 인물명",
         "제목 문장",
+        "행사 안내 표현",
+        "행사 안내문이 아닌데",
     )
     return any(marker in message for marker in markers)
 

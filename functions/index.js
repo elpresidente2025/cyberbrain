@@ -40,6 +40,14 @@ try {
   console.warn('[index] profile handler warning:', e?.message);
 }
 
+// Restore still-referenced callable endpoints until Python cutover.
+try {
+  const { deleteUserAccount } = require('./handlers/user-management');
+  exports.deleteUserAccount = deleteUserAccount;
+} catch (e) {
+  console.warn('[index] user-management handler warning:', e?.message);
+}
+
 
 // Add emergency admin restore handler
 try {
@@ -71,6 +79,14 @@ try {
   Object.assign(exports, dashboardHandlers);
 } catch (e) {
   console.warn('[index] dashboard handler warning:', e?.message);
+}
+
+// Restore admin monitoring endpoint still used by the frontend.
+try {
+  const { getPerformanceMetrics } = require('./handlers/performance');
+  exports.getPerformanceMetrics = getPerformanceMetrics;
+} catch (e) {
+  console.warn('[index] performance handler warning:', e?.message);
 }
 
 // Add system handlers
@@ -151,6 +167,14 @@ try {
   Object.assign(exports, naverLoginHandlers);
 } catch (e) {
   console.warn('[index] naver-login handler warning:', e?.message);
+}
+
+// Keep legacy registration completion endpoint alive until auth migration.
+try {
+  const { naverCompleteRegistration } = require('./handlers/naver-login2');
+  exports.naverCompleteRegistration = naverCompleteRegistration;
+} catch (e) {
+  console.warn('[index] naver-login2 handler warning:', e?.message);
 }
 
 // Add Naver Payments handlers

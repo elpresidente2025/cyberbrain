@@ -8,6 +8,7 @@ Node `handlers/posts.js`의 generatePosts 엔트리 역할을 Python으로 이�
 from __future__ import annotations
 
 import asyncio
+from difflib import SequenceMatcher
 import html
 import json
 import logging
@@ -38,9 +39,23 @@ from agents.common.role_keyword_policy import (
     normalize_role_label as normalize_role_label_common,
     roles_equivalent as roles_equivalent_common,
 )
+from agents.common.section_contract import (
+    extract_career_fact_signature as extract_career_fact_signature_common,
+    find_section_semantic_mismatch,
+    extract_policy_evidence_signature as extract_policy_evidence_signature_common,
+    should_apply_section_lane_contracts,
+    should_apply_cross_section_contracts,
+    split_sentences as split_section_contract_sentences,
+    validate_cross_section_contracts,
+)
+from agents.common.stance_filters import looks_like_hashtag_bullet_line
 from agents.core.structure_normalizer import _join_sections, _pad_short_section, _plain_len, _split_into_sections
 from services.memory import get_recent_selected_titles
-from services.posts.content_processor import cleanup_post_content, remove_grammatical_errors
+from services.posts.content_processor import (
+    cleanup_post_content,
+    remove_grammatical_errors,
+    repair_duplicate_particles_and_tokens,
+)
 from services.posts.profile_loader import (
     get_or_create_session,
     increment_session_attempts,
@@ -1538,6 +1553,13 @@ _SELF_ANALYTICAL_LOW_SIGNAL_RE_LIST: tuple[re.Pattern[str], ...] = (
         re.IGNORECASE,
     ),
     re.compile(
+        r"(?:저는|제가|[가-힣]{2,8}(?:은|는|이|가)?|시민(?:들)?에게|주민(?:들)?에게)?"
+        r"[^.!?]{0,36}(?:가장\s+)?충직한\s+"
+        r"(?:(?:[가-힣]{0,12})?(?:민주당원|당원|일꾼|국회의원|시의원|도의원|광역의원|기초의원|의원|정치인))"
+        r"[^.!?]{0,40}(?:입니다|이라고\s+자부합니다|으로서|로서|이겠습니다|이\s+되겠습니다|으로\s+남겠습니다)",
+        re.IGNORECASE,
+    ),
+    re.compile(
         r"(?:이는|이러한\s+결과(?:는)?)\s+[^.!?]{0,72}"
         r"(?:인정한\s+결과(?:라고\s+생각합니다|입니다)|비전과\s+[^.!?]{0,24}전문성을\s+인정한\s+결과)",
         re.IGNORECASE,
@@ -2266,6 +2288,12 @@ def _extract_speaker_consistency_issues(content: str, full_name: str) -> list[st
         return []
 
     role_expr = r"(?:시장|부산시장|시장후보|후보|의원|위원장|대표|전\s*위원장)"
+    role_plus_pronoun_expr = (
+        r"(?:(?:현|전)\s*)?"
+        r"(?:[가-힣]{1,12})?"
+        r"(?:국회의원|시의원|도의원|구의원|군의원|광역의원|기초의원|"
+        r"의원|시장후보|시장|도지사|지사|구청장|군수|위원장|대표|장관)"
+    )
     patterns = [
         re.compile(
             rf"저는\s*([가-힣]{{2,8}})\s*(?:{role_expr})?\s*(?:로서|으로서|입니다|이라|라는)",
@@ -2325,6 +2353,12 @@ def _extract_speaker_consistency_issues(content: str, full_name: str) -> list[st
     )
     if named_pronoun_pattern.search(plain):
         issues.append("화자 실명 뒤에 1인칭 대명사가 중복됨")
+    role_pronoun_pattern = re.compile(
+        rf"(?<![가-힣]){role_plus_pronoun_expr}\s+(저는|제가|저의|제)\b",
+        re.IGNORECASE,
+    )
+    if role_pronoun_pattern.search(plain):
+        issues.append("직함 뒤에 1인칭 대명사가 중복됨")
     return issues
 
 
@@ -2337,6 +2371,12 @@ def _repair_speaker_consistency_once(content: str, full_name: str) -> Dict[str, 
     applied_patterns: list[str] = []
     repaired = base
     role_expr = r"(?:부산시장|시장|시장후보|후보|의원|위원장|대표|전\s*위원장)"
+    role_plus_pronoun_expr = (
+        r"(?:(?:현|전)\s*)?"
+        r"(?:[가-힣]{1,12})?"
+        r"(?:국회의원|시의원|도의원|구의원|군의원|광역의원|기초의원|"
+        r"의원|시장후보|시장|도지사|지사|구청장|군수|위원장|대표|장관)"
+    )
 
     def _replace_first_person_named(match: re.Match[str]) -> str:
         pronoun = str(match.group(1) or "저는").strip()
@@ -2389,6 +2429,17 @@ def _repair_speaker_consistency_once(content: str, full_name: str) -> Dict[str, 
         return f"{pronoun}"
 
     repaired = named_pronoun_pattern.sub(_replace_named_pronoun, repaired)
+    role_pronoun_pattern = re.compile(
+        rf"(?<![가-힣]){role_plus_pronoun_expr}\s+(저는|제가|저의|제)\b",
+        re.IGNORECASE,
+    )
+
+    def _replace_role_pronoun(match: re.Match[str]) -> str:
+        pronoun = str(match.group(1) or "저는").strip()
+        applied_patterns.append("role_plus_pronoun")
+        return pronoun
+
+    repaired = role_pronoun_pattern.sub(_replace_role_pronoun, repaired)
     repaired = re.sub(r"(저는|제가)\s*[,，]\s*", r"\1 ", repaired)
     repaired = re.sub(r"\s{2,}", " ", repaired)
 
@@ -2968,6 +3019,19 @@ def _pick_object_particle_surface(text: str) -> str:
     return "을"
 
 
+def _ends_with_object_particle_surface(text: str) -> bool:
+    normalized = str(text or "").strip()
+    if len(normalized) < 2:
+        return False
+    last_char = normalized[-1]
+    if last_char not in {"을", "를"}:
+        return False
+    stem = normalized[:-1].strip()
+    if not stem:
+        return False
+    return _pick_object_particle_surface(stem) == last_char
+
+
 def _repair_generic_subheading_surface_text(
     heading_inner: str,
 ) -> tuple[str, list[Dict[str, str]]]:
@@ -3014,9 +3078,13 @@ def _repair_generic_subheading_surface_text(
 
     repaired_heading, particle_count = _MISSING_OBJECT_PARTICLE_HEADING_RE.subn(
         lambda match: (
-            f"{str(match.group('head') or '').strip()}"
-            f"{_pick_object_particle_surface(str(match.group('head') or '').strip())} "
-            f"위한 {str(match.group('tail') or '').strip()}"
+            str(match.group(0) or "")
+            if _ends_with_object_particle_surface(str(match.group("head") or "").strip())
+            else (
+                f"{str(match.group('head') or '').strip()}"
+                f"{_pick_object_particle_surface(str(match.group('head') or '').strip())} "
+                f"위한 {str(match.group('tail') or '').strip()}"
+            )
         ),
         updated_heading,
         count=1,
@@ -4529,11 +4597,7 @@ def _extract_career_fact_signature(text: Any) -> str:
     plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(text or "")))
     if not plain:
         return ""
-
-    compact = re.sub(r"\s+", "", plain).lower()
-    if all(token in compact for token in ("cj인터넷", "엔씨소프트", "자율주행", "ceo")):
-        return "career_fact:cj_nc_auto_ceo"
-    return ""
+    return extract_career_fact_signature_common(plain)
 
 
 def _dedupe_repeated_career_fact_sentences_once(content: str) -> Dict[str, Any]:
@@ -4597,6 +4661,337 @@ def _extract_policy_bundle_signature(text: Any) -> str:
     if len(hits) >= 3:
         return "policy_bundle:busan_growth"
     return ""
+
+
+def _extract_policy_evidence_signature(text: Any) -> str:
+    plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(text or "")))
+    if not plain:
+        return ""
+    return extract_policy_evidence_signature_common(plain)
+
+
+def _dedupe_repeated_policy_evidence_sentences_once(content: str) -> Dict[str, Any]:
+    base = str(content or "")
+    if not base.strip():
+        return {"content": base, "edited": False, "actions": []}
+
+    seen_signatures: set[str] = set()
+    actions: list[str] = []
+    edited = False
+
+    def _rewrite_inner(inner: str) -> str:
+        nonlocal edited
+        plain_inner = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(inner or "")))
+        if not plain_inner:
+            return str(inner or "")
+
+        sentences = _split_sentence_like_units(plain_inner)
+        kept_sentences: list[str] = []
+        removed_count = 0
+        for sentence in sentences:
+            signature = _extract_policy_evidence_signature(sentence)
+            if signature and signature in seen_signatures:
+                removed_count += 1
+                edited = True
+                continue
+            if signature:
+                seen_signatures.add(signature)
+            kept_sentences.append(sentence)
+
+        if removed_count <= 0:
+            return plain_inner
+
+        actions.append(f"policy_evidence_dedupe:{removed_count}")
+        rebuilt = " ".join(item for item in kept_sentences if item).strip()
+        rebuilt = re.sub(r"\s{2,}", " ", rebuilt)
+        rebuilt = re.sub(r"\s+([,.;!?])", r"\1", rebuilt)
+        return rebuilt
+
+    repaired = _rewrite_paragraph_blocks(base, _rewrite_inner)
+    repaired = re.sub(r"<p\b[^>]*>\s*</p\s*>", "", repaired, flags=re.IGNORECASE)
+    repaired = re.sub(r"\n{3,}", "\n\n", repaired)
+    return {"content": repaired, "edited": edited and repaired != base, "actions": actions}
+
+
+def _build_cross_section_contract_sections(content: str) -> list[dict[str, Any]]:
+    sections: list[dict[str, Any]] = []
+    for raw_section in _split_into_sections(str(content or "")):
+        section_html = str(raw_section.get("html") or "")
+        paragraphs: list[str] = []
+        for match in PARAGRAPH_TAG_PATTERN.finditer(section_html):
+            paragraph_text = _normalize_inline_whitespace(
+                re.sub(r"<[^>]*>", " ", str(match.group(1) or ""))
+            )
+            if paragraph_text:
+                paragraphs.append(paragraph_text)
+        sections.append(
+            {
+                "heading": _normalize_inline_whitespace(str(raw_section.get("h2_text") or "")),
+                "paragraphs": paragraphs,
+            }
+        )
+    return sections
+
+
+def _build_section_semantic_sections(content: str) -> list[dict[str, Any]]:
+    sections: list[dict[str, Any]] = []
+    for raw_index, raw_section in enumerate(_split_into_sections(str(content or "")), start=1):
+        if not bool(raw_section.get("has_h2")):
+            continue
+        section_html = str(raw_section.get("html") or "")
+        paragraphs: list[str] = []
+        for match in PARAGRAPH_TAG_PATTERN.finditer(section_html):
+            paragraph_text = _normalize_inline_whitespace(
+                re.sub(r"<[^>]*>", " ", str(match.group(1) or ""))
+            )
+            if paragraph_text:
+                paragraphs.append(paragraph_text)
+        heading_text = _normalize_inline_whitespace(str(raw_section.get("h2_text") or ""))
+        if heading_text and paragraphs:
+            sections.append(
+                {
+                    "heading": heading_text,
+                    "paragraphs": paragraphs,
+                    "rawSectionIndex": raw_index,
+                }
+            )
+    return sections
+
+
+def _remove_sentence_from_section_html(section_html: str, sentence: str) -> tuple[str, int]:
+    target_sentence = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(sentence or "")))
+    if not target_sentence:
+        return str(section_html or ""), 0
+
+    removed = 0
+
+    def _rewrite_inner(inner: str) -> str:
+        nonlocal removed
+        plain_inner = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(inner or "")))
+        if not plain_inner:
+            return str(inner or "")
+
+        sentences = split_section_contract_sentences(plain_inner)
+        if not sentences:
+            return plain_inner
+
+        kept_sentences: list[str] = []
+        for current_sentence in sentences:
+            normalized_sentence = _normalize_inline_whitespace(current_sentence)
+            if removed == 0 and normalized_sentence == target_sentence:
+                removed += 1
+                continue
+            kept_sentences.append(current_sentence)
+
+        rebuilt = " ".join(item for item in kept_sentences if str(item).strip()).strip()
+        rebuilt = re.sub(r"\s{2,}", " ", rebuilt)
+        rebuilt = re.sub(r"\s+([,.;!?])", r"\1", rebuilt)
+        return rebuilt
+
+    repaired = _rewrite_paragraph_blocks(str(section_html or ""), _rewrite_inner)
+    repaired = re.sub(r"<p\b[^>]*>\s*</p\s*>", "", repaired, flags=re.IGNORECASE)
+    repaired = re.sub(r"\n{3,}", "\n\n", repaired)
+    return repaired, removed
+
+
+def _section_html_contains_sentence(section_html: str, sentence: str) -> bool:
+    target_sentence = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(sentence or "")))
+    if not target_sentence:
+        return False
+
+    for match in PARAGRAPH_TAG_PATTERN.finditer(str(section_html or "")):
+        plain_inner = _normalize_inline_whitespace(
+            re.sub(r"<[^>]*>", " ", str(match.group(1) or ""))
+        )
+        if not plain_inner:
+            continue
+        for current_sentence in split_section_contract_sentences(plain_inner):
+            if _normalize_inline_whitespace(current_sentence) == target_sentence:
+                return True
+    return False
+
+
+def _append_sentences_to_section_html(
+    section_html: str,
+    sentences: list[str],
+) -> tuple[str, int]:
+    base = str(section_html or "")
+    if not base.strip():
+        return base, 0
+
+    existing_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", base))
+    additions: list[str] = []
+    for sentence in sentences:
+        normalized_sentence = _normalize_inline_whitespace(sentence)
+        if not normalized_sentence:
+            continue
+        if normalized_sentence in additions:
+            continue
+        if normalized_sentence in existing_plain:
+            continue
+        additions.append(normalized_sentence)
+
+    if not additions:
+        return base, 0
+
+    insertion = f"\n<p>{' '.join(additions)}</p>"
+    repaired = f"{base.rstrip()}{insertion}"
+    return repaired, len(additions)
+
+
+def _apply_section_semantic_lane_repair_once(
+    content: str,
+    *,
+    category: str = "",
+) -> Dict[str, Any]:
+    base = str(content or "")
+    normalized_category = str(category or "").strip().lower()
+    if not base.strip() or not should_apply_section_lane_contracts(normalized_category):
+        return {"content": base, "edited": False, "actions": []}
+
+    repaired = base
+    actions: list[str] = []
+    edited = False
+
+    for _ in range(6):
+        semantic_sections = _build_section_semantic_sections(repaired)
+        if len(semantic_sections) < 2:
+            break
+
+        violation = find_section_semantic_mismatch(
+            sections=semantic_sections,
+            category=normalized_category,
+        )
+        if not isinstance(violation, dict):
+            break
+
+        section_index = _to_int(violation.get("sectionIndex"), 0)
+        target_section_index = _to_int(violation.get("targetSectionIndex"), 0)
+        if (
+            section_index <= 0
+            or target_section_index <= 0
+            or section_index > len(semantic_sections)
+            or target_section_index > len(semantic_sections)
+            or section_index == target_section_index
+        ):
+            break
+
+        sentence = str(violation.get("sentence") or "").strip()
+        if not sentence:
+            break
+
+        source_raw_index = _to_int(semantic_sections[section_index - 1].get("rawSectionIndex"), 0)
+        target_raw_index = _to_int(semantic_sections[target_section_index - 1].get("rawSectionIndex"), 0)
+        raw_sections = _split_into_sections(repaired)
+        if (
+            source_raw_index <= 0
+            or target_raw_index <= 0
+            or source_raw_index > len(raw_sections)
+            or target_raw_index > len(raw_sections)
+            or source_raw_index == target_raw_index
+        ):
+            break
+
+        source_html = str(raw_sections[source_raw_index - 1].get("html") or "")
+        target_html = str(raw_sections[target_raw_index - 1].get("html") or "")
+        target_has_sentence = _section_html_contains_sentence(target_html, sentence)
+
+        updated_source_html, removed = _remove_sentence_from_section_html(source_html, sentence)
+        if removed <= 0:
+            break
+        if not PARAGRAPH_TAG_PATTERN.search(updated_source_html):
+            break
+
+        updated_target_html = target_html
+        if not target_has_sentence:
+            updated_target_html, appended = _append_sentences_to_section_html(target_html, [sentence])
+            if appended <= 0:
+                break
+
+        raw_sections[source_raw_index - 1] = {
+            **raw_sections[source_raw_index - 1],
+            "html": updated_source_html,
+        }
+        if not target_has_sentence:
+            raw_sections[target_raw_index - 1] = {
+                **raw_sections[target_raw_index - 1],
+                "html": updated_target_html,
+            }
+
+        candidate = _join_sections(raw_sections).strip()
+        if not candidate or candidate == repaired:
+            break
+
+        repaired = candidate
+        edited = True
+        actions.append(
+            f"section_lane_move:section_{section_index}:to_section_{target_section_index}"
+        )
+
+    return {"content": repaired, "edited": edited and repaired != base, "actions": actions}
+
+
+def _apply_cross_section_contract_once(
+    content: str,
+    *,
+    category: str = "",
+    full_name: str = "",
+) -> Dict[str, Any]:
+    base = str(content or "")
+    if not base.strip():
+        return {"content": base, "edited": False, "actions": []}
+
+    normalized_category = str(category or "").strip().lower()
+    if not should_apply_cross_section_contracts(normalized_category):
+        return {"content": base, "edited": False, "actions": []}
+
+    repaired = base
+    actions: list[str] = []
+    edited = False
+
+    for _ in range(6):
+        raw_sections = _split_into_sections(repaired)
+        if len(raw_sections) < 2:
+            break
+
+        violation = validate_cross_section_contracts(
+            sections=_build_cross_section_contract_sections(repaired),
+            speaker=str(full_name or "").strip(),
+            opponent="",
+        )
+        if not isinstance(violation, dict):
+            break
+
+        code = str(violation.get("code") or "").strip()
+        if code not in {"duplicate_career_fact", "duplicate_policy_evidence_fact"}:
+            break
+
+        section_index = _to_int(violation.get("sectionIndex"), 0)
+        if section_index <= 0 or section_index > len(raw_sections):
+            break
+
+        target_sentence = str(violation.get("sentence") or "").strip()
+        section_offset = section_index - 1
+        updated_html, removed = _remove_sentence_from_section_html(
+            str(raw_sections[section_offset].get("html") or ""),
+            target_sentence,
+        )
+        if removed <= 0:
+            break
+
+        raw_sections[section_offset] = {
+            **raw_sections[section_offset],
+            "html": updated_html,
+        }
+        candidate = _join_sections(raw_sections).strip()
+        if not candidate or candidate == repaired:
+            break
+
+        repaired = candidate
+        edited = True
+        actions.append(f"cross_section_contract:{code}:section_{section_index}")
+
+    return {"content": repaired, "edited": edited and repaired != base, "actions": actions}
 
 
 def _dedupe_repeated_policy_bundle_sentences_once(content: str) -> Dict[str, Any]:
@@ -5919,6 +6314,119 @@ def _dedupe_overlapping_sections_once(content: str) -> Dict[str, Any]:
         "content": repaired,
         "edited": repaired != base,
         "actions": actions,
+    }
+
+
+_INTRO_BODY_DUPLICATE_MIN_CHARS = 18
+_INTRO_BODY_DUPLICATE_SIMILARITY = 0.84
+_INTRO_BODY_DUPLICATE_SOFT_SIMILARITY = 0.58
+_INTRO_BODY_DUPLICATE_COMMON_BLOCK = 14
+
+
+def _normalize_intro_body_sentence_surface(text: Any) -> str:
+    plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(text or "")))
+    if not plain:
+        return ""
+    plain = re.sub(r"[\"'“”‘’`´·•,.:;!?()\[\]{}<>《》「」『』…\-–—]", "", plain)
+    return re.sub(r"\s+", "", plain).strip()
+
+
+def _is_intro_body_duplicate_sentence(intro_sentence: str, candidate_sentence: str) -> bool:
+    intro_norm = _normalize_intro_body_sentence_surface(intro_sentence)
+    candidate_norm = _normalize_intro_body_sentence_surface(candidate_sentence)
+    if not intro_norm or not candidate_norm:
+        return False
+    if intro_norm == candidate_norm:
+        return True
+    if min(len(intro_norm), len(candidate_norm)) < _INTRO_BODY_DUPLICATE_MIN_CHARS:
+        return False
+
+    matcher = SequenceMatcher(None, intro_norm, candidate_norm)
+    similarity = matcher.ratio()
+    if similarity >= _INTRO_BODY_DUPLICATE_SIMILARITY:
+        return True
+
+    longest_common = matcher.find_longest_match(0, len(intro_norm), 0, len(candidate_norm)).size
+    return (
+        similarity >= _INTRO_BODY_DUPLICATE_SOFT_SIMILARITY
+        and longest_common >= _INTRO_BODY_DUPLICATE_COMMON_BLOCK
+    )
+
+
+def _dedupe_intro_body_overlap_sentences_once(content: str) -> Dict[str, Any]:
+    base = str(content or "")
+    if not base.strip():
+        return {"content": base, "edited": False, "actions": []}
+
+    sections = _split_into_sections(base)
+    if len(sections) < 2 or bool(sections[0].get("has_h2")):
+        return {"content": base, "edited": False, "actions": []}
+
+    intro_html = str(sections[0].get("html") or "")
+    intro_sentences: list[str] = []
+    for match in PARAGRAPH_TAG_PATTERN.finditer(intro_html):
+        intro_inner = str(match.group(1) or "")
+        intro_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", intro_inner))
+        if not intro_plain:
+            continue
+        for sentence in _split_sentence_like_units(intro_plain):
+            sentence_text = _normalize_inline_whitespace(sentence)
+            if len(sentence_text) >= _INTRO_BODY_DUPLICATE_MIN_CHARS:
+                intro_sentences.append(sentence_text)
+
+    if not intro_sentences:
+        return {"content": base, "edited": False, "actions": []}
+
+    removed_count = 0
+    updated_sections: list[dict[str, Any]] = [dict(sections[0])]
+
+    for section in sections[1:]:
+        section_html = str(section.get("html") or "")
+        local_removed = 0
+
+        def _rewrite_inner(inner: str) -> str:
+            nonlocal local_removed
+            plain_inner = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(inner or "")))
+            if not plain_inner:
+                return str(inner or "")
+
+            sentences = _split_sentence_like_units(plain_inner)
+            if not sentences:
+                return plain_inner
+
+            kept_sentences: list[str] = []
+            for sentence in sentences:
+                sentence_text = _normalize_inline_whitespace(sentence)
+                if not sentence_text:
+                    continue
+                if any(
+                    _is_intro_body_duplicate_sentence(intro_sentence, sentence_text)
+                    for intro_sentence in intro_sentences
+                ):
+                    local_removed += 1
+                    continue
+                kept_sentences.append(sentence_text)
+
+            return " ".join(kept_sentences).strip() if kept_sentences else ""
+
+        updated_html = _rewrite_paragraph_blocks(section_html, _rewrite_inner)
+        if local_removed > 0:
+            updated_html = re.sub(r"<p\b[^>]*>\s*</p\s*>", "", updated_html, flags=re.IGNORECASE)
+            updated_html = re.sub(r"\n{3,}", "\n\n", updated_html).strip()
+            if updated_html and len(re.findall(r"<p\b[^>]*>[\s\S]*?</p\s*>", updated_html, re.IGNORECASE)) > 0:
+                removed_count += local_removed
+                updated_sections.append({**section, "html": updated_html})
+                continue
+        updated_sections.append(dict(section))
+
+    if removed_count <= 0:
+        return {"content": base, "edited": False, "actions": []}
+
+    repaired = _join_sections(updated_sections)
+    return {
+        "content": repaired,
+        "edited": repaired != base,
+        "actions": [f"intro_body_sentence_dedupe:{removed_count}"],
     }
 
 
@@ -7588,6 +8096,7 @@ def _ensure_closing_section_min_sentences_once(content: str, *, full_name: str =
 def _apply_final_sentence_polish_once(
     content: str,
     *,
+    category: str = "",
     full_name: str = "",
     user_keywords: Optional[list[str]] = None,
     role_facts: Optional[Dict[str, str]] = None,
@@ -7611,7 +8120,35 @@ def _apply_final_sentence_polish_once(
     if story_effect_trimmed > 0:
         actions.append(f"strip_self_analytical_story_effect_tail:{story_effect_trimmed}")
 
+    if full_name:
+        repaired, changed = re.subn(
+            rf"저\s+{re.escape(full_name)}(?:은|는)\s*",
+            "저는 ",
+            repaired,
+        )
+        if changed > 0:
+            actions.append(f"repair_named_first_person_subject:{changed}")
+
+    repaired, changed = re.subn(
+        r"(?:이번|이)\s+보고(?:를|서를)?\s+통해\s*",
+        "",
+        repaired,
+        flags=re.IGNORECASE,
+    )
+    if changed > 0:
+        actions.append(f"strip_report_framing:{changed}")
+
     safe_patterns: list[tuple[re.Pattern[str], str, str]] = [
+        (
+            re.compile(r"(?:오늘\s+)?이\s+자리에서\s*", re.IGNORECASE),
+            "이 글에서 ",
+            "speech_stage_framing",
+        ),
+        (
+            re.compile(r"상세히\s+보고드리(?:며|고)\s*", re.IGNORECASE),
+            "함께 말씀드리며 ",
+            "speech_report_verb",
+        ),
         (
             re.compile(r"선거까지\s+남은\s+결코\s+", re.IGNORECASE),
             "선거까지 남은 시간은 결코 ",
@@ -7883,6 +8420,43 @@ def _apply_final_sentence_polish_once(
     if poll_reaction_cleanup.get("edited"):
         repaired = str(poll_reaction_cleanup.get("content") or repaired)
 
+    intro_body_dedupe = _dedupe_intro_body_overlap_sentences_once(repaired)
+    intro_body_dedupe_actions = intro_body_dedupe.get("actions")
+    if isinstance(intro_body_dedupe_actions, list):
+        for action in intro_body_dedupe_actions:
+            action_text = str(action).strip()
+            if action_text:
+                actions.append(action_text)
+    if intro_body_dedupe.get("edited"):
+        repaired = str(intro_body_dedupe.get("content") or repaired)
+
+    section_lane_repair = _apply_section_semantic_lane_repair_once(
+        repaired,
+        category=category,
+    )
+    section_lane_actions = section_lane_repair.get("actions")
+    if isinstance(section_lane_actions, list):
+        for action in section_lane_actions:
+            action_text = str(action).strip()
+            if action_text:
+                actions.append(action_text)
+    if section_lane_repair.get("edited"):
+        repaired = str(section_lane_repair.get("content") or repaired)
+
+    cross_section_contract_repair = _apply_cross_section_contract_once(
+        repaired,
+        category=category,
+        full_name=full_name,
+    )
+    cross_section_contract_actions = cross_section_contract_repair.get("actions")
+    if isinstance(cross_section_contract_actions, list):
+        for action in cross_section_contract_actions:
+            action_text = str(action).strip()
+            if action_text:
+                actions.append(action_text)
+    if cross_section_contract_repair.get("edited"):
+        repaired = str(cross_section_contract_repair.get("content") or repaired)
+
     career_dedupe = _dedupe_repeated_career_fact_sentences_once(repaired)
     career_dedupe_actions = career_dedupe.get("actions")
     if isinstance(career_dedupe_actions, list):
@@ -7892,6 +8466,16 @@ def _apply_final_sentence_polish_once(
                 actions.append(action_text)
     if career_dedupe.get("edited"):
         repaired = str(career_dedupe.get("content") or repaired)
+
+    policy_evidence_dedupe = _dedupe_repeated_policy_evidence_sentences_once(repaired)
+    policy_evidence_actions = policy_evidence_dedupe.get("actions")
+    if isinstance(policy_evidence_actions, list):
+        for action in policy_evidence_actions:
+            action_text = str(action).strip()
+            if action_text:
+                actions.append(action_text)
+    if policy_evidence_dedupe.get("edited"):
+        repaired = str(policy_evidence_dedupe.get("content") or repaired)
 
     policy_bundle_dedupe = _dedupe_repeated_policy_bundle_sentences_once(repaired)
     policy_bundle_actions = policy_bundle_dedupe.get("actions")
@@ -8016,6 +8600,11 @@ def _apply_final_sentence_polish_once(
                 actions.append(action_text)
     if closing_sentence_repair.get("edited"):
         repaired = str(closing_sentence_repair.get("content") or repaired)
+
+    duplicate_particle_repaired = repair_duplicate_particles_and_tokens(repaired)
+    if duplicate_particle_repaired != repaired:
+        repaired = duplicate_particle_repaired
+        actions.append("repair_duplicate_particles_and_tokens")
 
     return {
         "content": repaired,
@@ -8356,6 +8945,8 @@ def _build_title_stance_summary(
         plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(candidate or "")))
         plain = re.sub(r"^[*\-•]+\s*", "", plain).strip()
         if len(plain) < 6:
+            return
+        if looks_like_hashtag_bullet_line(plain):
             return
         if _looks_like_title_stance_meta_line(plain):
             return
@@ -9772,6 +10363,16 @@ def _guard_title_after_editor(
     raise ApiError("internal", f"제목 검증 실패: {reason}")
 
 
+def _repair_failed_possessive_title_surface(title: str) -> str:
+    candidate = _normalize_title_surface_local(title)
+    if not candidate or not any(token in candidate for token in ("그의", "그녀의")):
+        return ""
+    repaired = re.sub(r"(?:그의|그녀의)\s*", "", candidate)
+    repaired = re.sub(r"선택은\??$", "선택의 이유", repaired)
+    repaired = _normalize_title_surface_local(repaired) or repaired
+    return repaired if repaired and repaired != candidate else ""
+
+
 def _guard_draft_title_nonfatal(
     *,
     phase: str,
@@ -9789,8 +10390,14 @@ def _guard_draft_title_nonfatal(
     poll_fact_table: Optional[Dict[str, Any]] = None,
     poll_focus_bundle: Optional[Dict[str, Any]] = None,
 ) -> tuple[str, Dict[str, Any]]:
-    candidate = _normalize_title_surface_local(candidate_title)
-    previous = _normalize_title_surface_local(previous_title)
+    raw_candidate = str(candidate_title or "").strip()
+    raw_previous = str(previous_title or "").strip()
+    candidate = _normalize_title_surface_local(
+        repair_duplicate_particles_and_tokens(candidate_title)
+    )
+    previous = _normalize_title_surface_local(
+        repair_duplicate_particles_and_tokens(previous_title)
+    )
     try:
         guarded_title, guard_info = _guard_title_after_editor(
             candidate_title=candidate,
@@ -9806,144 +10413,69 @@ def _guard_draft_title_nonfatal(
             poll_focus_bundle=poll_focus_bundle,
             recent_titles=recent_titles,
         )
+        guarded_title = _normalize_title_surface_local(
+            repair_duplicate_particles_and_tokens(guarded_title)
+        ) or guarded_title
+        raw_reference_title = raw_candidate or raw_previous
         guard_info["phase"] = phase
         guard_info["nonFatal"] = True
         guard_info["validated"] = True
+        guard_info["repaired"] = bool(guard_info.get("repaired")) or (
+            bool(raw_reference_title) and guarded_title != raw_reference_title
+        )
         return guarded_title, guard_info
     except ApiError as exc:
         reason = str(exc or "").strip()
         if reason.startswith("제목 검증 실패:"):
             reason = reason.split(":", 1)[1].strip()
-        requires_safe_fallback = any(
-            marker in reason
-            for marker in (
-                "현재 직함",
-                "직함(\"",
-                "제목에 사용할 수 없습니다",
-                "출마/거론 의도를 붙여",
-                "경쟁자 intent 제목의 쉼표 뒤",
-                "조사 상투구",
+        minimal_repair = _repair_failed_possessive_title_surface(candidate or previous)
+        if minimal_repair:
+            repaired_score = _score_title_compliance(
+                title=minimal_repair,
+                topic=topic,
+                content=content,
+                user_keywords=user_keywords,
+                full_name=full_name,
+                category=category,
+                status=status,
+                context_analysis=context_analysis,
+                role_keyword_policy=role_keyword_policy,
+                poll_focus_bundle=poll_focus_bundle,
             )
-        )
-
-        def _try_guarded_fallback(fallback_title: str, source: str) -> Optional[tuple[str, Dict[str, Any]]]:
-            normalized_fallback = _normalize_title_surface_local(fallback_title)
-            if not normalized_fallback:
-                return None
-            try:
-                guarded_title, guarded_info = _guard_title_after_editor(
-                    candidate_title=normalized_fallback,
-                    previous_title="",
-                    topic=topic,
-                    content=content,
-                    user_keywords=user_keywords,
-                    full_name=full_name,
-                    category=category,
-                    status=status,
-                    context_analysis=context_analysis,
-                    role_keyword_policy=role_keyword_policy,
-                    poll_focus_bundle=poll_focus_bundle,
-                    recent_titles=recent_titles,
-                )
-                return guarded_title, {
-                    **guarded_info,
-                    "accepted": True,
-                    "source": source,
-                    "reason": reason or str(guarded_info.get("reason") or "draft_title_guard_failed"),
-                    "phase": phase,
-                    "nonFatal": True,
-                    "fallbackUsed": True,
-                    "validated": True,
-                }
-            except ApiError:
-                return None
-
-        fallback_candidates: list[tuple[str, str]] = []
-        seen_fallbacks: set[str] = set()
-
-        def _append_fallback(raw_title: str, source: str) -> None:
-            normalized = _normalize_title_surface_local(raw_title)
-            if not normalized or normalized in seen_fallbacks:
-                return
-            seen_fallbacks.add(normalized)
-            fallback_candidates.append((normalized, source))
-
-        try:
-            from agents.common.title_common import build_structured_title_candidates
-
-            structured_fallbacks = build_structured_title_candidates(
-                {
-                    "topic": topic,
-                    "contentPreview": content,
-                    "backgroundText": "",
-                    "stanceText": "",
-                    "keywords": [],
-                    "userKeywords": list(user_keywords or []),
-                    "fullName": full_name,
-                    "category": category,
-                    "status": status,
-                    "pollFocusBundle": poll_focus_bundle if isinstance(poll_focus_bundle, dict) else {},
-                    "roleKeywordPolicy": role_keyword_policy if isinstance(role_keyword_policy, dict) else {},
-                },
-                limit=4,
+            repaired_title = (
+                _normalize_title_surface_local(str(repaired_score.get("title") or minimal_repair))
+                or minimal_repair
             )
-        except Exception:
-            structured_fallbacks = []
-
-        for structured_title in structured_fallbacks:
-            _append_fallback(str(structured_title or ""), "structured_fallback")
-
-        _append_fallback(previous, "previous_fallback")
-
-        repeat_safe = _build_repeat_safe_title_fallback(
-            current_title="",
-            recent_titles=_normalize_recent_title_memory_values(recent_titles or []),
-            topic=topic,
-            content=content,
-            user_keywords=user_keywords,
-            full_name=full_name,
-            category=category,
-            status=status,
-            context_analysis=context_analysis,
-            role_keyword_policy=role_keyword_policy,
-            poll_fact_table=poll_fact_table,
-            poll_focus_bundle=poll_focus_bundle,
-        )
-        _append_fallback(str(repeat_safe.get("title") or ""), "repeat_safe_fallback")
-
-        for fallback_title, fallback_source in fallback_candidates:
-            guarded_fallback = _try_guarded_fallback(fallback_title, fallback_source)
-            if guarded_fallback is not None:
-                logger.warning(
-                    "Draft title guard failure downgraded to guarded fallback (phase=%s, source=%s, reason=%s)",
-                    phase,
-                    fallback_source,
-                    reason,
-                )
-                return guarded_fallback
-
-        fallback_title = repeat_safe.get("title") or previous
-        fallback_source = "unsafe_repeat_safe_fallback" if repeat_safe.get("title") else (
-            "previous_fallback" if previous else "candidate_fallback"
-        )
-        if not fallback_title:
-            fallback_title = _normalize_title_surface_local(str(topic or "")) or candidate
-            fallback_source = "topic_fallback"
+            return repaired_title, {
+                "accepted": True,
+                "source": "candidate_failed_possessive_repair",
+                "score": repaired_score.get("score"),
+                "reason": reason or repaired_score.get("reason") or "third_person_possessive_repair",
+                "repaired": True,
+                "phase": phase,
+                "nonFatal": True,
+                "fallbackUsed": False,
+                "validated": bool(repaired_score.get("passed")),
+            }
         logger.warning(
-            "Draft title guard failure downgraded to fallback (phase=%s, source=%s, reason=%s)",
+            "Draft title guard failure downgraded to passthrough (phase=%s, reason=%s, title=%s)",
             phase,
-            fallback_source,
             reason,
+            candidate,
         )
-        return fallback_title, {
+        passthrough_title = _normalize_title_surface_local(
+            repair_duplicate_particles_and_tokens(candidate or previous)
+        ) or (candidate or previous)
+        raw_reference_title = raw_candidate or raw_previous
+        return passthrough_title, {
             "accepted": True,
-            "source": fallback_source,
+            "source": "candidate_failed_passthrough",
             "score": 0,
             "reason": reason or "draft_title_guard_failed",
-            "repaired": False,
+            "repaired": bool(raw_reference_title) and passthrough_title != raw_reference_title,
             "phase": phase,
             "nonFatal": True,
-            "fallbackUsed": True,
+            "fallbackUsed": False,
             "validated": False,
         }
 
@@ -11700,6 +12232,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         context_analysis=context_analysis_for_title,
         full_name=full_name,
     )
+    generated_title = repair_duplicate_particles_and_tokens(generated_title)
     generated_title = _normalize_title_surface_local(generated_title) or generated_title
     generated_content = normalize_book_title_notation(
         generated_content,
@@ -11940,6 +12473,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     final_sentence_polish["attempted"] = True
     sentence_polish_result = _apply_final_sentence_polish_once(
         generated_content,
+        category=category,
         full_name=full_name,
         user_keywords=user_keywords,
         role_facts=role_facts,
@@ -12654,6 +13188,39 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         logger.info(
             "최종 이력 문장 중복 제거 적용: %s",
             final_career_dedupe.get("actions") or [],
+        )
+
+    final_section_lane_repair = _apply_section_semantic_lane_repair_once(
+        generated_content,
+        category=category,
+    )
+    if final_section_lane_repair.get("edited"):
+        generated_content = str(final_section_lane_repair.get("content") or generated_content)
+        _refresh_terminal_validation_state()
+        final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
+            keyword_validation,
+            gate_user_keywords,
+        )
+        logger.info(
+            "Final section lane repair applied: %s",
+            final_section_lane_repair.get("actions") or [],
+        )
+
+    final_cross_section_contract = _apply_cross_section_contract_once(
+        generated_content,
+        category=category,
+        full_name=full_name,
+    )
+    if final_cross_section_contract.get("edited"):
+        generated_content = str(final_cross_section_contract.get("content") or generated_content)
+        _refresh_terminal_validation_state()
+        final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
+            keyword_validation,
+            gate_user_keywords,
+        )
+        logger.info(
+            "Final cross-section contract dedupe applied: %s",
+            final_cross_section_contract.get("actions") or [],
         )
 
     final_fragment_scrub = _scrub_broken_poll_fragments_once(

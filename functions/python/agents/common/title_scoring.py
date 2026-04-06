@@ -19,6 +19,7 @@ from .title_common import (
     _fit_title_length,
     normalize_title_surface,
     repair_title_focus_name_repetition,
+    resolve_title_family,
     extract_numbers_from_content,
 )
 from .title_metadata import (
@@ -38,6 +39,7 @@ from .title_keywords import (
     validate_theme_and_content,
 )
 from .title_repairers import (
+    _assess_loyalty_self_certification_title,
     _assess_competitor_intent_title_tail,
     _assess_title_first_person_usage,
     _repair_competitor_intent_title_tail,
@@ -60,6 +62,101 @@ _ALLOWED_KEYWORD_SPACE_FOLLOWERS = (
     '정책',
     '공약',
 )
+
+_NON_EVENT_ANNOUNCEMENT_SURFACE_PATTERNS = (
+    re.compile(r'(?:행사|일정)\s*안내', re.IGNORECASE),
+    re.compile(r'(?:행사|일정)\s*(?:초대|초청)', re.IGNORECASE),
+    re.compile(r'참석\s*요청', re.IGNORECASE),
+    re.compile(r'개최\s*안내', re.IGNORECASE),
+)
+
+_SLOGAN_COMMITMENT_POSITIVE_PATTERNS = (
+    re.compile(r'(책임감|지켜온|곁을\s+지키|끝까지|책임지겠|책임지는|곁에서)', re.IGNORECASE),
+    re.compile(r'(구민|시민|주민|당원)\s*(곁|에게)', re.IGNORECASE),
+)
+_SLOGAN_COMMITMENT_GENERIC_REPORT_PATTERN = re.compile(
+    r'(현안\s*해결|미래\s*비전|비전\s*제시|정책\s*방향|실행\s*과제|의정활동\s*성과)',
+    re.IGNORECASE,
+)
+
+
+def _repair_third_person_possessive_title_surface(title: str) -> str:
+    repaired = normalize_title_surface(str(title or "").strip())
+    if not repaired:
+        return ""
+    repaired = re.sub(r"(?:그의|그녀의)\s*", "", repaired)
+    repaired = re.sub(r"선택은\??$", "선택의 이유", repaired)
+    repaired = re.sub(r"\s{2,}", " ", repaired)
+    repaired = re.sub(r"\s+([,·:;!?])", r"\1", repaired)
+    repaired = repaired.strip(" ,·:;!?")
+    return repaired
+
+
+def _detect_non_event_announcement_surface(title: str) -> str:
+    normalized = normalize_title_surface(title) or str(title or '').strip()
+    if not normalized:
+        return ''
+    for pattern in _NON_EVENT_ANNOUNCEMENT_SURFACE_PATTERNS:
+        match = pattern.search(normalized)
+        if match:
+            return str(match.group(0) or '').strip()
+    return ''
+
+
+def _assess_title_family_fit(title: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    selected_family = resolve_title_family(params)
+    normalized = normalize_title_surface(title) or str(title or '').strip()
+    if not normalized:
+        return {
+            'passed': True,
+            'family': selected_family,
+            'score': 0,
+            'max': 10,
+            'status': 'unknown',
+            'reason': '',
+        }
+
+    if selected_family == 'SLOGAN_COMMITMENT':
+        has_positive_signal = any(pattern.search(normalized) for pattern in _SLOGAN_COMMITMENT_POSITIVE_PATTERNS)
+        generic_match = _SLOGAN_COMMITMENT_GENERIC_REPORT_PATTERN.search(normalized)
+        if generic_match and not has_positive_signal:
+            return {
+                'passed': False,
+                'family': selected_family,
+                'score': 0,
+                'max': 10,
+                'status': 'mismatch',
+                'reason': (
+                    f'선택된 제목 패밀리는 슬로건·다짐형인데, 제목이 "{str(generic_match.group(0) or "").strip()}" '
+                    '같은 보고서형 꼬리로 평탄화됐습니다.'
+                ),
+            }
+        if has_positive_signal:
+            return {
+                'passed': True,
+                'family': selected_family,
+                'score': 10,
+                'max': 10,
+                'status': 'fit',
+                'reason': '',
+            }
+        return {
+            'passed': True,
+            'family': selected_family,
+            'score': 6,
+            'max': 10,
+            'status': 'neutral',
+            'reason': '슬로건·다짐형 단서가 약합니다.',
+        }
+
+    return {
+        'passed': True,
+        'family': selected_family,
+        'score': 8,
+        'max': 10,
+        'status': 'fit',
+        'reason': '',
+    }
 
 def _assess_initial_title_length_discipline(title: str) -> Dict[str, Any]:
     normalized = normalize_title_surface(title)
@@ -242,7 +339,8 @@ def calculate_title_quality_score(
 
     normalized_author = re.sub(r"\s+", "", str(author_name or "")).strip()
     normalized_title = re.sub(r"\s+", "", str(title or "")).strip()
-    if normalized_author and ("그의" in title or "그녀의" in title) and normalized_author not in normalized_title:
+    if normalized_author and ("그의" in title or "그녀의" in title):
+        repaired_title = _repair_third_person_possessive_title_surface(title)
         return {
             'score': 0,
             'breakdown': {
@@ -255,9 +353,28 @@ def calculate_title_quality_score(
             },
             'passed': False,
             'suggestions': ['제목에서 "그의/그녀의" 같은 3인칭 소유 표현을 제거하고 화자 중심으로 작성하세요.'],
+            **({'repairedTitle': repaired_title} if repaired_title and repaired_title != title else {}),
         }
 
     title_purpose = resolve_title_purpose(topic, params)
+    if title_purpose != 'event_announcement':
+        event_surface = _detect_non_event_announcement_surface(title)
+        if event_surface:
+            return {
+                'score': 0,
+                'breakdown': {
+                    'eventSurfaceLeak': {
+                        'score': 0,
+                        'max': 100,
+                        'status': '실패',
+                        'reason': f'실제 행사 안내문이 아닌데 행사 안내 표현("{event_surface}")이 포함됨',
+                    }
+                },
+                'passed': False,
+                'suggestions': [
+                    '행사 공지 글이 아니라면 "행사 안내/일정 안내/참석 요청" 같은 표현을 제목에서 제거하세요.'
+                ],
+            }
     if title_purpose != 'event_announcement':
         first_person_title = _assess_title_first_person_usage(title, params)
         if not first_person_title.get('passed', True):
@@ -277,6 +394,49 @@ def calculate_title_quality_score(
                 'suggestions': [str(first_person_title.get('reason') or '메인 제목의 1인칭 표현을 제거하세요.')],
                 **({'repairedTitle': repaired_candidate} if repaired_candidate else {}),
             }
+        loyalty_self_cert_title = _assess_loyalty_self_certification_title(title, params)
+        if not loyalty_self_cert_title.get('passed', True):
+            repaired_candidate = str(loyalty_self_cert_title.get("repairedTitle") or "").strip()
+            return {
+                'score': 0,
+                'breakdown': {
+                    'loyaltySelfCertification': {
+                        'score': 0,
+                        'max': 100,
+                        'status': '실패',
+                        'reason': str(
+                            loyalty_self_cert_title.get('reason')
+                            or '메인 제목에 자기인증 표현이 포함됐습니다.'
+                        ),
+                        'matched': str(loyalty_self_cert_title.get('matched') or ''),
+                    }
+                },
+                'passed': False,
+                'suggestions': [
+                    str(
+                        loyalty_self_cert_title.get('reason')
+                        or '메인 제목의 자기인증 표현을 제거하세요.'
+                    )
+                ],
+                **({'repairedTitle': repaired_candidate} if repaired_candidate else {}),
+            }
+
+    family_fit = _assess_title_family_fit(title, params)
+    if not family_fit.get('passed', True):
+        return {
+            'score': 0,
+            'breakdown': {
+                'titleFamily': {
+                    'score': 0,
+                    'max': 100,
+                    'status': '실패',
+                    'reason': str(family_fit.get('reason') or '선택된 제목 패밀리와 표면이 맞지 않습니다.'),
+                    'family': str(family_fit.get('family') or ''),
+                }
+            },
+            'passed': False,
+            'suggestions': [str(family_fit.get('reason') or '선택된 제목 패밀리에 맞게 다시 작성하세요.')],
+        }
 
     focus_name_validation = assess_title_focus_name_repetition(title, params)
     if not focus_name_validation.get('passed', True):
@@ -555,6 +715,16 @@ def calculate_title_quality_score(
         suggestions.append(keyword_gate_soft_reason)
     else:
         breakdown['keywordRequirement'] = {'score': 10, 'max': 10, 'status': '충족'}
+
+    breakdown['titleFamily'] = {
+        'score': int(family_fit.get('score', 8) or 0),
+        'max': int(family_fit.get('max', 10) or 10),
+        'status': str(family_fit.get('status') or 'fit'),
+        'family': str(family_fit.get('family') or ''),
+    }
+    family_fit_reason = str(family_fit.get('reason') or '').strip()
+    if family_fit_reason:
+        suggestions.append(family_fit_reason)
 
     # 1. Length Score (Max 20)
     if TITLE_LENGTH_OPTIMAL_MIN <= title_length <= TITLE_LENGTH_OPTIMAL_MAX:

@@ -3,6 +3,7 @@ import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+from ..common.stance_filters import looks_like_hashtag_bullet_line
 from .structure_utils import (
     strip_html,
     normalize_context_text,
@@ -34,6 +35,8 @@ class ContextAnalyzer:
     def _is_noisy_stance_material(self, text: str) -> bool:
         plain = re.sub(r"\s+", " ", strip_html(text or "")).strip()
         if not plain:
+            return True
+        if looks_like_hashtag_bullet_line(plain):
             return True
 
         if re.fullmatch(r"(?:관련\s*현안(?:와|은|는|이|가)?|해당\s*현안(?:와|은|는|이|가)?)", plain):
@@ -423,4 +426,3 @@ class ContextAnalyzer:
             elapsed = time.time() - start_time
             print(f"⚠️ [ContextAnalyzer] 실패 ({elapsed:.1f}초): {str(e)} - 건너뜀")
             return None
-

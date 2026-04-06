@@ -8,6 +8,12 @@
 - 깃허브 커밋 메시지는 한국어로 작성한다.
 - 요청되지 않은 파일이나 범위 밖의 변경은 피한다.
 - 필요한 경우에만 추가 질문을 하고, 불필요한 왕복을 줄인다.
+- 모든 수정은 기본적으로 범용 구현을 우선한다.
+- 특정 사용자, 후보, 고객 전용 규칙·문구·실명·실수치를 공용 코드에 하드코딩하지 않는다.
+- 사용자별 차이는 `styleFingerprint`, `userProfile`, `users/{uid}` 문서의 설정 필드로 주입하는 데이터 기반 방식으로 처리한다.
+- 새 규칙이나 금지어를 추가할 때는 먼저 "모든 사용자 공통 규칙인지, 특정 사용자 전용 규칙인지"를 구분한다. 공통이 아니면 공용 로직이 아니라 데이터 필드로 보낸다.
+- 테스트/회귀 픽스처의 합성 인물명·지역명·기관명은 실명 대신 `{user_name}`, `{opponent_name}`, `{region}`, `{organization}` 같은 슬롯 표기를 우선 사용한다.
+- 합성 테스트 픽스처를 추가할 때는 해당 테스트 함수 바로 위에 `# synthetic_fixture` 표식을 넣고, 슬롯 표기 규칙 검사를 통과하도록 작성한다. 실제 사실 검증 때문에 실명이 꼭 필요하면 `# real_fixture_ok: 사유` 주석으로 예외를 명시한다.
 
 ## Skills
 이 프로젝트에서 사용할 수 있는 스킬과 적용 규칙은 아래를 따른다.
@@ -16,6 +22,7 @@
 스킬은 여러 로컬 소스에서 시작 시 자동으로 발견된다. 각 항목은 이름, 설명, 파일 경로를 포함하며 전체 지침은 해당 경로의 문서에서 확인한다.
 
 ### 사용 가능한 스킬
+- gstack-workflows: gstack의 CEO 리뷰, 엔지니어링 리뷰, 리뷰, ship, retro, browse 모드를 Codex용으로 포팅한 스킬. 사용자가 gstack 또는 해당 모드를 직접 언급하거나 같은 의도의 요청을 할 때 사용. (file: E:/ai-secretary/.codex/skills/gstack-workflows/SKILL.md)
 - skill-creator: 전문 지식/워크플로/도구 통합을 위한 새 스킬을 만들거나 기존 스킬을 업데이트할 때 사용. (file: C:/Users/강정구학부졸업미디어문예창작학과/.codex/skills/.system/skill-creator/SKILL.md)
 - skill-installer: 큐레이션 목록 또는 GitHub 경로에서 스킬을 설치할 때 사용. (file: C:/Users/강정구학부졸업미디어문예창작학과/.codex/skills/.system/skill-installer/SKILL.md)
 - Discovery: 사용 가능한 스킬은 프로젝트 문서 및 런타임 "## Skills" 섹션(이름 + 설명 + 파일 경로)에 나열될 수 있으며, 해당 경로가 진실원천이다.

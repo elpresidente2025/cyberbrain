@@ -23,7 +23,7 @@ _POLICY_DETAIL_RE = re.compile(
     r"(?:유치|지원|재개발|혁신|스타트업|산업 구조|일자리|첨단금융|관광 인프라|규제 완화|투자 유치|산학 협력)"
 )
 _EXPERIENCE_RE = re.compile(
-    r"(?:\b\d{1,2}세에\b|이사\b|전무\b|CEO\b|센터장\b|졸업\b|태어나|다녔|거쳐|활약|경영 일선|현장에서|봉사)"
+    r"(?:\b\d{1,2}세에\b|이사\b|전무\b|CEO\b|센터장\b|졸업\b|태어나|다녔|거쳐|활약|활동(?:했|하며)?|경영 일선|현장에서|봉사|역임|재직|근무|맡(?:아|았|으며)?)"
 )
 _CONCRETE_RESULT_RE = re.compile(r"(?:\b\d{1,3}(?:\.\d+)?%|\b\d{1,4}명\b)")
 _CLOSING_RE = re.compile(r"(?:반드시|끝까지|함께|해내겠습니다|실행하겠습니다|살려내겠습니다|이뤄내겠습니다)")
@@ -35,6 +35,52 @@ _CAREER_REPEAT_MARKERS = (
     "전무",
     "경영 일선",
 )
+_CAREER_SIGNATURE_MARKERS: tuple[tuple[str, str], ...] = (
+    ("스타트업CEO", "ceo"),
+    ("CEO", "ceo"),
+    ("이사", "이사"),
+    ("전무", "전무"),
+    ("경영일선", "경영일선"),
+    ("보좌관", "보좌관"),
+    ("사무국장", "사무국장"),
+    ("직무대행", "직무대행"),
+    ("공동선대위원장", "선대위원장"),
+    ("선대위원장", "선대위원장"),
+    ("종합상황실장", "종합상황실장"),
+    ("광역시의원", "광역의원"),
+    ("광역의원", "광역의원"),
+    ("시의원", "광역의원"),
+    ("도의원", "광역의원"),
+    ("구의원", "기초의원"),
+    ("군의원", "기초의원"),
+)
+
+_POLICY_EVIDENCE_PROOF_RE = re.compile(r"(?:증명한\s+바|입증(?:된|됐다|되었|했습니다)?|검증(?:된|됐다|되었|했습니다)?)")
+_POLICY_EVIDENCE_TOPIC_RE = re.compile(
+    r"(?P<topic>[가-힣A-Za-z0-9][가-힣A-Za-z0-9·'\"_-]{1,24})의\s+(?:역할과\s+효과|효과)"
+)
+_POLICY_EVIDENCE_TENURE_RE = re.compile(
+    r"(?P<office>[가-힣A-Za-z0-9][가-힣A-Za-z0-9·'\"_-]{1,24}(?:도지사|시장|군수|구청장|대통령|국회의원|지사))\s+재임\s*시절"
+)
+_POLICY_EVIDENCE_PERSON_RE = re.compile(
+    r"(?P<name>[가-힣A-Za-z0-9][가-힣A-Za-z0-9·'\"_-]{1,20})\s*(?:대통령님?|대통령|국회의원님?|국회의원|도지사|시장|군수|구청장|지사)"
+)
+_POLICY_EVIDENCE_STOPWORDS = {
+    "저는",
+    "저의",
+    "제가",
+    "이미",
+    "역할",
+    "효과",
+    "증명",
+    "증명한",
+    "입증",
+    "검증",
+    "바",
+    "같이",
+    "재임",
+    "시절",
+}
 
 _HEADING_STOPWORDS = {
     "이유",
@@ -154,6 +200,7 @@ _ROLE_PROMPTS = {
 }
 
 _SECTION_WIDE_FORBIDDEN_ROLES = {"audience_reaction", "self_certification"}
+_CROSS_SECTION_CONTRACT_CATEGORIES = frozenset({"matchup", "activity-report", "policy-proposal"})
 
 
 def _merge_allowed_roles(*role_groups: Sequence[str]) -> List[str]:
@@ -347,6 +394,124 @@ def infer_sentence_role(
     if _CONCRETE_RESULT_RE.search(text) or _SCORE_RE.search(text):
         return "concrete_result"
     return "other"
+
+
+def _extract_normalized_career_markers(sentence: Any) -> List[str]:
+    text = _normalize_text(sentence)
+    if not text:
+        return []
+
+    compact = re.sub(r"\s+", "", text).lower()
+    markers: List[str] = []
+    for raw_marker, normalized_marker in _CAREER_SIGNATURE_MARKERS:
+        probe = re.sub(r"\s+", "", str(raw_marker or "")).lower()
+        if not probe or probe not in compact or normalized_marker in markers:
+            continue
+        markers.append(normalized_marker)
+    return markers
+
+
+def extract_career_fact_signature(
+    sentence: Any,
+    *,
+    speaker: str = "",
+    opponent: str = "",
+) -> str:
+    text = _normalize_text(sentence)
+    if not text:
+        return ""
+
+    markers = _extract_normalized_career_markers(text)
+    has_experience_cue = bool(_EXPERIENCE_RE.search(text))
+    is_list_like = (text.count(",") + text.count("·")) >= 1
+    inferred_role = infer_sentence_role(text, speaker=speaker, opponent=opponent)
+
+    if inferred_role != "experience_fact" and not (has_experience_cue and len(markers) >= 2):
+        return ""
+    if len(markers) >= 2:
+        return "|".join(sorted(markers))
+    if len(markers) == 1 and has_experience_cue and is_list_like:
+        return markers[0]
+    if len(text) >= 24 and has_experience_cue and is_list_like:
+        return text.lower()
+    return ""
+
+
+def _normalize_policy_evidence_token(token: Any) -> str:
+    normalized = _normalize_text(token).lower()
+    if not normalized:
+        return ""
+    for suffix in (
+        "님께서",
+        "께서",
+        "님께",
+        "께",
+        "님",
+        "으로서",
+        "로서",
+        "으로",
+        "로",
+        "은",
+        "는",
+        "이",
+        "가",
+        "을",
+        "를",
+        "과",
+        "와",
+        "도",
+        "의",
+    ):
+        if normalized.endswith(suffix) and len(normalized) - len(suffix) >= 2:
+            normalized = normalized[: -len(suffix)]
+            break
+    return normalized
+
+
+def extract_policy_evidence_signature(sentence: Any) -> str:
+    text = _normalize_text(sentence)
+    if not text or not _POLICY_EVIDENCE_PROOF_RE.search(text):
+        return ""
+
+    tokens: List[str] = []
+    topic_match = _POLICY_EVIDENCE_TOPIC_RE.search(text)
+    if topic_match:
+        topic_token = _normalize_policy_evidence_token(topic_match.group("topic"))
+        if topic_token:
+            tokens.append(topic_token)
+
+    person_match = _POLICY_EVIDENCE_PERSON_RE.search(text)
+    if person_match:
+        person_token = _normalize_policy_evidence_token(person_match.group("name"))
+        if person_token:
+            tokens.append(person_token)
+
+    tenure_match = _POLICY_EVIDENCE_TENURE_RE.search(text)
+    if tenure_match:
+        office_token = _normalize_policy_evidence_token(tenure_match.group("office"))
+        if office_token:
+            tokens.append(office_token)
+
+    if len(tokens) < 2:
+        for raw_token in _TOKEN_RE.findall(text):
+            normalized = _normalize_policy_evidence_token(raw_token)
+            if (
+                not normalized
+                or normalized in _POLICY_EVIDENCE_STOPWORDS
+                or normalized in tokens
+            ):
+                continue
+            if any(cue in normalized for cue in ("정책", "제도", "모델", "화폐", "연금", "공약", "기본소득")):
+                tokens.append(normalized)
+
+    deduped_tokens: List[str] = []
+    for token in tokens:
+        if token and token not in _POLICY_EVIDENCE_STOPWORDS and token not in deduped_tokens:
+            deduped_tokens.append(token)
+
+    if len(deduped_tokens) < 2:
+        return ""
+    return "|".join(sorted(deduped_tokens))
 
 
 def build_matchup_allowed_h2_kinds(
@@ -546,17 +711,11 @@ def _extract_career_fact_signature(
     speaker: str = "",
     opponent: str = "",
 ) -> str:
-    text = _normalize_text(sentence)
-    if not text:
-        return ""
-    if infer_sentence_role(text, speaker=speaker, opponent=opponent) != "experience_fact":
-        return ""
-    markers = sorted({marker.lower() for marker in _CAREER_REPEAT_MARKERS if marker in text})
-    if len(markers) >= 2:
-        return "|".join(markers)
-    if len(text) >= 24 and (text.count(",") + text.count("·")) >= 1:
-        return text.lower()
-    return ""
+    return extract_career_fact_signature(
+        sentence,
+        speaker=speaker,
+        opponent=opponent,
+    )
 
 
 def validate_cross_section_contracts(
@@ -566,6 +725,7 @@ def validate_cross_section_contracts(
     opponent: str = "",
 ) -> Optional[Dict[str, Any]]:
     seen_career_signatures: Dict[str, Dict[str, Any]] = {}
+    seen_policy_evidence_signatures: Dict[str, Dict[str, Any]] = {}
 
     for section_index, section in enumerate(sections, start=1):
         heading_text = _normalize_text(section.get("heading"))
@@ -579,6 +739,23 @@ def validate_cross_section_contracts(
                     speaker=speaker,
                     opponent=opponent,
                 )
+                policy_signature = extract_policy_evidence_signature(sentence)
+                if policy_signature:
+                    prior_policy = seen_policy_evidence_signatures.get(policy_signature)
+                    if prior_policy:
+                        return {
+                            "code": "duplicate_policy_evidence_fact",
+                            "message": "같은 정책 근거 문장을 다른 섹션에서 반복했습니다. 동일한 정책 사례/검증 근거는 한 번만 쓰고, 다음 섹션에서는 실행 계획이나 효과만 이어가십시오.",
+                            "sentence": sentence,
+                            "sectionIndex": section_index,
+                            "sectionHeading": heading_text,
+                            "firstSectionIndex": prior_policy.get("sectionIndex"),
+                            "firstSectionHeading": prior_policy.get("sectionHeading"),
+                        }
+                    seen_policy_evidence_signatures[policy_signature] = {
+                        "sectionIndex": section_index,
+                        "sectionHeading": heading_text,
+                    }
                 if not signature:
                     continue
                 prior = seen_career_signatures.get(signature)
@@ -595,6 +772,156 @@ def validate_cross_section_contracts(
                 seen_career_signatures[signature] = {
                     "sectionIndex": section_index,
                     "sectionHeading": heading_text,
+                }
+
+    return None
+
+
+def should_apply_cross_section_contracts(category: Any) -> bool:
+    return _normalize_text(category).lower() in _CROSS_SECTION_CONTRACT_CATEGORIES
+
+
+_SECTION_LANE_CATEGORIES = frozenset({"activity-report", "policy-proposal"})
+_SECTION_LANE_HEADING_KEYWORDS = {
+    "achievement": (
+        "성과",
+        "입법",
+        "조례",
+        "예산",
+        "의정활동",
+        "실적",
+        "기여",
+        "확보",
+    ),
+    "future": (
+        "미래",
+        "비전",
+        "과제",
+        "방향",
+        "계획",
+        "약속",
+        "로드맵",
+        "청사진",
+        "조성",
+        "추진",
+        "완성",
+    ),
+    "context": (
+        "역할",
+        "경험",
+        "헌신",
+        "이해",
+        "배경",
+        "걸어온",
+        "발자취",
+    ),
+}
+_FUTURE_POLICY_MODAL_RE = re.compile(
+    r"(?:하겠습니다|하겠으며|할 것입니다|힘쓰겠습니다|노력하겠습니다|추진하겠습니다|완성하겠습니다|"
+    r"유치하겠습니다|검토하겠습니다|만들겠습니다|나서겠습니다|챙기겠습니다|집중하겠습니다|"
+    r"가시화하겠습니다|마련하겠습니다)"
+)
+_FUTURE_POLICY_TOPIC_RE = re.compile(
+    r"(?:추진|조성|유치|완성|계획|지정|설치|확보|가시화|도입|재배치|개편|정비|개정|"
+    r"산단|산업단지|철도|교통망|캠퍼스|스타트업|RE100|지역화폐|기본소득|연금|플랫폼)"
+)
+
+
+def should_apply_section_lane_contracts(category: Any) -> bool:
+    return _normalize_text(category).lower() in _SECTION_LANE_CATEGORIES
+
+
+def infer_section_semantic_lane(heading: Any) -> str:
+    heading_text = _normalize_text(heading)
+    if not heading_text:
+        return ""
+
+    scores = {
+        lane: sum(1 for token in keywords if token in heading_text)
+        for lane, keywords in _SECTION_LANE_HEADING_KEYWORDS.items()
+    }
+    future_score = scores.get("future", 0)
+    achievement_score = scores.get("achievement", 0)
+    context_score = scores.get("context", 0)
+
+    if future_score > 0 and future_score >= max(achievement_score, context_score):
+        return "future"
+    if achievement_score > 0 and achievement_score >= context_score:
+        return "achievement"
+    if context_score > 0:
+        return "context"
+    return ""
+
+
+def is_future_policy_agenda_sentence(sentence: Any) -> bool:
+    sentence_text = _normalize_text(sentence)
+    if not sentence_text:
+        return False
+    return bool(
+        _FUTURE_POLICY_MODAL_RE.search(sentence_text)
+        and _FUTURE_POLICY_TOPIC_RE.search(sentence_text)
+    )
+
+
+def find_section_semantic_mismatch(
+    *,
+    sections: Sequence[Dict[str, Any]],
+    category: Any = "",
+) -> Optional[Dict[str, Any]]:
+    if not should_apply_section_lane_contracts(category):
+        return None
+
+    normalized_sections: List[Dict[str, Any]] = []
+    for section in sections:
+        heading_text = _normalize_text(section.get("heading"))
+        paragraphs = section.get("paragraphs") if isinstance(section, dict) else []
+        if not heading_text or not isinstance(paragraphs, list):
+            continue
+        paragraph_list = [_normalize_text(item) for item in paragraphs if _normalize_text(item)]
+        if not paragraph_list:
+            continue
+        normalized_sections.append(
+            {
+                "heading": heading_text,
+                "paragraphs": paragraph_list,
+            }
+        )
+
+    if len(normalized_sections) < 2:
+        return None
+
+    future_target_indices = [
+        index
+        for index, section in enumerate(normalized_sections, start=1)
+        if infer_section_semantic_lane(section.get("heading")) == "future"
+    ]
+    if not future_target_indices:
+        return None
+
+    target_section_index = future_target_indices[-1]
+    target_heading = _normalize_text(
+        normalized_sections[target_section_index - 1].get("heading")
+    )
+
+    for section_index, section in enumerate(normalized_sections, start=1):
+        if section_index >= target_section_index:
+            continue
+        lane = infer_section_semantic_lane(section.get("heading"))
+        if lane not in {"achievement", "context"}:
+            continue
+        for paragraph in section.get("paragraphs") or []:
+            for sentence in split_sentences(paragraph):
+                if not is_future_policy_agenda_sentence(sentence):
+                    continue
+                return {
+                    "code": "section_topic_drift",
+                    "message": "성과/맥락 섹션에 앞으로의 실행 과제가 섞여 있습니다.",
+                    "sentence": sentence,
+                    "sectionIndex": section_index,
+                    "sectionHeading": _normalize_text(section.get("heading")),
+                    "targetSectionIndex": target_section_index,
+                    "targetSectionHeading": target_heading,
+                    "lane": lane,
                 }
 
     return None
@@ -691,11 +1018,17 @@ def validate_section_contract(
 __all__ = [
     "build_matchup_allowed_h2_kinds",
     "build_shared_contract_rules",
+    "extract_career_fact_signature",
+    "find_section_semantic_mismatch",
     "get_matchup_section_contracts",
     "get_section_contract_sequence",
     "infer_sentence_role",
+    "infer_section_semantic_lane",
+    "is_future_policy_agenda_sentence",
     "is_declarative_heading",
+    "should_apply_section_lane_contracts",
     "split_sentences",
+    "should_apply_cross_section_contracts",
     "validate_cross_section_contracts",
     "validate_section_contract",
 ]

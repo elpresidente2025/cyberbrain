@@ -2,7 +2,11 @@ import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..common.editorial import STRUCTURE_SPEC
-from ..common.h2_guide import H2_MAX_LENGTH, H2_MIN_LENGTH
+from ..common.h2_guide import (
+    H2_MAX_LENGTH,
+    H2_MIN_LENGTH,
+    sanitize_h2_text,
+)
 from ..common.section_contract import (
     _SECTION_WIDE_FORBIDDEN_ROLES,
     get_section_contract_sequence,
@@ -21,6 +25,22 @@ _HEADING_ALIGNMENT_GENERIC_IGNORE_TOKENS = {
     "위원장",
     "대표",
 }
+
+
+_INTRO_ORPHAN_TRANSITION_PREFIXES = (
+    "특히",
+    "또한",
+    "아울러",
+    "이와 함께",
+    "이러한",
+    "이는",
+)
+
+_INTRO_BRIDGE_TRANSITION_PREFIXES = (
+    "앞으로도",
+    "이제는",
+    "이와 함께",
+)
 
 
 def _coerce_int_option(
@@ -64,11 +84,102 @@ class SectionNormalizerMixin:
             raise ValueError(f"구조 JSON 계약 위반: 소제목 1인칭 표현 금지('{text}')")
         text = re.sub(r'(위한|향한|만드는|통한|대한)(\s|$)', ' ', text)
         text = re.sub(r'\s+', ' ', text).strip(' -_.,')
-        if len(text) > H2_MAX_LENGTH:
-            text = text[:H2_MAX_LENGTH].rstrip(' -_.,')
-        if len(text) < H2_MIN_LENGTH:
-            raise ValueError(f"구조 JSON 계약 위반: 소제목 길이 부족({len(text)}자)")
+        text = sanitize_h2_text(
+            text,
+            min_length=H2_MIN_LENGTH,
+            max_length=H2_MAX_LENGTH,
+        )
         return text
+
+    def _count_plain_sentences(self, text: Any) -> int:
+        cleaned = self._clean_plain_text(text)
+        if not cleaned:
+            return 0
+        sentences = [sentence for sentence in split_sentences(cleaned) if self._clean_plain_text(sentence)]
+        return len(sentences) if sentences else 1
+
+    def _intro_transition_prefix(self, paragraph: Any) -> str:
+        cleaned = self._clean_plain_text(paragraph)
+        for prefix in _INTRO_ORPHAN_TRANSITION_PREFIXES + _INTRO_BRIDGE_TRANSITION_PREFIXES:
+            if cleaned.startswith(prefix):
+                return prefix
+        return ""
+
+    def _is_short_intro_fragment(self, paragraph: Any) -> bool:
+        cleaned = self._clean_plain_text(paragraph)
+        if not cleaned:
+            return False
+        sentence_count = self._count_plain_sentences(cleaned)
+        return sentence_count <= 1 and len(cleaned) <= 95
+
+    def _should_merge_intro_paragraph(
+        self,
+        previous: Any,
+        current: Any,
+    ) -> bool:
+        previous_text = self._clean_plain_text(previous)
+        current_text = self._clean_plain_text(current)
+        if not previous_text or not current_text:
+            return False
+
+        previous_sentence_count = self._count_plain_sentences(previous_text)
+        current_sentence_count = self._count_plain_sentences(current_text)
+        transition_prefix = self._intro_transition_prefix(current_text)
+        if transition_prefix:
+            if transition_prefix in _INTRO_ORPHAN_TRANSITION_PREFIXES:
+                return previous_sentence_count <= 2 or len(previous_text) <= 140
+            return previous_sentence_count <= 1 or len(previous_text) <= 90
+
+        if len(previous_text) <= 30 and current_sentence_count <= 2:
+            return True
+        if (
+            previous_sentence_count <= 1
+            and current_sentence_count <= 1
+            and len(previous_text) + len(current_text) <= 180
+        ):
+            return True
+        return False
+
+    def _normalize_intro_paragraphs(
+        self,
+        paragraphs: Any,
+        *,
+        target_count: int,
+    ) -> List[str]:
+        cleaned_list = self._normalize_section_paragraphs(
+            paragraphs,
+            target_count=max(1, min(target_count, 3)),
+        )
+        if len(cleaned_list) <= 1:
+            return cleaned_list
+
+        merged: List[str] = []
+        for paragraph in cleaned_list:
+            cleaned = self._clean_plain_text(paragraph)
+            if not cleaned:
+                continue
+            if not merged:
+                merged.append(cleaned)
+                continue
+            if self._should_merge_intro_paragraph(merged[-1], cleaned):
+                merged[-1] = f"{merged[-1]} {cleaned}".strip()
+                continue
+            merged.append(cleaned)
+
+        while len(merged) > 2:
+            tail = self._clean_plain_text(merged[-1])
+            prev = self._clean_plain_text(merged[-2])
+            if self._intro_transition_prefix(tail) or self._is_short_intro_fragment(tail):
+                merged[-2] = f"{prev} {tail}".strip()
+                merged.pop()
+                continue
+            if self._is_short_intro_fragment(prev) and len(merged) >= 3:
+                merged[-3] = f"{self._clean_plain_text(merged[-3])} {prev}".strip()
+                merged.pop(-2)
+                continue
+            break
+
+        return merged
 
     def _heading_identity_key(self, heading: Any) -> str:
         text = self._clean_plain_text(heading)
@@ -381,7 +492,7 @@ class SectionNormalizerMixin:
         intro_payload = payload.get('intro')
         if not isinstance(intro_payload, dict):
             raise ValueError("구조 JSON 계약 위반: intro 객체가 누락되었습니다.")
-        intro_paragraphs = self._normalize_section_paragraphs(
+        intro_paragraphs = self._normalize_intro_paragraphs(
             intro_payload.get('paragraphs'),
             target_count=section_paragraphs,
         )

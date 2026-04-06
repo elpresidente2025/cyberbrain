@@ -241,6 +241,8 @@ export function useGenerateAPI() {
       const newDraft = {
         id: draftData.id || Date.now(),
         title: draftData.title || formData.topic || formData.prompt || '새로운 원고',
+        topic: draftData.topic || formData.topic || formData.prompt || '',
+        stanceText: stanceText,
         content: content,
 
         // 📌 보안 개선: DOMPurify 사용
@@ -386,10 +388,12 @@ export function useGenerateAPI() {
   // 초안 저장 함수
   const save = useCallback(async (draft) => {
     try {
-      console.log('💾 savePost 호출 시작:', draft.title);
+      console.log('💾 saveSelectedPost 호출 시작:', draft.title);
 
       const result = await callFunctionWithNaverAuth(CONFIG.FUNCTIONS.SAVE_POST, {
         title: draft.title,
+        topic: draft.topic,
+        stanceText: draft.stanceText,
         content: draft.content,
         htmlContent: draft.htmlContent,
         plainText: draft.plainText,
@@ -402,11 +406,11 @@ export function useGenerateAPI() {
         sourceInput: draft.sourceInput,
         sourceType: draft.sourceType,
         meta: draft.meta,
-        sessionId: sessionId, // 🆕 세션 ID 전달 (세션 완료 처리용)
-        appliedStrategy: draft.multiAgent?.appliedStrategy || null  // 🎯 적용된 수사학 전략 (선호도 학습용)
+        sessionId: sessionId,
+        appliedStrategy: draft.multiAgent?.appliedStrategy || null
       });
 
-      console.log('✅ savePost 응답 수신:', result);
+      console.log('✅ saveSelectedPost 응답 수신:', result);
       console.log('🔍 응답 타입:', typeof result);
       console.log('🔍 응답 success 필드:', result?.success);
 
@@ -439,7 +443,7 @@ export function useGenerateAPI() {
       }
 
     } catch (err) {
-      console.error('❌ savePost 호출 실패:', err);
+      console.error('❌ saveSelectedPost 호출 실패:', err);
 
       // 📌 개선: 중앙화된 에러 처리
       const errorMessage = handleHttpError(err);

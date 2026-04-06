@@ -143,6 +143,15 @@ def build_scoring_prompt(
 - 과장/선동형 문구 대신 설명형 문체를 유지하는가?
 - 원문의 핵심 사실/수치/고유명사를 왜곡 없이 보존하는가?
 """.strip()
+    elif platform_lower == "facebook-instagram":
+        platform_specific_rules = """
+**Facebook/Instagram 공용 게시물 적합도 체크 (필수):**
+- 결과가 타래가 아니라 단일 게시물 JSON(content, hashtags, wordCount) 형식인가?
+- 첫 2~3줄 안에 핵심 메시지와 맥락이 배치되어 미리보기 구간에서 의미가 전달되는가?
+- Instagram 해시태그 과다 사용이나 Facebook 장문 서론 없이 두 플랫폼 모두에서 자연스러운가?
+- 댓글/공감 유도 문장이 짧고 자연스러운가?
+- 원문의 고유명사/핵심 수치/핵심 주장 반영이 충분한가?
+""".strip()
 
     return f"""
 당신은 SNS 콘텐츠 성과 예측 전문가입니다.
@@ -339,6 +348,7 @@ async def rank_and_select(
         context={
             "platformConfig": options.get("platformConfig"),
             "userInfo": options.get("userInfo"),
+            "sourceType": options.get("sourceType"),
         },
     )
     elapsed_ms = int((time.time() - start_time) * 1000)

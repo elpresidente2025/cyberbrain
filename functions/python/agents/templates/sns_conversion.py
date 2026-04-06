@@ -3,7 +3,7 @@ SNS 플랫폼별 변환 프롬프트 빌더.
 Node.js `prompts/builders/sns-conversion.js`의 Python 포팅 버전이다.
 
 주의:
-- 이 모듈은 X, Threads만 지원한다. (Facebook 제외)
+- Facebook/Instagram은 단일 게시물, X/Threads는 타래 형식을 사용한다.
 """
 
 from __future__ import annotations
@@ -17,8 +17,17 @@ X_TARGET_AVG_NON_SPACE = 111
 X_MIN_NON_SPACE = 60
 THREADS_MIN_NON_SPACE = 120
 
-# SNS 플랫폼별 제한사항 (Facebook 제외)
+# SNS 플랫폼별 제한사항
 SNS_LIMITS: Dict[str, Dict[str, Any]] = {
+    "facebook-instagram": {
+        "minLength": 300,
+        "maxLength": 1000,
+        "hashtagLimit": 5,
+        "charsPerLine": 22,
+        "previewLimit": 125,
+        "name": "Facebook/Instagram",
+        "isThread": False,
+    },
     "x": {
         "maxLengthPerPost": X_TARGET_AVG_NON_SPACE,
         "minLengthPerPost": X_MIN_NON_SPACE,
@@ -83,6 +92,112 @@ def _resolve_source_label(options: Dict[str, Any]) -> str:
     if source_type in {"position_statement", "statement", "stance", "facebook_post", "facebook", "fb"}:
         return "내 입장문/페이스북 글"
     return "블로그 원고"
+
+
+def build_facebook_instagram_prompt(
+    clean_content: str,
+    platform_config: Dict[str, Any],
+    user_info: Dict[str, Any],
+    options: Dict[str, Any] | None = None,
+) -> str:
+    options = options or {}
+    min_len = int(platform_config.get("minLength", 300))
+    max_len = int(platform_config.get("maxLength", 1000))
+    hashtag_limit = int(platform_config.get("hashtagLimit", 5))
+    chars_per_line = int(platform_config.get("charsPerLine", 22))
+    quality_issues = options.get("qualityIssues", [])
+    natural_tone_guide = build_sns_natural_tone_guide()
+    extra_context = _build_topic_and_title_block(options)
+    source_label = _resolve_source_label(options)
+
+    remediation_block = ""
+    if isinstance(quality_issues, list) and quality_issues:
+        remediation = "\n".join(f"  <issue>{item}</issue>" for item in quality_issues if str(item).strip())
+        if remediation:
+            remediation_block = f"""
+<remediation_instructions reason="이전 결과 보정">
+  <instruction>이전 결과에서 아래 문제가 확인되었습니다. 반드시 모두 해결하세요.</instruction>
+{remediation}
+</remediation_instructions>
+"""
+
+    return f"""
+<task type="SNS 변환" platform="facebook-instagram" mode="공용 단일 게시물" system="전자두뇌비서관">
+  <source_info>
+    <author_name>{user_info.get('name', '정치인')}</author_name>
+    <author_role>{user_info.get('position', '의원')}</author_role>
+    <instruction>{source_label}을 Facebook 게시물과 Instagram 캡션에 모두 사용할 수 있는 단일 SNS 원고로 변환하라.</instruction>
+  </source_info>
+
+{extra_context}
+
+  <source_content>
+{clean_content}
+  </source_content>
+
+{natural_tone_guide}
+
+  <transformation_policy priority="critical">
+    <rule>변환 목적은 신규 원고 작성이 아니라 원문을 SNS용 단일 게시물로 압축/재배열하는 것이다.</rule>
+    <rule>원문의 핵심 표현, 고유명사, 숫자, 정책명을 최대한 재사용한다.</rule>
+    <rule>원문에 없는 주장, 수치, 사례, 구호를 새로 만들지 않는다.</rule>
+    <rule>원문 핵심어(고유명사/숫자/정책명) 3개 이상을 본문에 그대로 유지한다.</rule>
+  </transformation_policy>
+
+  <platform_strategy>
+    <description>Facebook과 Instagram에서 모두 자연스럽게 읽히는 단일 게시물이어야 한다.</description>
+    <rule>첫 2~3줄 안에 핵심 메시지와 맥락을 배치해 두 플랫폼의 미리보기 구간에서도 의미가 전달되게 한다.</rule>
+    <rule>모바일 가독성을 위해 한 줄을 {chars_per_line}자 내외로 유지한다.</rule>
+    <rule>Instagram식 해시태그 과다 사용과 Facebook식 장문 서론을 모두 피하고 균형을 맞춘다.</rule>
+    <rule>해시태그는 본문 하단에 최대 {hashtag_limit}개만 배치한다.</rule>
+  </platform_strategy>
+
+  <content_structure>
+    <section order="1" name="훅">첫 문장은 독자가 바로 핵심 이슈를 이해할 수 있게 작성</section>
+    <section order="2" name="핵심 요약">바쁜 독자를 위한 2~4줄 요약</section>
+    <section order="3" name="상세 설명">배경, 정책 내용, 수치, 기대효과를 해설형으로 설명</section>
+    <section order="4" name="마무리">개인적 소회, 책임감, 다짐 중 하나로 정리</section>
+    <section order="5" name="짧은 CTA">댓글/공감/공유를 유도하되 1문장 이내로 유지</section>
+    <section order="6" name="해시태그">최대 {hashtag_limit}개</section>
+  </content_structure>
+
+  <writing_rules>
+    <rule>길이는 {min_len}~{max_len}자(공백 포함) 범위에서 작성한다.</rule>
+    <rule>요약보다 해설형에 가깝게 작성하되, 불필요한 군더더기는 줄인다.</rule>
+    <rule>원문 문장 또는 원문 어절을 직접 재사용한 구문을 1개 이상 포함한다.</rule>
+    <rule>원문의 정치적 입장과 논조를 완전 보존한다.</rule>
+    <rule>원문에 없는 사실/수치/사례 추가 금지</rule>
+    <rule>이모지는 0~3개만 사용하고, 없어도 무방하다.</rule>
+    <rule>Facebook에서도 어색하지 않도록 인스타 전용 SEO 문구나 과도한 해시태그 반복을 금지한다.</rule>
+  </writing_rules>
+
+  <anti_patterns priority="critical">
+    <item>"자세한 내용은 블로그에서" 같은 저품질 CTA 문구</item>
+    <item>Instagram 전용 밈/해시태그를 과도하게 나열해 Facebook 문맥에서 어색해지는 결과</item>
+    <item>원문에 없는 정책/수치/사례 창작</item>
+    <item>문단마다 느낌표/감탄사를 남발하는 과장형 문체</item>
+    <item>타래처럼 번호를 붙이거나 게시물을 여러 개로 나누는 형식</item>
+  </anti_patterns>
+
+{remediation_block}
+
+  <output_contract format="json">
+{{
+  "content": "Facebook/Instagram 공용 단일 게시물 텍스트",
+  "hashtags": ["#태그1", "#태그2", "#태그3"],
+  "wordCount": 780
+}}
+  </output_contract>
+
+  <final_checklist>
+    <item>단일 게시물 JSON 형식(content, hashtags, wordCount)인가?</item>
+    <item>첫 2~3줄 안에 핵심 메시지와 맥락이 들어갔는가?</item>
+    <item>원문 고유명사/숫자/정책명을 3개 이상 반영했는가?</item>
+    <item>Facebook과 Instagram 모두에서 자연스러운 어조인가?</item>
+    <item>해시태그가 {hashtag_limit}개 이하인가?</item>
+  </final_checklist>
+</task>
+""".strip()
 
 
 def build_x_prompt(
@@ -189,7 +304,7 @@ def build_x_prompt(
       <item>원본의 임팩트 요소 1~2개 포함</item>
       <item>구체적 정책/활동 1개 언급</item>
       <item>길이: 권장 {recommended_len}자 내외, 최대 {max_len}자 (공백 제외)</item>
-      <item>블로그 링크 필수 포함 (별도 CTA 문구 없이 링크만 자연 배치)</item>
+      <item>블로그 링크는 게시물 마지막 줄에 URL만 1회 배치</item>
       <item>해시태그: 최대 {hashtag_limit}개</item>
       <item>{blog_line}</item>
     </step>
@@ -209,6 +324,7 @@ def build_x_prompt(
   <anti_patterns priority="critical">
     <item>"자세한 내용은 블로그에서 확인하세요" 같은 저품질 CTA 문구</item>
     <item>링크 앞 장황한 안내 문구</item>
+    <item>블로그 링크를 중간에 넣거나 두 번 이상 반복</item>
     <item>원본 키워드 없는 일반 요약</item>
     <item>원문에 없는 새로운 구호/캐치프레이즈 창작</item>
     <item>느낌표/감탄사 남발</item>
@@ -227,7 +343,7 @@ def build_x_prompt(
   "posts": [
     {{
       "order": 1,
-      "content": "[훅/핵심 메시지]\\n\\n[임팩트 요소 + 정책]\\n\\n{link_hint}\\n\\n#태그1 #태그2",
+      "content": "[훅/핵심 메시지]\\n\\n[임팩트 요소 + 정책]\\n\\n#태그1 #태그2\\n{link_hint}",
       "wordCount": 148
     }}
   ],
@@ -338,7 +454,7 @@ def build_threads_prompt(
     <post order="last" role="마무리">
       <item>입장 정리 또는 다짐</item>
       <item>해시태그 {hashtag_limit}개 이내</item>
-      <item>블로그 링크 포함</item>
+      <item>블로그 링크는 마지막 줄에 URL만 1회 배치</item>
     </post>
   </thread_structure>
 
@@ -350,7 +466,7 @@ def build_threads_prompt(
     <rule>이모지 남발 금지 (필요 시 0~1개)</rule>
     <rule>원본의 정치적 입장과 논조 완전 보존</rule>
     <rule>원본에 없는 사실/수치 추가 금지</rule>
-    <rule>마지막 게시물에는 링크를 포함하고 CTA는 짧게 유지</rule>
+    <rule>마지막 게시물 마지막 줄에만 블로그 링크 URL을 1회 배치하고 별도 CTA는 쓰지 않는다</rule>
   </writing_rules>
 
   <anti_patterns priority="critical">
@@ -367,7 +483,7 @@ def build_threads_prompt(
     {{ "order": 1, "content": "요약 + 훅", "wordCount": 280 }},
     {{ "order": 2, "content": "맥락 설명", "wordCount": 320 }},
     {{ "order": 3, "content": "핵심 내용/근거", "wordCount": 300 }},
-    {{ "order": 4, "content": "마무리\\n{link_hint}\\n#태그1 #태그2 #태그3", "wordCount": 260 }}
+    {{ "order": 4, "content": "마무리\\n#태그1 #태그2 #태그3\\n{link_hint}", "wordCount": 260 }}
   ],
   "hashtags": ["#태그1", "#태그2", "#태그3"],
   "totalWordCount": 1160,
@@ -409,6 +525,8 @@ def build_sns_prompt(
 
     clean_content = clean_html_content(original_content)
 
+    if platform == "facebook-instagram":
+        return build_facebook_instagram_prompt(clean_content, platform_config, user_info, options)
     if platform == "x":
         return build_x_prompt(clean_content, platform_config, user_info, options)
     if platform == "threads":

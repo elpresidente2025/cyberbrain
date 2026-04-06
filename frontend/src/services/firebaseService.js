@@ -223,13 +223,13 @@ export const clearSystemCache = async () => {
 
 export const convertToSNS = async (postId, targetPlatform = null) => {
   const modelName = localStorage.getItem('gemini_model') || 'gemini-2.5-flash-lite';
-  return await callFunctionWithNaverAuth('convertToSNS', { postId, modelName, targetPlatform });
+  return await callFunctionWithNaverAuth('py_convertToSNS', { postId, modelName, targetPlatform });
 };
 
 export const testSNS = async () => {
-  return await callFunctionWithRetry('testSNS');
+  return await callFunctionWithRetry('py_testSNS');
 };
 
 export const getSNSUsage = async () => {
-  return await callFunctionWithNaverAuth('getSNSUsage', {});
+  return await callFunctionWithNaverAuth('py_getSNSUsage', {});
 };

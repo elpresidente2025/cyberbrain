@@ -65,3 +65,25 @@ def test_resolve_request_category_uses_stance_text_when_category_missing() -> No
     assert topic == "기초연금 정책"
     assert category == "educational-content"
     assert sub_category == "policy_explanation"
+
+
+def test_refine_with_stance_reclassifies_non_issue_policy_manifesto_out_of_current_affairs() -> None:
+    primary = {
+        "category": "current-affairs",
+        "subCategory": "",
+        "writingMethod": "critical_writing",
+        "confidence": 0.78,
+        "source": "llm_topic",
+    }
+
+    result = topic_classifier.refine_with_stance(
+        primary,
+        (
+            "계양테크노밸리 완성과 지역화폐 부활, 이익공유형 기본소득 도입을 추진하겠습니다. "
+            "예산 확보와 제도 개선으로 구체적인 정책 실행 계획을 보여드리겠습니다."
+        ),
+    )
+
+    assert result["category"] == "policy-proposal"
+    assert result["writingMethod"] == "logical_writing"
+    assert result["source"] == "llm_topic+stance"

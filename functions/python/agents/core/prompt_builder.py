@@ -13,6 +13,7 @@ from ..common.election_rules import get_prompt_instruction
 from ..common.natural_tone import build_natural_tone_prompt
 from ..common.editorial import KEYWORD_SPEC, QUALITY_SPEC, STRUCTURE_SPEC
 from ..common.section_contract import build_shared_contract_rules
+from ..common.stance_filters import looks_like_hashtag_bullet_line
 
 from ..templates.activity_report import build_activity_report_prompt
 from ..templates.current_affairs import build_critical_writing_prompt, build_diagnosis_writing_prompt
@@ -62,6 +63,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     """
     # Extract params
     writing_method = params.get('writingMethod')
+    category = str(params.get('category') or '').strip().lower()
     template_builder = TEMPLATE_BUILDERS.get(writing_method, build_daily_communication_prompt)
 
     user_profile = params.get('userProfile', {})
@@ -200,7 +202,17 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
         context_analysis = {}
 
     if context_analysis:
-        stance_list = context_analysis.get('mustIncludeFromStance', [])
+        raw_stance_list = context_analysis.get('mustIncludeFromStance', [])
+        stance_list = []
+        for item in raw_stance_list if isinstance(raw_stance_list, list) else []:
+            if isinstance(item, dict):
+                if looks_like_hashtag_bullet_line(item.get('topic')):
+                    continue
+                stance_list.append(item)
+                continue
+            if looks_like_hashtag_bullet_line(item):
+                continue
+            stance_list.append(item)
 
         # 구조화된 stance 처리
         formatted_stances = []
@@ -246,7 +258,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
   <instructions>
     <instruction order="1">각 주제를 별도의 본론 섹션(H2)으로 구성</instruction>
     <instruction order="2">각 섹션에 Why/How/Effect 논리를 핵심 위주로 반영</instruction>
-    <instruction order="3">How 단계에서 Bio(경력)를 근거로 전문성을 제시</instruction>
+    <instruction order="3">How 단계에서는 필요할 때만 Bio(경력) 한 항목을 근거로 연결하고, 동일한 직함·경력 리스트를 다른 섹션에 다시 나열하지 말 것</instruction>
   </instructions>
 </body_expansion>
 """
@@ -380,8 +392,8 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     )
 
     intro_line_1 = '<p>1문단: 입장문/페이스북 글의 핵심 주장으로 바로 시작하고 자기소개는 1문장 이내로 제한</p>'
-    intro_line_2 = '<p>2문단: 입장문 핵심 주장(원문 요지)을 재작성하여 글의 목적을 명확히 제시</p>'
-    intro_line_3 = '<p>3문단: 본론에서 다룰 해결 방향/행동 제안을 예고</p>'
+    intro_line_2 = '<p>2문단: 입장문 핵심 주장(원문 요지)과 본론에서 다룰 해결 방향을 자연스럽게 연결</p>'
+    intro_line_3 = '<p>3문단: 필요한 경우에만 추가하고, 앞 문단과 이어지는 구체 근거·행동만 보완</p>'
     intro_stance_rules = f"""
   <intro_stance_binding priority="critical">
     <rule id="intro_must_anchor_stance">서론 2문단 이내에 입장문 핵심 주장 또는 문제의식을 반드시 재진술할 것.</rule>
@@ -389,6 +401,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     <rule id="intro_no_generic_opening">맥락 없는 일반 인삿말/상투적 도입으로 시작하지 말 것.</rule>
     <rule id="intro_paraphrase_required">입장문 문장을 그대로 복붙하지 말고 의미는 유지한 채 재작성할 것.</rule>
     <rule id="intro_profile_cap">서론 전체에서 경력/이력 나열은 최대 2문장으로 제한할 것.</rule>
+    <rule id="career_list_once_only">같은 직함·경력 리스트는 원고 전체에서 한 번만 쓰고, 이후 섹션에서는 그 경험을 바탕으로 한 판단·행동·성과만 이어갈 것.</rule>
     <rule id="intro_to_body_bridge">서론 마지막 문장에서 본론 주제로 자연스럽게 연결할 것.</rule>
     <stance_seed>{intro_seed or '(입장문 요지 없음)'}</stance_seed>
     <stance_anchor_topic>{intro_anchor_topic or '(미지정)'}</stance_anchor_topic>
@@ -458,6 +471,16 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
   </genre_contract>
 """.strip()
 
+    section_lane_rules = ""
+    if category in {"activity-report", "policy-proposal"}:
+        section_lane_rules = """
+  <section_lane_rules priority="high">
+    <rule id="section_lane_achievement_only">입법·조례·예산·성과 섹션에는 이미 수행한 성과와 그 효과만 쓰고, "하겠습니다/추진하겠습니다/완성하겠습니다"류 미래 과제 문장은 넣지 말 것.</rule>
+    <rule id="section_lane_future_only">미래·비전·과제·방향 섹션에서만 앞으로의 실행 과제와 약속을 집중적으로 설명할 것.</rule>
+    <rule id="section_lane_no_mix">같은 섹션 안에 과거 성과 설명과 앞으로의 신규 과제를 장문으로 섞지 말고, 미래 과제는 별도 섹션으로 분리할 것.</rule>
+  </section_lane_rules>
+""".strip()
+
     structure_enforcement = f"""
 <structure_guide mode="strict">
   <strategy>E-A-T (전문성-권위-신뢰) 전략으로 작성</strategy>
@@ -472,13 +495,15 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
   <expansion_guide name="섹션별 작성 4단계">
     각 본론 섹션을 아래 흐름으로 밀도 있게 전개하십시오.
     <step name="Why" sentences="1~2">시민들이 겪는 실제 불편함과 현장의 고충을 구체적으로 진단</step>
-    <step name="How+Expertise" sentences="2">실현 가능한 해결책 제시 및 본인의 Bio(경력)를 인용하여 전문성 강조</step>
+    <step name="How+Expertise" sentences="2">실현 가능한 해결책 제시 및 본인의 Bio(경력)는 한 번만 근거로 연결하고, 동일한 경력 리스트 재나열 없이 전문성의 의미만 이어 설명</step>
     <step name="Authority" sentences="1">과거 성과나 네트워크를 바탕으로 실행 능력을 증명</step>
     <step name="Effect+Trust" sentences="1~2">변화될 {user_region}의 미래 청사진을 명확히 제시</step>
   </expansion_guide>
 
+  {section_lane_rules}
+
   <sections total="{total_section_count}">
-    <intro paragraphs="{STRUCTURE_SPEC['paragraphsPerSection']}" chars="{per_section_recommended}" heading="없음">
+    <intro paragraphs="기본 2, 필요 시 3" chars="{per_section_recommended}" heading="없음">
       {intro_line_1}
       {intro_line_2}
       {intro_line_3}
@@ -505,6 +530,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     <rule id="no_datetime_location_ngram_repeat">일시+장소가 함께 들어간 구문(예: "3월 1일(일) 오후 2시, 서면...")은 같은 어순으로 3회 이상 반복 금지. 2회를 넘으면 어순/표현을 반드시 변형할 것.</rule>
     <rule id="no_meta_prompt_leak">프롬프트/규칙 설명 문장을 본문에 복사하지 말 것. "문제는~점검" 같은 규칙성 메타 문장 생성 금지.</rule>
     <rule id="paragraph_min_sentences">원칙적으로 각 &lt;p&gt;는 최소 2문장으로 구성. 예외는 결론의 마지막 CTA 문단 1개만 허용.</rule>
+    <rule id="intro_fragment_guard">서론은 기본 2문단으로 쓰고, 1문장짜리 짧은 문단 3개로 쪼개지 말 것. "특히", "앞으로도", "또한", "이와 함께"로 시작하는 문단은 앞 문단과 의미가 자연스럽게 이어지도록 작성할 것.</rule>
     <rule id="causal_clarity">성과 언급 시 본인의 구체적 역할/직책 명시. "40% 득표율을 이끌어냈다" → "시당위원장으로서 지역 조직을 총괄하며 40% 득표율 달성에 기여했습니다"</rule>
     <rule id="h2_semantic_uniqueness">같은 의미를 다른 말로 반복하지 말 것. 같은 주제를 둘로 쪼개지 말고, 각 본론 H2는 서로 다른 질문과 직접 답을 가져야 한다.</rule>
     <rule id="no_self_certification_claim">근거 문장 없이 '유일한 후보', '최고의 후보', '인정한 결과', '인정받은 결과', '완벽하게 준비되어 있습니다' 같은 자기 단정 표현을 쓰지 말 것. 자평이 필요하면 반드시 앞 문장의 사실 근거를 먼저 제시할 것.</rule>

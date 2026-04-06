@@ -352,9 +352,21 @@ const STYLE_GUIDE_SENTENCE_SPLIT_RE = /(?<=[.!?])\s+|\n+/;
 const STYLE_GUIDE_TRANSITION_PREFIXES = ['이제', '그리고', '그러나', '하지만', '무엇보다', '그래서', '또한', '먼저', '결국', '저는'];
 const STYLE_GUIDE_POSITIONING_MARKERS = ['태어나', '자라', '출신', '로서', '경험', '기업인', '전문가', '막내', '아들', '딸', '사람'];
 const STYLE_GUIDE_EMOTION_MARKERS = ['반드시', '분명', '책임', '약속', '희망', '감사', '애정', '소중', '지키겠습니다', '해내겠습니다'];
+const STYLE_GUIDE_SOURCE_PREFIX_RE = /^(?:\[[^\]]+\]\s*)+/;
+const STYLE_GUIDE_LABEL_PREFIX_RE = /^(?:자기소개|자기 소개|프로필|약력|이력|경력|정책 메모|정책|공약|활동|성과)\s*:\s*/;
+const STYLE_GUIDE_NARRATIVE_MARKERS = ['태어나', '자라', '살아', '이어왔', '걸어왔', '노동자', '막내', '아들', '딸', '부산에서', '현장', '경험', '로서'];
+const STYLE_GUIDE_POLICY_MARKERS = ['정책', '정부', '공약', '비전', 'AI', '경제', '도시', '산업', '일자리', '복지', '교통', '교육', '세우겠습니다', '살려내겠습니다', '만들겠습니다', '이뤄내겠습니다', '제시합니다', '바꾸겠습니다'];
+const STYLE_GUIDE_MEANING_MARKERS = ['비전', '제시합니다', '보여줍니다', '세우겠습니다', '살려내겠습니다', '만들겠습니다', '이뤄내겠습니다', '약속합니다', '분명한'];
+const STYLE_GUIDE_CLOSING_ENDING_RE = /(?:합니다|했습니다|있습니다|됩니다|드리겠습니다|하겠습니다|제시합니다|지키겠습니다|해내겠습니다|살려내겠습니다)\.?\s*$/;
 
 function normalizeGuideSentence(text) {
-  return String(text || '').replace(/\s+/g, ' ').trim();
+  return String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(STYLE_GUIDE_SOURCE_PREFIX_RE, '')
+    .replace(STYLE_GUIDE_LABEL_PREFIX_RE, '')
+    .replace(/^(?:-\s*)+/, '')
+    .trim();
 }
 
 function truncateGuideSentence(text, maxLength = 90) {
@@ -391,6 +403,77 @@ function collectGuideExamples(sentences, predicate, used, limit = 2) {
     }
   }
   return results;
+}
+
+function dedupeGuideExamples(items, limit = null) {
+  const results = [];
+  const seen = new Set();
+  for (const item of items || []) {
+    const normalized = normalizeGuideSentence(item);
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    results.push(normalized);
+    if (limit !== null && results.length >= limit) break;
+  }
+  return results;
+}
+
+function containsGuideMarker(text, markers) {
+  return markers.some(marker => text.includes(marker));
+}
+
+function buildStyleRolePairs(leftItems, rightItems, leftKey, rightKey, maxPairs = 2) {
+  const pairs = [];
+  for (let idx = 0; idx < Math.min(leftItems.length, maxPairs); idx += 1) {
+    const left = leftItems[idx];
+    const right = rightItems[idx] || rightItems[0] || '';
+    if (!left || !right) continue;
+    pairs.push({ [leftKey]: left, [rightKey]: right });
+  }
+  return pairs;
+}
+
+function buildSourceRoleExamples(sourceExamples, examplePatterns) {
+  const transitionExamples = dedupeGuideExamples([
+    ...(sourceExamples.transitionExamples || []),
+    ...(examplePatterns || []),
+  ], 2);
+  const concretizationExamples = dedupeGuideExamples(sourceExamples.concretizationExamples || []);
+  const positioningExamples = dedupeGuideExamples(sourceExamples.positioningExamples || []);
+  const emotionExamples = dedupeGuideExamples(sourceExamples.emotionExamples || []);
+
+  const narrativeCandidates = dedupeGuideExamples([
+    ...(sourceExamples.transitionExamples || []),
+    ...(sourceExamples.concretizationExamples || []),
+    ...positioningExamples,
+  ]).filter(item => containsGuideMarker(item, STYLE_GUIDE_NARRATIVE_MARKERS));
+  const policyCandidates = dedupeGuideExamples([
+    ...(examplePatterns || []),
+    ...positioningExamples,
+    ...emotionExamples,
+  ]).filter(item => containsGuideMarker(item, STYLE_GUIDE_POLICY_MARKERS));
+  const evidenceCandidates = dedupeGuideExamples([
+    ...concretizationExamples,
+    ...(sourceExamples.transitionExamples || []),
+  ]).filter(item => /\d/.test(item) || containsGuideMarker(item, ['부산', '시민', '현장', '기업', '경제']));
+  const meaningCandidates = dedupeGuideExamples([
+    ...(examplePatterns || []),
+    ...positioningExamples,
+    ...emotionExamples,
+  ]).filter(item => containsGuideMarker(item, STYLE_GUIDE_MEANING_MARKERS));
+  const closingExamples = dedupeGuideExamples([
+    ...emotionExamples,
+    ...(examplePatterns || []).filter(item => STYLE_GUIDE_CLOSING_ENDING_RE.test(item)),
+  ], 2);
+
+  return {
+    declarationBridgeExamples: transitionExamples,
+    narrativeToPolicyPairs: buildStyleRolePairs(narrativeCandidates, policyCandidates, 'narrative', 'policy'),
+    evidenceToMeaningPairs: buildStyleRolePairs(evidenceCandidates, meaningCandidates, 'evidence', 'meaning'),
+    closingExamples,
+  };
 }
 
 function buildSourceStyleExamples(fingerprint, sourceText = '') {
@@ -519,6 +602,7 @@ function buildStyleGuidePrompt(fingerprint, options = {}) {
   const localTerms = (vocab.localTerms || []).filter(Boolean).slice(0, 4);
   const uniqueFeatures = (analysis.uniqueFeatures || []).filter(Boolean).slice(0, 3);
   const sourceExamples = buildSourceStyleExamples(fingerprint, sourceText);
+  const roleExamples = buildSourceRoleExamples(sourceExamples, examplePatterns);
 
   if (compact) {
     // 간소화 버전 (토큰 절약)
@@ -531,6 +615,30 @@ function buildStyleGuidePrompt(fingerprint, options = {}) {
     ? `${patterns.avgLength}자 내외 (${patterns.lengthRange})`
     : `${patterns.avgLength || 45}자 내외`;
 
+  const appendSection = (title, lines) => {
+    if (!lines || lines.length === 0) return;
+    sections.push(`${sections.length + 1}. ${title}:\n   ${lines.join('\n   ')}`);
+  };
+
+  const roleLines = [];
+  if (roleExamples.declarationBridgeExamples.length > 0) {
+    roleLines.push(`- 선언 뒤 연결: ${roleExamples.declarationBridgeExamples.map(item => `"${item}"`).join(', ')}`);
+  }
+  if (roleExamples.narrativeToPolicyPairs.length > 0) {
+    roleLines.push(
+      `- 개인 서사 -> 정책 전환: ${roleExamples.narrativeToPolicyPairs.map(item => `서사 "${item.narrative}" | 선언 "${item.policy}"`).join(' / ')}`
+    );
+  }
+  if (roleExamples.evidenceToMeaningPairs.length > 0) {
+    roleLines.push(
+      `- 수치/증거 -> 의미 해석: ${roleExamples.evidenceToMeaningPairs.map(item => `근거 "${item.evidence}" | 해석 "${item.meaning}"`).join(' / ')}`
+    );
+  }
+  if (roleExamples.closingExamples.length > 0) {
+    roleLines.push(`- 문단 마감: ${roleExamples.closingExamples.map(item => `"${item}"`).join(', ')}`);
+  }
+  appendSection('문장 역할별 실제 예시', roleLines);
+
   if (transitions.length > 0 || examplePatterns.length > 0 || sourceExamples.transitionExamples.length > 0) {
     const transitionLines = [];
     if (sourceExamples.transitionExamples.length > 0) {
@@ -542,7 +650,7 @@ function buildStyleGuidePrompt(fingerprint, options = {}) {
     if (examplePatterns.length > 0) {
       transitionLines.push(`- 실제 전개 예시: ${examplePatterns.map(item => `"${item}"`).join(', ')}`);
     }
-    sections.push(`1. 전환 패턴:\n   ${transitionLines.join('\n   ')}`);
+    appendSection('전환 패턴', transitionLines);
   }
 
   const concretizationLines = [
@@ -559,7 +667,7 @@ function buildStyleGuidePrompt(fingerprint, options = {}) {
     concretizationLines.push(`- 행동 동사: ${preferredVerbs.join(', ')}`);
   }
   concretizationLines.push(`- 사실·정책 설명 수준: ${vocab.technicalLevel || 'accessible'}`);
-  sections.push(`2. 구체화 패턴:\n   ${concretizationLines.join('\n   ')}`);
+  appendSection('구체화 패턴', concretizationLines);
 
   const rhythmLines = [
     `- 문장 길이: ${lengthInfo}`,
@@ -574,7 +682,7 @@ function buildStyleGuidePrompt(fingerprint, options = {}) {
   if (rhetoric.usesRepetition) rhythmLines.push('- 반복 구조를 활용하는 편');
   if (rhetoric.usesEnumeration) rhythmLines.push('- 나열형 전개를 활용하는 편');
   if (punctuation.commaGuidance) rhythmLines.push(`- 콤마: ${punctuation.commaGuidance}`);
-  sections.push(`3. 리듬 패턴:\n   ${rhythmLines.join('\n   ')}`);
+  appendSection('리듬 패턴', rhythmLines);
 
   const vocabLines = [];
   if (preferredVerbs.length > 0) {
@@ -590,9 +698,7 @@ function buildStyleGuidePrompt(fingerprint, options = {}) {
   if (phraseCluster.length > 0) {
     vocabLines.push(`- 시그니처 표현: ${phraseCluster.map(item => `"${item}"`).join(', ')}`);
   }
-  if (vocabLines.length > 0) {
-    sections.push(`4. 선호 어휘 클러스터:\n   ${vocabLines.join('\n   ')}`);
-  }
+  appendSection('선호 어휘 클러스터', vocabLines);
 
   const positioningLines = [];
   if (analysis.dominantStyle) {
@@ -607,9 +713,7 @@ function buildStyleGuidePrompt(fingerprint, options = {}) {
   if (sourceExamples.positioningExamples.length > 0) {
     positioningLines.push(`- 실제 자기 선언 예시: ${sourceExamples.positioningExamples.map(item => `"${item}"`).join(', ')}`);
   }
-  if (positioningLines.length > 0) {
-    sections.push(`5. 화자 포지셔닝 방식:\n   ${positioningLines.join('\n   ')}`);
-  }
+  appendSection('화자 포지셔닝 방식', positioningLines);
 
   const toneDesc = [];
   if (tone.formality > 0.6) toneDesc.push('격식체');
@@ -635,9 +739,7 @@ function buildStyleGuidePrompt(fingerprint, options = {}) {
   if (sourceExamples.emotionExamples.length > 0) {
     emotionLines.push(`- 실제 감정/선언 문장: ${sourceExamples.emotionExamples.map(item => `"${item}"`).join(', ')}`);
   }
-  if (emotionLines.length > 0) {
-    sections.push(`6. 감정 표현 방식:\n   ${emotionLines.join('\n   ')}`);
-  }
+  appendSection('감정 표현 방식', emotionLines);
 
   const alts = fingerprint.aiAlternatives || {};
   const altLines = Object.entries(alts)
@@ -650,9 +752,7 @@ function buildStyleGuidePrompt(fingerprint, options = {}) {
     .filter(Boolean)
     .slice(0, 4);
 
-  if (altLines.length > 0) {
-    sections.push(`7. AI 상투어 대체:\n   ${altLines.join('\n   ')}`);
-  }
+  appendSection('AI 상투어 대체', altLines);
 
   if (sections.length === 0) {
     return '';

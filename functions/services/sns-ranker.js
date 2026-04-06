@@ -105,6 +105,18 @@ function buildScoringPrompt(candidates, platform, originalContent, context = {})
   const { platformConfig, userInfo } = context;
   const platformName = platformConfig?.name || platform;
   const authorLabel = userInfo ? `${userInfo.name} ${userInfo.position}` : '작성자';
+  const platformLower = String(platform || '').trim().toLowerCase();
+
+  let platformSpecificRules = '';
+  if (platformLower === 'facebook-instagram') {
+    platformSpecificRules = `
+**Facebook/Instagram 공용 게시물 적합도 체크 (필수):**
+- 결과가 타래가 아니라 단일 게시물 JSON(content, hashtags, wordCount) 형식인가?
+- 첫 2~3줄 안에 핵심 메시지와 맥락이 배치되어 미리보기 구간에서도 의미가 전달되는가?
+- Instagram 해시태그 과다 사용이나 Facebook 장문 서론 없이 두 플랫폼 모두에서 자연스러운가?
+- 댓글/공감 유도 문장이 짧고 자연스러운가?
+- 원문의 고유명사/핵심 수치/핵심 주장 반영이 충분한가?`;
+  }
 
   return `당신은 SNS 콘텐츠 성과 예측 전문가입니다.
 아래 원본 블로그 원고를 ${platformName} 플랫폼용으로 변환한 ${candidates.length}개 후보를 평가해주세요.
@@ -141,6 +153,8 @@ ${candidateBlocks}
    - 원본의 핵심 메시지가 정확히 전달되는가?
    - 원본에 없는 내용이 추가되지 않았는가?
    - 정치적 입장과 논조가 보존되었는가?
+
+${platformSpecificRules}
 
 **JSON 출력 형식:**
 {

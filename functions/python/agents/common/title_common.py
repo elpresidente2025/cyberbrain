@@ -117,6 +117,188 @@ def detect_content_type(content_preview: str, category: str) -> str:
         logger.error(f'Error in detect_content_type: {e}')
         return 'VIRAL_HOOK'
 
+
+_TITLE_FAMILY_IDS = (
+    'SLOGAN_COMMITMENT',
+    'VIRAL_HOOK',
+    'DATA_BASED',
+    'QUESTION_ANSWER',
+    'COMPARISON',
+    'LOCAL_FOCUSED',
+    'EXPERT_KNOWLEDGE',
+    'TIME_BASED',
+    'ISSUE_ANALYSIS',
+    'COMMENTARY',
+)
+
+_TITLE_FAMILY_PRIORITY = (
+    'SLOGAN_COMMITMENT',
+    'EXPERT_KNOWLEDGE',
+    'DATA_BASED',
+    'QUESTION_ANSWER',
+    'COMPARISON',
+    'LOCAL_FOCUSED',
+    'ISSUE_ANALYSIS',
+    'TIME_BASED',
+    'COMMENTARY',
+    'VIRAL_HOOK',
+)
+
+_SLOGAN_COMMITMENT_PATTERN = re.compile(
+    r'(책임감|지켜온|지켜온\s+책임감|곁을\s+지키|곁에|끝까지|해내겠|다하겠|되겠|약속|다짐|함께\s+하겠|역할을\s+해내겠)',
+    re.IGNORECASE,
+)
+_SLOGAN_RELATION_PATTERN = re.compile(r'(구민|시민|주민|당원)')
+_GENERIC_REPORT_SURFACE_PATTERN = re.compile(
+    r'(현안\s*해결|미래\s*비전|비전\s*제시|정책\s*방향|실행\s*과제|의정활동\s*성과)',
+    re.IGNORECASE,
+)
+
+
+def _build_title_family_source_text(params: Optional[Dict[str, Any]]) -> str:
+    params_dict = params if isinstance(params, dict) else {}
+    source_text = " ".join(
+        str(params_dict.get(key) or "")
+        for key in ("topic", "stanceText", "contentPreview", "backgroundText")
+        if str(params_dict.get(key) or "").strip()
+    )
+    source_text = re.sub(r"<[^>]*>", " ", source_text)
+    return re.sub(r"\s+", " ", source_text).strip()
+
+
+def select_title_family(params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    params_dict = params if isinstance(params, dict) else {}
+    forced_type = str(
+        params_dict.get("_forcedType")
+        or params_dict.get("selectedTitleFamily")
+        or ""
+    ).strip()
+    if forced_type in _TITLE_FAMILY_IDS:
+        return {
+            "selectedFamily": forced_type,
+            "scores": {family: int(family == forced_type) * 100 for family in _TITLE_FAMILY_IDS},
+            "prior": forced_type,
+            "reasons": {forced_type: ["forced title family"]},
+        }
+
+    category = str(params_dict.get("category") or "").strip()
+    content_preview = str(params_dict.get("contentPreview") or "")
+    topic = str(params_dict.get("topic") or "")
+    stance_text = str(params_dict.get("stanceText") or "")
+    source_text = _build_title_family_source_text(params_dict)
+    lowered_source = source_text.lower()
+
+    prior = detect_content_type(content_preview, category)
+    scores: Dict[str, int] = {family: 0 for family in _TITLE_FAMILY_IDS}
+    reasons: Dict[str, List[str]] = {family: [] for family in _TITLE_FAMILY_IDS}
+
+    def _boost(family: str, score: int, reason: str) -> None:
+        if family not in scores or score <= 0:
+            return
+        scores[family] += score
+        if reason and len(reasons[family]) < 4:
+            reasons[family].append(reason)
+
+    if prior in scores:
+        _boost(prior, 3, f"detect_content_type prior={prior}")
+
+    has_numbers = bool(re.search(r'\d+(?:억|만원|%|명|건|가구|곳|개|회|일|년|개월|분기)', source_text))
+    has_question = bool(
+        re.search(r'[?？]', source_text)
+        or re.search(r'(어떻게|무엇|왜|얼마|언제|어떤)', source_text)
+    )
+    has_comparison = bool(re.search(r'(→|vs|대비|격차|앞섰|추월|개선|감소|증가|변화)', source_text, re.IGNORECASE))
+    has_legal_terms = bool(re.search(r'(법안|조례|법률|제도|개정|발의|통과|제정)', source_text))
+    has_policy_terms = bool(re.search(r'(정책|공약|비전|예산|입법|의정|추진|현안|민생|기본소득|지역화폐)', source_text))
+    has_time_terms = bool(re.search(r'(상반기|하반기|분기|월간|연간|보고서|리포트|브리핑|뉴스레터)', source_text))
+    has_local_terms = bool(re.search(r'[가-힣]+(동|구|군|시|읍|면|리)(?:[가-힣]|\s|,|$)', source_text))
+    has_issue_terms = bool(re.search(r'(개혁|분권|양극화|격차|투명성|문제점|대안|위기|침체|부담|부진)', source_text))
+    has_commentary_terms = bool(re.search(r'(논평|질타|비판|평가|반박|지적|소신|판단|입장)', source_text))
+    has_profile_terms = bool(re.search(r'(의원|위원장|보좌관|사무국장|대통령|지역구|당원|시민|주민|구민)', source_text))
+    has_first_person = bool(re.search(r'(저는|제가|저의|저\b)', source_text))
+    has_profile_narrative = has_first_person and has_profile_terms
+    has_slogan_commitment = bool(_SLOGAN_COMMITMENT_PATTERN.search(source_text))
+    has_relation_target = bool(_SLOGAN_RELATION_PATTERN.search(source_text))
+    has_generic_report_surface = bool(_GENERIC_REPORT_SURFACE_PATTERN.search(source_text))
+    topic_has_slogan_commitment = bool(_SLOGAN_COMMITMENT_PATTERN.search(topic) or _SLOGAN_COMMITMENT_PATTERN.search(stance_text))
+
+    if has_numbers:
+        _boost("DATA_BASED", 4, "수치/단위 신호")
+    if has_question:
+        _boost("QUESTION_ANSWER", 4, "질문형 신호")
+    if has_comparison and has_numbers:
+        _boost("COMPARISON", 6, "비교/대조 수치 신호")
+    elif has_comparison:
+        _boost("COMPARISON", 3, "비교/대조 신호")
+    if has_local_terms:
+        _boost("LOCAL_FOCUSED", 4, "지역 단위 신호")
+    if has_legal_terms:
+        _boost("EXPERT_KNOWLEDGE", 6, "법안/조례 신호")
+    elif has_policy_terms and not has_question:
+        _boost("EXPERT_KNOWLEDGE", 3, "정책/추진 신호")
+    if has_time_terms:
+        _boost("TIME_BASED", 5, "정기 보고/시점 신호")
+    if has_issue_terms and not has_profile_narrative:
+        _boost("ISSUE_ANALYSIS", 4, "현안/문제 분석 신호")
+    if has_commentary_terms:
+        _boost("COMMENTARY", 5, "논평/평가 신호")
+    elif has_profile_narrative:
+        _boost("COMMENTARY", 2, "화자 자기서술 신호")
+    if has_question and not (has_numbers or has_legal_terms or has_time_terms):
+        _boost("VIRAL_HOOK", 2, "질문형 후킹")
+    if re.search(r'(왜\s+지금|왜\s+다른가|선택의\s+이유|무엇이\s+다른가|주목받)', lowered_source):
+        _boost("VIRAL_HOOK", 3, "서사 후킹 표현")
+
+    if topic_has_slogan_commitment:
+        _boost("SLOGAN_COMMITMENT", 6, "주제/입장문 다짐형 신호")
+    if has_slogan_commitment:
+        _boost("SLOGAN_COMMITMENT", 5, "책임/다짐 표현")
+    if has_relation_target:
+        _boost("SLOGAN_COMMITMENT", 2, "주민/당원 관계 표현")
+    if has_profile_narrative and not (has_numbers or has_legal_terms or has_time_terms):
+        _boost("SLOGAN_COMMITMENT", 3, "자기소개형 입장문")
+    if has_generic_report_surface and not has_slogan_commitment:
+        _boost("DATA_BASED", 1, "보고서형 표면")
+
+    if category == "daily-communication":
+        _boost("SLOGAN_COMMITMENT", 2, "일상 소통 카테고리")
+        _boost("VIRAL_HOOK", 1, "일상 소통 카테고리")
+    elif category == "activity-report":
+        _boost("DATA_BASED", 2, "의정활동 보고 카테고리")
+    elif category == "policy-proposal":
+        _boost("EXPERT_KNOWLEDGE", 2, "정책 제안 카테고리")
+    elif category == "current-affairs":
+        _boost("ISSUE_ANALYSIS", 2, "현안 카테고리")
+
+    best_family = "VIRAL_HOOK"
+    best_score = -1
+    for family in _TITLE_FAMILY_PRIORITY:
+        score = int(scores.get(family, 0))
+        if score > best_score:
+            best_score = score
+            best_family = family
+
+    if best_score <= 0 and prior in scores:
+        best_family = prior
+    if best_score <= 0:
+        best_family = "VIRAL_HOOK"
+
+    return {
+        "selectedFamily": best_family,
+        "scores": scores,
+        "prior": prior,
+        "reasons": reasons,
+        "sourceText": source_text,
+    }
+
+
+def resolve_title_family(params: Optional[Dict[str, Any]]) -> str:
+    family_meta = select_title_family(params)
+    selected_family = str(family_meta.get("selectedFamily") or "").strip()
+    if selected_family in _TITLE_FAMILY_IDS:
+        return selected_family
+    return "VIRAL_HOOK"
+
 def extract_numbers_from_content(content: str) -> Dict[str, Any]:
     if not content:
         return {'numbers': [], 'instruction': ''}

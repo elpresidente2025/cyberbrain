@@ -123,6 +123,58 @@ INTRO_SENTENCE_MAX = 1
 POLL_PAIR_SENTENCE_MAX = 2
 SENTENCE_DUPLICATE_SIMILARITY = 0.90
 SENTENCE_DUPLICATE_LOOKBACK = 48
+SOFT_SENTENCE_DUPLICATE_SIMILARITY = 0.78
+SENTENCE_OVERLAP_MIN_TOKENS = 6
+SENTENCE_OVERLAP_RATIO = 0.70
+
+LOW_SIGNAL_SENTENCE_TOKENS = {
+    "특히",
+    "또한",
+    "아울러",
+    "무엇보다",
+    "그리고",
+    "저",
+    "저는",
+    "제가",
+    "이는",
+    "이러한",
+    "당시",
+    "엄중한",
+    "시기",
+    "시기에도",
+    "속에서도",
+}
+
+SENTENCE_TOKEN_SUFFIXES = (
+    "으로서는",
+    "으로서",
+    "로서는",
+    "로서",
+    "에게서는",
+    "에게서",
+    "에서는",
+    "에서",
+    "에게",
+    "으로",
+    "까지",
+    "부터",
+    "처럼",
+    "보다",
+    "께서",
+    "은",
+    "는",
+    "이",
+    "가",
+    "을",
+    "를",
+    "과",
+    "와",
+    "의",
+    "도",
+    "만",
+    "에",
+    "로",
+)
 
 INTRO_SENTENCE_PATTERNS = (
     re.compile(r"부산항\s*(?:부두\s*)?노동자.*(?:막내|아들)", re.IGNORECASE),
@@ -866,6 +918,33 @@ def _split_sentences(plain_text: str) -> list[str]:
     return sentences
 
 
+def _tokenize_sentence_for_overlap(sentence: str) -> list[str]:
+    tokens: list[str] = []
+    for raw_token in re.findall(r"[A-Za-z0-9가-힣]+", _normalize_plain_text(sentence)):
+        token = str(raw_token or "").strip()
+        if len(token) < 2:
+            continue
+        for suffix in SENTENCE_TOKEN_SUFFIXES:
+            if len(token) - len(suffix) >= 2 and token.endswith(suffix):
+                token = token[: -len(suffix)]
+                break
+        if len(token) < 2 or token in LOW_SIGNAL_SENTENCE_TOKENS:
+            continue
+        tokens.append(token)
+    return tokens
+
+
+def _has_high_sentence_overlap(left: str, right: str) -> bool:
+    left_tokens = list(dict.fromkeys(_tokenize_sentence_for_overlap(left)))
+    right_tokens = list(dict.fromkeys(_tokenize_sentence_for_overlap(right)))
+    if min(len(left_tokens), len(right_tokens)) < SENTENCE_OVERLAP_MIN_TOKENS:
+        return False
+
+    common = len(set(left_tokens) & set(right_tokens))
+    overlap_ratio = common / max(1, min(len(left_tokens), len(right_tokens)))
+    return common >= SENTENCE_OVERLAP_MIN_TOKENS and overlap_ratio >= SENTENCE_OVERLAP_RATIO
+
+
 def _extract_poll_pair_key(sentence: str) -> str:
     match = POLL_PAIR_SENTENCE_RE.search(str(sentence or ""))
     if not match:
@@ -1097,6 +1176,7 @@ def compress_redundant_sentences(content: str) -> tuple[str, dict[str, int]]:
     poll_pair_trimmed = 0
 
     kept_norms: list[str] = []
+    kept_sentence_history: list[str] = []
     intro_kept = 0
     poll_pair_kept: dict[str, int] = {}
 
@@ -1115,7 +1195,7 @@ def compress_redundant_sentences(content: str) -> tuple[str, dict[str, int]]:
         if not sentences:
             continue
 
-        kept_sentences: list[str] = []
+        paragraph_sentences: list[str] = []
         for sentence in sentences:
             text = str(sentence or "").strip()
             if not text:
@@ -1140,25 +1220,35 @@ def compress_redundant_sentences(content: str) -> tuple[str, dict[str, int]]:
             norm = _normalize_sentence_for_similarity(text)
             if len(norm) >= 10:
                 duplicate = False
-                for prev_norm in kept_norms[-SENTENCE_DUPLICATE_LOOKBACK:]:
+                recent_norms = kept_norms[-SENTENCE_DUPLICATE_LOOKBACK:]
+                recent_sentences = kept_sentence_history[-SENTENCE_DUPLICATE_LOOKBACK:]
+                for prev_norm, prev_text in zip(recent_norms, recent_sentences):
                     if prev_norm == norm:
                         duplicate = True
                         break
-                    if SequenceMatcher(None, prev_norm, norm).ratio() >= SENTENCE_DUPLICATE_SIMILARITY:
+                    similarity = SequenceMatcher(None, prev_norm, norm).ratio()
+                    if similarity >= SENTENCE_DUPLICATE_SIMILARITY:
+                        duplicate = True
+                        break
+                    if (
+                        similarity >= SOFT_SENTENCE_DUPLICATE_SIMILARITY
+                        and _has_high_sentence_overlap(prev_text, text)
+                    ):
                         duplicate = True
                         break
                 if duplicate:
                     removed_sentences += 1
                     continue
                 kept_norms.append(norm)
+                kept_sentence_history.append(text)
 
-            kept_sentences.append(text)
+            paragraph_sentences.append(text)
 
-        if not kept_sentences:
+        if not paragraph_sentences:
             replacements[idx] = ""
             continue
-        if len(kept_sentences) != len(sentences):
-            replacements[idx] = _build_paragraph_html_like(html_block, " ".join(kept_sentences))
+        if len(paragraph_sentences) != len(sentences):
+            replacements[idx] = _build_paragraph_html_like(html_block, " ".join(paragraph_sentences))
 
     if not replacements:
         return content, {"removedSentences": 0, "introTrimmed": 0, "pollPairTrimmed": 0}

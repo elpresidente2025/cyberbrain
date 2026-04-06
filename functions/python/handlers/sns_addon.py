@@ -1,6 +1,6 @@
 """
 SNS 변환 핸들러 (Python 포팅).
-Node.js `handlers/sns-addon.js`의 핵심 로직을 X/Threads 기준으로 이식한다.
+Node.js `handlers/sns-addon.js`의 핵심 로직을 Python으로 이식한다.
 """
 
 from __future__ import annotations
@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import random
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
@@ -24,14 +23,20 @@ from services.sns_ranker import extract_first_balanced_json, rank_and_select, wi
 
 logger = logging.getLogger(__name__)
 
-CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 URL_RE = re.compile(r"https?://[^\s)]+", re.IGNORECASE)
+SHORT_URL_RE = re.compile(r"https:\/\/ai-secretary-6e9c8\.web\.app\/s\/[0-9A-Za-z]+", re.IGNORECASE)
 SOURCE_TOKEN_RE = re.compile(r"[가-힣A-Za-z0-9·]{2,}")
 LOW_QUALITY_CTA_PATTERNS = [
     r"자세한\s*내용은\s*블로그에서\s*확인(?:해\s*)?(?:주세요|하세요)?",
     r"블로그에서\s*확인(?:해\s*)?(?:주세요|하세요)?",
     r"더\s*자세한\s*내용은\s*블로그에서",
 ]
+BLOG_CTA_ONLY_LINE_RE = re.compile(
+    r"^\s*(?:더\s*자세한\s*내용은\s*블로그에서\s*확인(?:해\s*)?(?:주세요|보세요)?|"
+    r"자세한\s*내용은\s*블로그에서\s*확인(?:해\s*)?(?:주세요|보세요)?|"
+    r"블로그\s*링크)\s*[:：]?\s*$",
+    re.IGNORECASE,
+)
 SOURCE_STOPWORDS: Set[str] = {
     "그리고",
     "하지만",
@@ -396,16 +401,10 @@ def format_post_for_readability(content: str, platform: str) -> str:
         if idx % block_size == 0 and idx < len(wrapped_body):
             formatted_body.append("")
 
-    merged_lines = formatted_body + [line.strip() for line in url_lines if str(line).strip()] + hashtag_lines
+    merged_lines = formatted_body + hashtag_lines + [line.strip() for line in url_lines if str(line).strip()]
     merged_text = "\n".join(merged_lines).strip()
     merged_text = re.sub(r"\n{3,}", "\n\n", merged_text)
     return merged_text
-
-
-def build_thread_cta_text(blog_url: str) -> str:
-    if not blog_url:
-        return ""
-    return f"전체 맥락은 블로그에서 확인하실 수 있습니다: {blog_url}"
 
 
 def has_url(text: str) -> bool:
@@ -425,6 +424,22 @@ def strip_low_quality_blog_cta(text: str) -> str:
     return cleaned.strip()
 
 
+def strip_blog_url_artifacts(text: str, blog_url: str) -> str:
+    normalized_url = normalize_blog_url(blog_url)
+    lines: List[str] = []
+    for raw_line in str(text or "").splitlines():
+        cleaned = SHORT_URL_RE.sub("", str(raw_line or ""))
+        if normalized_url:
+            cleaned = cleaned.replace(normalized_url, "")
+        cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+        if not cleaned:
+            continue
+        if BLOG_CTA_ONLY_LINE_RE.match(cleaned):
+            continue
+        lines.append(cleaned)
+    return "\n".join(lines).strip()
+
+
 def trim_to_non_space_limit(text: str, non_space_limit: int) -> str:
     if non_space_limit <= 0:
         return ""
@@ -441,14 +456,10 @@ def trim_to_non_space_limit(text: str, non_space_limit: int) -> str:
 
 def ensure_x_link_policy(content: str, blog_url: str) -> str:
     normalized_url = normalize_blog_url(blog_url)
-    cleaned = strip_low_quality_blog_cta(content)
+    cleaned = strip_blog_url_artifacts(strip_low_quality_blog_cta(content), normalized_url)
     if not normalized_url:
         return cleaned
-    if normalized_url in cleaned:
-        return cleaned
-    if has_url(cleaned):
-        return cleaned
-    return f"{cleaned}\n{normalized_url}".strip()
+    return f"{cleaned}\n{normalized_url}".strip() if cleaned else normalized_url
 
 
 def enforce_x_length_with_link(content: str, blog_url: str, min_len: int, max_len: int) -> str:
@@ -845,47 +856,6 @@ def get_thread_length_adjustment(
     return None
 
 
-def generate_code(length: int = 6) -> str:
-    return "".join(random.choice(CHARS) for _ in range(length))
-
-
-async def generate_short_link(
-    db,
-    original_url: str,
-    uid: str,
-    post_id: str,
-    platform: str,
-) -> str:
-    if not original_url:
-        return ""
-
-    short_code = None
-    is_unique = False
-    for _ in range(3):
-        candidate = generate_code(6)
-        doc = db.collection("short_links").document(candidate).get()
-        if not doc.exists:
-            short_code = candidate
-            is_unique = True
-            break
-    if not is_unique or not short_code:
-        return original_url
-
-    db.collection("short_links").document(short_code).set(
-        {
-            "originalUrl": original_url,
-            "shortCode": short_code,
-            "userId": uid or "system",
-            "postId": post_id or None,
-            "platform": platform or "sns-autogen",
-            "clicks": 0,
-            "createdAt": firestore.SERVER_TIMESTAMP,
-        }
-    )
-    base_url = "https://ai-secretary-6e9c8.web.app"
-    return f"{base_url}/s/{short_code}"
-
-
 async def apply_thread_cta_to_last_post(
     db,
     posts: List[Dict[str, Any]],
@@ -900,14 +870,17 @@ async def apply_thread_cta_to_last_post(
         return posts
 
     normalized_url = normalize_blog_url(blog_url)
-    use_original_blog_url = platform == "x"
-    short_url = ""
-    if normalized_url and not use_original_blog_url:
-        short_url = await generate_short_link(db, normalized_url, uid, post_id, platform)
-    final_url = normalized_url if use_original_blog_url else (normalize_blog_url(short_url) or normalized_url)
+    updated = []
+    for post in posts:
+        cleaned_content = strip_blog_url_artifacts(str((post or {}).get("content", "")), normalized_url)
+        updated.append({
+            **post,
+            "content": cleaned_content,
+            "wordCount": count_without_space(cleaned_content),
+        })
 
-    last_index = len(posts) - 1
-    last_post = posts[last_index] if last_index >= 0 else {}
+    last_index = len(updated) - 1
+    last_post = updated[last_index] if last_index >= 0 else {}
     last_content = str(last_post.get("content", "")).strip()
     if include_signature and signature_text:
         last_content = inject_signature_line(last_content, signature_text)
@@ -915,18 +888,14 @@ async def apply_thread_cta_to_last_post(
     if platform == "x":
         min_len = SNS_LIMITS["x"].get("minLengthPerPost", X_MIN_NON_SPACE)
         max_len = SNS_LIMITS["x"].get("maxLengthPerPost", X_TARGET_AVG_NON_SPACE)
-        next_content = enforce_x_length_with_link(last_content, final_url, min_len, max_len)
+        next_content = enforce_x_length_with_link(last_content, normalized_url, min_len, max_len)
     else:
-        cta_text = build_thread_cta_text(final_url)
-        if not cta_text:
-            return posts
-        if final_url and (final_url in last_content or has_url(last_content)):
-            next_content = strip_low_quality_blog_cta(last_content)
+        if not normalized_url:
+            next_content = last_content
         else:
-            next_content = f"{last_content}\n{cta_text}".strip() if last_content else cta_text
+            next_content = f"{last_content}\n{normalized_url}".strip() if last_content else normalized_url
 
     next_content = format_post_for_readability(next_content, platform)
-    updated = list(posts)
     updated[last_index] = {
         **last_post,
         "content": next_content,
@@ -958,6 +927,12 @@ async def _convert_platform(
         await asyncio.sleep(platform_index * 2)
 
     platform_config = SNS_LIMITS[platform]
+    minimum_content_length = 0
+    if not platform_config.get("isThread"):
+        minimum_content_length = min(
+            int(platform_config.get("minLength", 0) or 0),
+            count_without_space(cleaned_original_content),
+        )
     thread_constraints = {
         "minPosts": platform_config.get("minPosts", 2),
         "maxPosts": platform_config.get("maxPosts", 5),
@@ -1087,10 +1062,18 @@ async def _convert_platform(
             else:
                 # 예외적으로 단일 포맷이 온 경우 안전 변환
                 content = str(parsed_result.get("content", "")).strip()
+                content_length = count_without_space(content)
                 unsupported = collect_unsupported_numbers(content, fact_allowlist)
                 if unsupported:
                     logger.warning("[FactGuard] %s 출처 미확인 수치: %s", platform, ", ".join(unsupported))
-                if content:
+                if platform == "facebook-instagram":
+                    if content and (minimum_content_length == 0 or content_length >= minimum_content_length):
+                        converted_result = {
+                            "isThread": False,
+                            "content": content,
+                            "hashtags": parsed_result.get("hashtags") or generate_default_hashtags(platform),
+                        }
+                elif content:
                     converted_result = {
                         "isThread": True,
                         "posts": [{"order": 1, "content": content, "wordCount": count_without_space(content)}],
@@ -1103,7 +1086,14 @@ async def _convert_platform(
 
     if not converted_result:
         logger.warning("%s fallback 콘텐츠 생성", platform)
-        if platform == "x":
+        if platform == "facebook-instagram":
+            fallback_content = clean_content(original_content)[:900] or "핵심 메시지를 공유드립니다."
+            converted_result = {
+                "isThread": False,
+                "content": format_post_for_readability(fallback_content, platform),
+                "hashtags": generate_default_hashtags(platform),
+            }
+        elif platform == "x":
             fallback_core = clean_content(original_content)[:110] or "핵심 정책 메시지를 공유드립니다."
             fallback_content = strip_low_quality_blog_cta(fallback_core)
             converted_result = {
@@ -1129,17 +1119,27 @@ async def _convert_platform(
                 "postCount": 3,
             }
 
-    posts = converted_result.get("posts", [])
-    posts = await apply_thread_cta_to_last_post(
-        db,
-        posts,
-        blog_url,
-        platform,
-        uid,
-        post_id_str,
-        signature_text=signature_text,
-        include_signature=include_signature,
-    )
+    if converted_result.get("isThread"):
+        posts = converted_result.get("posts", [])
+        posts = await apply_thread_cta_to_last_post(
+            db,
+            posts,
+            blog_url,
+            platform,
+            uid,
+            post_id_str,
+            signature_text=signature_text,
+            include_signature=include_signature,
+        )
+    else:
+        single_content = str(converted_result.get("content", "")).strip()
+        if include_signature and signature_text:
+            single_content = inject_signature_line(single_content, signature_text)
+        single_content = format_post_for_readability(single_content, platform)
+        converted_result["content"] = single_content
+        converted_result["wordCount"] = count_without_space(single_content)
+        return {"platform": platform, "result": converted_result}
+
     if platform == "x" and posts:
         x_min = platform_config.get("minLengthPerPost", X_MIN_NON_SPACE)
         x_max = platform_config.get("maxLengthPerPost", X_TARGET_AVG_NON_SPACE)

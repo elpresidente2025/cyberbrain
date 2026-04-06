@@ -236,6 +236,27 @@ def _entries_to_document(entries: List[Dict[str, Any]]) -> str:
     return "\n\n".join(blocks)
 
 
+def _facebook_entries_to_document(entries: List[Dict[str, Any]]) -> str:
+    """페이스북 다이어리 엔트리 배열을 LightRAG ainsert()용 텍스트로 변환.
+
+    각 엔트리 헤더에 날짜·카테고리를 포함하면 LightRAG가 엔티티 관계를 더 잘 추출한다.
+    """
+    parts: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        text = str(entry.get("text") or "").strip()
+        if not text:
+            continue
+        created_at = entry.get("createdAt")
+        date_str = str(created_at)[:10] if created_at else ""
+        category = str(entry.get("category") or "").strip()
+        header = f"[Facebook 입장문] {date_str} ({category})".strip()
+        parts.append(f"{header}\n{text}")
+
+    return "\n\n---\n\n".join(parts)
+
+
 # ---------------------------------------------------------------------------
 # Manager Class
 # ---------------------------------------------------------------------------
@@ -307,6 +328,18 @@ class LightRAGManager:
         upload_graph_to_gcs(self.bucket_name, self.uid)
         logger.info("Index + upload complete for uid=%s", self.uid)
         return document
+
+    async def index_text(self, text: str) -> None:
+        """임의 텍스트(페이스북 다이어리 등)를 지식 그래프에 색인하고 GCS에 업로드한다."""
+        if self.rag is None:
+            await self.initialize(mode="write")
+        if not text.strip():
+            logger.warning("index_text: 빈 텍스트 — uid=%s", self.uid)
+            return
+        logger.info("index_text: %d자 색인 시작 — uid=%s", len(text), self.uid)
+        await self.rag.ainsert(text)
+        upload_graph_to_gcs(self.bucket_name, self.uid)
+        logger.info("index_text: 색인 + GCS 업로드 완료 — uid=%s", self.uid)
 
     def persist(self) -> None:
         """현재 그래프를 GCS에 업로드."""

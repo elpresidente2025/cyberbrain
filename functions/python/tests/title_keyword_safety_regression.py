@@ -20,8 +20,13 @@ from agents.common.title_generation import (
     generate_and_validate_title,
     resolve_title_purpose,
 )
-from agents.common.title_common import build_structured_title_candidates, detect_content_type
+from agents.common.title_common import (
+    build_structured_title_candidates,
+    detect_content_type,
+    resolve_title_family,
+)
 from agents.common.h2_guide import has_incomplete_h2_ending, sanitize_h2_text
+from agents.core.structure_normalizer import _generate_h2_text
 from agents.common.role_keyword_policy import build_role_keyword_policy
 from agents.core.keyword_injector_agent import KeywordInjectorAgent
 from agents.core.prompt_builder import build_structure_prompt
@@ -211,6 +216,47 @@ def test_sanitize_h2_text_truncates_exact_max_length_incomplete_ending() -> None
     assert len(result) <= 25
 
 
+def test_sanitize_h2_text_truncates_at_word_boundary() -> None:
+    try:
+        sanitize_h2_text("?댁옱??vs ?꾩옱?? 遺??誘몃옒瑜?嫄?吏꾩쭨 ?밸?")
+    except ValueError as error:
+        assert "25" in str(error)
+    else:
+        raise AssertionError("과도한 소제목이 잘리지 않고 거부되어야 합니다.")
+
+
+def test_sanitize_h2_text_truncates_exact_max_length_incomplete_ending() -> None:
+    text = "遺?곌꼍????곸떊, ?쒕? ?щ윭遺꾧낵 ?④퍡 ?대쨪?닿쿋"
+
+    assert len(text) == 25
+
+    try:
+        sanitize_h2_text(text, max_length=25)
+    except ValueError as error:
+        assert "미완결" in str(error)
+    else:
+        raise AssertionError("미완결 어절로 끝나는 소제목은 잘리지 않고 거부되어야 합니다.")
+
+
+def test_sanitize_h2_text_truncates_exact_max_length_incomplete_ending() -> None:
+    text = ("가" * 24) + "을"
+
+    try:
+        sanitize_h2_text(text, max_length=25)
+    except ValueError as error:
+        assert "미완결" in str(error)
+    else:
+        raise AssertionError("미완결 어절로 끝나는 소제목은 잘리지 않고 거부되어야 합니다.")
+
+
+def test_generate_h2_text_falls_back_instead_of_cutting_fragment() -> None:
+    result = _generate_h2_text("<p>?댁옱??vs ?꾩옱?? 遺??誘몃옒瑜?嫄?吏꾩쭨 ?밸? ?쒖옉?낅땲??</p>", 2)
+
+    assert result != "?댁옱??vs ?꾩옱?? 遺??誘몃옒瑜?嫄?吏꾩쭨"
+    assert len(result) <= 25
+    assert not has_incomplete_h2_ending(result)
+
+
 def test_has_incomplete_h2_ending_detects_particle_and_unfinished_endings() -> None:
     bad = ["부산의 미래를", "미래 확신을", "시민과 함께 이뤄내겠", "부산의 새로운 시"]
     good = ["부산의 미래는?", "경제 혁신의 시작", "4월 3일 KNN 토론"]
@@ -220,6 +266,25 @@ def test_has_incomplete_h2_ending_detects_particle_and_unfinished_endings() -> N
 
     for text in good:
         assert has_incomplete_h2_ending(text) is False, text
+
+
+def test_sanitize_h2_text_allows_overlong_heading_without_truncation() -> None:
+    text = "이재성 vs 전재수, 부산 미래를 건 진짜 승부"
+
+    result = sanitize_h2_text(text)
+
+    assert result == text
+    assert len(result) > 25
+
+
+def test_sanitize_h2_text_allows_exact_max_length_incomplete_ending() -> None:
+    text = ("가" * 24) + "을"
+
+    result = sanitize_h2_text(text, max_length=25)
+
+    assert result == text
+    assert len(result) == 25
+    assert has_incomplete_h2_ending(result)
 
 
 def test_structure_agent_json_prompt_includes_heading_self_check_and_concrete_fill_rules() -> None:
@@ -534,6 +599,17 @@ def test_repair_speaker_consistency_once_removes_name_plus_first_person_pronoun(
     assert "저는 33세에 CJ인터넷 이사로 일했습니다." in result["content"]
 
 
+def test_repair_speaker_consistency_once_removes_role_plus_first_person_pronoun() -> None:
+    result = _repair_speaker_consistency_once(
+        "<p>인천광역시의원 저는 계양구민 삶의 질 향상을 위한 조례를 계속 추진하겠습니다.</p>",
+        "문세종",
+    )
+
+    assert result["edited"] is True
+    assert "인천광역시의원 저는" not in result["content"]
+    assert "저는 계양구민 삶의 질 향상을 위한 조례를 계속 추진하겠습니다." in result["content"]
+
+
 def test_drop_low_signal_analysis_sentences_once_removes_self_certification_claim() -> None:
     content = (
         "<p>저는 실질적인 성과를 만들어낼 수 있는 유일한 후보라고 자부합니다.</p>"
@@ -566,6 +642,21 @@ def test_drop_low_signal_analysis_sentences_once_removes_generic_padding_variant
     assert "스마트 항만과 자율운항 산업을 부산의 성장축으로 만들겠습니다." in result["content"]
 
 
+def test_drop_low_signal_analysis_sentences_once_removes_loyalty_self_certification_claim() -> None:
+    content = (
+        "<p>저는 당과 지역을 지켜온 충직한 민주당원으로서 자부심을 느낍니다.</p>"
+        "<p>계양테크노밸리와 지역화폐 정책을 지속적으로 추진하겠습니다.</p>"
+        "<p>계양구민에게 가장 충직한 인천광역시의원으로서 역할을 다하겠습니다.</p>"
+    )
+
+    result = _drop_low_signal_analysis_sentences_once(content)
+
+    assert result["edited"] is True
+    assert "충직한 민주당원으로서" not in result["content"]
+    assert "가장 충직한 인천광역시의원" not in result["content"]
+    assert "계양테크노밸리와 지역화폐 정책을 지속적으로 추진하겠습니다." in result["content"]
+
+
 def test_final_sentence_polish_removes_passive_self_certification_and_repairs_section_opener() -> None:
     content = (
         "<h2>사람 곁에서 쌓은 현장 경험</h2>"
@@ -587,6 +678,22 @@ def test_final_sentence_polish_removes_passive_self_certification_and_repairs_se
     assert "인정받은 결과입니다" not in updated
     assert "완벽하게 되어 있습니다" not in updated
     assert "스마트 항만과 자율운항 산업을 부산의 성장축으로 만들겠습니다." in updated
+
+
+# synthetic_fixture
+def test_final_sentence_polish_strips_report_framing_and_named_first_person_subject() -> None:
+    content = (
+        "<p>이번 보고를 통해 제가 걸어온 길과 정책 방향을 밝힙니다.</p>"
+        "<p>저 {user_name}은 언제나 시민 곁에서 답을 찾겠습니다.</p>"
+    )
+
+    result = _apply_final_sentence_polish_once(content, full_name="{user_name}")
+    updated = str(result.get("content") or "")
+
+    assert result["edited"] is True
+    assert "이번 보고를 통해" not in updated
+    assert "저 {user_name}은" not in updated
+    assert "저는 언제나 시민 곁에서 답을 찾겠습니다." in updated
 
 
 def test_ensure_closing_section_min_sentences_once_strengthens_single_sentence_closing() -> None:
@@ -850,6 +957,70 @@ def test_detect_content_type_prefers_policy_profile_over_question_answer() -> No
     assert detect_content_type(content, "논평/이슈대응") == "EXPERT_KNOWLEDGE"
 
 
+def test_resolve_title_family_prefers_slogan_commitment_for_commitment_topic() -> None:
+    params = {
+        "topic": "대통령님의 지역구를 지켜온 책임감으로, 계양구민에게 가장 충직한 인천광역시의원으로 역할을 해내겠습니다.",
+        "stanceText": "대통령님의 지역구를 지켜온 책임감으로 계양구민 곁을 끝까지 지키겠습니다.",
+        "contentPreview": "인천 계양구에서 당원과 시민을 위해 뛰어온 인천광역시의원 문세종입니다.",
+        "category": "activity-report",
+    }
+
+    assert resolve_title_family(params) == "SLOGAN_COMMITMENT"
+
+
+def test_build_title_prompt_uses_slogan_commitment_family_few_shot() -> None:
+    prompt = build_title_prompt(
+        {
+            "topic": "대통령님의 지역구를 지켜온 책임감으로, 계양구민에게 가장 충직한 인천광역시의원으로 역할을 해내겠습니다.",
+            "contentPreview": "인천 계양구에서 당원과 시민을 위해 뛰어온 인천광역시의원 문세종입니다.",
+            "stanceText": "계양구민 곁을 끝까지 지키겠습니다.",
+            "fullName": "문세종",
+            "userKeywords": ["문세종"],
+            "category": "activity-report",
+        }
+    )
+
+    assert '<content_type detected="SLOGAN_COMMITMENT">' in prompt
+    assert '<title_family_selection selected="SLOGAN_COMMITMENT"' in prompt
+    assert '<user_provided_few_shot priority="high"' in prompt
+
+
+def test_calculate_title_quality_score_rejects_generic_report_tail_for_slogan_family() -> None:
+    params = {
+        "topic": "대통령님의 지역구를 지켜온 책임감으로, 계양구민에게 가장 충직한 인천광역시의원으로 역할을 해내겠습니다.",
+        "stanceText": "대통령님의 지역구를 지켜온 책임감으로 계양구민 곁을 끝까지 지키겠습니다.",
+        "contentPreview": "인천 계양구에서 당원과 시민을 위해 뛰어온 인천광역시의원 문세종입니다.",
+        "userKeywords": ["문세종"],
+        "fullName": "문세종",
+        "category": "activity-report",
+    }
+
+    result = calculate_title_quality_score("문세종, 계양구 현안 해결과 미래 비전 제시", params)
+
+    assert result["passed"] is False
+    assert "titleFamily" in result["breakdown"]
+    assert "보고서형" in str(result["breakdown"]["titleFamily"]["reason"])
+
+
+def test_calculate_title_quality_score_repairs_loyalty_title_with_slogan_tail() -> None:
+    params = {
+        "topic": "대통령님의 지역구를 지켜온 책임감으로, 계양구민에게 가장 충직한 인천광역시의원으로 역할을 해내겠습니다.",
+        "stanceText": "대통령님의 지역구를 지켜온 책임감으로 계양구민 곁을 끝까지 지키겠습니다.",
+        "contentPreview": "인천 계양구에서 당원과 시민을 위해 뛰어온 인천광역시의원 문세종입니다.",
+        "userKeywords": ["문세종"],
+        "fullName": "문세종",
+        "category": "activity-report",
+    }
+
+    result = calculate_title_quality_score("문세종, 계양구민에게 가장 충직한 인천광역시의원 되겠다", params)
+
+    assert result["passed"] is False
+    repaired = str(result.get("repairedTitle") or "")
+    assert repaired.startswith("문세종, ")
+    assert "정책 방향" not in repaired
+    assert ("곁" in repaired) or ("책임" in repaired)
+
+
 def test_build_title_prompt_includes_common_title_anti_patterns_block() -> None:
     prompt = build_title_prompt(
         {
@@ -1006,6 +1177,61 @@ def test_calculate_title_quality_score_allows_event_title_with_extra_anchor() ->
     assert result["passed"] is True
     assert int(result["score"]) >= 70
     assert "topicCopy" not in result.get("breakdown", {})
+
+
+def test_calculate_title_quality_score_rejects_event_announcement_surface_for_non_event_post() -> None:
+    result = calculate_title_quality_score(
+        "문세종, 계양구민에게 충직한 인천광역시의원 행사 안내",
+        {
+            "topic": "문세종의 구체적인 정책",
+            "contentPreview": (
+                "계양테크노밸리와 햇빛연금, 지역 현안 해결 방안을 추진하겠다는 "
+                "정책 제안과 입법 성과를 설명하는 글입니다."
+            ),
+            "stanceText": (
+                "계양구민이 체감할 정책과 예산 확보 성과를 설명하고 "
+                "앞으로의 실천 계획을 제시합니다."
+            ),
+            "userKeywords": ["문세종"],
+            "fullName": "문세종",
+            "category": "policy-proposal",
+        },
+        {"autoFitLength": False},
+    )
+
+    assert result["passed"] is False
+    assert "eventSurfaceLeak" in result["breakdown"]
+
+
+# synthetic_fixture
+def test_calculate_title_quality_score_repairs_loyalty_self_certification_title() -> None:
+    result = calculate_title_quality_score(
+        "{user_name}, 지역민에게 가장 충직한 시의원 되겠다",
+        {
+            "topic": "{user_name}의 구체적인 정책",
+            "contentPreview": (
+                "지역화폐 부활과 산업단지 활성화, 지역 현안 해결 방안을 "
+                "설명하는 의정활동 보고 글입니다."
+            ),
+            "stanceText": (
+                "시민이 체감하는 정책과 예산 확보 성과를 바탕으로 "
+                "정책 방향과 실행 과제를 제시합니다."
+            ),
+            "userKeywords": ["{user_name}"],
+            "fullName": "{user_name}",
+            "category": "activity-report",
+            "status": "active",
+        },
+        {"autoFitLength": False},
+    )
+
+    repaired = str(result.get("repairedTitle") or "")
+
+    assert result["passed"] is False
+    assert "loyaltySelfCertification" in result["breakdown"]
+    assert repaired
+    assert "충직한" not in repaired
+    assert "{user_name}" in repaired
 
 
 def test_calculate_title_quality_score_repairs_adjacent_focus_keywords_surface() -> None:
@@ -1599,12 +1825,16 @@ def main() -> None:
             test_sanitize_h2_text_repairs_duplicate_particles_and_tokens,
         ),
         (
-            "sanitize_h2_text_truncates_at_word_boundary",
-            test_sanitize_h2_text_truncates_at_word_boundary,
+            "sanitize_h2_text_allows_overlong_heading_without_truncation",
+            test_sanitize_h2_text_allows_overlong_heading_without_truncation,
         ),
         (
-            "sanitize_h2_text_truncates_exact_max_length_incomplete_ending",
-            test_sanitize_h2_text_truncates_exact_max_length_incomplete_ending,
+            "sanitize_h2_text_allows_exact_max_length_incomplete_ending",
+            test_sanitize_h2_text_allows_exact_max_length_incomplete_ending,
+        ),
+        (
+            "generate_h2_text_falls_back_instead_of_cutting_fragment",
+            test_generate_h2_text_falls_back_instead_of_cutting_fragment,
         ),
         (
             "has_incomplete_h2_ending_detects_particle_and_unfinished_endings",
@@ -1701,6 +1931,10 @@ def main() -> None:
         (
             "final_sentence_polish_removes_passive_self_certification_and_repairs_section_opener",
             test_final_sentence_polish_removes_passive_self_certification_and_repairs_section_opener,
+        ),
+        (
+            "final_sentence_polish_strips_report_framing_and_named_first_person_subject",
+            test_final_sentence_polish_strips_report_framing_and_named_first_person_subject,
         ),
         (
             "ensure_closing_section_min_sentences_once_strengthens_single_sentence_closing",
@@ -1801,6 +2035,10 @@ def main() -> None:
         (
             "calculate_title_quality_score_repairs_adjacent_focus_keywords_surface",
             test_calculate_title_quality_score_repairs_adjacent_focus_keywords_surface,
+        ),
+        (
+            "calculate_title_quality_score_repairs_loyalty_self_certification_title",
+            test_calculate_title_quality_score_repairs_loyalty_self_certification_title,
         ),
         (
             "generate_and_validate_title_uses_structured_rescue_for_event_title",

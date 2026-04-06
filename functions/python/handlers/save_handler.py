@@ -6,10 +6,13 @@ Node.js `handlers/posts/save-handler.js`의 Python 포팅 버전이다.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List
 
 from firebase_admin import auth as firebase_auth
@@ -21,6 +24,11 @@ from services.memory import update_memory_on_selection
 from services.posts.profile_loader import end_session
 
 logger = logging.getLogger(__name__)
+
+_RAG_BUCKET = "ai-secretary-6e9c8.appspot.com"
+REINDEX_THRESHOLD = 3
+FACEBOOK_ENTRY_MIN_LENGTH = 30
+_REINDEX_COOLDOWN = timedelta(minutes=5)
 
 SOURCE_TYPE_ALIASES = {
     "position_statement": "position_statement",
@@ -184,6 +192,89 @@ def _extract_source_type(data: Dict[str, Any]) -> str:
     return "blog_draft"
 
 
+def _record_facebook_entry(uid: str, data: Dict[str, Any], db) -> int | None:
+    """stanceText를 Firestore 다이어리 엔트리로 저장하고 누적 카운트를 반환한다."""
+    text = str(data.get("stanceText") or "").strip()
+    if len(text) < FACEBOOK_ENTRY_MIN_LENGTH:
+        return None
+
+    entry = {
+        "text": text,
+        "topic": str(data.get("topic") or "").strip(),
+        "category": str(data.get("category") or "").strip(),
+        "createdAt": firestore.SERVER_TIMESTAMP,
+        "indexed": False,
+    }
+    bio_ref = db.collection("bios").document(uid)
+    bio_ref.collection("facebook_entries").add(entry)
+
+    # 원자적 Increment — bios/{uid} 문서가 없어도 merge=True로 생성
+    bio_ref.set(
+        {"pendingFacebookEntryCount": firestore.Increment(1)},
+        merge=True,
+    )
+    snapshot = bio_ref.get(field_paths=["pendingFacebookEntryCount"])
+    count = (snapshot.to_dict() or {}).get("pendingFacebookEntryCount")
+    return int(count) if count is not None else None
+
+
+async def _async_reindex(uid: str) -> None:
+    """facebook_entries 전체를 LightRAG에 색인하고 GCS에 업로드한다."""
+    from rag_manager import LightRAGManager, _facebook_entries_to_document, upload_graph_to_gcs
+
+    db = firestore.client()
+    bio_ref = db.collection("bios").document(uid)
+
+    # 중복 실행 방지: 마지막 색인 후 5분 이내면 스킵
+    snapshot = bio_ref.get(field_paths=["facebookEntryIndexedAt"])
+    last_indexed = (snapshot.to_dict() or {}).get("facebookEntryIndexedAt")
+    if last_indexed is not None:
+        last_dt = last_indexed if isinstance(last_indexed, datetime) else None
+        if last_dt and (datetime.now(timezone.utc) - last_dt.replace(tzinfo=timezone.utc)) < _REINDEX_COOLDOWN:
+            logger.info("[FacebookDiary] 색인 쿨다운 중 — uid=%s", uid)
+            return
+
+    docs = bio_ref.collection("facebook_entries").order_by("createdAt").get()
+    entries = [doc.to_dict() for doc in docs if doc.to_dict()]
+    if not entries:
+        return
+
+    document = _facebook_entries_to_document(entries)
+    if not document.strip():
+        return
+
+    logger.info("[FacebookDiary] %d개 엔트리 색인 시작 — uid=%s", len(entries), uid)
+    manager = LightRAGManager(bucket_name=_RAG_BUCKET, uid=uid)
+    await manager.initialize(mode="write")
+    await manager.rag.ainsert(document)
+    upload_graph_to_gcs(_RAG_BUCKET, uid)
+
+    bio_ref.set(
+        {
+            "pendingFacebookEntryCount": 0,
+            "facebookEntryIndexedAt": firestore.SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
+    logger.info("[FacebookDiary] 색인 + GCS 업로드 완료 — uid=%s", uid)
+
+
+def _run_rag_reindex(uid: str) -> None:
+    """daemon thread 에서 호출되는 동기 래퍼."""
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(_async_reindex(uid))
+    except Exception as exc:
+        logger.warning("[FacebookDiary] 재색인 실패(무시) — uid=%s: %s", uid, exc)
+    finally:
+        try:
+            loop.close()
+        except Exception:
+            pass
+        asyncio.set_event_loop(None)
+
+
 def _evaluate_and_update_post(
     doc_ref,
     *,
@@ -256,6 +347,19 @@ def _save_selected_post_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]:
         doc_ref = db.collection("posts").document()
         doc_ref.set(post_data)
         post_id = doc_ref.id
+
+        # 페이스북 글 다이어리 엔트리 저장 + 임계치 도달 시 백그라운드 재색인
+        try:
+            entry_count = _record_facebook_entry(uid, data, db)
+            if entry_count is not None and entry_count >= REINDEX_THRESHOLD:
+                threading.Thread(
+                    target=_run_rag_reindex, args=(uid,), daemon=True
+                ).start()
+                logger.info(
+                    "[FacebookDiary] 재색인 트리거 — uid=%s count=%d", uid, entry_count
+                )
+        except Exception as exc:
+            logger.warning("[FacebookDiary] 엔트리 기록 실패(무시): %s", exc)
 
         evaluation = None
         executor = ThreadPoolExecutor(max_workers=1)

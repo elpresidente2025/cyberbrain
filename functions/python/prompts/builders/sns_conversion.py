@@ -10,7 +10,7 @@ import re
 from typing import Any, Dict, Optional
 
 from agents.templates.sns_conversion import (
-    build_sns_natural_tone_guide as _build_sns_natural_tone_guide,
+    build_facebook_instagram_prompt as _build_facebook_instagram_prompt,
     build_threads_prompt as _build_threads_prompt,
     build_x_prompt as _build_x_prompt,
 )
@@ -64,80 +64,13 @@ def clean_html_content(original_content: str) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
-
-def _topic_title_block(options: Dict[str, Any]) -> str:
-    topic = str(options.get("topic") or "")
-    title = str(options.get("title") or "")
-    topic_block = (
-        f'\n<core_topic priority="highest">\n'
-        f'  <message>{topic}</message>\n'
-        f'  <instruction>이 주제의 핵심 메시지와 CTA(행동 유도)를 반드시 보존하세요.</instruction>\n'
-        f'</core_topic>\n'
-        if topic
-        else ""
-    )
-    title_block = f"<source_title>{title}</source_title>\n" if title else ""
-    return f"{topic_block}{title_block}"
-
-
 def build_facebook_instagram_prompt(
     clean_content: str,
     platform_config: Dict[str, Any],
     user_info: Dict[str, Any],
     options: Optional[Dict[str, Any]] = None,
 ) -> str:
-    options = options or {}
-    chars_per_line = int(platform_config.get("charsPerLine", 22))
-    topic_title = _topic_title_block(options)
-    natural_tone_guide = _build_sns_natural_tone_guide()
-
-    min_len = platform_config.get('minLength', 300)
-    max_len = platform_config.get('maxLength', 1000)
-    hashtag_limit = platform_config.get('hashtagLimit', 5)
-
-    return f"""아래는 {user_info.get('name', '정치인')} {user_info.get('position', '의원')}이 작성한 블로그 원고입니다. 이를 Instagram 캡션으로 변환해주세요.
-{topic_title}
-<source_content>
-{clean_content}
-</source_content>
-
-{natural_tone_guide}
-
-<instagram_conversion platform="instagram" chars_per_line="{chars_per_line}">
-  <algorithm_optimization>
-    <rule>첫 125자에 핵심 메시지 + 검색 키워드를 배치</rule>
-    <rule>모바일 가독성을 위해 한 줄을 {chars_per_line}자 내외로 유지</rule>
-    <rule>단순 요약보다 배경/의미/기대효과를 설명하는 해설형 캡션으로 작성</rule>
-    <rule>이모지는 도입 1개 + 본문 2~3개 + CTA 1개 수준으로 제한</rule>
-    <rule>해시태그는 본문 하단에 3줄 띄우고 최대 {hashtag_limit}개 사용</rule>
-  </algorithm_optimization>
-
-  <structure>
-    <section order="1" name="훅">첫 문장: 타겟 독자를 부르고 궁금증을 유도</section>
-    <section order="2" name="핵심 요약">바쁜 독자용 3~4줄</section>
-    <section order="3" name="상세 설명">정책 배경/수치/기대효과를 구체적으로 설명</section>
-    <section order="4" name="마무리">개인적 소회 또는 비전</section>
-    <section order="5" name="CTA">댓글/저장 유도</section>
-    <section order="6" name="해시태그">최대 {hashtag_limit}개</section>
-  </structure>
-
-  <banned_patterns>
-    <rule>"자세한 내용은 블로그에서" 같은 저품질 문구</rule>
-    <rule>원문에 없는 정책/수치 창작</rule>
-    <rule>과도한 느낌표/감탄사 남발</rule>
-  </banned_patterns>
-
-  <output_requirements min_length="{min_len}" max_length="{max_len}" hashtag_limit="{hashtag_limit}">
-    원본의 정치적 입장과 논조 유지
-  </output_requirements>
-</instagram_conversion>
-
-JSON 출력 형식:
-{{
-  "content": "변환된 Instagram 캡션 전체 텍스트",
-  "hashtags": ["#태그1", "#태그2", "#태그3"],
-  "wordCount": 실제글자수
-}}"""
+    return _build_facebook_instagram_prompt(clean_content, platform_config, user_info, options or {})
 
 
 def build_x_prompt(

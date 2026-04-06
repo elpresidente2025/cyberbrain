@@ -14,6 +14,10 @@ from ..templates.local_issues import build_local_issues_prompt
 from ..common.theminjoo import get_party_stance
 from ..common.election_rules import get_election_stage
 from ..common.style_analyzer import extract_style_from_text
+from ..common.stance_filters import (
+    looks_like_hashtag_bullet_line,
+    normalize_stance_text as normalize_stance_text_common,
+)
 from ..common.warnings import generate_non_lawmaker_warning, generate_family_status_warning
 from ..common.constants import resolve_writing_method
 from ..common.xml_builder import (
@@ -61,7 +65,7 @@ STANCE_BRANDING_RECOGNITION_PATTERN = re.compile(
 
 
 def _normalize_stance_text(value: Any) -> str:
-    return re.sub(r'\s+', ' ', str(value or '')).strip()
+    return normalize_stance_text_common(value)
 
 
 def _compact_stance_text(value: Any) -> str:
@@ -115,6 +119,8 @@ def _should_keep_must_include_stance(candidate: Any, author_name: Any = "") -> b
     if len(normalized) < 8:
         return False
     if normalized.startswith(('⚠️', '우선순위:', '예시 패턴:', '→ 실제')):
+        return False
+    if looks_like_hashtag_bullet_line(normalized):
         return False
     if _looks_like_stance_meta_line(normalized):
         return False

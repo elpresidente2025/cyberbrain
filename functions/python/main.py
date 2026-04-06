@@ -208,6 +208,19 @@ def batch_index_bios(req: https_fn.Request) -> https_fn.Response:
 @https_fn.on_request(
     cors=options.CorsOptions(cors_origins="*", cors_methods=["POST", "OPTIONS"]),
     region="asia-northeast3",
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=300,
+    secrets=["GEMINI_API_KEY"],
+)
+def index_facebook_entries(req: https_fn.Request) -> https_fn.Response:
+    """페이스북 다이어리 엔트리를 LightRAG에 수동 재색인 (운영자용)"""
+    from handlers.rag_index import handle_index_facebook_entries
+    return handle_index_facebook_entries(req)
+
+
+@https_fn.on_request(
+    cors=options.CorsOptions(cors_origins="*", cors_methods=["POST", "OPTIONS"]),
+    region="asia-northeast3",
     memory=options.MemoryOption.MB_512,
     timeout_sec=300,
     secrets=["GEMINI_API_KEY"]
@@ -229,7 +242,7 @@ def save_selected_post(req: https_fn.Request) -> https_fn.Response:
     secrets=["GEMINI_API_KEY"]
 )
 def py_convertToSNS(req: https_fn.CallableRequest) -> dict:
-    """원고를 X/Threads용으로 변환 (onCall, 프런트 호환 함수명)"""
+    """원고를 SNS 플랫폼용으로 변환 (onCall, 프런트 호환 함수명)"""
     from handlers.sns_addon import handle_convert_to_sns_call
     return handle_convert_to_sns_call(req)
 
@@ -276,7 +289,7 @@ def py_testSNS(req: https_fn.CallableRequest) -> dict:
     secrets=["GEMINI_API_KEY"]
 )
 def convert_to_sns(req: https_fn.Request) -> https_fn.Response:
-    """원고를 X/Threads용으로 변환"""
+    """원고를 SNS 플랫폼용으로 변환"""
     from handlers.sns_addon import handle_convert_to_sns
     return handle_convert_to_sns(req)
 

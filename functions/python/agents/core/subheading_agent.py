@@ -8,7 +8,6 @@ from ..common.h2_guide import (
     H2_BEST_RANGE,
     H2_MAX_LENGTH,
     build_h2_rules,
-    has_incomplete_h2_ending,
     normalize_h2_style,
     sanitize_h2_text,
 )
@@ -258,20 +257,13 @@ class SubheadingAgent(Agent):
                 raise StructuredOutputError("headings must be an array.")
 
             processed: List[str] = []
-            blocked_headings: List[str] = []
             for heading in headings:
                 try:
                     heading_text = sanitize_h2_text(str(heading))
                 except ValueError:
                     continue
-                if has_incomplete_h2_ending(heading_text):
-                    blocked_headings.append(heading_text)
-                    continue
                 processed.append(heading_text)
 
-            if blocked_headings:
-                logger.warning("[%s] Incomplete H2 surfaces blocked: %s", self.name, blocked_headings[:3])
-                raise StructuredOutputError(f"incomplete headings after normalization: {blocked_headings[:3]}")
             if not processed:
                 raise StructuredOutputError("headings array is empty after normalization.")
             return processed

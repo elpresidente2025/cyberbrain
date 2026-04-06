@@ -31,8 +31,10 @@ from agents.common.title_generation import (
     generate_and_validate_title,
     validate_theme_and_content,
 )
+from agents.common.xml_builder import build_context_analysis_section
 from agents.core.structure_agent import StructureAgent
 from agents.core.content_validator import ContentValidator
+from agents.core.prompt_guards import _build_style_generation_guard
 from agents.core.writer_agent import _should_keep_must_include_stance
 from agents.core.prompt_builder import build_structure_prompt, build_style_role_priority_summary
 from handlers.generate_posts import (
@@ -67,6 +69,8 @@ from handlers.generate_posts import (
 )
 from handlers.generate_posts_pkg.pipeline import (
     _apply_speaker_name_keyword_max_override,
+    _build_title_stance_summary,
+    _repair_generic_subheading_surface_text,
     _repair_self_reference_placeholders_once,
     _repair_keyword_gate_once,
 )
@@ -75,6 +79,7 @@ from services.posts.poll_fact_guard import (
     build_poll_matchup_fact_table,
     enforce_poll_fact_consistency,
 )
+from services.posts.content_processor import repair_duplicate_particles_and_tokens
 from services.posts.output_formatter import finalize_output
 from services.posts.personalization import generate_style_hints
 from services.memory import _update_recent_titles
@@ -141,6 +146,163 @@ def test_should_keep_must_include_stance_filters_meta_and_branding_lines() -> No
     assert _should_keep_must_include_stance("이재성도 충분히 이깁니다.", "이재성") is False
     assert _should_keep_must_include_stance("부산 경제는 이재성입니다.", "이재성") is False
     assert _should_keep_must_include_stance("* KNN 뉴스 3월5일(목) 17시 방송분", "이재성") is False
+    assert _should_keep_must_include_stance("#송영길 국회의원 보좌관", "문세종") is False
+
+
+def test_build_context_analysis_section_omits_hashtag_bullet_stance_phrases() -> None:
+    xml = build_context_analysis_section(
+        {
+            "mustIncludeFromStance": [
+                "#profile_bullet",
+                "#role_bullet",
+                "{region} 주민 삶의 질을 높이겠습니다.",
+            ]
+        },
+        "{user_name}",
+    )
+
+    assert "#profile_bullet" not in xml
+    assert "#role_bullet" not in xml
+    assert "{region} 주민 삶의 질을 높이겠습니다." in xml
+
+
+# synthetic_fixture
+def test_build_structure_prompt_skips_hashtag_bullet_stance_items() -> None:
+    prompt = build_structure_prompt(
+        {
+            "topic": "{region} 현안과 정책 방향",
+            "category": "activity-report",
+            "writingMethod": "direct_writing",
+            "authorName": "{user_name}",
+            "authorBio": "{user_title} {user_name}",
+            "instructions": "{region} 주민 삶의 질을 높이겠습니다.",
+            "newsContext": "",
+            "ragContext": "",
+            "targetWordCount": 1800,
+            "partyStanceGuide": "",
+            "contextAnalysis": {
+                "mustIncludeFromStance": [
+                    "#profile_bullet",
+                    "{region} 주민 삶의 질을 높이겠습니다.",
+                ]
+            },
+            "userProfile": {"name": "{user_name}", "status": "active"},
+            "personalizationContext": "",
+            "memoryContext": "",
+            "profileSupportContext": "",
+            "profileSubstituteContext": "",
+            "newsSourceMode": "bio",
+            "userKeywords": ["{user_name}"],
+            "lengthSpec": {
+                "body_sections": 3,
+                "total_sections": 5,
+                "paragraphs_per_section": 2,
+                "per_section_min": 180,
+                "per_section_max": 320,
+            },
+        }
+    )
+
+    assert "#profile_bullet" not in prompt
+    assert "{region} 주민 삶의 질을 높이겠습니다." in prompt
+
+# synthetic_fixture
+def test_build_structure_prompt_guides_intro_as_two_paragraphs_by_default() -> None:
+    prompt = build_structure_prompt(
+        {
+            "topic": "{region} 현안과 정책 방향",
+            "category": "activity-report",
+            "writingMethod": "direct_writing",
+            "authorName": "{user_name}",
+            "authorBio": "{user_title} {user_name}",
+            "instructions": "{region} 현안과 정책 방향을 설명합니다.",
+            "newsContext": "",
+            "ragContext": "",
+            "targetWordCount": 1800,
+            "partyStanceGuide": "",
+            "contextAnalysis": {},
+            "userProfile": {"name": "{user_name}", "status": "active"},
+            "personalizationContext": "",
+            "memoryContext": "",
+            "profileSupportContext": "",
+            "profileSubstituteContext": "",
+            "newsSourceMode": "bio",
+            "userKeywords": ["{user_name}"],
+            "lengthSpec": {
+                "body_sections": 3,
+                "total_sections": 5,
+                "paragraphs_per_section": 3,
+                "per_section_min": 180,
+                "per_section_max": 320,
+            },
+        }
+    )
+
+    assert '<intro paragraphs="기본 2, 필요 시 3"' in prompt
+    assert "서론은 기본 2문단으로 쓰고" in prompt
+
+
+# synthetic_fixture
+def test_build_structure_prompt_adds_section_lane_rules_for_activity_report() -> None:
+    prompt = build_structure_prompt(
+        {
+            "topic": "{region} 정책 성과와 미래 과제",
+            "category": "activity-report",
+            "writingMethod": "direct_writing",
+            "authorName": "{user_name}",
+            "authorBio": "{user_title} {user_name}",
+            "instructions": "{region} 주민 삶의 질을 높이기 위한 성과와 과제를 설명합니다.",
+            "newsContext": "",
+            "ragContext": "",
+            "targetWordCount": 1800,
+            "partyStanceGuide": "",
+            "contextAnalysis": {},
+            "userProfile": {"name": "{user_name}", "status": "active"},
+            "personalizationContext": "",
+            "memoryContext": "",
+            "profileSupportContext": "",
+            "profileSubstituteContext": "",
+            "newsSourceMode": "bio",
+            "userKeywords": ["{user_name}"],
+            "lengthSpec": {
+                "body_sections": 3,
+                "total_sections": 5,
+                "paragraphs_per_section": 3,
+                "per_section_min": 180,
+                "per_section_max": 320,
+            },
+        }
+    )
+
+    assert 'id="section_lane_achievement_only"' in prompt
+    assert 'id="section_lane_future_only"' in prompt
+
+
+def test_build_title_stance_summary_skips_hashtag_bullet_fragments() -> None:
+    summary = _build_title_stance_summary(
+        {
+            "mustIncludeFromStance": [
+                "#profile_bullet",
+                "#role_bullet",
+                "{region} 주민 삶의 질을 높이겠습니다.",
+            ]
+        },
+        "#profile_bullet\n{region} 주민 삶의 질을 높이겠습니다.",
+        full_name="{user_name}",
+    )
+
+    assert "#profile_bullet" not in summary
+    assert "#role_bullet" not in summary
+    assert "{region} 주민 삶의 질을 높이겠습니다." in summary
+
+
+def test_style_generation_guard_includes_requested_static_forbidden_phrases() -> None:
+    guard = _build_style_generation_guard()
+
+    assert "오늘 이 자리에서" in guard
+    assert "소홀히 하지 않았습니다" in guard
+    assert "<phrase>소홀함이 없었습니다</phrase>" not in guard
+    assert "<phrase>메커니즘을 완벽히 이해하고 있으며</phrase>" not in guard
 
 
 def test_sanitize_auto_keywords_removes_fragments_and_name_particles() -> None:
@@ -716,7 +878,7 @@ def test_guard_title_after_editor_accepts_direct_role_surface_candidate_when_anc
     assert str(info["source"]).startswith("candidate")
 
 
-def test_guard_draft_title_nonfatal_downgrades_failure_to_previous_fallback() -> None:
+def test_guard_draft_title_nonfatal_preserves_failed_candidate_without_fallback() -> None:
     restored, info = _guard_draft_title_nonfatal(
         phase="draft_output",
         candidate_title="부산 선거",
@@ -734,10 +896,55 @@ def test_guard_draft_title_nonfatal_downgrades_failure_to_previous_fallback() ->
     )
 
     assert restored
-    assert restored != "부산 선거"
+    assert restored == "부산 선거"
     assert info["accepted"] is True
     assert info["nonFatal"] is True
     assert info["phase"] == "draft_output"
+    assert info["source"] == "candidate_failed_passthrough"
+    assert info["validated"] is False
+
+
+# synthetic_fixture
+def test_guard_draft_title_nonfatal_repairs_mixed_duplicate_particles_in_title_surface() -> None:
+    restored, info = _guard_draft_title_nonfatal(
+        phase="draft_output",
+        candidate_title="계양구의 밝은 미래를을 위한 약속과 비전",
+        previous_title="",
+        topic="계양구의 밝은 미래와 정책 방향",
+        content="계양구의 미래와 정책 방향을 설명하는 의정활동 보고입니다.",
+        user_keywords=["{user_name}"],
+        full_name="{user_name}",
+        category="activity-report",
+        status="active",
+        context_analysis={},
+    )
+
+    assert restored == "계양구의 밝은 미래를 위한 약속과 비전"
+    assert info["accepted"] is True
+    assert info["repaired"] is True
+
+
+# synthetic_fixture
+def test_guard_draft_title_nonfatal_repairs_third_person_possessive_title_surface() -> None:
+    restored, info = _guard_draft_title_nonfatal(
+        phase="draft_output",
+        candidate_title="{user_name}, 그의 선택은?",
+        previous_title="",
+        topic="{region} 변화와 정책 방향",
+        content="{region} 현안과 민생경제 해법을 설명하는 의정활동 보고입니다.",
+        user_keywords=["{user_name}"],
+        full_name="{user_name}",
+        category="activity-report",
+        status="active",
+        context_analysis={},
+    )
+
+    assert restored
+    assert "그의" not in restored
+    assert "그녀의" not in restored
+    assert "선택의 이유" in restored
+    assert info["accepted"] is True
+    assert info["repaired"] is True
 
 
 def test_guard_draft_title_nonfatal_repairs_direct_role_surface_candidate_to_anchor_plus_argument() -> None:
@@ -1573,6 +1780,58 @@ def test_shared_section_contract_blocks_duplicate_career_fact_across_sections() 
     assert violation.get("sectionIndex") == 2
 
 
+# synthetic_fixture
+def test_shared_section_contract_blocks_duplicate_political_career_fact_across_sections() -> None:
+    violation = validate_cross_section_contracts(
+        sections=[
+            {
+                "heading": "{region}를 위해 걸어온 길",
+                "paragraphs": [
+                    "정책보좌관, {user_title}, 지역조직 사무국장, 지역위원장 직무대행을 역임하며 {region} 현안 해결에 앞장섰습니다.",
+                ],
+            },
+            {
+                "heading": "{user_name}의 지역 현안 이해",
+                "paragraphs": [
+                    "정책보좌관을 시작으로 {user_title}, 지역조직 사무국장, 지역위원장 직무대행을 맡으며 {region} 발전에 힘썼습니다.",
+                ],
+            },
+        ],
+        speaker="{user_name}",
+        opponent="",
+    )
+
+    assert violation is not None
+    assert violation.get("code") == "duplicate_career_fact"
+    assert violation.get("sectionIndex") == 2
+
+
+# synthetic_fixture
+def test_shared_section_contract_blocks_duplicate_policy_evidence_fact_across_sections() -> None:
+    violation = validate_cross_section_contracts(
+        sections=[
+            {
+                "heading": "{region} {policy_topic} 추진 방향과 실행 계획",
+                "paragraphs": [
+                    "지역화폐의 역할과 효과는 기준인물 시장께서 시장 재임 시절 이미 증명한 바 있습니다.",
+                ],
+            },
+            {
+                "heading": "{region} 민생 회복과 정책 실행 과제",
+                "paragraphs": [
+                    "저는 지역화폐의 역할과 효과가 기준인물 시장께서 시장 재임 시절 증명한 바와 같이 민생 회복에 도움이 된다고 봅니다.",
+                ],
+            },
+        ],
+        speaker="{user_name}",
+        opponent="",
+    )
+
+    assert violation is not None
+    assert violation.get("code") == "duplicate_policy_evidence_fact"
+    assert violation.get("sectionIndex") == 2
+
+
 def test_get_section_contract_sequence_keeps_single_closing_contract() -> None:
     bundle = {
         "scope": "matchup",
@@ -2129,6 +2388,53 @@ def test_structure_agent_build_html_replaces_low_alignment_heading_with_contract
     assert "혁신과 실천으로 증명하는 이재성의 경쟁력" not in content
     assert "이재성이 주진우와의 가상대결에서 앞선 이유" in content
 
+# synthetic_fixture
+def test_structure_agent_build_html_merges_fragmented_intro_paragraphs() -> None:
+    agent = StructureAgent(options={})
+    payload = {
+        "title": "{user_name}의 {issue_topic}",
+        "intro": {
+            "paragraphs": [
+                "{user_title} {user_name}입니다.",
+                "특히, {region} 현안과 주민들의 삶의 질 향상을 위해 더 치열하게 움직이겠습니다.",
+                "앞으로도 저는 새로운 관점으로 {region}의 해법을 찾겠습니다.",
+            ]
+        },
+        "body": [
+            {
+                "heading": "{region} 현안 해결 방향",
+                "paragraphs": [
+                    "{region}의 주요 현안을 다시 정리하고, 주민 불편을 줄이기 위한 대응 방안을 마련하겠습니다. 현장에서 확인한 문제를 빠르게 행정에 연결하겠습니다.",
+                    "의정활동 과정에서 확인한 과제를 사업과 예산으로 연결해 실질적인 변화를 만들겠습니다. 주민이 체감하는 결과를 더 분명하게 보여드리겠습니다.",
+                    "생활 밀착형 현안을 놓치지 않고 지역의 우선순위를 다시 세우겠습니다. 필요한 제도 개선과 예산 확보를 함께 추진하겠습니다.",
+                ],
+            }
+        ],
+        "conclusion": {
+            "heading": "{region}의 더 나은 내일",
+            "paragraphs": [
+                "{region}의 더 나은 내일을 위해 지금 필요한 과제를 차분하게 풀어가겠습니다. 주민과의 약속을 실행으로 증명하겠습니다.",
+                "현장의 목소리를 끝까지 듣고, 책임 있게 결과를 만들어내겠습니다. {region} 주민과 함께 다음 변화를 준비하겠습니다.",
+                "주민이 체감하는 성과를 다시 확인할 수 있도록 마지막까지 챙기겠습니다. 더 나은 {region}를 위한 의정활동을 이어가겠습니다.",
+            ],
+        },
+    }
+
+    content, _ = agent._build_html_from_structure_json(
+        payload,
+        length_spec={
+            "body_sections": 1,
+            "paragraphs_per_section": 3,
+        },
+        topic="{region} 현안과 정책 방향",
+    )
+
+    intro_html = content.split("<h2>", 1)[0]
+
+    assert intro_html.count("<p>") <= 2
+    assert "{user_title} {user_name}입니다. 특히, {region} 현안과 주민들의 삶의 질 향상을 위해 더 치열하게 움직이겠습니다." in intro_html
+    assert "앞으로도 저는 새로운 관점으로 {region}의 해법을 찾겠습니다." in intro_html
+
 
 def test_content_validator_rejects_section_role_contract_violation() -> None:
     bundle = build_poll_focus_bundle(
@@ -2208,6 +2514,103 @@ def test_content_validator_rejects_duplicate_career_fact_across_sections() -> No
 
     assert validation.get("passed") is False
     assert validation.get("code") == "SECTION_ROLE_CONTRACT"
+
+# synthetic_fixture
+def test_content_validator_rejects_fragmented_intro_paragraphs() -> None:
+    validator = ContentValidator()
+    content = """
+<p>{user_title} {user_name}입니다.</p>
+<p>특히, {region} 현안과 주민들의 삶의 질 향상에 집중하겠습니다.</p>
+<p>앞으로도 저는 새로운 관점으로 {region}의 변화를 만들겠습니다.</p>
+<h2>{region} 현안 해결 방향</h2>
+<p>{region} 현안을 더 세밀하게 살피고 주민 불편을 줄이는 실질적 방안을 마련하겠습니다. 생활 현장에서 확인한 문제를 행정과 예산에 연결하겠습니다.</p>
+<p>현장 의견을 꾸준히 수렴하고 우선순위를 분명히 정해 실행력을 높이겠습니다. 주민이 체감하는 개선 결과를 빠르게 보여드리겠습니다.</p>
+<h2>{region}의 더 나은 내일</h2>
+<p>{region}의 더 나은 내일을 위해 필요한 과제를 끝까지 책임 있게 챙기겠습니다. 주민과의 약속을 실행으로 증명하겠습니다.</p>
+<p>지역의 문제를 끝까지 따라가며 해결책을 만들겠습니다. {region} 주민과 함께 다음 변화를 준비하겠습니다.</p>
+""".strip()
+
+    validation = validator.validate(
+        content,
+        {
+            "min_chars": 80,
+            "max_chars": 2000,
+            "expected_h2": 2,
+            "per_section_recommended": 120,
+            "per_section_min": 20,
+            "per_section_max": 900,
+            "total_sections": 3,
+            "body_sections": 1,
+        },
+    )
+
+    assert validation.get("passed") is False
+    assert validation.get("code") == "INTRO_FRAGMENTED"
+
+
+# synthetic_fixture
+def test_content_validator_rejects_orphan_intro_transition() -> None:
+    validator = ContentValidator()
+    content = """
+<p>{user_name}입니다.</p>
+<p>특히, {region} 현안 해결에 더 집중하겠습니다.</p>
+<h2>{region} 현안 해결 방향</h2>
+<p>{region} 현안을 더 세밀하게 살피고 주민 불편을 줄이는 실질적 방안을 마련하겠습니다. 생활 현장에서 확인한 문제를 행정과 예산에 연결하겠습니다.</p>
+<p>현장 의견을 꾸준히 수렴하고 우선순위를 분명히 정해 실행력을 높이겠습니다. 주민이 체감하는 개선 결과를 빠르게 보여드리겠습니다.</p>
+<h2>{region}의 더 나은 내일</h2>
+<p>{region}의 더 나은 내일을 위해 필요한 과제를 끝까지 책임 있게 챙기겠습니다. 주민과의 약속을 실행으로 증명하겠습니다.</p>
+<p>지역의 문제를 끝까지 따라가며 해결책을 만들겠습니다. {region} 주민과 함께 다음 변화를 준비하겠습니다.</p>
+""".strip()
+
+    validation = validator.validate(
+        content,
+        {
+            "min_chars": 80,
+            "max_chars": 2000,
+            "expected_h2": 2,
+            "per_section_recommended": 120,
+            "per_section_min": 20,
+            "per_section_max": 900,
+            "total_sections": 3,
+            "body_sections": 1,
+        },
+    )
+
+    assert validation.get("passed") is False
+    assert validation.get("code") == "INTRO_ORPHAN_TRANSITION"
+
+
+# synthetic_fixture
+def test_content_validator_rejects_section_topic_drift_for_activity_report() -> None:
+    validator = ContentValidator()
+    content = """
+<p>{region}에서 주민과 함께한 {user_title} {user_name}입니다. 현장에서 확인한 문제를 정책과 예산에 연결해 왔습니다.</p>
+<p>{issue_topic} 해결을 위해 지금까지의 성과와 앞으로의 과제를 차례로 말씀드리겠습니다.</p>
+<h2>{issue_topic} 입법 성과</h2>
+<p>{issue_topic} 관련 조례를 발의하고 가결시키며 주민 불편을 줄였습니다. 현장에서 확인한 문제를 제도 개선으로 연결했습니다.</p>
+<p>앞으로도 도시첨단산업단지 2단계 지정을 마무리하고 광역철도망 계획이 가시화될 수 있도록 힘쓰겠습니다.</p>
+<h2>{region} 미래 비전</h2>
+<p>{region}의 지속 가능한 발전을 위해 필요한 과제를 단계별로 추진하겠습니다. 주민이 체감하는 변화로 연결하겠습니다.</p>
+<p>현장 의견을 반영해 실행 일정을 챙기고 필요한 기반을 마련하겠습니다.</p>
+""".strip()
+
+    validation = validator.validate(
+        content,
+        {
+            "min_chars": 80,
+            "max_chars": 2400,
+            "expected_h2": 2,
+            "per_section_recommended": 120,
+            "per_section_min": 20,
+            "per_section_max": 900,
+            "total_sections": 3,
+            "body_sections": 1,
+        },
+        category="activity-report",
+    )
+
+    assert validation.get("passed") is False
+    assert validation.get("code") == "SECTION_TOPIC_DRIFT"
 
 
 def test_structure_agent_attempt_section_level_recovery_replaces_only_target_block() -> None:
@@ -3073,13 +3476,15 @@ def test_finalize_output_reuses_embedded_poll_summary() -> None:
     assert meta.get("pollCitationForced") is True
 
 
+# synthetic_fixture
 def test_finalize_output_strips_keyword_reflection_meta_tail_and_repairs_duplicate_particles() -> None:
     content = """
-    <p>문세종은 계양구민 삶의 질 향상을을 위해 끝까지 뛰겠습니다.</p>
-    <p>문세종은 약속이 아닌 실천으로 변화를 만들겠습니다.</p>
+    <p>{user_name}은 계양구민 삶의 질 향상을을 위해 끝까지 뛰겠습니다.</p>
+    <h2>계양구의 밝은 미래를을 위한 약속과 비전</h2>
+    <p>{user_name}은 약속이 아닌 실천으로 변화를 만들겠습니다.</p>
     카테고리: 논평, 진단 및 이슈 대응
     검색어 반영 횟수:
-    "문세종": 6회
+    "{user_name}": 6회
     생성 시간: 2026. 4. 2. 오후 8:12:30
     """
 
@@ -3089,9 +3494,26 @@ def test_finalize_output_strips_keyword_reflection_meta_tail_and_repairs_duplica
     assert "카테고리:" not in updated
     assert "검색어 반영 횟수" not in updated
     assert "생성 시간:" not in updated
-    assert '"문세종": 6회' not in updated
+    assert '"{user_name}": 6회' not in updated
     assert "향상을을" not in updated
+    assert "미래를을" not in updated
     assert "계양구민 삶의 질 향상을 위해" in updated
+    assert "계양구의 밝은 미래를 위한 약속과 비전" in updated
+
+
+# synthetic_fixture
+def test_finalize_output_compresses_near_duplicate_event_sentences() -> None:
+    content = """
+    <p>불법 비상계엄과 탄핵 정국 속에서도 국회 결집과 거리 집회에 참여하며 민주주의와 당을 수호하는 데 최선을 다했습니다.</p>
+    <p>특히 불법 비상계엄과 탄핵 정국이라는 엄중한 시기에도 저는 국회 결집과 거리 집회에 참여하며 민주주의와 당을 수호하는 데 앞장섰습니다.</p>
+    <p>{region} 현안과 지역화폐 정책도 함께 추진하겠습니다.</p>
+    """
+
+    result = finalize_output(content, embed_poll_citation=False)
+    updated = str(result.get("content") or "")
+
+    assert updated.count("비상계엄") == 1
+    assert "{region} 현안과 지역화폐 정책도 함께 추진하겠습니다." in updated
 
 
 def test_enforce_keyword_requirements_keeps_speaker_name_without_generic_opponent_fallback() -> None:
@@ -3468,6 +3890,27 @@ def test_repair_subheading_entity_consistency_drops_low_signal_matchup_prefix() 
 
     assert "<h2>혁신성과 정치적 무게감의 양자 대결 구도</h2>" in updated
     assert repaired.get("edited") is True
+
+
+def test_repair_generic_subheading_surface_text_keeps_existing_object_particle() -> None:
+    heading = "계양테크노밸리 성공적 완성을 위한 노력과 과제"
+
+    repaired, replacements = _repair_generic_subheading_surface_text(heading)
+
+    assert repaired == heading
+    assert replacements == []
+
+
+def test_repair_generic_subheading_surface_text_repairs_missing_object_particle() -> None:
+    heading = "계양테크노밸리 성공적 완성 위한 노력과 과제"
+
+    repaired, replacements = _repair_generic_subheading_surface_text(heading)
+
+    assert repaired == "계양테크노밸리 성공적 완성을 위한 노력과 과제"
+    assert any(
+        str(replacement.get("type") or "") == "heading_missing_object_particle"
+        for replacement in replacements
+    )
 
 
 def test_detect_integrity_gate_issues_allows_valid_matchup_heading_and_sentence() -> None:
@@ -4152,6 +4595,54 @@ def test_final_sentence_polish_dedupes_duplicate_poll_explanation_sentence() -> 
     assert repaired.get("edited") is True
 
 
+def test_final_sentence_polish_repairs_duplicate_particles_in_heading_and_body() -> None:
+    content = (
+        "<h2>계양구의 밝은 미래를을 위한 약속과 비전</h2>"
+        "<p>계양구민 삶의 질 향상을을 위해 끝까지 뛰겠습니다.</p>"
+    )
+
+    repaired = _apply_final_sentence_polish_once(content)
+    updated = str(repaired.get("content") or "")
+
+    assert "미래를을" not in updated
+    assert "향상을을" not in updated
+    assert "<h2>계양구의 밝은 미래를 위한 약속과 비전</h2>" in updated
+    assert "계양구민 삶의 질 향상을 위해 끝까지 뛰겠습니다." in updated
+    assert repaired.get("edited") is True
+    assert "repair_duplicate_particles_and_tokens" in list(repaired.get("actions") or [])
+
+
+def test_repair_duplicate_particles_preserves_normal_surfaces_and_repairs_true_duplicates() -> None:
+    content = (
+        "이러한 예산 확보 성과를 바탕으로 성과는 이어졌고, "
+        "귀 기울이는 소중한 자세와 만들어 나가는 실행력, "
+        "판교테크노밸리에 버금가는 비전을 함께 강조했습니다. "
+        "마을을 지키겠다는 약속과 가을을 떠올리게 하는 이야기 역시 남겼습니다. "
+        "계양구의 밝은 미래를을 위한 약속과 삶의 질 향상을을 위한 과제도 남았습니다."
+    )
+
+    repaired = repair_duplicate_particles_and_tokens(content)
+
+    assert "성과를 바탕으로" in repaired
+    assert "성과는 이어졌고" in repaired
+    assert "귀 기울이는 소중한 자세" in repaired
+    assert "만들어 나가는 실행력" in repaired
+    assert "버금가는 비전" in repaired
+    assert "마을을 지키겠다는 약속" in repaired
+    assert "가을을 떠올리게 하는 이야기" in repaired
+    assert "성를" not in repaired
+    assert "성는" not in repaired
+    assert "기울는" not in repaired
+    assert "만들어 나는" not in repaired
+    assert "버금는" not in repaired
+    assert "마을 지키겠다는" not in repaired
+    assert "가을 떠올리게" not in repaired
+    assert "미래를을" not in repaired
+    assert "미래를 위한" in repaired
+    assert "향상을을" not in repaired
+    assert "향상을 위한" in repaired
+
+
 def test_final_sentence_polish_drops_broken_poll_fragment_sentence() -> None:
     content = (
         "<p>최근 여론조사에서 주진우 의원이 37.6%보다 크게 앞섰지만, 저의 인지도는 꾸준히 상승하고 있습니다.</p>"
@@ -4364,6 +4855,40 @@ def test_final_sentence_polish_uses_distinct_question_h2_lanes_and_keeps_intro_l
     assert "이 흐름은 이재성의 이름과 메시지가 부산 시민 사이에서 조금씩 더 알려지고 있음을 보여줍니다." not in updated
     assert "부산 경제를 살릴 해법은 지역 산업과 일자리 문제를 함께 풀 수 있는 실질적 정책에 있습니다." in updated
     assert "이재성·박형준 가상대결에서는 30.9% 대 31.3%로 나타났습니다." in updated
+
+
+# synthetic_fixture
+def test_final_sentence_polish_dedupes_intro_body_overlap_sentences() -> None:
+    content = (
+        "<p>지역에서 당원과 시민을 위해 헌신해 온 {user_title} {user_name}입니다. "
+        "불법 비상계엄과 탄핵 정국 속에서도 민주주의와 공동체를 지키는 데 앞장섰습니다.</p>"
+        "<h2>{region} 현안 해결 방향</h2>"
+        "<p>저는 지역에서 당원과 시민을 위해 헌신하며 {user_title}으로서의 소임을 다하고 있습니다. "
+        "불법 비상계엄과 탄핵 정국이라는 어려운 시기에도 국회 결집과 거리 집회에 참여하며 민주주의와 공동체를 지키는 데 앞장섰습니다.</p>"
+        "<p>{region} 교통과 생활 현안을 끝까지 챙기겠습니다.</p>"
+    )
+
+    repaired = _apply_final_sentence_polish_once(content, full_name="{user_name}")
+    updated = str(repaired.get("content") or "")
+
+    assert updated.count("당원과 시민을 위해") == 1
+    assert updated.count("비상계엄") == 1
+    assert "{region} 교통과 생활 현안을 끝까지 챙기겠습니다." in updated
+    assert repaired.get("edited") is True
+    assert any(str(action).startswith("intro_body_sentence_dedupe:") for action in list(repaired.get("actions") or []))
+
+
+# synthetic_fixture
+def test_final_sentence_polish_rewrites_speech_stage_framing() -> None:
+    content = "<p>오늘 이 자리에서 제가 걸어온 길과 앞으로 나아갈 방향을 상세히 보고드리며 말씀드리겠습니다.</p>"
+
+    repaired = _apply_final_sentence_polish_once(content, full_name="{user_name}")
+    updated = str(repaired.get("content") or "")
+
+    assert "오늘 이 자리에서" not in updated
+    assert "상세히 보고드리며" not in updated
+    assert "이 글에서" in updated
+    assert "함께 말씀드리며" in updated
 
 
 def test_final_sentence_polish_dedupes_duplicate_sections_before_style_overlay() -> None:
@@ -4921,6 +5446,133 @@ def test_final_sentence_polish_dedupes_repeated_career_fact_sentence() -> None:
     assert "부산 경제는 다시 일어서야 합니다." in updated
 
 
+# synthetic_fixture
+def test_final_sentence_polish_dedupes_repeated_political_career_fact_sentence() -> None:
+    content = (
+        "<p>정책보좌관, {user_title}, 지역조직 사무국장, 지역위원장 직무대행을 역임하며 {region} 현안 해결에 앞장섰습니다.</p>"
+        "<p>{issue_topic}의 성공적 완성을 위해 교통망과 기업 유치를 함께 챙기겠습니다.</p>"
+        "<p>정책보좌관을 시작으로 {user_title}, 지역조직 사무국장, 지역위원장 직무대행을 맡으며 {region} 발전에 힘썼습니다.</p>"
+    )
+
+    repaired = _apply_final_sentence_polish_once(content, full_name="{user_name}")
+    updated = str(repaired.get("content") or "")
+
+    assert updated.count("정책보좌관") == 1
+    assert "{issue_topic}의 성공적 완성을 위해 교통망과 기업 유치를 함께 챙기겠습니다." in updated
+    assert repaired.get("edited") is True
+    assert any(str(action).startswith("career_fact_dedupe:") for action in list(repaired.get("actions") or []))
+
+
+# synthetic_fixture
+def test_final_sentence_polish_dedupes_repeated_policy_evidence_sentence() -> None:
+    content = (
+        "<p>지역화폐의 역할과 효과는 기준인물 시장께서 "
+        "시장 재임 시절 이미 증명한 바 있습니다.</p>"
+        "<p>{region}에서는 이 정책을 생활 현장에 맞게 조정해 실행하겠습니다.</p>"
+        "<p>저는 지역화폐의 역할과 효과가 기준인물 시장께서 "
+        "시장 재임 시절 증명한 바와 같이 민생 회복에 도움이 된다고 봅니다.</p>"
+    )
+
+    repaired = _apply_final_sentence_polish_once(content, full_name="{user_name}")
+    updated = str(repaired.get("content") or "")
+
+    assert updated.count("지역화폐의 역할과 효과") == 1
+    assert "{region}에서는 이 정책을 생활 현장에 맞게 조정해 실행하겠습니다." in updated
+    assert repaired.get("edited") is True
+    assert any(str(action).startswith("policy_evidence_dedupe:") for action in list(repaired.get("actions") or []))
+
+
+# synthetic_fixture
+def test_final_sentence_polish_applies_cross_section_contract_to_activity_report() -> None:
+    content = (
+        "<p>{region} 현장에서 주민 의견을 듣고 정책 과제를 정리해 왔습니다.</p>"
+        "<h2>{region} 현안 해결 방향</h2>"
+        "<p>{career_role}, {user_title}, 지역조직 사무국장, 지역위원장 직무대행을 맡으며 "
+        "{region} 현안을 챙겨왔습니다.</p>"
+        "<p>{issue_topic} 해결을 위해 예산과 행정 절차를 함께 점검하겠습니다.</p>"
+        "<h2>{region} 실행 계획</h2>"
+        "<p>{career_role}을 시작으로 {user_title}, 지역조직 사무국장, 지역위원장 직무대행을 역임하며 "
+        "{region} 현장 경험을 쌓았습니다.</p>"
+        "<p>{issue_topic} 해결 순서와 일정은 주민과 공유하겠습니다.</p>"
+    )
+
+    repaired = _apply_final_sentence_polish_once(
+        content,
+        category="activity-report",
+        full_name="{user_name}",
+    )
+    updated = str(repaired.get("content") or "")
+
+    assert "{issue_topic} 해결을 위해 예산과 행정 절차를 함께 점검하겠습니다." in updated
+    assert "{issue_topic} 해결 순서와 일정은 주민과 공유하겠습니다." in updated
+    assert repaired.get("edited") is True
+    assert any(
+        str(action).startswith("cross_section_contract:duplicate_career_fact:")
+        for action in list(repaired.get("actions") or [])
+    )
+
+
+# synthetic_fixture
+def test_final_sentence_polish_applies_cross_section_contract_to_policy_proposal() -> None:
+    content = (
+        "<p>{region} 민생 회복을 위한 실행 근거를 먼저 설명합니다.</p>"
+        "<h2>{policy_topic} 추진 근거</h2>"
+        "<p>지역화폐의 역할과 효과는 기준인물 도지사 재임 시절 이미 증명한 바 있습니다.</p>"
+        "<p>{region} 여건에 맞는 실행 모델을 구체화하겠습니다.</p>"
+        "<h2>{policy_topic} 실행 계획</h2>"
+        "<p>저는 지역화폐의 역할과 효과가 기준인물 도지사 재임 시절 증명한 바와 같이 "
+        "{region} 민생 회복에도 도움이 된다고 봅니다.</p>"
+        "<p>예산 규모와 우선 대상부터 차례로 확정하겠습니다.</p>"
+    )
+
+    repaired = _apply_final_sentence_polish_once(
+        content,
+        category="policy-proposal",
+        full_name="{user_name}",
+    )
+    updated = str(repaired.get("content") or "")
+
+    assert "{region} 여건에 맞는 실행 모델을 구체화하겠습니다." in updated
+    assert "예산 규모와 우선 대상부터 차례로 확정하겠습니다." in updated
+    assert repaired.get("edited") is True
+    assert any(
+        str(action).startswith("cross_section_contract:duplicate_policy_evidence_fact:")
+        for action in list(repaired.get("actions") or [])
+    )
+
+
+# synthetic_fixture
+def test_final_sentence_polish_moves_future_agenda_sentence_to_future_section() -> None:
+    content = (
+        "<p>{region} 주민과 함께 현안을 점검해 온 {user_title} {user_name}입니다.</p>"
+        "<h2>{issue_topic} 입법 성과</h2>"
+        "<p>{issue_topic} 관련 조례를 발의하고 가결시키며 생활 현장의 불편을 줄였습니다. 주민 의견을 제도 개선으로 연결했습니다.</p>"
+        "<p>앞으로도 도시첨단산업단지 2단계 지정을 마무리하고 광역철도망 계획이 가시화될 수 있도록 힘쓰겠습니다.</p>"
+        "<h2>{region} 미래 비전</h2>"
+        "<p>{region}의 지속 가능한 발전을 위해 필요한 과제를 단계별로 추진하겠습니다. 주민이 체감하는 변화로 연결하겠습니다.</p>"
+        "<p>현장 의견을 반영해 실행 일정을 챙기고 필요한 기반을 마련하겠습니다.</p>"
+    )
+
+    repaired = _apply_final_sentence_polish_once(
+        content,
+        category="activity-report",
+        full_name="{user_name}",
+    )
+    updated = str(repaired.get("content") or "")
+
+    achievement_index = updated.index("<h2>{issue_topic} 입법 성과</h2>")
+    future_index = updated.index("<h2>{region} 미래 비전</h2>")
+    moved_sentence = "앞으로도 도시첨단산업단지 2단계 지정을 마무리하고 광역철도망 계획이 가시화될 수 있도록 힘쓰겠습니다."
+
+    assert moved_sentence not in updated[achievement_index:future_index]
+    assert moved_sentence in updated[future_index:]
+    assert repaired.get("edited") is True
+    assert any(
+        str(action).startswith("section_lane_move:")
+        for action in list(repaired.get("actions") or [])
+    )
+
+
 def test_final_sentence_polish_dedupes_repeated_policy_bundle_sentence() -> None:
     content = (
         "<p>북항 재개발과 제조업 혁신, 스타트업 육성, 첨단금융, 관광 인프라를 함께 밀어 부산 경제를 다시 세우겠습니다.</p>"
@@ -5242,8 +5894,12 @@ def main() -> None:
             test_guard_title_after_editor_accepts_direct_role_surface_candidate_when_anchor_is_kept,
         ),
         (
-            "guard_draft_title_nonfatal_downgrades_failure_to_previous_fallback",
-            test_guard_draft_title_nonfatal_downgrades_failure_to_previous_fallback,
+            "guard_draft_title_nonfatal_preserves_failed_candidate_without_fallback",
+            test_guard_draft_title_nonfatal_preserves_failed_candidate_without_fallback,
+        ),
+        (
+            "guard_draft_title_nonfatal_repairs_mixed_duplicate_particles_in_title_surface",
+            test_guard_draft_title_nonfatal_repairs_mixed_duplicate_particles_in_title_surface,
         ),
         (
             "guard_draft_title_nonfatal_repairs_direct_role_surface_candidate_to_anchor_plus_argument",
@@ -5344,6 +6000,10 @@ def main() -> None:
         (
             "shared_section_contract_blocks_duplicate_career_fact_across_sections",
             test_shared_section_contract_blocks_duplicate_career_fact_across_sections,
+        ),
+        (
+            "shared_section_contract_blocks_duplicate_political_career_fact_across_sections",
+            test_shared_section_contract_blocks_duplicate_political_career_fact_across_sections,
         ),
         (
             "get_section_contract_sequence_keeps_single_closing_contract",
@@ -5470,6 +6130,10 @@ def main() -> None:
             test_finalize_output_strips_keyword_reflection_meta_tail_and_repairs_duplicate_particles,
         ),
         (
+            "finalize_output_compresses_near_duplicate_event_sentences",
+            test_finalize_output_compresses_near_duplicate_event_sentences,
+        ),
+        (
             "enforce_keyword_requirements_keeps_speaker_name_without_generic_opponent_fallback",
             test_enforce_keyword_requirements_keeps_speaker_name_without_generic_opponent_fallback,
         ),
@@ -5479,6 +6143,10 @@ def main() -> None:
         ),
         ("repair_competitor_policy_phrase_chain", test_repair_competitor_policy_phrase_chain),
         ("final_sentence_polish_repairs_common_broken_phrases", test_final_sentence_polish_repairs_common_broken_phrases),
+        (
+            "final_sentence_polish_repairs_duplicate_particles_in_heading_and_body",
+            test_final_sentence_polish_repairs_duplicate_particles_in_heading_and_body,
+        ),
         ("collect_targeted_sentence_polish_candidates", test_collect_targeted_sentence_polish_candidates),
         ("apply_targeted_sentence_rewrites", test_apply_targeted_sentence_rewrites),
         (
@@ -5534,6 +6202,14 @@ def main() -> None:
             test_repair_subheading_entity_consistency_drops_low_signal_matchup_prefix,
         ),
         (
+            "repair_generic_subheading_surface_text_keeps_existing_object_particle",
+            test_repair_generic_subheading_surface_text_keeps_existing_object_particle,
+        ),
+        (
+            "repair_generic_subheading_surface_text_repairs_missing_object_particle",
+            test_repair_generic_subheading_surface_text_repairs_missing_object_particle,
+        ),
+        (
             "detect_integrity_gate_issues_allows_valid_matchup_heading_and_sentence",
             test_detect_integrity_gate_issues_allows_valid_matchup_heading_and_sentence,
         ),
@@ -5544,6 +6220,10 @@ def main() -> None:
         (
             "sanitize_auto_keywords_removes_fragments_and_name_particles",
             test_sanitize_auto_keywords_removes_fragments_and_name_particles,
+        ),
+        (
+            "style_generation_guard_includes_requested_static_forbidden_phrases",
+            test_style_generation_guard_includes_requested_static_forbidden_phrases,
         ),
         (
             "rewrite_sentence_to_reduce_keyword_keeps_trailing_self_name_identity_sentence",
@@ -5816,6 +6496,18 @@ def main() -> None:
         (
             "final_sentence_polish_dedupes_repeated_career_fact_sentence",
             test_final_sentence_polish_dedupes_repeated_career_fact_sentence,
+        ),
+        (
+            "final_sentence_polish_dedupes_repeated_political_career_fact_sentence",
+            test_final_sentence_polish_dedupes_repeated_political_career_fact_sentence,
+        ),
+        (
+            "final_sentence_polish_applies_cross_section_contract_to_activity_report",
+            test_final_sentence_polish_applies_cross_section_contract_to_activity_report,
+        ),
+        (
+            "final_sentence_polish_applies_cross_section_contract_to_policy_proposal",
+            test_final_sentence_polish_applies_cross_section_contract_to_policy_proposal,
         ),
         (
             "final_sentence_polish_dedupes_repeated_policy_bundle_sentence",

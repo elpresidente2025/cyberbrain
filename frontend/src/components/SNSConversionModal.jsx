@@ -28,6 +28,7 @@ import {
   Close,
   Refresh
 } from '@mui/icons-material';
+import { alpha, useTheme } from '@mui/material/styles';
 import { convertToSNS, getSNSUsage, testSNS } from '../services/firebaseService';
 import { useAuth } from '../hooks/useAuth';
 
@@ -84,8 +85,128 @@ const PLATFORMS = {
   }
 };
 
+const SHORT_URL_PATTERN = /https:\/\/ai-secretary-6e9c8\.web\.app\/s\/[0-9A-Za-z]+/g;
+const BLOG_CTA_ONLY_PATTERN = /^\s*(?:더\s*자세한\s*내용은\s*블로그에서\s*확인해(?:주세요|보세요)|자세한\s*내용은\s*블로그에서\s*확인해(?:주세요|보세요)|블로그\s*링크)\s*[:：]?\s*$/;
+
+function replaceShortUrlWithOriginal(text, originalUrl) {
+  if (!text || !originalUrl) return text;
+  return String(text).replace(SHORT_URL_PATTERN, originalUrl);
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function stripThreadBlogUrlArtifacts(text, originalUrl) {
+  const normalizedUrl = String(originalUrl || '').trim();
+  const urlPattern = normalizedUrl ? new RegExp(escapeRegExp(normalizedUrl), 'g') : null;
+
+  const lines = String(text || '')
+    .split('\n')
+    .map((line) => {
+      let cleaned = String(line || '');
+      if (urlPattern) {
+        cleaned = cleaned.replace(urlPattern, '');
+      }
+      cleaned = cleaned.replace(/\s{2,}/g, ' ').trim();
+      if (!cleaned) return '';
+      if (BLOG_CTA_ONLY_PATTERN.test(cleaned)) return '';
+      return cleaned;
+    })
+    .filter(Boolean);
+
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function normalizeThreadPosts(posts, originalUrl) {
+  const normalizedUrl = String(originalUrl || '').trim();
+  if (!Array.isArray(posts) || posts.length === 0) return posts;
+
+  const cleanedPosts = posts.map((post) => {
+    const replaced = replaceShortUrlWithOriginal(post?.content || '', normalizedUrl);
+    const content = stripThreadBlogUrlArtifacts(replaced, normalizedUrl);
+    return {
+      ...post,
+      content,
+      wordCount: countWithoutSpace(content)
+    };
+  });
+
+  if (!normalizedUrl) {
+    return cleanedPosts;
+  }
+
+  const lastIndex = cleanedPosts.length - 1;
+  const lastPost = cleanedPosts[lastIndex] || {};
+  const nextContent = [String(lastPost.content || '').trim(), normalizedUrl]
+    .filter(Boolean)
+    .join('\n');
+
+  cleanedPosts[lastIndex] = {
+    ...lastPost,
+    content: nextContent,
+    wordCount: countWithoutSpace(nextContent)
+  };
+
+  return cleanedPosts;
+}
+
+function normalizeSnsResultUrls(result, originalUrl) {
+  if (!result || !originalUrl) return result;
+
+  if (result.isThread && Array.isArray(result.posts)) {
+    const posts = normalizeThreadPosts(result.posts, originalUrl);
+    return {
+      ...result,
+      posts,
+      totalWordCount: posts.reduce((sum, post) => sum + countWithoutSpace(post.content), 0)
+    };
+  }
+
+  if (typeof result.content === 'string') {
+    const replaced = replaceShortUrlWithOriginal(result.content, originalUrl);
+    const stripped = stripThreadBlogUrlArtifacts(replaced, originalUrl);
+    const hasShortUrl = String(result.content || '').includes('https://ai-secretary-6e9c8.web.app/s/');
+    const shouldAppendUrl = Boolean(
+      originalUrl && (
+        replaced.includes(originalUrl) || hasShortUrl
+      )
+    );
+    const content = shouldAppendUrl
+      ? [stripped, originalUrl].filter(Boolean).join('\n')
+      : stripped;
+    return {
+      ...result,
+      content,
+      wordCount: countWithoutSpace(content)
+    };
+  }
+
+  return result;
+}
+
+function normalizeSnsResults(results, originalUrl) {
+  if (!results || !originalUrl) return results || {};
+
+  return Object.fromEntries(
+    Object.entries(results).map(([platform, result]) => [
+      platform,
+      normalizeSnsResultUrls(result, originalUrl)
+    ])
+  );
+}
+
 // 타래 게시물 렌더링 컴포넌트
 const ThreadPostsDisplay = ({ posts, hashtags, onCopy }) => {
+  const theme = useTheme();
+  const highlightedPostBg = alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.2 : 0.08);
+  const defaultPostBg = theme.palette.mode === 'dark'
+    ? alpha(theme.palette.common.white, 0.04)
+    : theme.palette.background.paper;
+  const badgeBg = theme.palette.mode === 'dark'
+    ? alpha(theme.palette.common.white, 0.16)
+    : theme.palette.grey[700];
+
   // 전체 타래 복사용 텍스트 생성
   const getFullThreadText = () => {
     const postsText = posts.map((post, idx) => `[${idx + 1}/${posts.length}]\n${post.content}`).join('\n\n');
@@ -94,7 +215,7 @@ const ThreadPostsDisplay = ({ posts, hashtags, onCopy }) => {
   };
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
       {posts.map((post, index) => (
         <Box
           key={index}
@@ -103,8 +224,10 @@ const ThreadPostsDisplay = ({ posts, hashtags, onCopy }) => {
             border: '1px solid',
             borderColor: index === 0 ? 'primary.main' : 'divider',
             borderRadius: 1,
-            backgroundColor: index === 0 ? 'primary.50' : 'white',
-            position: 'relative'
+            backgroundColor: index === 0 ? highlightedPostBg : defaultPostBg,
+            position: 'relative',
+            minWidth: 0,
+            overflow: 'hidden'
           }}
         >
           {/* 게시물 번호 뱃지 (게시물이 2개 이상일 때만 표시) */}
@@ -114,8 +237,8 @@ const ThreadPostsDisplay = ({ posts, hashtags, onCopy }) => {
                 position: 'absolute',
                 top: -8,
                 left: 8,
-                backgroundColor: index === 0 ? 'primary.main' : 'grey.600',
-                color: 'white',
+                backgroundColor: index === 0 ? 'primary.main' : badgeBg,
+                color: theme.palette.common.white,
                 px: 1,
                 py: 0.25,
                 borderRadius: 4,
@@ -134,9 +257,11 @@ const ThreadPostsDisplay = ({ posts, hashtags, onCopy }) => {
             sx={{
               mt: 1,
               whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
               lineHeight: 1.6,
               fontSize: '0.85rem',
-              color: '#000000'
+              color: 'text.primary'
             }}
           >
             {post.content}
@@ -174,6 +299,7 @@ const ThreadPostsDisplay = ({ posts, hashtags, onCopy }) => {
 
 
 function SNSConversionModal({ open, onClose, post }) {
+  const theme = useTheme();
   const [results, setResults] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -202,7 +328,7 @@ function SNSConversionModal({ open, onClose, post }) {
       // 기존 변환 결과가 있으면 불러오기
       if (post?.snsConversions && Object.keys(post.snsConversions).length > 0) {
         console.log('📦 기존 SNS 변환 결과 불러오기:', Object.keys(post.snsConversions));
-        setResults(post.snsConversions);
+        setResults(normalizeSnsResults(post.snsConversions, post?.publishUrl));
       } else {
         setResults({});
       }
@@ -262,7 +388,7 @@ function SNSConversionModal({ open, onClose, post }) {
         });
       });
 
-      setResults(result.results);
+      setResults(normalizeSnsResults(result.results, post?.publishUrl));
 
       // 사용량 정보 갱신
       await fetchUsage();
@@ -299,7 +425,7 @@ function SNSConversionModal({ open, onClose, post }) {
         console.log(`✅ ${platform} 재생성 완료`);
         setResults(prev => ({
           ...prev,
-          [platform]: result.results[platform]
+          [platform]: normalizeSnsResultUrls(result.results[platform], post?.publishUrl)
         }));
         await fetchUsage();
       }
@@ -320,6 +446,14 @@ function SNSConversionModal({ open, onClose, post }) {
 
   const canConvert = usage?.isActive;
   const hasResults = Object.keys(results).length > 0;
+  const loadingOverlayBg = alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.9 : 0.94);
+  const contentBoxBg = theme.palette.mode === 'dark'
+    ? alpha(theme.palette.common.white, 0.04)
+    : theme.palette.background.paper;
+  const contentBoxBorder = theme.palette.mode === 'dark'
+    ? alpha(theme.palette.common.white, 0.12)
+    : theme.palette.divider;
+  const mutedLinkColor = theme.palette.text.secondary;
 
   return (
     <Dialog
@@ -356,7 +490,7 @@ function SNSConversionModal({ open, onClose, post }) {
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              backgroundColor: 'rgba(255, 255, 255, 0.9)',
+              backgroundColor: loadingOverlayBg,
               zIndex: 10,
               gap: 2
             }}
@@ -443,12 +577,12 @@ function SNSConversionModal({ open, onClose, post }) {
                   overflowY: 'auto',
                   p: 1.5,
                   border: '1px solid',
-                  borderColor: 'divider',
+                  borderColor: contentBoxBorder,
                   borderRadius: 1,
-                  backgroundColor: 'white',
+                  backgroundColor: contentBoxBg,
                   mb: 1
                 }}>
-                  <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, color: '#000000' }}>
+                  <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, color: 'text.primary' }}>
                     {results['facebook-instagram'].content}
                   </Typography>
                 </Box>
@@ -469,7 +603,7 @@ function SNSConversionModal({ open, onClose, post }) {
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2, mb: 2 }}>
               {/* X 타래 */}
               {results.x && (
-                <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
+                <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider', minWidth: 0 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <SNSIcon src={PLATFORMS.x.iconSrc} alt="X" size={20} />
@@ -508,11 +642,11 @@ function SNSConversionModal({ open, onClose, post }) {
                       </Tooltip>
                     </Box>
                   </Box>
-                  <Box sx={{ maxHeight: '400px', overflowY: 'auto' }}>
+                  <Box sx={{ maxHeight: '400px', overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
                     {results.x.posts ? (
                       <ThreadPostsDisplay posts={results.x.posts} hashtags={results.x.hashtags} onCopy={handleCopy} />
                     ) : (
-                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', color: '#000000' }}>
+                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word', color: 'text.primary' }}>
                         {results.x.content}
                       </Typography>
                     )}
@@ -527,7 +661,7 @@ function SNSConversionModal({ open, onClose, post }) {
 
               {/* Threads 타래 */}
               {results.threads && (
-                <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
+                <Paper sx={{ p: 2, border: '1px solid', borderColor: 'divider', minWidth: 0 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <SNSIcon src={PLATFORMS.threads.iconSrc} alt="Threads" size={20} />
@@ -566,11 +700,11 @@ function SNSConversionModal({ open, onClose, post }) {
                       </Tooltip>
                     </Box>
                   </Box>
-                  <Box sx={{ maxHeight: '400px', overflowY: 'auto' }}>
+                  <Box sx={{ maxHeight: '400px', overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
                     {results.threads.posts ? (
                       <ThreadPostsDisplay posts={results.threads.posts} hashtags={results.threads.hashtags} onCopy={handleCopy} />
                     ) : (
-                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', color: '#000000' }}>
+                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word', color: 'text.primary' }}>
                         {results.threads.content}
                       </Typography>
                     )}
@@ -600,11 +734,8 @@ function SNSConversionModal({ open, onClose, post }) {
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{
-                    color: '#666',
-                    textDecoration: 'none',
-                    '&:hover': {
-                      textDecoration: 'underline'
-                    }
+                    color: mutedLinkColor,
+                    textDecoration: 'none'
                   }}
                 >
                   Freepik - Flaticon

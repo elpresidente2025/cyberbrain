@@ -5,9 +5,21 @@ from .intro_echo_utils import find_intro_conclusion_duplicates
 from ..common.h2_guide import H2_MIN_LENGTH, H2_MAX_LENGTH
 from ..common.editorial import STRUCTURE_SPEC, QUALITY_SPEC
 from ..common.section_contract import (
+    find_section_semantic_mismatch,
     get_section_contract_sequence,
     validate_cross_section_contracts,
     validate_section_contract,
+)
+
+_INTRO_ORPHAN_TRANSITION_PREFIXES = (
+    "특히",
+    "또한",
+    "아울러",
+    "이와 함께",
+    "이러한",
+    "이는",
+    "앞으로도",
+    "이제는",
 )
 
 class ContentValidator:
@@ -131,28 +143,35 @@ class ContentValidator:
                     'violation': violation,
                 }
 
-        duplicate_career_violation = validate_cross_section_contracts(
+        duplicate_cross_section_violation = validate_cross_section_contracts(
             sections=parsed_sections,
             speaker=speaker,
             opponent=opponent,
         )
-        if duplicate_career_violation:
-            section_index = int(duplicate_career_violation.get("sectionIndex") or 0) or None
-            heading_text = normalize_context_text(duplicate_career_violation.get("sectionHeading"))
+        if duplicate_cross_section_violation:
+            section_index = int(duplicate_cross_section_violation.get("sectionIndex") or 0) or None
+            heading_text = normalize_context_text(duplicate_cross_section_violation.get("sectionHeading"))
+            violation_code = normalize_context_text(duplicate_cross_section_violation.get("code"))
+            feedback = (
+                "같은 경력 나열은 원고 전체에서 한 번만 쓰십시오. "
+                "다른 섹션에서는 그 경험이나 현장에서 익힌 판단·행동만 이어 쓰십시오."
+            )
+            if violation_code == "duplicate_policy_evidence_fact":
+                feedback = (
+                    "같은 정책 사례·검증 근거는 한 번만 쓰십시오. "
+                    "다음 섹션에서는 실행 계획이나 기대 효과만 이어 쓰십시오."
+                )
             return {
                 'passed': False,
                 'code': 'SECTION_ROLE_CONTRACT',
                 'reason': (
-                    f"섹션 {section_index or '?'} 허용 문장 계약 위반 "
-                    f"({normalize_context_text(duplicate_career_violation.get('message')) or '구조 위반'})"
+                    f"섹션 {section_index or '?'} 섹션 간 중복 금지 위반 "
+                    f"({normalize_context_text(duplicate_cross_section_violation.get('message')) or '구조 위반'})"
                 ),
-                'feedback': (
-                    "같은 경력 나열은 원고 전체에서 한 번만 쓰십시오. "
-                    "다른 섹션에서는 그 경험이나 현장에서 익힌 판단·행동만 이어 쓰십시오."
-                ),
+                'feedback': feedback,
                 'sectionIndex': section_index,
                 'sectionHeading': heading_text,
-                'violation': duplicate_career_violation,
+                'violation': duplicate_cross_section_violation,
             }
 
         return None
@@ -315,11 +334,124 @@ class ContentValidator:
 
         return False
 
+    def _extract_intro_paragraphs(self, intro_block: str) -> List[str]:
+        return [
+            strip_html(item).strip()
+            for item in re.findall(r'<p\b[^>]*>([\s\S]*?)</p\s*>', intro_block or '', re.IGNORECASE)
+            if strip_html(item).strip()
+        ]
+
+    def _intro_transition_prefix(self, paragraph: str) -> str:
+        cleaned = normalize_context_text(paragraph)
+        for prefix in _INTRO_ORPHAN_TRANSITION_PREFIXES:
+            if cleaned.startswith(prefix):
+                return prefix
+        return ""
+
+    def _is_short_intro_fragment(self, paragraph: str) -> bool:
+        cleaned = normalize_context_text(paragraph)
+        if not cleaned:
+            return False
+        sentence_count = len(self._split_plain_sentences(cleaned)) or 1
+        return sentence_count <= 1 and len(cleaned) <= 95
+
+    def _validate_intro_flow(self, intro_block: str) -> Optional[Dict[str, Any]]:
+        intro_paragraphs = self._extract_intro_paragraphs(intro_block)
+        if len(intro_paragraphs) >= 3:
+            short_fragment_count = sum(
+                1 for paragraph in intro_paragraphs if self._is_short_intro_fragment(paragraph)
+            )
+            if short_fragment_count >= 2:
+                return {
+                    'passed': False,
+                    'code': 'INTRO_FRAGMENTED',
+                    'reason': '서론이 짧은 단문으로 과도하게 분절됨',
+                    'feedback': '서론은 기본 2문단으로 정리하고, 짧은 자기소개/연결문을 여러 문단으로 나누지 말고 앞 문단과 자연스럽게 합쳐 주십시오.',
+                    'introParagraphCount': len(intro_paragraphs),
+                }
+
+        for index, paragraph in enumerate(intro_paragraphs[1:], start=1):
+            prefix = self._intro_transition_prefix(paragraph)
+            if not prefix:
+                continue
+            previous = normalize_context_text(intro_paragraphs[index - 1])
+            previous_sentence_count = len(self._split_plain_sentences(previous)) or (1 if previous else 0)
+            if previous_sentence_count <= 1 and len(previous) <= 90:
+                return {
+                    'passed': False,
+                    'code': 'INTRO_ORPHAN_TRANSITION',
+                    'reason': f'서론 연결어 "{prefix}"의 선행 문맥이 약함',
+                    'feedback': f'서론에서 "{prefix}"로 시작하는 문단은 앞 문단과 합치거나, 연결 대상이 드러나도록 명시적 주어로 다시 써 주십시오.',
+                    'transitionPrefix': prefix,
+                }
+
+        return None
+
+    def _validate_section_semantic_lanes(
+        self,
+        content: str,
+        *,
+        category: str = '',
+    ) -> Optional[Dict[str, Any]]:
+        normalized_category = normalize_context_text(category).lower()
+        if not normalized_category:
+            return None
+
+        first_h2_match = re.search(r'<h2\b', content, re.IGNORECASE)
+        if not first_h2_match:
+            return None
+
+        h2_blocks = [
+            block
+            for block in re.split(r'(?=<h2\b)', content[first_h2_match.start():], flags=re.IGNORECASE)
+            if block and block.strip()
+        ]
+        if len(h2_blocks) < 2:
+            return None
+
+        parsed_sections: List[Dict[str, Any]] = []
+        for block in h2_blocks:
+            heading_match = re.search(r'<h2[^>]*>(.*?)</h2>', block, re.IGNORECASE | re.DOTALL)
+            heading_text = strip_html(heading_match.group(1)).strip() if heading_match else ''
+            paragraphs = [
+                strip_html(item).strip()
+                for item in re.findall(r'<p\b[^>]*>([\s\S]*?)</p\s*>', block, re.IGNORECASE)
+                if strip_html(item).strip()
+            ]
+            if heading_text and paragraphs:
+                parsed_sections.append({"heading": heading_text, "paragraphs": paragraphs})
+
+        violation = find_section_semantic_mismatch(
+            sections=parsed_sections,
+            category=normalized_category,
+        )
+        if not violation:
+            return None
+
+        section_index = int(violation.get('sectionIndex') or 0) or None
+        heading_text = normalize_context_text(violation.get('sectionHeading'))
+        target_heading = normalize_context_text(violation.get('targetSectionHeading'))
+        sentence = normalize_context_text(violation.get('sentence'))
+        target_label = f"'{target_heading}' 섹션" if target_heading else "뒤쪽 비전/과제 섹션"
+        return {
+            'passed': False,
+            'code': 'SECTION_TOPIC_DRIFT',
+            'reason': f"섹션 {section_index or '?'} 주제 경계 이탈",
+            'feedback': (
+                f"'{heading_text}' 섹션에는 이미 수행한 성과와 그 효과만 남기고, "
+                f"앞으로의 실행 과제를 설명하는 문장(\"{sentence}\")은 {target_label}으로 옮기십시오."
+            ),
+            'sectionIndex': section_index,
+            'sectionHeading': heading_text,
+            'violation': violation,
+        }
+
     def validate(
         self,
         content: str,
         length_spec: Dict[str, int],
         *,
+        category: str = '',
         context_analysis: Optional[Dict[str, Any]] = None,
         is_event_announcement: bool = False,
         event_date_hint: str = '',
@@ -480,6 +612,17 @@ class ContentValidator:
                     'reason': '서론에 입장문 앵커 누락',
                     'feedback': '서론 1~2문단에 입장문 핵심 주장을 분명히 포함해 주십시오.',
                 }
+
+            intro_flow_issue = self._validate_intro_flow(section_blocks[0])
+            if intro_flow_issue:
+                return intro_flow_issue
+
+            section_semantic_issue = self._validate_section_semantic_lanes(
+                content,
+                category=category,
+            )
+            if section_semantic_issue:
+                return section_semantic_issue
 
             min_phrase_len = 12
             duplicate_phrases = find_intro_conclusion_duplicates(

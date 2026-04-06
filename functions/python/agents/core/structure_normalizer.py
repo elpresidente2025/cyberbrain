@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .intro_echo_utils import find_intro_conclusion_duplicates, normalize_keywords
 from .structure_utils import normalize_context_text, strip_html
-from ..common.h2_guide import H2_MAX_LENGTH
+from ..common.h2_guide import H2_MAX_LENGTH, has_incomplete_h2_ending
 
 
 SECTION_PADDING_SENTENCES = (
@@ -237,12 +237,44 @@ def _compress_section_overflow(section_html: str, target_max: int) -> str:
 def _generate_h2_text(p_block: str, index: int) -> str:
     plain = _strip_tags(p_block)
     first_sentence = _split_sentences(plain)[0] if _split_sentences(plain) else plain
-    candidate = first_sentence[:H2_MAX_LENGTH].strip()
+    normalized = re.sub(r"\s+", " ", first_sentence).strip().rstrip(".!?")
+    candidates: List[str] = [normalized]
+    for separator in (",", ":", ";", "·", " - ", " — ", " – ", "("):
+        if separator not in normalized:
+            continue
+        fragment = normalized.split(separator, 1)[0].strip().rstrip(".!?")
+        if fragment and fragment not in candidates:
+            candidates.append(fragment)
     candidate = re.sub(r"[은는이가을를에의와과로만도]$", "", candidate).strip()
     candidate = candidate.rstrip(".!?")
     if not candidate or len(candidate) < 3:
         candidate = f"핵심 주제 {index}"
     return candidate
+
+
+def _generate_h2_text(p_block: str, index: int) -> str:
+    plain = _strip_tags(p_block)
+    first_sentence = _split_sentences(plain)[0] if _split_sentences(plain) else plain
+    normalized = re.sub(r"\s+", " ", first_sentence).strip().rstrip(".!?")
+    candidates: List[str] = [normalized]
+    for separator in (",", ":", ";", "·", " - ", " — ", " – ", "("):
+        if separator not in normalized:
+            continue
+        fragment = normalized.split(separator, 1)[0].strip().rstrip(".!?")
+        if fragment and fragment not in candidates:
+            candidates.append(fragment)
+
+    for candidate in candidates:
+        candidate = re.sub(r"[??붿씠媛?꾨??먯쓽?怨쇰줈留뚮룄]$", "", candidate).strip()
+        if not candidate or len(candidate) < 3:
+            continue
+        if len(candidate) > H2_MAX_LENGTH:
+            continue
+        if has_incomplete_h2_ending(candidate):
+            continue
+        return candidate
+
+    return f"?듭떖 二쇱젣 {index}"
 
 
 def ensure_intro_section(content: str) -> str:

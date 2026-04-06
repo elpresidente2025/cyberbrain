@@ -14,12 +14,35 @@ from .title_common import (
     TITLE_LENGTH_HARD_MAX,
     TITLE_LENGTH_HARD_MIN,
     are_keywords_similar,
+    resolve_title_family,
     _collect_recent_title_values,
     _contains_competitor_tail_forbidden_token,
     _find_title_first_person_expression,
     _split_title_anchor_and_tail,
     normalize_title_surface,
 )
+
+_LOYALTY_SELF_CERT_TITLE_RE = re.compile(
+    r"(?:가장\s+)?충직한\s+"
+    r"(?:(?:[가-힣]{0,12})?(?:민주당원|당원|일꾼|국회의원|시의원|도의원|광역의원|기초의원|의원|정치인))"
+    r"(?:\s*(?:되겠다|되겠습니다|입니다|이겠습니다|이\s+되겠습니다|으로서|로서|으로\s+남겠습니다))?",
+    re.IGNORECASE,
+)
+
+_GENERIC_REPORT_TAILS = (
+    "의정활동 성과와 정책 방향",
+    "현안 해결과 정책 방향",
+    "민생 현안과 의정활동 성과",
+    "정책 방향과 실행 과제",
+)
+
+_SLOGAN_COMMITMENT_TAILS = (
+    "주민 곁을 지키겠습니다",
+    "지역을 지켜온 책임감으로 끝까지 뛰겠습니다",
+    "끝까지 책임지는 일꾼이 되겠습니다",
+    "주민 곁에서 끝까지 책임지겠습니다",
+)
+
 
 def _resolve_competitor_intent_title_keyword(params: Optional[Dict[str, Any]]) -> str:
     params_dict = params if isinstance(params, dict) else {}
@@ -300,6 +323,163 @@ def _repair_competitor_intent_title_tail(title: str, params: Optional[Dict[str, 
         if repaired_title and repaired_title != normalized_title:
             return repaired_title
     return ""
+
+
+def _resolve_self_certification_title_anchor(title: str, params: Optional[Dict[str, Any]]) -> str:
+    params_dict = params if isinstance(params, dict) else {}
+    normalized_title = normalize_title_surface(title) or str(title or "").strip()
+    full_name = str(params_dict.get("fullName") or "").strip()
+    user_keywords = [
+        str(item or "").strip()
+        for item in (params_dict.get("userKeywords") if isinstance(params_dict.get("userKeywords"), list) else [])
+        if str(item or "").strip()
+    ]
+
+    anchor_candidates: List[str] = []
+    if full_name:
+        anchor_candidates.append(full_name)
+    for keyword in user_keywords:
+        if keyword not in anchor_candidates:
+            anchor_candidates.append(keyword)
+
+    for candidate in anchor_candidates:
+        if candidate and candidate in normalized_title:
+            return candidate
+
+    split_title = _split_title_anchor_and_tail(normalized_title, primary_keyword=full_name or (user_keywords[0] if user_keywords else ""))
+    anchor = str(split_title.get("anchor") or "").strip()
+    if anchor:
+        return anchor
+    return anchor_candidates[0] if anchor_candidates else ""
+
+
+def _extract_commitment_relation_target(params: Optional[Dict[str, Any]]) -> str:
+    params_dict = params if isinstance(params, dict) else {}
+    source_text = " ".join(
+        str(params_dict.get(key) or "")
+        for key in ("topic", "stanceText", "contentPreview", "backgroundText")
+        if str(params_dict.get(key) or "").strip()
+    )
+    normalized_source = re.sub(r"<[^>]*>", " ", source_text)
+    normalized_source = re.sub(r"\s+", " ", normalized_source).strip()
+    if not normalized_source:
+        return ""
+
+    for relation_target in ("계양구민", "구민", "시민", "주민", "당원"):
+        if relation_target in normalized_source:
+            return relation_target
+    return ""
+
+
+def _build_slogan_commitment_repair_tails(params: Optional[Dict[str, Any]]) -> List[str]:
+    relation_target = _extract_commitment_relation_target(params)
+    local_issues = _extract_local_issue_title_cues(params, limit=2)
+    candidates: List[str] = []
+    seen: set[str] = set()
+
+    def _append(value: str) -> None:
+        normalized = re.sub(r"\s+", " ", str(value or "")).strip(" ,.:;!?")
+        compact = re.sub(r"\s+", "", normalized)
+        if not normalized or compact in seen:
+            return
+        seen.add(compact)
+        candidates.append(normalized)
+
+    if relation_target:
+        _append(f"{relation_target} 곁을 지키겠습니다")
+        _append(f"{relation_target}에게 끝까지 책임지겠습니다")
+    _append("지역을 지켜온 책임감으로 끝까지 뛰겠습니다")
+    _append("주민 곁에서 끝까지 책임지겠습니다")
+    _append("더 가까이에서 책임지는 일꾼이 되겠습니다")
+
+    for issue in local_issues:
+        _append(f"{issue}를 끝까지 책임지겠습니다")
+
+    for tail in _SLOGAN_COMMITMENT_TAILS:
+        _append(tail)
+
+    return candidates
+
+
+def _build_self_certification_repair_tails(params: Optional[Dict[str, Any]]) -> List[str]:
+    params_dict = params if isinstance(params, dict) else {}
+    full_name = str(params_dict.get("fullName") or "").strip()
+    candidates: List[str] = []
+    seen: set[str] = set()
+    title_family = resolve_title_family(params_dict)
+
+    def _append(value: str) -> None:
+        normalized = re.sub(r"\s+", " ", str(value or "")).strip(" ,.:;!?")
+        compact = re.sub(r"\s+", "", normalized)
+        if not normalized or compact in seen:
+            return
+        seen.add(compact)
+        candidates.append(normalized)
+
+    for cue in _extract_argument_title_cues(params, limit=6):
+        cue_core = _strip_leading_subject_name(cue, full_name)
+        if cue_core.endswith(("정책", "공약", "해법", "현안", "산업", "일자리", "교통", "복지", "교육", "실행력", "역량", "개혁", "전환")):
+            _append(f"{cue_core} 추진 방향")
+            _append(f"{cue_core}과 의정활동 성과")
+        else:
+            _append(f"{cue_core}과 의정활동 성과")
+
+    for issue in _extract_local_issue_title_cues(params, limit=4):
+        _append(f"{issue} 해법과 실행 방향")
+        _append(f"{issue} 대안")
+
+    if title_family == "SLOGAN_COMMITMENT":
+        for commitment_tail in _build_slogan_commitment_repair_tails(params):
+            _append(commitment_tail)
+    else:
+        for generic_tail in _GENERIC_REPORT_TAILS:
+            _append(generic_tail)
+
+    return candidates
+
+
+def _repair_loyalty_self_certification_title(title: str, params: Optional[Dict[str, Any]]) -> str:
+    normalized_title = normalize_title_surface(title) or str(title or "").strip()
+    if not normalized_title or not _LOYALTY_SELF_CERT_TITLE_RE.search(normalized_title):
+        return ""
+
+    anchor = _resolve_self_certification_title_anchor(normalized_title, params)
+    for tail in _build_self_certification_repair_tails(params):
+        if anchor:
+            tail = _strip_leading_subject_name(tail, anchor)
+        candidate = (
+            normalize_title_surface(f"{anchor}, {tail}")
+            if anchor else
+            normalize_title_surface(tail)
+        )
+        normalized_candidate = candidate or ""
+        if (
+            normalized_candidate
+            and normalized_candidate != normalized_title
+            and TITLE_LENGTH_HARD_MIN <= len(normalized_candidate) <= TITLE_LENGTH_HARD_MAX
+        ):
+            return normalized_candidate
+    return ""
+
+
+def _assess_loyalty_self_certification_title(title: str, params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    normalized_title = normalize_title_surface(title) or str(title or "").strip()
+    match = _LOYALTY_SELF_CERT_TITLE_RE.search(normalized_title)
+    if not match:
+        return {"passed": True, "matched": "", "reason": "", "repairedTitle": ""}
+
+    matched = str(match.group(0) or "").strip()
+    repaired_title = _repair_loyalty_self_certification_title(normalized_title, params)
+    return {
+        "passed": False,
+        "matched": matched,
+        "reason": (
+            f'제목에 자기인증 표현("{matched}")을 쓰지 말고 '
+            "성과·정책·현안 중심의 제목으로 다시 작성하세요."
+        ),
+        "repairedTitle": repaired_title,
+    }
+
 
 def _assess_title_first_person_usage(title: str, params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     matched = _find_title_first_person_expression(title)

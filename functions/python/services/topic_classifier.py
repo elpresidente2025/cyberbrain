@@ -163,6 +163,46 @@ POLICY_EXPLANATION_PATTERNS = (
     r"무엇이\s*달라",
 )
 
+SUBSTANTIVE_POLICY_PATTERNS = (
+    r"공약",
+    r"비전",
+    r"정책",
+    r"해법",
+    r"도입하겠습니다",
+    r"추진하겠습니다",
+    r"확대하겠습니다",
+    r"모색하겠습니다",
+    r"실현하겠습니다",
+    r"검토하겠습니다",
+    r"활성화",
+)
+
+SUBSTANTIVE_ACTIVITY_PATTERNS = (
+    r"의정활동",
+    r"입법활동",
+    r"조례",
+    r"발의",
+    r"가결",
+    r"예산\s*확보",
+    r"간담회",
+    r"현장\s*방문",
+    r"처리\s*결과",
+    r"추진\s*현황",
+    r"성과",
+)
+
+POLICY_COMMITMENT_PATTERNS = (
+    r"하겠습니다",
+    r"해내겠습니다",
+    r"추진하겠습니다",
+    r"도입하겠습니다",
+    r"확대하겠습니다",
+    r"모색하겠습니다",
+    r"검토하겠습니다",
+    r"실현하겠습니다",
+    r"만들겠습니다",
+)
+
 
 def normalize_requested_category(raw_category: Any, raw_sub_category: Any = "") -> tuple[str, str]:
     sub_category = str(raw_sub_category or "").strip()
@@ -360,6 +400,9 @@ def refine_with_stance(primary: Dict[str, Any], stance_text: str) -> Dict[str, A
 
     explanation_score = _pattern_score(normalized_stance, POLICY_EXPLANATION_PATTERNS)
     diagnosis_score = _pattern_score(normalized_stance, CURRENT_AFFAIRS_DIAGNOSIS_PATTERNS)
+    policy_signal_score = _pattern_score(normalized_stance, SUBSTANTIVE_POLICY_PATTERNS)
+    activity_signal_score = _pattern_score(normalized_stance, SUBSTANTIVE_ACTIVITY_PATTERNS)
+    policy_commitment_score = _pattern_score(normalized_stance, POLICY_COMMITMENT_PATTERNS)
     best = _best_scored_category(normalized_stance)
 
     if category == "current-affairs" and diagnosis_score >= 1:
@@ -369,6 +412,20 @@ def refine_with_stance(primary: Dict[str, Any], stance_text: str) -> Dict[str, A
             confidence=max(confidence, 0.84),
             source=f"{source}+stance",
         )
+
+    if category in {"current-affairs", "daily-communication"} and diagnosis_score <= 0:
+        if policy_signal_score >= 2 and policy_commitment_score >= 1:
+            return _build_result(
+                category="policy-proposal",
+                confidence=max(confidence, 0.82),
+                source=f"{source}+stance",
+            )
+        if activity_signal_score >= 3:
+            return _build_result(
+                category="activity-report",
+                confidence=max(confidence, 0.8),
+                source=f"{source}+stance",
+            )
 
     if category in {"policy-proposal", "educational-content"}:
         if explanation_score >= 2:

@@ -1,5 +1,7 @@
 from typing import Dict, List, Optional, Any
 
+from .stance_filters import looks_like_hashtag_bullet_line
+
 def xml_section(tag: str, attrs: Dict[str, Any] = None, content: str = '') -> str:
     attrs_str = ''
     if attrs:
@@ -30,7 +32,14 @@ def build_context_analysis_section(analysis: Dict, author_name: str) -> str:
     quotes_xml = '\n'.join([f'    <quote>{q}</quote>' for q in quotes])
 
     stance_phrases = analysis.get('mustIncludeFromStance') or []
-    stance_phrases = [p for p in stance_phrases if isinstance(p, str) and len(p) >= 10 and not p.startswith('⚠️') and not p.startswith('우선순위:')]
+    stance_phrases = [
+        p for p in stance_phrases
+        if isinstance(p, str)
+        and len(p) >= 10
+        and not p.startswith('⚠️')
+        and not p.startswith('우선순위:')
+        and not looks_like_hashtag_bullet_line(p)
+    ]
     stance_phrases_xml = '\n'.join([f'    <phrase>{p}</phrase>' for p in stance_phrases])
 
     return f"""<context-analysis priority="absolute">

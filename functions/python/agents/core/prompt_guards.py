@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from ..common.editorial import STRUCTURE_SPEC, QUALITY_SPEC
 from ..common.h2_guide import H2_MIN_LENGTH, H2_MAX_LENGTH, H2_OPTIMAL_MIN, H2_OPTIMAL_MAX
+from ..common.stance_filters import looks_like_hashtag_bullet_line
 
 from .structure_utils import strip_html, normalize_context_text, _xml_text, _xml_cdata, material_key
 from .style_guide_builder import _build_style_role_guide_xml
@@ -65,6 +66,8 @@ def _build_style_generation_guard(
         "공감과 희망을 줍니다",
         "우선순위를 명확히 하고",
         "일정을 현실적으로 맞추겠습니다",
+        "오늘 이 자리에서",
+        "소홀히 하지 않았습니다",
     ]
     pattern_forbidden_phrases = [
         "단순한 X가 아니라",
@@ -244,6 +247,8 @@ def build_material_uniqueness_guard(
     def add_card(card_type: str, raw_text: Any) -> None:
         text = normalize_context_text(raw_text)
         if len(strip_html(text)) < 8:
+            return
+        if card_type == "stance" and looks_like_hashtag_bullet_line(text):
             return
         key = material_key(text)
         if not key or key in seen:

@@ -97,20 +97,7 @@ def sanitize_h2_text(
             break
         candidate = repaired
 
-    should_trim_at_boundary = len(candidate) > max_length
-    if len(candidate) == max_length and has_incomplete_h2_ending(candidate):
-        should_trim_at_boundary = True
-
-    if should_trim_at_boundary:
-        truncated = candidate[:max_length]
-        last_space = truncated.rfind(' ')
-        if last_space >= min_length:
-            truncated = truncated[:last_space]
-        candidate = truncated.rstrip(H2_TRUNCATION_RSTRIP_CHARS)
-
     candidate = re.sub(r'\s+', ' ', candidate).strip()
-    if len(candidate) < min_length:
-        raise ValueError(f"h2 텍스트 길이가 {min_length}자 미만입니다.")
     return candidate
 
 
