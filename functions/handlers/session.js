@@ -8,6 +8,7 @@
 const { wrap } = require('../common/wrap');
 const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
+const { requireAdmin } = require('../common/rbac');
 const { db } = require('../utils/firebaseAdmin');
 
 /**
@@ -70,11 +71,7 @@ exports.adminResetSession = wrap(async (req) => {
   const { uid: adminUid } = await auth(req);
   const { targetUserId } = req.data || {};
 
-  // 관리자 확인
-  const adminDoc = await db.collection('users').doc(adminUid).get();
-  if (!adminDoc.exists || !adminDoc.data().isAdmin) {
-    throw new Error('관리자 권한이 필요합니다.');
-  }
+  await requireAdmin(adminUid);
 
   if (!targetUserId) {
     throw new Error('targetUserId가 필요합니다.');

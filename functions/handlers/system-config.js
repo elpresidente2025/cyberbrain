@@ -34,8 +34,8 @@ exports.getSystemConfig = wrap(async (req) => {
  * 시스템 설정 업데이트 (관리자 전용)
  */
 exports.updateSystemConfig = wrap(async (req) => {
-  const { uid, token } = await auth(req);
-  await requireAdmin(uid, token); // 관리자만 수정 가능
+  const { uid } = await auth(req);
+  await requireAdmin(uid); // 관리자만 수정 가능
 
   const { aiKeywordRecommendationEnabled, testMode, testModeSettings } = req.data;
 

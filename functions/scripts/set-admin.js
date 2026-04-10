@@ -7,12 +7,16 @@
 
 const admin = require('firebase-admin');
 
-// Firebase Admin 초기화
 if (!admin.apps.length) {
   admin.initializeApp();
 }
 
 const db = admin.firestore();
+
+function isAdminUser(userData = {}) {
+  const role = String(userData.role || '').trim().toLowerCase();
+  return role === 'admin' || userData.isAdmin === true;
+}
 
 async function setAdmin(uid) {
   try {
@@ -26,30 +30,29 @@ async function setAdmin(uid) {
       return;
     }
 
-    const userData = userDoc.data();
+    const userData = userDoc.data() || {};
     console.log(`\n📋 현재 사용자: ${userData.name || 'Unknown'}`);
-    console.log(`- 현재 isAdmin: ${userData.isAdmin || false}`);
     console.log(`- 현재 role: ${userData.role || 'user'}`);
+    console.log(`- 현재 isAdmin: ${userData.isAdmin || false}`);
+    console.log(`- 파생 admin: ${isAdminUser(userData)}`);
 
-    // 관리자 권한 설정
     console.log('\n🔧 관리자 권한 설정 중...');
 
     await userRef.update({
-      isAdmin: true,
       role: 'admin',
+      isAdmin: admin.firestore.FieldValue.delete(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    console.log('✅ 관리자 권한이 설정되었습니다!');
+    console.log('✅ 관리자 권한이 설정되었습니다.');
 
-    // 확인
     const updatedDoc = await userRef.get();
-    const updatedData = updatedDoc.data();
+    const updatedData = updatedDoc.data() || {};
 
     console.log('\n📋 업데이트된 데이터:');
+    console.log(`- role: ${updatedData.role || 'user'}`);
     console.log(`- isAdmin: ${updatedData.isAdmin}`);
-    console.log(`- role: ${updatedData.role}`);
-
+    console.log(`- 파생 admin: ${isAdminUser(updatedData)}`);
   } catch (error) {
     console.error('❌ 에러 발생:', error);
   } finally {
@@ -57,7 +60,6 @@ async function setAdmin(uid) {
   }
 }
 
-// 명령줄 인자 확인
 const uid = process.argv[2];
 
 if (!uid) {

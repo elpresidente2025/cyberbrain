@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../../hooks/useAuth';
 import { callFunctionWithNaverAuth } from '../../../services/firebaseService';
+import { hasAdminAccess } from '../../../utils/authz';
 
 /**
  * 당원 인증 상태 판단
@@ -58,7 +59,7 @@ export default function useBillingData() {
     const [testMode, setTestMode] = useState(false);
     const [adminOverrideSubscription, setAdminOverrideSubscription] = useState(null);
 
-    const isAdmin = user?.role === 'admin';
+    const isAdmin = hasAdminAccess(user);
     const isSubscribed = adminOverrideSubscription !== null
         ? adminOverrideSubscription
         : user?.subscriptionStatus === 'active';

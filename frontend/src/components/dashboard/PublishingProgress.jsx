@@ -22,6 +22,7 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { callFunctionWithNaverAuth } from '../../services/firebaseService';
 import { useColor } from '../../contexts/ColorContext';
+import { hasAdminAccess } from '../../utils/authz';
 
 // 7-세그먼트 숫자 컴포넌트 (3자리 고정)
 const SevenSegmentNumber = ({ number, color, size = 'small' }) => {
@@ -188,7 +189,7 @@ const PublishingProgress = () => {
 
   const getMonthlyTarget = (user) => {
     // 관리자/테스터는 90회
-    const isAdmin = user?.isAdmin || user?.role === 'admin';
+    const isAdmin = hasAdminAccess(user);
     const isTester = user?.isTester === true;
     const plan = user?.plan || user?.subscription;
 
@@ -260,7 +261,7 @@ const PublishingProgress = () => {
   
   // 플랜 검증을 먼저 수행 (관리자/테스터는 예외)
   const plan = user?.plan || user?.subscription;
-  const isAdmin = user?.isAdmin || user?.role === 'admin';
+  const isAdmin = hasAdminAccess(user);
   const isTester = user?.isTester === true;
 
   console.log('📊 PublishingProgress - 최종 렌더링 전 확인:', {

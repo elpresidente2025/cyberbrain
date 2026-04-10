@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { callFunctionWithNaverAuth } from '../../../services/firebaseService';
+import { normalizeAuthUser } from '../../../utils/authz';
 
 const DEFAULT_PROFILE = {
     name: '',
@@ -113,7 +114,7 @@ export function useProfileData(user) {
         // localStorage 동기화
         try {
             const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-            const updatedUser = { ...currentUser, ...newProfile, bio: profileData.bio || '' };
+            const updatedUser = normalizeAuthUser({ ...currentUser, ...newProfile, bio: profileData.bio || '' });
             localStorage.setItem('currentUser', JSON.stringify(updatedUser));
             window.dispatchEvent(new CustomEvent('userProfileUpdated', { detail: updatedUser }));
         } catch (e) {

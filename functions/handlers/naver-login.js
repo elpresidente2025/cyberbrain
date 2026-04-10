@@ -6,6 +6,7 @@
 'use strict';
 
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
+const { isAdminUser } = require('../common/rbac');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { ALLOWED_ORIGINS } = require('../common/config');
 const { NAVER_CLIENT_ID, NAVER_CLIENT_SECRET, getSecretValue } = require('../common/secrets');
@@ -295,6 +296,7 @@ const naverLoginHTTP = onRequest({
     stage = 'prepare_login_existing_user';
     const userDoc = userQuery.docs[0];
     const userData = userDoc.data();
+    const derivedIsAdmin = isAdminUser(userData);
 
     stage = 'update_last_login';
     const updateExisting = {
@@ -339,8 +341,8 @@ const naverLoginHTTP = onRequest({
           provider: 'naver',
           profileComplete: userData.profileComplete || false,
           // 전체 사용자 정보 포함
-          role: userData.role || null,
-          isAdmin: userData.isAdmin || false,
+          role: userData.role || (derivedIsAdmin ? 'admin' : null),
+          isAdmin: derivedIsAdmin,
           status: userData.status || null,
           position: userData.position || null,
           regionMetro: userData.regionMetro || null,

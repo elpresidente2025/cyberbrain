@@ -3,6 +3,7 @@
 const { wrap } = require('../common/wrap');
 const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
+const { isAdminUser } = require('../common/rbac');
 const { admin, db } = require('../utils/firebaseAdmin');
 
 // 로그인만 하면 누구나 호출 가능 (관리자 확인용)
@@ -22,7 +23,7 @@ exports.diagWhoami = wrap(async (req) => {
     if (snap.exists) {
       const doc = snap.data();
       dbUser = {
-        isAdmin: !!doc.isAdmin,
+        isAdmin: isAdminUser(doc),
         role: doc.role || null,
         name: doc.name || '',
         email: doc.email || '',

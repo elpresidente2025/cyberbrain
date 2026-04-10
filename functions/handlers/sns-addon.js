@@ -3,6 +3,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { wrap } = require('../common/wrap');
 const { httpWrap } = require('../common/http-wrap');
 const { ok, error } = require('../common/response');
+const { isAdminUser } = require('../common/rbac');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { callGenerativeModel } = require('../services/gemini');
 const { buildFactAllowlist, findUnsupportedNumericTokens } = require('../utils/fact-guard');
@@ -137,7 +138,7 @@ exports.convertToSNS = wrap(async (req) => {
     const userPlan = userData.plan || userData.subscription;
 
     // 관리자는 모든 제한 무시
-    const isAdmin = userData.role === 'admin' || userData.isAdmin === true;
+    const isAdmin = isAdminUser(userData);
 
     // 2. 원고 조회 (사용량 제한 없음)
     const postDoc = await db.collection('posts').doc(postIdStr).get();

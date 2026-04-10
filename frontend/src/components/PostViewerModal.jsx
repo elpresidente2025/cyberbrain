@@ -16,6 +16,7 @@ import { callFunctionWithNaverAuth } from '../services/firebaseService';
 import { NotificationSnackbar, useNotification } from './ui';
 import { useAuth } from '../hooks/useAuth';
 import { transitions } from '../theme/tokens';
+import { hasAdminOrTesterAccess } from '../utils/authz';
 import SNSConversionModal from './SNSConversionModal'; // 🆕 내장형 SNS 모달
 
 // 유틸리티 함수들
@@ -92,9 +93,7 @@ export default function PostViewerModal({
   const [publishUrl, setPublishUrl] = useState('');
 
   // 권한 체크: 관리자 또는 테스터만 SNS 사용 가능
-  const canUseSNS = useMemo(() => {
-    return user?.role === 'admin' || user?.isAdmin === true || user?.isTester === true;
-  }, [user]);
+  const canUseSNS = useMemo(() => hasAdminOrTesterAccess(user), [user]);
 
   // 복사 핸들러
   const handleCopy = () => {

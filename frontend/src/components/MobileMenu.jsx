@@ -27,6 +27,7 @@ import {
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { getUserDisplayTitle, getUserRegionInfo, getUserStatusIcon } from '../utils/userUtils';
+import { hasAdminAccess } from '../utils/authz';
 import { useThemeMode } from '../contexts/ThemeContext';
 import { useTheme } from '@mui/material';
 
@@ -58,7 +59,7 @@ const MobileMenu = () => {
 
   const userIcon = getUserStatusIcon(user);
   const regionInfo = getUserRegionInfo(user);
-  const isAdmin = user?.role === 'admin' || user?.isAdmin;
+  const isAdmin = hasAdminAccess(user);
   const hasBio = user?.bio && user.bio.trim().length > 0;
 
   const menuItems = [];

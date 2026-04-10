@@ -1,6 +1,7 @@
 // frontend/src/hooks/useGenerateForm.js (수정된 최종 버전)
 
 import { useState, useCallback, useMemo } from 'react';
+import { hasAdminAccess } from '../utils/authz';
 
 // 🎯 관리자 시연용 참고자료 (2번 슬롯에 배치)
 const ADMIN_DEMO_INSTRUCTIONS = `인천시, 노선 체계 재정비…"혼잡도로 개선, 고속도로 건설"
@@ -35,7 +36,7 @@ const adminInitialState = {
 export const useGenerateForm = (user = null) => {
   // 🎯 관리자면 시연용 프리셋, 일반 사용자면 기본 상태
   const getInitialState = () => {
-    if (user?.role === 'admin' || user?.isAdmin === true) {
+    if (hasAdminAccess(user)) {
       return adminInitialState;
     }
     return initialState;
@@ -58,7 +59,7 @@ export const useGenerateForm = (user = null) => {
    */
   const resetForm = useCallback(() => {
     setFormData(getInitialState());
-  }, [user?.role, user?.isAdmin]);
+  }, [user]);
 
   /**
    * 폼 데이터가 유효한지 검사하는 함수.

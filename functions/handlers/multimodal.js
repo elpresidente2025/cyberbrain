@@ -9,6 +9,7 @@
 'use strict';
 
 const { HttpsError } = require('firebase-functions/v2/https');
+const { isAdminUser } = require('../common/rbac');
 const { db } = require('../utils/firebaseAdmin');
 
 // Python RAG 서비스 URL
@@ -25,7 +26,7 @@ async function checkTesterAccess(uid) {
 
     const userData = userDoc.data();
     const isTester = userData.isTester === true;
-    const isAdmin = userData.isAdmin === true || userData.role === 'admin';
+    const isAdmin = isAdminUser(userData);
 
     if (!isTester && !isAdmin) {
         throw new HttpsError('permission-denied', '테스터 전용 기능입니다.');

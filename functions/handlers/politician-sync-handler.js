@@ -11,6 +11,7 @@
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onCall } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const { isAdminUser } = require('../common/rbac');
 const { getOpenAssemblyApiKey, OPEN_ASSEMBLY_API_KEY } = require('../common/secrets');
 
 // Firestore 초기화
@@ -152,7 +153,7 @@ exports.syncPoliticiansManual = onCall(
         const userDoc = await db.collection('users').doc(uid).get();
         const userData = userDoc.data();
 
-        if (userData?.role !== 'admin' && !userData?.isAdmin) {
+        if (!isAdminUser(userData)) {
             throw new Error('관리자 권한이 필요합니다.');
         }
 

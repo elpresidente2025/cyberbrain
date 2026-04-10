@@ -3,6 +3,7 @@
 const { wrap } = require('../common/wrap');
 const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
+const { requireAdmin } = require('../common/rbac');
 const { log } = require('../common/log');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { callGenerativeModel } = require('../services/gemini');
@@ -167,12 +168,7 @@ exports.updateGeminiStatus = wrap(async (req) => {
   const { uid } = await auth(req);
   const { newState } = req.data || {};
 
-  const requesterDoc = await db.collection('users').doc(uid).get();
-  const userData = requesterDoc.exists ? requesterDoc.data() : {};
-  const isAdmin = userData.role === 'admin' || userData.isAdmin === true;
-  if (!requesterDoc.exists || !isAdmin) {
-    throw new HttpsError('permission-denied', 'Admin only.');
-  }
+  await requireAdmin(uid);
 
   const allowed = ['active', 'maintenance', 'inactive'];
   if (!allowed.includes(newState)) {

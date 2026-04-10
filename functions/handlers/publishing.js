@@ -2,6 +2,7 @@ const admin = require('firebase-admin');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { wrap } = require('../common/wrap');
 const { auth } = require('../common/auth');
+const { requireAdmin, isAdminUser } = require('../common/rbac');
 
 function isNaverBlogUrl(value) {
   const trimmed = String(value || '').trim();
@@ -117,7 +118,7 @@ const getPublishingStats = wrap(async (request) => {
     const userDoc = await db.collection('users').doc(uid).get();
     const userData = userDoc.exists ? userDoc.data() : {};
     const userRole = userData.role || 'local_blogger';
-    const isAdmin = userData.isAdmin === true || userData.role === 'admin';
+    const isAdmin = isAdminUser(userData);
     const isTester = userData.isTester === true;
     // 관리자/테스터는 90회, 그 외는 monthlyLimit 필드 또는 role 기반
     const monthlyTarget = (isAdmin || isTester) ? 90 : (userData.monthlyLimit || getMonthlyTarget(userRole));
@@ -182,7 +183,7 @@ const checkBonusEligibility = wrap(async (request) => {
     }
 
     const userData = userDoc.data();
-    const isAdmin = userData.role === 'admin' || userData.isAdmin === true;
+    const isAdmin = isAdminUser(userData);
 
     // 관리자는 무제한 보너스 제공
     if (isAdmin) {
@@ -244,7 +245,7 @@ const useBonusGeneration = wrap(async (request) => {
       }
 
       const userData = userDoc.data();
-      const isAdmin = userData.role === 'admin' || userData.isAdmin === true;
+      const isAdmin = isAdminUser(userData);
 
       // 관리자는 무제한 보너스 사용 가능
       if (isAdmin) {
@@ -311,13 +312,7 @@ const resetUserUsage = wrap(async (request) => {
   try {
     const db = admin.firestore();
 
-    // 관리자 권한 확인
-    const adminDoc = await db.collection('users').doc(adminUid).get();
-    const isAdmin = adminDoc.exists && (adminDoc.data().role === 'admin' || adminDoc.data().isAdmin === true);
-
-    if (!isAdmin) {
-      throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
-    }
+    await requireAdmin(adminUid);
 
     // System Config에서 testMode 확인
     const systemConfigDoc = await db.collection('system').doc('config').get();
@@ -422,13 +417,7 @@ const toggleFaceVerified = wrap(async (request) => {
   try {
     const db = admin.firestore();
 
-    // 관리자 권한 확인
-    const adminDoc = await db.collection('users').doc(adminUid).get();
-    const isAdmin = adminDoc.exists && (adminDoc.data().role === 'admin' || adminDoc.data().isAdmin === true);
-
-    if (!isAdmin) {
-      throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
-    }
+    await requireAdmin(adminUid);
 
     // 대상 사용자 정보 조회
     const userDoc = await db.collection('users').doc(targetUserId).get();
@@ -508,13 +497,7 @@ const toggleTester = wrap(async (request) => {
   try {
     const db = admin.firestore();
 
-    // 관리자 권한 확인
-    const adminDoc = await db.collection('users').doc(adminUid).get();
-    const isAdmin = adminDoc.exists && (adminDoc.data().role === 'admin' || adminDoc.data().isAdmin === true);
-
-    if (!isAdmin) {
-      throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
-    }
+    await requireAdmin(adminUid);
 
     // 대상 사용자 정보 조회
     const userDoc = await db.collection('users').doc(targetUserId).get();

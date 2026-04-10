@@ -9,6 +9,7 @@ import MaintenancePage from './components/MaintenancePage';
 import { LoadingOverlay } from './components/loading';
 import { HelpProvider } from './contexts/HelpContext';
 import { ColorProvider } from './contexts/ColorContext';
+import { hasAdminAccess } from './utils/authz';
 
 function App() {
   const { user, loading, logout } = useAuth();
@@ -49,7 +50,7 @@ function App() {
   }, []);
 
   // 관리자 계정 확인 (useEffect보다 먼저 선언)
-  const isAdmin = user?.email === 'kjk6206@gmail.com' || user?.email === 'taesoo@secretart.ai';
+  const isAdmin = hasAdminAccess(user);
 
   useEffect(() => {
     // 로그인 상태가 확정된 후에만 시스템 상태 확인 (최초 1회만)

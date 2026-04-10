@@ -26,6 +26,7 @@ import {
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { getUserDisplayTitle, getUserRegionInfo, getUserStatusIcon } from '../utils/userUtils';
+import { hasAdminAccess } from '../utils/authz';
 import { useThemeMode } from '../contexts/ThemeContext';
 import { useHelp } from '../contexts/HelpContext';
 import HelpButton from './HelpButton';
@@ -49,7 +50,7 @@ const DashboardLayout = ({ children }) => {
 
   const userIcon = getUserStatusIcon(user);
   const regionInfo = getUserRegionInfo(user);
-  const isAdmin = user?.role === 'admin' || user?.isAdmin;
+  const isAdmin = hasAdminAccess(user);
   const hasBio = user?.bio && user.bio.trim().length > 0;
 
   // 자기소개가 없는 사용자는 제한된 메뉴만 표시

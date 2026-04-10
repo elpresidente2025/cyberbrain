@@ -14,6 +14,7 @@ import {
   useTheme
 } from '@mui/material';
 import { AutoAwesome, Save, CheckCircle, Warning, Speed } from '@mui/icons-material';
+import { hasAdminOrTesterAccess } from '../../utils/authz';
 
 export default function DraftGrid({
   items = [],
@@ -138,7 +139,7 @@ export default function DraftGrid({
             </CardContent>
             
             {/* 🤖 Multi-Agent 메타데이터 (관리자/테스터만) */}
-            {(user?.isAdmin || user?.isTester) && draft.multiAgent?.enabled && (
+            {hasAdminOrTesterAccess(user) && draft.multiAgent?.enabled && (
               <Box sx={{
                 px: 2,
                 py: 1,

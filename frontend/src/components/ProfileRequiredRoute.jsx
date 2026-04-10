@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import { AccountCircle, Edit } from '@mui/icons-material';
 import { useAuth } from '../hooks/useAuth';
+import { hasAdminAccess } from '../utils/authz';
 
 const ProfileRequiredRoute = ({ children }) => {
   const theme = useTheme();
@@ -39,7 +40,7 @@ const ProfileRequiredRoute = ({ children }) => {
   }
 
   // 관리자는 프로필 체크 제외
-  if (user.role === 'admin') {
+  if (hasAdminAccess(user)) {
     return children;
   }
 

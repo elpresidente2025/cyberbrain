@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { signInWithCustomToken } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { callFunctionWithNaverAuth } from '../services/firebaseService';
+import { normalizeAuthUser } from '../utils/authz';
 
 export const useNaverLogin = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -119,7 +120,7 @@ export const useNaverLogin = () => {
           naverEmail: naver?.email,
           finalEmail: user.email || naver?.email
         });
-        const currentUserData = {
+        const currentUserData = normalizeAuthUser({
           uid: user.uid,
           naverUserId: user.naverUserId,
           displayName: user.displayName,
@@ -129,7 +130,7 @@ export const useNaverLogin = () => {
           profileComplete: user.profileComplete,
           role: user.role,
           bio: user.bio || '' // naverLoginHTTP에서 반환한 bio 포함
-        };
+        });
         console.log('🟢 localStorage에 저장할 데이터:', currentUserData);
 
         localStorage.setItem('currentUser', JSON.stringify(currentUserData));
@@ -148,10 +149,10 @@ export const useNaverLogin = () => {
               new Promise((_, reject) => setTimeout(() => reject(new Error('functions call timeout')), 10000))
             ]);
             if (profileResponse?.profile) {
-              const updatedUserData = {
+              const updatedUserData = normalizeAuthUser({
                 ...currentUserData,
                 ...profileResponse.profile
-              };
+              });
               localStorage.setItem('currentUser', JSON.stringify(updatedUserData));
               console.log('✅ 네이버 사용자 프로필 정보 업데이트 완료:', updatedUserData);
               

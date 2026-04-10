@@ -3,6 +3,7 @@
 const { wrap } = require('../common/wrap');
 const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
+const { requireAdmin } = require('../common/rbac');
 const { log } = require('../common/log');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { callGenerativeModel } = require('../services/gemini');
@@ -183,13 +184,7 @@ exports.updateGeminiStatus = wrap(async (req) => {
   const { uid } = await auth(req);
   const { newState } = req.data || {};
 
-  // 관리자 권한 확인
-  const requesterDoc = await db.collection('users').doc(uid).get();
-  const userData = requesterDoc.exists ? requesterDoc.data() : {};
-  const isAdmin = userData.role === 'admin' || userData.isAdmin === true;
-  if (!requesterDoc.exists || !isAdmin) {
-    throw new (require('firebase-functions/v2/https').HttpsError)('permission-denied', '관리자만 변경할 수 있습니다.');
-  }
+  await requireAdmin(uid);
 
   const allowed = ['active', 'maintenance', 'inactive'];
   if (!allowed.includes(newState)) {
@@ -212,13 +207,7 @@ exports.updateSystemStatus = wrap(async (req) => {
 
   log('SYSTEM', 'updateSystemStatus 호출', { userId: uid, status });
 
-  // 관리자 권한 확인
-  const requesterDoc = await db.collection('users').doc(uid).get();
-  const userData = requesterDoc.exists ? requesterDoc.data() : {};
-  const isAdmin = userData.role === 'admin' || userData.isAdmin === true;
-  if (!requesterDoc.exists || !isAdmin) {
-    throw new (require('firebase-functions/v2/https').HttpsError)('permission-denied', '관리자만 시스템 상태를 변경할 수 있습니다.');
-  }
+  await requireAdmin(uid);
 
   const allowed = ['active', 'maintenance', 'inactive'];
   if (!allowed.includes(status)) {

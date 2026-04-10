@@ -20,10 +20,12 @@ import { Download, Warning, Error, Refresh } from '@mui/icons-material';
 import HongKongNeonCard from '../HongKongNeonCard';
 import { useAuth } from '../../hooks/useAuth';
 import { getErrorLogs } from '../../services/firebaseService';
+import { hasAdminAccess } from '../../utils/authz';
 
 function ErrorsMiniTable() {
   const theme = useTheme();
   const { user } = useAuth();
+  const isAdmin = hasAdminAccess(user);
   const [errors, setErrors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -59,10 +61,10 @@ function ErrorsMiniTable() {
   };
 
   useEffect(() => {
-    if (user?.isAdmin) {
+    if (isAdmin) {
       fetchRecentErrors();
     }
-  }, [user]);
+  }, [isAdmin]);
 
   const exportErrorsCsv = async () => {
     try {
@@ -151,7 +153,7 @@ function ErrorsMiniTable() {
     }
   };
 
-  if (!user?.isAdmin) {
+  if (!isAdmin) {
     return null;
   }
 

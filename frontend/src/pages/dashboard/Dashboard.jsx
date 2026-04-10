@@ -11,6 +11,7 @@ import {
     useMediaQuery
 } from '@mui/material';
 import { useAuth } from '../../hooks/useAuth';
+import { hasAdminAccess } from '../../utils/authz';
 
 // 레이아웃 및 공통 컴포넌트
 import DashboardLayout from '../../components/DashboardLayout';
@@ -46,7 +47,7 @@ const Dashboard = () => {
     } = useDashboardActions(recentPosts);
 
     // 사용자 정보
-    const isAdmin = user?.role === 'admin' || user?.isAdmin === true;
+    const isAdmin = hasAdminAccess(user);
     const isTester = user?.isTester === true;
     const hasBio = user?.bio && user.bio.trim().length > 0;
     const showBioAlert = !hasBio && !isAdmin;

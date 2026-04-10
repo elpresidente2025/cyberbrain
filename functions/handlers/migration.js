@@ -8,6 +8,7 @@
 const { wrap } = require('../common/wrap');
 const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
+const { requireAdmin } = require('../common/rbac');
 const { HttpsError } = require('firebase-functions/v2/https');
 const { admin, db } = require('../utils/firebaseAdmin');
 
@@ -18,11 +19,7 @@ exports.migrateToPrioritySystem = wrap(async (req) => {
   const { uid } = await auth(req);
   const { dryRun = true } = req.data || {};
 
-  // 관리자 확인
-  const userDoc = await db.collection('users').doc(uid).get();
-  if (!userDoc.exists || !userDoc.data().isAdmin) {
-    throw new HttpsError('permission-denied', '관리자만 실행할 수 있습니다.');
-  }
+  await requireAdmin(uid);
 
   console.log('🚀 우선권 시스템 마이그레이션 시작:', { dryRun, requestedBy: uid });
 

@@ -2,6 +2,7 @@ const admin = require('firebase-admin');
 const { HttpsError } = require('firebase-functions/v2/https');
 const wrap = require('../common/wrap').wrap;
 const { auth } = require('../common/auth');
+const { requireAdmin } = require('../common/rbac');
 const { extractStyleFingerprint, buildStyleGuidePrompt } = require('../services/stylometry');
 
 const MIN_BIO_STYLE_CONTENT_LENGTH = 100;
@@ -26,16 +27,13 @@ const buildConsolidatedBioContent = (bioData = {}) => {
 };
 
 const getAdminRequesterContext = async (uid) => {
-  const db = admin.firestore();
-  const requesterDoc = await db.collection('users').doc(uid).get();
-  const userData = requesterDoc.data() || {};
-  const isAdmin = userData.role === 'admin' || userData.isAdmin === true;
-
-  if (!requesterDoc.exists || !isAdmin) {
-    throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
-  }
-
-  return { db, requesterDoc, userData };
+  const { userDoc, userData, adminAccessSource } = await requireAdmin(uid);
+  return {
+    db: admin.firestore(),
+    requesterDoc: userDoc,
+    userData,
+    adminAccessSource
+  };
 };
 
 // 모든 사용자 조회 (관리자 전용)
@@ -43,16 +41,7 @@ const getAllUsers = wrap(async (request) => {
   const { uid } = await auth(request);
 
   try {
-    const db = admin.firestore();
-    
-    // 요청자가 관리자인지 확인
-    const requesterDoc = await db.collection('users').doc(uid).get();
-    const userData = requesterDoc.data() || {};
-    const isAdmin = userData.role === 'admin' || userData.isAdmin === true; // 이전 버전과 호환성
-    
-    if (!requesterDoc.exists || !isAdmin) {
-      throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
-    }
+    const { db } = await getAdminRequesterContext(uid);
 
     // 모든 사용자 조회
     const usersSnapshot = await db.collection('users').orderBy('createdAt', 'desc').get();
@@ -106,16 +95,7 @@ const deactivateUser = wrap(async (request) => {
   }
 
   try {
-    const db = admin.firestore();
-    
-    // 요청자가 관리자인지 확인
-    const requesterDoc = await db.collection('users').doc(uid).get();
-    const userData = requesterDoc.data() || {};
-    const isAdmin = userData.role === 'admin' || userData.isAdmin === true; // 이전 버전과 호환성
-    
-    if (!requesterDoc.exists || !isAdmin) {
-      throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
-    }
+    const { db } = await getAdminRequesterContext(uid);
 
     // 자기 자신은 비활성화할 수 없음
     if (uid === userId) {
@@ -160,16 +140,7 @@ const reactivateUser = wrap(async (request) => {
   }
 
   try {
-    const db = admin.firestore();
-    
-    // 요청자가 관리자인지 확인
-    const requesterDoc = await db.collection('users').doc(uid).get();
-    const userData = requesterDoc.data() || {};
-    const isAdmin = userData.role === 'admin' || userData.isAdmin === true; // 이전 버전과 호환성
-    
-    if (!requesterDoc.exists || !isAdmin) {
-      throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
-    }
+    const { db } = await getAdminRequesterContext(uid);
 
     // Firestore에서 사용자 재활성화
     await db.collection('users').doc(userId).update({
@@ -209,16 +180,7 @@ const deleteUser = wrap(async (request) => {
   }
 
   try {
-    const db = admin.firestore();
-    
-    // 요청자가 관리자인지 확인
-    const requesterDoc = await db.collection('users').doc(uid).get();
-    const userData = requesterDoc.data() || {};
-    const isAdmin = userData.role === 'admin' || userData.isAdmin === true; // 이전 버전과 호환성
-    
-    if (!requesterDoc.exists || !isAdmin) {
-      throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
-    }
+    const { db } = await getAdminRequesterContext(uid);
 
     // 자기 자신은 삭제할 수 없음
     if (uid === userId) {

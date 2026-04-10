@@ -2,6 +2,8 @@
  * 사용자 호칭 유틸리티: 직책/지역/상태(현역/예비/후보)에 맞는 인사말용 호칭 생성 및 보조 함수
  */
 
+import { hasAdminAccess } from './authz';
+
 const norm = (v) => (v ?? '').toString().trim();
 
 export const getUserDisplayTitle = (user) => {
@@ -85,7 +87,7 @@ export const getUserPositionColor = (user) => {
 
 export const getUserStatusIcon = (user) => {
   if (!user) return '👤';
-  if (user.role === 'admin') return '⭐';
+  if (hasAdminAccess(user)) return '⭐';
   const position = norm(user.position);
   const status = norm(user.status);
   if (status === '예비') return '⏳';
