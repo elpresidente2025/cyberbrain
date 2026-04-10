@@ -18,6 +18,28 @@ const { districtKey } = require('../services/district');
 const { getDistrictStatus, addUserToDistrict } = require('../services/district-priority');
 const { analyzeBioForStyle } = require('../services/style-analysis');
 
+const MIN_BIO_LENGTH_FOR_ONBOARDING = 50;
+
+// 광역/기초자치단체장은 선거구(electoralDistrict) 불필요
+function requiredRegionFieldsFor(position) {
+  if (!position) return ['regionMetro'];
+  if (position === '광역자치단체장') return ['regionMetro'];
+  if (position === '기초자치단체장') return ['regionMetro', 'regionLocal'];
+  return ['regionMetro', 'regionLocal', 'electoralDistrict'];
+}
+
+// 온보딩 완료 여부 판정 (백엔드 SSOT)
+function isOnboardingCompleteFields(profile, bioText) {
+  if (!profile) return false;
+  if (!profile.position) return false;
+  for (const key of requiredRegionFieldsFor(profile.position)) {
+    if (!profile[key]) return false;
+  }
+  const text = typeof bioText === 'string' ? bioText.trim() : '';
+  if (text.length < MIN_BIO_LENGTH_FOR_ONBOARDING) return false;
+  return true;
+}
+
 // ============================================================================
 // HTTP Callable Functions
 // ============================================================================
@@ -100,6 +122,25 @@ exports.getUserProfile = wrap(async (req) => {
     hasBio: !!profile.bio,
     bioLength: profile.bio?.length || 0
   });
+
+  // onboardingCompleted 보정: 기존 유저도 조건 충족 시 true로 자동 세팅
+  if (profile.onboardingCompleted !== true) {
+    if (isOnboardingCompleteFields(profile, profile.bio)) {
+      profile.onboardingCompleted = true;
+      profile.profileComplete = true;
+      try {
+        await db.collection('users').doc(uid).set({
+          onboardingCompleted: true,
+          profileComplete: true,
+          onboardingCompletedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+      } catch (e) {
+        console.warn('[getUserProfile] onboardingCompleted 자동 세팅 실패:', e.message);
+      }
+    } else {
+      profile.onboardingCompleted = false;
+    }
+  }
 
   logInfo('getUserProfile 성공', { userId: uid });
   return ok({ profile });
@@ -272,6 +313,38 @@ exports.updateProfile = wrap(async (req) => {
     },
     { merge: true }
   );
+
+  // 온보딩 완료 판정 및 플래그 세팅
+  try {
+    const mergedProfile = {
+      position: nextFields.position,
+      regionMetro: nextFields.regionMetro,
+      regionLocal: nextFields.regionLocal,
+      electoralDistrict: nextFields.electoralDistrict,
+    };
+
+    // bio 텍스트 확정: 이번 요청에 포함되지 않았다면 bios 컬렉션에서 조회
+    let bioText = bio;
+    if (!bioText) {
+      try {
+        const bioDoc = await db.collection('bios').doc(uid).get();
+        if (bioDoc.exists) {
+          bioText = bioDoc.data().content || '';
+        }
+      } catch (_) {}
+    }
+
+    if (isOnboardingCompleteFields(mergedProfile, bioText) && current.onboardingCompleted !== true) {
+      await userRef.set({
+        onboardingCompleted: true,
+        profileComplete: true,
+        onboardingCompletedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      logInfo('온보딩 완료 플래그 세팅', { uid });
+    }
+  } catch (e) {
+    console.warn('[updateProfile] 온보딩 플래그 판정 실패:', e.message);
+  }
 
   logInfo('updateProfile 성공', { isActive });
   return ok({ message: '프로필이 성공적으로 업데이트되었습니다.', isActive });

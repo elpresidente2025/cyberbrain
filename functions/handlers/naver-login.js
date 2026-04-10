@@ -226,6 +226,8 @@ const naverLoginHTTP = onRequest({
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           lastLoginAt: admin.firestore.FieldValue.serverTimestamp(),
           profileComplete: false,
+          // 온보딩 튜토리얼 상태 (신규 가입자는 /onboarding으로 강제 리디렉션)
+          onboardingCompleted: false,
 
           // 우선권 시스템 필드
           districtPriority: null,

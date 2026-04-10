@@ -12,7 +12,8 @@ import App from './App.jsx';
 import ErrorPage from './pages/ErrorPage.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AdminRoute from './components/AdminRoute.jsx';
-import ProfileRequiredRoute from './components/ProfileRequiredRoute.jsx';
+import OnboardingGuard from './components/OnboardingGuard.jsx';
+import OnboardingPage from './pages/onboarding/OnboardingPage.jsx';
 import './index.css';
 // 새 디자인 시스템 토큰 로드
 import './design-system/tokens.css';
@@ -60,16 +61,20 @@ const router = createBrowserRouter([
       { path: 'login', element: <LoginPage /> },
       { path: 'register', element: <RegisterPage /> },
       {
+        path: 'onboarding',
+        element: <ProtectedRoute><OnboardingPage /></ProtectedRoute>,
+      },
+      {
         path: 'dashboard',
-        element: <ProtectedRoute><Dashboard /></ProtectedRoute>,
+        element: <ProtectedRoute><OnboardingGuard><Dashboard /></OnboardingGuard></ProtectedRoute>,
       },
       {
         path: 'generate',
-        element: <ProtectedRoute><ProfileRequiredRoute><GeneratePage /></ProfileRequiredRoute></ProtectedRoute>,
+        element: <ProtectedRoute><OnboardingGuard><GeneratePage /></OnboardingGuard></ProtectedRoute>,
       },
       {
         path: 'profile',
-        element: <ProtectedRoute><ProfilePage /></ProtectedRoute>,
+        element: <ProtectedRoute><OnboardingGuard><ProfilePage /></OnboardingGuard></ProtectedRoute>,
       },
       {
         path: 'billing',
@@ -85,15 +90,15 @@ const router = createBrowserRouter([
       },
       {
         path: 'posts',
-        element: <ProtectedRoute><ProfileRequiredRoute><PostsListPage /></ProfileRequiredRoute></ProtectedRoute>,
+        element: <ProtectedRoute><OnboardingGuard><PostsListPage /></OnboardingGuard></ProtectedRoute>,
       },
       {
         path: 'posts/:id',
-        element: <ProtectedRoute><ProfileRequiredRoute><PostDetailPage /></ProfileRequiredRoute></ProtectedRoute>,
+        element: <ProtectedRoute><OnboardingGuard><PostDetailPage /></OnboardingGuard></ProtectedRoute>,
       },
       {
         path: 'guidelines',
-        element: <ProtectedRoute><ProfileRequiredRoute><GuidelinesPage /></ProfileRequiredRoute></ProtectedRoute>,
+        element: <ProtectedRoute><OnboardingGuard><GuidelinesPage /></OnboardingGuard></ProtectedRoute>,
       },
       {
         path: 'about',

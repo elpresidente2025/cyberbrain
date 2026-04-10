@@ -124,21 +124,6 @@ export function useProfileData(user) {
         return newProfile;
     }, []);
 
-    // 필수 필드 누락 체크
-    const checkMissingFields = useCallback((profileData) => {
-        const missing = [];
-        if (!profileData.position) missing.push('position');
-        if (!profileData.regionMetro) missing.push('regionMetro');
-
-        if (profileData.position === '기초자치단체장' && !profileData.regionLocal) {
-            missing.push('regionLocal');
-        } else if (profileData.position && profileData.position !== '광역자치단체장' && profileData.position !== '기초자치단체장') {
-            if (!profileData.regionLocal) missing.push('regionLocal');
-            if (!profileData.electoralDistrict) missing.push('electoralDistrict');
-        }
-        return missing;
-    }, []);
-
     // 최초 로드
     useEffect(() => {
         mountedRef.current = true;
@@ -172,6 +157,5 @@ export function useProfileData(user) {
         loading, error, setError,
         reloadProfile,
         handleFieldChange,
-        checkMissingFields,
     };
 }

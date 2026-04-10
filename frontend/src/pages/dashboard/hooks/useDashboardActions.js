@@ -13,7 +13,6 @@ export const useDashboardActions = (recentPosts) => {
     // 모달 상태
     const [viewerOpen, setViewerOpen] = useState(false);
     const [viewerPost, setViewerPost] = useState(null);
-    const [onboardingOpen, setOnboardingOpen] = useState(false);
     const [snsOpen, setSnsOpen] = useState(false);
     const [snsPost, setSnsPost] = useState(null);
 
@@ -82,25 +81,11 @@ export const useDashboardActions = (recentPosts) => {
         setSnsOpen(true);
     }, []);
 
-    // 온보딩
-    const dismissOnboarding = useCallback(() => {
-        setOnboardingOpen(false);
-        sessionStorage.setItem('onboardingDismissed', 'true');
-    }, []);
-
-    const completeOnboarding = useCallback(() => {
-        setOnboardingOpen(false);
-        sessionStorage.setItem('onboardingDismissed', 'true');
-        navigate('/profile');
-    }, [navigate]);
-
     return {
         // 상태
         localPosts,
         viewerOpen,
         viewerPost,
-        onboardingOpen,
-        setOnboardingOpen,
         snsOpen,
         snsPost,
 
@@ -112,8 +97,6 @@ export const useDashboardActions = (recentPosts) => {
         handleDelete,
         handleCopy,
         handleSNSConvert,
-        dismissOnboarding,
-        completeOnboarding,
         closeSns: useCallback(() => setSnsOpen(false), [])
     };
 };

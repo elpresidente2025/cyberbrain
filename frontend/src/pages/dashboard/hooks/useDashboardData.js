@@ -1,7 +1,7 @@
 // frontend/src/pages/dashboard/hooks/useDashboardData.js
 // 대시보드 데이터 로딩 커스텀 훅
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { callFunctionWithNaverAuth } from '../../../services/firebaseService';
 
 /**
@@ -17,9 +17,6 @@ export const useDashboardData = (user) => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
     const [testMode, setTestMode] = useState(false);
-
-    // Bio 체크 실행 여부 추적
-    const hasCheckedBio = useRef(false);
 
     // 메인 데이터 로딩 함수
     const fetchDashboardData = useCallback(async () => {
@@ -90,29 +87,6 @@ export const useDashboardData = (user) => {
         }
     }, [user?.uid]);
 
-    // Bio 체크 및 온보딩 로직
-    const checkBioAndShowOnboarding = useCallback(() => {
-        if (!user) return false;
-
-        // 세션 중에 한 번 닫으면 다시 표시하지 않음
-        const onboardingDismissed = sessionStorage.getItem('onboardingDismissed');
-        if (onboardingDismissed) return false;
-
-        let hasSufficientBio = false;
-        try {
-            if (user.bio && user.bio.trim().length >= 200) {
-                hasSufficientBio = true;
-            } else {
-                const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-                hasSufficientBio = currentUser.bio && currentUser.bio.trim().length >= 200;
-            }
-        } catch (e) {
-            hasSufficientBio = user.bio && user.bio.trim().length >= 200;
-        }
-
-        return !hasSufficientBio;
-    }, [user]);
-
     // 데이터 로딩 (user가 있을 때)
     useEffect(() => {
         if (user?.uid) {
@@ -142,8 +116,6 @@ export const useDashboardData = (user) => {
 
         // 액션
         refreshData,
-        checkBioAndShowOnboarding,
-        hasCheckedBio
     };
 };
 

@@ -1,7 +1,7 @@
 // frontend/src/pages/dashboard/Dashboard.jsx
 // 리팩토링된 대시보드 메인 컴포넌트
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import {
     Box,
     Grid,
@@ -19,7 +19,6 @@ import LoadingState from '../../components/ui/feedback/LoadingState';
 import NoticeBanner from '../../components/dashboard/NoticeBanner';
 import PostViewerModal from '../../components/PostViewerModal';
 import SNSConversionModal from '../../components/SNSConversionModal';
-import OnboardingWelcomeModal from '../../components/onboarding/OnboardingWelcomeModal';
 import MobileToPCBanner from '../../components/MobileToPCBanner';
 import ElectionDDay from '../../components/dashboard/ElectionDDay';
 
@@ -35,15 +34,14 @@ const Dashboard = () => {
 
     const {
         usage, recentPosts, notices, isLoading, error,
-        checkBioAndShowOnboarding, hasCheckedBio
     } = useDashboardData(user);
 
     const {
-        localPosts, viewerOpen, viewerPost, onboardingOpen, setOnboardingOpen,
+        localPosts, viewerOpen, viewerPost,
         snsOpen, snsPost,
         handleGeneratePost, handleViewAllPosts, handlePostClick,
         closeViewer, handleDelete, handleCopy, handleSNSConvert,
-        dismissOnboarding, completeOnboarding, closeSns
+        closeSns
     } = useDashboardActions(recentPosts);
 
     // 사용자 정보
@@ -52,16 +50,6 @@ const Dashboard = () => {
     const hasBio = user?.bio && user.bio.trim().length > 0;
     const showBioAlert = !hasBio && !isAdmin;
     const canGeneratePost = isAdmin || isTester || (hasBio && usage.postsGenerated < usage.monthlyLimit);
-
-    // Bio 체크 및 온보딩
-    useEffect(() => {
-        if (user && !isLoading && !hasCheckedBio.current) {
-            hasCheckedBio.current = true;
-            if (checkBioAndShowOnboarding()) {
-                setOnboardingOpen(true);
-            }
-        }
-    }, [user, isLoading, checkBioAndShowOnboarding, hasCheckedBio, setOnboardingOpen]);
 
     if (isLoading) {
         return (
@@ -130,11 +118,6 @@ const Dashboard = () => {
                 onSNSConvert={handleSNSConvert}
             />
             <SNSConversionModal open={snsOpen} onClose={closeSns} post={snsPost} />
-            <OnboardingWelcomeModal
-                open={onboardingOpen}
-                onClose={dismissOnboarding}
-                onComplete={completeOnboarding}
-            />
         </DashboardLayout>
     );
 };

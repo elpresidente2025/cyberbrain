@@ -10,8 +10,6 @@ export function useProfileActions(profile, bioEntries, user, reloadProfile, setE
     const [deleting, setDeleting] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
-    const [isFirstTimeBioSave, setIsFirstTimeBioSave] = useState(false);
-    const [congratulationsOpen, setCongratulationsOpen] = useState(false);
 
     const { notification, showNotification, hideNotification } = useNotification();
 
@@ -71,12 +69,6 @@ export function useProfileActions(profile, bioEntries, user, reloadProfile, setE
         try {
             setSaving(true);
 
-            const hadSufficientBio = user?.bio && user.bio.trim().length >= 200;
-            const willHaveSufficientBio = profile.bio && profile.bio.trim().length >= 200;
-            const isFirstBioCompletion = !hadSufficientBio && willHaveSufficientBio;
-
-            if (isFirstBioCompletion) setIsFirstTimeBioSave(true);
-
             const payload = {
                 name: profile.name,
                 status: profile.status,
@@ -108,12 +100,7 @@ export function useProfileActions(profile, bioEntries, user, reloadProfile, setE
 
             if (res) {
                 try { await reloadProfile(); } catch (_) { /* 리로드 실패해도 저장은 성공 */ }
-
-                if (isFirstBioCompletion) {
-                    setCongratulationsOpen(true);
-                } else {
-                    showNotification(res.message || '프로필이 저장되었습니다.', 'success');
-                }
+                showNotification(res.message || '프로필이 저장되었습니다.', 'success');
             } else {
                 throw new Error('서버 응답이 올바르지 않습니다.');
             }
@@ -197,8 +184,6 @@ export function useProfileActions(profile, bioEntries, user, reloadProfile, setE
         saving, deleting,
         deleteDialogOpen, setDeleteDialogOpen,
         deleteConfirmText, setDeleteConfirmText,
-        isFirstTimeBioSave,
-        congratulationsOpen, setCongratulationsOpen,
         notification, showNotification, hideNotification,
         handleSubmit,
         handleCustomTitleSave,

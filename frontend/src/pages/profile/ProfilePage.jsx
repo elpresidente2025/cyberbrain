@@ -1,7 +1,7 @@
 // frontend/src/pages/profile/ProfilePage.jsx
 // 리팩토링된 프로필 페이지 메인 컴포넌트
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
 import {
     Box,
@@ -22,9 +22,6 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import DashboardLayout from '../../components/DashboardLayout';
 import UserInfoForm from '../../components/UserInfoForm';
-import ProfileBioGuideModal from '../../components/onboarding/ProfileBioGuideModal';
-import ProfileIncompleteModal from '../../components/onboarding/ProfileIncompleteModal';
-import CongratulationsModal from '../../components/onboarding/CongratulationsModal';
 import { LoadingSpinner, LoadingButton } from '../../components/loading';
 import { NotificationSnackbar } from '../../components/ui';
 import { VALIDATION_RULES } from '../../constants/bio-types';
@@ -55,11 +52,6 @@ const CONTAINER_MAX_WIDTH = {
 export default function ProfilePage() {
     const { user, logout } = useAuth();
 
-    // 온보딩 모달 상태
-    const [bioGuideOpen, setBioGuideOpen] = useState(false);
-    const [profileIncompleteOpen, setProfileIncompleteOpen] = useState(false);
-    const [missingFields, setMissingFields] = useState([]);
-
     // 데이터 훅
     const {
         profile, setProfile,
@@ -68,7 +60,6 @@ export default function ProfilePage() {
         loading, error, setError,
         reloadProfile,
         handleFieldChange,
-        checkMissingFields,
     } = useProfileData(user);
 
     // Bio 엔트리 훅
@@ -84,7 +75,6 @@ export default function ProfilePage() {
         saving, deleting,
         deleteDialogOpen, setDeleteDialogOpen,
         deleteConfirmText, setDeleteConfirmText,
-        congratulationsOpen, setCongratulationsOpen,
         notification, hideNotification,
         handleSubmit,
         handleCustomTitleSave,
@@ -92,46 +82,6 @@ export default function ProfilePage() {
         handleDeleteAccount,
         closeDeleteDialog,
     } = useProfileActions(profile, bioEntries, user, reloadProfile, setError);
-
-    // Bio 가이드 글로우 효과
-    const focusBioTextarea = () => {
-        const bioCard = document.querySelector('[data-bio-section="personal"]');
-        if (!bioCard) { setBioGuideOpen(true); return; }
-
-        bioCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        setTimeout(() => {
-            let glowCount = 0;
-            const glowCycle = () => {
-                if (glowCount >= 2) { setBioGuideOpen(true); return; }
-                bioCard.style.boxShadow = '0 0 15px 3px rgba(0, 188, 212, 0.5), 0 0 25px 8px rgba(0, 188, 212, 0.2)';
-                bioCard.style.transition = 'all 0.3s ease';
-                bioCard.style.transform = 'scale(1.01)';
-                setTimeout(() => {
-                    bioCard.style.boxShadow = '';
-                    bioCard.style.transform = '';
-                    glowCount++;
-                    setTimeout(glowCycle, 200);
-                }, 300);
-            };
-            glowCycle();
-        }, 500);
-    };
-
-    // 최초 로드 후 온보딩 체크
-    useEffect(() => {
-        if (loading || !profile.name) return;
-
-        const missing = checkMissingFields(profile);
-        if (missing.length > 0) {
-            setMissingFields(missing);
-            setTimeout(() => setProfileIncompleteOpen(true), 500);
-        } else {
-            const hasSufficientBio = profile.bio && profile.bio.trim().length >= 200;
-            if (!hasSufficientBio) {
-                setTimeout(() => focusBioTextarea(), 800);
-            }
-        }
-    }, [loading, profile.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
     if (loading) {
         return (
@@ -379,7 +329,7 @@ export default function ProfilePage() {
                     autoHideDuration={6000}
                 />
 
-                {/* 다이얼로그 & 모달 */}
+                {/* 다이얼로그 */}
                 <DeleteAccountDialog
                     open={deleteDialogOpen}
                     onClose={closeDeleteDialog}
@@ -387,59 +337,6 @@ export default function ProfilePage() {
                     onConfirmTextChange={setDeleteConfirmText}
                     onDelete={() => handleDeleteAccount(logout)}
                     deleting={deleting}
-                />
-
-                <ProfileBioGuideModal
-                    open={bioGuideOpen}
-                    onClose={() => setBioGuideOpen(false)}
-                    onStartWriting={() => {
-                        setBioGuideOpen(false);
-                        setTimeout(() => {
-                            const bioCard = document.querySelector('[data-bio-section="personal"]');
-                            const focusTextarea = () => {
-                                const ta = document.querySelector('textarea[placeholder*="자기소개"]');
-                                if (ta) { ta.focus(); ta.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-                            };
-                            if (!bioCard) { focusTextarea(); return; }
-
-                            let glowCount = 0;
-                            const glowCycle = () => {
-                                if (glowCount >= 2) { focusTextarea(); return; }
-                                bioCard.style.boxShadow = '0 0 15px 3px rgba(0, 188, 212, 0.5), 0 0 25px 8px rgba(0, 188, 212, 0.2)';
-                                bioCard.style.transition = 'all 0.3s ease';
-                                bioCard.style.transform = 'scale(1.01)';
-                                setTimeout(() => {
-                                    bioCard.style.boxShadow = '';
-                                    bioCard.style.transform = '';
-                                    glowCount++;
-                                    setTimeout(glowCycle, 200);
-                                }, 300);
-                            };
-                            glowCycle();
-                        }, 300);
-                    }}
-                    userName={user?.displayName || user?.name}
-                />
-
-                <CongratulationsModal
-                    open={congratulationsOpen}
-                    onClose={() => setCongratulationsOpen(false)}
-                    userName={user?.displayName || user?.name}
-                    bioContent={profile.bio}
-                />
-
-                <ProfileIncompleteModal
-                    open={profileIncompleteOpen}
-                    onClose={() => setProfileIncompleteOpen(false)}
-                    onFillProfile={() => {
-                        setProfileIncompleteOpen(false);
-                        const field = document.querySelector('[name="position"]');
-                        if (field) {
-                            field.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            setTimeout(() => field.focus(), 500);
-                        }
-                    }}
-                    missingFields={missingFields}
                 />
             </Container>
         </DashboardLayout>
