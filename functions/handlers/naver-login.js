@@ -10,7 +10,10 @@ const { isAdminUser } = require('../common/rbac');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { ALLOWED_ORIGINS } = require('../common/config');
 const { NAVER_CLIENT_ID, NAVER_CLIENT_SECRET, getSecretValue } = require('../common/secrets');
+const { getTrialMonthlyLimit } = require('../common/plan-catalog');
 const fetch = require('node-fetch');
+
+const TRIAL_MONTHLY_LIMIT = getTrialMonthlyLimit();
 
 // 네이버 OAuth 설정 (환경변수/시크릿)
 
@@ -236,11 +239,17 @@ const naverLoginHTTP = onRequest({
 
           // 구독/무료 체험 관련 필드
           subscriptionStatus: 'trial',
+          planId: null,
+          plan: null,
+          billing: {
+            status: 'trial',
+            monthlyLimit: TRIAL_MONTHLY_LIMIT,
+          },
           paidAt: null,
-          trialPostsRemaining: 8,
-          generationsRemaining: 8,
+          trialPostsRemaining: TRIAL_MONTHLY_LIMIT,
+          generationsRemaining: TRIAL_MONTHLY_LIMIT,
           trialExpiresAt: admin.firestore.Timestamp.fromDate(endOfMonth),
-          monthlyLimit: 8,
+          monthlyLimit: TRIAL_MONTHLY_LIMIT,
           monthlyUsage: {},
           activeGenerationSession: null
         };

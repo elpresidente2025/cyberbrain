@@ -10,6 +10,7 @@ const { admin, db } = require('../utils/firebaseAdmin');
 const { NAVER_CLIENT_ID, NAVER_CLIENT_SECRET, getSecretValue } = require('../common/secrets');
 const axios = require('axios');
 const { getAllowedOrigins } = require('../common/branding');
+const { getDefaultPaidPlan } = require('../common/plan-catalog');
 
 // 네이버페이 API 설정
 const NAVER_PARTNER_ID = process.env.NAVER_PARTNER_ID;
@@ -217,8 +218,11 @@ async function updateUserSubscription(uid, orderId, paymentData) {
   try {
     // 주문번호에서 플랜 정보 추출
     const orderName = paymentData.body?.productName || '';
-    const planName = '공식 파트너십';
-    const monthlyLimit = 90; // 공식 파트너십: 월 90회
+    const paidPlan = getDefaultPaidPlan();
+    const planName = paidPlan?.name || '공식 파트너십';
+    const planId = paidPlan?.id || 'official-partnership';
+    const monthlyLimit = paidPlan?.monthlyLimit || 90;
+    const paidAmount = paymentData.body?.totalPayAmount || paidPlan?.price || 55000;
 
     // 사용자 정보 가져오기
     const userRef = db.collection('users').doc(uid);
@@ -230,25 +234,44 @@ async function updateUserSubscription(uid, orderId, paymentData) {
 
     // 다음 결제일 계산 (가입월 M+1월 1일)
     let nextBillingDate;
-    if (!userData.subscriptionStartDate) {
+    if (!userData.billing?.subscriptionStartDate && !userData.subscriptionStartDate) {
       // 첫 결제인 경우: M+1월 1일
       nextBillingDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     } else {
       // 이미 구독 중인 경우: 다음 달 1일
-      const currentNext = userData.nextBillingDate?.toDate() || now;
+      const currentNext = userData.billing?.nextBillingDate?.toDate?.() ||
+        userData.nextBillingDate?.toDate?.() ||
+        now;
       nextBillingDate = new Date(currentNext.getFullYear(), currentNext.getMonth() + 1, 1);
     }
 
+    const subscriptionStartDate = userData.billing?.subscriptionStartDate ||
+      userData.subscriptionStartDate ||
+      admin.firestore.FieldValue.serverTimestamp();
+    const nextBillingTimestamp = admin.firestore.Timestamp.fromDate(nextBillingDate);
+
     // 구독 데이터 준비
     const subscriptionData = {
+      planId,
       plan: planName,
       subscriptionStatus: 'active',
       monthlyLimit,
-      subscriptionStartDate: userData.subscriptionStartDate || admin.firestore.FieldValue.serverTimestamp(),
-      nextBillingDate: admin.firestore.Timestamp.fromDate(nextBillingDate),
+      subscriptionStartDate,
+      nextBillingDate: nextBillingTimestamp,
       lastPaymentAt: admin.firestore.FieldValue.serverTimestamp(),
-      lastPaymentAmount: paymentData.body?.totalPayAmount || 55000,
+      lastPaymentAmount: paidAmount,
       lastPaymentKey: orderId,
+      'billing.planId': planId,
+      'billing.planName': planName,
+      'billing.status': 'active',
+      'billing.monthlyLimit': monthlyLimit,
+      'billing.subscriptionStartDate': subscriptionStartDate,
+      'billing.nextBillingDate': nextBillingTimestamp,
+      'billing.lastPaymentAt': admin.firestore.FieldValue.serverTimestamp(),
+      'billing.lastPaymentAmount': paidAmount,
+      'billing.lastPaymentKey': orderId,
+      'billing.price': paidAmount,
+      'billing.currency': paidPlan?.currency || 'KRW',
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
@@ -262,11 +285,12 @@ async function updateUserSubscription(uid, orderId, paymentData) {
     // 구독 이력도 기록
     await db.collection('subscription_history').add({
       userId: uid,
+      planId,
       planName,
       monthlyLimit,
       paymentKey: orderId,
       orderId: orderId,
-      amount: paymentData.body?.totalPayAmount || 55000,
+      amount: paidAmount,
       status: 'active',
       billingDate: now,
       nextBillingDate: nextBillingDate,
@@ -275,6 +299,7 @@ async function updateUserSubscription(uid, orderId, paymentData) {
 
     console.log('✅ 사용자 구독 정보 업데이트 완료:', {
       uid,
+      planId,
       planName,
       monthlyLimit,
       nextBillingDate: nextBillingDate.toISOString()

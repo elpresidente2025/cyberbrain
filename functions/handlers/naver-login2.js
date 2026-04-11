@@ -5,9 +5,11 @@ const { defineSecret } = require('firebase-functions/params');
 const { admin, db } = require('../utils/firebaseAdmin');
 const fetch = require('node-fetch');
 const { getAllowedOrigins } = require('../common/branding');
+const { getTrialMonthlyLimit } = require('../common/plan-catalog');
 
 const NAVER_CLIENT_ID = defineSecret('NAVER_CLIENT_ID');
 const NAVER_CLIENT_SECRET = defineSecret('NAVER_CLIENT_SECRET');
+const TRIAL_MONTHLY_LIMIT = getTrialMonthlyLimit();
 
 // Normalize gender to app standard labels
 function mapGender(g) {
@@ -300,11 +302,17 @@ const naverCompleteRegistration = onRequest({ region: 'asia-northeast3', cors: t
       districtStatus: 'trial',
       // 구독/무료 체험 관련 필드
       subscriptionStatus: 'trial',
+      planId: null,
+      plan: null,
+      billing: {
+        status: 'trial',
+        monthlyLimit: TRIAL_MONTHLY_LIMIT,
+      },
       paidAt: null,
-      trialPostsRemaining: 8,
-      generationsRemaining: 8,
+      trialPostsRemaining: TRIAL_MONTHLY_LIMIT,
+      generationsRemaining: TRIAL_MONTHLY_LIMIT,
       trialExpiresAt: admin.firestore.Timestamp.fromDate(endOfMonth),
-      monthlyLimit: 8,
+      monthlyLimit: TRIAL_MONTHLY_LIMIT,
       monthlyUsage: {},
       activeGenerationSession: null,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),

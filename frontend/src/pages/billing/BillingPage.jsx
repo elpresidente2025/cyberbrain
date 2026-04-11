@@ -81,7 +81,7 @@ const BillingPage = () => {
                         <Grid container spacing={3}>
                             <Grid item xs={12} md={6}>
                                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={stagger(2)}>
-                                    <BenefitsCard />
+                                    <BenefitsCard planInfo={planInfo} />
                                 </motion.div>
                             </Grid>
                             <Grid item xs={12} md={6}>

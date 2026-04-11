@@ -13,12 +13,26 @@
 const { admin, db } = require('../utils/firebaseAdmin');
 const { districtKey } = require('./district');
 const { notifyPriorityChange } = require('./district');
+const {
+  getDefaultPaidPlan,
+  getDefaultPaidPlanMonthlyLimit,
+  getTrialMonthlyLimit,
+} = require('../common/plan-catalog');
 
 let HttpsError;
 try {
   HttpsError = require('firebase-functions/v2/https').HttpsError;
 } catch (_) {
   HttpsError = require('firebase-functions').https.HttpsError;
+}
+
+const DEFAULT_PAID_PLAN = getDefaultPaidPlan();
+const DEFAULT_PAID_MONTHLY_LIMIT = getDefaultPaidPlanMonthlyLimit();
+const TRIAL_MONTHLY_LIMIT = getTrialMonthlyLimit();
+
+function parseMonthlyLimit(value) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 /**
@@ -173,8 +187,15 @@ async function handlePaymentSuccess({ uid, districtKey }) {
       isPrimaryInDistrict: isFirstPayer,
       districtStatus: isFirstPayer ? 'primary' : 'waiting',
       subscriptionStatus: 'active',
+      planId: DEFAULT_PAID_PLAN?.id || null,
+      plan: DEFAULT_PAID_PLAN?.name || null,
+      'billing.planId': DEFAULT_PAID_PLAN?.id || null,
+      'billing.planName': DEFAULT_PAID_PLAN?.name || null,
+      'billing.status': 'active',
+      'billing.monthlyLimit': DEFAULT_PAID_MONTHLY_LIMIT,
+      'billing.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
       paidAt,
-      monthlyLimit: isFirstPayer ? 90 : 0  // 우선권자만 사용 가능
+      monthlyLimit: isFirstPayer ? DEFAULT_PAID_MONTHLY_LIMIT : 0
     });
 
     console.log('✅ [handlePaymentSuccess] 결제 처리 완료:', {
@@ -296,6 +317,8 @@ async function handleSubscriptionCancellation({ uid, districtKey }) {
       isPrimaryInDistrict: false,
       districtStatus: 'cancelled',
       subscriptionStatus: 'cancelled',
+      'billing.status': 'cancelled',
+      'billing.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
       monthlyLimit: 0
     });
 
@@ -305,7 +328,9 @@ async function handleSubscriptionCancellation({ uid, districtKey }) {
       tx.update(newPrimaryRef, {
         isPrimaryInDistrict: true,
         districtStatus: 'primary',
-        monthlyLimit: 90
+        'billing.status': 'active',
+        'billing.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+        monthlyLimit: DEFAULT_PAID_MONTHLY_LIMIT
       });
     }
 
@@ -452,7 +477,7 @@ async function checkGenerationPermission({ uid }) {
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const monthlyUsage = userData.monthlyUsage || {};
     const used = monthlyUsage[currentMonth] || 0;
-    const limit = 90;  // 유료 사용자와 동일
+    const limit = DEFAULT_PAID_MONTHLY_LIMIT;
 
     if (used >= limit) {
       return {
@@ -471,7 +496,7 @@ async function checkGenerationPermission({ uid }) {
     // generationsRemaining이 undefined인 경우 = 레거시 사용자, 8회로 초기화
     const remaining = userData.generationsRemaining !== undefined
       ? userData.generationsRemaining
-      : (userData.trialPostsRemaining !== undefined ? userData.trialPostsRemaining : 8);
+      : (userData.trialPostsRemaining !== undefined ? userData.trialPostsRemaining : TRIAL_MONTHLY_LIMIT);
 
     if (remaining <= 0) {
       return {
@@ -508,7 +533,7 @@ async function checkGenerationPermission({ uid }) {
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const monthlyUsage = userData.monthlyUsage || {};
   const used = monthlyUsage[currentMonth] || 0;
-  const limit = userData.monthlyLimit || 90;
+  const limit = parseMonthlyLimit(userData.monthlyLimit) ?? DEFAULT_PAID_MONTHLY_LIMIT;
 
   if (used >= limit) {
     return {

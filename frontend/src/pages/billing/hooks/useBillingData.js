@@ -4,7 +4,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../../hooks/useAuth';
 import { callFunctionWithNaverAuth } from '../../../services/firebaseService';
-import { hasAdminAccess } from '../../../utils/authz';
+import { hasAdminAccess, isPaidSubscriber } from '../../../utils/authz';
+import { DEFAULT_PAID_PLAN, resolvePaidPlanFromUser } from '../../../config/planCatalog';
 
 /**
  * 당원 인증 상태 판단
@@ -42,18 +43,6 @@ const getAuthStatus = (user) => {
     };
 };
 
-const PLAN_INFO = {
-    name: '공식 파트너십',
-    price: 55000,
-    monthlyLimit: 90,
-    features: [
-        '월 90회 원고 생성',
-        'SNS 원고 무료 생성',
-        '최대 3회 재생성',
-        '더불어민주당 당원 전용',
-    ],
-};
-
 export default function useBillingData() {
     const { user, refreshUserProfile } = useAuth();
     const [testMode, setTestMode] = useState(false);
@@ -62,8 +51,9 @@ export default function useBillingData() {
     const isAdmin = hasAdminAccess(user);
     const isSubscribed = adminOverrideSubscription !== null
         ? adminOverrideSubscription
-        : user?.subscriptionStatus === 'active';
+        : isPaidSubscriber(user);
     const authStatus = getAuthStatus(user);
+    const planInfo = resolvePaidPlanFromUser(user) || DEFAULT_PAID_PLAN;
 
     useEffect(() => {
         const loadSystemConfig = async () => {
@@ -88,6 +78,6 @@ export default function useBillingData() {
         adminOverrideSubscription,
         setAdminOverrideSubscription,
         authStatus,
-        planInfo: PLAN_INFO,
+        planInfo,
     };
 }

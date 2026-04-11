@@ -59,8 +59,13 @@
 | `trialPostsRemaining` | number | 체험판 남은 횟수 | 8 |
 | `monthlyLimit` | number | 월간 생성 제한 | 8 (체험판), 플랜별 상이 |
 | `postsThisMonth` | number | 이번 달 생성 횟수 | 0 |
-| `plan` | string | 요금제 플랜 | '로컬 블로거', '리전 인플루언서', '오피니언 리더' |
-| `subscription` | string | 구독 (plan과 동일, 호환성용) | |
+| `planId` | string | 표준 요금제 ID | 'official-partnership' |
+| `plan` | string | 표시용 요금제 이름(호환성 유지) | '공식 파트너십' |
+| `billing.status` | string | 표준 청구 상태 | 'trial', 'active', 'cancelled', 'expired' |
+| `billing.planId` | string | billing 스냅샷의 요금제 ID | 'official-partnership' |
+| `billing.planName` | string | billing 스냅샷의 요금제 이름 | '공식 파트너십' |
+| `billing.monthlyLimit` | number | 계약상 플랜 한도 스냅샷 | 90 |
+| `subscription` | string | 레거시 구독명 (제거 대상) | |
 
 #### 시스템 필드
 | 필드명 | 타입 | 설명 |
@@ -238,11 +243,12 @@
   - 백엔드 코드는 이미 userId 사용 중
 
 ### 3. 구독 관련 필드
-- ⚠️ **부분 해결**:
-  - `plan`을 표준 필드로 사용
+- ⚠️ **진행 중**:
+  - `planId`를 표준 식별자로 사용
+  - `plan`은 표시용 이름으로만 유지
+  - `billing.status` / `billing.planId` / `billing.monthlyLimit`를 표준 billing 스냅샷으로 사용
+  - `subscriptionStatus` / `monthlyLimit`는 기존 권한 로직과의 호환성 필드로 당분간 병행
   - `subscription` 레거시 필드는 제거 대상으로 취급
-  - updateUserPlan에서 둘 다 설정 (profile.js:246-247)
-  - 읽기/쓰기 모두 `plan`만 사용하고 `subscription`은 cleanup 스크립트로 제거
 
 ### 4. 나이 관련 필드
 - ✅ **현재 구조 유지**:
@@ -275,10 +281,13 @@
 ### ✅ 우선순위 2: 필드명 통일 (완료)
 - [x] userId/authorId 통일 (firestore.rules 수정)
 - [x] plan 표준화 및 legacy subscription 제거 준비
+- [x] planId + billing 스냅샷 표준 구조 추가
 
 **변경된 파일**:
 - `firestore.rules`: Line 43
 - `functions/handlers/profile.js`: Line 246-247
+- `functions/common/plan-catalog.js`
+- `shared/plan-catalog.json`
 
 ### ✅ 우선순위 3: 데이터 정규화 (스크립트 준비 완료)
 - [x] 데이터 정규화 스크립트 작성
@@ -289,6 +298,7 @@
 1. 성별 필드 일괄 정규화 (M/F → 남성/여성)
 2. age ↔ ageDecade 자동 동기화
 3. users.bio → bios.content 마이그레이션 (잔여 데이터 처리)
+4. `planId` / `billing.*` backfill은 `functions/scripts/backfill-plan-schema.js`에서 별도 수행
 
 **스크립트 위치**: `functions/scripts/normalize-user-data.js`
 

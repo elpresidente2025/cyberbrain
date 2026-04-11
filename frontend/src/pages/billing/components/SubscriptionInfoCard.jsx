@@ -6,7 +6,8 @@ import { Box, Paper, Typography, Divider } from '@mui/material';
 import { CreditCard } from '@mui/icons-material';
 
 const SubscriptionInfoCard = ({ user, planInfo }) => {
-    const nextBilling = user?.nextBillingDate?.toDate?.() ||
+    const nextBilling = user?.billing?.nextBillingDate?.toDate?.() ||
+        user?.nextBillingDate?.toDate?.() ||
         new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1);
     const dateStr = nextBilling.toLocaleDateString('ko-KR', {
         year: 'numeric', month: 'long', day: 'numeric',

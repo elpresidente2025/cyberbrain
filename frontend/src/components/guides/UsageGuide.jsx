@@ -11,14 +11,19 @@ import {
   CardContent,
 } from '@mui/material';
 import { CheckCircleOutline, TrendingUp } from '@mui/icons-material';
+import { DEFAULT_PAID_PLAN } from '../../config/planCatalog';
 
 const UsageGuide = () => {
+  const paidPlan = DEFAULT_PAID_PLAN;
   const plans = [
-    { name: '공식 파트너십', limit: '월 90회 원고 생성 + SNS 원고 무료 생성' }
+    {
+      name: paidPlan?.name || '공식 파트너십',
+      limit: `월 ${paidPlan?.monthlyLimit || 90}회 원고 생성 + SNS 원고 무료 생성`
+    }
   ];
 
   const bonus = [
-    '월 90회 원고 생성 가능',
+    `월 ${paidPlan?.monthlyLimit || 90}회 원고 생성 가능`,
     'SNS 원고 무료 생성 포함',
     '무제한 수정 및 재생성',
     '대시보드에서 현황 확인 가능'

@@ -1,3 +1,11 @@
+import {
+  DEFAULT_PAID_MONTHLY_LIMIT,
+  TRIAL_MONTHLY_LIMIT,
+  getBillingStatus as getNormalizedBillingStatus,
+  getUserPlanId as getCatalogPlanId,
+  resolvePaidPlanFromUser,
+} from '../config/planCatalog';
+
 export const normalizeRole = (role) => String(role ?? '').trim().toLowerCase();
 
 export const isAdminRole = (role) => normalizeRole(role) === 'admin';
@@ -8,20 +16,23 @@ export const hasLegacyTesterFlag = (user) => user?.isTester === true;
 
 const parseMonthlyLimit = (value) => {
   const normalized = Number.parseInt(value, 10);
-  return Number.isFinite(normalized) && normalized > 0 ? normalized : null;
+  return Number.isFinite(normalized) && normalized >= 0 ? normalized : null;
 };
+
+export const getPlanId = (user) => getCatalogPlanId(user);
 
 export const getPlanName = (user) => {
   if (!user || typeof user !== 'object') return null;
+  const resolvedPlan = resolvePaidPlanFromUser(user);
+  if (resolvedPlan) {
+    return resolvedPlan.name;
+  }
   const plan = typeof user.plan === 'string' ? user.plan.trim() : '';
   return plan || null;
 };
 
 export const getSubscriptionStatus = (user) => {
-  const status = typeof user?.subscriptionStatus === 'string'
-    ? user.subscriptionStatus.trim().toLowerCase()
-    : '';
-  return status || null;
+  return getNormalizedBillingStatus(user);
 };
 
 export const hasAdminAccess = (user) => {
@@ -43,23 +54,33 @@ export const isPaidSubscriber = (user) => {
   if (getSubscriptionStatus(user) === 'active') return true;
 
   const monthlyLimit = parseMonthlyLimit(user.monthlyLimit);
-  if (monthlyLimit && monthlyLimit > 8) return true;
+  if (monthlyLimit !== null && monthlyLimit > TRIAL_MONTHLY_LIMIT) return true;
 
-  return Boolean(getPlanName(user));
+  return Boolean(resolvePaidPlanFromUser(user) || getPlanName(user));
 };
 
-export const getMonthlyLimit = (user, fallbackLimit = 8) => {
+export const getMonthlyLimit = (user, fallbackLimit = TRIAL_MONTHLY_LIMIT) => {
   if (hasAdminOrTesterAccess(user)) {
-    return 90;
+    return DEFAULT_PAID_MONTHLY_LIMIT;
   }
 
   const monthlyLimit = parseMonthlyLimit(user?.monthlyLimit);
-  if (monthlyLimit) {
+  if (monthlyLimit !== null) {
     return monthlyLimit;
   }
 
+  const billingMonthlyLimit = parseMonthlyLimit(user?.billing?.monthlyLimit);
+  if (billingMonthlyLimit !== null) {
+    return billingMonthlyLimit;
+  }
+
+  const paidPlan = resolvePaidPlanFromUser(user);
+  if (paidPlan?.monthlyLimit) {
+    return paidPlan.monthlyLimit;
+  }
+
   if (isPaidSubscriber(user)) {
-    return 90;
+    return DEFAULT_PAID_MONTHLY_LIMIT;
   }
 
   return fallbackLimit;

@@ -14,9 +14,12 @@ const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
 const { logInfo } = require('../common/log');
 const { admin, db } = require('../utils/firebaseAdmin');
+const { resolvePaidPlan, getTrialMonthlyLimit } = require('../common/plan-catalog');
 const { districtKey } = require('../services/district');
 const { getDistrictStatus, addUserToDistrict } = require('../services/district-priority');
 const { analyzeBioForStyle } = require('../services/style-analysis');
+
+const TRIAL_MONTHLY_LIMIT = getTrialMonthlyLimit();
 
 // 광역/기초자치단체장은 선거구(electoralDistrict) 불필요
 function requiredRegionFieldsFor(position) {
@@ -343,35 +346,48 @@ exports.updateProfile = wrap(async (req) => {
  */
 exports.updateUserPlan = wrap(async (req) => {
   const { uid, token } = await auth(req);
-  const { plan } = req.data || {};
+  const { planId, plan } = req.data || {};
+  const selectedPlan = resolvePaidPlan(planId || plan);
 
-  if (!plan || typeof plan !== 'string') {
+  if (!selectedPlan) {
     throw new HttpsError('invalid-argument', '유효한 플랜을 선택해주세요.');
   }
 
-  // 단일 플랜: 스탠다드 플랜
-  const allowedPlans = ['스탠다드 플랜'];
-  if (!allowedPlans.includes(plan)) {
-    throw new HttpsError('invalid-argument', '허용되지 않은 플랜입니다.');
-  }
-
-  logInfo('updateUserPlan 호출', { userId: uid, email: token?.email, plan });
+  logInfo('updateUserPlan 호출', {
+    userId: uid,
+    email: token?.email,
+    planId: selectedPlan.id,
+    planName: selectedPlan.name,
+  });
 
   const userRef = db.collection('users').doc(uid);
 
   try {
-    await userRef.set({
-      plan: plan, // 표준 필드
-      monthlyLimit: 90, // 공식 파트너십: 월 90회
-      subscriptionStatus: 'active', // 유료 플랜 활성화
+    await userRef.update({
+      planId: selectedPlan.id,
+      plan: selectedPlan.name,
+      monthlyLimit: selectedPlan.monthlyLimit,
+      subscriptionStatus: 'active',
       monthlyUsage: {}, // 월별 사용량 초기화
+      'billing.planId': selectedPlan.id,
+      'billing.planName': selectedPlan.name,
+      'billing.status': 'active',
+      'billing.monthlyLimit': selectedPlan.monthlyLimit,
+      'billing.price': selectedPlan.price,
+      'billing.currency': selectedPlan.currency,
+      'billing.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
+    });
 
-    logInfo('플랜 업데이트 성공', { userId: uid, plan });
+    logInfo('플랜 업데이트 성공', {
+      userId: uid,
+      planId: selectedPlan.id,
+      planName: selectedPlan.name,
+    });
     return ok({
-      message: `${plan} 플랜으로 성공적으로 변경되었습니다.`,
-      plan: plan
+      message: `${selectedPlan.name} 플랜으로 성공적으로 변경되었습니다.`,
+      planId: selectedPlan.id,
+      plan: selectedPlan.name,
     });
   } catch (error) {
     console.error('❌ 플랜 업데이트 실패:', error);
@@ -468,11 +484,17 @@ exports.registerWithDistrictCheck = wrap(async (req) => {
       districtStatus: 'trial',  // trial | primary | waiting | cancelled
       // 구독 정보
       subscriptionStatus: 'trial',  // 무료 체험 상태
+      planId: null,
+      plan: null,
+      billing: {
+        status: 'trial',
+        monthlyLimit: TRIAL_MONTHLY_LIMIT,
+      },
       paidAt: null,  // 결제 시점 (결제 후 업데이트)
-      trialPostsRemaining: 8,  // 무료 체험 8회 (레거시, 하위 호환용)
-      generationsRemaining: 8,  // 생성 횟수 8회 (= 24회 시도)
+      trialPostsRemaining: TRIAL_MONTHLY_LIMIT,
+      generationsRemaining: TRIAL_MONTHLY_LIMIT,
       trialExpiresAt: admin.firestore.Timestamp.fromDate(endOfMonth),  // 말일까지 체험 가능
-      monthlyLimit: 8,  // 체험 기간 제한
+      monthlyLimit: TRIAL_MONTHLY_LIMIT,
       monthlyUsage: {},  // 월별 사용량 (자동 초기화되는 구조)
       activeGenerationSession: null,  // 활성 세션 없음
       createdAt: admin.firestore.FieldValue.serverTimestamp(),

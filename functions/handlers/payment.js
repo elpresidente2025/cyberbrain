@@ -5,11 +5,12 @@
 
 'use strict';
 
-const { wrap } = require('../common/wrap');
+const { wrap, wrapLite } = require('../common/wrap');
 const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
 const { HttpsError } = require('firebase-functions/v2/https');
 const { db } = require('../utils/firebaseAdmin');
+const { resolvePaidPlan, getUserMonthlyLimit, getTrialMonthlyLimit } = require('../common/plan-catalog');
 const {
   handlePaymentSuccess,
   handleSubscriptionCancellation
@@ -21,19 +22,18 @@ const { notifyPriorityChange } = require('../services/district');
  */
 exports.processPayment = wrap(async (req) => {
   const { uid } = await auth(req);
-  const { plan } = req.data || {};
+  const { planId, plan } = req.data || {};
+  const selectedPlan = resolvePaidPlan(planId || plan);
 
-  if (!plan || typeof plan !== 'string') {
+  if (!selectedPlan) {
     throw new HttpsError('invalid-argument', '유효한 플랜을 선택해주세요.');
   }
 
-  // 단일 플랜: 스탠다드 플랜
-  const allowedPlans = ['스탠다드 플랜'];
-  if (!allowedPlans.includes(plan)) {
-    throw new HttpsError('invalid-argument', '허용되지 않은 플랜입니다.');
-  }
-
-  console.log('💳 [processPayment] 결제 처리 시작:', { uid, plan });
+  console.log('💳 [processPayment] 결제 처리 시작:', {
+    uid,
+    planId: selectedPlan.id,
+    planName: selectedPlan.name,
+  });
 
   // 1. 사용자 정보 조회
   const userDoc = await db.collection('users').doc(uid).get();
@@ -130,7 +130,7 @@ exports.cancelSubscription = wrap(async (req) => {
 /**
  * 결제/우선권 상태 조회
  */
-exports.getPaymentStatus = wrap(async (req) => {
+exports.getPaymentStatus = wrapLite(async (req) => {
   const { uid } = await auth(req);
 
   const userDoc = await db.collection('users').doc(uid).get();
@@ -172,7 +172,7 @@ exports.getPaymentStatus = wrap(async (req) => {
     districtStatus: userData.districtStatus || 'unknown',
     subscriptionStatus: userData.subscriptionStatus || 'trial',
     paidAt: member?.paidAt || null,
-    monthlyLimit: userData.monthlyLimit || 8,
+    monthlyLimit: getUserMonthlyLimit(userData, getTrialMonthlyLimit()),
     message: userData.isPrimaryInDistrict
       ? '우선권을 보유 중입니다.'
       : '대기 중입니다.'

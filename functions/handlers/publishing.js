@@ -1,8 +1,17 @@
 const admin = require('firebase-admin');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
-const { wrap } = require('../common/wrap');
+const { wrap, wrapLite } = require('../common/wrap');
 const { auth } = require('../common/auth');
 const { requireAdmin, isAdminUser } = require('../common/rbac');
+const { getDefaultPaidPlanMonthlyLimit, getTrialMonthlyLimit } = require('../common/plan-catalog');
+
+const DEFAULT_PAID_MONTHLY_LIMIT = getDefaultPaidPlanMonthlyLimit();
+const TRIAL_MONTHLY_LIMIT = getTrialMonthlyLimit();
+
+function parseMonthlyLimit(value) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
 
 function isNaverBlogUrl(value) {
   const trimmed = String(value || '').trim();
@@ -108,7 +117,7 @@ const publishPost = wrap(async (request) => {
 });
 
 // 발행 통계 조회
-const getPublishingStats = wrap(async (request) => {
+const getPublishingStats = wrapLite(async (request) => {
   const { uid } = await auth(request);
 
   try {
@@ -121,7 +130,10 @@ const getPublishingStats = wrap(async (request) => {
     const isAdmin = isAdminUser(userData);
     const isTester = userData.isTester === true;
     // 관리자/테스터는 90회, 그 외는 monthlyLimit 필드 또는 role 기반
-    const monthlyTarget = (isAdmin || isTester) ? 90 : (userData.monthlyLimit || getMonthlyTarget(userRole));
+    const userMonthlyLimit = parseMonthlyLimit(userData.monthlyLimit);
+    const monthlyTarget = (isAdmin || isTester)
+      ? DEFAULT_PAID_MONTHLY_LIMIT
+      : (userMonthlyLimit !== null ? userMonthlyLimit : getMonthlyTarget(userRole));
 
     // 현재 월 정보
     const now = new Date();
@@ -169,7 +181,7 @@ const getPublishingStats = wrap(async (request) => {
 });
 
 // 보너스 원고 생성 권한 확인
-const checkBonusEligibility = wrap(async (request) => {
+const checkBonusEligibility = wrapLite(async (request) => {
   const { uid } = await auth(request);
 
   // auth 함수에서 이미 인증 검증이 완료됨
@@ -296,7 +308,7 @@ const getMonthlyTarget = (role) => {
     case 'local_blogger':
     case '로컬 블로거':
     default:
-      return 8;
+      return TRIAL_MONTHLY_LIMIT;
   }
 };
 
@@ -350,7 +362,7 @@ const resetUserUsage = wrap(async (request) => {
       console.log(`🧪 데모 모드 사용자 초기화: monthlyUsage.${currentMonthKey} ${currentMonthGenerations} -> 0`);
     } else if (subscriptionStatus === 'trial') {
       // 무료 체험: generationsRemaining 복구
-      const monthlyLimit = userData.monthlyLimit || 8;
+      const monthlyLimit = parseMonthlyLimit(userData.monthlyLimit) ?? TRIAL_MONTHLY_LIMIT;
       updateData.generationsRemaining = monthlyLimit;
       updateData.trialPostsRemaining = monthlyLimit;  // 하위 호환성
       updateData.activeGenerationSession = admin.firestore.FieldValue.delete();
@@ -377,7 +389,7 @@ const resetUserUsage = wrap(async (request) => {
       before = currentMonthData;
       after = 0;
     } else if (subscriptionStatus === 'trial') {
-      const monthlyLimit = userData.monthlyLimit || 8;
+      const monthlyLimit = parseMonthlyLimit(userData.monthlyLimit) ?? TRIAL_MONTHLY_LIMIT;
       message = `무료 체험 생성 횟수가 초기화되었습니다. (${currentGenerationsRemaining}회 -> ${monthlyLimit}회)`;
       before = currentGenerationsRemaining;
       after = monthlyLimit;
@@ -512,7 +524,7 @@ const toggleTester = wrap(async (request) => {
     // 테스터 상태 토글 + monthlyLimit 연동
     await db.collection('users').doc(targetUserId).update({
       isTester: newTesterStatus,
-      monthlyLimit: newTesterStatus ? 90 : 8,  // 테스터는 90회, 해제 시 8회
+      monthlyLimit: newTesterStatus ? DEFAULT_PAID_MONTHLY_LIMIT : TRIAL_MONTHLY_LIMIT,
       testerUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       testerUpdatedBy: adminUid
     });

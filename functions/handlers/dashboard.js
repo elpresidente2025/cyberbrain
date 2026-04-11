@@ -6,20 +6,21 @@
 'use strict';
 
 const { db, admin } = require('../utils/firebaseAdmin');
-const { wrap } = require('../common/wrap');
+const { wrapLite } = require('../common/wrap');
 const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
+const { getUserBillingStatus, getUserMonthlyLimit, getTrialMonthlyLimit } = require('../common/plan-catalog');
 
-exports.getDashboardData = wrap(async (req) => {
+exports.getDashboardData = wrapLite(async (req) => {
   const { uid } = await auth(req);
 
   // 사용자 정보 가져오기 (구독 상태 확인)
   const userDoc = await db.collection('users').doc(uid).get();
   const userData = userDoc.data() || {};
 
-  const subscriptionStatus = userData.subscriptionStatus || 'trial';
-  const monthlyLimit = userData.monthlyLimit || 8;
-  const trialPostsRemaining = userData.trialPostsRemaining || 0;
+  const subscriptionStatus = getUserBillingStatus(userData);
+  const monthlyLimit = getUserMonthlyLimit(userData, getTrialMonthlyLimit());
+  const trialPostsRemaining = userData.trialPostsRemaining || getTrialMonthlyLimit();
 
   // 사용량 정보
   const now = new Date();
