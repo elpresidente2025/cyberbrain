@@ -27,7 +27,7 @@ function main() {
 
   for (const targetPath of targetPaths) {
     ensureDirectory(targetPath);
-    const current = fs.existsSync(targetPath) ? fs.readFileSync(targetPath, 'utf8') : null;
+    const current = fs.existsSync(targetPath) ? readNormalizedJson(targetPath) : null;
 
     if (current !== normalizedSource) {
       changedTargets.push(path.relative(repoRoot, targetPath));
