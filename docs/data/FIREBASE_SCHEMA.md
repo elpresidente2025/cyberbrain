@@ -240,9 +240,9 @@
 ### 3. 구독 관련 필드
 - ⚠️ **부분 해결**:
   - `plan`을 표준 필드로 사용
-  - `subscription`은 레거시 호환성을 위해 유지 (향후 제거 예정)
+  - `subscription` 레거시 필드는 제거 대상으로 취급
   - updateUserPlan에서 둘 다 설정 (profile.js:246-247)
-  - 읽기 시 plan 우선, subscription은 fallback
+  - 읽기/쓰기 모두 `plan`만 사용하고 `subscription`은 cleanup 스크립트로 제거
 
 ### 4. 나이 관련 필드
 - ✅ **현재 구조 유지**:
@@ -274,7 +274,7 @@
 
 ### ✅ 우선순위 2: 필드명 통일 (완료)
 - [x] userId/authorId 통일 (firestore.rules 수정)
-- [x] plan/subscription 명확화 (주석 추가)
+- [x] plan 표준화 및 legacy subscription 제거 준비
 
 **변경된 파일**:
 - `firestore.rules`: Line 43
@@ -335,3 +335,4 @@
 - `functions/handlers/naver-login2.js`: 네이버 로그인 로직
 - `functions/handlers/bio.js`: Bio 관리 로직
 - `functions/handlers/dashboard.js`: 대시보드 데이터 조회
+

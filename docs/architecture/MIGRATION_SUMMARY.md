@@ -141,7 +141,7 @@ node functions/scripts/normalize-user-data.js --batch-size=100
 
 ### 문서
 
-#### 5. `FIREBASE_SCHEMA.md` (업데이트)
+#### 5. `docs/data/FIREBASE_SCHEMA.md` (업데이트)
 - ✅ 필드 구조 문서화
 - ✅ 마이그레이션 상태 업데이트
 - ✅ 해결된 문제 표시
