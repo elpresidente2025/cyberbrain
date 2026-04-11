@@ -7,14 +7,11 @@
 
 const { onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { admin, db } = require('../utils/firebaseAdmin');
+const { getAllowedOrigins } = require('../common/branding');
 
 // 네이버 연결 끊기 콜백 처리
 const naverDisconnect = onRequest({
-  cors: [
-    'https://cyberbrain.kr',
-    'https://ai-secretary-6e9c8.web.app',
-    'https://ai-secretary-6e9c8.firebaseapp.com'
-  ],
+  cors: getAllowedOrigins(),
   memory: '256MiB',
   timeoutSeconds: 60
 }, async (request, response) => {

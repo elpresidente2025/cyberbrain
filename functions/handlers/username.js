@@ -2,6 +2,7 @@
 
 const { onRequest } = require('firebase-functions/v2/https');
 const { admin, db } = require('../utils/firebaseAdmin');
+const { getAllowedOrigins } = require('../common/branding');
 
 function normalizeUsername(u) {
   return String(u || '').trim().toLowerCase();
@@ -9,7 +10,7 @@ function normalizeUsername(u) {
 
 // 아이디 사용 가능 여부 확인
 const checkUsername = onRequest({ region: 'asia-northeast3', cors: true, timeoutSeconds: 30 }, async (req, res) => {
-  const allowedOrigins = ['https://cyberbrain.kr', 'https://ai-secretary-6e9c8.web.app', 'https://ai-secretary-6e9c8.firebaseapp.com'];
+  const allowedOrigins = getAllowedOrigins();
   const origin = req.headers.origin;
   if (allowedOrigins.includes(origin)) {
     res.set('Access-Control-Allow-Origin', origin);
@@ -26,7 +27,7 @@ const checkUsername = onRequest({ region: 'asia-northeast3', cors: true, timeout
 
 // 아이디 선점 (트랜잭션)
 const claimUsername = onRequest({ region: 'asia-northeast3', cors: true, timeoutSeconds: 60 }, async (req, res) => {
-  const allowedOrigins = ['https://cyberbrain.kr', 'https://ai-secretary-6e9c8.web.app', 'https://ai-secretary-6e9c8.firebaseapp.com'];
+  const allowedOrigins = getAllowedOrigins();
   const origin = req.headers.origin;
   if (allowedOrigins.includes(origin)) {
     res.set('Access-Control-Allow-Origin', origin);

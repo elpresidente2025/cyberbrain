@@ -114,7 +114,7 @@ function HeroSection({ demoMode, handlePrimaryCTA }) {
           <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center' }}>
             <img
               src="/logo-landscape.png"
-              alt="AI Secretary Logo"
+              alt="전자두뇌비서관 로고"
               style={{
                 height: '48px',
                 width: 'auto',

@@ -31,6 +31,8 @@ import {
 import { alpha, useTheme } from '@mui/material/styles';
 import { convertToSNS, getSNSUsage, testSNS } from '../services/firebaseService';
 import { useAuth } from '../hooks/useAuth';
+import { hasAdminOrTesterAccess } from '../utils/authz';
+import { containsKnownShortUrl, replaceKnownShortUrls } from '../config/branding';
 
 // SNS 아이콘 컴포넌트 (이미지 사용)
 const SNSIcon = ({ src, alt, size = 20 }) => (
@@ -85,12 +87,11 @@ const PLATFORMS = {
   }
 };
 
-const SHORT_URL_PATTERN = /https:\/\/ai-secretary-6e9c8\.web\.app\/s\/[0-9A-Za-z]+/g;
 const BLOG_CTA_ONLY_PATTERN = /^\s*(?:더\s*자세한\s*내용은\s*블로그에서\s*확인해(?:주세요|보세요)|자세한\s*내용은\s*블로그에서\s*확인해(?:주세요|보세요)|블로그\s*링크)\s*[:：]?\s*$/;
 
 function replaceShortUrlWithOriginal(text, originalUrl) {
   if (!text || !originalUrl) return text;
-  return String(text).replace(SHORT_URL_PATTERN, originalUrl);
+  return replaceKnownShortUrls(text, originalUrl);
 }
 
 function escapeRegExp(value) {
@@ -166,7 +167,7 @@ function normalizeSnsResultUrls(result, originalUrl) {
   if (typeof result.content === 'string') {
     const replaced = replaceShortUrlWithOriginal(result.content, originalUrl);
     const stripped = stripThreadBlogUrlArtifacts(replaced, originalUrl);
-    const hasShortUrl = String(result.content || '').includes('https://ai-secretary-6e9c8.web.app/s/');
+    const hasShortUrl = containsKnownShortUrl(result.content || '');
     const shouldAppendUrl = Boolean(
       originalUrl && (
         replaced.includes(originalUrl) || hasShortUrl
@@ -308,19 +309,19 @@ function SNSConversionModal({ open, onClose, post }) {
   const [regenerating, setRegenerating] = useState({}); // { platform: boolean }
 
   const { user } = useAuth();
+  const isAdminOrTester = hasAdminOrTesterAccess(user);
   // DEBUG: Role check
   useEffect(() => {
     console.log('🔍 [SNSModal] User Role Check:', {
       role: user?.role,
       isAdmin: user?.isAdmin,
       isTester: user?.isTester,
-      computedAdmin: user?.role === 'admin' || user?.isAdmin === true || user?.isTester === true
+      computedAccess: isAdminOrTester
     });
-  }, [user]);
+  }, [isAdminOrTester, user]);
 
   // DEBUG: Role check logic preserved but log kept
   // const isAdminOrTester = true; // Reverted for security
-  const isAdminOrTester = user?.role === 'admin' || user?.isAdmin === true || user?.isTester === true;
   // 🆕 모달이 열릴 때 기존 SNS 변환 결과 불러오기
   useEffect(() => {
     if (open) {

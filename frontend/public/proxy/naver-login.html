@@ -2,14 +2,18 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Naver Login Proxy</title>
+    <title>전자두뇌비서관 네이버 로그인 프록시</title>
     <script>
+        const PROJECT_ID = 'ai-secretary-6e9c8';
+        const FUNCTIONS_BASE_URL = `https://asia-northeast3-${PROJECT_ID}.cloudfunctions.net`;
+        const ALLOWED_PARENT_ORIGINS = ['https://cyberbrain.kr', 'https://www.cyberbrain.kr'];
+
         // Firebase Hosting에서 Functions 호출 (CORS 없음)
         async function proxyNaverLogin(data) {
             console.log('🔥 프록시에서 함수 호출 시작:', data);
             try {
                 // Firebase Functions 직접 호출 (같은 프로젝트이므로 CORS 없음)
-                const response = await fetch('https://asia-northeast3-ai-secretary-6e9c8.cloudfunctions.net/naverLoginHTTP', {
+                const response = await fetch(`${FUNCTIONS_BASE_URL}/naverLoginHTTP`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -57,7 +61,7 @@
             console.log('📨 프록시에서 메시지 수신:', event.origin, event.data);
             
             // cyberbrain.kr에서 온 요청만 처리
-            if (event.origin !== 'https://cyberbrain.kr') {
+            if (!ALLOWED_PARENT_ORIGINS.includes(event.origin)) {
                 console.log('❌ 허용되지 않은 origin:', event.origin);
                 return;
             }
@@ -113,7 +117,7 @@
             console.log('📤 부모 창에 준비 완료 신호 전송');
             window.opener.postMessage({
                 type: 'proxy-ready'
-            }, 'https://cyberbrain.kr');
+            }, ALLOWED_PARENT_ORIGINS[0]);
         } else {
             console.log('❌ 부모 창을 찾을 수 없음');
         }

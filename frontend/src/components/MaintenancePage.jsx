@@ -20,6 +20,7 @@ import {
   AdminPanelSettings,
   Logout
 } from '@mui/icons-material';
+import { BRANDING } from '../config/branding';
 
 function MaintenancePage({ maintenanceInfo, onRetry, isAdmin, onLogout }) {
   const theme = useTheme();
@@ -209,7 +210,7 @@ function MaintenancePage({ maintenanceInfo, onRetry, isAdmin, onLogout }) {
           {/* 푸터 */}
           <Box sx={{ mt: 5, pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
             <Typography variant="body2" color="text.secondary">
-              AI Secretary • 서비스 일시 중단
+              {BRANDING.serviceName} • 서비스 일시 중단
             </Typography>
           </Box>
         </Paper>

@@ -7,6 +7,7 @@ import { useThemeMode } from '../contexts/ThemeContext';
 import { Container, Typography, Box, Paper, TextField, Alert, Link, Grid, FormControlLabel, Checkbox, Dialog, DialogTitle, DialogContent, DialogActions, Button, useTheme, Divider } from '@mui/material';
 import UserInfoForm from '../components/UserInfoForm';
 import { LoadingButton } from '../components/loading';
+import { BRANDING, buildFunctionsUrl } from '../config/branding';
 
 function RegisterPage() {
   const location = useLocation();
@@ -47,7 +48,7 @@ function RegisterPage() {
   const [naverConsentOpen, setNaverConsentOpen] = useState(false);
   const { register } = useAuth();
 
-  useEffect(() => { document.title = '사이버브레인 - 회원가입'; }, []);
+  useEffect(() => { document.title = `${BRANDING.serviceName} - 회원가입`; }, []);
 
   // 네이버 동의 팝업 표시
   useEffect(() => {
@@ -118,7 +119,7 @@ function RegisterPage() {
 
       if (formData.isNaverUser && naverUserData) {
         // 네이버 회원가입 처리
-        const resp = await fetch('https://asia-northeast3-ai-secretary-6e9c8.cloudfunctions.net/naverCompleteRegistration', {
+        const resp = await fetch(buildFunctionsUrl('naverCompleteRegistration'), {
           method: 'POST', 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -217,7 +218,7 @@ function RegisterPage() {
             {!naverUserData ? (
               <Box>
                 <Alert severity="info" sx={{ mb: 3 }}>
-                  전자두뇌비서관은 네이버 아이디로만 회원가입이 가능합니다.
+                  {BRANDING.serviceName}은 네이버 아이디로만 회원가입이 가능합니다.
                 </Alert>
 
                 <Box sx={{ textAlign: 'center', mb: 3 }}>

@@ -9,6 +9,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { NAVER_CLIENT_ID, NAVER_CLIENT_SECRET, getSecretValue } = require('../common/secrets');
 const axios = require('axios');
+const { getAllowedOrigins } = require('../common/branding');
 
 // 네이버페이 API 설정
 const NAVER_PARTNER_ID = process.env.NAVER_PARTNER_ID;
@@ -26,11 +27,7 @@ function getNaverCredentials() {
  * 네이버페이 결제 시작
  */
 exports.initiateNaverPayment = onCall({
-  cors: [
-    'https://cyberbrain.kr',
-    'https://ai-secretary-6e9c8.web.app',
-    'https://ai-secretary-6e9c8.firebaseapp.com'
-  ],
+  cors: getAllowedOrigins(),
   memory: '512MiB',
   timeoutSeconds: 60,
   secrets: [NAVER_CLIENT_ID, NAVER_CLIENT_SECRET]
@@ -114,11 +111,7 @@ exports.initiateNaverPayment = onCall({
  * 네이버페이 결제 승인
  */
 exports.confirmNaverPayment = onCall({
-  cors: [
-    'https://cyberbrain.kr',
-    'https://ai-secretary-6e9c8.web.app',
-    'https://ai-secretary-6e9c8.firebaseapp.com'
-  ],
+  cors: getAllowedOrigins(),
   memory: '512MiB',
   timeoutSeconds: 60,
   secrets: [NAVER_CLIENT_ID, NAVER_CLIENT_SECRET]
@@ -249,7 +242,6 @@ async function updateUserSubscription(uid, orderId, paymentData) {
     // 구독 데이터 준비
     const subscriptionData = {
       plan: planName,
-      subscription: planName, // 호환성을 위해 둘 다 설정
       subscriptionStatus: 'active',
       monthlyLimit,
       subscriptionStartDate: userData.subscriptionStartDate || admin.firestore.FieldValue.serverTimestamp(),

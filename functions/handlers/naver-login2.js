@@ -4,6 +4,7 @@ const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https')
 const { defineSecret } = require('firebase-functions/params');
 const { admin, db } = require('../utils/firebaseAdmin');
 const fetch = require('node-fetch');
+const { getAllowedOrigins } = require('../common/branding');
 
 const NAVER_CLIENT_ID = defineSecret('NAVER_CLIENT_ID');
 const NAVER_CLIENT_SECRET = defineSecret('NAVER_CLIENT_SECRET');
@@ -58,15 +59,7 @@ const naverLogin = onCall({ region: 'asia-northeast3' }, async () => {
 });
 
 const naverLoginHTTP = onRequest({ region: 'asia-northeast3', cors: true, timeoutSeconds: 60, secrets: [NAVER_CLIENT_ID, NAVER_CLIENT_SECRET] }, async (req, res) => {
-  const allowedOrigins = [
-    'https://cyberbrain.kr',
-    'https://www.cyberbrain.kr',
-    'https://ai-secretary-6e9c8.web.app',
-    'https://ai-secretary-6e9c8.firebaseapp.com',
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost:3000'
-  ];
+  const allowedOrigins = getAllowedOrigins({ includeLocal: true });
   const origin = req.headers.origin;
   if (allowedOrigins.includes(origin)) {
     res.set('Access-Control-Allow-Origin', origin);
@@ -235,7 +228,7 @@ const naverLoginHTTP = onRequest({ region: 'asia-northeast3', cors: true, timeou
 });
 
 const naverCompleteRegistration = onRequest({ region: 'asia-northeast3', cors: true, timeoutSeconds: 60 }, async (req, res) => {
-  const allowedOrigins = ['https://cyberbrain.kr', 'https://www.cyberbrain.kr', 'https://ai-secretary-6e9c8.web.app', 'https://ai-secretary-6e9c8.firebaseapp.com'];
+  const allowedOrigins = getAllowedOrigins();
   const origin = req.headers.origin;
   if (allowedOrigins.includes(origin)) {
     res.set('Access-Control-Allow-Origin', origin);

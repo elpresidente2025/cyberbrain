@@ -19,6 +19,7 @@ import {
   ContactSupport
 } from '@mui/icons-material';
 import DashboardLayout from '../components/DashboardLayout';
+import { BRANDING } from '../config/branding';
 
 const PaymentFail = () => {
   const [searchParams] = useSearchParams();
@@ -143,7 +144,7 @@ const PaymentFail = () => {
         <Alert severity="info" sx={{ mb: 3 }}>
           <Typography variant="body2">
             <strong>도움이 필요하시면</strong><br/>
-            결제 관련 문의: support@cyberbrain.kr<br/>
+            결제 관련 문의: {BRANDING.supportEmail}<br/>
             전화 문의: 1588-1234 (평일 09:00-18:00)
           </Typography>
         </Alert>
@@ -170,7 +171,7 @@ const PaymentFail = () => {
           <Button
             variant="outlined"
             startIcon={<ContactSupport />}
-            onClick={() => window.open('mailto:support@cyberbrain.kr', '_blank')}
+            onClick={() => window.open(`mailto:${BRANDING.supportEmail}`, '_blank')}
             size="large"
             color="secondary"
           >

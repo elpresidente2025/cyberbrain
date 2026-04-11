@@ -38,6 +38,7 @@ import {
   Tooltip,
   ReferenceLine
 } from 'recharts';
+import { BRANDING } from '../config/branding';
 
 const AboutPage = () => {
   const navigate = useNavigate();
@@ -146,7 +147,7 @@ const AboutPage = () => {
       ariaLabel: 'AI 학습 기능',
       title: '점점 나다워지는 AI',
       description: '프로필 학습으로 진화',
-      modalTitle: '🧠 쓸수록 닮아갑니다. 나만의 AI 비서관.',
+      modalTitle: `🧠 쓸수록 닮아갑니다. 나만의 ${BRANDING.serviceShortName}.`,
       details: `처음엔 조금 어색할 수 있습니다.
 하지만 걱정 마세요.
 
@@ -402,7 +403,7 @@ AI가 학습합니다. 점점 닮아갑니다.
                   wordBreak: 'keep-all'
                 }}
               >
-                전자두뇌비서관 도입 후 월 평균 조회수 289회 → 1,451회 (5.03배)
+                {BRANDING.serviceName} 도입 후 월 평균 조회수 289회 → 1,451회 (5.03배)
               </Typography>
               <Typography
                 sx={{
@@ -964,9 +965,9 @@ AI가 학습합니다. 점점 닮아갑니다.
         }}
       >
         <Typography variant="body2" sx={{ lineHeight: 2, fontSize: '0.95rem' }}>
-          사이버브레인 | 사업자등록번호: 256-24-02174 | 통신판매업신고번호: (비움)<br />
+          {BRANDING.companyNameKo} | 사업자등록번호: 256-24-02174 | 통신판매업신고번호: (비움)<br />
           대표: 강정구 | 인천광역시 계양구 용종로 124, 학마을한진아파트 139동 1504호 | 대표번호: 010-4885-6206<br />
-          Copyright 2025. CyberBrain. All Rights Reserved.
+          Copyright 2025. {BRANDING.companyNameEn}. All Rights Reserved.
         </Typography>
       </Box>
     </Box>

@@ -3,6 +3,7 @@
 const { onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const { GEMINI_API_KEY } = require('./secrets');
+const { getAllowedOrigins } = require('./branding');
 
 // 시크릿 정의
 const HF_API_TOKEN = defineSecret('HF_API_TOKEN');
@@ -10,16 +11,10 @@ const UPSTASH_REDIS_REST_URL = defineSecret('UPSTASH_REDIS_REST_URL');
 const UPSTASH_REDIS_REST_TOKEN = defineSecret('UPSTASH_REDIS_REST_TOKEN');
 
 // HTTP 함수용 옵션
+const allowedOrigins = getAllowedOrigins({ includeLocal: true });
 const httpFunctionOptions = {
   cors: {
-    origin: [
-      'https://cyberbrain.kr',
-      'https://www.cyberbrain.kr',
-      'https://ai-secretary-6e9c8.web.app',
-      'https://ai-secretary-6e9c8.firebaseapp.com',
-      'http://localhost:5173',
-      'http://localhost:5174'
-    ],
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',
@@ -42,15 +37,6 @@ const httpFunctionOptions = {
 exports.httpWrap = (handler) => {
   return onRequest(httpFunctionOptions, async (req, res) => {
     // CORS 헤더 설정
-    const allowedOrigins = [
-      'https://cyberbrain.kr',
-      'https://www.cyberbrain.kr',
-      'https://ai-secretary-6e9c8.web.app',
-      'https://ai-secretary-6e9c8.firebaseapp.com',
-      'http://localhost:5173',
-      'http://localhost:5174'
-    ];
-
     const origin = req.headers.origin;
     if (allowedOrigins.includes(origin)) {
       res.set('Access-Control-Allow-Origin', origin);

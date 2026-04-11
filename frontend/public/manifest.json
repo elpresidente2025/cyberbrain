@@ -1,5 +1,6 @@
 {
- "name": "App",
+ "name": "전자두뇌비서관",
+ "short_name": "전뇌비서관",
  "icons": [
   {
    "src": "\/android-icon-36x36.png",

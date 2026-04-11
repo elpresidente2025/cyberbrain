@@ -1,4 +1,6 @@
-const SHORT_URL_PATTERN = /https:\/\/ai-secretary-6e9c8\.web\.app\/s\/[0-9A-Za-z]+/g;
+const { buildShortUrlPattern } = require('../common/branding');
+
+const SHORT_URL_PATTERN = buildShortUrlPattern();
 const BLOG_CTA_ONLY_PATTERN = /^\s*(?:더\s*자세한\s*내용은\s*블로그에서\s*확인해(?:주세요|보세요)|자세한\s*내용은\s*블로그에서\s*확인해(?:주세요|보세요)|블로그\s*링크)\s*[:：]?\s*$/;
 
 function countWithoutSpace(str) {

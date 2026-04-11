@@ -1,11 +1,11 @@
 # Firebase Firestore 데이터 스키마
 
 > 생성일: 2025-10-28
-> AI Secretary 프로젝트의 Firestore 컬렉션 구조 문서
+> CyberBrain 프로젝트의 전자두뇌비서관 Firestore 컬렉션 구조 문서
 
 ## 개요
 
-이 문서는 AI Secretary 프로젝트에서 사용하는 Firestore 데이터베이스의 컬렉션 구조와 필드를 정리합니다.
+이 문서는 CyberBrain 프로젝트에서 운영하는 전자두뇌비서관 서비스의 Firestore 데이터베이스 컬렉션 구조를 정리합니다.
 
 ---
 

@@ -1,5 +1,6 @@
 import { useTheme, useMediaQuery, Button } from '@mui/material';
 import { Computer } from '@mui/icons-material';
+import { BRANDING, buildAssetUrl } from '../config/branding';
 
 export default function MobileToPCBanner() {
   const theme = useTheme();
@@ -20,9 +21,9 @@ export default function MobileToPCBanner() {
       window.Kakao.Share.sendDefault({
         objectType: 'feed',
         content: {
-          title: '전자두뇌비서관',
+          title: BRANDING.serviceName,
           description: 'PC에서 더 편리하게 이용하세요!',
-          imageUrl: 'https://ai-secretary-6e9c8.web.app/logo-landscape.png',
+          imageUrl: buildAssetUrl('/logo-landscape.png'),
           link: {
             mobileWebUrl: window.location.href,
             webUrl: window.location.href

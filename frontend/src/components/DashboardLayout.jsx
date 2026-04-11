@@ -32,6 +32,7 @@ import { useHelp } from '../contexts/HelpContext';
 import HelpButton from './HelpButton';
 import HelpModal from './HelpModal';
 import MobileMenu from './MobileMenu';
+import { BRANDING } from '../config/branding';
 
 const DashboardLayout = ({ children }) => {
   const { user, logout } = useAuth();
@@ -113,7 +114,7 @@ const DashboardLayout = ({ children }) => {
             <Box
               component="img"
               src="/logo-landscape.png"
-              alt="전자두뇌비서관 로고"
+              alt={`${BRANDING.serviceName} 로고`}
               sx={{ height: 32, objectFit: 'contain' }}
             />
           </Box>
@@ -221,9 +222,9 @@ const DashboardLayout = ({ children }) => {
         }}
       >
         <Typography variant="caption" sx={{ lineHeight: 1.6, color: '#ffffff', position: 'relative', zIndex: 2 }}>
-          사이버브레인 | 사업자등록번호: 256-24-02174 | 통신판매업신고번호: (비움)<br />
+          {BRANDING.companyNameKo} | 사업자등록번호: 256-24-02174 | 통신판매업신고번호: (비움)<br />
           대표: 강정구 | 인천광역시 계양구 용종로 124, 학마을한진아파트 139동 1504호 | 대표번호: 010-4885-6206<br />
-          Copyright 2025. CyberBrain. All Rights Reserved.
+          Copyright 2025. {BRANDING.companyNameEn}. All Rights Reserved.
         </Typography>
       </Box>
 

@@ -21,6 +21,7 @@ import UserListModal from './UserListModal';
 import StatusUpdateModal from './StatusUpdateModal';
 import HongKongNeonCard from '../HongKongNeonCard';
 import { getAdminStats, callFunctionWithRetry } from '../../services/firebaseService';
+import { buildFunctionsUrl } from '../../config/branding';
 
 function QuickActions() {
   const theme = useTheme();
@@ -153,9 +154,7 @@ function QuickActions() {
     setRagIndexing(true);
     setRagProgress('색인 준비 중...');
 
-    const region = 'asia-northeast3';
-    const projectId = 'ai-secretary-6e9c8';
-    const functionUrl = `https://${region}-${projectId}.cloudfunctions.net/batch_index_bios`;
+    const functionUrl = buildFunctionsUrl('batch_index_bios');
 
     let totalSuccess = 0;
     let totalSkipped = 0;

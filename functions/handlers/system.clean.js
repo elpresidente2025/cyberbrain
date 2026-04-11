@@ -9,11 +9,12 @@ const { admin, db } = require('../utils/firebaseAdmin');
 const { callGenerativeModel } = require('../services/gemini');
 const { testPrompt, getPolicySafe } = require('../prompts/prompts');
 const { HttpsError } = require('firebase-functions/v2/https');
+const { BRANDING } = require('../common/branding');
 
 // Health check
 exports.healthCheck = wrap(async () => {
   log('HEALTH', 'status check');
-  return ok({ message: 'AI Secretary backend is running.', timestamp: new Date().toISOString() });
+  return ok({ message: `${BRANDING.projectName} backend is running.`, timestamp: new Date().toISOString() });
 });
 
 // Prompt test

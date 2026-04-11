@@ -8,6 +8,7 @@
 const { admin, db } = require('../utils/firebaseAdmin');
 const fs = require('fs');
 const path = require('path');
+const { BRANDING } = require('../common/branding');
 
 /**
  * 알림 유형 정의
@@ -72,8 +73,9 @@ async function notifyPriorityGained({ userId, districtKey, previousUserId = null
           html: await renderEmailTemplate('priority-gained', {
             userName,
             districtName: formatDistrictName(districtKey),
-            loginUrl: process.env.APP_URL || 'https://ai-secretary.web.app',
-            supportEmail: process.env.SUPPORT_EMAIL || 'support@ai-secretary.com'
+            loginUrl: BRANDING.appUrl,
+            supportEmail: BRANDING.supportEmail,
+            companyNameEn: BRANDING.companyNameEn
           })
         }
       };
@@ -168,7 +170,7 @@ async function notifySubscriptionExpiring({ userId, daysRemaining }) {
             <h2>안녕하세요, ${userName}님</h2>
             <p>구독이 <strong>${daysRemaining}일 후</strong> 만료됩니다.</p>
             <p>계속 이용하시려면 구독을 갱신해주세요.</p>
-            <a href="${process.env.APP_URL}/subscription">구독 갱신하기</a>
+            <a href="${BRANDING.appUrl}/subscription">구독 갱신하기</a>
           `
         }
       });

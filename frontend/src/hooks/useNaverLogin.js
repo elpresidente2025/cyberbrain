@@ -4,6 +4,7 @@ import { signInWithCustomToken } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { callFunctionWithNaverAuth } from '../services/firebaseService';
 import { normalizeAuthUser } from '../utils/authz';
+import { buildFunctionsUrl } from '../config/branding';
 
 export const useNaverLogin = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -71,7 +72,7 @@ export const useNaverLogin = () => {
 
       console.log('🔵 네이버 콜백 디버그 - payload:', payload);
 
-      const resp = await fetch('https://asia-northeast3-ai-secretary-6e9c8.cloudfunctions.net/naverLoginHTTP', {
+      const resp = await fetch(buildFunctionsUrl('naverLoginHTTP'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

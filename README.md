@@ -1,4 +1,6 @@
-# ai-secretary
+# CyberBrain
+
+전자두뇌비서관 서비스 운영 저장소입니다.
 
 Naver login integration is documented in `docs/NAVER_LOGIN.md`.
 UTF-8 console handling for Windows PowerShell is documented in `docs/UTF8_CONSOLE.md`.

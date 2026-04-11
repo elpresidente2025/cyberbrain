@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { buildFunctionsUrl } from '../config/branding';
 
 export const usePerformanceMonitoring = () => {
   const [metrics, setMetrics] = useState(null);
@@ -49,7 +50,7 @@ export const usePerformanceMonitoring = () => {
       setBrowserMetrics(browserData);
 
       // 서버 메트릭 조회
-      const response = await fetch('https://asia-northeast3-ai-secretary-6e9c8.cloudfunctions.net/getPerformanceMetrics', {
+      const response = await fetch(buildFunctionsUrl('getPerformanceMetrics'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
