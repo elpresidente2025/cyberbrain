@@ -540,8 +540,95 @@ exports.onBioUpdate = onDocumentWritten('bios/{userId}', async (event) => {
     extractMetadataAsync(userId, newData.content);
   }
 
+  // 페이스북 다이어리 기반 stylometry 자동 재학습 트리거
+  // Python save_handler가 styleRefreshRequestedAt을 세팅하면 여기서 감지한다.
+  await maybeRefreshStyleFromDiary(userId, newData, oldData);
+
   return null;
 });
+
+async function maybeRefreshStyleFromDiary(userId, newData, oldData) {
+  const newRequestedAt = newData?.styleRefreshRequestedAt;
+  const oldRequestedAt = oldData?.styleRefreshRequestedAt;
+
+  if (!newRequestedAt) return;
+  if (_timestampEquals(newRequestedAt, oldRequestedAt)) return;
+
+  // 재귀 가드: 바로 직전 stylometry write 후 동일 트리거가 한 번 더 돌 때 빠르게 빠져나간다.
+  const lastUpdated = newData?.styleFingerprintUpdatedAt;
+  if (lastUpdated && _secondsSince(lastUpdated) < 60) {
+    console.log(`[StyleRefresh] uid=${userId} 재귀 가드 — 최근 갱신 직후`);
+    return;
+  }
+
+  try {
+    const { buildDiaryAugmentedCorpus, refreshUserStyleFingerprint } = require('../services/style-refresh');
+
+    await db.collection('bios').doc(userId).set({
+      styleRefreshStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    const corpus = await buildDiaryAugmentedCorpus(userId, newData);
+    if (corpus.source === 'empty' || !corpus.text) {
+      console.warn(`[StyleRefresh] uid=${userId} 코퍼스 비어 있음 — 스킵`);
+      await db.collection('bios').doc(userId).set({
+        styleRefreshRequestedAt: admin.firestore.FieldValue.delete(),
+        styleRefreshError: {
+          message: 'empty-corpus',
+          at: admin.firestore.FieldValue.serverTimestamp(),
+        },
+      }, { merge: true });
+      return;
+    }
+
+    console.log(`🔄 [StyleRefresh] uid=${userId} source=${corpus.source} chars=${corpus.stats.totalChars}`);
+
+    const result = await refreshUserStyleFingerprint(userId, {
+      corpusText: corpus.text,
+      source: corpus.source,
+      corpusStats: corpus.stats,
+      userMeta: {
+        userName: String(newData.userName || newData.name || '').trim(),
+        region: String(newData.region || '').trim(),
+      },
+    });
+
+    if (!result.ok) {
+      console.warn(`[StyleRefresh] uid=${userId} 실패: ${result.reason}`);
+    }
+  } catch (err) {
+    console.error(`[StyleRefresh] uid=${userId} 처리 중 예외:`, err);
+    try {
+      await db.collection('bios').doc(userId).set({
+        styleRefreshError: {
+          message: err?.message || 'unknown-error',
+          at: admin.firestore.FieldValue.serverTimestamp(),
+        },
+      }, { merge: true });
+    } catch (_) { /* ignore */ }
+  }
+}
+
+function _timestampEquals(a, b) {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  try {
+    const aMs = typeof a.toMillis === 'function' ? a.toMillis() : (a.seconds || 0) * 1000;
+    const bMs = typeof b.toMillis === 'function' ? b.toMillis() : (b.seconds || 0) * 1000;
+    return aMs === bMs;
+  } catch (_err) {
+    return false;
+  }
+}
+
+function _secondsSince(ts) {
+  try {
+    const ms = typeof ts.toMillis === 'function' ? ts.toMillis() : (ts.seconds || 0) * 1000;
+    return (Date.now() - ms) / 1000;
+  } catch (_err) {
+    return Infinity;
+  }
+}
 
 // extractMetadataAsync는 다른 핸들러에서 사용할 수 있도록 추가 export
 module.exports.extractMetadataAsync = extractMetadataAsync;

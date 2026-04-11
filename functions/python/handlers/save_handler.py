@@ -30,6 +30,12 @@ REINDEX_THRESHOLD = 3
 FACEBOOK_ENTRY_MIN_LENGTH = 30
 _REINDEX_COOLDOWN = timedelta(minutes=5)
 
+# Stylometry 자동 재학습 게이트 (페이스북 다이어리 기반)
+STYLE_REFRESH_THRESHOLD = 5
+STYLE_REFRESH_MIN_CHARS = 1500
+_STYLE_REFRESH_COOLDOWN = timedelta(hours=6)
+_STYLE_REFRESH_CORPUS_SAMPLE_LIMIT = 50
+
 SOURCE_TYPE_ALIASES = {
     "position_statement": "position_statement",
     "statement": "position_statement",
@@ -209,13 +215,95 @@ def _record_facebook_entry(uid: str, data: Dict[str, Any], db) -> int | None:
     bio_ref.collection("facebook_entries").add(entry)
 
     # 원자적 Increment — bios/{uid} 문서가 없어도 merge=True로 생성
+    # pendingFacebookEntryCount: LightRAG 재색인 카운터 (기존)
+    # pendingStyleEntryCount:    stylometry 재학습 카운터 (신규, 독립 게이트)
     bio_ref.set(
-        {"pendingFacebookEntryCount": firestore.Increment(1)},
+        {
+            "pendingFacebookEntryCount": firestore.Increment(1),
+            "pendingStyleEntryCount": firestore.Increment(1),
+        },
         merge=True,
     )
+
+    # stylometry 재학습 트리거 — 실패는 저장 흐름을 깨뜨리지 않도록 흡수
+    try:
+        _maybe_request_style_refresh(uid, bio_ref)
+    except Exception as exc:
+        logger.warning("[StyleRefresh] 요청 실패(무시) — uid=%s: %s", uid, exc)
+
     snapshot = bio_ref.get(field_paths=["pendingFacebookEntryCount"])
     count = (snapshot.to_dict() or {}).get("pendingFacebookEntryCount")
     return int(count) if count is not None else None
+
+
+def _maybe_request_style_refresh(uid: str, bio_ref) -> None:
+    """문체 재학습 게이트. 통과 시 bios/{uid}.styleRefreshRequestedAt marker를 세팅한다.
+
+    Node onBioUpdate가 이 marker 변화를 감지해 실제 stylometry를 돌린다.
+    게이트: (1) pending 엔트리 >= THRESHOLD
+            (2) 마지막 갱신 후 COOLDOWN 경과
+            (3) 최근 다이어리 코퍼스 >= MIN_CHARS
+    """
+    snapshot = bio_ref.get(
+        field_paths=[
+            "pendingStyleEntryCount",
+            "styleFingerprintUpdatedAt",
+            "styleRefreshRequestedAt",
+        ]
+    )
+    data = snapshot.to_dict() or {}
+
+    pending = int(data.get("pendingStyleEntryCount") or 0)
+    if pending < STYLE_REFRESH_THRESHOLD:
+        return
+
+    last_updated = data.get("styleFingerprintUpdatedAt")
+    if isinstance(last_updated, datetime):
+        last_dt = last_updated if last_updated.tzinfo else last_updated.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - last_dt < _STYLE_REFRESH_COOLDOWN:
+            logger.info("[StyleRefresh] uid=%s 쿨다운 중 — 스킵", uid)
+            return
+
+    # 이미 요청이 걸려 있고 아직 처리되지 않았다면 중복 요청하지 않는다.
+    # (Node 쪽이 성공 시 delete, 실패 시 남겨두므로 남아있다면 최근 실패한 상태)
+    pending_request = data.get("styleRefreshRequestedAt")
+    if isinstance(pending_request, datetime):
+        pending_dt = pending_request if pending_request.tzinfo else pending_request.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - pending_dt < _STYLE_REFRESH_COOLDOWN:
+            logger.info("[StyleRefresh] uid=%s 기존 요청 대기 중 — 스킵", uid)
+            return
+
+    # 최소 코퍼스 길이 게이트 — 누적 다이어리가 충분히 쌓였는지 확인
+    try:
+        docs = (
+            bio_ref.collection("facebook_entries")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(_STYLE_REFRESH_CORPUS_SAMPLE_LIMIT)
+            .get()
+        )
+        total_chars = sum(
+            len(str((d.to_dict() or {}).get("text") or ""))
+            for d in docs
+        )
+    except Exception as exc:
+        logger.warning("[StyleRefresh] uid=%s 코퍼스 길이 계산 실패: %s", uid, exc)
+        return
+
+    if total_chars < STYLE_REFRESH_MIN_CHARS:
+        logger.info(
+            "[StyleRefresh] uid=%s 코퍼스 부족 — %d/%d자",
+            uid, total_chars, STYLE_REFRESH_MIN_CHARS,
+        )
+        return
+
+    bio_ref.set(
+        {"styleRefreshRequestedAt": firestore.SERVER_TIMESTAMP},
+        merge=True,
+    )
+    logger.info(
+        "[StyleRefresh] uid=%s 재학습 요청 세팅 — pending=%d chars=%d",
+        uid, pending, total_chars,
+    )
 
 
 async def _async_reindex(uid: str) -> None:

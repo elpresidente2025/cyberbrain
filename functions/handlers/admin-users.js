@@ -3,9 +3,13 @@ const { HttpsError } = require('firebase-functions/v2/https');
 const wrap = require('../common/wrap').wrap;
 const { auth } = require('../common/auth');
 const { requireAdmin } = require('../common/rbac');
-const { extractStyleFingerprint, buildStyleGuidePrompt } = require('../services/stylometry');
+const {
+  buildDiaryAugmentedCorpus,
+  refreshUserStyleFingerprint,
+  MIN_CORPUS_LENGTH,
+} = require('../services/style-refresh');
 
-const MIN_BIO_STYLE_CONTENT_LENGTH = 100;
+const MIN_BIO_STYLE_CONTENT_LENGTH = MIN_CORPUS_LENGTH;
 
 const buildConsolidatedBioContent = (bioData = {}) => {
   const entries = Array.isArray(bioData.entries) ? bioData.entries : [];
@@ -260,6 +264,7 @@ const batchAnalyzeBioStyles = wrap(async (request) => {
     ? Math.min(Math.max(rawMinConfidence, 0), 1)
     : 0.7;
   const force = requestData.force === true;
+  const useDiary = requestData.useDiary === true;
 
   let query = db.collection('bios')
     .orderBy(admin.firestore.FieldPath.documentId())
@@ -299,54 +304,41 @@ const batchAnalyzeBioStyles = wrap(async (request) => {
       continue;
     }
 
-    const consolidatedContent = buildConsolidatedBioContent(bioData);
-    if (!consolidatedContent || consolidatedContent.length < MIN_BIO_STYLE_CONTENT_LENGTH) {
+    let corpusText;
+    let corpusSource;
+    let corpusStats = null;
+
+    if (useDiary) {
+      const corpus = await buildDiaryAugmentedCorpus(doc.id, bioData);
+      corpusText = corpus.text;
+      corpusSource = corpus.source;
+      corpusStats = corpus.stats;
+    } else {
+      corpusText = buildConsolidatedBioContent(bioData);
+      corpusSource = 'bio-only';
+      corpusStats = { bioChars: corpusText.length, diaryEntryCount: 0, diaryChars: 0, totalChars: corpusText.length };
+    }
+
+    if (!corpusText || corpusText.length < MIN_BIO_STYLE_CONTENT_LENGTH) {
       noContentCount += 1;
       continue;
     }
 
-    try {
-      const styleFingerprint = await extractStyleFingerprint(consolidatedContent, {
+    const result = await refreshUserStyleFingerprint(doc.id, {
+      corpusText,
+      source: corpusSource,
+      corpusStats,
+      userMeta: {
         userName: String(bioData.userName || bioData.name || '').trim(),
-        region: String(bioData.region || '').trim()
-      });
+        region: String(bioData.region || '').trim(),
+      },
+    });
 
-      if (!styleFingerprint) {
-        failedCount += 1;
-        failures.push({ uid: doc.id, reason: 'empty-result' });
-        continue;
-      }
-
-      const styleGuide = buildStyleGuidePrompt(styleFingerprint, {
-        compact: false,
-        sourceText: consolidatedContent
-      });
-
-      await doc.ref.update({
-        styleFingerprint,
-        styleGuide,
-        styleFingerprintUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        styleGuideUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        lastAnalyzed: admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      const userRef = db.collection('users').doc(doc.id);
-      const userSnap = await userRef.get();
-      if (userSnap.exists) {
-        await userRef.set({
-          styleGuide,
-          styleGuideUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
-      }
-
+    if (result.ok) {
       successCount += 1;
-    } catch (error) {
+    } else {
       failedCount += 1;
-      failures.push({
-        uid: doc.id,
-        reason: error?.message || 'unknown-error'
-      });
-      console.error(`batchAnalyzeBioStyles failed for ${doc.id}:`, error);
+      failures.push({ uid: doc.id, reason: result.reason || 'unknown-error' });
     }
   }
 
@@ -364,7 +356,8 @@ const batchAnalyzeBioStyles = wrap(async (request) => {
     lastUid,
     failures: failures.slice(0, 10),
     minConfidence,
-    force
+    force,
+    useDiary
   };
 });
 
