@@ -4,7 +4,9 @@ import { signInWithCustomToken } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { callFunctionWithNaverAuth } from '../services/firebaseService';
 import { normalizeAuthUser } from '../utils/authz';
-import { buildFunctionsUrl } from '../config/branding';
+import { APP_ORIGIN, buildFunctionsUrl } from '../config/branding';
+
+const DEFAULT_NAVER_CLIENT_ID = '_E0OZLvkgp61fV7MFtND';
 
 export const useNaverLogin = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -14,11 +16,16 @@ export const useNaverLogin = () => {
 
   const initializeNaverLogin = () => {
     if (typeof window !== 'undefined' && window.naver) {
-      const clientId = import.meta.env.VITE_NAVER_CLIENT_ID;
-      const callbackUrl = import.meta.env.VITE_NAVER_REDIRECT_URI || (window.location.origin + "/auth/naver/callback");
+      const isLocalDevelopment = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+      const clientId = String(import.meta.env.VITE_NAVER_CLIENT_ID || DEFAULT_NAVER_CLIENT_ID).trim();
+      const callbackBaseUrl = isLocalDevelopment ? window.location.origin : APP_ORIGIN;
+      const callbackUrl = import.meta.env.VITE_NAVER_REDIRECT_URI || `${callbackBaseUrl}/auth/naver/callback`;
       if (!clientId) {
         console.error('VITE_NAVER_CLIENT_ID is missing. Please set it in frontend/.env');
         return null;
+      }
+      if (!import.meta.env.VITE_NAVER_CLIENT_ID) {
+        console.warn('VITE_NAVER_CLIENT_ID가 없어 기본 네이버 클라이언트 ID를 사용합니다.');
       }
       const naverLogin = new window.naver.LoginWithNaverId({
         clientId,
@@ -41,6 +48,7 @@ export const useNaverLogin = () => {
       naverLogin.authorize();
     } catch (e) {
       setError(e.message);
+      throw e;
     } finally {
       setIsLoading(false);
     }
