@@ -47,7 +47,7 @@ const db = admin.firestore();
 
 function isAdminUser(userData = {}) {
   const role = String(userData.role || '').trim().toLowerCase();
-  return role === 'admin' || userData.isAdmin === true;
+  return role === 'admin';
 }
 
 (async () => {

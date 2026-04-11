@@ -9,7 +9,7 @@
 
 const { HttpsError } = require('firebase-functions/v2/https');
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
-const { wrap } = require('../common/wrap');
+const { wrap, wrapLite } = require('../common/wrap');
 const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
 const { logInfo } = require('../common/log');
@@ -17,8 +17,6 @@ const { admin, db } = require('../utils/firebaseAdmin');
 const { districtKey } = require('../services/district');
 const { getDistrictStatus, addUserToDistrict } = require('../services/district-priority');
 const { analyzeBioForStyle } = require('../services/style-analysis');
-
-const MIN_BIO_LENGTH_FOR_ONBOARDING = 50;
 
 // 광역/기초자치단체장은 선거구(electoralDistrict) 불필요
 function requiredRegionFieldsFor(position) {
@@ -29,14 +27,15 @@ function requiredRegionFieldsFor(position) {
 }
 
 // 온보딩 완료 여부 판정 (백엔드 SSOT)
-function isOnboardingCompleteFields(profile, bioText) {
+// 자기소개(bio)는 온보딩 완료 조건에서 제외하고 프로필 페이지에서 별도로 작성하도록 유도한다.
+// status는 선거법 기준 판별의 핵심 지표이므로 예외 없이 필수로 요구한다.
+function isOnboardingCompleteFields(profile) {
   if (!profile) return false;
+  if (!profile.status) return false;
   if (!profile.position) return false;
   for (const key of requiredRegionFieldsFor(profile.position)) {
     if (!profile[key]) return false;
   }
-  const text = typeof bioText === 'string' ? bioText.trim() : '';
-  if (text.length < MIN_BIO_LENGTH_FOR_ONBOARDING) return false;
   return true;
 }
 
@@ -47,7 +46,7 @@ function isOnboardingCompleteFields(profile, bioText) {
 /**
  * 사용자 프로필 조회
  */
-exports.getUserProfile = wrap(async (req) => {
+exports.getUserProfile = wrapLite(async (req) => {
   const { uid, token } = await auth(req);
   logInfo('getUserProfile 호출', { userId: uid });
 
@@ -59,7 +58,7 @@ exports.getUserProfile = wrap(async (req) => {
     regionMetro: '',
     regionLocal: '',
     electoralDistrict: '',
-    status: '현역',
+    status: '',
     bio: '', // 호환성을 위해 유지하지만 bios 컬렉션에서 조회
     targetElection: null, // 목표 선거 정보 (현직과 별개로 출마 예정 선거)
   };
@@ -125,7 +124,7 @@ exports.getUserProfile = wrap(async (req) => {
 
   // onboardingCompleted 보정: 기존 유저도 조건 충족 시 true로 자동 세팅
   if (profile.onboardingCompleted !== true) {
-    if (isOnboardingCompleteFields(profile, profile.bio)) {
+    if (isOnboardingCompleteFields(profile)) {
       profile.onboardingCompleted = true;
       profile.profileComplete = true;
       try {
@@ -323,18 +322,7 @@ exports.updateProfile = wrap(async (req) => {
       electoralDistrict: nextFields.electoralDistrict,
     };
 
-    // bio 텍스트 확정: 이번 요청에 포함되지 않았다면 bios 컬렉션에서 조회
-    let bioText = bio;
-    if (!bioText) {
-      try {
-        const bioDoc = await db.collection('bios').doc(uid).get();
-        if (bioDoc.exists) {
-          bioText = bioDoc.data().content || '';
-        }
-      } catch (_) {}
-    }
-
-    if (isOnboardingCompleteFields(mergedProfile, bioText) && current.onboardingCompleted !== true) {
+    if (isOnboardingCompleteFields(mergedProfile) && current.onboardingCompleted !== true) {
       await userRef.set({
         onboardingCompleted: true,
         profileComplete: true,
@@ -374,7 +362,6 @@ exports.updateUserPlan = wrap(async (req) => {
   try {
     await userRef.set({
       plan: plan, // 표준 필드
-      subscription: plan, // 레거시 호환성 (향후 제거 예정)
       monthlyLimit: 90, // 공식 파트너십: 월 90회
       subscriptionStatus: 'active', // 유료 플랜 활성화
       monthlyUsage: {}, // 월별 사용량 초기화
@@ -395,7 +382,7 @@ exports.updateUserPlan = wrap(async (req) => {
 /**
  * 선거구 상태 확인 (1인 제한 폐지됨 - 항상 사용 가능)
  */
-exports.checkDistrictAvailability = wrap(async (req) => {
+exports.checkDistrictAvailability = wrapLite(async (req) => {
   const { regionMetro, regionLocal, electoralDistrict, position } = req.data || {};
   if (!regionMetro || !regionLocal || !electoralDistrict || !position) {
     throw new HttpsError('invalid-argument', '지역/선거구/직책을 모두 입력해주세요.');

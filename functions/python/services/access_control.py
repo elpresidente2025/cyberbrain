@@ -4,6 +4,7 @@ from typing import Any, Optional
 from firebase_admin import firestore
 from google.api_core import exceptions as gcloud_exceptions
 
+from services.authz import get_admin_access_source, get_tester_access_source
 from services.system_config import get_test_mode_config
 
 logger = logging.getLogger(__name__)
@@ -147,13 +148,16 @@ async def check_generation_permission(user_id: str, db_client: firestore.Client)
             user_data = {}
 
         # 0. 관리자 (무제한)
-        role = str(user_data.get("role") or "").strip().lower()
-        if role == "admin" or user_data.get("isAdmin") is True:
+        admin_access_source = get_admin_access_source(user_data)
+        if admin_access_source:
             logger.info(f"✅ 관리자 권한 - 사용량 무제한: {user_id}")
             return {"allowed": True, "reason": "admin", "remaining": 999}
 
         # 0-1. 테스터 (무료 체험 제한 스킵, 90회/월)
-        if role == "tester" or user_data.get("isTester") is True:
+        tester_access_source = get_tester_access_source(user_data)
+        if tester_access_source:
+            if tester_access_source == "legacy-isTester":
+                logger.warning("[authz] legacy isTester fallback used in access_control: %s", user_id)
             current_month = get_current_month_key()
             used = _get_monthly_used(user_data, current_month)
             limit = 90

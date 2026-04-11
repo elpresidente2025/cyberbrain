@@ -11,17 +11,9 @@ function isAdminRole(role) {
   return normalizeRole(role) === 'admin';
 }
 
-function hasLegacyAdminFlag(userData) {
-  return userData?.isAdmin === true;
-}
-
 function getAdminAccessSource(userData) {
   if (isAdminRole(userData?.role)) {
     return 'role';
-  }
-
-  if (hasLegacyAdminFlag(userData)) {
-    return 'legacy-isAdmin';
   }
 
   return null;
@@ -48,10 +40,6 @@ async function requireAdmin(uid) {
     throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
   }
 
-  if (adminAccessSource === 'legacy-isAdmin') {
-    console.warn('[rbac] legacy isAdmin fallback used:', { uid });
-  }
-
   return {
     userDoc,
     userData,
@@ -61,7 +49,6 @@ async function requireAdmin(uid) {
 
 exports.normalizeRole = normalizeRole;
 exports.isAdminRole = isAdminRole;
-exports.hasLegacyAdminFlag = hasLegacyAdminFlag;
 exports.getAdminAccessSource = getAdminAccessSource;
 exports.isAdminUser = isAdminUser;
 exports.requireAdmin = requireAdmin;
