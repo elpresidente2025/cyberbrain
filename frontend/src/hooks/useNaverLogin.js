@@ -24,7 +24,7 @@ export const useNaverLogin = () => {
         console.error('VITE_NAVER_CLIENT_ID is missing. Please set it in frontend/.env');
         return null;
       }
-      if (!import.meta.env.VITE_NAVER_CLIENT_ID) {
+      if (import.meta.env.DEV && !import.meta.env.VITE_NAVER_CLIENT_ID) {
         console.warn('VITE_NAVER_CLIENT_ID가 없어 기본 네이버 클라이언트 ID를 사용합니다.');
       }
       const naverLogin = new window.naver.LoginWithNaverId({
