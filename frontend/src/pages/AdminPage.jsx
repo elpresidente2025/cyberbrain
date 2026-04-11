@@ -1,5 +1,6 @@
 // frontend/src/pages/AdminPage.jsx
 import React, { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Container,
@@ -10,7 +11,7 @@ import {
   useTheme,
   Grid
 } from '@mui/material';
-import { Speed } from '@mui/icons-material';
+import { Speed, Visibility } from '@mui/icons-material';
 import DashboardLayout from '../components/DashboardLayout';
 import { colors, spacing } from '../theme/tokens';
 import DashboardCards from '../components/admin/DashboardCards';
@@ -21,6 +22,7 @@ import PerformanceMonitor from '../components/admin/PerformanceMonitor';
 import UserManagement from '../components/admin/UserManagement';
 import SystemSettings from '../components/admin/SystemSettings';
 import { useAuth } from '../hooks/useAuth';
+import { hasAdminAccess } from '../utils/authz';
 import { NotificationSnackbar, useNotification } from '../components/ui';
 
 // 섹션 제목 컴포넌트 (접근성 개선)
@@ -47,7 +49,9 @@ const SectionHeading = ({ id, children }) => (
 
 function AdminPage() {
   const { user } = useAuth();
+  const isAdmin = hasAdminAccess(user);
   const theme = useTheme();
+  const navigate = useNavigate();
   const { notification, showNotification, hideNotification } = useNotification();
   const [performanceMonitorOpen, setPerformanceMonitorOpen] = useState(false);
 
@@ -59,6 +63,10 @@ function AdminPage() {
   const handleClosePerformanceMonitor = useCallback(() => {
     setPerformanceMonitorOpen(false);
   }, []);
+
+  const handlePreviewOnboarding = useCallback(() => {
+    navigate('/onboarding?preview=1');
+  }, [navigate]);
 
   // 권한 체크
   if (!user) {
@@ -77,7 +85,7 @@ function AdminPage() {
     );
   }
 
-  if (user.role !== 'admin') {
+  if (!isAdmin) {
     return (
       <DashboardLayout title="관리자 페이지">
         <Container maxWidth="xl" role="main" aria-labelledby="admin-page-title">
@@ -145,7 +153,28 @@ function AdminPage() {
               </Typography>
             </Box>
 
-            <Box sx={{ display: 'flex', gap: `${spacing.md}px`, flexShrink: 0 }}>
+            <Box sx={{ display: 'flex', gap: `${spacing.md}px`, flexShrink: 0, flexWrap: 'wrap' }}>
+              <Button
+                variant="outlined"
+                startIcon={<Visibility aria-hidden="true" />}
+                onClick={handlePreviewOnboarding}
+                aria-label="온보딩 미리보기 열기"
+                sx={{
+                  borderColor: colors.brand.primary,
+                  color: colors.brand.primary,
+                  '&:hover': {
+                    borderColor: '#007a74',
+                    bgcolor: 'rgba(0, 98, 97, 0.08)',
+                    transform: 'translateY(-1px)'
+                  },
+                  '&:focus-visible': {
+                    outline: '2px solid #006261',
+                    outlineOffset: '2px'
+                  }
+                }}
+              >
+                온보딩 미리보기
+              </Button>
               <Button
                 variant="contained"
                 startIcon={<Speed aria-hidden="true" />}

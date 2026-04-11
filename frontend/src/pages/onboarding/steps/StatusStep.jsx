@@ -6,15 +6,30 @@ import { motion, AnimatePresence } from 'framer-motion';
 const APPLE_BLUE = '#007AFF';
 const IOS_EASE = [0.32, 0.72, 0, 1];
 
-const POSITION_OPTIONS = [
-  { value: '국회의원', label: '국회의원', description: '총선 지역구 또는 비례대표' },
-  { value: '광역자치단체장', label: '광역자치단체장', description: '특별시장 · 광역시장 · 도지사' },
-  { value: '기초자치단체장', label: '기초자치단체장', description: '시장 · 군수 · 구청장' },
-  { value: '광역의원', label: '광역의원', description: '특별시 · 광역시 · 도 의회 의원' },
-  { value: '기초의원', label: '기초의원', description: '시 · 군 · 구 의회 의원' },
+const STATUS_OPTIONS = [
+  {
+    value: '현역',
+    label: '현역',
+    description: '현재 해당 자리에 재임 중입니다',
+  },
+  {
+    value: '후보',
+    label: '후보',
+    description: '공식 후보로 등록되어 선거를 치르고 있습니다',
+  },
+  {
+    value: '예비',
+    label: '예비후보',
+    description: '예비후보로 등록하여 활동 중입니다',
+  },
+  {
+    value: '준비',
+    label: '준비 중',
+    description: '다음 선거 출마를 준비하고 있습니다',
+  },
 ];
 
-const RoleStep = ({ value, onChange }) => {
+const StatusStep = ({ value, onChange }) => {
   return (
     <Box
       sx={{
@@ -25,13 +40,11 @@ const RoleStep = ({ value, onChange }) => {
         borderColor: 'divider',
       }}
     >
-      {POSITION_OPTIONS.map((opt, idx) => {
+      {STATUS_OPTIONS.map((opt, idx) => {
         const selected = value === opt.value;
         return (
           <React.Fragment key={opt.value}>
-            {idx > 0 && (
-              <Box sx={{ height: '1px', bgcolor: 'divider', ml: 2.5 }} />
-            )}
+            {idx > 0 && <Box sx={{ height: '1px', bgcolor: 'divider', ml: 2.5 }} />}
             <motion.div
               whileTap={{ backgroundColor: 'rgba(0, 0, 0, 0.04)' }}
               transition={{ duration: 0.12, ease: IOS_EASE }}
@@ -51,22 +64,10 @@ const RoleStep = ({ value, onChange }) => {
                 }}
               >
                 <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography
-                    sx={{
-                      fontSize: '1.0625rem',
-                      fontWeight: 400,
-                      color: 'text.primary',
-                    }}
-                  >
+                  <Typography sx={{ fontSize: '1.0625rem', color: 'text.primary' }}>
                     {opt.label}
                   </Typography>
-                  <Typography
-                    sx={{
-                      fontSize: '0.8125rem',
-                      color: 'text.secondary',
-                      mt: 0.25,
-                    }}
-                  >
+                  <Typography sx={{ fontSize: '0.8125rem', color: 'text.secondary', mt: 0.25 }}>
                     {opt.description}
                   </Typography>
                 </Box>
@@ -95,4 +96,4 @@ const RoleStep = ({ value, onChange }) => {
   );
 };
 
-export default RoleStep;
+export default StatusStep;

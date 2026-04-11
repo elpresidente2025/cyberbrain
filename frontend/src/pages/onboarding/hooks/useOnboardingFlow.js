@@ -3,28 +3,25 @@ import { callFunctionWithNaverAuth } from '../../../services/firebaseService';
 import { normalizeAuthUser } from '../../../utils/authz';
 import { getRequiredRegionFields } from '../../../components/OnboardingGuard';
 
-export const MIN_BIO_LENGTH = 50;
-
 const INITIAL_DATA = {
+  status: '',
   position: '',
   regionMetro: '',
   regionLocal: '',
   electoralDistrict: '',
-  bio: '',
+  ageDecade: '',
+  ageDetail: '',
+  gender: '',
+  familyStatus: '',
+  backgroundCareer: '',
+  localConnection: '',
+  politicalExperience: '',
 };
 
 export function validateRegion(data) {
   const required = getRequiredRegionFields(data.position);
   for (const key of required) {
     if (!data[key]) return `${fieldLabel(key)}을(를) 선택해주세요.`;
-  }
-  return null;
-}
-
-export function validateBio(bio) {
-  const text = typeof bio === 'string' ? bio.trim() : '';
-  if (text.length < MIN_BIO_LENGTH) {
-    return `자기소개는 최소 ${MIN_BIO_LENGTH}자 이상 입력해주세요. (현재 ${text.length}자)`;
   }
   return null;
 }
@@ -38,26 +35,38 @@ function fieldLabel(key) {
   }
 }
 
-export function useOnboardingFlow() {
+export function useOnboardingFlow({ preview = false } = {}) {
   const [data, setData] = useState(INITIAL_DATA);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!preview);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const mountedRef = useRef(true);
 
   useEffect(() => {
     mountedRef.current = true;
+    if (preview) {
+      setData(INITIAL_DATA);
+      setLoading(false);
+      return () => { mountedRef.current = false; };
+    }
     (async () => {
       try {
         const res = await callFunctionWithNaverAuth('getUserProfile');
         const profile = res?.profile || res || {};
         if (!mountedRef.current) return;
         setData({
+          status: profile.status || '',
           position: profile.position || '',
           regionMetro: profile.regionMetro || '',
           regionLocal: profile.regionLocal || '',
           electoralDistrict: profile.electoralDistrict || '',
-          bio: profile.bio || '',
+          ageDecade: profile.ageDecade || '',
+          ageDetail: profile.ageDetail || '',
+          gender: profile.gender || '',
+          familyStatus: profile.familyStatus || '',
+          backgroundCareer: profile.backgroundCareer || '',
+          localConnection: profile.localConnection || '',
+          politicalExperience: profile.politicalExperience || '',
         });
       } catch (e) {
         console.error('[useOnboardingFlow] 프로필 로드 실패:', e);
@@ -67,7 +76,7 @@ export function useOnboardingFlow() {
       }
     })();
     return () => { mountedRef.current = false; };
-  }, []);
+  }, [preview]);
 
   const updateField = useCallback((name, value) => {
     setError('');
@@ -80,6 +89,9 @@ export function useOnboardingFlow() {
   }, []);
 
   const savePartial = useCallback(async (partial) => {
+    if (preview) {
+      return true;
+    }
     setSaving(true);
     setError('');
     try {
@@ -101,7 +113,7 @@ export function useOnboardingFlow() {
     } finally {
       setSaving(false);
     }
-  }, []);
+  }, [preview]);
 
   return {
     data,

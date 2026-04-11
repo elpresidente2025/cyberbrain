@@ -1,46 +1,69 @@
 import React from 'react';
-import { Box, Typography, Stack, Chip, Alert } from '@mui/material';
-import { CheckCircle } from '@mui/icons-material';
+import { Box, Typography } from '@mui/material';
+import { motion } from 'framer-motion';
+
+const IOS_EASE = [0.32, 0.72, 0, 1];
+
+const STATUS_LABEL = {
+  현역: '현역',
+  후보: '후보',
+  예비: '예비후보',
+  준비: '준비 중',
+};
 
 const CompleteStep = ({ data }) => {
+  const items = [
+    { label: '상태', value: STATUS_LABEL[data.status] || data.status },
+    { label: '직책', value: data.position },
+    { label: '광역', value: data.regionMetro },
+    { label: '기초', value: data.regionLocal },
+    { label: '선거구', value: data.electoralDistrict },
+  ].filter((item) => item.value);
+
+  if (items.length === 0) return null;
+
   return (
-    <Box sx={{ textAlign: 'center', py: 2 }}>
-      <CheckCircle sx={{ fontSize: 72, color: 'success.main', mb: 2 }} />
-      <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
-        설정이 완료되었습니다
-      </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
-        입력하신 정보를 바탕으로 맞춤 원고를 생성할 수 있습니다.
-      </Typography>
-
-      <Box
-        sx={{
-          p: 3,
-          bgcolor: 'action.hover',
-          borderRadius: 2,
-          textAlign: 'left',
-          mb: 3,
-        }}
-      >
-        <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5 }}>
-          입력하신 정보
-        </Typography>
-        <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ gap: 1 }}>
-          {data.position && <Chip label={`직책: ${data.position}`} color="primary" size="small" />}
-          {data.regionMetro && <Chip label={`광역: ${data.regionMetro}`} color="info" size="small" />}
-          {data.regionLocal && <Chip label={`기초: ${data.regionLocal}`} color="info" size="small" />}
-          {data.electoralDistrict && (
-            <Chip label={`선거구: ${data.electoralDistrict}`} color="info" size="small" />
-          )}
-          {data.bio && (
-            <Chip label={`자기소개 ${data.bio.trim().length}자`} color="success" size="small" />
-          )}
-        </Stack>
-      </Box>
-
-      <Alert severity="info" sx={{ textAlign: 'left' }}>
-        프로필 페이지에서 선택 정보(나이대, 경력, 공약 등)를 추가로 입력하면 원고 품질이 더욱 향상됩니다.
-      </Alert>
+    <Box
+      sx={{
+        borderRadius: 3,
+        overflow: 'hidden',
+        bgcolor: 'background.paper',
+        border: '1px solid',
+        borderColor: 'divider',
+      }}
+    >
+      {items.map((item, idx) => (
+        <React.Fragment key={item.label}>
+          {idx > 0 && <Box sx={{ height: '1px', bgcolor: 'divider', ml: 2.5 }} />}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.4,
+              ease: IOS_EASE,
+              delay: 0.25 + idx * 0.07,
+            }}
+          >
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                px: 2.5,
+                minHeight: 56,
+                gap: 2,
+              }}
+            >
+              <Typography sx={{ fontSize: '1.0625rem', color: 'text.primary' }}>
+                {item.label}
+              </Typography>
+              <Typography sx={{ fontSize: '1.0625rem', color: 'text.secondary' }}>
+                {item.value}
+              </Typography>
+            </Box>
+          </motion.div>
+        </React.Fragment>
+      ))}
     </Box>
   );
 };
