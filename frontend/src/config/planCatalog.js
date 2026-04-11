@@ -1,4 +1,4 @@
-import catalog from '../../../shared/plan-catalog.json';
+import catalog from './plan-catalog.json';
 
 const normalizeString = (value) => String(value ?? '').trim().toLowerCase();
 

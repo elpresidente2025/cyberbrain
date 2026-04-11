@@ -1,6 +1,6 @@
 'use strict';
 
-const catalog = require('../../shared/plan-catalog.json');
+const catalog = require('../config/plan-catalog.json');
 
 function normalizeString(value) {
   return String(value ?? '').trim().toLowerCase();

@@ -288,6 +288,9 @@
 - `functions/handlers/profile.js`: Line 246-247
 - `functions/common/plan-catalog.js`
 - `shared/plan-catalog.json`
+- `functions/config/plan-catalog.json`
+- `frontend/src/config/plan-catalog.json`
+- `scripts/sync-plan-catalog.js`
 
 ### ✅ 우선순위 3: 데이터 정규화 (스크립트 준비 완료)
 - [x] 데이터 정규화 스크립트 작성

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "trial": {
+    "id": "trial",
+    "name": "무료 체험",
+    "monthlyLimit": 8
+  },
+  "activePlanId": "official-partnership",
+  "paidPlans": [
+    {
+      "id": "official-partnership",
+      "name": "공식 파트너십",
+      "legacyNames": [
+        "스탠다드 플랜"
+      ],
+      "price": 55000,
+      "currency": "KRW",
+      "monthlyLimit": 90,
+      "features": [
+        "월 90회 원고 생성",
+        "SNS 원고 무료 생성",
+        "최대 3회 재생성",
+        "더불어민주당 당원 전용"
+      ]
+    }
+  ]
+}

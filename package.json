@@ -4,10 +4,11 @@
   "description": "더불어민주당 정치인 전용 블로그 콘텐츠 자동 생성 서비스",
   "private": true,
   "scripts": {
+    "sync:plan-catalog": "node scripts/sync-plan-catalog.js",
     "dev:frontend": "npm run dev -w frontend",
     "dev:functions": "npm run serve -w functions",
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:functions\"",
-    "build": "npm run build -w frontend",
+    "build": "npm run sync:plan-catalog && npm run build -w frontend",
     "deploy": "python deploy.py",
     "deploy:hosting": "python deploy.py hosting-only",
     "deploy:full": "python deploy.py full",
