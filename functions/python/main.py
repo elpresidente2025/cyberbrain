@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 from firebase_functions import https_fn, options
+from firebase_functions.firestore_fn import on_document_updated, Event, Change, DocumentSnapshot
 from firebase_admin import initialize_app
 
 
@@ -316,6 +317,51 @@ def test_sns(req: https_fn.Request) -> https_fn.Response:
     """SNS 변환 핸들러 헬스체크"""
     from handlers.sns_addon import handle_test_sns
     return handle_test_sns(req)
+
+
+# ============================================================
+# Legacy Single Function (하위 호환용 유지)
+# ============================================================
+
+# ============================================================
+# Firestore Triggers — Stylometry
+# ============================================================
+
+@on_document_updated(
+    document="bios/{userId}",
+    region="asia-northeast3",
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=300,
+    secrets=["GEMINI_API_KEY"],
+)
+def py_stylometryOnBioUpdate(event: Event[Change[DocumentSnapshot]]) -> None:
+    """bios/{userId} 업데이트 시 styleRefreshRequestedAt 감지 → 문체 재학습.
+
+    Node analyzeBioOnUpdate의 stylometry 분기를 Python으로 이관한 트리거.
+    content 변경 감지(기존 스타일 분석)는 Node에 그대로 남아 있다.
+    """
+    from services.stylometry.refresh import process_bio_style_update
+
+    user_id = event.params["userId"]
+    new_data = event.data.after.to_dict() or {}
+    old_data = event.data.before.to_dict() or {}
+
+    # styleRefreshRequestedAt 변화가 없으면 조기 종료
+    new_req = new_data.get("styleRefreshRequestedAt")
+    old_req = old_data.get("styleRefreshRequestedAt")
+    if not new_req:
+        return
+    if new_req == old_req:
+        return
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(
+            process_bio_style_update(user_id, new_data, old_data)
+        )
+    finally:
+        loop.close()
 
 
 # ============================================================
