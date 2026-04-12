@@ -3,32 +3,6 @@ const { HttpsError } = require('firebase-functions/v2/https');
 const wrap = require('../common/wrap').wrap;
 const { auth } = require('../common/auth');
 const { requireAdmin } = require('../common/rbac');
-const {
-  buildDiaryAugmentedCorpus,
-  refreshUserStyleFingerprint,
-  MIN_CORPUS_LENGTH,
-} = require('../services/style-refresh');
-
-const MIN_BIO_STYLE_CONTENT_LENGTH = MIN_CORPUS_LENGTH;
-
-const buildConsolidatedBioContent = (bioData = {}) => {
-  const entries = Array.isArray(bioData.entries) ? bioData.entries : [];
-  let consolidatedContent = '';
-
-  entries.forEach((entry) => {
-    const content = String(entry?.content || '').trim();
-    if (!content) return;
-    const type = String(entry?.type || 'content').trim().toUpperCase();
-    const title = String(entry?.title || '').trim();
-    consolidatedContent += `\n[${type}] ${title}: ${content}\n`;
-  });
-
-  if (!consolidatedContent.trim()) {
-    consolidatedContent = String(bioData.content || '').trim();
-  }
-
-  return consolidatedContent.trim();
-};
 
 const getAdminRequesterContext = async (uid) => {
   const { userDoc, userData, adminAccessSource } = await requireAdmin(uid);
@@ -250,121 +224,11 @@ const deleteUser = wrap(async (request) => {
   }
 });
 
-// 사용자 바이오 문체 분석 일괄 실행 (관리자 전용)
-const batchAnalyzeBioStyles = wrap(async (request) => {
-  const { uid } = await auth(request);
-  const { db } = await getAdminRequesterContext(uid);
-
-  const requestData = request.data || {};
-  const rawLimit = Number.parseInt(requestData.limit, 10);
-  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 20) : 10;
-  const startAfter = String(requestData.startAfter || '').trim();
-  const rawMinConfidence = Number.parseFloat(requestData.minConfidence);
-  const minConfidence = Number.isFinite(rawMinConfidence)
-    ? Math.min(Math.max(rawMinConfidence, 0), 1)
-    : 0.7;
-  const force = requestData.force === true;
-  const useDiary = requestData.useDiary === true;
-
-  let query = db.collection('bios')
-    .orderBy(admin.firestore.FieldPath.documentId())
-    .limit(limit);
-
-  if (startAfter) {
-    query = query.startAfter(startAfter);
-  }
-
-  const snapshot = await query.get();
-  if (snapshot.empty) {
-    return {
-      success: true,
-      processedCount: 0,
-      successCount: 0,
-      skippedCount: 0,
-      failedCount: 0,
-      noContentCount: 0,
-      hasMore: false,
-      lastUid: '',
-      message: '처리할 bio 문서가 없습니다.'
-    };
-  }
-
-  let successCount = 0;
-  let skippedCount = 0;
-  let failedCount = 0;
-  let noContentCount = 0;
-  const failures = [];
-
-  for (const doc of snapshot.docs) {
-    const bioData = doc.data() || {};
-    const existingConfidence = Number(bioData?.styleFingerprint?.analysisMetadata?.confidence || 0);
-
-    if (!force && existingConfidence >= minConfidence) {
-      skippedCount += 1;
-      continue;
-    }
-
-    let corpusText;
-    let corpusSource;
-    let corpusStats = null;
-
-    if (useDiary) {
-      const corpus = await buildDiaryAugmentedCorpus(doc.id, bioData);
-      corpusText = corpus.text;
-      corpusSource = corpus.source;
-      corpusStats = corpus.stats;
-    } else {
-      corpusText = buildConsolidatedBioContent(bioData);
-      corpusSource = 'bio-only';
-      corpusStats = { bioChars: corpusText.length, diaryEntryCount: 0, diaryChars: 0, totalChars: corpusText.length };
-    }
-
-    if (!corpusText || corpusText.length < MIN_BIO_STYLE_CONTENT_LENGTH) {
-      noContentCount += 1;
-      continue;
-    }
-
-    const result = await refreshUserStyleFingerprint(doc.id, {
-      corpusText,
-      source: corpusSource,
-      corpusStats,
-      userMeta: {
-        userName: String(bioData.userName || bioData.name || '').trim(),
-        region: String(bioData.region || '').trim(),
-      },
-    });
-
-    if (result.ok) {
-      successCount += 1;
-    } else {
-      failedCount += 1;
-      failures.push({ uid: doc.id, reason: result.reason || 'unknown-error' });
-    }
-  }
-
-  const lastUid = snapshot.docs[snapshot.docs.length - 1]?.id || '';
-  const hasMore = snapshot.docs.length === limit && Boolean(lastUid);
-
-  return {
-    success: true,
-    processedCount: snapshot.size,
-    successCount,
-    skippedCount,
-    failedCount,
-    noContentCount,
-    hasMore,
-    lastUid,
-    failures: failures.slice(0, 10),
-    minConfidence,
-    force,
-    useDiary
-  };
-});
+// batchAnalyzeBioStyles → Python py_batchAnalyzeBioStyles로 이관됨
 
 module.exports = {
   getAllUsers,
   deactivateUser,
   reactivateUser,
-  deleteUser,
-  batchAnalyzeBioStyles
+  deleteUser
 };

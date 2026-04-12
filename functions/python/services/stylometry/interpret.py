@@ -12,7 +12,9 @@ from typing import Any
 
 from agents.common.gemini_client import generate_json_async
 
+from .features import extract_raw_features
 from .fingerprint import validate_style_fingerprint
+from .models import RawFeatureProfile
 from .schemas import (
     CONJUNCTIONS,
     LEGACY_REQUIRED_KEYS,
@@ -200,6 +202,8 @@ async def extract_style_fingerprint(
         logger.warning("텍스트가 너무 짧아 stylometry 분석 불가 (최소 %d자, 현재 %d자)", MIN_ANALYZABLE_CHARS, len(text))
         return None
 
+    # 결정론적 피처 (LLM 없음)
+    raw_features: RawFeatureProfile | None = extract_raw_features(text)
     text_stats = analyze_text_statistics(text)
 
     prompt = _build_extract_prompt(text, user_name=user_name, region=region)
@@ -214,5 +218,10 @@ async def extract_style_fingerprint(
     )
 
     validated = validate_style_fingerprint(raw, len(text), text_stats)
+
+    # 결정론적 피처를 fingerprint에 첨부
+    if raw_features is not None:
+        validated["rawFeatures"] = raw_features.to_dict()
+
     logger.info("[Stylometry] 분석 완료 (신뢰도: %.2f)", validated["analysisMetadata"]["confidence"])
     return validated

@@ -8,7 +8,6 @@
 'use strict';
 
 const { HttpsError } = require('firebase-functions/v2/https');
-const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { wrap, wrapLite } = require('../common/wrap');
 const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
@@ -17,8 +16,6 @@ const { admin, db } = require('../utils/firebaseAdmin');
 const { resolvePaidPlan, getTrialMonthlyLimit } = require('../common/plan-catalog');
 const { districtKey } = require('../services/district');
 const { getDistrictStatus, addUserToDistrict } = require('../services/district-priority');
-const { analyzeBioForStyle } = require('../services/style-analysis');
-
 const TRIAL_MONTHLY_LIMIT = getTrialMonthlyLimit();
 
 // 광역/기초자치단체장은 선거구(electoralDistrict) 불필요
@@ -518,37 +515,7 @@ exports.registerWithDistrictCheck = wrap(async (req) => {
 });
 
 
-// ============================================================================
-// Firestore Trigger
-// ============================================================================
-
-/**
- * @trigger analyzeBioOnUpdate
- * @description 'bios' 문서의 'content' 필드가 업데이트되면 자동으로 스타일 분석을 실행합니다.
- */
-exports.analyzeBioOnUpdate = onDocumentUpdated('bios/{userId}', async (event) => {
-  const newData = event.data.after.data();
-  const oldData = event.data.before.data();
-  const userId = event.params.userId;
-
-  if (newData.content && newData.content !== oldData?.content && newData.content.length > 50) {
-    console.log(`사용자 ${userId}의 자기소개가 변경되어 스타일 분석을 시작합니다.`);
-    try {
-      const styleProfile = await analyzeBioForStyle(newData.content);
-      if (styleProfile) {
-        // users 컬렉션에 스타일 프로필 저장
-        await db.collection('users').doc(userId).update({
-          writingStyle: styleProfile,
-          styleLastAnalyzed: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        console.log(`사용자 ${userId}의 스타일 프로필을 성공적으로 저장했습니다.`);
-      }
-    } catch (error) {
-      console.error(`사용자 ${userId}의 스타일 프로필 분석 및 저장에 실패했습니다:`, error);
-    }
-  }
-  return null;
-});
+// analyzeBioOnUpdate → Python py_stylometryOnBioUpdate로 이관 완료, 삭제됨.
 
 /**
  * @trigger cleanupDistrictClaimsOnUserDelete

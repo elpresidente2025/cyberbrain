@@ -245,7 +245,7 @@ function QuickActions() {
         );
 
         const result = await callFunctionWithRetry(
-          'batchAnalyzeBioStyles',
+          'py_batchAnalyzeBioStyles',
           {
             limit: 10,
             minConfidence: 0.7,

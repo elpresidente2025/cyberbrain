@@ -6,14 +6,12 @@
 'use strict';
 
 const { HttpsError } = require('firebase-functions/v2/https');
-const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { wrap } = require('../common/wrap');
 const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
 const { logInfo, logError } = require('../common/log');
 const { admin, db } = require('../utils/firebaseAdmin');
-const { extractBioMetadata, generateOptimizationHints, extractStyleFingerprint } = require('../services/bio-analysis');
-const { buildStyleGuidePrompt } = require('../services/stylometry');
+const { extractBioMetadata, generateOptimizationHints } = require('../services/bio-analysis');
 const { BIO_ENTRY_TYPES, VALIDATION_RULES, TYPE_ANALYSIS_WEIGHTS } = require('../constants/bio-types');
 
 // ============================================================================
@@ -407,33 +405,16 @@ async function extractEntriesMetadataAsync(uid, entries) {
 
     const hints = generateOptimizationHints(consolidatedMetadata);
 
-    // 🎨 Stylometry 분석 (Style Fingerprint 추출)
-    let styleFingerprint = null;
-    let styleGuide = '';
-    try {
-      console.log(`🎨 [Stylometry] 분석 시작: ${uid}`);
-      styleFingerprint = await extractStyleFingerprint(consolidatedContent, {
-        userName: '',
-        region: ''
-      });
-      styleGuide = buildStyleGuidePrompt(styleFingerprint, {
-        compact: false,
-        sourceText: consolidatedContent
-      });
-      console.log(`✅ [Stylometry] 분석 완료: ${uid} (신뢰도: ${styleFingerprint?.analysisMetadata?.confidence || 0})`);
-    } catch (styleError) {
-      console.warn(`⚠️ [Stylometry] 분석 실패 (무시): ${uid}`, styleError.message);
-    }
-
+    // 🎨 Stylometry → Python py_stylometryOnBioUpdate 트리거에 위임
+    // marker 필드를 세팅하면 Python Firestore trigger가 자동으로 처리한다.
     await db.collection('bios').doc(uid).update({
       extractedMetadata: consolidatedMetadata,
       typeMetadata: typeMetadata,
       optimizationHints: hints,
-      // 🎨 Style Fingerprint 저장
-      styleFingerprint: styleFingerprint || null,
-      styleGuide: styleGuide || '',
       metadataStatus: 'completed',
       lastAnalyzed: admin.firestore.FieldValue.serverTimestamp(),
+      // Stylometry 재학습 요청 marker
+      styleRefreshRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
 
       // 엔트리 정보도 함께 저장
       entryStats: {
@@ -445,11 +426,6 @@ async function extractEntriesMetadataAsync(uid, entries) {
         lastProcessedAt: admin.firestore.FieldValue.serverTimestamp()
       }
     });
-
-    await db.collection('users').doc(uid).set({
-      styleGuide: styleGuide || '',
-      styleGuideUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
 
     console.log(`✅ 다중 엔트리 메타데이터 추출 완료: ${uid}`, {
       entriesProcessed: entries.length,
@@ -509,43 +485,8 @@ async function extractEntriesMetadataAsync(uid, entries) {
 // Firestore 트리거
 // ============================================================================
 
-/**
- * bios 컬렉션 변경 시 자동 메타데이터 추출 트리거
- */
-exports.onBioUpdate = onDocumentWritten('bios/{userId}', async (event) => {
-  const userId = event.params.userId;
-  const newData = event.data?.after?.data();
-  const oldData = event.data?.before?.data();
-
-  // 문서가 삭제된 경우 처리하지 않음
-  if (!newData) {
-    console.log(`Bio 문서 삭제됨: ${userId}`);
-    return null;
-  }
-
-  // content가 변경되었고, 50자 이상인 경우에만 메타데이터 추출
-  const contentChanged = newData.content !== oldData?.content;
-  const hasValidContent = newData.content && newData.content.length >= 50;
-  const needsAnalysis = contentChanged && hasValidContent;
-
-  console.log(`Bio 트리거 조건 체크: ${userId}`, {
-    contentChanged,
-    hasValidContent,
-    needsAnalysis,
-    contentLength: newData.content?.length || 0
-  });
-
-  if (needsAnalysis && newData.metadataStatus !== 'analyzing') {
-    console.log(`🔄 Bio 변경 감지, 메타데이터 추출 시작: ${userId}`);
-    extractMetadataAsync(userId, newData.content);
-  }
-
-  // stylometry 재학습 트리거는 Python py_stylometryOnBioUpdate로 이관됨.
-  // bio.js의 onBioUpdate는 index.js에서 import되지 않아 실제 배포되지 않지만,
-  // 혼란 방지를 위해 stylometry 관련 코드를 제거한다.
-
-  return null;
-});
+// onBioUpdate (dead code, index.js 미등록) — 삭제됨.
+// stylometry는 Python py_stylometryOnBioUpdate가 처리.
 
 // extractMetadataAsync는 다른 핸들러에서 사용할 수 있도록 추가 export
 module.exports.extractMetadataAsync = extractMetadataAsync;

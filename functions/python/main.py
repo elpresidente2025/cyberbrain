@@ -320,8 +320,20 @@ def test_sns(req: https_fn.Request) -> https_fn.Response:
 
 
 # ============================================================
-# Legacy Single Function (하위 호환용 유지)
+# Admin — Stylometry
 # ============================================================
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=540,
+    secrets=["GEMINI_API_KEY"],
+)
+def py_batchAnalyzeBioStyles(req: https_fn.CallableRequest) -> dict:
+    """관리자 전용 — 사용자 바이오 문체 분석 일괄 실행."""
+    from handlers.admin_stylometry import handle_batch_analyze_bio_styles
+    return handle_batch_analyze_bio_styles(req)
+
 
 # ============================================================
 # Firestore Triggers — Stylometry
