@@ -21,6 +21,7 @@ import {
 } from '@mui/material';
 import { Close } from '@mui/icons-material';
 import { callFunctionWithRetry } from '../../services/firebaseService';
+import { hasAdminAccess } from '../../utils/authz';
 
 function UserDetailDialog({ user, open, onClose }) {
   const [loading, setLoading] = useState(false);
@@ -124,7 +125,7 @@ function UserDetailDialog({ user, open, onClose }) {
                     color={detailData.base?.isActive ? 'success' : 'default'}
                     size="small"
                   />
-                  {detailData.base?.isAdmin && (
+                  {hasAdminAccess(detailData.base) && (
                     <Chip label="관리자" color="primary" size="small" />
                   )}
                 </Box>

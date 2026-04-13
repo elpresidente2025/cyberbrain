@@ -208,7 +208,7 @@ const GeneratePage = () => {
     }
   }, []);
 
-  // 사용자 프로필 새로고침 (최신 plan/subscription 정보 가져오기)
+  // 사용자 프로필 새로고침 (최신 구독/한도 정보 가져오기)
   useEffect(() => {
     const doRefresh = async () => {
       if (user?.uid && refreshUserProfile && !hasRefreshedProfile.current) {
@@ -618,3 +618,4 @@ const GeneratePage = () => {
 };
 
 export default GeneratePage;
+

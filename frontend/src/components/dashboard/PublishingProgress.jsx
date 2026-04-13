@@ -22,7 +22,7 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { callFunctionWithNaverAuth } from '../../services/firebaseService';
 import { useColor } from '../../contexts/ColorContext';
-import { hasAdminAccess } from '../../utils/authz';
+import { getMonthlyLimit, hasAdminAccess, isPaidSubscriber, isTesterUser } from '../../utils/authz';
 
 // 7-세그먼트 숫자 컴포넌트 (3자리 고정)
 const SevenSegmentNumber = ({ number, color, size = 'small' }) => {
@@ -131,7 +131,7 @@ const PublishingProgress = () => {
     return () => {
       mounted = false;
     };
-  }, [user?.uid, user?.plan, user?.subscription]); // 플랜 변경 시에도 데이터 새로고침
+  }, [user?.uid, user?.monthlyLimit, user?.subscriptionStatus, user?.role, user?.isTester]); // 플랜 변경 시에도 데이터 새로고침
 
   const fetchPublishingStats = async () => {
     if (!user?.uid) return;
@@ -188,34 +188,20 @@ const PublishingProgress = () => {
   };
 
   const getMonthlyTarget = (user) => {
-    // 관리자/테스터는 90회
     const isAdmin = hasAdminAccess(user);
-    const isTester = user?.isTester === true;
-    const plan = user?.plan || user?.subscription;
+    const isTester = isTesterUser(user);
+    const isSubscribed = isPaidSubscriber(user);
+    const resolvedMonthlyLimit = getMonthlyLimit(user, 8);
 
-    console.log('📊 PublishingProgress - getMonthlyTarget:', {
+    console.log('?뱤 PublishingProgress - getMonthlyTarget:', {
       isAdmin,
       isTester,
-      plan,
-      monthlyLimit: user?.monthlyLimit
+      isSubscribed,
+      monthlyLimit: user?.monthlyLimit,
+      resolvedMonthlyLimit
     });
 
-    // 관리자 또는 테스터
-    if (isAdmin || isTester) {
-      return 90;
-    }
-
-    // monthlyLimit 필드가 있으면 사용 (DB 값 우선)
-    if (user?.monthlyLimit) {
-      return user.monthlyLimit;
-    }
-
-    if (plan) {
-      return 90; // 공식 파트너십: 월 90회
-    }
-
-    // 기본값: 무료 티어 (월 8회)
-    return 8;
+    return resolvedMonthlyLimit;
   };
 
 
@@ -260,15 +246,15 @@ const PublishingProgress = () => {
   const published = currentMonth?.published || 0;
   
   // 플랜 검증을 먼저 수행 (관리자/테스터는 예외)
-  const plan = user?.plan || user?.subscription;
   const isAdmin = hasAdminAccess(user);
-  const isTester = user?.isTester === true;
+  const isTester = isTesterUser(user);
+  const isSubscribed = isPaidSubscriber(user);
 
   console.log('📊 PublishingProgress - 최종 렌더링 전 확인:', {
     userUid: user?.uid,
     isAdmin,
     isTester,
-    plan
+    isSubscribed
   });
 
   // 모든 사용자에게 정상 게이지 표시 (무료: 8회, 유료: 90회)
@@ -280,7 +266,8 @@ const PublishingProgress = () => {
     currentMonth,
     published,
     target,
-    userPlan: user?.plan || user?.subscription
+    subscriptionStatus: user?.subscriptionStatus,
+    monthlyLimit: user?.monthlyLimit
   });
 
   // 진행 상황 계산
@@ -420,7 +407,7 @@ const PublishingProgress = () => {
         </Box>
 
         {/* 무료 티어 업그레이드 안내 (관리자/테스터 제외) */}
-        {!plan && !isAdmin && !isTester && (
+        {!isSubscribed && !isAdmin && !isTester && (
           <Box sx={{ mt: 2 }}>
             <Alert severity="info" sx={{ mb: 0 }}>
               <Typography variant="body2" sx={{ mb: 1 }}>
@@ -451,3 +438,10 @@ const PublishingProgress = () => {
 };
 
 export default PublishingProgress;
+
+
+
+
+
+
+

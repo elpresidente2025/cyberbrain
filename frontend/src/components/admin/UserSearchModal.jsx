@@ -22,6 +22,7 @@ import {
 } from '@mui/material';
 import { Search, Close, Visibility, Download } from '@mui/icons-material';
 import { callFunctionWithRetry } from '../../services/firebaseService';
+import { hasAdminAccess } from '../../utils/authz';
 
 function UserSearchModal({ open, onClose }) {
   const theme = useTheme();
@@ -173,7 +174,7 @@ function UserSearchModal({ open, onClose }) {
                           <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                             {user.name || '-'}
                           </Typography>
-                          {user.role === 'admin' && (
+                          {hasAdminAccess(user) && (
                             <Chip label="관리자" size="small" color="primary" />
                           )}
                           <Chip 

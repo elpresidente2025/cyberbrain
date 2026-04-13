@@ -20,6 +20,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { getUserFullTitle, getUserStatusIcon, getUserRegionInfo } from '../../../utils/userUtils';
 import { useColor } from '../../../contexts/ColorContext';
+import { getMonthlyLimit } from '../../../utils/authz';
 
 // 7-세그먼트 숫자 컴포넌트
 const SevenSegmentNumber = ({ number, color }) => {
@@ -113,8 +114,7 @@ const UserStatusCard = ({
     const published = usage.postsGenerated || 0;
     // 테스터/유료=90, 무료=8, 관리자=무제한
     const target = isAdmin ? 0
-        : (isTester || user?.plan || user?.subscription) ? 90
-        : (user?.monthlyLimit || usage.monthlyLimit || 8);
+        : getMonthlyLimit(user, usage.monthlyLimit || 8);
     const progress = isAdmin ? 100 : target > 0 ? Math.min((published / target) * 100, 100) : 0;
     const isCompleted = published >= target;
     const remaining = Math.max(target - published, 0);
@@ -274,3 +274,5 @@ const UserStatusCard = ({
 };
 
 export default UserStatusCard;
+
+

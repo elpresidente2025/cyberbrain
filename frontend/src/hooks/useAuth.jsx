@@ -1,4 +1,7 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { httpsCallable } from 'firebase/functions';
+import { auth, functions } from '../services/firebase';
 import { normalizeAuthUser } from '../utils/authz';
 
 const AuthContext = createContext();
@@ -30,68 +33,52 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    let unsubscribeAuth = null;
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        let naverUser = checkNaverUser();
 
-    const initAuth = async () => {
-      try {
-        const { auth } = await import('../services/firebase');
-        const { onAuthStateChanged } = await import('firebase/auth');
+        if (naverUser && naverUser.uid !== firebaseUser.uid) {
+          console.warn('localStorage UID 불일치 감지:', {
+            localStorageUid: naverUser.uid,
+            firebaseUid: firebaseUser.uid,
+          });
+          localStorage.removeItem('currentUser');
+          naverUser = null;
+        }
 
-        unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
-          if (firebaseUser) {
-            console.log('🔵 useAuth: Firebase Auth 사용자 인증됨', firebaseUser.uid);
+        if (naverUser) {
+          const updatedUser = normalizeAuthUser({
+            ...naverUser,
+            email: naverUser.email || firebaseUser.email || firebaseUser.providerData?.[0]?.email,
+          });
 
-            let naverUser = checkNaverUser();
-
-            if (naverUser && naverUser.uid !== firebaseUser.uid) {
-              console.warn('⚠️ useAuth: localStorage UID 불일치 감지', {
-                localStorageUid: naverUser.uid,
-                firebaseUid: firebaseUser.uid
-              });
-              localStorage.removeItem('currentUser');
-              naverUser = null;
-            }
-
-            if (naverUser) {
-              const updatedUser = normalizeAuthUser({
-                ...naverUser,
-                email: naverUser.email || firebaseUser.email || firebaseUser.providerData?.[0]?.email
-              });
-
-              if (updatedUser?.email && !naverUser.email) {
-                localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-                console.log('🔵 useAuth: email 추가 후 localStorage 업데이트:', updatedUser.email);
-              }
-
-              setUser(updatedUser);
-            } else {
-              const basicUser = normalizeAuthUser({
-                uid: firebaseUser.uid,
-                provider: 'naver',
-                displayName: firebaseUser.displayName || '사용자',
-                email: firebaseUser.email
-              });
-              setUser(basicUser);
-            }
-          } else {
-            console.log('🔵 useAuth: 로그아웃 상태');
-            setUser(null);
+          if (updatedUser?.email && !naverUser.email) {
+            localStorage.setItem('currentUser', JSON.stringify(updatedUser));
           }
-          setLoading(false);
-        });
-      } catch (e) {
-        console.error('🔵 useAuth 초기화 에러:', e);
-        setError(e.message);
-        setUser(null);
-        setLoading(false);
-      }
-    };
 
-    initAuth();
+          setUser(updatedUser);
+        } else {
+          setUser(normalizeAuthUser({
+            uid: firebaseUser.uid,
+            provider: 'naver',
+            displayName: firebaseUser.displayName || '사용자',
+            email: firebaseUser.email,
+          }));
+        }
+      } else {
+        setUser(null);
+      }
+
+      setLoading(false);
+    }, (authError) => {
+      console.error('useAuth 초기화 오류:', authError);
+      setError(authError.message);
+      setUser(null);
+      setLoading(false);
+    });
 
     const handleStorageChange = (e) => {
       if (e.key === 'currentUser') {
-        console.log('🔵 useAuth: localStorage 변경 감지');
         const naverUser = checkNaverUser();
         if (naverUser) {
           setUser(naverUser);
@@ -100,7 +87,6 @@ export const AuthProvider = ({ children }) => {
     };
 
     const handleNaverAuthUpdate = (e) => {
-      console.log('🔵 useAuth: 프로필 업데이트 이벤트', e.detail);
       setUser(normalizeAuthUser(e.detail));
     };
 
@@ -108,7 +94,7 @@ export const AuthProvider = ({ children }) => {
     window.addEventListener('userProfileUpdated', handleNaverAuthUpdate);
 
     return () => {
-      if (unsubscribeAuth) unsubscribeAuth();
+      unsubscribeAuth();
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('userProfileUpdated', handleNaverAuthUpdate);
     };
@@ -116,61 +102,45 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
-      const { auth } = await import('../services/firebase');
-      const { signOut } = await import('firebase/auth');
       await signOut(auth);
-
       localStorage.removeItem('currentUser');
       setUser(null);
-      console.log('🔵 useAuth: 로그아웃 완료');
     } catch (e) {
-      console.error('🔵 useAuth: 로그아웃 에러:', e);
+      console.error('로그아웃 오류:', e);
     }
   };
 
   const refreshUserProfile = async () => {
     try {
       const currentUser = checkNaverUser();
-      if (!currentUser || !currentUser.uid) {
-        console.warn('🔵 refreshUserProfile: 사용자 정보 없음');
+      if (!currentUser?.uid) {
+        console.warn('refreshUserProfile: 사용자 정보 없음');
         return;
       }
-
-      console.log('🔵 refreshUserProfile: Cloud Function으로 최신 프로필 가져오기 시작');
-
-      const { functions } = await import('../services/firebase');
-      const { httpsCallable } = await import('firebase/functions');
 
       const getUserProfile = httpsCallable(functions, 'getUserProfile');
       const result = await getUserProfile({
         __naverAuth: {
           uid: currentUser.uid,
-          provider: 'naver'
-        }
+          provider: 'naver',
+        },
       });
 
-      if (result.data?.profile) {
-        const firestoreData = result.data.profile;
-        console.log('🔵 refreshUserProfile: Cloud Function 데이터', {
-          verificationStatus: firestoreData.verificationStatus,
-          lastVerification: firestoreData.lastVerification
-        });
-
-        const updatedUser = normalizeAuthUser({
-          ...currentUser,
-          ...firestoreData,
-          uid: currentUser.uid
-        });
-
-        localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-        setUser(updatedUser);
-
-        console.log('🔵 refreshUserProfile: 프로필 업데이트 완료');
-      } else {
-        console.warn('🔵 refreshUserProfile: 프로필 데이터 없음');
+      if (!result.data?.profile) {
+        console.warn('refreshUserProfile: 프로필 데이터 없음');
+        return;
       }
-    } catch (error) {
-      console.error('🔵 refreshUserProfile 에러:', error);
+
+      const updatedUser = normalizeAuthUser({
+        ...currentUser,
+        ...result.data.profile,
+        uid: currentUser.uid,
+      });
+
+      localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+      setUser(updatedUser);
+    } catch (authError) {
+      console.error('refreshUserProfile 오류:', authError);
     }
   };
 

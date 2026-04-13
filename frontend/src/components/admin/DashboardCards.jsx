@@ -23,11 +23,13 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../../hooks/useAuth';
 import { getAdminStats, updateGeminiStatus } from '../../services/firebaseService';
+import { hasAdminAccess } from '../../utils/authz';
 import HongKongNeonCard from '../HongKongNeonCard';
 import ActiveUsersChartModal from './ActiveUsersChartModal';
 
 function DashboardCards() {
   const { user } = useAuth();
+  const isAdmin = hasAdminAccess(user);
   const [stats, setStats] = useState({
     todaySuccess: 0,
     todayFail: 0,
@@ -169,7 +171,7 @@ function DashboardCards() {
   }
 
   // 권한 부족
-  if (user.role !== 'admin') {
+  if (!isAdmin) {
     return (
       <Alert severity="error" role="alert" aria-live="assertive">
         관리자 권한이 필요합니다. 현재 권한: {user.role || 'user'}

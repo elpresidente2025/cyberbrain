@@ -4,15 +4,17 @@ import { functions } from '../services/firebase';
 import { httpsCallable } from 'firebase/functions';
 import DashboardLayout from '../components/DashboardLayout';
 import { useAuth } from '../hooks/useAuth';
+import { hasAdminAccess } from '../utils/authz';
 
 const CleanupLegacyFieldsPage = () => {
   const { user } = useAuth();
+  const isAdmin = hasAdminAccess(user);
   const [loading, setLoading] = useState({ district: false, profileImage: false, isAdmin: false });
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
   const executeCleanup = async (type) => {
-    if (!user || user.role !== 'admin') {
+    if (!user || !isAdmin) {
       setError('관리자 권한이 필요합니다.');
       return;
     }
@@ -64,7 +66,7 @@ const CleanupLegacyFieldsPage = () => {
     );
   }
 
-  if (user.role !== 'admin') {
+  if (!isAdmin) {
     return (
       <DashboardLayout title="레거시 필드 정리">
         <Container maxWidth="lg">

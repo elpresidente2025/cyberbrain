@@ -34,6 +34,7 @@ import {
 } from '@mui/icons-material';
 import HongKongNeonCard from '../HongKongNeonCard';
 import { callFunction } from '../../services/firebaseService';
+import { hasAdminAccess } from '../../utils/authz';
 import { NotificationSnackbar, useNotification } from '../ui';
 
 const UserManagement = () => {
@@ -242,7 +243,7 @@ const UserManagement = () => {
         case 'faceVerified':
           return user.faceVerified;
         case 'admin':
-          return user.isAdmin;
+          return hasAdminAccess(user);
         default:
           return true;
       }

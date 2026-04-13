@@ -2,11 +2,13 @@
 // 리팩토링된 프로필 페이지 메인 컴포넌트
 
 import React from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
     Box,
     Grid,
     Alert,
+    AlertTitle,
     Container,
     Button
 } from '@mui/material';
@@ -51,6 +53,8 @@ const CONTAINER_MAX_WIDTH = {
 
 export default function ProfilePage() {
     const { user, logout } = useAuth();
+    const [searchParams] = useSearchParams();
+    const showWelcome = searchParams.get('welcome') === '1';
 
     // 데이터 훅
     const {
@@ -107,6 +111,19 @@ export default function ProfilePage() {
                     saving={saving}
                     onPastPostsIndexing={handlePastPostsIndexing}
                 />
+
+                {/* 온보딩 직후 환영 배너 */}
+                {showWelcome && (
+                    <Alert
+                        severity="info"
+                        sx={{ mb: 3, borderRadius: 'var(--radius-lg)' }}
+                    >
+                        <AlertTitle sx={{ fontWeight: 700 }}>
+                            기본 설정이 완료되었습니다
+                        </AlertTitle>
+                        오른쪽 <strong>자기소개 · 출마선언문</strong> 섹션에 이미 준비해 두신 출마선언문이나 자기소개 글을 그대로 붙여넣어 주세요. 처음에는 짧게 작성해도 괜찮고, 나중에 언제든 보완할 수 있습니다.
+                    </Alert>
+                )}
 
                 {/* 에러 메시지 */}
                 {error && (

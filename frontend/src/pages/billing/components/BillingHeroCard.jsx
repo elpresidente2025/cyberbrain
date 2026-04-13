@@ -83,7 +83,7 @@ const BillingHeroCard = ({ isSubscribed, isAdmin, adminOverrideSubscription, use
                         <FormControlLabel
                             control={
                                 <Switch
-                                    checked={adminOverrideSubscription !== null ? adminOverrideSubscription : (user?.subscriptionStatus === 'active')}
+                                    checked={adminOverrideSubscription !== null ? adminOverrideSubscription : isSubscribed}
                                     onChange={(e) => onAdminToggle(e.target.checked)}
                                     size="small"
                                 />

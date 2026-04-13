@@ -1,5 +1,4 @@
-// frontend/src/main.jsx
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { AuthProvider } from './hooks/useAuth.jsx';
@@ -13,43 +12,55 @@ import ErrorPage from './pages/ErrorPage.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AdminRoute from './components/AdminRoute.jsx';
 import OnboardingGuard from './components/OnboardingGuard.jsx';
-import OnboardingPage from './pages/onboarding/OnboardingPage.jsx';
 import './index.css';
-// 새 디자인 시스템 토큰 로드
 import './design-system/tokens.css';
-// 임시 조치: lazy loading 제거하고 직접 import
 import HomePage from './pages/HomePage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx';
-import Dashboard from './pages/Dashboard.jsx';
+import AboutPage from './pages/AboutPage.jsx';
 
-// [FIX] 동적 import(lazy loading) 실패 시 페이지를 새로고침하는 전역 핸들러
-// 배포 후 이전 해시의 chunk 파일을 요청할 때 발생하는 에러를 자동으로 복구합니다.
+const OnboardingPage = lazy(() => import('./pages/onboarding/OnboardingPage.jsx'));
+const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
+const GeneratePage = lazy(() => import('./pages/GeneratePage.jsx'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage.jsx'));
+const AdminPage = lazy(() => import('./pages/AdminPage.jsx'));
+const CleanupLegacyFieldsPage = lazy(() => import('./pages/CleanupLegacyFieldsPage.jsx'));
+const PostDetailPage = lazy(() => import('./pages/PostDetailPage.jsx'));
+const PostsListPage = lazy(() => import('./pages/PostsListPage.jsx'));
+const Billing = lazy(() => import('./pages/Billing.jsx'));
+const GuidelinesPage = lazy(() => import('./pages/GuidelinesPage.jsx'));
+const PaymentSuccess = lazy(() => import('./pages/PaymentSuccess.jsx'));
+const PaymentFail = lazy(() => import('./pages/PaymentFail.jsx'));
+const NaverCallback = lazy(() => import('./pages/auth/NaverCallback.jsx'));
+const RestoreAdminPage = lazy(() => import('./pages/RestoreAdminPage.jsx'));
+const TermsPage = lazy(() => import('./pages/TermsPage.jsx'));
+
 window.addEventListener('vite:preloadError', (event) => {
-  console.warn('🔄 Vite preload error caught. Reloading page to fetch latest chunks...', event);
+  console.warn('Vite preload error caught. Reloading page to fetch latest chunks...', event);
   window.location.reload();
 });
 
-import GeneratePage from './pages/GeneratePage.jsx';
-import ProfilePage from './pages/ProfilePage.jsx';
-import AdminPage from './pages/AdminPage.jsx';
-import CleanupLegacyFieldsPage from './pages/CleanupLegacyFieldsPage.jsx';
-import PostDetailPage from './pages/PostDetailPage.jsx';
-import PostsListPage from './pages/PostsListPage.jsx';
-import Billing from './pages/Billing.jsx';
-import GuidelinesPage from './pages/GuidelinesPage.jsx';
-import PaymentSuccess from './pages/PaymentSuccess.jsx';
-import PaymentFail from './pages/PaymentFail.jsx';
-import NaverCallback from './pages/auth/NaverCallback.jsx';
-import AboutPage from './pages/AboutPage.jsx';
-import RestoreAdminPage from './pages/RestoreAdminPage.jsx';
-import TermsPage from './pages/TermsPage.jsx';
+const RouteFallback = () => (
+  <div
+    style={{
+      minHeight: '40vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      color: '#4b5563',
+      fontSize: '0.95rem',
+      fontFamily: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+    }}
+  >
+    페이지를 불러오는 중입니다.
+  </div>
+);
 
-// 사전 로드 함수(사용자 경험 개선 목적)
-export const preloadGenerate = () => import('./pages/GeneratePage.jsx');
-export const preloadPosts = () => import('./pages/PostsListPage.jsx');
-export const preloadBilling = () => import('./pages/Billing.jsx');
-export const preloadProfile = () => import('./pages/ProfilePage.jsx');
+const withSuspense = (element) => (
+  <Suspense fallback={<RouteFallback />}>
+    {element}
+  </Suspense>
+);
 
 const router = createBrowserRouter([
   {
@@ -62,43 +73,63 @@ const router = createBrowserRouter([
       { path: 'register', element: <RegisterPage /> },
       {
         path: 'onboarding',
-        element: <ProtectedRoute><OnboardingPage /></ProtectedRoute>,
+        element: withSuspense(
+          <ProtectedRoute><OnboardingPage /></ProtectedRoute>
+        ),
       },
       {
         path: 'dashboard',
-        element: <ProtectedRoute><OnboardingGuard><Dashboard /></OnboardingGuard></ProtectedRoute>,
+        element: withSuspense(
+          <ProtectedRoute><OnboardingGuard><Dashboard /></OnboardingGuard></ProtectedRoute>
+        ),
       },
       {
         path: 'generate',
-        element: <ProtectedRoute><OnboardingGuard><GeneratePage /></OnboardingGuard></ProtectedRoute>,
+        element: withSuspense(
+          <ProtectedRoute><OnboardingGuard><GeneratePage /></OnboardingGuard></ProtectedRoute>
+        ),
       },
       {
         path: 'profile',
-        element: <ProtectedRoute><OnboardingGuard><ProfilePage /></OnboardingGuard></ProtectedRoute>,
+        element: withSuspense(
+          <ProtectedRoute><OnboardingGuard><ProfilePage /></OnboardingGuard></ProtectedRoute>
+        ),
       },
       {
         path: 'billing',
-        element: <ProtectedRoute><Billing /></ProtectedRoute>,
+        element: withSuspense(
+          <ProtectedRoute><Billing /></ProtectedRoute>
+        ),
       },
       {
         path: 'admin',
-        element: <AdminRoute><AdminPage /></AdminRoute>,
+        element: withSuspense(
+          <AdminRoute><AdminPage /></AdminRoute>
+        ),
       },
       {
         path: 'admin/cleanup',
-        element: <AdminRoute><CleanupLegacyFieldsPage /></AdminRoute>,
+        element: withSuspense(
+          <AdminRoute><CleanupLegacyFieldsPage /></AdminRoute>
+        ),
       },
       {
         path: 'posts',
-        element: <ProtectedRoute><OnboardingGuard><PostsListPage /></OnboardingGuard></ProtectedRoute>,
+        element: withSuspense(
+          <ProtectedRoute><OnboardingGuard><PostsListPage /></OnboardingGuard></ProtectedRoute>
+        ),
       },
       {
         path: 'posts/:id',
-        element: <ProtectedRoute><OnboardingGuard><PostDetailPage /></OnboardingGuard></ProtectedRoute>,
+        element: withSuspense(
+          <ProtectedRoute><OnboardingGuard><PostDetailPage /></OnboardingGuard></ProtectedRoute>
+        ),
       },
       {
         path: 'guidelines',
-        element: <ProtectedRoute><OnboardingGuard><GuidelinesPage /></OnboardingGuard></ProtectedRoute>,
+        element: withSuspense(
+          <ProtectedRoute><OnboardingGuard><GuidelinesPage /></OnboardingGuard></ProtectedRoute>
+        ),
       },
       {
         path: 'about',
@@ -106,29 +137,32 @@ const router = createBrowserRouter([
       },
       {
         path: 'terms',
-        element: <TermsPage />,
+        element: withSuspense(<TermsPage />),
       },
       {
         path: 'payment/success',
-        element: <ProtectedRoute><PaymentSuccess /></ProtectedRoute>,
+        element: withSuspense(
+          <ProtectedRoute><PaymentSuccess /></ProtectedRoute>
+        ),
       },
       {
         path: 'payment/fail',
-        element: <ProtectedRoute><PaymentFail /></ProtectedRoute>,
+        element: withSuspense(
+          <ProtectedRoute><PaymentFail /></ProtectedRoute>
+        ),
       },
       {
         path: 'auth/naver/callback',
-        element: <NaverCallback />,
+        element: withSuspense(<NaverCallback />),
       },
       {
         path: 'restore-admin',
-        element: <RestoreAdminPage />,
+        element: withSuspense(<RestoreAdminPage />),
       },
     ],
   },
 ]);
 
-// 테마용 상위 컴포넌트
 const ThemedApp = () => {
   const { isDarkMode } = useThemeMode();
   const theme = createCustomTheme(isDarkMode);
@@ -143,7 +177,6 @@ const ThemedApp = () => {
   );
 };
 
-// React 렌더링
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
@@ -155,7 +188,6 @@ root.render(
   </React.StrictMode>
 );
 
-// React 마운트 완료 후 즉시 로딩 스피너 숨기기
 const loadingContainer = document.getElementById('loading-container');
 if (loadingContainer) {
   loadingContainer.classList.add('hidden');

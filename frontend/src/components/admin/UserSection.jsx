@@ -25,10 +25,12 @@ import {
 import { Search, Visibility } from '@mui/icons-material';
 import { useAuth } from '../../hooks/useAuth';
 import { callFunctionWithRetry } from '../../services/firebaseService';
+import { hasAdminAccess } from '../../utils/authz';
 import UserDetailDialog from './UserDetailDialog';
 
 function UsersSection() {
   const { user } = useAuth();
+  const isAdmin = hasAdminAccess(user);
   const [users, setUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -41,7 +43,7 @@ function UsersSection() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
-    if (user?.role !== 'admin') return;
+    if (!isAdmin) return;
 
     const fetchUsers = async () => {
       try {
@@ -62,7 +64,7 @@ function UsersSection() {
     };
 
     fetchUsers();
-  }, [user]);
+  }, [isAdmin]);
 
   // 검색 및 필터링
   useEffect(() => {
@@ -82,7 +84,7 @@ function UsersSection() {
       filtered = filtered.filter(user => {
         if (statusFilter === 'active') return user.isActive;
         if (statusFilter === 'inactive') return !user.isActive;
-        if (statusFilter === 'admin') return user.role === 'admin';
+        if (statusFilter === 'admin') return hasAdminAccess(user);
         return true;
       });
     }
@@ -105,7 +107,7 @@ function UsersSection() {
     setDialogOpen(true);
   };
 
-  if (user?.role !== 'admin') {
+  if (!isAdmin) {
     return (
       <Alert severity="error">
         관리자 권한이 필요합니다.
@@ -227,7 +229,7 @@ function UsersSection() {
                       <Typography variant="body2" fontWeight="medium">
                         {userData.name || '-'}
                       </Typography>
-                      {userData.role === 'admin' && (
+                      {hasAdminAccess(userData) && (
                         <Chip label="관리자" size="small" color="primary" />
                       )}
                     </Box>
