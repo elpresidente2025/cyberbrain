@@ -224,7 +224,24 @@ def extract_topic_keywords(topic: str) -> List[str]:
             bucket.append(cleaned)
 
     keywords: List[str] = []
-    role_terms = re.findall(r"[가-힣]{2,10}(?:시장|지사|교육감|구청장|군수|국회의원|의원)", topic_text)
+
+    # 토큰 단위 fullmatch로 greedy/backtrack 오탐 차단.
+    # (예: "대한민국시장경제" → 과거에는 "대한민국시장"으로 잘못 매치됨)
+    role_suffixes_ordered = ("국회의원", "교육감", "구청장", "도지사", "군수", "시장", "지사", "의원")
+    role_terms: List[str] = []
+    for raw_token in re.split(r"[\s,.!?;:·()\[\]{}「」『』《》〈〉\"'“”‘’]+", topic_text):
+        stem = _strip_particle(raw_token)
+        if not stem or len(stem) < 3 or len(stem) > 12:
+            continue
+        if not all("\uac00" <= ch <= "\ud7a3" for ch in stem):
+            continue
+        for suffix in role_suffixes_ordered:
+            if stem.endswith(suffix) and len(stem) > len(suffix):
+                head = stem[: -len(suffix)]
+                if len(head) >= 2 and all("\uac00" <= ch <= "\ud7a3" for ch in head):
+                    role_terms.append(stem)
+                    break
+
     comparison_names = re.findall(r"([가-힣]{2,4})(?:보다|와|과)", topic_text)
     possessive_names = re.findall(r"([가-힣]{2,4})의", topic_text)
     for token in role_terms[:2]:

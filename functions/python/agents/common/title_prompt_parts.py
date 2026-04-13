@@ -685,38 +685,38 @@ TITLE_SKELETONS: Dict[str, List[Dict[str, Any]]] = {
     'SLOGAN_COMMITMENT': [
         {
             'id': 'S1',
-            'pattern': '[인물명], [지역/대상] 곁을 지키는 [역할/직함명]',
-            'example': '문세종, 계양구민 곁을 지키는 인천광역시의원',
-            'triggers': 'authorIncluded, titleFamily, keywordPosition+쉼표',
-            'note': '정체성 + 관계 + 역할',
+            'pattern': '[SEO키워드], [인물명]의 약속 "[한 줄 다짐]"',
+            'example_template': '{KEYWORD}, {NAME}의 약속 "끝까지 곁을 지키겠습니다"',
+            'triggers': 'authorIncluded, keywordPosition+쉼표, impact:인용문',
+            'note': '대상/키워드 선두 → 인물 → 인용 다짐.',
         },
         {
             'id': 'S2',
-            'pattern': '[인물명], [지역]을 지켜온 책임감으로 끝까지 뛰겠습니다',
-            'example': '문세종, 계양을 지켜온 책임감으로 끝까지 뛰겠습니다',
-            'triggers': 'authorIncluded, keywordPosition+쉼표',
-            'note': '책임감 + 약속',
+            'pattern': '[SEO키워드] 지키는 [인물명], 끝까지 뛰겠습니다',
+            'example_template': '{KEYWORD} 지키는 {NAME}, 끝까지 뛰겠습니다',
+            'triggers': 'authorIncluded, keywordPosition, impact:다짐어미',
+            'note': '키워드 수식구 + 인물 + 다짐.',
         },
         {
             'id': 'S3',
-            'pattern': '[인물명], [지역/대상]에게 더 가까운 [역할/직함명]',
-            'example': '문세종, 계양구민에게 더 가까운 인천광역시의원',
-            'triggers': 'authorIncluded, keywordPosition+쉼표',
-            'note': '관계형 슬로건',
+            'pattern': '[SEO키워드] 현장, [인물명]이 책임지겠습니다',
+            'example_template': '{KEYWORD} 현장, {NAME}이 책임지겠습니다',
+            'triggers': 'authorIncluded, keywordPosition+쉼표, impact:다짐어미',
+            'note': '키워드 현장 + 인물 + 책임.',
         },
         {
             'id': 'S4',
-            'pattern': '[인물명], [지역]을 지켜온 책임감으로 다시 뜁니다',
-            'example': '문세종, 계양을 지켜온 책임감으로 다시 뜁니다',
-            'triggers': 'authorIncluded, keywordPosition+쉼표',
-            'note': '정체성 + 다짐',
+            'pattern': '[SEO키워드] 개혁, [인물명]의 한 수',
+            'example_template': '{KEYWORD} 개혁, {NAME}의 한 수',
+            'triggers': 'authorIncluded, keywordPosition+쉼표, impact:한 수',
+            'note': '키워드 이슈 + 인물 + 선택.',
         },
         {
             'id': 'S5',
-            'pattern': '[인물명], [지역/대상] 곁에서 끝까지 책임지겠습니다',
-            'example': '문세종, 계양구민 곁에서 끝까지 책임지겠습니다',
-            'triggers': 'authorIncluded, keywordPosition+쉼표',
-            'note': '관계 + 책임 + 약속',
+            'pattern': '[SEO키워드] 위한 [인물명]의 선택 "[한 줄 다짐]"',
+            'example_template': '{KEYWORD} 위한 {NAME}의 선택 "끝까지 책임지겠습니다"',
+            'triggers': 'authorIncluded, keywordPosition, impact:인용문',
+            'note': '키워드 목적 + 인물 + 인용 다짐.',
         },
     ],
     'COMMENTARY': [
@@ -780,13 +780,23 @@ def build_title_skeleton_protocol(type_id: str, params: Optional[Dict[str, Any]]
     primary_kw = user_keywords[0] if user_keywords else ''
     topic = str(params.get('topic') or '').strip()
 
+    # 필드값 기반 렌더링: example_template이 있으면 현재 사용자 데이터로 치환한다.
+    keyword_fill = primary_kw or '[SEO키워드]'
+    name_fill = full_name or '[인물명]'
+
+    def _render_example(sk: Dict[str, Any]) -> str:
+        template = str(sk.get('example_template') or '').strip()
+        if template:
+            return template.replace('{KEYWORD}', keyword_fill).replace('{NAME}', name_fill)
+        return str(sk.get('example') or '').strip()
+
     skeleton_xml_lines: List[str] = []
     for sk in skeletons:
         if not isinstance(sk, dict):
             continue
         sk_id = str(sk.get('id') or '').strip()
         pattern = str(sk.get('pattern') or '').strip()
-        example = str(sk.get('example') or '').strip()
+        example = _render_example(sk)
         triggers = str(sk.get('triggers') or '').strip()
         note = str(sk.get('note') or '').strip()
         if not sk_id or not pattern:
@@ -808,6 +818,25 @@ def build_title_skeleton_protocol(type_id: str, params: Optional[Dict[str, Any]]
     if topic:
         slot_hint_lines.append(f'    <slot name="topic_원문">{topic[:80]}</slot>')
     slot_hint_xml = '\n'.join(slot_hint_lines) or '    <slot name="(없음)">입력 정보에서 추출</slot>'
+
+    # SEO 키워드와 인물명이 동일한 경우의 충돌 회피 규칙
+    name_keyword_collision = bool(
+        primary_kw and full_name and primary_kw.replace(' ', '') == full_name.replace(' ', '')
+    )
+    collision_rule_xml = ''
+    if resolved_id == 'SLOGAN_COMMITMENT' and name_keyword_collision:
+        collision_rule_xml = (
+            f'    <rule priority="critical">SEO키워드와 인물명이 동일("{primary_kw}")하다. '
+            f'첫 슬롯은 그대로 유지하고, skeleton의 두 번째 [인물명] 슬롯은 '
+            f'input 정보(topic/stance)에서 추출한 [지역/대상/정책 명사]로 치환하라. '
+            f'"{primary_kw}"라는 이름이 한 제목에 두 번 반복되지 않게 할 것.</rule>\n'
+        )
+    elif resolved_id == 'SLOGAN_COMMITMENT':
+        collision_rule_xml = (
+            '    <rule priority="critical">SLOGAN_COMMITMENT의 첫 슬롯 [SEO키워드]는 '
+            '항상 제목 앞(0-10자)에 배치하고, skeleton pattern 순서를 그대로 유지하라. '
+            'SEO키워드가 인물명과 다르다고 해서 skeleton 구조를 뒤집지 말 것.</rule>\n'
+        )
 
     return f"""
 <title_construction_protocol priority="critical" enforce="strict" source="few_shot_skeletons">
@@ -832,7 +861,7 @@ def build_title_skeleton_protocol(type_id: str, params: Optional[Dict[str, Any]]
     <rule>슬롯에 들어갈 구체 명사·수치는 본문(content_preview) 또는 입장문(stance_summary)에 실제 등장하는 토큰만 사용하라. 허구 수치 금지.</rule>
     <rule>skeleton의 종결 어미(~나, ~까, ~까요?, ~겠습니다, ~었어요, 등)와 구두점(?, →, "...", 쉼표)을 임의로 바꾸지 말 것. 구조의 핵심이다.</rule>
     <rule>SEO 키워드가 skeleton 앞쪽 슬롯에 이미 포함돼 있으면 그대로 두고, 없으면 제목 맨 앞(0-10자)에 배치 후 쉼표/조사로 분리하라.</rule>
-  </phase_2>
+{collision_rule_xml}  </phase_2>
 
   <phase_3 name="SELF_VALIDATE" priority="critical">
     <instruction>출력 직전 아래 checklist를 내부 검증하고, 실패 항목이 있으면 phase_1로 돌아가 다른 skeleton을 선택하라.</instruction>
