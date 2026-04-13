@@ -692,13 +692,9 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         return (compact_bio or name), name
 
     def is_current_lawmaker(self, user_profile: Dict) -> bool:
-        # 방어 코드 - list로 전달되거나 None인 경우 방어
+        # position은 _canonical_position으로 국회의원/광역의원/기초의원/...으로
+        # 정규화돼 저장되므로 완전 일치만 본다.
         if not user_profile or not isinstance(user_profile, dict):
             return False
-        status = user_profile.get('status', '')
-        position = user_profile.get('position', '')
-        title = user_profile.get('customTitle', '')
-
-        elected_keywords = ['의원', '구청장', '군수', '시장', '도지사', '교육감']
-        text_to_check = status + position + title
-        return any(k in text_to_check for k in elected_keywords)
+        position = str(user_profile.get('position') or '').strip()
+        return position == '국회의원'

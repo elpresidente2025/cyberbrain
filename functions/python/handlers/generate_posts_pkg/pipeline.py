@@ -50,6 +50,7 @@ from agents.common.section_contract import (
 )
 from agents.common.stance_filters import looks_like_hashtag_bullet_line
 from agents.core.structure_normalizer import _join_sections, _pad_short_section, _plain_len, _split_into_sections
+from services.authz import is_admin_user, is_tester_user
 from services.memory import get_recent_selected_titles
 from services.posts.content_processor import (
     cleanup_post_content,
@@ -9250,7 +9251,7 @@ def _build_repeat_safe_title_fallback(
                 prefix_candidates.append(normalized_prefix)
 
     if not prefix_candidates and speaker:
-        prefix_candidates.append(f"{speaker} 여론조사")
+        prefix_candidates.append(speaker)
     if not prefix_candidates and topic:
         prefix_candidates.append(str(topic).strip())
 
@@ -9308,14 +9309,6 @@ def _build_repeat_safe_title_fallback(
     for tail_candidate in structured_tail_candidates:
         _append_signal_suffix(tail_candidate)
 
-    if speaker and not competitor_intent_keyword:
-        _append_signal_suffix(f"{speaker}의 가능성")
-        _append_signal_suffix(f"{speaker}의 가능성과 부산 해법")
-        _append_signal_suffix(f"{speaker}의 부산 해법")
-        _append_signal_suffix(f"{speaker} 부산 해법은?")
-        _append_signal_suffix(f"{speaker}가 말하는 부산 변화")
-        _append_signal_suffix(f"{speaker}가 내세운 현장 경험")
-
     suffix_candidates.extend(signal_suffix_candidates)
     if pair and not competitor_intent_keyword:
         speaker_score = _format_title_percent(pair.get("speakerScore"))
@@ -9328,22 +9321,15 @@ def _build_repeat_safe_title_fallback(
                     f"{speaker}과 양자대결서 확인된 경쟁력",
                 ]
             )
-    if speaker and not suffix_candidates and not competitor_intent_keyword:
-        suffix_candidates.extend(
-            [
-                f"{speaker}과 가상대결서 드러난 접전",
-                f"{speaker}의 경쟁력",
-            ]
-        )
-    if speaker and not suffix_candidates and competitor_intent_keyword:
-        suffix_candidates.extend(
-            [
-                f"{speaker}이 앞서는 이유",
-                f"{speaker}의 부산 해법",
-            ]
-        )
+    normalized_current = _normalize_title_surface_local(current_title) or current_title
+
     if not suffix_candidates:
-        suffix_candidates.append("여론조사에서 드러난 변화")
+        return {
+            "title": normalized_current,
+            "usedFallback": False,
+            "repeatMeta": _compute_title_repeat_meta(normalized_current, normalized_recent_titles),
+            "reason": "no_generic_suffix_candidates",
+        }
 
     candidate_titles: list[str] = []
     seen_titles: set[str] = set()
@@ -9356,11 +9342,10 @@ def _build_repeat_safe_title_fallback(
             candidate_titles.append(title)
 
     if current_title:
-        candidate_titles.append(_normalize_title_surface_local(current_title) or current_title)
+        candidate_titles.append(normalized_current)
 
     best: Optional[Dict[str, Any]] = None
     best_safe_alternative: Optional[Dict[str, Any]] = None
-    normalized_current = _normalize_title_surface_local(current_title) or current_title
     for candidate in candidate_titles:
         compliance = _score_title_compliance(
             title=candidate,
@@ -9464,6 +9449,50 @@ def _stabilize_repeated_title(
         poll_focus_bundle=poll_focus_bundle,
     )
     stabilized_title = _normalize_title_surface_local(fallback.get("title") or normalized_candidate) or normalized_candidate
+
+    # Guard: reject fallback that regresses topic relevance or duplicates speaker name.
+    # The repeat-safe fallback can emit garbage suffixes when argument_cues are thin,
+    # and we must not replace a topic-relevant draft with a topic-irrelevant one.
+    if stabilized_title and stabilized_title != normalized_candidate:
+        def _topic_overlap_count(title_text: str) -> int:
+            try:
+                from agents.common.title_keywords import extract_topic_keywords
+                topic_kws = extract_topic_keywords(topic or "")
+                if not topic_kws:
+                    return 0
+                normalized_title = re.sub(r"\s+", "", title_text)
+                return sum(1 for kw in topic_kws if kw and kw in normalized_title)
+            except Exception:
+                return 0
+
+        def _speaker_count(title_text: str) -> int:
+            speaker = (full_name or "").strip()
+            if not speaker:
+                return 0
+            return title_text.count(speaker)
+
+        candidate_overlap = _topic_overlap_count(normalized_candidate)
+        fallback_overlap = _topic_overlap_count(stabilized_title)
+        fallback_speaker_dup = _speaker_count(stabilized_title) >= 2
+
+        if fallback_speaker_dup or fallback_overlap < candidate_overlap:
+            logger.warning(
+                "[TitleStabilize] fallback rejected, keeping draft: "
+                "draft=%s fallback=%s draftOverlap=%s fallbackOverlap=%s speakerDup=%s",
+                normalized_candidate,
+                stabilized_title,
+                candidate_overlap,
+                fallback_overlap,
+                fallback_speaker_dup,
+            )
+            return normalized_candidate, {
+                "repeated": True,
+                "applied": False,
+                "repeatMeta": repeat_meta,
+                "fallbackReason": "rejected_topic_regression" if not fallback_speaker_dup else "rejected_speaker_duplication",
+                "fallbackRepeatMeta": fallback.get("repeatMeta") if isinstance(fallback.get("repeatMeta"), dict) else {},
+            }
+
     return stabilized_title, {
         "repeated": True,
         "applied": stabilized_title != normalized_candidate,
@@ -10711,6 +10740,7 @@ def _run_editor_repair_once(
     purpose: str = "repair",
     style_guide: str = "",
     style_fingerprint: Optional[Dict[str, Any]] = None,
+    generation_profile: Optional[Dict[str, Any]] = None,
     style_polish_mode: str = "",
 ) -> Dict[str, Any]:
     """기준 미충족 시 EditorAgent로 1회 교정 시도."""
@@ -10734,6 +10764,7 @@ def _run_editor_repair_once(
         normalized_extra_issues = []
     normalized_purpose = str(purpose or "repair").strip().lower()
     resolved_style_fingerprint = style_fingerprint if isinstance(style_fingerprint, dict) else {}
+    resolved_generation_profile = generation_profile if isinstance(generation_profile, dict) else {}
     resolved_style_guide = str(style_guide or "").strip()
     resolved_style_polish_mode = str(style_polish_mode or "").strip().lower()
     if resolved_style_polish_mode not in {"light", "medium"}:
@@ -10760,6 +10791,7 @@ def _run_editor_repair_once(
             "polishMode": normalized_purpose == "polish",
             "styleGuide": resolved_style_guide if allow_style_polish else "",
             "styleFingerprint": resolved_style_fingerprint if allow_style_polish else {},
+            "generationProfile": resolved_generation_profile if allow_style_polish else {},
             "stylePolishMode": resolved_style_polish_mode if allow_style_polish else "",
         }
         result = _run_async_sync(agent.run(editor_input))
@@ -11031,8 +11063,8 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     # 프로필 로드 (권한/세션/경고/응답 메타데이터용)
     profile_bundle = load_user_profile(uid, category=category, topic=topic, options={"strictSourceOnly": True})
     user_profile = _safe_dict(profile_bundle.get("userProfile"))
-    is_admin = bool(profile_bundle.get("isAdmin") is True)
-    is_tester = bool(profile_bundle.get("isTester") is True)
+    is_admin = is_admin_user(user_profile)
+    is_tester = is_tester_user(user_profile)
     if not is_admin and not is_tester:
         eligibility = check_election_eligibility(user_profile)
         if not eligibility.get("allowed"):
@@ -11055,6 +11087,10 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     if not isinstance(raw_style_fingerprint, dict):
         raw_style_fingerprint = profile_bundle.get("styleFingerprint")
     style_fingerprint = _safe_dict(raw_style_fingerprint)
+    raw_generation_profile = data.get("generationProfile")
+    if not isinstance(raw_generation_profile, dict):
+        raw_generation_profile = profile_bundle.get("generationProfile")
+    generation_profile = _safe_dict(raw_generation_profile)
     style_polish_mode = str(data.get("stylePolishMode") or "light").strip().lower()
     if style_polish_mode not in {"light", "medium"}:
         style_polish_mode = "light"
@@ -11827,6 +11863,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             purpose=editor_purpose,
             style_guide=style_guide,
             style_fingerprint=style_fingerprint,
+            generation_profile=generation_profile,
             style_polish_mode=style_polish_mode,
         )
         editor_auto_repair["error"] = editor_fix.get("error")
@@ -12025,6 +12062,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             purpose="repair",
             style_guide=style_guide,
             style_fingerprint=style_fingerprint,
+            generation_profile=generation_profile,
             style_polish_mode=style_polish_mode,
         )
         editor_second_pass["error"] = second_editor_fix.get("error")
@@ -12593,6 +12631,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 purpose="polish",
                 style_guide=style_guide,
                 style_fingerprint=style_fingerprint,
+                generation_profile=generation_profile,
                 style_polish_mode=style_polish_mode,
             )
             integrity_editor_repair["error"] = integrity_fix.get("error")

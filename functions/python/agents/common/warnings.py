@@ -1,17 +1,225 @@
-from typing import Optional, Dict
+from typing import Optional
 
-def generate_non_lawmaker_warning(is_current_lawmaker: bool, political_experience: str, author_bio: str) -> str:
-    # If currently a lawmaker or not a "political rookie", no warning needed.
-    # Note: JS logic was: if (isCurrentLawmaker !== false || politicalExperience !== '정치 신인') return '';
-    # This implies: if (isCurrentLawmaker is true OR isn't explicitly false OR experience isn't rookie) -> return empty
-    # Wait, the JS logic: `isCurrentLawmaker !== false` means if it's true or undefined (if default is true?), it returns empty.
-    # Actually, usually `isCurrentLawmaker` would be boolean.
-    # If `isCurrentLawmaker` is True, return empty.
-    # If `politicalExperience` is NOT '정치 신인', return empty.
-    
-    if is_current_lawmaker or political_experience != '정치 신인':
+
+def generate_non_lawmaker_warning(
+    position: Optional[str],
+    status: Optional[str],
+    political_experience: Optional[str],
+    author_bio: Optional[str],
+) -> str:
+    """작성자 직책·재임 상태·경력에 맞는 금지/허용 표현 가이드를 생성한다.
+
+    입력 필드:
+    - `position`: `_canonical_position` 결과
+      (국회의원 / 광역의원 / 기초의원 / 광역자치단체장 / 기초자치단체장 / 기타)
+    - `status`: '예비' / '현역' 등 재임 상태
+    - `political_experience`: '정치 신인' / '초선' / '재선' / '3선이상' 등
+
+    분기:
+    - 국회의원: 경고 없음 (모든 표현 허용)
+    - 광역·기초의원:
+        · 신인 예비후보(status='예비' AND experience='정치 신인')
+          → 1인칭 현재형 의정활동 금지, 미래형·다짐형만 허용
+        · 그 외 (현역 또는 경력자)
+          → 국회 전용 표현만 금지, 해당 의회 표현 허용
+    - 자치단체장:
+        · 신인 예비후보 → 시정/구정 미래형만 허용
+        · 그 외 → 의회 활동 표현만 금지
+    - 기타 (지역위원장/무직책 등): 신인에 한해 강한 경고
+    """
+    canonical_position = (position or '').strip()
+    status_str = (status or '').strip()
+    experience = (political_experience or '').strip()
+    bio = author_bio or ''
+
+    if canonical_position == '국회의원':
         return ''
 
+    is_rookie_candidate = ('예비' in status_str) and (experience == '정치 신인')
+
+    if canonical_position in ('광역의원', '기초의원'):
+        if is_rookie_candidate:
+            return _build_local_assembly_rookie_candidate_warning(canonical_position, bio)
+        return _build_local_assembly_warning(canonical_position, bio)
+
+    if canonical_position in ('광역자치단체장', '기초자치단체장'):
+        if is_rookie_candidate:
+            return _build_executive_rookie_candidate_warning(canonical_position, bio)
+        return _build_executive_warning(canonical_position, bio)
+
+    if experience != '정치 신인':
+        return ''
+    return _build_rookie_warning(bio)
+
+
+def _build_local_assembly_warning(position: str, author_bio: str) -> str:
+    assembly_term, role_term = {
+        '광역의원': ('시의회/도의회', '광역의원(시의원/도의원)'),
+        '기초의원': ('구의회/군의회', '기초의원(구의원/군의원)'),
+    }.get(position, ('지방의회', '지방의원'))
+
+    return f"""
+╔═══════════════════════════════════════════════════════════════╗
+║  🚫 작성자 신분 설정 (원고에 명시 금지)                          ║
+╚═══════════════════════════════════════════════════════════════╝
+
+작성자: {author_bio}
+작성자 직책: {role_term}
+(이 정보는 글쓰기 톤 설정용입니다. 원고 본문에 직접 노출하지 마세요.)
+
+[절대 금지 - 국회 전용 표현]
+❌ "국회의원", "국회 활동", "국회에서", "원내", "원 구성" 등 국회 관련 표현
+❌ "지역구 의원", "지역구 국회의원", "지역구 현안", "지역구 발전" 등 "지역구"가 들어가는 모든 표현
+   (이유: "지역구"는 국회의원 전용 용어. {role_term}은 "선거구" 혹은 지역명 사용)
+   → 대체 표현: "우리 지역", "이 지역", 광역/기초지자체명
+❌ "256명의 국회의원 중..." 같이 본인을 국회의원으로 암시·동일시
+❌ "저는 국회의원이 아닙니다만" 등 신분 고백
+❌ 위 작성자 정보를 원고 본문에 그대로 복사하는 행위
+
+[허용 / 권장 표현]
+✅ "{assembly_term}", "본회의", "상임위원회", "조례 제·개정", "5분 자유발언"
+✅ "의정활동", "의원 경력", "의안 발의", "행정사무감사" — {role_term}의 정상 활동
+✅ "OO시민", "OO구 주민", "OO군민" 등 지역명 + 시민/주민 표현
+
+[예외 규칙]
+✅ Bio(작성자 정보) 내 **큰따옴표(" ")로 묶인 문장**은 금지어 포함 여부와 무관하게 원문 그대로 인용
+   - 예: "그 스펙이면 벌써 국회의원 했을 텐데" (그대로 유지)
+
+→ 원고는 {role_term}의 자연스러운 관점에서 작성하되, 국회 수준의 표현으로 과장하지 마세요.
+"""
+
+
+def _build_executive_warning(position: str, author_bio: str) -> str:
+    admin_term, role_term = {
+        '광역자치단체장': ('시정/도정', '광역자치단체장(시장/도지사)'),
+        '기초자치단체장': ('시정/구정/군정', '기초자치단체장(시장/군수/구청장)'),
+    }.get(position, ('자치단체 행정', '자치단체장'))
+
+    return f"""
+╔═══════════════════════════════════════════════════════════════╗
+║  🚫 작성자 신분 설정 (원고에 명시 금지)                          ║
+╚═══════════════════════════════════════════════════════════════╝
+
+작성자: {author_bio}
+작성자 직책: {role_term}
+(이 정보는 글쓰기 톤 설정용입니다. 원고 본문에 직접 노출하지 마세요.)
+
+[절대 금지 - 국회/의회 활동 표현]
+❌ "국회의원", "국회 활동", "지역구 의원", "지역구 국회의원" 등 국회 관련 표현
+❌ "의정활동", "본회의", "상임위", "의안 발의", "5분 자유발언" 등 의회 활동 표현
+   (이유: {role_term}은 의회 소속이 아닌 행정부 수장)
+❌ "저는 국회의원이 아닙니다만" 등 신분 고백
+❌ 위 작성자 정보를 원고 본문에 그대로 복사하는 행위
+
+[허용 / 권장 표현]
+✅ "{admin_term}", "행정", "자치단체 운영", "정책 집행", "현장 행정"
+✅ "시민 여러분", "OO시민", "OO구민", "OO군민" 등 지역명+주민 표현
+
+[예외 규칙]
+✅ Bio 내 큰따옴표(" ")로 묶인 문장은 원문 그대로 인용
+
+→ 원고는 행정부 수장의 관점에서 작성하되, 의회 활동으로 오해될 표현은 피하세요.
+"""
+
+
+def _build_local_assembly_rookie_candidate_warning(position: str, author_bio: str) -> str:
+    assembly_term, role_term, candidate_term = {
+        '광역의원': ('시의회/도의회', '광역의원', '광역의원(시의원/도의원) 예비후보'),
+        '기초의원': ('구의회/군의회', '기초의원', '기초의원(구의원/군의원) 예비후보'),
+    }.get(position, ('지방의회', '지방의원', '지방의원 예비후보'))
+
+    return f"""
+╔═══════════════════════════════════════════════════════════════╗
+║  🚫 작성자 신분 설정 (원고에 명시 금지)                          ║
+╚═══════════════════════════════════════════════════════════════╝
+
+작성자: {author_bio}
+작성자 직책: {candidate_term} (정치 신인)
+(아직 {role_term}이 아닙니다. 선거를 준비하는 단계이며, 의정 경험이 전혀 없습니다.)
+
+[절대 금지 - 국회 전용 표현]
+❌ "국회의원", "국회 활동", "국회에서", "원내" 등 국회 관련 표현 일체
+❌ "지역구 의원", "지역구 국회의원", "지역구 현안" 등 "지역구"가 들어가는 모든 표현
+   → 대체: "우리 지역", "이 지역", 광역/기초지자체명
+
+[절대 금지 - 본인이 이미 의원인 것처럼 쓰는 1인칭 현재·과거형]
+❌ "저는 {assembly_term}에서 의정활동을 하고 있습니다" — 거짓 (의원이 아님)
+❌ "제가 발의한 조례", "제가 상정한 안건", "최근 제 의정활동" — 거짓
+❌ "본회의에서 5분 자유발언을 했습니다" — 거짓
+❌ "{role_term}으로서", "OO 의원으로서" 같은 1인칭 현재형 자기규정 — 거짓
+❌ "의정활동 중 주민 여러분께서..." — 거짓
+❌ "저는 정치 신인입니다만", "저는 예비후보입니다만" 등 신분 고백
+❌ 위 작성자 정보를 원고 본문에 그대로 복사하는 행위
+
+[허용 - 미래형·다짐형·3인칭 언급]
+✅ "{role_term}이 되면 OO 조례를 발의하겠습니다" — 미래형 공약
+✅ "당선되면 OO 하겠습니다", "OO에 앞장서겠습니다" — 다짐
+✅ "{assembly_term}는 OO 역할을 해야 합니다" — 3인칭 기관 언급
+✅ "OO 조례는 반드시 제·개정되어야 합니다" — 정책 주장
+✅ "저는 그동안 OO 정책을 연구해 왔습니다" — 준비/연구 활동
+✅ "OO 현장에서 주민 여러분의 목소리를 들어왔습니다" — 현장 활동
+✅ "OO 시민사회·정책 전문가로서" — 실제 경력 기반 자기규정
+
+[톤 가이드]
+✅ 출마 준비, 공약 설계, 정책 연구, 현장 경험, 주민 소통 중심으로 서술
+✅ "OO시민", "OO구 주민", "OO군민" 등 지역명 + 시민/주민 표현
+✅ 실제 직위(지역위원장, 정책연구소장 등)가 있다면 자연스럽게 사용
+
+[예외 규칙]
+✅ Bio 내 큰따옴표(" ")로 묶인 문장은 원문 그대로 인용
+
+→ 핵심 원칙: 과거·현재는 "준비·연구·현장 소통", 미래는 "공약·다짐".
+→ {assembly_term} 내부 활동은 모두 **미래형 또는 3인칭**으로만 서술.
+"""
+
+
+def _build_executive_rookie_candidate_warning(position: str, author_bio: str) -> str:
+    admin_term, role_term, candidate_term = {
+        '광역자치단체장': ('시정/도정', '광역자치단체장', '광역자치단체장(시장/도지사) 예비후보'),
+        '기초자치단체장': ('시정/구정/군정', '기초자치단체장', '기초자치단체장(시장/군수/구청장) 예비후보'),
+    }.get(position, ('자치단체 행정', '자치단체장', '자치단체장 예비후보'))
+
+    return f"""
+╔═══════════════════════════════════════════════════════════════╗
+║  🚫 작성자 신분 설정 (원고에 명시 금지)                          ║
+╚═══════════════════════════════════════════════════════════════╝
+
+작성자: {author_bio}
+작성자 직책: {candidate_term} (정치 신인)
+(아직 {role_term}이 아닙니다. 선거를 준비하는 단계이며, 행정 집행 경험이 전혀 없습니다.)
+
+[절대 금지 - 국회/의회 활동 표현]
+❌ "국회의원", "국회 활동", "지역구 의원" 등 국회 관련 표현
+❌ "의정활동", "본회의", "상임위", "의안 발의" 등 의회 활동 표현
+   (이유: {role_term}은 의회 소속이 아닌 행정부 수장)
+
+[절대 금지 - 본인이 이미 단체장인 것처럼 쓰는 1인칭 현재·과거형]
+❌ "저는 {admin_term}을 운영하고 있습니다" — 거짓
+❌ "제가 추진한 사업", "제가 집행한 정책", "최근 제 행정" — 거짓
+❌ "{role_term}으로서 OO을 결정했습니다" — 거짓
+❌ "저는 정치 신인입니다만", "저는 예비후보입니다만" 등 신분 고백
+❌ 위 작성자 정보를 원고 본문에 그대로 복사하는 행위
+
+[허용 - 미래형·다짐형·3인칭 언급]
+✅ "{role_term}이 되면 OO 사업을 추진하겠습니다" — 미래형 공약
+✅ "당선되면 {admin_term}에 OO 원칙을 세우겠습니다" — 다짐
+✅ "OO은 반드시 개선되어야 합니다" — 정책 주장
+✅ "저는 그동안 OO 현장에서 주민 목소리를 들어왔습니다" — 현장 활동
+
+[톤 가이드]
+✅ 출마 준비, 공약 설계, 정책 연구, 현장 경험, 주민 소통 중심
+✅ "시민 여러분", "OO시민", "OO구민", "OO군민" 지역명+주민 표현
+✅ 실제 직위(지역위원장 등)가 있다면 자연스럽게 사용
+
+[예외 규칙]
+✅ Bio 내 큰따옴표(" ")로 묶인 문장은 원문 그대로 인용
+
+→ 핵심 원칙: 과거·현재는 "준비·연구·현장 소통", 미래는 "공약·다짐".
+→ 행정 집행은 모두 **미래형 또는 3인칭**으로만 서술.
+"""
+
+
+def _build_rookie_warning(author_bio: str) -> str:
     return f"""
 ╔═══════════════════════════════════════════════════════════════╗
 ║  🚫 작성자 신분 설정 (원고에 명시 금지)                          ║

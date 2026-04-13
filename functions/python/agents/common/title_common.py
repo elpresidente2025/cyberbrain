@@ -528,6 +528,17 @@ def _detect_truncated_title_reason(title: str) -> str:
     if re.search(r'(?:^|[\s,:;!?])\d{1,3}$', stripped):
         return '숫자로 비정상 종료'
 
+    # 조사로 끝나는 제목은 서술어가 빠진 불완전 문장이다.
+    # 을/를 — 목적격 (항상 불완전)
+    # 의 — 관형격 (뒤에 수식받는 명사가 와야 함)
+    # "실천으로 공동체를", "박지상의" 같은 잘림 현상을 잡는다.
+    trailing_particle_match = re.search(
+        r'(?:^|[\s,:;!?])[가-힣]{2,}(을|를|의)\s*[.…]?$',
+        stripped,
+    )
+    if trailing_particle_match:
+        return f'조사 "{trailing_particle_match.group(1)}"로 종결 (서술어/체언 누락)'
+
     wrapper_pairs = (
         ('(', ')'),
         ('[', ']'),

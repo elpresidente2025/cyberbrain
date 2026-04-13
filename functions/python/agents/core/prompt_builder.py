@@ -42,15 +42,17 @@ TEMPLATE_BUILDERS = {
 }
 
 def is_current_lawmaker(user_profile: Dict) -> bool:
-    """사용자가 현직 의원/단체장인지 판별한다."""
+    """현직 국회의원 여부를 판별한다.
+
+    profile 저장 시 `_canonical_position`이 직책을
+    국회의원/광역의원/기초의원/광역자치단체장/기초자치단체장으로 정규화하므로
+    캐노니컬 값 완전 일치만 본다. "의원" 부분 문자열 매칭은
+    구의원/기초의원을 잘못 국회의원으로 분류하는 버그가 있어 제거됨.
+    """
     if not user_profile or not isinstance(user_profile, dict):
         return False
-    status = user_profile.get('status', '')
-    position = user_profile.get('position', '')
-    title = user_profile.get('customTitle', '')
-    elected_keywords = ['의원', '구청장', '군수', '시장', '도지사', '교육감']
-    text_to_check = status + position + title
-    return any(k in text_to_check for k in elected_keywords)
+    position = str(user_profile.get('position') or '').strip()
+    return position == '국회의원'
 
 
 def build_structure_prompt(params: Dict[str, Any]) -> str:
@@ -79,6 +81,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     )
     style_guide = normalize_context_text(params.get('styleGuide'), sep="\n")
     style_fingerprint = params.get('styleFingerprint') if isinstance(params.get('styleFingerprint'), dict) else {}
+    generation_profile = params.get('generationProfile') if isinstance(params.get('generationProfile'), dict) else {}
 
     # Build base template prompt
     template_prompt = template_builder({
@@ -340,9 +343,10 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     # Warning Generation (XML)
     warning_blocks: List[str] = []
     non_lawmaker_warn = generate_non_lawmaker_warning(
-        is_current_lawmaker(user_profile),
+        user_profile.get('position'),
+        user_profile.get('status'),
         user_profile.get('politicalExperience'),
-        params.get('authorBio')
+        params.get('authorBio'),
     )
     if non_lawmaker_warn:
         warning_blocks.append(
@@ -557,6 +561,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
         style_fingerprint=style_fingerprint,
         style_guide=style_guide,
         user_profile=user_profile,
+        generation_profile=generation_profile,
     )
 
     # SEO 지침 생성

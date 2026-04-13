@@ -71,8 +71,17 @@ _NON_EVENT_ANNOUNCEMENT_SURFACE_PATTERNS = (
 )
 
 _SLOGAN_COMMITMENT_POSITIVE_PATTERNS = (
-    re.compile(r'(책임감|지켜온|곁을\s+지키|끝까지|책임지겠|책임지는|곁에서)', re.IGNORECASE),
-    re.compile(r'(구민|시민|주민|당원)\s*(곁|에게)', re.IGNORECASE),
+    re.compile(
+        r'(책임감|책임지|책임을\s*다|'
+        r'지키겠|지켜온|지켜낼|지켜낸|곁을\s*지키|곁에서|끝까지|'
+        r'약속(?:하|합|드립|할)|다짐|맹세|'
+        r'실천(?:할|하|으로|한다|합니다|하겠|하는)|'
+        r'답하(?:다|겠|는)|답합니다|'
+        r'이어받|계승(?:할|하|하겠)?|'
+        r'만들겠|만들어가|이끄는|이끌겠)',
+        re.IGNORECASE,
+    ),
+    re.compile(r'(구민|시민|주민|당원|청년|공동체)\s*(곁|에게|위해|위한)', re.IGNORECASE),
 )
 _SLOGAN_COMMITMENT_GENERIC_REPORT_PATTERN = re.compile(
     r'(현안\s*해결|미래\s*비전|비전\s*제시|정책\s*방향|실행\s*과제|의정활동\s*성과)',

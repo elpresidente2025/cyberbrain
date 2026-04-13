@@ -222,7 +222,7 @@ def _build_generation_config(
             config.thinking_config = thinking_config
         except Exception:
             pass  # 모델/SDK가 thinking_config 미지원 시 무시
-    elif response_mime_type == "application/json":
+    elif opts.get("enable_thinking") is not True:
         try:
             config.thinking_config = types.ThinkingConfig(thinking_budget=0)
         except Exception:
@@ -718,7 +718,16 @@ def generate_content(
                 config=config,
             )
             text = _extract_response_text(response)
-            logger.info("[GeminiClient] sync success (%s chars)", len(text))
+            usage = getattr(response, "usage_metadata", None)
+            if usage:
+                logger.warning(
+                    "[GeminiClient] sync usage model=%s prompt=%s candidates=%s thoughts=%s total=%s",
+                    normalized_model,
+                    getattr(usage, "prompt_token_count", "?"),
+                    getattr(usage, "candidates_token_count", "?"),
+                    getattr(usage, "thoughts_token_count", "?"),
+                    getattr(usage, "total_token_count", "?"),
+                )
             return text
         except Exception as error:  # pragma: no cover
             last_error = error
@@ -770,7 +779,16 @@ async def generate_content_async(
                     config=config,
                 )
                 text = _extract_response_text(response)
-                logger.info("[GeminiClient] async success (%s chars)", len(text))
+                usage = getattr(response, "usage_metadata", None)
+                if usage:
+                    logger.warning(
+                        "[GeminiClient] async usage model=%s prompt=%s candidates=%s thoughts=%s total=%s",
+                        normalized_model,
+                        getattr(usage, "prompt_token_count", "?"),
+                        getattr(usage, "candidates_token_count", "?"),
+                        getattr(usage, "thoughts_token_count", "?"),
+                        getattr(usage, "total_token_count", "?"),
+                    )
                 return text
             except Exception as error:  # pragma: no cover
                 last_error = error

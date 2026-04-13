@@ -613,11 +613,12 @@ class WriterAgent:
     def build_warnings(self, user_profile: Dict[str, Any], author_bio: str) -> str:
         warnings = []
         
-        nm_warning = generate_non_lawmaker_warning({
-            'isCurrentLawmaker': self.is_current_lawmaker(user_profile),
-            'politicalExperience': user_profile.get('politicalExperience'),
-            'authorBio': author_bio
-        })
+        nm_warning = generate_non_lawmaker_warning(
+            user_profile.get('position'),
+            user_profile.get('status'),
+            user_profile.get('politicalExperience'),
+            author_bio,
+        )
         if nm_warning: warnings.append(nm_warning.strip())
         
         fam_warning = generate_family_status_warning({
