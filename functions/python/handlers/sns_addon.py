@@ -19,6 +19,7 @@ from firebase_functions import https_fn
 from agents.common.fact_guard import build_fact_allowlist, find_unsupported_numeric_tokens
 from agents.common.gemini_client import generate_content_async
 from agents.templates.sns_conversion import SNS_LIMITS, build_sns_prompt
+from services.authz import get_admin_access_source
 from services.sns_ranker import extract_first_balanced_json, rank_and_select, with_timeout
 
 logger = logging.getLogger(__name__)
@@ -1314,8 +1315,8 @@ async def _convert_to_sns_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]
     if not user_doc.exists:
         raise ApiError(404, "not-found", "사용자를 찾을 수 없습니다.")
     user_data = user_doc.to_dict() or {}
-    is_admin = user_data.get("role") == "admin" or user_data.get("isAdmin") is True
-
+    admin_access_source = get_admin_access_source(user_data)
+    is_admin = bool(admin_access_source)
     post_doc = db.collection("posts").document(post_id_str).get()
     if not post_doc.exists:
         raise ApiError(404, "not-found", "원고를 찾을 수 없습니다.")

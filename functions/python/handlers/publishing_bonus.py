@@ -14,6 +14,8 @@ from typing import Any, Dict
 from firebase_admin import firestore
 from firebase_functions import https_fn
 
+from services.authz import get_admin_access_source
+
 logger = logging.getLogger(__name__)
 
 
@@ -84,9 +86,8 @@ def _check_bonus_eligibility_core(req: https_fn.CallableRequest) -> Dict[str, An
         raise ApiError("not-found", "사용자를 찾을 수 없습니다.")
 
     user_data = _safe_dict(user_doc.to_dict())
-    is_admin = str(user_data.get("role") or "").strip().lower() == "admin" or user_data.get("isAdmin") is True
-
-    if is_admin:
+    admin_access_source = get_admin_access_source(user_data)
+    if admin_access_source:
         return {
             "success": True,
             "data": {
@@ -127,8 +128,8 @@ def _use_bonus_generation_core(req: https_fn.CallableRequest) -> Dict[str, Any]:
             raise ApiError("not-found", "사용자를 찾을 수 없습니다.")
 
         user_data = _safe_dict(user_doc.to_dict())
-        is_admin = str(user_data.get("role") or "").strip().lower() == "admin" or user_data.get("isAdmin") is True
-        if is_admin:
+        admin_access_source = get_admin_access_source(user_data)
+        if admin_access_source:
             return {"is_admin": True}
 
         usage = _safe_dict(user_data.get("usage"))
