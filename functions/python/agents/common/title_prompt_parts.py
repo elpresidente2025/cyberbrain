@@ -380,6 +380,485 @@ COMMON_TITLE_ANTI_PATTERNS: List[Dict[str, str]] = [
     },
 ]
 
+# ---------------------------------------------------------------------------
+# Title skeletons — 각 family의 good examples에서 역추출한 syntactic 골격.
+# LLM이 "보고 참고"하는 것이 아니라 "1개를 선택해 슬롯만 치환"하는 강제 구조.
+# 각 skeleton은 scoring rubric과 연결된 triggers를 명시해 점수 획득을 보장한다.
+# ---------------------------------------------------------------------------
+TITLE_SKELETONS: Dict[str, List[Dict[str, Any]]] = {
+    'VIRAL_HOOK': [
+        {
+            'id': 'S1',
+            'pattern': '[SEO키워드], 왜 [인물지시구]이 [과거동사]나',
+            'example': '부산 지방선거, 왜 이 남자가 뛰어들었나',
+            'triggers': 'keywordPosition+쉼표, impact:원인질문(왜), impact:미완결서사',
+            'note': '왜 질문형 — 구체적 인물 + 미완결',
+        },
+        {
+            'id': 'S2',
+            'pattern': '[SEO키워드]에 [과거동사형] [인물 배경/정체성 명사]',
+            'example': '부산 지방선거에 뛰어든 부두 노동자의 아들',
+            'triggers': 'keywordPosition(조사), titleFamily, 서사 아크',
+            'note': '서사 아크 — 출신·배경으로 호기심 유발',
+        },
+        {
+            'id': 'S3',
+            'pattern': '[SEO키워드], [인물명]은 왜 [형용사+ㄴ가]',
+            'example': '부산 지방선거, 이재성은 왜 다른가',
+            'triggers': 'keywordPosition+쉼표, authorIncluded, impact:원인질문',
+            'note': '간결 도발형 — 짧고 강렬',
+        },
+        {
+            'id': 'S4',
+            'pattern': '[SEO키워드], [수치][단위] [주체]이 [과거동사] [지역/대상]의 [사건명사]',
+            'example': '부산 지방선거, 10만 청년이 떠난 도시의 반란',
+            'triggers': 'keywordPosition+쉼표, numbers, impact:미완결서사',
+            'note': '수치+사건형 — 팩트 충격 + 암시',
+        },
+        {
+            'id': 'S5',
+            'pattern': '[SEO키워드], [가치/수단]만으로 [동사] 수 있을까',
+            'example': '부산 지방선거, 원칙만으로 이길 수 있을까',
+            'triggers': 'keywordPosition+쉼표, impact:질문형(까)',
+            'note': '도발적 질문 — 가치 논쟁',
+        },
+    ],
+    'DATA_BASED': [
+        {
+            'id': 'S1',
+            'pattern': '[대상] [사업명] [수치][단위] [성과동사], [추가대상] [수치][단위] [성과동사]',
+            'example': '청년 일자리 274명 창출, 지원금 85억 달성',
+            'triggers': 'numbers(검증됨, 15점), 정보요소 균형',
+            'note': '숫자 2개 + 성과 병렬',
+        },
+        {
+            'id': 'S2',
+            'pattern': '[대상] [수량][단위] [사업명] [완료동사]',
+            'example': '주택 234가구 리모델링 지원 완료',
+            'triggers': 'numbers, 짧고 명확',
+            'note': '수량 + 완결',
+        },
+        {
+            'id': 'S3',
+            'pattern': '[사업명] [액션], [예산항목] [금액][단위] 확보',
+            'example': '노후 산업단지 재생, 국비 120억 확보',
+            'triggers': 'numbers, 쉼표 구분',
+            'note': '사업 + 금액',
+        },
+        {
+            'id': 'S4',
+            'pattern': '[시설] [수량][단위] 개선, [지표] [수치]% 감소',
+            'example': '교통 신호등 15곳 개선, 사고율 40% 감소',
+            'triggers': 'numbers, impact:대비구조',
+            'note': '시설 + 효과 수치',
+        },
+        {
+            'id': 'S5',
+            'pattern': '[시점] [업무명] [목표수치][단위] [달성동사]',
+            'example': '2025년 상반기 민원 처리 3일 이내 달성',
+            'triggers': 'numbers, 기간 명시',
+            'note': '기간 + 기준',
+        },
+    ],
+    'QUESTION_ANSWER': [
+        {
+            'id': 'S1',
+            'pattern': '[지역] [대상] [영역], [혜택항목] 얼마까지?',
+            'example': '분당구 청년 주거, 월세 지원 얼마까지?',
+            'triggers': 'impact:질문형(?), keywordPosition',
+            'note': '지역+혜택 질문',
+        },
+        {
+            'id': 'S2',
+            'pattern': '[지역] [현안], 어떻게 풀까?',
+            'example': '성남 교통 체증, 어떻게 풀까?',
+            'triggers': 'impact:질문형(?), impact:원인질문(어떻게)',
+            'note': '문제+해결 질문 — 짧고 강력',
+        },
+        {
+            'id': 'S3',
+            'pattern': '[대상] [영역], 어떤 [하위항목]이 있나?',
+            'example': '어르신 일자리, 어떤 프로그램이 있나?',
+            'triggers': 'impact:질문형(?)',
+            'note': '대상+정보 질문',
+        },
+        {
+            'id': 'S4',
+            'pattern': '[시점] [정책명], [세부기준] 바뀌었어요?',
+            'example': '2025년 보육료, 지원 기준 바뀌었어요?',
+            'triggers': 'impact:질문형(?)',
+            'note': '시기+변경 확인',
+        },
+        {
+            'id': 'S5',
+            'pattern': '[대상] [영역], 실제로 언제 [동사]요?',
+            'example': '주민 민원, 실제로 언제 해결돼요?',
+            'triggers': 'impact:질문형(?)',
+            'note': '현실적 질문',
+        },
+    ],
+    'COMPARISON': [
+        {
+            'id': 'S1',
+            'pattern': '[업무] [이전값][단위] → [현재값][단위], [배수] 빨라졌어요',
+            'example': '민원 처리 14일 → 3일, 5배 빨라졌어요',
+            'triggers': 'numbers, impact:대비구조(→)',
+            'note': 'Before/After + 배수',
+        },
+        {
+            'id': 'S2',
+            'pattern': '[혜택명] [단위] [이전값] → [현재값][단위] 확대',
+            'example': '청년 기본소득 월 30만 → 50만원 확대',
+            'triggers': 'numbers, impact:대비구조(→)',
+            'note': '수치 증대 강조',
+        },
+        {
+            'id': 'S3',
+            'pattern': '[지표], 전년 대비 [수치]% 감소',
+            'example': '교통 사고율, 전년 대비 40% 감소',
+            'triggers': 'numbers, impact:대비구조(대비)',
+            'note': '연도 대비 감소',
+        },
+        {
+            'id': 'S4',
+            'pattern': '[비용항목] [이전][단위] → [현재][단위], 절감 실현',
+            'example': '쓰레기 비용 99억 → 65억, 절감 실현',
+            'triggers': 'numbers, impact:대비구조(→)',
+            'note': '예산 절감 증명',
+        },
+        {
+            'id': 'S5',
+            'pattern': '[현안], [기간] 만에 해결',
+            'example': '주차장 부족 지역, 12개월 만에 해결',
+            'triggers': 'numbers, 기간 단축',
+            'note': '기간 중심 성과',
+        },
+    ],
+    'LOCAL_FOCUSED': [
+        {
+            'id': 'S1',
+            'pattern': '[구] [동] [사업/정책], [예산항목] [금액][단위] 확보',
+            'example': '분당구 정자동 도시가스, 기금 70억 확보',
+            'triggers': 'numbers, keywordPosition, 초지역 SEO',
+            'note': '구/동 + 구체적 예산',
+        },
+        {
+            'id': 'S2',
+            'pattern': '[구] [동] [시설] 신설, [시기] 개교',
+            'example': '수지구 풍덕천동 학교 신설, 올 9월 개교',
+            'triggers': 'keywordPosition, 시기 명시',
+            'note': '지역 + 시설 + 시기',
+        },
+        {
+            'id': 'S3',
+            'pattern': '[시] [구] [정책] 지원, [단위] [수치][단위] 추가',
+            'example': '성남시 중원구 보육료 지원, 월 15만원 추가',
+            'triggers': 'numbers, keywordPosition',
+            'note': '지역 + 혜택 구체화',
+        },
+        {
+            'id': 'S4',
+            'pattern': '[시] [구] [대상] [시설], 신청 마감 [기간]',
+            'example': '용인시 기흥구 어르신 요양원, 신청 마감 1주',
+            'triggers': 'numbers, 긴급성',
+            'note': '지역 + 긴급 행동',
+        },
+        {
+            'id': 'S5',
+            'pattern': '[구] [동] [지표], [기간]간 [수치]% 개선',
+            'example': '영통구 광교동 교통 혼잡도, 6개월간 35% 개선',
+            'triggers': 'numbers, impact:대비구조',
+            'note': '지역 + 개선 수치',
+        },
+    ],
+    'EXPERT_KNOWLEDGE': [
+        {
+            'id': 'S1',
+            'pattern': '[법안명] 발의, [단위] [혜택수치] [지원명사]',
+            'example': '청년 기본소득법 발의, 월 50만원 지원안',
+            'triggers': 'numbers, 전문성',
+            'note': '법안명 + 혜택 수치',
+        },
+        {
+            'id': 'S2',
+            'pattern': '[시설/영역] [의무명사] 조례 개정 추진',
+            'example': '주차장 설치 의무 조례 개정 추진',
+            'triggers': 'titleFamily, 전문성',
+            'note': '조례 개정 행동',
+        },
+        {
+            'id': 'S3',
+            'pattern': '[법안명], 핵심 [수치]가지',
+            'example': '전세 사기 피해자 보호법, 핵심 3가지',
+            'triggers': 'numbers, 정보 요약',
+            'note': '법안 + 요약 정보',
+        },
+        {
+            'id': 'S4',
+            'pattern': '[대상] [시설/정책] 의무화 조례안 통과',
+            'example': '야간 상점 CCTV 의무화 조례안 통과',
+            'triggers': 'titleFamily, 결과 명시',
+            'note': '조례 + 결과',
+        },
+        {
+            'id': 'S5',
+            'pattern': '[대상] [영역], [핵심혜택] 정책 추진',
+            'example': '자영업자 신용대출, 금리 인하 정책 추진',
+            'triggers': 'titleFamily, 대상+혜택',
+            'note': '대상 + 정책 추진',
+        },
+    ],
+    'TIME_BASED': [
+        {
+            'id': 'S1',
+            'pattern': '[시점] [보고서명], [수치]대 성과',
+            'example': '2025년 상반기 의정 보고서, 5대 성과',
+            'triggers': 'numbers, 시점 명시',
+            'note': '정기성 + 성과 요약',
+        },
+        {
+            'id': 'S2',
+            'pattern': '[월] [업무명] 리포트, [건수]건 해결',
+            'example': '6월 민원 처리 리포트, 1,234건 해결',
+            'triggers': 'numbers, 월간 실적',
+            'note': '월 + 구체적 건수',
+        },
+        {
+            'id': 'S3',
+            'pattern': '[시점] [예산/집행] 현황 공개',
+            'example': '2025년 1분기 예산 집행 현황 공개',
+            'triggers': 'titleFamily, 투명성',
+            'note': '분기 + 투명성 공개',
+        },
+        {
+            'id': 'S4',
+            'pattern': '[시점] [활동명], [건수]건 반영 추진',
+            'example': '상반기 주민 의견 분석, 88건 반영 추진',
+            'triggers': 'numbers, 기간 + 반영',
+            'note': '기간 + 반영 건수',
+        },
+        {
+            'id': 'S5',
+            'pattern': '[정기간행명] ([월호]) 배포',
+            'example': '월간 의정 뉴스레터 (7월호) 배포',
+            'triggers': 'titleFamily, 정기성',
+            'note': '정기 간행물',
+        },
+    ],
+    'ISSUE_ANALYSIS': [
+        {
+            'id': 'S1',
+            'pattern': '[이슈명], 실제로 뭐가 달라질까?',
+            'example': '지방 분권 개혁, 실제로 뭐가 달라질까?',
+            'triggers': 'impact:질문형(?)',
+            'note': '이슈 + 변화 궁금증',
+        },
+        {
+            'id': 'S2',
+            'pattern': '[정책쟁점], 어떻게 개선할까?',
+            'example': '정치 자금 투명성, 어떻게 개선할까?',
+            'triggers': 'impact:질문형(?), impact:원인질문(어떻게)',
+            'note': '쟁점 + 해결 질문',
+        },
+        {
+            'id': 'S3',
+            'pattern': '[문제명], [대안수]대 대안 제시',
+            'example': '양극화 문제, 4대 대안 제시',
+            'triggers': 'numbers, 대안 개수',
+            'note': '문제 + 대안 제시',
+        },
+        {
+            'id': 'S4',
+            'pattern': '[이슈명], [수단명사]로 뭐가 달라질까?',
+            'example': '교육 격차, 재정 투자로 뭐가 달라질까?',
+            'triggers': 'impact:질문형(?)',
+            'note': '수단 + 효과 질문',
+        },
+        {
+            'id': 'S5',
+            'pattern': '[개혁명], 왜 시급한가?',
+            'example': '선거 제도 개혁, 왜 시급한가?',
+            'triggers': 'impact:질문형, impact:원인질문(왜)',
+            'note': '개혁 + 당위성',
+        },
+    ],
+    'SLOGAN_COMMITMENT': [
+        {
+            'id': 'S1',
+            'pattern': '[인물명], [지역/대상] 곁을 지키는 [역할/직함명]',
+            'example': '문세종, 계양구민 곁을 지키는 인천광역시의원',
+            'triggers': 'authorIncluded, titleFamily, keywordPosition+쉼표',
+            'note': '정체성 + 관계 + 역할',
+        },
+        {
+            'id': 'S2',
+            'pattern': '[인물명], [지역]을 지켜온 책임감으로 끝까지 뛰겠습니다',
+            'example': '문세종, 계양을 지켜온 책임감으로 끝까지 뛰겠습니다',
+            'triggers': 'authorIncluded, keywordPosition+쉼표',
+            'note': '책임감 + 약속',
+        },
+        {
+            'id': 'S3',
+            'pattern': '[인물명], [지역/대상]에게 더 가까운 [역할/직함명]',
+            'example': '문세종, 계양구민에게 더 가까운 인천광역시의원',
+            'triggers': 'authorIncluded, keywordPosition+쉼표',
+            'note': '관계형 슬로건',
+        },
+        {
+            'id': 'S4',
+            'pattern': '[인물명], [지역]을 지켜온 책임감으로 다시 뜁니다',
+            'example': '문세종, 계양을 지켜온 책임감으로 다시 뜁니다',
+            'triggers': 'authorIncluded, keywordPosition+쉼표',
+            'note': '정체성 + 다짐',
+        },
+        {
+            'id': 'S5',
+            'pattern': '[인물명], [지역/대상] 곁에서 끝까지 책임지겠습니다',
+            'example': '문세종, 계양구민 곁에서 끝까지 책임지겠습니다',
+            'triggers': 'authorIncluded, keywordPosition+쉼표',
+            'note': '관계 + 책임 + 약속',
+        },
+    ],
+    'COMMENTARY': [
+        {
+            'id': 'S1',
+            'pattern': '[화자], [대상] [수치][단위] [비판명사]',
+            'example': '이재성, 박형준 시장 0.7% 성장률 질타',
+            'triggers': 'authorIncluded+앞배치, numbers, keywordPosition+쉼표',
+            'note': '화자 + 대상 + 비판',
+        },
+        {
+            'id': 'S2',
+            'pattern': '[제3자] 칭찬한 [화자], [이슈] 논평',
+            'example': '조경태 칭찬한 이재성, 尹 사형 논평',
+            'triggers': 'authorIncluded, 관계+화자, keywordPosition',
+            'note': '관계 + 이슈 논평',
+        },
+        {
+            'id': 'S3',
+            'pattern': '[화자] "[이슈에 대한 인용문]"',
+            'example': '이재성 "부산 AI 예산 전액 삭감 충격"',
+            'triggers': 'authorIncluded+앞배치, impact:인용문',
+            'note': '화자 + 인용 + 감정',
+        },
+        {
+            'id': 'S4',
+            'pattern': '[대상] [사건/발언]에 대한 [화자] 반박',
+            'example': '박형준 시장 발언에 대한 이재성 반박',
+            'triggers': 'authorIncluded, 대상+반응',
+            'note': '대상 + 이슈 + 반응',
+        },
+        {
+            'id': 'S5',
+            'pattern': '[화자] "[대상], [평가]"',
+            'example': '이재성 "박형준, 경제 성적 낙제점"',
+            'triggers': 'authorIncluded+앞배치, impact:인용문',
+            'note': '화자 + 인용 평가',
+        },
+    ],
+}
+
+
+def build_title_skeleton_protocol(type_id: str, params: Optional[Dict[str, Any]] = None) -> str:
+    """Return a structured construction protocol block for the selected title family.
+
+    The LLM must pick exactly one skeleton and fill slots with current topic/keyword/author
+    data, instead of inventing a new structure. Each skeleton is labeled with the scoring
+    features it triggers so the model can optimize for the rubric directly.
+    """
+    resolved_id = str(type_id or '').strip() or 'VIRAL_HOOK'
+    skeletons = TITLE_SKELETONS.get(resolved_id) or TITLE_SKELETONS.get('VIRAL_HOOK') or []
+    if not skeletons:
+        return ''
+
+    params = params or {}
+    full_name = str(params.get('fullName') or '').strip()
+    user_keywords = _filter_required_title_keywords(
+        params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else [],
+        params.get('roleKeywordPolicy') if isinstance(params.get('roleKeywordPolicy'), dict) else {},
+    )
+    primary_kw = user_keywords[0] if user_keywords else ''
+    topic = str(params.get('topic') or '').strip()
+
+    skeleton_xml_lines: List[str] = []
+    for sk in skeletons:
+        if not isinstance(sk, dict):
+            continue
+        sk_id = str(sk.get('id') or '').strip()
+        pattern = str(sk.get('pattern') or '').strip()
+        example = str(sk.get('example') or '').strip()
+        triggers = str(sk.get('triggers') or '').strip()
+        note = str(sk.get('note') or '').strip()
+        if not sk_id or not pattern:
+            continue
+        skeleton_xml_lines.append(
+            f'    <skeleton id="{sk_id}" triggers="{triggers}">\n'
+            f'      <pattern>{pattern}</pattern>\n'
+            f'      <reference_example>{example}</reference_example>\n'
+            f'      <note>{note}</note>\n'
+            f'    </skeleton>'
+        )
+    skeletons_block = '\n'.join(skeleton_xml_lines)
+
+    slot_hint_lines: List[str] = []
+    if primary_kw:
+        slot_hint_lines.append(f'    <slot name="SEO키워드">{primary_kw}</slot>')
+    if full_name:
+        slot_hint_lines.append(f'    <slot name="인물명|화자">{full_name}</slot>')
+    if topic:
+        slot_hint_lines.append(f'    <slot name="topic_원문">{topic[:80]}</slot>')
+    slot_hint_xml = '\n'.join(slot_hint_lines) or '    <slot name="(없음)">입력 정보에서 추출</slot>'
+
+    return f"""
+<title_construction_protocol priority="critical" enforce="strict" source="few_shot_skeletons">
+  <description>
+    이 블록은 검증된 good example에서 역추출한 syntactic 골격이다.
+    절대 새 구조를 발명하지 말고, 아래 3단계를 순서대로 밟아 제목을 생성하라.
+    각 skeleton의 triggers는 채점 루브릭에서 점수를 받는 feature를 가리킨다.
+  </description>
+
+  <selected_family id="{resolved_id}" />
+
+  <phase_1 name="SKELETON_SELECT">
+    <instruction>아래 {len(skeleton_xml_lines)}개 skeleton 중 현재 topic/stance에 가장 적합한 1개를 내부적으로 확정하라. 번호를 섞거나 두 skeleton의 요소를 결합하지 말 것.</instruction>
+{skeletons_block}
+  </phase_1>
+
+  <phase_2 name="SLOT_FILL">
+    <instruction>선택한 skeleton의 [대괄호 슬롯]을 아래 입력값으로 치환하라. 슬롯 이름을 그대로 출력하면 실격.</instruction>
+    <available_slots>
+{slot_hint_xml}
+    </available_slots>
+    <rule>슬롯에 들어갈 구체 명사·수치는 본문(content_preview) 또는 입장문(stance_summary)에 실제 등장하는 토큰만 사용하라. 허구 수치 금지.</rule>
+    <rule>skeleton의 종결 어미(~나, ~까, ~까요?, ~겠습니다, ~었어요, 등)와 구두점(?, →, "...", 쉼표)을 임의로 바꾸지 말 것. 구조의 핵심이다.</rule>
+    <rule>SEO 키워드가 skeleton 앞쪽 슬롯에 이미 포함돼 있으면 그대로 두고, 없으면 제목 맨 앞(0-10자)에 배치 후 쉼표/조사로 분리하라.</rule>
+  </phase_2>
+
+  <phase_3 name="SELF_VALIDATE" priority="critical">
+    <instruction>출력 직전 아래 checklist를 내부 검증하고, 실패 항목이 있으면 phase_1로 돌아가 다른 skeleton을 선택하라.</instruction>
+    <checklist>
+      <item id="length">글자 수 {TITLE_LENGTH_OPTIMAL_MAX - 15}-{TITLE_LENGTH_OPTIMAL_MAX}자 범위인가?</item>
+      <item id="keyword_front">SEO 키워드가 0-10자 위치에 있고 직후에 쉼표/조사가 붙는가?</item>
+      <item id="info_density">실질 정보 요소(2자 이상 단어)가 6개 이하인가? (7개 이상 시 감점)</item>
+      <item id="skeleton_fidelity">선택한 skeleton의 pattern 순서와 종결형이 그대로 유지되는가?</item>
+      <item id="impact_min">
+        아래 중 최소 1개를 만족하는가? (impact 점수 획득 조건)
+        - 질문형 종결: ?, ~나, ~까
+        - 인용부호: "..." 또는 '...'
+        - 대비 표현: →, vs, 대비
+        - 관점 표현: X이 본, X가 본
+        - 미완결 종결: ~은, ~는, ~선택, ~한 수, ~이유, ~답
+        - 의문부사: 왜, 어떻게
+        - 수치 + 단위 (억, 만원, %, 명, 건, 가구, 곳)
+      </item>
+      <item id="no_topic_copy">topic 원문을 그대로/거의 그대로 복사하지 않았는가?</item>
+      <item id="slot_leak">"[인물명]", "[지역]" 같은 슬롯 이름이 그대로 출력되지 않았는가?</item>
+    </checklist>
+    <fallback>checklist 중 하나라도 실패하면 phase_1로 돌아가 다른 skeleton을 선택하라. 동일 skeleton을 변형하는 것은 금지.</fallback>
+  </phase_3>
+</title_construction_protocol>
+""".strip()
+
 def _build_role_keyword_title_policy_instruction(role_keyword_policy: Dict[str, Any]) -> str:
     entries = role_keyword_policy.get("entries") if isinstance(role_keyword_policy, dict) else {}
     if not isinstance(entries, dict) or not entries:

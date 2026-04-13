@@ -37,6 +37,7 @@ from .title_prompt_parts import (
     build_competitor_intent_title_instruction,
     build_event_title_policy_instruction,
     build_poll_focus_title_instruction,
+    build_title_skeleton_protocol,
     build_user_provided_few_shot_instruction,
     get_keyword_strategy_instruction,
     _render_narrative_principle_xml,
@@ -164,6 +165,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
         role_keyword_policy,
     )
     user_few_shot = build_user_provided_few_shot_instruction(primary_type['id'], params)
+    skeleton_protocol = build_title_skeleton_protocol(primary_type['id'], params)
     common_anti_patterns = build_common_title_anti_pattern_instruction()
     narrative_principle_xml = '' if prompt_lite else _render_narrative_principle_xml(primary_type.get('principle', ''))
 
@@ -342,6 +344,8 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
   <rule id="no_topic_copy">주제(topic) 텍스트를 그대로 또는 거의 그대로 제목으로 사용 금지. 주제의 핵심 방향만 따르되, 표현·어순·구성은 반드시 새롭게 작성할 것.</rule>
   <rule id="no_content_phrase_fragment">본문(content_preview)의 구문 조각을 이름에 직접 붙여 제목을 만들지 말 것. 예: 본문에 "네거티브 없는 정책 경선"이 있어도 "[인물명] 없는 정책"처럼 축약해 쓰지 말 것. 본문은 맥락 파악용이지 어구 복사 재료가 아니다.</rule>
 </rules>
+
+{skeleton_protocol}
 
 {event_title_policy}
 {poll_focus_title_policy}
@@ -1254,10 +1258,28 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
 
     best_suggestions = best_result.get('suggestions', []) if isinstance(best_result, dict) else []
     suggestion_text = ', '.join(best_suggestions) if best_suggestions else '없음'
-    raise RuntimeError(
-        f"[TitleGen] 제목 생성 실패: 최소 점수 {min_score}점 미달 "
-        f"(최고 {best_score}점, 제목: \"{best_title}\"). 개선 힌트: {suggestion_text}"
+    logger.warning(
+        "[TitleGen] 모든 재시도/수선 실패 — 최고점 제목으로 soft-accept: "
+        "score=%s min=%s title=%s suggestions=%s",
+        best_score,
+        min_score,
+        best_title,
+        suggestion_text,
     )
+    best_breakdown = best_result.get('breakdown', {}) if isinstance(best_result, dict) else {}
+    return {
+        'title': best_title,
+        'score': best_score,
+        'baseScore': int(best_result.get('baseScore', best_score) or 0) if isinstance(best_result, dict) else best_score,
+        'similarityPenalty': int(best_result.get('similarityPenalty', 0) or 0) if isinstance(best_result, dict) else 0,
+        'initialLengthPenalty': int(best_result.get('initialLengthPenalty', 0) or 0) if isinstance(best_result, dict) else 0,
+        'attempts': len(history),
+        'passed': False,
+        'softAccepted': True,
+        'history': history,
+        'breakdown': dict(best_breakdown or {}),
+        'source': 'soft_accept_best_score',
+    }
 
 __all__ = [
     'TITLE_TYPES',
