@@ -115,7 +115,7 @@
     {
       "source": "functions",
       "codebase": "default",
-      "runtime": "nodejs20",
+      "runtime": "nodejs22",
       "ignore": [
         "node_modules",
         ".git",
@@ -141,8 +141,5 @@
         ".env"
       ]
     }
-  ],
-  "extensions": {
-    "firestore-send-email": "firebase/firestore-send-email@0.2.4"
-  }
+  ]
 }

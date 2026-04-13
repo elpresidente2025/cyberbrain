@@ -1,6 +1,6 @@
 // functions/handlers/sns-addon.js
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
-const { wrap } = require('../common/wrap');
+const { wrap, wrapHeavy, wrapLite } = require('../common/wrap');
 const { httpWrap } = require('../common/http-wrap');
 const { ok, error } = require('../common/response');
 const { isAdminUser } = require('../common/rbac');
@@ -91,7 +91,7 @@ async function applyThreadCtaToLastPost(posts, blogUrl) {
 /**
  * SNS 변환 테스트 함수
  */
-exports.testSNS = wrap(async (req) => {
+exports.testSNS = wrapLite(async (req) => {
   console.log('🔥 testSNS 함수 호출됨');
   return { success: true, message: 'SNS 함수가 정상 작동합니다.' };
 });
@@ -99,7 +99,7 @@ exports.testSNS = wrap(async (req) => {
 /**
  * 원고를 모든 SNS용으로 변환
  */
-exports.convertToSNS = wrap(async (req) => {
+exports.convertToSNS = wrapHeavy(async (req) => {
   console.log('🔥 convertToSNS 함수 시작');
 
   const { uid } = req.auth || {};
@@ -135,7 +135,6 @@ exports.convertToSNS = wrap(async (req) => {
 
     const userData = userDoc.data();
     const userRole = userData.role || 'local_blogger';
-    const userPlan = userData.plan || userData.subscription;
 
     // 관리자는 모든 제한 무시
     const isAdmin = isAdminUser(userData);
@@ -475,7 +474,7 @@ exports.convertToSNS = wrap(async (req) => {
 /**
  * SNS 애드온 사용량 조회
  */
-exports.getSNSUsage = wrap(async (req) => {
+exports.getSNSUsage = wrapLite(async (req) => {
   const { uid } = req.auth || {};
 
   if (!uid) {
@@ -876,3 +875,4 @@ function enforceLength(content, platform, platformConfig = null) {
 
   return trimmed + '...';
 }
+

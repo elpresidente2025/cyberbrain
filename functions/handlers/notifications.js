@@ -5,7 +5,7 @@
 
 'use strict';
 
-const { wrap } = require('../common/wrap');
+const { wrapLite } = require('../common/wrap');
 const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
 const {
@@ -17,7 +17,7 @@ const {
 /**
  * 읽지 않은 알림 조회
  */
-exports.getNotifications = wrap(async (req) => {
+exports.getNotifications = wrapLite(async (req) => {
   const { uid } = await auth(req);
   const { limit = 10 } = req.data || {};
 
@@ -33,7 +33,7 @@ exports.getNotifications = wrap(async (req) => {
 /**
  * 특정 알림 읽음 처리
  */
-exports.markNotificationRead = wrap(async (req) => {
+exports.markNotificationRead = wrapLite(async (req) => {
   const { uid } = await auth(req);
   const { notificationId } = req.data || {};
 
@@ -49,7 +49,7 @@ exports.markNotificationRead = wrap(async (req) => {
 /**
  * 모든 알림 읽음 처리
  */
-exports.markAllNotificationsRead = wrap(async (req) => {
+exports.markAllNotificationsRead = wrapLite(async (req) => {
   const { uid } = await auth(req);
 
   const result = await markAllNotificationsAsRead(uid);

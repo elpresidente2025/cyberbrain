@@ -5,7 +5,7 @@
 
 'use strict';
 
-const { wrap } = require('../common/wrap');
+const { wrapLite } = require('../common/wrap');
 const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
 const { requireAdmin } = require('../common/rbac');
@@ -14,7 +14,7 @@ const { db } = require('../utils/firebaseAdmin');
 /**
  * 현재 활성 세션 초기화 (새 생성 시작)
  */
-exports.resetGenerationSession = wrap(async (req) => {
+exports.resetGenerationSession = wrapLite(async (req) => {
   const { uid } = await auth(req);
 
   console.log('🔄 [resetGenerationSession] 세션 초기화:', uid);
@@ -34,7 +34,7 @@ exports.resetGenerationSession = wrap(async (req) => {
 /**
  * 현재 세션 상태 조회
  */
-exports.getGenerationSession = wrap(async (req) => {
+exports.getGenerationSession = wrapLite(async (req) => {
   const { uid } = await auth(req);
 
   const userDoc = await db.collection('users').doc(uid).get();
@@ -67,7 +67,7 @@ exports.getGenerationSession = wrap(async (req) => {
 /**
  * 특정 사용자의 세션 초기화 (관리자 전용)
  */
-exports.adminResetSession = wrap(async (req) => {
+exports.adminResetSession = wrapLite(async (req) => {
   const { uid: adminUid } = await auth(req);
   const { targetUserId } = req.data || {};
 

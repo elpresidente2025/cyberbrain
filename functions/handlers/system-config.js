@@ -1,6 +1,6 @@
 'use strict';
 
-const { wrap } = require('../common/wrap');
+const { wrap, wrapLite } = require('../common/wrap');
 const { ok } = require('../common/response');
 const { auth } = require('../common/auth');
 const { requireAdmin } = require('../common/rbac');
@@ -9,7 +9,7 @@ const { db } = require('../utils/firebaseAdmin');
 /**
  * 시스템 설정 조회
  */
-exports.getSystemConfig = wrap(async (req) => {
+exports.getSystemConfig = wrapLite(async (req) => {
   // 로그인 사용자만 설정 조회 가능
   await auth(req);
 

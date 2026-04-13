@@ -2,7 +2,7 @@
 'use strict';
 
 const { HttpsError } = require('firebase-functions/v2/https');
-const { wrap } = require('../common/wrap');
+const { wrap, wrapLite } = require('../common/wrap');
 const { ok } = require('../common/response');
 const { requireAdmin, isAdminUser, getAdminAccessSource } = require('../common/rbac');
 const { admin, db } = require('../utils/firebaseAdmin');
@@ -31,7 +31,7 @@ exports.syncDistrictKey = wrap(async (req) => {
 // 관리자 상태 확인 및 설정
 // ============================================================================
 
-exports.checkAdminStatus = wrap(async (req) => {
+exports.checkAdminStatus = wrapLite(async (req) => {
   let uid;
 
   let requestData = req.data || req.rawRequest?.body || {};
