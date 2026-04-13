@@ -19,13 +19,92 @@ def _is_identity_signature_phrase(text: str) -> bool:
         for token in ("뼛속까지", "입니다", "저 ", "저는", "이재성!", "저 이재성")
     )
 
+def _build_generation_profile_xml(gen_profile: Optional[Dict[str, Any]]) -> str:
+    """GenerationProfile → 초안 생성 제약 XML 블록.
+
+    결정론적 피처 기반 목표치(문장 길이 범위, CV, 선호 종결 어미 등)를
+    프롬프트에 주입하여 모델이 실측 문체 통계에 맞춰 쓰도록 유도한다.
+    """
+    if not isinstance(gen_profile, dict) or not gen_profile:
+        return ""
+
+    parts: List[str] = ['<generation_profile priority="high">']
+    parts.append("  <overview>아래 수치는 사용자의 실제 문체 통계에서 산출됐다. 초안 생성 시 이 제약을 우선 따른다.</overview>")
+
+    target_len = gen_profile.get("target_sentence_length")
+    if isinstance(target_len, (list, tuple)) and len(target_len) == 2:
+        try:
+            lo = int(target_len[0])
+            hi = int(target_len[1])
+            if lo > 0 and hi > lo:
+                parts.append(
+                    f'  <rule id="sentence_length">문장 길이는 평균 {lo}~{hi}자 범위에 맞출 것. 너무 짧거나 너무 긴 문장은 지양.</rule>'
+                )
+        except (TypeError, ValueError):
+            pass
+
+    try:
+        target_cv = float(gen_profile.get("target_cv") or 0)
+    except (TypeError, ValueError):
+        target_cv = 0.0
+    if target_cv > 0:
+        if target_cv < 0.25:
+            cv_hint = "문장 길이를 고르게 유지할 것(변동 최소)."
+        elif target_cv < 0.45:
+            cv_hint = "문장 길이에 자연스러운 리듬 변화를 줄 것(중간 수준 변동)."
+        else:
+            cv_hint = "짧은 문장과 긴 문장을 적극 섞을 것(리듬 변동 큼)."
+        parts.append(f'  <rule id="sentence_rhythm">{_xml_text(cv_hint)}</rule>')
+
+    try:
+        formality = float(gen_profile.get("formality") or 0)
+    except (TypeError, ValueError):
+        formality = 0.0
+    if formality >= 0.75:
+        parts.append('  <rule id="formality">격식체(-습니다/-입니다)를 일관되게 유지할 것.</rule>')
+    elif formality and formality <= 0.35:
+        parts.append('  <rule id="formality">딱딱한 공문서 어투 대신 친근한 존대(-어요/-네요 혼용)를 허용.</rule>')
+
+    preferred_endings = gen_profile.get("preferred_endings") or []
+    if isinstance(preferred_endings, list):
+        endings = [str(e).strip() for e in preferred_endings if str(e).strip()][:6]
+        if endings:
+            endings_xml = "".join(f"<item>{_xml_text(e)}</item>" for e in endings)
+            parts.append(f"  <preferred_endings>{endings_xml}</preferred_endings>")
+
+    forbidden_patterns = gen_profile.get("forbidden_patterns") or []
+    if isinstance(forbidden_patterns, list):
+        patterns = [str(p).strip() for p in forbidden_patterns if str(p).strip()][:6]
+        if patterns:
+            patterns_xml = "".join(f"<item>{_xml_text(p)}</item>" for p in patterns)
+            parts.append(f"  <forbidden_patterns>{patterns_xml}</forbidden_patterns>")
+
+    signature_phrases = gen_profile.get("signature_phrases") or []
+    if isinstance(signature_phrases, list):
+        signatures = [str(s).strip() for s in signature_phrases if str(s).strip()][:6]
+        if signatures:
+            signatures_xml = "".join(f"<item>{_xml_text(s)}</item>" for s in signatures)
+            parts.append(
+                f"  <signature_phrases>{signatures_xml}</signature_phrases>"
+            )
+
+    style_summary = str(gen_profile.get("style_summary") or "").strip()
+    if style_summary:
+        parts.append(f"  <style_summary>{_xml_text(style_summary[:300])}</style_summary>")
+
+    parts.append("</generation_profile>")
+    return "\n".join(parts)
+
+
 def _build_style_generation_guard(
     style_fingerprint: Optional[Dict[str, Any]] = None,
     style_guide: str = "",
     user_profile: Optional[Dict[str, Any]] = None,
+    generation_profile: Optional[Dict[str, Any]] = None,
 ) -> str:
     fingerprint = style_fingerprint if isinstance(style_fingerprint, dict) else {}
     profile = user_profile if isinstance(user_profile, dict) else {}
+    gen_profile = generation_profile if isinstance(generation_profile, dict) else {}
     normalized_guide = normalize_context_text(style_guide, sep="\n")
     metadata = fingerprint.get("analysisMetadata") or {}
     try:
@@ -207,10 +286,12 @@ def _build_style_generation_guard(
     )
     style_role_guide_xml = _build_style_role_guide_xml(normalized_guide, fingerprint)
     guide_xml = f"<style_guide>{_xml_cdata(normalized_guide[:1800])}</style_guide>" if normalized_guide else ""
+    generation_profile_xml = _build_generation_profile_xml(gen_profile)
 
     return f"""
 <style_generation_guard priority="high" confidence="{confidence:.2f}">
   {style_role_guide_xml}
+  {generation_profile_xml}
   <rule id="no_generic_political_boilerplate">아래 금지 표현은 초안 생성 단계에서 직접 쓰지 말 것.</rule>
   <rule id="prefer_registered_replacements">등록된 대체 표현이 있으면 원문 표현 대신 대체 표현을 우선 사용할 것.</rule>
   <rule id="no_self_analysis_tone">화자의 진정성/열정/울림을 3인칭 해설처럼 설명하지 말고, 바로 주장과 선언으로 말할 것.</rule>

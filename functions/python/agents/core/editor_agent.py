@@ -72,10 +72,14 @@ class EditorAgent(Agent):
         style_fingerprint = context.get('styleFingerprint')
         if not isinstance(style_fingerprint, dict):
             style_fingerprint = {}
+        generation_profile = context.get('generationProfile')
+        if not isinstance(generation_profile, dict):
+            generation_profile = {}
         style_polish_mode = str(context.get('stylePolishMode') or '').strip().lower()
         style_instruction = self._build_style_polish_instruction(
             style_guide=style_guide,
             style_fingerprint=style_fingerprint,
+            generation_profile=generation_profile,
             mode=style_polish_mode,
             enabled=polish_mode,
         )
@@ -275,11 +279,13 @@ class EditorAgent(Agent):
         *,
         style_guide: str,
         style_fingerprint: Dict[str, Any],
+        generation_profile: Optional[Dict[str, Any]] = None,
         mode: str = "",
         enabled: bool = False,
     ) -> str:
         if not enabled:
             return ""
+        gen_profile = generation_profile if isinstance(generation_profile, dict) else {}
 
         normalized_mode = mode if mode in STYLE_POLISH_LIMITS else "light"
         limits = STYLE_POLISH_LIMITS[normalized_mode]
@@ -400,6 +406,38 @@ class EditorAgent(Agent):
                     break
             if replacement_pairs:
                 lines.append(f"- AI 상투어 대체 예시: {', '.join(replacement_pairs)}")
+
+        if gen_profile:
+            target_len = gen_profile.get("target_sentence_length")
+            if isinstance(target_len, (list, tuple)) and len(target_len) == 2:
+                try:
+                    lo = int(target_len[0])
+                    hi = int(target_len[1])
+                    if lo > 0 and hi > lo:
+                        lines.append(f"- 목표 문장 길이: 평균 {lo}~{hi}자 범위 유지")
+                except (TypeError, ValueError):
+                    pass
+            try:
+                target_cv = float(gen_profile.get("target_cv") or 0)
+            except (TypeError, ValueError):
+                target_cv = 0.0
+            if target_cv > 0:
+                if target_cv < 0.25:
+                    lines.append("- 문장 길이 변동: 고르게 유지(변동 최소)")
+                elif target_cv < 0.45:
+                    lines.append("- 문장 길이 변동: 자연스러운 리듬 변화")
+                else:
+                    lines.append("- 문장 길이 변동: 짧은 문장과 긴 문장 적극 혼합")
+            forbidden = gen_profile.get("forbidden_patterns") or []
+            if isinstance(forbidden, list):
+                forbidden_clean = [str(p).strip() for p in forbidden if str(p).strip()][:4]
+                if forbidden_clean:
+                    lines.append(f"- 사용 금지 패턴: {', '.join(forbidden_clean)}")
+            preferred_endings = gen_profile.get("preferred_endings") or []
+            if isinstance(preferred_endings, list):
+                endings_clean = [str(e).strip() for e in preferred_endings if str(e).strip()][:4]
+                if endings_clean:
+                    lines.append(f"- 선호 종결 어미: {', '.join(endings_clean)}")
 
         return "\n".join(lines)
 

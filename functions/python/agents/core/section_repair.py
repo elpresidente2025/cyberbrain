@@ -100,6 +100,7 @@ class SectionRepairMixin:
         user_keywords = context.get('userKeywords', [])
         style_guide = normalize_context_text(context.get('styleGuide', ''), sep="\n")
         style_fingerprint = context.get('styleFingerprint') if isinstance(context.get('styleFingerprint'), dict) else {}
+        generation_profile = context.get('generationProfile') if isinstance(context.get('generationProfile'), dict) else {}
         style_role_priority = build_style_role_priority_summary(style_guide, style_fingerprint)
         personalized_hints = normalize_context_text(context.get('personalizedHints', ''), sep="\n")
         memory_context = normalize_context_text(context.get('memoryContext', ''), sep="\n")
@@ -247,6 +248,7 @@ class SectionRepairMixin:
             'memoryContext': memory_context,
             'styleGuide': style_guide,
             'styleFingerprint': style_fingerprint,
+            'generationProfile': generation_profile,
             'profileSupportContext': profile_support_context,
             'profileSubstituteContext': profile_substitute.get('contextText') if isinstance(profile_substitute, dict) else '',
             'newsSourceMode': news_source_mode,

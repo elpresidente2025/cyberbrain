@@ -11,8 +11,10 @@ from typing import Any
 
 from firebase_admin import firestore
 
-from .interpret import extract_style_fingerprint
+from .generation import build_generation_profile
 from .guide import build_style_guide_prompt
+from .interpret import extract_style_fingerprint
+from .models import RawFeatureProfile
 from .schemas import MAX_DIARY_ENTRIES, MIN_CORPUS_LENGTH
 
 logger = logging.getLogger(__name__)
@@ -191,6 +193,11 @@ async def refresh_user_style_fingerprint(
 
         style_guide = build_style_guide_prompt(fingerprint, source_text=corpus_text)
 
+        # rawFeatures → GenerationProfile 빌드
+        raw_feat_dict = fingerprint.get("rawFeatures") or {}
+        raw_feat = RawFeatureProfile.from_dict(raw_feat_dict) if raw_feat_dict else None
+        gen_profile = build_generation_profile(fingerprint, raw_feat)
+
         bio_ref = db.collection("bios").document(uid)
         now = firestore.SERVER_TIMESTAMP
 
@@ -198,6 +205,7 @@ async def refresh_user_style_fingerprint(
             {
                 "styleFingerprint": fingerprint,
                 "styleGuide": style_guide,
+                "generationProfile": gen_profile.to_dict(),
                 "styleFingerprintUpdatedAt": now,
                 "styleGuideUpdatedAt": now,
                 "styleFingerprintSource": source,

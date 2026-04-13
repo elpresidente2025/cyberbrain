@@ -16,6 +16,7 @@ from typing import Any, Dict
 from firebase_functions import https_fn
 
 from agents.common.election_rules import check_election_eligibility
+from services.authz import is_admin_user, is_tester_user
 from services.posts.poll_focus_bundle import build_poll_focus_bundle
 from services.posts.poll_fact_guard import build_poll_matchup_fact_table
 
@@ -549,8 +550,8 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
 
         user_profile = _merge_profiles(loaded_user_profile, input_user_profile)
         user_profile["uid"] = uid
-        is_admin = bool(profile_bundle.get("isAdmin") is True)
-        is_tester = bool(profile_bundle.get("isTester") is True)
+        is_admin = is_admin_user(loaded_user_profile)
+        is_tester = is_tester_user(loaded_user_profile)
 
         if not is_admin and not is_tester:
             eligibility_profile = dict(user_profile)
@@ -744,6 +745,12 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
         if not isinstance(style_fingerprint, dict):
             style_fingerprint = {}
 
+        generation_profile = data.get("generationProfile")
+        if not isinstance(generation_profile, dict):
+            generation_profile = profile_bundle.get("generationProfile")
+        if not isinstance(generation_profile, dict):
+            generation_profile = {}
+
         slogan = str(data.get("slogan") or user_profile.get("slogan") or "").strip()
         slogan_enabled = _as_bool(
             data.get("sloganEnabled"),
@@ -802,6 +809,7 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
             "styleHints": additional_context.get("styleHints", {}),
             "styleGuide": style_guide,
             "styleFingerprint": style_fingerprint,
+            "generationProfile": generation_profile,
             "personalizedHints": personalized_hints,
             "memoryContext": memory_context,
             "ragContext": _normalize_text(additional_context.get("ragContext", data.get("ragContext", ""))),

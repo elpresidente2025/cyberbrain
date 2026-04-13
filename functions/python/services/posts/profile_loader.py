@@ -13,6 +13,7 @@ from typing import Any, Dict
 
 from firebase_admin import firestore
 
+from services.authz import is_admin_user, is_tester_user, normalize_user_flags
 from .personalization import generate_all_personalization_hints
 
 logger = logging.getLogger(__name__)
@@ -115,16 +116,6 @@ def peek_active_generation_session(
         }
 
 
-def _is_admin(user_profile: Dict[str, Any]) -> bool:
-    role = str(user_profile.get("role", "")).strip().lower()
-    return bool(user_profile.get("isAdmin") is True or role == "admin")
-
-
-def _is_tester(user_profile: Dict[str, Any]) -> bool:
-    role = str(user_profile.get("role", "")).strip().lower()
-    return bool(user_profile.get("isTester") is True or role == "tester")
-
-
 def load_user_profile(
     uid: str,
     category: str = "",
@@ -152,6 +143,7 @@ def load_user_profile(
         "bioEntries": [],
         "styleGuide": "",
         "styleFingerprint": None,
+        "generationProfile": None,
         "isAdmin": False,
         "isTester": False,
         "slogan": "",
@@ -169,6 +161,7 @@ def load_user_profile(
     bio_metadata = None
     style_fingerprint = None
     stored_style_guide = ""
+    generation_profile: Dict[str, Any] | None = None
     bio_content = ""
     bio_entries: list[Any] = []
 
@@ -190,6 +183,8 @@ def load_user_profile(
             style_raw = bio_data.get("styleFingerprint")
             style_fingerprint = _safe_dict(style_raw) if isinstance(style_raw, dict) else None
             stored_style_guide = str(bio_data.get("styleGuide") or "").strip()
+            gp_raw = bio_data.get("generationProfile")
+            generation_profile = _safe_dict(gp_raw) if isinstance(gp_raw, dict) else None
     except Exception as exc:
         logger.warning("[ProfileLoader] bios/%s lookup failed: %s", uid, exc)
 
@@ -198,6 +193,7 @@ def load_user_profile(
         user_profile["bio"] = bio_content
     if bio_entries and not user_profile.get("bioEntries"):
         user_profile["bioEntries"] = bio_entries
+    user_profile = normalize_user_flags(user_profile)
 
     hints_bundle = generate_all_personalization_hints(
         {
@@ -217,8 +213,8 @@ def load_user_profile(
     if not style_guide:
         style_guide = str(user_profile.get("styleGuide") or "").strip()
 
-    is_admin = _is_admin(user_profile)
-    is_tester = _is_tester(user_profile)
+    is_admin = is_admin_user(user_profile)
+    is_tester = is_tester_user(user_profile)
 
     return {
         "userProfile": user_profile,
@@ -232,6 +228,7 @@ def load_user_profile(
         "bioEntries": bio_entries,
         "styleGuide": style_guide,
         "styleFingerprint": style_fingerprint,
+        "generationProfile": generation_profile,
         "isAdmin": is_admin,
         "isTester": is_tester,
         "slogan": str(user_profile.get("slogan") or ""),

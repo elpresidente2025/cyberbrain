@@ -107,8 +107,37 @@ def analyze_text_statistics(text: str) -> dict[str, Any] | None:
 
 # ── Gemini 프롬프트 (JS 원본과 동일) ────────────────────────
 
-def _build_extract_prompt(bio_content: str, *, user_name: str = "", region: str = "") -> str:
+def _format_feature_context(features: RawFeatureProfile | None) -> str:
+    """rawFeatures를 Gemini 프롬프트에 주입할 참고 블록으로 포맷."""
+    if features is None:
+        return ""
+    s = features.sentences
+    lx = features.lexical
+    p = features.punctuation
+    k = features.korean
+    return f"""
+[정량 분석 결과 — 아래 수치를 해석의 근거로 활용하세요]
+- 문장 수: {s.count}개, 평균 길이: {s.avg_length}자 (표준편차 {s.std_dev}, CV {s.cv})
+- 문장 길이 분포: 짧음({s.short_ratio:.0%}) / 보통({s.medium_ratio:.0%}) / 긴({s.long_ratio:.0%})
+- 어휘 다양성: TTR {lx.ttr:.3f}, 단일 출현 어휘 비율 {lx.hapax_ratio:.3f}
+- 구두점 엔트로피: {p.entropy:.2f} (높을수록 다양한 구두점 사용)
+- 문장당 쉼표: {p.commas_per_sentence}회, 물음표 {p.question}개, 말줄임 {p.ellipsis}개
+- 격식체 비율: {k.formal_ending_ratio:.0%}, 비격식체 비율: {k.informal_ending_ratio:.0%}
+- 종결 어미 다양성: {k.ending_diversity:.2f}, 상위 어미: {', '.join(k.top_endings[:5]) or '정보 없음'}
+- 접속사 밀도: 문장당 {k.conjunction_density:.1f}회
+- 복잡도: {features.complexity_level} ({features.complexity_score}점)
+"""
+
+
+def _build_extract_prompt(
+    bio_content: str,
+    *,
+    user_name: str = "",
+    region: str = "",
+    features: RawFeatureProfile | None = None,
+) -> str:
     source = bio_content[:MAX_INTERPRET_TEXT_CHARS]
+    feature_block = _format_feature_context(features)
     return f"""당신은 정치 텍스트 전문 언어학자입니다. 다음 정치인의 자기소개 텍스트를 stylometry(문체 분석) 관점에서 분석하여 고유한 "Style Fingerprint"를 추출하세요.
 
 [분석 대상 텍스트]
@@ -118,7 +147,7 @@ def _build_extract_prompt(bio_content: str, *, user_name: str = "", region: str 
 
 {f"[참고] 작성자: {user_name}" if user_name else ""}
 {f"[참고] 지역: {region}" if region else ""}
-
+{feature_block}
 다음 JSON 형식으로 정확히 응답하세요. 텍스트에서 실제로 발견되는 패턴만 추출하세요.
 
 {{
@@ -206,7 +235,9 @@ async def extract_style_fingerprint(
     raw_features: RawFeatureProfile | None = extract_raw_features(text)
     text_stats = analyze_text_statistics(text)
 
-    prompt = _build_extract_prompt(text, user_name=user_name, region=region)
+    prompt = _build_extract_prompt(
+        text, user_name=user_name, region=region, features=raw_features,
+    )
 
     logger.info("[Stylometry] 분석 시작 (텍스트 길이: %d자)", len(text))
 

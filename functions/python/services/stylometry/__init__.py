@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from .features import extract_raw_features
 from .fingerprint import validate_style_fingerprint
+from .generation import build_generation_profile
 from .guide import build_style_guide_prompt
 from .interpret import analyze_text_statistics, extract_style_fingerprint
 from .models import (
@@ -55,6 +56,7 @@ __all__ = [
     # 피처 엔진
     "extract_raw_features",
     "analyze_text_statistics",
+    "build_generation_profile",
     # Gemini 파이프라인
     "extract_style_fingerprint",
     "validate_style_fingerprint",
