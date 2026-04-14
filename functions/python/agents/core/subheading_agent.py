@@ -44,6 +44,7 @@ from ..common.h2_planning import (
     strip_html,
 )
 from ..common.h2_repair import (
+    enforce_anchor_cap,
     ensure_user_keyword_first_slot,
     repair_awkward_phrases,
     repair_branding_phrases,
@@ -58,6 +59,7 @@ from ..common.h2_templates import (
 from ..common.h2_scoring import (
     H2_HARD_FAIL_ISSUES,
     H2Score,
+    compute_anchor_cap,
     detect_emotion_appeal,
     score_h2,
     score_h2_aeo,
@@ -663,6 +665,28 @@ class SubheadingAgent(Agent):
             else:
                 trace[i]["action"] = "fallback_original"
                 final_headings.append(originals[i])
+
+        # ---------- Phase 6.5: fullName 앵커 cap 강제 (스탬핑 방지)
+        anchor_cap_value = compute_anchor_cap(len(final_headings))
+        anchor_cap_result = enforce_anchor_cap(
+            final_headings,
+            full_name=full_name,
+            cap=anchor_cap_value,
+        )
+        if anchor_cap_result.get("edited"):
+            capped_headings = list(anchor_cap_result.get("headings") or final_headings)
+            for action in anchor_cap_result.get("actions") or []:
+                idx = action.get("index")
+                if isinstance(idx, int) and 0 <= idx < len(trace):
+                    trace[idx]["anchor_cap_before"] = action.get("before")
+                    trace[idx]["anchor_cap_after"] = action.get("after")
+                    trace[idx]["anchor_cap_applied"] = True
+            final_headings = capped_headings
+            logger.info(
+                "🔧 [SubheadingAgent] anchor cap enforced: cap=%s, edits=%s",
+                anchor_cap_value,
+                len(anchor_cap_result.get("actions") or []),
+            )
 
         for i, final in enumerate(final_headings):
             trace[i]["final"] = final

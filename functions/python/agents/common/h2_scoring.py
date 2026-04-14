@@ -34,8 +34,25 @@ __all__ = [
     "score_h2_aeo",
     "detect_emotion_appeal",
     "count_entity_distribution",
+    "compute_anchor_cap",
     "detect_sibling_suffix_overlap",
 ]
+
+
+def compute_anchor_cap(section_count: int) -> int:
+    """H2 세트 내 fullName 앵커 허용 횟수.
+
+    Why: memory feedback — H2 세트에서 fullName은 1~2회 앵커 (키워드 스탬핑 금지).
+    제목이 이미 fullName을 포함하는 경우가 대부분이라 H2는 더 적게 허용해야 체감상
+    '반복 스탬핑' 을 피한다. 섹션이 많을수록 한 번 더 허용.
+    """
+    try:
+        count = int(section_count or 0)
+    except (TypeError, ValueError):
+        count = 0
+    if count <= 4:
+        return 1
+    return 2
 
 
 # TUNABLE: 통과 임계값 — 프로덕션 로그에서 h2Trace.first_score 분포를 보고 조정
@@ -585,7 +602,7 @@ def score_h2_aeo(
                 all_headings, full_name=name_clean, descriptor_pool=pool
             )
             anchor_count = distribution["full_name"]
-            anchor_cap = max(1, int(section_count * 0.5))
+            anchor_cap = compute_anchor_cap(section_count)
             if anchor_count == 0 and name_clean:
                 issues.append("H2_ENTITY_ANCHOR_MISSING")
                 entity_distribution_score = 0.4

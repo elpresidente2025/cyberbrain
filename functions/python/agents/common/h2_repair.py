@@ -34,6 +34,7 @@ __all__ = [
     "build_keyword_intent_h2",
     "ensure_keyword_first_slot",
     "ensure_user_keyword_first_slot",
+    "enforce_anchor_cap",
     "repair_awkward_phrases",
     "repair_branding_phrases",
     "repair_generic_surface",
@@ -163,6 +164,112 @@ def ensure_user_keyword_first_slot(
         return {"content": base, "edited": False}
 
     return ensure_keyword_first_slot(base, target_keyword)
+
+
+# ---------------------------------------------------------------------------
+# Anchor cap enforcement — H2 세트 내 fullName 반복 스탬핑 방지
+# ---------------------------------------------------------------------------
+
+_LEADING_PARTICLE_RE = re.compile(
+    r"^(?:을|를|은|는|이|가|과|와|의|에|도|만|로|으로|에서|에게|까지|부터)\s"
+)
+
+
+def _is_valid_stripped_heading(text: str) -> bool:
+    stripped = str(text or "").strip()
+    if len(stripped) < 8 or len(stripped) > 40:
+        return False
+    if _LEADING_PARTICLE_RE.match(stripped):
+        return False
+    return True
+
+
+def _strip_name_from_heading(heading: str, name: str) -> str:
+    """H2 앞/뒤에 붙은 fullName 앵커를 조용히 제거한다.
+
+    다음 패턴만 처리 (의미 손실 없이 descriptor 만 남기는 경우):
+    - `{name}, rest` → `rest`
+    - `{name}· rest` → `rest`
+    - `{name} rest` (공백 구분) → `rest`  — 단 rest 길이·조사 검증 통과 시만
+    - `rest, {name}` → `rest`
+    - `rest {name}` 끝 → `rest`  — 검증 통과 시만
+    """
+    text = str(heading or "").strip()
+    escaped = re.escape(name)
+
+    prefix = re.match(rf"^{escaped}\s*[,·]\s*(.+)$", text)
+    if prefix:
+        candidate = prefix.group(1).strip()
+        if _is_valid_stripped_heading(candidate):
+            return candidate
+
+    suffix = re.match(rf"^(.+?)\s*[,·]\s*{escaped}\s*$", text)
+    if suffix:
+        candidate = suffix.group(1).strip()
+        if _is_valid_stripped_heading(candidate):
+            return candidate
+
+    plain_prefix = re.match(rf"^{escaped}\s+(.+)$", text)
+    if plain_prefix:
+        candidate = plain_prefix.group(1).strip()
+        if _is_valid_stripped_heading(candidate):
+            return candidate
+
+    plain_suffix = re.match(rf"^(.+?)\s+{escaped}\s*$", text)
+    if plain_suffix:
+        candidate = plain_suffix.group(1).strip()
+        if _is_valid_stripped_heading(candidate):
+            return candidate
+
+    return ""
+
+
+def enforce_anchor_cap(
+    headings: Sequence[Any],
+    *,
+    full_name: Any,
+    cap: int = 1,
+) -> Dict[str, Any]:
+    """H2 세트에서 fullName 앵커 횟수를 `cap` 이하로 낮춘다.
+
+    Why: memory feedback_h2_entity_stamping — fullName은 1~2회 앵커, 나머지는
+    descriptor 혼합. 제목이 이미 fullName을 포함하므로 H2 반복은 스탬핑처럼 느껴진다.
+    How to apply: 스코어/프롬프트만으로 막지 못하고 최종 H2에 fullName이 cap보다
+    많이 남은 경우, 앞/뒤 prefix 형태의 앵커를 조용히 제거해 descriptor만 남긴다.
+
+    - 첫 `cap` 개의 fullName 포함 H2 는 유지 (앵커 역할).
+    - 나머지는 `_strip_name_from_heading` 으로 전처리. 제거 결과가 유효하지
+      않으면 원본 유지 (lossless — 이상하게 자르지 않는다).
+    """
+    name = str(full_name or "").strip()
+    result: List[str] = [str(h or "") for h in (headings or [])]
+
+    if not name or not result:
+        return {"headings": result, "edited": False, "actions": []}
+
+    try:
+        cap_value = max(0, int(cap))
+    except (TypeError, ValueError):
+        cap_value = 1
+
+    indices_with_name = [i for i, h in enumerate(result) if name in h]
+    if len(indices_with_name) <= cap_value:
+        return {"headings": result, "edited": False, "actions": []}
+
+    actions: List[Dict[str, Any]] = []
+    to_strip = indices_with_name[cap_value:]
+    for idx in to_strip:
+        original = result[idx]
+        candidate = _strip_name_from_heading(original, name)
+        if candidate and candidate != original.strip():
+            result[idx] = candidate
+            actions.append({"index": idx, "before": original, "after": candidate})
+
+    return {
+        "headings": result,
+        "edited": bool(actions),
+        "actions": actions,
+    }
 
 
 _AWKWARD_PLEDGE_RE = re.compile(r"필요성을\s+말씀드립니다$")

@@ -29,9 +29,11 @@ from agents.common.h2_planning import (
     classify_section_intent,
     detect_answer_type,
 )
+from agents.common.h2_repair import enforce_anchor_cap
 from agents.common.h2_scoring import (
     H2_AEO_ADVISORIES,
     H2_HARD_FAIL_ISSUES,
+    compute_anchor_cap,
     count_entity_distribution,
     detect_emotion_appeal,
     detect_sibling_suffix_overlap,
@@ -406,3 +408,55 @@ class TestScoreH2Aeo:
         too_long = score_h2_aeo("이" * 60, siblings=[], section_count=1)
         assert "H2_SHORT_LENGTH" in too_short["issues"]
         assert "H2_LONG_LENGTH" in too_long["issues"]
+
+
+# ---------------------------------------------------------------------------
+# anchor cap enforcement
+# ---------------------------------------------------------------------------
+
+class TestAnchorCap:
+    def test_compute_anchor_cap_small_sets(self) -> None:
+        assert compute_anchor_cap(3) == 1
+        assert compute_anchor_cap(4) == 1
+        assert compute_anchor_cap(5) == 2
+        assert compute_anchor_cap(6) == 2
+
+    def test_enforce_anchor_cap_strips_prefix_comma(self) -> None:
+        headings = [
+            "샘플구를 변화시키는 홍길동의 책임",
+            "청년위원장, 청년 정책 수행해야",
+            "샘플시 청년 삶의 질 고민해야",
+            "홍길동, 공동체를 위한 책임을 다하는 일꾼",
+        ]
+        result = enforce_anchor_cap(headings, full_name="홍길동", cap=1)
+        assert result["edited"] is True
+        out = result["headings"]
+        assert out[0] == headings[0]
+        assert out[3] == "공동체를 위한 책임을 다하는 일꾼"
+        assert "홍길동" not in out[3]
+
+    def test_enforce_anchor_cap_noop_when_within_cap(self) -> None:
+        headings = [
+            "샘플구 청년 정책 약속",
+            "홍길동의 교통 해법 핵심",
+            "일자리 5대 우선순위",
+            "샘플동 교육 재도약",
+        ]
+        result = enforce_anchor_cap(headings, full_name="홍길동", cap=1)
+        assert result["edited"] is False
+        assert result["headings"] == headings
+
+    def test_enforce_anchor_cap_preserves_when_strip_invalid(self) -> None:
+        headings = [
+            "홍길동 청년 정책 첫 단추",
+            "홍길동",
+        ]
+        result = enforce_anchor_cap(headings, full_name="홍길동", cap=1)
+        assert result["headings"][0] == headings[0]
+        assert result["headings"][1] == headings[1]
+
+    def test_enforce_anchor_cap_empty_fullname(self) -> None:
+        headings = ["샘플 정책 약속", "샘플구 교통 해법"]
+        result = enforce_anchor_cap(headings, full_name="", cap=1)
+        assert result["edited"] is False
+        assert result["headings"] == headings
