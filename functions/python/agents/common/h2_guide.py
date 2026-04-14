@@ -309,3 +309,97 @@ def _build_assertive_examples() -> str:
   </checklist>
 </h2_examples>
 """
+
+
+# ---------------------------------------------------------------------------
+# Category Tone Anchor — SUBHEADING_STYLES.examples 흡수 (카테고리별 톤 예시)
+# ---------------------------------------------------------------------------
+CATEGORY_TONE_EXAMPLES = {
+    'current-affairs': {
+        'style': 'assertive',
+        'description': '논평/시사 카테고리는 주장형 소제목을 사용합니다.',
+        'preferred_types': ['주장형', '명사형'],
+        'examples': [
+            '"신공안 프레임"은 책임 회피에 불과하다',
+            '특검은 정치 보복이 아니다',
+            '당당하면 피할 이유 없다',
+            '민주주의의 기본 질서를 지켜야',
+        ],
+    },
+    'policy-proposal': {
+        'style': 'aeo',
+        'description': '정책 제안 카테고리는 구체적인 정보형 소제목을 사용합니다.',
+        'preferred_types': ['데이터형', '명사형', '절차형'],
+        'examples': [
+            '청년 일자리 3대 핵심 전략',
+            '국비 100억 확보 내역',
+            '교통 체계 개편 5단계 로드맵',
+        ],
+    },
+    'activity-report': {
+        'style': 'aeo',
+        'description': '의정활동 보고는 성과 중심 소제목을 사용합니다.',
+        'preferred_types': ['데이터형', '명사형'],
+        'examples': [
+            '국정감사 5대 핵심 성과',
+            '지역 현안 해결 실적',
+            '국회 발의 법안 현황',
+        ],
+    },
+    'daily-communication': {
+        'style': 'aeo',
+        'description': '일상 소통은 친근한 질문형도 허용됩니다.',
+        'preferred_types': ['질문형', '명사형'],
+        'examples': [
+            '요즘 어떻게 지내시나요?',
+            '함께 나눈 이야기들',
+            '시민 여러분께 전하는 말씀',
+        ],
+    },
+    'default': {
+        'style': 'aeo',
+        'description': '기본 AEO 최적화 스타일을 사용합니다.',
+        'preferred_types': ['질문형', '명사형', '데이터형'],
+        'examples': [],
+    },
+}
+
+
+def get_category_tone(category: str) -> dict:
+    """카테고리별 톤 앵커(description/preferred_types/examples/style)를 반환한다."""
+    key = str(category or '').strip()
+    if key in CATEGORY_TONE_EXAMPLES:
+        return CATEGORY_TONE_EXAMPLES[key]
+    return CATEGORY_TONE_EXAMPLES['default']
+
+
+def build_category_tone_block(category: str) -> str:
+    """카테고리별 톤 예시를 프롬프트용 XML 블록으로 반환한다.
+
+    h2_guide의 일반 few-shot과 별도로, 카테고리마다 고유한 어조 앵커를 제공한다.
+    예시 목록이 비어 있는 카테고리(default)에는 빈 문자열을 반환해 프롬프트 노이즈를
+    방지한다.
+    """
+    tone = get_category_tone(category)
+    examples = [str(item).strip() for item in (tone.get('examples') or []) if str(item).strip()]
+    if not examples:
+        return ''
+
+    style = normalize_h2_style(tone.get('style'))
+    description = str(tone.get('description') or '').strip()
+    preferred_types = ', '.join(
+        str(item).strip() for item in (tone.get('preferred_types') or []) if str(item).strip()
+    )
+
+    lines = [
+        f'<h2_category_tone category="{category}" style="{style}">',
+    ]
+    if description:
+        lines.append(f'  <description>{description}</description>')
+    if preferred_types:
+        lines.append(f'  <preferred_types>{preferred_types}</preferred_types>')
+    for example in examples:
+        safe = example.replace('<', '&lt;').replace('>', '&gt;')
+        lines.append(f'  <good>{safe}</good>')
+    lines.append('</h2_category_tone>')
+    return '\n'.join(lines)
