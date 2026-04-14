@@ -334,6 +334,40 @@ def test_score_h2_fails_on_incomplete_ending() -> None:
     assert result["passed"] is False
 
 
+def test_score_h2_fails_on_verbal_modifier_ending() -> None:
+    """관형형 어미 `-(으)ㄹ` 단독 종결 감지 (PR 4.5).
+
+    용언 관형형(다할/이어갈/해낼/펼칠)은 수식할 명사가 붙지 않으면 미완결.
+    """
+    plan = _plan_for("청년 책임", "명사형")
+    for heading in (
+        "청년 정치인, 공동체 책임 다할",
+        "청년 정치인, 독립정신을 이어갈",
+        "청년의 약속을 해낼",
+        "미래로 꿈을 펼칠",
+    ):
+        result = score_h2(
+            heading,
+            plan,
+            style="aeo",
+            preferred_types=["명사형"],
+        )
+        assert "INCOMPLETE_ENDING" in result["issues"], heading
+        assert result["passed"] is False, heading
+
+
+def test_score_h2_accepts_verbal_modifier_with_noun() -> None:
+    """관형형 뒤에 수식 명사가 있으면 완결 — false positive 방지."""
+    plan = _plan_for("청년 약속", "명사형")
+    result = score_h2(
+        "청년이 지킬 약속 3가지",
+        plan,
+        style="aeo",
+        preferred_types=["명사형"],
+    )
+    assert "INCOMPLETE_ENDING" not in result["issues"]
+
+
 def test_score_h2_fails_on_dangling_subject_particle_without_predicate() -> None:
     plan = _plan_for("청년의 목소리", "명사형")
     result = score_h2(

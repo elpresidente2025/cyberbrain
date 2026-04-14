@@ -50,6 +50,14 @@ _H2_TRAILING_INCOMPLETE_ENDING_RE = re.compile(
     r"겠(?:다|습)?|하는|있는|없는"
     r")$"
 )
+# 관형형 어미 `-(으)ㄹ` 단독 종결 감지. 용언(하다/가다/내다/되다/오다/보다/치다/키다)
+# 의 관형형이 수식 대상 없이 H2 끝에 남으면 미완결이다.
+# 예: "공동체 책임 다할", "정신을 이어갈", "꿈을 펼칠"
+# 비교 대상인 명사(길, 달, 발, 물 등)와 혼동하지 않도록 마지막 음절이
+# 할/갈/낼/될/올/볼/칠/킬 인 2음절 이상 토큰만 매칭.
+_H2_TRAILING_VERBAL_MODIFIER_RE = re.compile(
+    r"[가-힣]{1,}(?:할|갈|낼|될|올|볼|칠|킬)$"
+)
 
 # 주어 조사 `가`가 문장 중간에 나타나지만 술어가 전혀 없는 경우를 감지한다.
 # 예: "청년의 목소리가 실질적 변화" — "목소리가" 뒤에 동사/서술어가 없음.
@@ -117,6 +125,9 @@ def has_incomplete_h2_ending(text: str) -> bool:
         return True
 
     if _H2_TRAILING_INCOMPLETE_ENDING_RE.search(last_token):
+        return True
+
+    if len(last_token) >= 2 and _H2_TRAILING_VERBAL_MODIFIER_RE.search(last_token):
         return True
 
     return _has_dangling_subject_particle(candidate)

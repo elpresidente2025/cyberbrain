@@ -49,6 +49,12 @@ from ..common.h2_repair import (
     repair_branding_phrases,
     repair_entity_consistency,
 )
+from ..common.h2_templates import (
+    MATCHUP_HEADING_CUES,
+    MATCHUP_KIND_TEMPLATES,
+    build_matchup_heading,
+    select_matchup_kind_sequence,
+)
 from ..common.h2_scoring import (
     H2_HARD_FAIL_ISSUES,
     H2Score,
@@ -135,6 +141,13 @@ class SubheadingAgent(Agent):
         if not content:
             return {"content": "", "optimized": False, "h2Trace": [], "subheadingStats": {}}
 
+        poll_focus_bundle = context.get("pollFocusBundle")
+        if (
+            isinstance(poll_focus_bundle, dict)
+            and str(poll_focus_bundle.get("scope") or "").strip().lower() == "matchup"
+        ):
+            return await self._process_matchup(context, poll_focus_bundle)
+
         full_name = (
             context.get("fullName")
             or (context.get("author") or {}).get("name", "")
@@ -174,6 +187,176 @@ class SubheadingAgent(Agent):
 
         return {
             "content": optimized_content,
+            "optimized": True,
+            "h2Trace": trace,
+            "subheadingStats": stats,
+        }
+
+    # ----------------------------------------------------------- matchup mode
+    async def _process_matchup(
+        self,
+        context: Dict[str, Any],
+        bundle: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """매치업 모드 — h2_templates 기반 결정론 배정·생성 (LLM 0회).
+
+        generic process() 와 반환 shape 호환. 실패 섹션은 원본 유지.
+        """
+        content = context.get("content") or ""
+        if not content:
+            return {"content": "", "optimized": False, "h2Trace": [], "subheadingStats": {}}
+
+        matches = list(_H2_PATTERN.finditer(content))
+        if not matches:
+            return {
+                "content": content,
+                "optimized": False,
+                "h2Trace": [],
+                "subheadingStats": {"matches": 0, "mode": "matchup"},
+            }
+
+        primary_pair = bundle.get("primaryPair") if isinstance(bundle.get("primaryPair"), dict) else {}
+        secondary_pairs_raw = (
+            bundle.get("secondaryPairs") if isinstance(bundle.get("secondaryPairs"), list) else []
+        )
+        speaker = str(primary_pair.get("speaker") or bundle.get("speaker") or "").strip()
+        primary_opponent = str(primary_pair.get("opponent") or "").strip()
+        speaker_percent = str(
+            primary_pair.get("speakerPercent") or primary_pair.get("speakerScore") or ""
+        ).strip()
+        opponent_percent = str(
+            primary_pair.get("opponentPercent") or primary_pair.get("opponentScore") or ""
+        ).strip()
+
+        if not speaker or not primary_opponent:
+            return {
+                "content": content,
+                "optimized": False,
+                "h2Trace": [],
+                "subheadingStats": {
+                    "matches": len(matches),
+                    "mode": "matchup",
+                    "skipped": "missing_speaker_or_opponent",
+                },
+            }
+
+        secondary_opponents: List[str] = []
+        secondary_templates_by_opp: Dict[str, Dict[str, str]] = {}
+        for pair in secondary_pairs_raw[:3]:
+            if not isinstance(pair, dict):
+                continue
+            opp = str(pair.get("opponent") or "").strip()
+            if opp:
+                secondary_opponents.append(opp)
+                secondary_templates_by_opp[opp] = {
+                    "speakerPercent": str(
+                        pair.get("speakerPercent") or pair.get("speakerScore") or ""
+                    ).strip(),
+                    "opponentPercent": str(
+                        pair.get("opponentPercent") or pair.get("opponentScore") or ""
+                    ).strip(),
+                }
+
+        allowed_raw = bundle.get("allowedH2Kinds") if isinstance(bundle.get("allowedH2Kinds"), list) else []
+        template_overrides: Dict[str, str] = {}
+        allowed_kind_ids: List[str] = []
+        for raw_kind in allowed_raw:
+            if not isinstance(raw_kind, dict):
+                continue
+            kind_id = str(raw_kind.get("id") or "").strip()
+            if not kind_id:
+                continue
+            allowed_kind_ids.append(kind_id)
+            tmpl = str(raw_kind.get("template") or "").strip()
+            if tmpl:
+                template_overrides[kind_id] = tmpl
+        if not allowed_kind_ids:
+            allowed_kind_ids = list(MATCHUP_KIND_TEMPLATES.keys())
+
+        section_texts: List[str] = []
+        originals: List[str] = []
+        for match in matches:
+            start_pos = match.end()
+            next_text = content[start_pos : start_pos + 600]
+            section_texts.append(strip_html(next_text))
+            originals.append(match.group(1).strip())
+
+        kind_sequence = select_matchup_kind_sequence(
+            section_texts,
+            primary_opponent=primary_opponent,
+            speaker_percent=speaker_percent,
+            opponent_percent=opponent_percent,
+            secondary_opponents=secondary_opponents,
+            allowed_kind_ids=allowed_kind_ids,
+        )
+
+        trace: List[Dict[str, Any]] = []
+        final_headings: List[str] = []
+        for index, kind in enumerate(kind_sequence):
+            item: Dict[str, Any] = {
+                "index": index,
+                "original": originals[index],
+                "kind": kind,
+                "action": "pending",
+            }
+            heading = ""
+            if kind:
+                opp_for_kind = primary_opponent
+                sp_for_kind = speaker_percent
+                op_for_kind = opponent_percent
+                if kind == "secondary_matchup":
+                    for cand in secondary_opponents:
+                        if cand and cand in section_texts[index]:
+                            opp_for_kind = cand
+                            sp_for_kind = secondary_templates_by_opp.get(cand, {}).get(
+                                "speakerPercent", ""
+                            )
+                            op_for_kind = secondary_templates_by_opp.get(cand, {}).get(
+                                "opponentPercent", ""
+                            )
+                            break
+                heading = build_matchup_heading(
+                    kind,
+                    speaker=speaker,
+                    opponent=opp_for_kind,
+                    speaker_percent=sp_for_kind,
+                    opponent_percent=op_for_kind,
+                    template_override=template_overrides.get(kind, ""),
+                )
+
+            item["template_heading"] = heading
+
+            chosen = ""
+            if heading and speaker in heading and not has_incomplete_h2_ending(heading):
+                cues = MATCHUP_HEADING_CUES.get(kind, ())
+                cue_ok = not cues or any(c in heading for c in cues)
+                if cue_ok and H2_MIN_LENGTH <= len(heading) <= H2_MAX_LENGTH:
+                    chosen = heading
+                    item["action"] = "matchup_template"
+
+            if not chosen:
+                chosen = originals[index]
+                item["action"] = "fallback_original"
+
+            item["final"] = chosen
+            trace.append(item)
+            final_headings.append(chosen)
+
+        rebuilt = self._replace_h2_headings(content, matches, final_headings)
+
+        stats = {
+            "matches": len(matches),
+            "mode": "matchup",
+            "llm_calls": 0,
+            "kind_sequence": list(kind_sequence),
+            "actions": {
+                action: sum(1 for item in trace if item.get("action") == action)
+                for action in ("matchup_template", "fallback_original")
+            },
+        }
+        logger.info(f"✅ [SubheadingAgent] 매치업 모드 완료. stats={stats}")
+        return {
+            "content": rebuilt,
             "optimized": True,
             "h2Trace": trace,
             "subheadingStats": stats,
