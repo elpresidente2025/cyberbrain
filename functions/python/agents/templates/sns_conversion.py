@@ -12,9 +12,13 @@ import html
 import re
 from typing import Any, Dict
 
-# 예시 원고(사용자 제공) 기반 X 평균 길이(공백 제외) 정책값
+# X 게시물 길이 정책 (공백·URL 제외, 한글 비공백 기준)
+# - min 70: 사용자 정책("X는 70~110자 안팎")과 일치
+# - recommended 95: 70~110 중앙값. LLM이 타겟팅해야 할 본문 길이
+# - max 111: 예시 원고 평균치 상한
 X_TARGET_AVG_NON_SPACE = 111
-X_MIN_NON_SPACE = 60
+X_MIN_NON_SPACE = 70
+X_RECOMMENDED_NON_SPACE = 95
 THREADS_MIN_NON_SPACE = 200
 
 # SNS 플랫폼별 제한사항
@@ -31,7 +35,7 @@ SNS_LIMITS: Dict[str, Dict[str, Any]] = {
     "x": {
         "maxLengthPerPost": X_TARGET_AVG_NON_SPACE,
         "minLengthPerPost": X_MIN_NON_SPACE,
-        "recommendedMinLength": X_TARGET_AVG_NON_SPACE,
+        "recommendedMinLength": X_RECOMMENDED_NON_SPACE,
         "hashtagLimit": 2,
         "charsPerLine": 32,
         "name": "X(Twitter)",
@@ -336,10 +340,18 @@ def build_x_prompt(
   </transformation_policy>
 
   <platform_strategy>
-    <description>X는 훑어보는 플랫폼이므로 훅 → 본문 → (선택) 마무리의 짧은 타래로 구성한다.</description>
+    <description>X는 훑어보는 플랫폼이지만, 한 게시물이 한 카드로 완성돼야 한다. 훅 → 본문 → (선택) 마무리 구조로 2~3개 카드형 타래를 구성하며, 각 카드는 공백·URL 제외 {min_len}~{max_len}자(권장 {recommended_len}자 내외)의 본문 볼륨을 반드시 확보한다.</description>
     <selected_style>{style_name}</selected_style>
 {style_guide}
   </platform_strategy>
+
+  <length_discipline priority="critical">
+    <target>각 게시물의 본문은 공백·URL 제외 {min_len}~{max_len}자 범위, 권장 {recommended_len}자 내외.</target>
+    <floor>본문이 {min_len}자 미만이면 검증에서 실패하고 재생성 대상이 됩니다. 짧게 끝내려 하지 말고 원문의 맥락·원인·영향 중 한두 요소를 더 끌어와 본문을 채우세요.</floor>
+    <ceiling>{max_len}자를 초과하면 안 됩니다. 원문 어절을 직접 재사용하되 형용사·부사를 먼저 덜어내 압축합니다.</ceiling>
+    <how_to_fill>본문 길이가 부족할 때는 다음 중 하나를 덧붙여 {recommended_len}자 내외까지 올립니다: (1) 원문에서 생략한 배경/맥락 1문장, (2) 인용·수치·지명 등 구체 근거 1개, (3) 독자 입장에서의 의미를 설명하는 한 문장. "~합니다" 같은 공허한 다짐만 반복해 채우지 않습니다.</how_to_fill>
+    <note>마지막 게시물의 블로그 URL과 해시태그는 글자 수에서 제외됩니다. 본문만 기준으로 판정합니다.</note>
+  </length_discipline>
 
   <thread_structure post_range="{min_posts}-{max_posts}" length_per_post="공백·URL 제외 {min_len}~{max_len}자">
     <post order="1" role="훅">
@@ -376,7 +388,7 @@ def build_x_prompt(
   </extraction_steps>
 
   <writing_rules>
-    <rule>각 게시물은 공백·URL 제외 최대 {max_len}자 이내로 작성하고, 분량을 억지로 채우지 않습니다. 마지막 게시물의 블로그 링크는 글자 수에서 제외됩니다.</rule>
+    <rule>각 게시물은 공백·URL 제외 {min_len}~{max_len}자 범위 안에서 작성합니다. {min_len}자 미만 게시물은 허용되지 않으며, 권장 {recommended_len}자 내외로 본문을 채웁니다. 마지막 게시물의 블로그 링크·해시태그는 글자 수에서 제외됩니다.</rule>
     <rule>줄바꿈 카드형 구성(2~5줄)으로 가독성 확보</rule>
     <rule>각 게시물은 독립적으로도 의미가 전달되도록 작성</rule>
     <rule>타래 전반에서 원본 고유명사/핵심 수치/핵심 주장 최소 2개 이상 포함</rule>
@@ -399,9 +411,10 @@ def build_x_prompt(
   </anti_patterns>
 
   <style_hints type="few_shot">
-    <hint>첫 게시물은 훅 + 핵심 사실로 구성하고 링크를 넣지 않는다</hint>
-    <hint>길이를 줄이려면 형용사보다 고유명사/숫자를 남긴다</hint>
+    <hint>첫 게시물은 훅 + 원문 고유명사 + 핵심 사실 1~2개를 모두 담아 권장 {recommended_len}자 내외로 채운다</hint>
+    <hint>길이 조정은 형용사·부사를 먼저 덜어내고, 고유명사·수치·지명·사건명은 유지한다</hint>
     <hint>신뢰감이 필요한 이슈에서는 차분한 단정형 종결을 사용한다</hint>
+    <hint>본문이 너무 짧아 {min_len}자 미만이면, 원문의 배경 한 문장이나 독자 입장에서의 의미를 덧붙여 볼륨을 확보한다</hint>
   </style_hints>
 
 {remediation_block}
@@ -428,7 +441,8 @@ def build_x_prompt(
 
   <final_checklist>
     <item>게시물 수가 {min_posts}~{max_posts}개 범위인가?</item>
-    <item>각 게시물이 공백·URL 제외 {max_len}자 이하인가? (마지막 게시물의 블로그 링크는 글자 수 제외)</item>
+    <item>각 게시물의 본문이 공백·URL 제외 {min_len}자 이상, {max_len}자 이하인가? (권장 {recommended_len}자 내외, 마지막 게시물의 블로그 링크·해시태그는 글자 수 제외)</item>
+    <item>1번 게시물(훅)에 원문의 고유명사(인물·지명·단체·사건명) 1개 이상이 포함됐는가?</item>
     <item>타래 전반에서 원본 고유명사/수치/핵심 주장을 2개 이상 반영했는가?</item>
     <item>원문 어절/문장을 재사용한 구문이 포함되었는가?</item>
     <item>저품질 CTA 문구가 없는가?</item>

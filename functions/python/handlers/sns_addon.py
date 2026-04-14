@@ -57,9 +57,11 @@ SOURCE_STOPWORDS: Set[str] = {
     "대한민국",
 }
 
-# 사용자 제공 예시 원고 평균(공백 제외 약 111자) 기반 X 길이 정책
+# X 길이 정책(공백·URL 제외, 한글 비공백 기준).
+# 정책: 70~110자 (권장 95자 내외). 예시 원고 평균 약 111자.
 X_TARGET_AVG_NON_SPACE = 111
-X_MIN_NON_SPACE = 60
+X_MIN_NON_SPACE = 70
+X_RECOMMENDED_NON_SPACE = 95
 
 # 프롬프트 메타 플레이스홀더가 본문으로 오염되는 사고를 감지하기 위한 패턴.
 # 예) user_info.name이 비어 "정치인"으로 fallback → LLM이 "정치인 의원님과 함께..." 같은 본문 생성.
