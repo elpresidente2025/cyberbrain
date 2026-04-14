@@ -34,6 +34,11 @@ from ..common.h2_guide import (
 from ..common.h2_planning import (
     SectionPlan,
     StanceBrief,
+    assign_h2_entity_slots,
+    build_descriptor_pool,
+    build_target_keyword_canonical,
+    classify_section_intent,
+    detect_answer_type,
     extract_section_plan,
     extract_stance_claims,
     strip_html,
@@ -44,7 +49,13 @@ from ..common.h2_repair import (
     repair_branding_phrases,
     repair_entity_consistency,
 )
-from ..common.h2_scoring import H2Score, score_h2
+from ..common.h2_scoring import (
+    H2_HARD_FAIL_ISSUES,
+    H2Score,
+    detect_emotion_appeal,
+    score_h2,
+    score_h2_aeo,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +169,7 @@ class SubheadingAgent(Agent):
             known_person_names=known_person_names,
             role_facts=role_facts,
             preferred_keyword=preferred_keyword,
+            user_profile=user_profile,
         )
 
         return {
@@ -180,6 +192,7 @@ class SubheadingAgent(Agent):
         known_person_names: Optional[Sequence[str]] = None,
         role_facts: Optional[Dict[str, Any]] = None,
         preferred_keyword: str = "",
+        user_profile: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, List[Dict[str, Any]], Dict[str, Any]]:
         matches = list(_H2_PATTERN.finditer(content))
         if not matches:
@@ -215,12 +228,46 @@ class SubheadingAgent(Agent):
             top_claims=[], key_entities=[], dominant_type=""
         )
 
+        # ---------- AEO 결정론 산출: 글 전체 1회
+        target_keyword_canonical = build_target_keyword_canonical(
+            preferred_keyword=preferred_keyword,
+            full_name=full_name,
+            user_keywords=user_keywords or [],
+        )
+        descriptor_pool = build_descriptor_pool(
+            full_name=full_name,
+            full_region=full_region,
+            role_facts=role_facts or {},
+            profile=user_profile or {},
+        )
+        assigned_entity_surfaces = assign_h2_entity_slots(
+            len(plans),
+            full_name=full_name,
+            descriptor_pool=descriptor_pool,
+        )
+        body_first_sentences: List[str] = []
+        for text in section_texts:
+            cleaned = (text or "").strip()
+            first = re.split(r"(?<=[.!?。?!])\s+", cleaned, maxsplit=1)[0] if cleaned else ""
+            body_first_sentences.append(first[:200])
+
+        for i, plan in enumerate(plans):
+            plan["query_intent"] = classify_section_intent(section_texts[i])
+            plan["answer_type"] = detect_answer_type(section_texts[i])
+            plan["target_keyword_canonical"] = target_keyword_canonical
+            plan["assigned_entity_surface"] = (
+                assigned_entity_surfaces[i] if i < len(assigned_entity_surfaces) else ""
+            )
+
         trace: List[Dict[str, Any]] = [
             {
                 "index": i,
                 "original": originals[i],
                 "suggested_type": plans[i].get("suggested_type", ""),
                 "must_include_keyword": plans[i].get("must_include_keyword", ""),
+                "query_intent": plans[i].get("query_intent", ""),
+                "answer_type": plans[i].get("answer_type", ""),
+                "assigned_entity_surface": plans[i].get("assigned_entity_surface", ""),
                 "action": "pending",
             }
             for i in range(len(plans))
@@ -253,7 +300,7 @@ class SubheadingAgent(Agent):
         for i, heading in enumerate(first_attempt):
             trace[i]["first_attempt"] = heading
 
-        # ---------- Phase 3: score
+        # ---------- Phase 3: score (rubric + AEO advisory + emotion hard-fail)
         first_scores = [
             score_h2(
                 heading,
@@ -263,9 +310,16 @@ class SubheadingAgent(Agent):
             )
             for i, heading in enumerate(first_attempt)
         ]
-        for i, sc in enumerate(first_scores):
-            trace[i]["first_score"] = sc.get("score", 0.0)
-            trace[i]["first_issues"] = list(sc.get("issues", []))
+        self._enrich_scores_with_aeo(
+            scores=first_scores,
+            headings=first_attempt,
+            trace=trace,
+            full_name=full_name,
+            descriptor_pool=descriptor_pool,
+            body_first_sentences=body_first_sentences,
+            target_keyword_canonical=target_keyword_canonical,
+            score_key="first",
+        )
 
         # ---------- Phase 4a: per-heading deterministic pre-repair (cheap: josa/length/질문형)
         working: List[str] = list(first_attempt)
@@ -282,9 +336,20 @@ class SubheadingAgent(Agent):
                     style=h2_style,
                     preferred_types=preferred_types,
                 )
+                self._enrich_score_one(
+                    new_score,
+                    heading=repaired,
+                    index=i,
+                    siblings=working,
+                    full_name=full_name,
+                    descriptor_pool=descriptor_pool,
+                    body_first_sentences=body_first_sentences,
+                    target_keyword_canonical=target_keyword_canonical,
+                )
                 current_scores[i] = new_score
                 trace[i]["pre_repair"] = repaired
                 trace[i]["pre_repair_score"] = new_score.get("score", 0.0)
+                trace[i]["pre_repair_issues"] = list(new_score.get("issues", []))
 
         # ---------- Phase 4b: content-level h2_repair chain (entity/phrase/user-keyword)
         chain_actions = self._apply_h2_repair_chain(
@@ -302,6 +367,9 @@ class SubheadingAgent(Agent):
             user_keywords=list(user_keywords or []),
             preferred_keyword=preferred_keyword,
             full_name=full_name,
+            descriptor_pool=descriptor_pool,
+            body_first_sentences=body_first_sentences,
+            target_keyword_canonical=target_keyword_canonical,
         )
 
         # ---------- Phase 5: LLM repair (≤1 call, batched)
@@ -338,8 +406,19 @@ class SubheadingAgent(Agent):
                             style=h2_style,
                             preferred_types=preferred_types,
                         )
+                        self._enrich_score_one(
+                            new_score,
+                            heading=cleaned,
+                            index=idx,
+                            siblings=working,
+                            full_name=full_name,
+                            descriptor_pool=descriptor_pool,
+                            body_first_sentences=body_first_sentences,
+                            target_keyword_canonical=target_keyword_canonical,
+                        )
                         trace[idx]["llm_repair"] = cleaned
                         trace[idx]["llm_repair_score"] = new_score.get("score", 0.0)
+                        trace[idx]["llm_repair_issues"] = list(new_score.get("issues", []))
                         if new_score.get("score", 0.0) > current_scores[idx].get("score", 0.0):
                             working[idx] = cleaned
                             current_scores[idx] = new_score
@@ -366,8 +445,19 @@ class SubheadingAgent(Agent):
                 style=h2_style,
                 preferred_types=preferred_types,
             )
+            self._enrich_score_one(
+                fallback_score,
+                heading=fallback,
+                index=i,
+                siblings=working,
+                full_name=full_name,
+                descriptor_pool=descriptor_pool,
+                body_first_sentences=body_first_sentences,
+                target_keyword_canonical=target_keyword_canonical,
+            )
             trace[i]["deterministic_fallback"] = fallback
             trace[i]["deterministic_fallback_score"] = fallback_score.get("score", 0.0)
+            trace[i]["deterministic_fallback_issues"] = list(fallback_score.get("issues", []))
 
             if fallback_score.get("passed"):
                 trace[i]["action"] = "deterministic_fallback"
@@ -381,12 +471,55 @@ class SubheadingAgent(Agent):
 
         # ---------- Phase 7: reconstruct content
         rebuilt = self._replace_h2_headings(content, matches, final_headings)
+
+        from ..common.h2_scoring import (
+            count_entity_distribution,
+            detect_sibling_suffix_overlap,
+        )
+
+        entity_distribution = count_entity_distribution(
+            final_headings, full_name=full_name, descriptor_pool=descriptor_pool
+        )
+        sibling_overlap = detect_sibling_suffix_overlap(final_headings)
+
         stats = {
             "matches": len(matches),
             "llm_calls": 2 if llm_repair_called else 1,
             "passed_first": sum(1 for sc in first_scores if sc.get("passed")),
             "passed_after_pre_repair": sum(1 for sc in current_scores if sc.get("passed")),
             "h2_repair_chain": chain_actions,
+            "aeo": {
+                "target_keyword_canonical": target_keyword_canonical,
+                "descriptor_pool": list(descriptor_pool),
+                "assigned_entity_surfaces": list(assigned_entity_surfaces),
+                "entity_distribution": entity_distribution,
+                "sibling_suffix_overlap": [
+                    {"token": token, "count": count} for token, count in sibling_overlap
+                ],
+                "intent_mix": {
+                    intent: sum(
+                        1 for plan in plans if plan.get("query_intent") == intent
+                    )
+                    for intent in ("info", "nav", "cmp", "tx")
+                },
+                "answer_type_mix": {
+                    atype: sum(
+                        1 for plan in plans if plan.get("answer_type") == atype
+                    )
+                    for atype in (
+                        "question-form",
+                        "declarative-fact",
+                        "declarative-list",
+                    )
+                },
+                "first_aeo_score_avg": (
+                    round(
+                        sum(sc.get("aeo_score", 0.0) for sc in first_scores)
+                        / max(len(first_scores), 1),
+                        4,
+                    )
+                ),
+            },
             "actions": {
                 action: sum(1 for item in trace if item.get("action") == action)
                 for action in (
@@ -579,6 +712,13 @@ class SubheadingAgent(Agent):
         keywords_text = ", ".join([str(k).strip() for k in user_keywords if str(k).strip()]) or "(없음)"
         tone_block = build_category_tone_block(category or "default")
 
+        descriptor_pool_global: List[str] = []
+        for plan in plans:
+            surface = str(plan.get("assigned_entity_surface") or "").strip()
+            if surface and surface != full_name and surface not in descriptor_pool_global:
+                descriptor_pool_global.append(surface)
+        descriptor_text = ", ".join(descriptor_pool_global) or "(없음)"
+
         section_xml_parts: List[str] = []
         for plan in plans:
             ctx_slice = str(plan.get("section_text") or "")[:400]
@@ -587,6 +727,9 @@ class SubheadingAgent(Agent):
                 f"""<section index="{int(plan.get("index", 0)) + 1}">
   <suggested_type>{plan.get("suggested_type") or "(없음)"}</suggested_type>
   <must_include_keyword>{plan.get("must_include_keyword") or "(없음)"}</must_include_keyword>
+  <query_intent>{plan.get("query_intent") or "info"}</query_intent>
+  <answer_type>{plan.get("answer_type") or "question-form"}</answer_type>
+  <assigned_entity_surface>{plan.get("assigned_entity_surface") or "(없음)"}</assigned_entity_surface>
   <numerics>{numerics}</numerics>
   <key_claim>{plan.get("key_claim") or "(없음)"}</key_claim>
   <context>{ctx_slice}</context>
@@ -608,6 +751,7 @@ class SubheadingAgent(Agent):
 - **Preferred Types**: {preferred_types_text}
 - **Topic**: {topic or "(없음)"}
 - **User Keywords**: {keywords_text}
+- **Descriptor Pool (본명 대체 호칭)**: {descriptor_text}
 {stance_block}
 
 # [CRITICAL] H2 Rulebook (SSOT)
@@ -615,8 +759,16 @@ class SubheadingAgent(Agent):
 {build_h2_rules(h2_style)}
 {tone_section}
 # Section Plan Table
-각 section 은 suggested_type / must_include_keyword / numerics / key_claim / context 로 구성되어 있습니다. must_include_keyword는 반드시 해당 소제목 앞 1/3 안에 등장시켜야 합니다.
+각 section 은 suggested_type / must_include_keyword / query_intent / answer_type / assigned_entity_surface / numerics / key_claim / context 로 구성되어 있습니다. must_include_keyword는 반드시 해당 소제목 앞 1/3 안에 등장시켜야 합니다.
 {sections_xml}
+
+# [AEO/SEO] Entity Surface 정책 (필수 준수)
+- 각 section 의 `assigned_entity_surface` 가 곧 그 H2 에서 사용해야 할 인물 표면형입니다.
+- 본명({full_name or "(없음)"})은 H2 세트 전체에서 1~2회만 등장해야 합니다 (키워드 스탬핑 방지).
+- 본명이 아닌 슬롯에는 Descriptor Pool 의 호칭 중 의미가 가장 잘 맞는 것을 사용하되, 본문에 이미 등장한 표현이어야 합니다.
+- `query_intent` 가 `cmp` 면 비교/대결 구조, `tx` 면 절차/방법 구조, `nav` 면 인물·이력 중심 구조, `info` 면 정보 정리형으로 작성하세요.
+- `answer_type` 이 `question-form` 이면 의문형으로, `declarative-list` 면 숫자/항목 정리로, `declarative-fact` 면 단정형 주장으로 표현하세요.
+- 감정 호소형 수사("함께 ~ 가자", "~을 위한 길", "~없었다면" 같은 반어, "약속드립니다/믿습니다" 단독 종결 등)는 H2 에서 금지입니다.
 
 # Additional Constraints
 - 단락마다 소제목 1개씩만 생성하세요.
@@ -624,8 +776,8 @@ class SubheadingAgent(Agent):
 - 소제목 텍스트만 생성하고 번호, 따옴표, 불릿은 넣지 마세요.
 - {H2_MAX_LENGTH - 2}자를 넘기지 마세요. (네이버 최적 범위 {H2_BEST_RANGE}자 이내를 목표로 하세요.)
 - 소제목은 반드시 완결된 어절로 끝나야 합니다. 조사("를", "을", "의", "에서", "과" 등)나 미완결 어미("겠", "하는", "있는" 등)로 끝나는 소제목은 금지입니다.
-- 본문 구절("미래에 대한 확신을", "이뤄내겠습니다" 등)을 잘라 붙여 소제목을 만들지 마세요.
-- 같은 단어를 연속으로 반복하거나 "도약을을"처럼 조사 오타가 남은 소제목은 출력하지 마세요.
+- 본문 구절을 그대로 잘라 붙여 소제목을 만들지 마세요.
+- 같은 단어를 연속으로 반복하거나 조사 오타가 남은 소제목은 출력하지 마세요.
 
 # Output Format (JSON Only)
 반드시 아래 JSON 포맷으로 출력하세요. 순서는 section index 와 일치해야 합니다.
@@ -638,6 +790,98 @@ class SubheadingAgent(Agent):
 """
 
     # ------------------------------------------------------------------- score
+    def _enrich_score_one(
+        self,
+        score: H2Score,
+        *,
+        heading: str,
+        index: int,
+        siblings: Sequence[str],
+        full_name: str,
+        descriptor_pool: Sequence[str],
+        body_first_sentences: Sequence[str],
+        target_keyword_canonical: str,
+    ) -> H2Score:
+        """단일 heading 의 score_h2 결과에 AEO advisory + emotion hard-fail 을 병합.
+
+        - `score_h2_aeo` 는 advisory 점수와 issues 를 반환 (hard-fail 아님)
+        - `detect_emotion_appeal` 결과는 `H2_EMOTION_APPEAL` 로 기록되며
+          `H2_HARD_FAIL_ISSUES` 멤버이므로 `passed=False` 로 강제 강등
+        """
+        text = str(heading or "").strip()
+        if not text:
+            return score
+
+        body_first = (
+            body_first_sentences[index] if 0 <= index < len(body_first_sentences) else ""
+        )
+        sibling_others = [
+            str(item or "").strip()
+            for j, item in enumerate(siblings)
+            if j != index and str(item or "").strip()
+        ]
+        aeo = score_h2_aeo(
+            text,
+            siblings=sibling_others,
+            full_name=full_name,
+            descriptor_pool=list(descriptor_pool or []),
+            body_first_sentence=body_first,
+            target_keyword_canonical=target_keyword_canonical,
+            section_index=index,
+            section_count=len(list(siblings or [])),
+        )
+        merged_issues = list(score.get("issues") or [])
+        for issue in aeo.get("issues") or []:
+            if issue not in merged_issues:
+                merged_issues.append(issue)
+
+        emotion_label = detect_emotion_appeal(text)
+        if emotion_label:
+            tag = f"H2_EMOTION_APPEAL:{emotion_label}"
+            if tag not in merged_issues:
+                merged_issues.append(tag)
+
+        score["issues"] = merged_issues
+        score["aeo_score"] = aeo.get("score", 0.0)
+        score["aeo_breakdown"] = aeo.get("breakdown", {})
+
+        hard_fail = any(
+            (issue.split(":", 1)[0] if isinstance(issue, str) else "")
+            in H2_HARD_FAIL_ISSUES
+            for issue in merged_issues
+        )
+        if hard_fail:
+            score["passed"] = False
+        return score
+
+    def _enrich_scores_with_aeo(
+        self,
+        *,
+        scores: List[H2Score],
+        headings: Sequence[str],
+        trace: List[Dict[str, Any]],
+        full_name: str,
+        descriptor_pool: Sequence[str],
+        body_first_sentences: Sequence[str],
+        target_keyword_canonical: str,
+        score_key: str,
+    ) -> None:
+        """전체 score 리스트에 AEO 결과를 병합하고 trace 에 기록한다."""
+        for i, sc in enumerate(scores):
+            self._enrich_score_one(
+                sc,
+                heading=headings[i] if i < len(headings) else "",
+                index=i,
+                siblings=headings,
+                full_name=full_name,
+                descriptor_pool=descriptor_pool,
+                body_first_sentences=body_first_sentences,
+                target_keyword_canonical=target_keyword_canonical,
+            )
+            trace[i][f"{score_key}_score"] = sc.get("score", 0.0)
+            trace[i][f"{score_key}_aeo_score"] = sc.get("aeo_score", 0.0)
+            trace[i][f"{score_key}_issues"] = list(sc.get("issues", []))
+
     def _safe_sanitize(self, raw: Any) -> str:
         try:
             return sanitize_h2_text(str(raw))
@@ -712,6 +956,9 @@ class SubheadingAgent(Agent):
         user_keywords: Sequence[str],
         preferred_keyword: str,
         full_name: str,
+        descriptor_pool: Sequence[str],
+        body_first_sentences: Sequence[str],
+        target_keyword_canonical: str,
     ) -> List[Dict[str, Any]]:
         """결정론 h2_repair 모듈 체인을 한 번에 적용.
 
@@ -801,7 +1048,18 @@ class SubheadingAgent(Agent):
                 style=h2_style,
                 preferred_types=preferred_types,
             )
+            self._enrich_score_one(
+                new_score,
+                heading=new_inner,
+                index=i,
+                siblings=working,
+                full_name=full_name,
+                descriptor_pool=descriptor_pool,
+                body_first_sentences=body_first_sentences,
+                target_keyword_canonical=target_keyword_canonical,
+            )
             trace[i]["h2_repair_chain_score"] = new_score.get("score", 0.0)
+            trace[i]["h2_repair_chain_issues"] = list(new_score.get("issues", []))
             current_scores[i] = new_score
 
         return actions

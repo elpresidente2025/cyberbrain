@@ -25,6 +25,13 @@ __all__ = [
     "pick_must_include_keyword",
     "extract_key_claim",
     "strip_html",
+    "classify_section_intent",
+    "detect_answer_type",
+    "build_target_keyword_canonical",
+    "build_descriptor_pool",
+    "assign_h2_entity_slots",
+    "AEO_INTENT_KINDS",
+    "AEO_ANSWER_TYPES",
 ]
 
 
@@ -84,6 +91,11 @@ class SectionPlan(TypedDict, total=False):
     numerics: List[str]
     entity_hints: List[str]
     key_claim: str
+    # AEO 확장 필드
+    query_intent: str
+    answer_type: str
+    target_keyword_canonical: str
+    assigned_entity_surface: str
 
 
 class StanceBrief(TypedDict, total=False):
@@ -348,3 +360,247 @@ def extract_stance_claims(stance_text: str) -> StanceBrief:
         key_entities=entities,
         dominant_type=dominant_type,
     )
+
+
+# ---------------------------------------------------------------------------
+# AEO 확장: intent 분류 · answer type · descriptor pool · 엔티티 슬롯 배정
+# ---------------------------------------------------------------------------
+
+AEO_INTENT_KINDS = ("info", "nav", "cmp", "tx")
+AEO_ANSWER_TYPES = ("question-form", "declarative-fact", "declarative-list")
+
+_INTENT_CMP_MARKERS = (
+    "vs",
+    "대비",
+    "차이",
+    "비교",
+    "대결",
+    "양자",
+    "가상대결",
+    "맞대결",
+    "쟁점",
+)
+_INTENT_CMP_NUMERIC_RE = re.compile(r"\d{1,3}(?:\.\d)?\s?%[^a-zA-Z0-9%]{0,8}\d{1,3}(?:\.\d)?\s?%")
+_INTENT_TX_MARKERS = (
+    "신청",
+    "접수",
+    "절차",
+    "단계",
+    "방법",
+    "가이드",
+    "지원금",
+    "신청서",
+    "자격",
+    "심사",
+)
+_INTENT_NAV_MARKERS = (
+    "이력",
+    "출마",
+    "프로필",
+    "소개",
+    "약력",
+    "성과",
+    "공약",
+    "활동",
+    "경력",
+)
+
+_ANSWER_LIST_MARKERS = (
+    "첫째",
+    "둘째",
+    "셋째",
+    "넷째",
+    "다섯째",
+    "하나,",
+    "둘,",
+    "셋,",
+)
+_ANSWER_LIST_NUMERIC_RE = re.compile(r"(?:^|[^\d])(?:[1-9]|1[0-9])[\)\.]\s")
+_ANSWER_LIST_COUNT_RE = re.compile(r"(?:3|4|5|6|7|8|9|10)\s?(?:대|가지|단계|축|원칙|영역)")
+_ANSWER_FACT_TAIL_RE = re.compile(r"(?:입니다|이다|합니다|한다|됩니다|된다|했습니다|했다)\s*[\.]")
+
+
+def classify_section_intent(section_text: str) -> str:
+    """섹션 본문의 패턴으로 query intent 를 결정론 분류한다.
+
+    반환값: "cmp" | "tx" | "nav" | "info" — 매칭 실패 시 "info" 기본값.
+    """
+    text = strip_html(section_text)
+    if not text:
+        return "info"
+
+    if _INTENT_CMP_NUMERIC_RE.search(text):
+        return "cmp"
+    if any(marker in text for marker in _INTENT_CMP_MARKERS):
+        return "cmp"
+    if any(marker in text for marker in _INTENT_TX_MARKERS):
+        return "tx"
+    if any(marker in text for marker in _INTENT_NAV_MARKERS):
+        return "nav"
+    return "info"
+
+
+def detect_answer_type(section_text: str) -> str:
+    """섹션 본문이 지향하는 답변 형태를 분류한다.
+
+    반환값: "declarative-list" | "declarative-fact" | "question-form"
+    - 리스트/열거 패턴이면 list
+    - 단정형 문장 비율이 높으면 fact
+    - 그 외(기본) question-form — LLM 에 질문형 H2 를 요구
+    """
+    text = strip_html(section_text)
+    if not text:
+        return "question-form"
+
+    if any(marker in text for marker in _ANSWER_LIST_MARKERS):
+        return "declarative-list"
+    if _ANSWER_LIST_NUMERIC_RE.search(text) or _ANSWER_LIST_COUNT_RE.search(text):
+        return "declarative-list"
+
+    sentences = _split_sentences(text)
+    if len(sentences) >= 3:
+        fact_hits = sum(
+            1 for sentence in sentences if _ANSWER_FACT_TAIL_RE.search(sentence + ".")
+        )
+        if fact_hits / len(sentences) >= 0.7:
+            return "declarative-fact"
+
+    return "question-form"
+
+
+def build_target_keyword_canonical(
+    *,
+    preferred_keyword: str = "",
+    full_name: str = "",
+    user_keywords: Optional[Sequence[str]] = None,
+) -> str:
+    """전역 타깃 canonical 키워드를 결정한다 (H2 세트 전체가 공유)."""
+    candidates = [
+        str(preferred_keyword or "").strip(),
+        str(full_name or "").strip(),
+    ]
+    for kw in user_keywords or ():
+        candidates.append(str(kw or "").strip())
+    for candidate in candidates:
+        if candidate:
+            return candidate
+    return ""
+
+
+def _split_role_label_tokens(value: Any) -> List[str]:
+    raw = str(value or "").strip()
+    if not raw:
+        return []
+    parts = [
+        token.strip()
+        for token in re.split(r"[·•,/]+", raw)
+        if token and token.strip()
+    ]
+    return parts or [raw]
+
+
+def build_descriptor_pool(
+    *,
+    full_name: str = "",
+    full_region: str = "",
+    role_facts: Optional[Any] = None,
+    profile: Optional[Any] = None,
+    max_items: int = 6,
+) -> List[str]:
+    """H2 엔티티 슬롯 배정에 사용할 descriptor 후보 리스트를 생성한다.
+
+    우선순위:
+    1. profile.currentRole / profile.identity / profile.tagline
+    2. role_facts 내 본인(full_name) 에 매핑된 역할 라벨
+    3. full_region 기반 "지역 + 청년 정치인" 류 positioning
+    4. role_facts 값 중 일반 정치 role 키워드
+
+    descriptor 는 본문에서 이미 선언된 것만 사용하는 것이 이상적이지만,
+    이 함수는 후보 풀 생성만 담당. 최종 검증은 h2_scoring 에서 수행.
+    """
+    pool: List[str] = []
+    name_clean = str(full_name or "").strip()
+    region_clean = str(full_region or "").strip()
+
+    if isinstance(profile, dict):
+        for key in ("currentRole", "current_role", "identity", "tagline", "publicRole"):
+            value = profile.get(key)
+            pool.extend(_split_role_label_tokens(value))
+
+    if isinstance(role_facts, dict) and name_clean:
+        own_role = role_facts.get(name_clean)
+        pool.extend(_split_role_label_tokens(own_role))
+
+    if region_clean:
+        short_region = region_clean.split()[-1] if region_clean else ""
+        if short_region:
+            pool.append(f"{short_region} 청년 정치인")
+            pool.append(f"{short_region} 정책 실무자")
+
+    if isinstance(role_facts, dict):
+        for value in role_facts.values():
+            pool.extend(_split_role_label_tokens(value))
+
+    cleaned: List[str] = []
+    seen: set = set()
+    for item in pool:
+        key = str(item or "").strip()
+        if not key or key == name_clean or key in seen:
+            continue
+        if len(key) < 2 or len(key) > 20:
+            continue
+        seen.add(key)
+        cleaned.append(key)
+        if len(cleaned) >= max_items:
+            break
+    return cleaned
+
+
+def assign_h2_entity_slots(
+    section_count: int,
+    *,
+    full_name: str,
+    descriptor_pool: Sequence[str],
+    anchor_max_ratio: float = 0.5,
+) -> List[str]:
+    """H2 섹션별로 노출할 엔티티 surface 를 미리 배정한다.
+
+    정책:
+    - 1번째 섹션은 앵커(full_name) 고정 — 글 시작부에 본명 1회 확보
+    - 2번째 이후는 descriptor_pool 을 순환 배정
+    - N≥5 인 경우에만 중반에 second anchor 1회 허용 (anchor_max_ratio 한도 내)
+    - descriptor_pool 이 비면 나머지 슬롯은 full_name 로 fallback (경고 대상)
+    """
+    count = max(int(section_count or 0), 0)
+    if count == 0:
+        return []
+    name_clean = str(full_name or "").strip()
+    pool = [str(item).strip() for item in (descriptor_pool or ()) if str(item).strip()]
+
+    if not name_clean:
+        if not pool:
+            return [""] * count
+        return [pool[idx % len(pool)] for idx in range(count)]
+
+    anchor_cap = max(1, int(count * anchor_max_ratio))
+    result: List[str] = [""] * count
+
+    result[0] = name_clean
+    used_anchors = 1
+
+    descriptor_cursor = 0
+    for idx in range(1, count):
+        if pool:
+            result[idx] = pool[descriptor_cursor % len(pool)]
+            descriptor_cursor += 1
+        else:
+            result[idx] = name_clean
+            used_anchors += 1
+
+    if used_anchors < anchor_cap and count >= 5 and pool:
+        mid_idx = count // 2
+        if result[mid_idx] != name_clean:
+            result[mid_idx] = name_clean
+            used_anchors += 1
+
+    return result

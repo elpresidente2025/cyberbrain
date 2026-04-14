@@ -24,11 +24,17 @@ from .h2_planning import SectionPlan
 
 __all__ = [
     "H2Score",
+    "H2_AEO_ADVISORIES",
     "H2_MIN_PASSING_SCORE",
     "H2_HARD_FAIL_ISSUES",
     "H2_BANNED_PATTERNS_AEO",
     "H2_BANNED_PATTERNS_ASSERTIVE",
+    "H2_EMOTION_STRUCTURE_PATTERNS",
     "score_h2",
+    "score_h2_aeo",
+    "detect_emotion_appeal",
+    "count_entity_distribution",
+    "detect_sibling_suffix_overlap",
 ]
 
 
@@ -43,6 +49,25 @@ H2_HARD_FAIL_ISSUES = frozenset(
         "INCOMPLETE_ENDING",
         "QUESTION_FORM_IN_ASSERTIVE",
         "DUPLICATE_PARTICLE_OR_TOKEN",
+        "H2_EMOTION_APPEAL",
+    }
+)
+
+# AEO 어드바이저리 — 점수에는 반영되지만 passed 결정에는 개입하지 않는다.
+# PR 6 이후 prod 데이터 확인 후 일부를 hard-fail 로 격상할 수 있다.
+H2_AEO_ADVISORIES = frozenset(
+    {
+        "H2_NO_SUBJECT_ENTITY",
+        "H2_NO_QUESTION_FORM",
+        "H2_SHORT_LENGTH",
+        "H2_LONG_LENGTH",
+        "H2_ENTITY_ANCHOR_MISSING",
+        "H2_ENTITY_ANCHOR_EXCESS",
+        "H2_KEYWORD_STAMP_WARNING",
+        "H2_SIBLING_SUFFIX_OVERLAP",
+        "H2_BODY_ECHO_FIRST_SENTENCE",
+        "H2_QA_PAIRING_FAIL",
+        "H2_CANONICAL_FORM_MISMATCH",
     }
 )
 
@@ -309,3 +334,282 @@ def score_h2(
         category_tags=category_tags,
         breakdown=breakdown,
     )
+
+
+# ---------------------------------------------------------------------------
+# AEO 확장: 감정 호소형 탐지 · 엔티티 분포 · 인접 H2 꼬리 중복 · AEO 점수
+# ---------------------------------------------------------------------------
+
+# 감정 호소형 / 수사형 문장 구조. 어휘가 아니라 **구조** 매칭이 핵심.
+H2_EMOTION_STRUCTURE_PATTERNS: List[tuple] = [
+    # "~이 없었다면 ~다" (반어형 수사)
+    ("reverse_counterfactual", re.compile(r".+(?:이|가)\s*없었다면\s+.+")),
+    # "함께 더 ~", "함께 ~ 가자/갑시다"
+    ("together_call", re.compile(r"^함께\s+")),
+    ("together_march", re.compile(r"함께\s+.{1,12}(?:가자|갑시다|나아가)")),
+    # "~을 위한 길"
+    ("path_for", re.compile(r".+(?:을|를)\s*위한\s*(?:길|여정|약속)$")),
+    # "지금 이 순간", "바로 지금"
+    ("now_appeal", re.compile(r"^(?:지금\s*이\s*순간|바로\s*지금|오늘부터)")),
+    # 명사 단독 호소형: "변화는 ~다", "미래는 ~다"
+    ("abstract_noun_declaration", re.compile(r"^(?:변화|미래|희망|내일)는\s+.+")),
+    # "믿습니다 / 약속드립니다" 단독 종결
+    ("pledge_solo", re.compile(r"(?:약속드립니다|믿습니다|다짐합니다)$")),
+]
+
+_QUESTION_FORM_HINTS = ("어떻게", "무엇", "왜", "누가", "언제", "어디서", "무슨", "어떤")
+_SIBLING_SUFFIX_OVERLAP_THRESHOLD = 1  # 1쌍만 중복돼도 어드바이저리 트리거
+
+
+def detect_emotion_appeal(heading: str) -> Optional[str]:
+    """감정 호소형 / 수사형 구조 패턴을 탐지한다.
+
+    매칭되면 패턴 라벨, 아니면 None. 이 결과는 hard-fail 판정에 쓰인다
+    (정치·자기PR 카테고리 기본). 매칭 로직은 정규식 리스트 기반으로 유지.
+    """
+    text = str(heading or "").strip()
+    if not text:
+        return None
+    for label, pattern in H2_EMOTION_STRUCTURE_PATTERNS:
+        if pattern.search(text):
+            return label
+    return None
+
+
+def count_entity_distribution(
+    headings: List[str],
+    *,
+    full_name: str,
+    descriptor_pool: Optional[List[str]] = None,
+) -> Dict[str, int]:
+    """H2 세트 전체에서 본명·descriptor 등장 분포를 센다.
+
+    반환: `{"full_name": N, "descriptor": M, "neither": K}`.
+    anchor 비율 판정·키워드 스탬핑 경고에 쓰인다.
+    """
+    name_clean = str(full_name or "").strip()
+    pool = [str(item).strip() for item in (descriptor_pool or []) if str(item).strip()]
+    distribution = {"full_name": 0, "descriptor": 0, "neither": 0}
+    for heading in headings or []:
+        text = str(heading or "")
+        if name_clean and name_clean in text:
+            distribution["full_name"] += 1
+            continue
+        matched = False
+        for descriptor in pool:
+            if descriptor and descriptor in text:
+                distribution["descriptor"] += 1
+                matched = True
+                break
+        if not matched:
+            distribution["neither"] += 1
+    return distribution
+
+
+def detect_sibling_suffix_overlap(headings: List[str]) -> List[tuple]:
+    """인접 H2 간 마지막 어절 / penultimate 토큰 중복을 탐지한다.
+
+    두 축을 본다:
+    1) 마지막 두 어절 bigram (완전 중복)
+    2) 마지막 어절 + penultimate 어절 각각의 개별 등장 회수
+       — 2회 이상이면 "테마 토큰 스탬핑" 신호
+
+    반환: (토큰 또는 bigram, 회수) 리스트. 2쌍 이상이면
+    `H2_SIBLING_SUFFIX_OVERLAP` 어드바이저리 트리거.
+    """
+    cleaned = [str(heading or "").strip() for heading in headings or []]
+    cleaned = [h for h in cleaned if h]
+    if len(cleaned) < 2:
+        return []
+
+    def last_two_tokens(text: str) -> tuple:
+        tokens = re.findall(r"[가-힣A-Za-z0-9]+", text)
+        if len(tokens) < 2:
+            return tuple(tokens)
+        return tuple(tokens[-2:])
+
+    suffix_counts: Dict[tuple, int] = {}
+    last_single_counts: Dict[str, int] = {}
+    penultimate_counts: Dict[str, int] = {}
+    for heading in cleaned:
+        tail = last_two_tokens(heading)
+        if len(tail) == 2:
+            suffix_counts[tail] = suffix_counts.get(tail, 0) + 1
+            penultimate_counts[tail[0]] = penultimate_counts.get(tail[0], 0) + 1
+        if tail:
+            last_single_counts[tail[-1]] = last_single_counts.get(tail[-1], 0) + 1
+
+    overlaps: List[tuple] = []
+    seen_tokens: set = set()
+    for pair, count in suffix_counts.items():
+        if count >= 2:
+            label = " ".join(pair)
+            overlaps.append((label, count))
+            seen_tokens.update(pair)
+    for token, count in last_single_counts.items():
+        if count >= 2 and token not in seen_tokens:
+            overlaps.append((token, count))
+            seen_tokens.add(token)
+    for token, count in penultimate_counts.items():
+        if count >= 2 and token not in seen_tokens:
+            overlaps.append((token, count))
+            seen_tokens.add(token)
+    return overlaps
+
+
+def _has_question_form(heading: str) -> bool:
+    text = str(heading or "").strip()
+    if not text:
+        return False
+    if text.rstrip().endswith("?"):
+        return True
+    if _QUESTION_TAIL_RE.search(text):
+        return True
+    if any(hint in text for hint in _QUESTION_FORM_HINTS):
+        return True
+    return False
+
+
+def _has_numeric_answer_marker(heading: str) -> bool:
+    text = str(heading or "")
+    if re.search(r"\d+\s?(?:대|가지|단계|축|원칙)", text):
+        return True
+    return False
+
+
+def _body_first_sentence_tokens(body_first_sentence: str) -> set:
+    cleaned = str(body_first_sentence or "").strip()
+    if not cleaned:
+        return set()
+    tokens = re.findall(r"[가-힣A-Za-z0-9]{2,}", cleaned)
+    return set(tokens)
+
+
+def score_h2_aeo(
+    heading: str,
+    *,
+    siblings: Optional[List[str]] = None,
+    full_name: str = "",
+    descriptor_pool: Optional[List[str]] = None,
+    body_first_sentence: str = "",
+    target_keyword_canonical: str = "",
+    section_index: int = 0,
+    section_count: int = 0,
+) -> Dict[str, object]:
+    """단일 H2 에 AEO 관점의 soft score + 어드바이저리 이슈를 반환한다.
+
+    이 함수는 hard-fail 을 결정하지 않는다(`detect_emotion_appeal` 은 별도).
+    호출자가 점수를 기존 `score_h2` 결과에 병합하고 어드바이저리 리스트를
+    `h2Trace` 에 기록하면 된다.
+    """
+    text = str(heading or "").strip()
+    issues: List[str] = []
+    breakdown: Dict[str, float] = {}
+
+    if not text:
+        return {
+            "score": 0.0,
+            "issues": ["EMPTY_HEADING"],
+            "breakdown": {},
+        }
+
+    length_chars = len(text)
+    if length_chars < 20:
+        length_score = 0.4
+        issues.append("H2_SHORT_LENGTH")
+    elif 20 <= length_chars <= 40:
+        length_score = 1.0
+    elif 41 <= length_chars <= 48:
+        length_score = 0.7
+    else:
+        length_score = 0.3
+        issues.append("H2_LONG_LENGTH")
+    breakdown["length"] = length_score
+
+    has_question = _has_question_form(text)
+    has_numeric = _has_numeric_answer_marker(text)
+    if has_question:
+        answer_score = 1.0
+    elif has_numeric:
+        answer_score = 0.85
+    else:
+        answer_score = 0.3
+        issues.append("H2_NO_QUESTION_FORM")
+    breakdown["answer_form"] = answer_score
+
+    pool = [str(item).strip() for item in (descriptor_pool or []) if str(item).strip()]
+    name_clean = str(full_name or "").strip()
+    contains_name = bool(name_clean and name_clean in text)
+    contains_descriptor = any(descriptor in text for descriptor in pool)
+    if contains_name or contains_descriptor:
+        entity_score = 1.0
+    else:
+        entity_score = 0.2
+        issues.append("H2_NO_SUBJECT_ENTITY")
+    breakdown["entity"] = entity_score
+
+    canonical = str(target_keyword_canonical or "").strip()
+    if canonical and canonical not in text and name_clean and name_clean not in text:
+        if not contains_descriptor:
+            issues.append("H2_CANONICAL_FORM_MISMATCH")
+
+    sibling_list = [str(item or "").strip() for item in (siblings or []) if str(item).strip()]
+    overlaps = detect_sibling_suffix_overlap(sibling_list + [text])
+    if len(overlaps) >= _SIBLING_SUFFIX_OVERLAP_THRESHOLD:
+        issues.append("H2_SIBLING_SUFFIX_OVERLAP")
+        uniqueness_score = 0.4
+    elif overlaps:
+        uniqueness_score = 0.7
+    else:
+        uniqueness_score = 1.0
+    breakdown["uniqueness"] = uniqueness_score
+
+    body_tokens = _body_first_sentence_tokens(body_first_sentence)
+    h2_tokens = set(re.findall(r"[가-힣A-Za-z0-9]{2,}", text))
+    qa_score = 1.0
+    if body_tokens and h2_tokens:
+        overlap_ratio = len(h2_tokens & body_tokens) / max(len(h2_tokens), 1)
+        if overlap_ratio >= 0.8:
+            issues.append("H2_BODY_ECHO_FIRST_SENTENCE")
+            qa_score = 0.4
+        elif overlap_ratio == 0:
+            issues.append("H2_QA_PAIRING_FAIL")
+            qa_score = 0.3
+    breakdown["qa_pairing"] = qa_score
+
+    entity_distribution_score = 1.0
+    if section_count and sibling_list is not None:
+        all_headings = sibling_list + [text]
+        if len(all_headings) == section_count:
+            distribution = count_entity_distribution(
+                all_headings, full_name=name_clean, descriptor_pool=pool
+            )
+            anchor_count = distribution["full_name"]
+            anchor_cap = max(1, int(section_count * 0.5))
+            if anchor_count == 0 and name_clean:
+                issues.append("H2_ENTITY_ANCHOR_MISSING")
+                entity_distribution_score = 0.4
+            elif anchor_count > anchor_cap:
+                issues.append("H2_KEYWORD_STAMP_WARNING")
+                entity_distribution_score = 0.4
+    breakdown["entity_distribution"] = entity_distribution_score
+
+    weights = {
+        "length": 0.15,
+        "answer_form": 0.25,
+        "entity": 0.20,
+        "uniqueness": 0.15,
+        "qa_pairing": 0.15,
+        "entity_distribution": 0.10,
+    }
+    total = round(
+        sum(breakdown[key] * weight for key, weight in weights.items()),
+        4,
+    )
+
+    return {
+        "score": total,
+        "issues": issues,
+        "breakdown": breakdown,
+        "section_index": section_index,
+    }
