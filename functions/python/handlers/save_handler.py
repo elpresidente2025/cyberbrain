@@ -416,6 +416,7 @@ def _save_selected_post_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         word_count = _count_without_html_tags(content)
+        news_data_text = str(data.get("newsDataText") or "").strip()
         post_data = {
             "userId": uid,
             "title": title,
@@ -427,6 +428,7 @@ def _save_selected_post_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]:
             "wordCount": word_count,
             "sourceInput": source_input,
             "sourceType": source_type,
+            "newsDataText": news_data_text,
             "status": "scheduled",
             "createdAt": firestore.SERVER_TIMESTAMP,
             "updatedAt": firestore.SERVER_TIMESTAMP,

@@ -243,6 +243,7 @@ export function useGenerateAPI() {
         title: draftData.title || formData.topic || formData.prompt || '새로운 원고',
         topic: draftData.topic || formData.topic || formData.prompt || '',
         stanceText: stanceText,
+        newsDataText: newsDataText,
         content: content,
 
         // 📌 보안 개선: DOMPurify 사용
@@ -394,6 +395,7 @@ export function useGenerateAPI() {
         title: draft.title,
         topic: draft.topic,
         stanceText: draft.stanceText,
+        newsDataText: draft.newsDataText,
         content: draft.content,
         htmlContent: draft.htmlContent,
         plainText: draft.plainText,

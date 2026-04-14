@@ -98,6 +98,31 @@ def _resolve_source_label(options: Dict[str, Any]) -> str:
     return "블로그 원고"
 
 
+_REFERENCE_CONTEXT_MAX_CHARS = 1500
+
+
+def _build_reference_context_block(options: Dict[str, Any]) -> str:
+    """
+    원고 생성 시 입력됐던 뉴스/데이터 텍스트를 변환 프롬프트에 보조 맥락으로 주입한다.
+    본문에 없는 수치·인용을 LLM이 활용할 수 있게 하되, 출처로만 쓰고 창작은 금지한다.
+    """
+    raw = str((options or {}).get("newsDataText") or "").strip()
+    if not raw:
+        return ""
+    trimmed = raw[:_REFERENCE_CONTEXT_MAX_CHARS]
+    truncated = len(raw) > _REFERENCE_CONTEXT_MAX_CHARS
+    note = "(일부 생략됨)" if truncated else ""
+    return (
+        "\n<reference_context role=\"보조 자료\" priority=\"high\">\n"
+        "  <instruction>아래는 이 원고가 만들어질 때 참고된 뉴스/데이터 원문입니다. "
+        "본문에 명시되지 않은 수치·인용·배경이 있을 때만 근거로 활용하고, "
+        "여기 없는 사실을 새로 만들지 않습니다. 본문 우선, 보조 자료는 사실 보강용입니다."
+        f"{(' ' + note) if note else ''}</instruction>\n"
+        f"  <material>{trimmed}</material>\n"
+        "</reference_context>\n"
+    )
+
+
 # 사용자 프로필이 비어있을 때 들어오는 generic placeholder 값들.
 # 이 값이 프롬프트 <author_*> 태그를 거쳐 LLM 본문에 오염되는 사고를 차단한다.
 _GENERIC_AUTHOR_NAMES = {"", "정치인", "작성자", "사용자", "후보", "의원", "이름"}
@@ -153,7 +178,7 @@ def build_facebook_instagram_prompt(
     chars_per_line = int(platform_config.get("charsPerLine", 22))
     quality_issues = options.get("qualityIssues", [])
     natural_tone_guide = build_sns_natural_tone_guide()
-    extra_context = _build_topic_and_title_block(options)
+    extra_context = _build_topic_and_title_block(options) + _build_reference_context_block(options)
     source_label = _resolve_source_label(options)
 
     remediation_block = ""
@@ -267,7 +292,7 @@ def build_x_prompt(
     sub_category = options.get("subCategory", "")
     quality_issues = options.get("qualityIssues", [])
     natural_tone_guide = build_sns_natural_tone_guide()
-    extra_context = _build_topic_and_title_block(options)
+    extra_context = _build_topic_and_title_block(options) + _build_reference_context_block(options)
     source_label = _resolve_source_label(options)
 
     # Node 로직과 유사한 분기
@@ -470,7 +495,7 @@ def build_threads_prompt(
     blog_url = options.get("blogUrl", "")
     quality_issues = options.get("qualityIssues", [])
     natural_tone_guide = build_sns_natural_tone_guide()
-    extra_context = _build_topic_and_title_block(options)
+    extra_context = _build_topic_and_title_block(options) + _build_reference_context_block(options)
     source_label = _resolve_source_label(options)
 
     post_count_guidance = (

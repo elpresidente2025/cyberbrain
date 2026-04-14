@@ -1004,6 +1004,7 @@ async def _convert_platform(
                     "topic": post_data.get("topic", ""),
                     "title": post_data.get("title", ""),
                     "sourceType": source_type,
+                    "newsDataText": post_data.get("newsDataText", ""),
                 },
             )
 
@@ -1219,6 +1220,7 @@ async def _convert_platform(
                     "title": post_data.get("title", ""),
                     "qualityIssues": quality_issues,
                     "sourceType": source_type,
+                    "newsDataText": post_data.get("newsDataText", ""),
                 },
             )
             try:
@@ -1298,6 +1300,7 @@ async def _convert_platform(
                     "title": post_data.get("title", ""),
                     "qualityIssues": thread_issues,
                     "sourceType": source_type,
+                    "newsDataText": post_data.get("newsDataText", ""),
                 },
             )
             try:
