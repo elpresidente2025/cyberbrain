@@ -59,6 +59,13 @@ function countWithoutSpace(str) {
   return count;
 }
 
+// 게시물 본문 글자수 (공백 + URL 제외) — 백엔드 count_content_chars와 동일 의미
+const URL_STRIP_RE = /https?:\/\/[^\s)]+/gi;
+function countContentChars(str) {
+  if (!str) return 0;
+  return countWithoutSpace(String(str).replace(URL_STRIP_RE, ''));
+}
+
 const PLATFORMS = {
   'facebook-instagram': {
     name: 'Facebook + Instagram',
@@ -129,7 +136,7 @@ function normalizeThreadPosts(posts, originalUrl) {
     return {
       ...post,
       content,
-      wordCount: countWithoutSpace(content)
+      wordCount: countContentChars(content)
     };
   });
 
@@ -146,7 +153,7 @@ function normalizeThreadPosts(posts, originalUrl) {
   cleanedPosts[lastIndex] = {
     ...lastPost,
     content: nextContent,
-    wordCount: countWithoutSpace(nextContent)
+    wordCount: countContentChars(nextContent)
   };
 
   return cleanedPosts;
@@ -160,7 +167,7 @@ function normalizeSnsResultUrls(result, originalUrl) {
     return {
       ...result,
       posts,
-      totalWordCount: posts.reduce((sum, post) => sum + countWithoutSpace(post.content), 0)
+      totalWordCount: posts.reduce((sum, post) => sum + countContentChars(post.content), 0)
     };
   }
 
@@ -179,7 +186,7 @@ function normalizeSnsResultUrls(result, originalUrl) {
     return {
       ...result,
       content,
-      wordCount: countWithoutSpace(content)
+      wordCount: countContentChars(content)
     };
   }
 
@@ -274,7 +281,7 @@ const ThreadPostsDisplay = ({ posts, hashtags, onCopy }) => {
             color="text.secondary"
             sx={{ display: 'block', textAlign: 'right', mt: 0.5 }}
           >
-            {countWithoutSpace(post.content)}자
+            {countContentChars(post.content)}자
           </Typography>
         </Box>
       ))}
@@ -588,7 +595,7 @@ function SNSConversionModal({ open, onClose, post }) {
                   </Typography>
                 </Box>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'right', mb: 1 }}>
-                  {countWithoutSpace(results['facebook-instagram'].content)}자 (공백 제외)
+                  {countContentChars(results['facebook-instagram'].content)}자 (공백·URL 제외)
                 </Typography>
                 {results['facebook-instagram'].hashtags?.length > 0 && (
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
@@ -654,7 +661,7 @@ function SNSConversionModal({ open, onClose, post }) {
                   </Box>
                   {results.x.totalWordCount && (
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'right', mt: 1 }}>
-                      총 {results.x.totalWordCount}자 (공백 제외)
+                      총 {results.x.totalWordCount}자 (공백·URL 제외)
                     </Typography>
                   )}
                 </Paper>
@@ -712,7 +719,7 @@ function SNSConversionModal({ open, onClose, post }) {
                   </Box>
                   {results.threads.totalWordCount && (
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'right', mt: 1 }}>
-                      총 {results.threads.totalWordCount}자 (공백 제외)
+                      총 {results.threads.totalWordCount}자 (공백·URL 제외)
                     </Typography>
                   )}
                 </Paper>
