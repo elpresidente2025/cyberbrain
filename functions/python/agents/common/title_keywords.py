@@ -4,6 +4,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from .title_common import logger
+from .title_family_rules import HOLLOW_ABSTRACT_TOKENS
 from .title_repairers import _assess_competitor_intent_title_tail
 from .title_validators import _assess_poll_focus_title_lane
 
@@ -39,14 +40,22 @@ def _topic_keyword_matches_text(keyword: str, text: str) -> bool:
 
 
 _SURFACE_TOPIC_PARTICLE_SUFFIXES = (
+    # 2~3자 복합 조사 — 반드시 단일 조사(로/서) 보다 먼저 매치돼야 한다.
+    "에게서",
+    "에서부터",
+    "으로서",
+    "으로써",
+    "로서",
+    "로써",
     "에서",
-    "보다",
-    "으로",
-    "로",
     "에게",
     "까지",
     "부터",
     "처럼",
+    "보다",
+    "으로",
+    # 단일 조사 — 단문자 particle 은 순회 끝쪽에서만 매치.
+    "로",
     "의",
     "을",
     "를",
@@ -120,6 +129,28 @@ _SURFACE_TOPIC_SIGNAL_SUFFIXES = (
 )
 
 
+_SURFACE_TOPIC_VERB_ENDING_RE = re.compile(
+    # `니다$` 는 -ㅂ니다/-습니다/-ㅂ니다 모든 경어체 종결을 포괄한다.
+    # 한국어에서 `니다` 로 끝나는 일반 명사는 거의 없으므로 안전하다.
+    r"("
+    r"니다|겠다|겠어요|겠네|"
+    r"했다|하였다|됐다|였다|었다|았다|렸다|쳤다|"
+    r"된다|한다|되다|하며|하면서|하자|해내|해내겠"
+    r")$"
+)
+
+# "가" 로 끝나는 단어 중 주격 조사가 아니라 명사 접미사인 것들.
+# 이 집합에 포함된 토큰은 끝 글자를 particle 로 벗기지 않는다.
+# (운동+가, 정치+가, 작+가 등 한국어 "-가" 명사 접미사 대응)
+_PROTECTED_NOMINAL_SUFFIXES: "tuple[str, ...]" = (
+    "운동가", "활동가", "실천가", "혁명가", "사상가", "이론가",
+    "정치가", "작가", "화가", "음악가", "미술가", "문학가", "소설가",
+    "평론가", "예술가", "건축가", "발명가", "교육자", "사업가",
+    "전문가", "애호가", "선구자", "학자", "기자", "의사", "교수",
+    "위원장", "위원", "변호사",
+)
+
+
 def _normalize_surface_topic_token(token: str) -> str:
     cleaned = re.sub(r"<[^>]*>", " ", str(token or ""))
     cleaned = re.sub(r"[#\"'“”‘’`~()\[\]{}<>]", " ", cleaned)
@@ -128,9 +159,23 @@ def _normalize_surface_topic_token(token: str) -> str:
     if not cleaned:
         return ""
 
-    for suffix in _SURFACE_TOPIC_PARTICLE_SUFFIXES:
-        if cleaned.endswith(suffix) and len(cleaned) - len(suffix) >= 2:
-            cleaned = cleaned[: -len(suffix)]
+    # 복합 조사(으로서/에서부터) 는 단일 조사(로/서) 를 품고 있으므로 한 번
+    # 벗기고 멈추면 잔여가 남는다("후손으로서"→"후손으로"). 더 이상 매치되는
+    # suffix 가 없을 때까지 반복해서 깨끗한 명사 어근까지 간다. 루프 상한을
+    # 두어 무한 루프·과도 절삭을 방지한다.
+    for _ in range(4):
+        # 명사 접미사 "-가/-자" 는 주격 조사와 표면이 같아서 한 글자만 벗기면
+        # "독립운동가 → 독립운동" 처럼 명사의 일부를 잘라 버린다. 보호 목록에
+        # 등록된 어근이면 이번 루프에서는 벗기지 않고 종료한다.
+        if any(cleaned.endswith(suffix) for suffix in _PROTECTED_NOMINAL_SUFFIXES):
+            break
+        stripped = False
+        for suffix in _SURFACE_TOPIC_PARTICLE_SUFFIXES:
+            if cleaned.endswith(suffix) and len(cleaned) - len(suffix) >= 2:
+                cleaned = cleaned[: -len(suffix)]
+                stripped = True
+                break
+        if not stripped:
             break
 
     if (
@@ -141,10 +186,93 @@ def _normalize_surface_topic_token(token: str) -> str:
     ):
         return ""
 
-    if re.search(r"(하겠|합니다|입니다|했다|하였다|되는|된다|되다|해내|한다|하며)$", cleaned):
+    if _SURFACE_TOPIC_VERB_ENDING_RE.search(cleaned):
+        return ""
+
+    # hollow 추상 어휘(공동체/미래/희망/책임/…) 는 title_family_rules 에서
+    # 제목 슬로건으로 쓰지 말라고 강등된 단어다. 여기서도 required topic
+    # keyword 로 요구하지 않는다 — 두 규칙이 같은 상수를 읽는다.
+    if cleaned in HOLLOW_ABSTRACT_TOKENS:
         return ""
 
     return cleaned
+
+
+def compute_required_topic_keywords(
+    topic: str,
+    params: Optional[Dict[str, Any]] = None,
+    *,
+    limit: int = 4,
+    content: Optional[str] = None,
+) -> List[str]:
+    """Single source of truth for "required topic keywords".
+
+    Both the title scorer (`validate_theme_and_content`) and the title
+    generator prompt (`build_title_prompt`) read from this function so the
+    LLM sees the exact list that will later gate its output. Author name is
+    intentionally NOT included here: the scorer tracks author presence on
+    a separate path (author_name_text in title_text), and mixing it into
+    topic_keywords would skew overlap ratios.
+
+    **본문 우선 원칙**: `topic` 은 사용자 의도(자유 텍스트, 스탠스 한 문장일
+    수도 있음) 일 뿐 실제 글의 주제가 아니다. 실제 글의 주제는 본문에 있다.
+    따라서 `content` 가 주어지면 `extract_slot_opportunities` 로 본문에서 뽑은
+    구체 슬롯 토큰(지역/기관/정책/연도/수치)을 필수 키워드로 우선 반환한다.
+    생성기 프롬프트의 slot_opportunities 블록과 스코어러의 required_keywords
+    가 동일 재료를 바라보게 되어 "생성기엔 A 요구, 채점기엔 B 요구" 모순이
+    사라진다.
+
+    본문이 없거나 슬롯이 비어 있을 때만 topic 텍스트 기반 추출로 폴백한다.
+    """
+    if content:
+        slot_keywords = _extract_slot_based_required_keywords(
+            topic=topic, content=content, params=params, limit=limit
+        )
+        if slot_keywords:
+            return slot_keywords
+
+    keywords = extract_topic_keywords(topic)
+    if not keywords:
+        keywords = _extract_surface_topic_tokens(topic, limit=limit)
+    elif len(keywords) < 3:
+        surface_extra = _extract_surface_topic_tokens(topic, limit=limit)
+        for extra in surface_extra:
+            if extra not in keywords:
+                keywords.append(extra)
+            if len(keywords) >= limit:
+                break
+    return keywords
+
+
+def _extract_slot_based_required_keywords(
+    *,
+    topic: str,
+    content: str,
+    params: Optional[Dict[str, Any]],
+    limit: int,
+) -> List[str]:
+    try:
+        from .title_hook_quality import extract_slot_opportunities
+    except Exception:
+        return []
+    opportunities = extract_slot_opportunities(topic, content, params)
+    if not isinstance(opportunities, dict):
+        return []
+    # 구체성 우선순위: region → policy → institution → numeric → year.
+    # 지역/정책/기관은 고유명사 성격이 강하고, 수치/연도는 부차 재료다.
+    ordered_categories = ('region', 'policy', 'institution', 'numeric', 'year')
+    result: List[str] = []
+    for category in ordered_categories:
+        for token in opportunities.get(category, []) or []:
+            cleaned = re.sub(r"\s+", "", str(token or "")).strip()
+            if not cleaned or len(cleaned) < 2:
+                continue
+            if cleaned in result:
+                continue
+            result.append(cleaned)
+            if len(result) >= limit:
+                return result
+    return result
 
 
 def _extract_surface_topic_tokens(text: str, *, limit: int = 4) -> List[str]:
@@ -655,13 +783,18 @@ def validate_theme_and_content(
                 'effectiveTitleScore': 0,
             }
 
-        topic_keywords = extract_topic_keywords(topic)
-        using_surface_topic_fallback = False
-        if not topic_keywords:
-            topic_keywords = _extract_surface_topic_tokens(topic, limit=4)
-            using_surface_topic_fallback = bool(topic_keywords)
-        content_text = str(content or '')
         params_dict = params if isinstance(params, dict) else {}
+        # 단일 진실: 생성 프롬프트(build_title_prompt) 도 같은 함수를 호출해
+        # 동일한 required_topic_keywords 를 LLM 에게 미리 보여준다. 두 경로가
+        # 서로 다른 키워드 목록을 가질 수 없게 된다.
+        raw_extract = extract_topic_keywords(topic)
+        topic_keywords = compute_required_topic_keywords(
+            topic, params_dict, content=content
+        )
+        using_surface_topic_fallback = (
+            bool(topic_keywords) and not raw_extract
+        )
+        content_text = str(content or '')
         matched_keywords = []
         missing_keywords = []
 
@@ -704,6 +837,34 @@ def validate_theme_and_content(
                 effective_title_score,
                 int(frame_alignment_meta.get("score") or 0),
             )
+
+            # 스타일리스틱 제목(슬로건/다짐/관점 등)은 주제 키워드를 수사로 치환해
+            # 표면 overlap 이 낮아지기 쉽다. 저자명이 제목에 있고 본문이 주제와
+            # 정합(content_overlap >= 50) 이면 두 가지 경로로 보통 tier 바닥값을 준다:
+            #   1) 제목이 저자명 외 주제 키워드도 포함 (안전한 기본 경로)
+            #   2) 제목이 stylistic family fit 에 부합 (커밋먼트/다짐/관점 등)
+            author_name_text = str(params_dict.get('fullName') or '').strip()
+            if (
+                author_name_text
+                and author_name_text in title_text
+                and content_overlap_score >= 50
+            ):
+                non_author_matches = [
+                    kw for kw in title_matched_keywords
+                    if kw and kw != author_name_text
+                ]
+                family_fit_floor = False
+                if not non_author_matches:
+                    try:
+                        from .title_family_rules import assess_family_fit
+                        from .title_common import resolve_title_family
+                        selected_family = resolve_title_family(params_dict)
+                        fit = assess_family_fit(title_text, selected_family)
+                        family_fit_floor = fit.get('status') == 'fit'
+                    except Exception:
+                        family_fit_floor = False
+                if non_author_matches or family_fit_floor:
+                    effective_title_score = max(effective_title_score, 65)
             competitor_tail_validation = _assess_competitor_intent_title_tail(title_text, params_dict)
             if not competitor_tail_validation.get("passed", True):
                 effective_title_score = min(effective_title_score, 35)
@@ -730,12 +891,23 @@ def validate_theme_and_content(
             if not numeric_binding.get("passed", True):
                 effective_title_score = min(effective_title_score, 40)
                 mismatch_reasons.append(str(numeric_binding.get("reason") or "제목 수치가 대결 문맥과 맞지 않습니다."))
+            # 사용자가 직접 SEO 검색어를 지정하지 않은 경우(=user_keywords 비어
+            # 있음), topic_keywords 는 scorer 가 topic 텍스트에서 자동 추출한
+            # 추정치에 불과하다. 이 추정 목록 기반으로 제목을 hard-reject 하면
+            # "사용자 의도가 없는 상태에서 LLM 이 아무리 좋은 제목을 내도
+            # 자동 추출된 단어와 일치하지 않으면 탈락" 하는 루프에 빠진다.
+            # 따라서 user_keywords 가 있을 때만 mismatch_reasons 에 추가하고,
+            # 없을 때는 suggestions 경로로만(= effectiveTitleScore 는 그대로)
+            # 가볍게 안내한다. user_keywords 가 있을 때는 종전 동작을 유지한다.
+            user_keywords_present = bool(params_dict.get('userKeywords'))
             if (
                 topic_keywords
                 and len(title_missing) > len(topic_keywords) * 0.5
                 and int(frame_alignment_meta.get("score") or 0) < 70
             ):
-                mismatch_reasons.append(f"제목에 주제 핵심어 부족: {', '.join(title_missing[:3])}")
+                missing_note = f"제목에 주제 핵심어 부족: {', '.join(title_missing[:3])}"
+                if user_keywords_present:
+                    mismatch_reasons.append(missing_note)
 
         return {
             'isValid': effective_title_score >= 50 and not mismatch_reasons,

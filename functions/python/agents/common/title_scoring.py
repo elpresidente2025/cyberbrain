@@ -22,6 +22,11 @@ from .title_common import (
     resolve_title_family,
     extract_numbers_from_content,
 )
+from .title_family_rules import (
+    assess_family_fit,
+    family_wants_relationship_voice,
+    title_has_any_commitment_signal,
+)
 from .title_metadata import (
     _contains_date_hint,
     _extract_book_title,
@@ -69,23 +74,6 @@ _NON_EVENT_ANNOUNCEMENT_SURFACE_PATTERNS = (
     re.compile(r'개최\s*안내', re.IGNORECASE),
 )
 
-_SLOGAN_COMMITMENT_POSITIVE_PATTERNS = (
-    re.compile(
-        r'(책임감|책임지|책임을\s*다|'
-        r'지키겠|지켜온|지켜낼|지켜낸|곁을\s*지키|곁에서|끝까지|'
-        r'약속(?:하|합|드립|할)|다짐|맹세|'
-        r'실천(?:할|하|으로|한다|합니다|하겠|하는)|'
-        r'답하(?:다|겠|는)|답합니다|'
-        r'이어받|계승(?:할|하|하겠)?|'
-        r'만들겠|만들어가|이끄는|이끌겠)',
-        re.IGNORECASE,
-    ),
-    re.compile(r'(구민|시민|주민|당원|청년|공동체)\s*(곁|에게|위해|위한)', re.IGNORECASE),
-)
-_SLOGAN_COMMITMENT_GENERIC_REPORT_PATTERN = re.compile(
-    r'(현안\s*해결|미래\s*비전|비전\s*제시|정책\s*방향|실행\s*과제|의정활동\s*성과)',
-    re.IGNORECASE,
-)
 
 
 def _repair_third_person_possessive_title_surface(title: str) -> str:
@@ -114,57 +102,7 @@ def _detect_non_event_announcement_surface(title: str) -> str:
 def _assess_title_family_fit(title: str, params: Dict[str, Any]) -> Dict[str, Any]:
     selected_family = resolve_title_family(params)
     normalized = normalize_title_surface(title) or str(title or '').strip()
-    if not normalized:
-        return {
-            'passed': True,
-            'family': selected_family,
-            'score': 0,
-            'max': 10,
-            'status': 'unknown',
-            'reason': '',
-        }
-
-    if selected_family == 'SLOGAN_COMMITMENT':
-        has_positive_signal = any(pattern.search(normalized) for pattern in _SLOGAN_COMMITMENT_POSITIVE_PATTERNS)
-        generic_match = _SLOGAN_COMMITMENT_GENERIC_REPORT_PATTERN.search(normalized)
-        if generic_match and not has_positive_signal:
-            return {
-                'passed': False,
-                'family': selected_family,
-                'score': 0,
-                'max': 10,
-                'status': 'mismatch',
-                'reason': (
-                    f'선택된 제목 패밀리는 슬로건·다짐형인데, 제목이 "{str(generic_match.group(0) or "").strip()}" '
-                    '같은 보고서형 꼬리로 평탄화됐습니다.'
-                ),
-            }
-        if has_positive_signal:
-            return {
-                'passed': True,
-                'family': selected_family,
-                'score': 10,
-                'max': 10,
-                'status': 'fit',
-                'reason': '',
-            }
-        return {
-            'passed': True,
-            'family': selected_family,
-            'score': 6,
-            'max': 10,
-            'status': 'neutral',
-            'reason': '슬로건·다짐형 단서가 약합니다.',
-        }
-
-    return {
-        'passed': True,
-        'family': selected_family,
-        'score': 8,
-        'max': 10,
-        'status': 'fit',
-        'reason': '',
-    }
+    return assess_family_fit(normalized, selected_family)
 
 def _assess_initial_title_length_discipline(title: str) -> Dict[str, Any]:
     normalized = normalize_title_surface(title)
@@ -218,6 +156,7 @@ def _compute_similarity_penalty(
     previous_titles: List[str],
     threshold: float,
     max_penalty: int,
+    params: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     if not title or not previous_titles or max_penalty <= 0:
         return {
@@ -258,6 +197,20 @@ def _compute_similarity_penalty(
     frame_penalty = 0
     if best_frame_score >= 5:
         frame_penalty = min(max_penalty, 4 + max(0, best_frame_score - 5) * 2)
+
+    # 스타일 수렴 완화: 현재 제목과 "가장 비슷했던 과거 제목"이 모두 같은
+    # stylistic family(슬로건/다짐, 관점 등) 이면 고정 어휘 풀 때문에 자연
+    # 수렴하는 것이므로 penalty를 절반으로 줄인다. 다른 주제에서 surface만
+    # 재활용하는 케이스는 family가 달라 감점이 그대로 유지된다.
+    if penalty and against and isinstance(params, dict):
+        current_family = resolve_title_family(params)
+        current_fit = assess_family_fit(title, current_family)
+        past_fit = assess_family_fit(against, current_family)
+        if (
+            current_fit.get('status') == 'fit'
+            and past_fit.get('status') == 'fit'
+        ):
+            penalty = max(1, penalty // 2)
 
     total_penalty = min(max_penalty, penalty + frame_penalty)
     return {
@@ -846,7 +799,10 @@ def calculate_title_quality_score(
             breakdown['keywordPosition'] = {'score': 0, 'max': 20, 'status': '없음'}
             suggestions.append(f'키워드 중 하나라도 제목에 포함하세요: {", ".join(user_keywords[:2])}')
     else:
-        breakdown['keywordPosition'] = {'score': 10, 'max': 20, 'status': '키워드없음'}
+        # 사용자가 별도 검색어를 지정하지 않았다면 이 항목은 측정 자체가
+        # 불가능하다. max 를 0 으로 돌려 총점 분모에서 제외해, 10점을
+        # "그냥 잃는" 구조가 되지 않게 한다. (score 도 0 이므로 합은 유지)
+        breakdown['keywordPosition'] = {'score': 0, 'max': 0, 'status': '키워드없음(N/A)'}
              
     # 3. Numbers Score (Max 15)
     has_numbers = bool(re.search(r'\d+(?:억|만원|%|명|건|가구|곳)?', title))
@@ -930,11 +886,10 @@ def calculate_title_quality_score(
         
     # 5. Author Inclusion (Max 10)
     if author_name:
-        category_text = str(params.get('category') or '').strip().lower()
-        commentary_purposes = {'commentary', 'issue_analysis', 'current_affairs'}
-        commentary_categories = {'current-affairs', 'bipartisan-cooperation'}
+        selected_family = str(family_fit.get('family') or '').strip().upper()
         prefers_relationship_style = (
-            title_purpose in commentary_purposes or category_text in commentary_categories
+            family_wants_relationship_voice(selected_family)
+            and not title_has_any_commitment_signal(title)
         )
 
         if author_name in title:
@@ -1031,7 +986,7 @@ def calculate_title_quality_score(
         if any(token in title for token in ('현장', '직접', '일정', '안내', '초대', '만남', '참석')):
             impact_score += 3
             impact_features.append('행사형후킹')
-        
+
     breakdown['impact'] = {
         'score': min(impact_score, 10),
         'max': 10,
@@ -1042,10 +997,10 @@ def calculate_title_quality_score(
     # Total Score
     total_score = sum(item.get('score', 0) for item in breakdown.values())
     max_possible = sum(item.get('max', 0) for item in breakdown.values())
-    
+
     # Normalize to 100
     normalized_score = round(total_score / max_possible * 100) if max_possible > 0 else 0
-    
+
     result = {
         'score': normalized_score,
         'rawScore': total_score,

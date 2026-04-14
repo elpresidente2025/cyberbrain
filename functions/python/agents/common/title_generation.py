@@ -19,8 +19,15 @@ from .title_common import (
 )
 from .title_keywords import (
     _extract_topic_person_names,
+    compute_required_topic_keywords,
     extract_topic_keywords,
     validate_theme_and_content,
+)
+from .title_hook_quality import (
+    compute_slot_preferences,
+    extract_slot_opportunities,
+    render_hook_rubric_block,
+    render_slot_opportunities_block,
 )
 from .title_metadata import (
     _detect_event_label,
@@ -185,6 +192,59 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
   <metro_region>{title_scope.get('regionMetro', 'the city/province') if title_scope else 'the city/province'}</metro_region>
 </title_region_scope>
 """
+    # 채점기(validate_theme_and_content) 와 동일한 함수로 required
+    # topic keywords 를 계산해 LLM 에게도 보여 준다. 두 경로가 같은
+    # 목록을 공유하므로 "생성은 막연히 쓰고 → 채점이 별도 키워드로 감점"
+    # 루프를 원천 차단한다. user_keywords 가 있으면 엄격(required), 없으면
+    # 권고(advisory) 로 문구만 바꾼다.
+    required_topic_keywords_list = compute_required_topic_keywords(
+        topic, params, content=content_preview
+    )
+    required_topic_keywords_mode = 'required' if user_keywords else 'advisory'
+    if required_topic_keywords_list:
+        required_topic_keywords_items = "\n".join(
+            f'    <keyword>{kw}</keyword>'
+            for kw in required_topic_keywords_list
+            if str(kw).strip()
+        )
+        if required_topic_keywords_mode == 'required':
+            mode_note = (
+                '사용자가 지정한 검색어 또는 채점기가 추출한 주제 핵심어 목록이다. '
+                '제목에 최소 1~2개 이상 포함해야 채점에서 감점되지 않는다.'
+            )
+        else:
+            mode_note = (
+                '사용자가 별도 검색어를 지정하지 않아 scorer 가 주제 텍스트에서 '
+                '자동 추출한 참고용 핵심어다. 전부 포함할 필요는 없으며, 이 중 '
+                '0~2개만 자연스럽게 반영하면 된다. 구체 슬롯([지역명]·[정책명]·'
+                '[수치]) 을 채우는 것이 이 목록을 채우는 것보다 우선이다.'
+            )
+        required_topic_keywords_xml = (
+            f'<required_topic_keywords mode="{required_topic_keywords_mode}">\n'
+            f'  <note>{mode_note}</note>\n'
+            f'  <list>\n{required_topic_keywords_items}\n  </list>\n'
+            f'</required_topic_keywords>\n'
+        )
+    else:
+        required_topic_keywords_xml = ''
+
+    # 🔑 scorer(title_hook_quality.assess_title_hook_quality) 와 동일한
+    # 함수로 본문·토픽에서 "쓸 수 있는 구체 재료" 를 뽑아 LLM 에게 직접
+    # 보여 준다. 이 블록 덕분에 LLM 은 "어떤 지역/수치/기관/정책명을
+    # 제목에 넣으면 점수가 올라가는지" 사전에 알 수 있다. hook_rubric
+    # 블록도 동시에 주입해 scorer 가 볼 기준을 LLM 이 그대로 본다.
+    slot_opportunities_map = extract_slot_opportunities(topic, content_preview, params)
+    slot_preferences_map = compute_slot_preferences(
+        slot_opportunities_map,
+        topic=topic,
+        content=content_preview,
+        params=params,
+    )
+    slot_opportunities_xml = render_slot_opportunities_block(
+        slot_opportunities_map, require_min=1, preferences=slot_preferences_map
+    )
+    hook_rubric_xml = render_hook_rubric_block() if not prompt_lite else ''
+
     family_reasons = family_meta.get('reasons') if isinstance(family_meta.get('reasons'), dict) else {}
     selected_family_reasons = family_reasons.get(detected_type_id) if isinstance(family_reasons, dict) else []
     family_reason_lines = "\n".join(
@@ -209,12 +269,23 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 </title_family_selection>
 """
 
+    # few-shot good 예시마다 scorer 와 동일한 함수로 "어떤 hook 차원을
+    # 채웠는지" 를 주석 달아 준다. LLM 은 이 annotation 을 보고 "이 제목이
+    # 왜 좋은지" 를 차원 단위로 이해한다 (예: info_gap+concrete_slot 이
+    # 동시에 채워진 제목이 몇 점이다). topic=ex.title 으로 평가하면 제목
+    # 자신의 슬롯이 있는 그대로 잡힌다.
+    from .title_hook_quality import assess_title_hook_quality as _assess_hq
     good_lines = []
     for i, ex in enumerate(good_examples_source):
+        ex_title = str(ex.get('title') or '')
+        ex_hq = _assess_hq(ex_title, topic=ex_title, content=ex_title, params={})
+        ex_features = ','.join(ex_hq.get('features') or []) or 'flat'
+        ex_hook_score = int(ex_hq.get('score') or 0)
         good_lines.append(
             f'  <example index="{i + 1}" chars="{int(ex.get("chars", 0) or 0)}">'
-            f'<title>{ex["title"]}</title>'
+            f'<title>{ex_title}</title>'
             f'<analysis>{ex.get("analysis", "")}</analysis>'
+            f'<hook score="{ex_hook_score}/{ex_hq.get("max", 0)}" dimensions="{ex_features}"/>'
             f'</example>'
         )
     good_examples = "\n".join(good_lines)
@@ -307,11 +378,15 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 <input>
   <topic>{topic}</topic>
   <author>{full_name}</author>
-  <stance_summary priority="Highest">{stance_text[:stance_limit] if stance_text else '(없음) - 입장문이 없으면 본문 내용 바탕으로 작성'}</stance_summary>
-  <content_preview>{(content_preview or '')[:content_limit]}</content_preview>
+  <content_preview priority="Highest" role="title_material_source">{(content_preview or '')[:content_limit]}</content_preview>
+  <stance_summary priority="guidance" role="author_intent">{stance_text[:stance_limit] if stance_text else '(없음) - 입장문이 없으면 본문(content_preview) 재료로 제목 구성'}</stance_summary>
   <background>{background_text[:background_limit] if background_text else '(없음)'}</background>
 </input>
 
+{required_topic_keywords_xml}
+
+{slot_opportunities_xml}
+{hook_rubric_xml}
 <examples type="good">
 {good_examples}
 </examples>
@@ -342,6 +417,24 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
   <rule id="info_density">제목에 담는 정보 요소는 최대 3개. SEO 키워드는 1개로 카운트. 요소: SEO키워드, 인명, 수치, 정책명, 수식어. "부산 지방선거, 왜 이 남자가 뛰어들었나" = 2개 OK. "부산 지방선거 이재명 2호 이재성 원칙 선택" = 5개 NG.</rule>
   <rule id="no_topic_copy">주제(topic) 텍스트를 그대로 또는 거의 그대로 제목으로 사용 금지. 주제의 핵심 방향만 따르되, 표현·어순·구성은 반드시 새롭게 작성할 것.</rule>
   <rule id="no_content_phrase_fragment">본문(content_preview)의 구문 조각을 이름에 직접 붙여 제목을 만들지 말 것. 예: 본문에 "네거티브 없는 정책 경선"이 있어도 "[인물명] 없는 정책"처럼 축약해 쓰지 말 것. 본문은 맥락 파악용이지 어구 복사 재료가 아니다.</rule>
+  <rule id="title_from_body_not_stance" priority="critical">제목의 구체 재료는 반드시 &lt;content_preview&gt;(생성된 본문)에서 가져와라. &lt;stance_summary&gt;는 사용자가 "어느 각도로 쓰고 싶다"는 의도 힌트일 뿐이고, 거기 있는 구절을 제목에 옮기면 그건 제목 생성이 아니라 사용자 입력 되돌려주기다. 올바른 흐름은 다음 4단계다:
+    1. content_preview 를 읽고 &lt;slot_opportunities&gt;(지역·수치·기관·연도·정책명)를 확인한다.
+    2. 그 재료로 제목의 뼈대를 새로 조립한다 — stance 문장을 틀로 삼지 말 것.
+    3. stance_summary 의 방향성만 어조·각도에 반영한다 (어미·대상·포커스 조정).
+    4. stance_summary 에서 공백 제거 연속 8자 이상 구간을 그대로 옮기면 no_topic_copy 위반으로 탈락된다. 단어 단위(3~4자) 참고는 허용.
+    사용자는 주제를 최소한으로만 적었을 수 있다. 그 경우에도 본문이 이미 완성돼 있으니, 본문의 구체 재료로 제목을 만들어라 — stance 를 늘이거나 다듬는 방식이 아니다.</rule>
+  <rule id="use_slot_opportunities" priority="critical">위 &lt;slot_opportunities&gt; 블록이 비어 있지 않다면, 제목은 그 중 최소 1개 카테고리에서 한 토큰 이상을 그대로 인용해야 한다. "공동체/책임/약속/미래/희망" 같은 추상어로 채우고 구체 재료(지역·수치·기관·연도·정책명)를 통째로 빼면 평탄한 선언형이 되어 채점에서 FAIL 된다. few-shot good 예시들이 왜 좋은지 보라 — 전부 구체 슬롯 2개 이상을 가지고 있다.</rule>
+  <rule id="prefer_specific_slot_token" priority="high">&lt;slot_opportunities&gt; 의 각 카테고리에 preferred="true" 가 달린 토큰이 있으면 그 토큰을 우선 인용하라. preferred 는 "이 글의 진짜 스코프(본문 빈도)" 와 "화자의 직책 정책(기초/광역)" 을 반영해 자동 계산된 결과다. 같은 카테고리 안의 더 넓거나 덜 구체적인 대안(preferred 가 아닌 형제 토큰) 은 preferred 가 제목 흐름(길이·율동·자연스러움)과 정면충돌할 때에만 대체재로 쓴다. 예: region 카테고리에 더 좁은 행정구역(구/군/동) 이 preferred 이면 상위 광역명(시/도/광역시) 대신 preferred 토큰을 쓰는 것이 기본이다.</rule>
+  <rule id="no_hollow_question_tail" priority="critical">제목 끝을 **"[추상명사][은/는]?"** 형태로 닫지 말 것. 예: "책임은?", "선택은?", "미래는?", "해답은?", "비결은?", "답은?", "방향은?", "뜻은?". 이것은 형식만 질문이고 내용이 공허한 안티패턴이다 — 독자가 "본인이겠지/당연하지"로 즉시 닫아버려 info_gap 이 발생하지 않는다. 반드시 다음 중 하나로 대체한다:
+    - **의문사 기반 실질 질문**: "왜 ~인가", "어떻게 ~할까", "얼마까지", "무엇이 달라졌나", "어디서 시작됐나" — 질문 뒤에 구체 재료가 붙어 있어야 함
+    - **도발적 평서문**: "[인물/사건]이 [의외 결과]를 만든 [이유/과정]"
+    - **서사 아크 평서문**: "[상태 A]에서 [상태 B]로", "[과거 사건]→[현재 과제]"
+    few-shot anti-example "후보의 존중하는 정책" / "~의 선택은?" 와 같은 계열이니 절대 금지.</rule>
+  <rule id="hook_must_have_tension" priority="critical">&lt;hook_quality_rubric&gt; 4 차원 중 concrete_slot + specificity 조합만으로는 "턱걸이" 다 — 재료만 나열한 평탄체가 된다. 반드시 info_gap 또는 narrative_arc 중 최소 하나를 추가로 채워라.
+    - info_gap 달성 방법: 물음표는 필수가 아니다. "왜 ~인가", "어떻게 ~할 것인가", "얼마나/얼마까지", "무엇이 달라졌나" 같은 **의문사 기반 실질 질문**이 기본이다. 질문 자체가 구체 재료를 물고 있어야 한다.
+    - narrative_arc 달성 방법(구조만 서술 — 예시 문구 금지): 두 상반 개념의 대치, 과거→현재→미래 변화 서사, 수치 A→수치 B 이동, "에서 ~까지" 스팬 구도, 수량 한정 부사(오직/단/처음), 부정+긍정 이중 축. 선언형 평서문("~으로 ~를 합니다") 은 이 차원을 못 채운다 — 평서체 안에서도 위 구조 중 하나를 집어 넣어야 한다.
+    - **중요: stance_summary 에 이미 등장한 대비/변화 구절은 복사하지 말 것**. narrative_arc 는 LLM 이 본문 재료(&lt;slot_opportunities&gt;)로 **새로** 만든 구조여야 한다. stance 구절을 제목 길이로 트림하면 새 구조가 아니라 복붙이다.
+    이 룰을 어기면 재료만 나열한 평탄체, 또는 stance 를 복붙한 가짜 tension 중 하나로 떨어진다.</rule>
 </rules>
 
 {skeleton_protocol}
@@ -546,6 +639,61 @@ def _build_previous_attempt_pattern_feedback(title: str) -> str:
     )
 
 
+def _build_previous_attempt_hook_feedback(
+    previous_title: str,
+    params: Dict[str, Any],
+) -> str:
+    """직전 제목을 hook rubric 으로 재평가해 "어느 차원이 0점이었는지" 를
+    LLM 에게 돌려준다. scorer 에는 손대지 않고 생성 경로에서만 독립적으로
+    rubric 을 돌린다. 이렇게 하면 scorer 의 합격 기준은 그대로 두면서도
+    재시도 프롬프트가 hook 차원 단위 피드백을 가질 수 있다."""
+    from .title_hook_quality import assess_title_hook_quality
+
+    clean_title = str(previous_title or '').strip()
+    if not clean_title:
+        return ''
+
+    topic = str(params.get('topic') or '') if isinstance(params, dict) else ''
+    content = str(params.get('contentPreview') or '') if isinstance(params, dict) else ''
+    hook = assess_title_hook_quality(
+        clean_title, topic=topic, content=content, params=params or {}
+    )
+    status = str(hook.get('status') or '').strip()
+    hook_score = int(hook.get('score') or 0)
+    hook_max = int(hook.get('max') or 0)
+    dims = hook.get('dimensions') if isinstance(hook.get('dimensions'), dict) else {}
+    missed = hook.get('missed_opportunities') or []
+
+    # flat 이거나 총점이 max 의 1/3 미만일 때만 피드백을 넣는다
+    if status != 'flat' and hook_score >= max(1, hook_max // 3):
+        return ''
+
+    zero_dims: List[str] = []
+    for dim_id, dim_data in dims.items():
+        if not isinstance(dim_data, dict):
+            continue
+        if int(dim_data.get('score') or 0) == 0:
+            zero_dims.append(str(dim_id))
+
+    parts: List[str] = []
+    if zero_dims:
+        parts.append(f'hook 차원 중 0점: {", ".join(zero_dims)}')
+    if missed:
+        sample_missed = ', '.join(str(m) for m in list(missed)[:3])
+        parts.append(f'쓸 수 있었던 재료: {sample_missed}')
+
+    if not parts:
+        return ''
+
+    return (
+        '<item>직전 제목은 hook 품질이 "평탄(flat)"이었습니다. '
+        + ' / '.join(parts)
+        + '. 재시도 시 hook_quality_rubric 에서 info_gap(왜/어떻게/미완결) 이나 '
+        'narrative_arc(수치+변화/→/에서~까지) 중 하나를 반드시 추가하고, '
+        'slot_opportunities 의 재료를 1개 이상 직접 인용하세요.</item>'
+    )
+
+
 def _build_title_candidate_prompt(
     base_prompt: str,
     attempt: int,
@@ -653,6 +801,9 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
             pattern_feedback = _build_previous_attempt_pattern_feedback(previous_title)
             if pattern_feedback:
                 suggestion_items += f"\n    {pattern_feedback}"
+            hook_feedback = _build_previous_attempt_hook_feedback(previous_title, params)
+            if hook_feedback:
+                suggestion_items += f"\n    {hook_feedback}"
             if not suggestion_items:
                 suggestion_items = "\n    <item>이전 문제를 보완해 새 제목을 생성하세요.</item>"
             feedback_prompt = f"""
@@ -809,6 +960,7 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
                 disallow_titles,
                 threshold=similarity_threshold,
                 max_penalty=max_similarity_penalty,
+                params=params,
             )
             adjusted_score = max(
                 0,

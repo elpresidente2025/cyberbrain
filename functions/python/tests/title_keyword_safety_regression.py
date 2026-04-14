@@ -1426,6 +1426,198 @@ def test_title_agent_propagates_generation_error_without_safe_fallback() -> None
     asyncio.run(_run())
 
 
+def test_title_family_rules_slogan_commitment_accepts_commitment_endings() -> None:
+    from agents.common.title_family_rules import assess_family_fit
+
+    fit = assess_family_fit("{name}, {region}을 지키겠습니다", "SLOGAN_COMMITMENT")
+    assert fit["status"] == "fit"
+    assert fit["score"] == 10
+
+    fit = assess_family_fit(
+        "{name}, 독립운동가 후손으로서 책임 다하겠습니다", "SLOGAN_COMMITMENT"
+    )
+    assert fit["status"] == "fit"
+
+
+def test_title_family_rules_slogan_commitment_rejects_generic_report_tail() -> None:
+    from agents.common.title_family_rules import assess_family_fit
+
+    fit = assess_family_fit(
+        "{name}, 현안 해결과 미래 비전 제시", "SLOGAN_COMMITMENT"
+    )
+    assert fit["status"] == "mismatch"
+    assert fit["passed"] is False
+    assert "보고서형 꼬리" in str(fit.get("reason") or "")
+
+
+def test_title_family_rules_slogan_commitment_downgrades_hollow_abstract_pairs() -> None:
+    """슬로건이 {공동체/미래/희망/...} + {책임/가치/...} 같은 추상 쌍으로만
+    구성되면, 비록 positive 단서가 있더라도 fit → neutral 로 강등해 구체
+    정책·수치 슬롯을 채우도록 유도한다.
+    """
+    from agents.common.title_family_rules import assess_family_fit
+
+    hollow_cases = [
+        "{name}, 공동체 책임 다합니다",
+        "{name}, 공동체를 지킵니다",
+        "{name}, 미래를 위해 뛰겠습니다",
+        "{name}, 미래 비전으로 앞장서겠습니다",
+    ]
+    for title in hollow_cases:
+        fit = assess_family_fit(title, "SLOGAN_COMMITMENT")
+        assert fit["status"] == "neutral", f"{title} → {fit}"
+        assert fit.get("hollow") is True
+        assert "구체 정책명" in str(fit.get("reason") or "")
+
+    # 구체 앵커(숫자·정책명)가 있으면 hollow 면제
+    rescued = [
+        "{name}, 공동체 책임 70억 확보하겠습니다",
+        "{name}, 미래를 돌봄으로 만들겠습니다",
+    ]
+    for title in rescued:
+        fit = assess_family_fit(title, "SLOGAN_COMMITMENT")
+        assert fit["status"] == "fit", f"{title} → {fit}"
+
+    # 기존 commitment 스타일(정체성 라벨 + 책임 다하겠)은 hollow 로 강등되지
+    # 않는다 — 추상 집단명사가 없기 때문이다.
+    safe = assess_family_fit(
+        "{name}, 독립운동가 후손으로서 책임 다하겠습니다", "SLOGAN_COMMITMENT"
+    )
+    assert safe["status"] == "fit"
+
+
+def test_title_family_rules_viral_hook_accepts_interrogative_endings() -> None:
+    from agents.common.title_family_rules import assess_family_fit
+
+    for title in (
+        "{region} 지방선거, 왜 이 남자가 뛰어들었나",
+        "{region} 지방선거, {name}은 왜 다른가",
+        "{region} 지방선거, 원칙만으로 이길 수 있을까",
+    ):
+        fit = assess_family_fit(title, "VIRAL_HOOK")
+        assert fit["status"] == "fit", f"{title} → {fit}"
+
+
+def test_title_family_rules_viral_hook_rejects_clickbait_surface() -> None:
+    from agents.common.title_family_rules import assess_family_fit
+
+    fit = assess_family_fit("결국 터질 게 터졌습니다 충격적 현실", "VIRAL_HOOK")
+    assert fit["status"] == "mismatch"
+    assert fit["passed"] is False
+
+
+def test_title_family_rules_data_based_accepts_numbers_and_units() -> None:
+    from agents.common.title_family_rules import assess_family_fit
+
+    fit = assess_family_fit("청년 일자리 274명 창출, 85억 달성", "DATA_BASED")
+    assert fit["status"] == "fit"
+
+
+def test_title_family_rules_data_based_flags_vague_effort_phrases() -> None:
+    from agents.common.title_family_rules import assess_family_fit
+
+    fit = assess_family_fit("열심히 하고 있는 지역 활동", "DATA_BASED")
+    assert fit["status"] == "mismatch"
+    assert fit["passed"] is False
+
+
+def test_title_family_rules_question_answer_accepts_interrogative_markers() -> None:
+    from agents.common.title_family_rules import assess_family_fit
+
+    fit = assess_family_fit("청년 월세 지원, 얼마까지 받을까?", "QUESTION_ANSWER")
+    assert fit["status"] == "fit"
+
+
+def test_title_family_rules_comparison_accepts_arrow_or_delta_terms() -> None:
+    from agents.common.title_family_rules import assess_family_fit
+
+    fit = assess_family_fit("민원 처리 14일 → 3일, 5배 빨라졌다", "COMPARISON")
+    assert fit["status"] == "fit"
+
+
+def test_title_family_rules_local_focused_accepts_admin_unit_and_rejects_vague_area() -> None:
+    from agents.common.title_family_rules import assess_family_fit
+
+    ok = assess_family_fit("샘플구 샘플동 도시가스 70억 확보", "LOCAL_FOCUSED")
+    assert ok["status"] == "fit"
+
+    bad = assess_family_fit("우리 지역을 위해 노력합니다", "LOCAL_FOCUSED")
+    assert bad["status"] == "mismatch"
+
+
+def test_title_family_rules_expert_knowledge_accepts_legislation_terms() -> None:
+    from agents.common.title_family_rules import assess_family_fit
+
+    fit = assess_family_fit("청년 기본소득법 발의, 50만원 지원안", "EXPERT_KNOWLEDGE")
+    assert fit["status"] == "fit"
+
+
+def test_title_family_rules_time_based_accepts_periodic_report_markers() -> None:
+    from agents.common.title_family_rules import assess_family_fit
+
+    fit = assess_family_fit("2025년 상반기 의정 보고서 5대 성과", "TIME_BASED")
+    assert fit["status"] == "fit"
+
+
+def test_title_family_rules_issue_analysis_accepts_issue_and_alternative_terms() -> None:
+    from agents.common.title_family_rules import assess_family_fit
+
+    fit = assess_family_fit("양극화 격차, 어떻게 개선할까", "ISSUE_ANALYSIS")
+    assert fit["status"] == "fit"
+
+
+def test_title_family_rules_commentary_accepts_perspective_markers() -> None:
+    from agents.common.title_family_rules import assess_family_fit
+
+    fit = assess_family_fit("{name}이 본 {region} 경제의 미래", "COMMENTARY")
+    assert fit["status"] == "fit"
+
+
+def test_title_family_rules_only_commentary_wants_relationship_voice() -> None:
+    from agents.common.title_family_rules import family_wants_relationship_voice
+
+    assert family_wants_relationship_voice("COMMENTARY") is True
+    for family in (
+        "SLOGAN_COMMITMENT",
+        "VIRAL_HOOK",
+        "DATA_BASED",
+        "QUESTION_ANSWER",
+        "COMPARISON",
+        "LOCAL_FOCUSED",
+        "EXPERT_KNOWLEDGE",
+        "TIME_BASED",
+        "ISSUE_ANALYSIS",
+    ):
+        assert family_wants_relationship_voice(family) is False, family
+
+
+def test_title_quality_score_passes_commitment_style_in_current_affairs_category() -> None:
+    """Commitment-style title in a commentary-like category must pass without
+    the contradictory "X이 본 / 칭찬한 X" relationship-voice nag. Uses
+    placeholder-style author name 홍길동 to avoid hardcoding any real user."""
+    result = calculate_title_quality_score(
+        "홍길동, 독립운동가 후손으로서 책임 다하겠습니다",
+        {
+            "topic": "홍길동 독립운동가 후손 책임 다짐",
+            "contentPreview": (
+                "홍길동은 독립운동가 후손으로서 구민 곁에서 책임을 다하겠다고 다짐했습니다. "
+                "독립운동가 후손의 책임, 홍길동의 약속입니다."
+            ),
+            "userKeywords": ["홍길동", "독립운동가"],
+            "fullName": "홍길동",
+            "category": "current-affairs",
+        },
+        {"autoFitLength": False},
+    )
+
+    assert result["passed"] is True
+    assert int(result["score"]) >= 70
+    assert all(
+        "관계형 표현" not in str(suggestion)
+        for suggestion in result.get("suggestions", [])
+    )
+
+
 def main() -> None:
     tests = [
         (
@@ -1695,6 +1887,70 @@ def main() -> None:
         (
             "title_agent_propagates_generation_error_without_safe_fallback",
             test_title_agent_propagates_generation_error_without_safe_fallback,
+        ),
+        (
+            "title_family_rules_slogan_commitment_accepts_commitment_endings",
+            test_title_family_rules_slogan_commitment_accepts_commitment_endings,
+        ),
+        (
+            "title_family_rules_slogan_commitment_rejects_generic_report_tail",
+            test_title_family_rules_slogan_commitment_rejects_generic_report_tail,
+        ),
+        (
+            "title_family_rules_slogan_commitment_downgrades_hollow_abstract_pairs",
+            test_title_family_rules_slogan_commitment_downgrades_hollow_abstract_pairs,
+        ),
+        (
+            "title_family_rules_viral_hook_accepts_interrogative_endings",
+            test_title_family_rules_viral_hook_accepts_interrogative_endings,
+        ),
+        (
+            "title_family_rules_viral_hook_rejects_clickbait_surface",
+            test_title_family_rules_viral_hook_rejects_clickbait_surface,
+        ),
+        (
+            "title_family_rules_data_based_accepts_numbers_and_units",
+            test_title_family_rules_data_based_accepts_numbers_and_units,
+        ),
+        (
+            "title_family_rules_data_based_flags_vague_effort_phrases",
+            test_title_family_rules_data_based_flags_vague_effort_phrases,
+        ),
+        (
+            "title_family_rules_question_answer_accepts_interrogative_markers",
+            test_title_family_rules_question_answer_accepts_interrogative_markers,
+        ),
+        (
+            "title_family_rules_comparison_accepts_arrow_or_delta_terms",
+            test_title_family_rules_comparison_accepts_arrow_or_delta_terms,
+        ),
+        (
+            "title_family_rules_local_focused_accepts_admin_unit_and_rejects_vague_area",
+            test_title_family_rules_local_focused_accepts_admin_unit_and_rejects_vague_area,
+        ),
+        (
+            "title_family_rules_expert_knowledge_accepts_legislation_terms",
+            test_title_family_rules_expert_knowledge_accepts_legislation_terms,
+        ),
+        (
+            "title_family_rules_time_based_accepts_periodic_report_markers",
+            test_title_family_rules_time_based_accepts_periodic_report_markers,
+        ),
+        (
+            "title_family_rules_issue_analysis_accepts_issue_and_alternative_terms",
+            test_title_family_rules_issue_analysis_accepts_issue_and_alternative_terms,
+        ),
+        (
+            "title_family_rules_commentary_accepts_perspective_markers",
+            test_title_family_rules_commentary_accepts_perspective_markers,
+        ),
+        (
+            "title_family_rules_only_commentary_wants_relationship_voice",
+            test_title_family_rules_only_commentary_wants_relationship_voice,
+        ),
+        (
+            "title_quality_score_passes_commitment_style_in_current_affairs_category",
+            test_title_quality_score_passes_commitment_style_in_current_affairs_category,
         ),
     ]
     passed = 0
