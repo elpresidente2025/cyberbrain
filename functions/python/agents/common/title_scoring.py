@@ -42,7 +42,6 @@ from .title_repairers import (
     _assess_loyalty_self_certification_title,
     _assess_competitor_intent_title_tail,
     _assess_title_first_person_usage,
-    _repair_competitor_intent_title_tail,
     _repair_title_for_missing_keywords,
     _validate_role_keyword_title_policy,
     _validate_user_keyword_title_requirements,
@@ -297,23 +296,20 @@ def calculate_title_quality_score(
     # 0. Critical Failure Checks
     has_html_tag = bool(re.search(r'<\s*/?\s*[a-zA-Z][^>]*>', title))
     has_slot_placeholder = any(f'[{name}]' in title for name in SLOT_PLACEHOLDER_NAMES)
+    # 경어체 종결(~입니다/~습니다/~니다)은 문장형 제목의 정상 종결이므로 더 이상 차단하지 않는다.
+    # 평서체 종결(~다/~ㄴ다)에 대한 규제는 프롬프트 레벨(sentence_form_honorific rule)에서 수행한다.
     looks_like_content = (
         '여러분' in title or
         has_html_tag or
         has_slot_placeholder or
-        title.endswith('입니다') or
-        title.endswith('습니다') or
-        title.endswith('습니까') or
-        title.endswith('니다') or
         len(title) > 50
     )
-    
+
     if looks_like_content:
         reason = (
             '호칭("여러분") 포함' if '여러분' in title else
             ('HTML 태그 포함' if has_html_tag else
-             ('슬롯 플레이스홀더 포함' if has_slot_placeholder else
-              ('50자 초과' if len(title) > 50 else '서술형 종결어미')))
+             ('슬롯 플레이스홀더 포함' if has_slot_placeholder else '50자 초과'))
         )
         return {
             'score': 0,
@@ -574,7 +570,6 @@ def calculate_title_quality_score(
 
     competitor_tail_validation = _assess_competitor_intent_title_tail(title, params)
     if not competitor_tail_validation.get('passed', True):
-        repaired_candidate = _repair_competitor_intent_title_tail(title, params)
         return {
             'score': 0,
             'breakdown': {
@@ -592,7 +587,6 @@ def calculate_title_quality_score(
             },
             'passed': False,
             'suggestions': [str(competitor_tail_validation.get('reason') or '경쟁자 intent 제목의 쉼표 뒤를 본문 논지로 다시 작성하세요.')],
-            **({'repairedTitle': repaired_candidate} if repaired_candidate else {}),
         }
 
     keyword_gate = _validate_user_keyword_title_requirements(title, user_keywords)

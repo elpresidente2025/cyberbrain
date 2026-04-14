@@ -44,7 +44,6 @@ from handlers.generate_posts import (
     _apply_targeted_sentence_rewrites,
     _build_display_keyword_validation,
     _build_independent_final_title_context,
-    _build_repeat_safe_title_fallback,
     _contains_targeted_beyond_boilerplate,
     _detect_integrity_gate_issues,
     _collect_targeted_sentence_polish_candidates,
@@ -1099,75 +1098,6 @@ def test_update_recent_titles_keeps_latest_unique_titles() -> None:
         "주진우 부산시장 출마론, 이재성과 AI공약과 무엇이 다른가",
         "주진우 부산시장 거론, 이재성과의 정책 온도차는",
     ]
-
-
-def test_build_repeat_safe_title_fallback_avoids_repeated_aggressive_question_frame() -> None:
-    role_keyword_policy = build_role_keyword_policy(
-        ["주진우", "주진우 부산시장"],
-        person_roles={"주진우": "국회의원"},
-        source_texts=[
-            "부산시장 양자대결에서 이재성 전 위원장과 주진우 국회의원이 31.7% 대 30.3%를 기록했다.",
-        ],
-    )
-    fallback = _build_repeat_safe_title_fallback(
-        current_title="주진우 부산시장 출마? 왜 이재성이 약진했을까",
-        recent_titles=[
-            "주진우 부산시장 출마? 왜 이재성이 약진했을까",
-            "주진우 부산시장 출마? 왜 이재성에게 흔들리나",
-        ],
-        topic="부산시장 선거 양자대결에서 확인된 이재성의 가능성",
-        content="이재성 전 위원장이 주진우 국회의원과의 가상대결에서 31.7% 대 30.3%를 기록했다.",
-        user_keywords=["주진우 부산시장", "주진우"],
-        full_name="이재성",
-        category="current-affairs",
-        status="campaign",
-        context_analysis={},
-        role_keyword_policy=role_keyword_policy,
-        poll_fact_table=build_poll_matchup_fact_table(
-            [
-                "이재성 전 위원장과 주진우 국회의원의 가상대결은 31.7% 대 30.3%였다.",
-            ],
-            known_names=["이재성", "주진우"],
-        ),
-    )
-
-    assert fallback["title"]
-    assert fallback["title"] != "주진우 부산시장 출마? 왜 이재성이 약진했을까"
-    assert "왜" not in fallback["title"]
-    assert not any(token in fallback["title"] for token in ("가상대결", "양자대결", "접전", "경쟁력"))
-    assert fallback["title"].startswith("주진우 부산시장 출마론,")
-    assert any(token in fallback["title"] for token in ("31.7%", "앞선 배경", "AI공약", "해법", "현장"))
-
-
-def test_build_repeat_safe_title_fallback_skips_blocked_role_keyword_prefix() -> None:
-    role_keyword_policy = build_role_keyword_policy(
-        ["주진우 부산시장", "주진우"],
-        person_roles={"주진우": "국회의원"},
-        source_texts=[
-            "최근 여론조사에서 주진우 의원과의 가상대결이 31.7% 대 30.3%로 나타났다.",
-        ],
-    )
-
-    fallback = _build_repeat_safe_title_fallback(
-        current_title="",
-        recent_titles=[],
-        topic="부산시장 선거 양자대결에서 확인된 이재성의 가능성",
-        content="이재성 전 위원장과 주진우 의원의 가상대결은 31.7% 대 30.3%였다.",
-        user_keywords=["주진우 부산시장", "주진우"],
-        full_name="이재성",
-        category="current-affairs",
-        status="campaign",
-        context_analysis={},
-        role_keyword_policy=role_keyword_policy,
-        poll_fact_table=build_poll_matchup_fact_table(
-            ["이재성 전 위원장과 주진우 의원의 가상대결은 31.7% 대 30.3%였다."],
-            known_names=["이재성", "주진우"],
-        ),
-    )
-
-    assert fallback["title"]
-    assert fallback["title"].startswith("주진우 부산시장 출마론,")
-    assert any(token in fallback["title"] for token in ("출마론", "거론", "출마 가능성", "거론 속", "구도"))
 
 
 def test_build_poll_focus_bundle_selects_primary_matchup_and_excludes_party_support() -> None:
@@ -5916,14 +5846,6 @@ def main() -> None:
         (
             "should_carry_recent_titles_from_prior_session_only_when_scope_matches",
             test_should_carry_recent_titles_from_prior_session_only_when_scope_matches,
-        ),
-        (
-            "build_repeat_safe_title_fallback_avoids_repeated_aggressive_question_frame",
-            test_build_repeat_safe_title_fallback_avoids_repeated_aggressive_question_frame,
-        ),
-        (
-            "build_repeat_safe_title_fallback_skips_blocked_role_keyword_prefix",
-            test_build_repeat_safe_title_fallback_skips_blocked_role_keyword_prefix,
         ),
         (
             "build_poll_focus_bundle_selects_primary_matchup_and_excludes_party_support",

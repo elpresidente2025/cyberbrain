@@ -9,7 +9,6 @@ from .title_common import (
     TITLE_LENGTH_OPTIMAL_MAX,
     TITLE_LENGTH_OPTIMAL_MIN,
     are_keywords_similar,
-    build_structured_title_candidates,
     extract_numbers_from_content,
     get_election_compliance_instruction,
     logger,
@@ -43,8 +42,6 @@ from .title_prompt_parts import (
     _render_narrative_principle_xml,
 )
 from .title_repairers import (
-    _build_argument_tail_candidates,
-    _extract_argument_title_cues,
     _repair_title_for_missing_keywords,
     _repair_title_for_role_keyword_policy,
     _resolve_competitor_intent_title_keyword,
@@ -245,13 +242,14 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
   <goal>아래 내용을 분석하여, 독자가 클릭하고 싶어지는 서사적 긴장감의 블로그 제목을 작성하십시오.</goal>
   <core_principle name="information_gap">좋은 제목은 답보다 질문을 남깁니다.</core_principle>
   <examples>
-    <bad reason="긴장감 부족">이재성이 경제 0.7%를 바꾼다</bad>
+    <bad reason="평서체 종결 — 경어체 아님">이재성이 경제 0.7%를 바꾼다</bad>
     <bad reason="문장 불완전">이재성 부산 AI 3대 강국?</bad>
     <good reason="팩트+미해결질문">부산 경제 0.7%, 왜 이 남자가 뛰어들었나</good>
+    <good reason="경어체 문장형">이재성, 부산 경제 0.7%를 바꿉니다</good>
   </examples>
   <banned_styles>
     <item>지루한 공무원 스타일("~개최", "~참석", "~발표")</item>
-    <item>선언형 결론("~바꾼다", "~이끈다", "~완성한다")</item>
+    <item>평서체 종결("~바꾼다", "~이끈다", "~완성한다", "~지킨다") — 문장형으로 닫을 때는 경어체 필수("~바꿉니다", "~이끕니다", "~완성합니다", "~지킵니다")</item>
     <item>키워드 나열만 하고 문장을 완성하지 않는 표현</item>
     <item>과도한 자극("충격", "경악", "결국 터졌다")</item>
   </banned_styles>
@@ -337,9 +335,10 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
   {f'<rule id="name_repeat_limit">{title_constraint_text}</rule>' if title_constraint_text else ''}
   {name_dedup_rule}
   <rule id="keyword_position">{keyword_position_rule}</rule>
-  <rule id="no_greeting">인사말("안녕하세요"), 서술형 어미("~입니다") 절대 금지</rule>
+  <rule id="no_greeting">인사말("안녕하세요"), 자기소개형 copula("저는 ~입니다") 금지. 단, 문장형 제목의 경어체 종결("~합니다", "~됩니다", "~지킵니다")은 허용.</rule>
+  <rule id="sentence_form_honorific" priority="critical">문장형(서술형 종결)으로 제목을 쓰는 경우, 종결 어미는 반드시 경어체(-ㅂ니다/-습니다)를 사용한다. 평서체 종결("~다", "~ㄴ다", "~바꾼다", "~지킨다", "~이끈다", "~한다", "~된다")은 제목에서 금지하고, 대응하는 경어체("~바꿉니다", "~지킵니다", "~이끕니다", "~합니다", "~됩니다")로 변환한다. 명사형 마무리, 질문형, 미완결 종결은 이 규칙의 대상이 아니다.</rule>
   <rule id="style_ban">{style_ban_rule}</rule>
-  <rule id="narrative_tension">읽은 뒤 "그래서?" "왜?"가 떠오르는 제목이 좋다. 기법을 억지로 넣지 말고 자연스러운 호기심을 만들어라. 선언형 종결("~바꾼다") 금지. 정보 요소 3개 이하.</rule>
+  <rule id="narrative_tension">읽은 뒤 "그래서?" "왜?"가 떠오르는 제목이 좋다. 기법을 억지로 넣지 말고 자연스러운 호기심을 만들어라. 정보 요소 3개 이하. 문장형으로 닫아야 한다면 평서체가 아니라 경어체로 끝낼 것.</rule>
   <rule id="info_density">제목에 담는 정보 요소는 최대 3개. SEO 키워드는 1개로 카운트. 요소: SEO키워드, 인명, 수치, 정책명, 수식어. "부산 지방선거, 왜 이 남자가 뛰어들었나" = 2개 OK. "부산 지방선거 이재명 2호 이재성 원칙 선택" = 5개 NG.</rule>
   <rule id="no_topic_copy">주제(topic) 텍스트를 그대로 또는 거의 그대로 제목으로 사용 금지. 주제의 핵심 방향만 따르되, 표현·어순·구성은 반드시 새롭게 작성할 것.</rule>
   <rule id="no_content_phrase_fragment">본문(content_preview)의 구문 조각을 이름에 직접 붙여 제목을 만들지 말 것. 예: 본문에 "네거티브 없는 정책 경선"이 있어도 "[인물명] 없는 정책"처럼 축약해 쓰지 말 것. 본문은 맥락 파악용이지 어구 복사 재료가 아니다.</rule>
@@ -545,244 +544,6 @@ def _build_previous_attempt_pattern_feedback(title: str) -> str:
         '"이름의 [수식어] [명사]" 형태 대신 팩트+서사 구조로 재작성하세요. '
         '예: "지방선거 경선 확정, 원칙이 가른 판세"</item>'
     )
-
-
-def _build_final_repair_prompt(
-    params: Dict[str, Any],
-    best_result: Dict[str, Any],
-    *,
-    min_score: int,
-) -> str:
-    base_prompt = build_title_prompt({**params, 'titlePromptLite': False})
-    best_title = str(best_result.get('title') or '').strip()
-    best_score = int(best_result.get('score', 0) or 0)
-    suggestion_items = ''.join(
-        f"\n    <item>{str(item or '').strip()}</item>"
-        for item in list(best_result.get('suggestions') or [])
-        if str(item or '').strip()
-    )
-    if not suggestion_items:
-        suggestion_items = "\n    <item>직전 제목의 문제를 실제로 고친 최종 제목 1개를 다시 작성하세요.</item>"
-
-    title_purpose = resolve_title_purpose(str(params.get('topic') or ''), params)
-    purpose_rule = ''
-    if title_purpose == 'event_announcement':
-        purpose_rule = (
-            '<rule>행사 안내형 제목이면 날짜, 행사 성격, 인물명 중 2개 이상이 자연스럽게 드러나고 '
-            '안내 목적이 즉시 보이게 작성할 것.</rule>'
-        )
-
-    return f"""{base_prompt}
-
-<final_title_repair priority="critical">
-  <failed_title>{best_title or '(없음)'}</failed_title>
-  <current_score>{best_score}</current_score>
-  <target_score>{min_score}</target_score>
-  <instruction>개선 힌트를 설명으로 출력하지 말고, 문제를 실제로 고친 최종 제목 1개만 다시 작성하세요.</instruction>
-  <issues>{suggestion_items}
-  </issues>
-  <rules>
-    <rule>직전 제목의 팩트와 주제는 유지하되, 점수를 깎인 원인만 실제로 수정할 것.</rule>
-    <rule>직전 실패 제목을 거의 그대로 반복하지 말고, 구체적인 수정 결과를 반영할 것.</rule>
-    <rule>설명, 해설, JSON 없이 최종 제목 1개만 출력할 것.</rule>
-    {purpose_rule}
-  </rules>
-</final_title_repair>
-"""
-
-
-async def _attempt_final_title_repair(
-    generate_fn,
-    params: Dict[str, Any],
-    *,
-    min_score: int,
-    best_result: Dict[str, Any],
-    recent_titles: List[str],
-    history: List[Dict[str, Any]],
-    similarity_threshold: float,
-    max_similarity_penalty: int,
-) -> Dict[str, Any]:
-    repair_seed = dict(best_result or {})
-    best_failed_title = str(best_result.get('title') or '').strip()
-    best_failed_score = int(best_result.get('score', 0) or 0)
-
-    for repair_attempt in range(1, 4):
-        repair_prompt = _build_final_repair_prompt(params, repair_seed, min_score=min_score)
-        raw_generated_title = str(await generate_fn(repair_prompt) or '').strip().strip('"\'')
-        initial_generated_title = _normalize_generated_title_without_fit(raw_generated_title, params)
-        if not initial_generated_title:
-            raise RuntimeError('[TitleGen] 최종 수선 단계에서 빈 제목이 반환되었습니다.')
-
-        score_result = calculate_title_quality_score(
-            initial_generated_title,
-            params,
-            {'autoFitLength': False},
-        )
-        candidate_title = initial_generated_title
-        repaired_title = str(score_result.get('repairedTitle') or '').strip()
-        if repaired_title and repaired_title != candidate_title:
-            repaired_score_result = calculate_title_quality_score(
-                repaired_title,
-                params,
-                {'autoFitLength': False},
-            )
-            if int(repaired_score_result.get('score', 0) or 0) >= int(score_result.get('score', 0) or 0):
-                candidate_title = repaired_title
-                score_result = repaired_score_result
-
-        disallow_titles = list(recent_titles)
-        disallow_titles.extend(
-            str(item.get('title') or '').strip()
-            for item in history
-            if isinstance(item, dict) and str(item.get('title') or '').strip()
-        )
-        similarity_meta = _compute_similarity_penalty(
-            candidate_title,
-            disallow_titles,
-            threshold=similarity_threshold,
-            max_penalty=max_similarity_penalty,
-        )
-        initial_length_meta = _assess_initial_title_length_discipline(candidate_title)
-        adjusted_score = max(
-            0,
-            int(score_result.get('score', 0))
-            - int(similarity_meta.get('penalty', 0))
-            - int(initial_length_meta.get('penalty', 0)),
-        )
-        if adjusted_score >= min_score:
-            repair_history = {
-                'attempt': len(history) + 1,
-                'title': candidate_title,
-                'score': adjusted_score,
-                'baseScore': int(score_result.get('score', 0) or 0),
-                'candidateCount': 1,
-                'selectedCandidate': 1,
-                'similarityPenalty': int(similarity_meta.get('penalty', 0)),
-                'similarity': similarity_meta.get('maxSimilarity', 0),
-                'initialLengthPenalty': int(initial_length_meta.get('penalty', 0) or 0),
-                'initialTitleLength': int(initial_length_meta.get('length', 0) or 0),
-                'suggestions': list(score_result.get('suggestions') or [])[:4],
-                'breakdown': dict(score_result.get('breakdown', {}) or {}),
-                'source': 'final_repair',
-                'repairAttempt': repair_attempt,
-            }
-            if raw_generated_title != candidate_title:
-                repair_history['rawTitle'] = raw_generated_title
-            history.append(repair_history)
-
-            return {
-                'title': candidate_title,
-                'score': adjusted_score,
-                'baseScore': int(score_result.get('score', 0) or 0),
-                'similarityPenalty': int(similarity_meta.get('penalty', 0)),
-                'initialLengthPenalty': int(initial_length_meta.get('penalty', 0) or 0),
-                'attempts': len(history),
-                'passed': True,
-                'history': history,
-                'breakdown': dict(score_result.get('breakdown', {}) or {}),
-                'source': 'final_repair',
-            }
-
-        if adjusted_score > best_failed_score:
-            best_failed_score = adjusted_score
-            best_failed_title = candidate_title
-
-        repair_seed = {
-            'title': candidate_title,
-            'score': adjusted_score,
-            'suggestions': list(score_result.get('suggestions') or []),
-            'breakdown': dict(score_result.get('breakdown', {}) or {}),
-        }
-
-    raise RuntimeError(
-        f"[TitleGen] 최종 수선 제목도 최소 점수 {min_score}점 미달 "
-        f"(최고 {best_failed_score}점, 제목: \"{best_failed_title}\")"
-    )
-
-
-def _attempt_structured_title_rescue(
-    params: Dict[str, Any],
-    *,
-    min_score: int,
-    recent_titles: List[str],
-    history: List[Dict[str, Any]],
-    similarity_threshold: float,
-    max_similarity_penalty: int,
-) -> Dict[str, Any]:
-    title_purpose = resolve_title_purpose(str(params.get('topic') or ''), params)
-    if title_purpose != 'event_announcement':
-        return {}
-
-    candidate_titles = build_structured_title_candidates(
-        params,
-        title_purpose=title_purpose,
-        limit=8,
-    )
-    if not candidate_titles:
-        return {}
-
-    disallow_titles = list(recent_titles)
-    disallow_titles.extend(
-        str(item.get('title') or '').strip()
-        for item in history
-        if isinstance(item, dict) and str(item.get('title') or '').strip()
-    )
-
-    best_candidate: Dict[str, Any] = {}
-    best_score = -1
-    for idx, candidate_title in enumerate(candidate_titles, start=1):
-        initial_length_meta = _assess_initial_title_length_discipline(candidate_title)
-        score_result = calculate_title_quality_score(
-            candidate_title,
-            params,
-            {'autoFitLength': False},
-        )
-        similarity_meta = _compute_similarity_penalty(
-            candidate_title,
-            disallow_titles,
-            threshold=similarity_threshold,
-            max_penalty=max_similarity_penalty,
-        )
-        adjusted_score = max(
-            0,
-            int(score_result.get('score', 0))
-            - int(similarity_meta.get('penalty', 0))
-            - int(initial_length_meta.get('penalty', 0)),
-        )
-        if adjusted_score > best_score:
-            best_score = adjusted_score
-            best_candidate = {
-                'attempt': len(history) + 1,
-                'title': candidate_title,
-                'score': adjusted_score,
-                'baseScore': int(score_result.get('score', 0) or 0),
-                'candidateCount': len(candidate_titles),
-                'selectedCandidate': idx,
-                'similarityPenalty': int(similarity_meta.get('penalty', 0)),
-                'similarity': similarity_meta.get('maxSimilarity', 0),
-                'initialLengthPenalty': int(initial_length_meta.get('penalty', 0) or 0),
-                'initialTitleLength': int(initial_length_meta.get('length', 0) or 0),
-                'suggestions': list(score_result.get('suggestions') or [])[:4],
-                'breakdown': dict(score_result.get('breakdown', {}) or {}),
-                'source': 'structured_rescue',
-            }
-
-    if not best_candidate or int(best_candidate.get('score', 0) or 0) < min_score:
-        return {}
-
-    history.append(best_candidate)
-    return {
-        'title': str(best_candidate.get('title') or ''),
-        'score': int(best_candidate.get('score', 0) or 0),
-        'baseScore': int(best_candidate.get('baseScore', 0) or 0),
-        'similarityPenalty': int(best_candidate.get('similarityPenalty', 0) or 0),
-        'initialLengthPenalty': int(best_candidate.get('initialLengthPenalty', 0) or 0),
-        'attempts': len(history),
-        'passed': True,
-        'history': history,
-        'breakdown': dict(best_candidate.get('breakdown', {}) or {}),
-        'source': 'structured_rescue',
-    }
 
 
 def _build_title_candidate_prompt(
@@ -1219,67 +980,12 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
             f"[TitleGen] 제목 생성 실패: {max_attempts}회 시도 모두 유효한 제목을 생성하지 못했습니다."
         )
 
-    if best_title.strip():
-        try:
-            logger.info(
-                "[TitleGen] 근소 미달 제목 최종 수선 시도: score=%s min=%s title=%s",
-                best_score,
-                min_score,
-                best_title,
-            )
-            return await _attempt_final_title_repair(
-                generate_fn,
-                params,
-                min_score=min_score,
-                best_result=best_result if isinstance(best_result, dict) else {},
-                recent_titles=recent_titles,
-                history=history,
-                similarity_threshold=similarity_threshold,
-                max_similarity_penalty=max_similarity_penalty,
-            )
-        except Exception as repair_error:
-            logger.warning("[TitleGen] 최종 수선 실패: %s", repair_error)
-
-    structured_rescue_result = _attempt_structured_title_rescue(
-        params,
-        min_score=min_score,
-        recent_titles=recent_titles,
-        history=history,
-        similarity_threshold=similarity_threshold,
-        max_similarity_penalty=max_similarity_penalty,
-    )
-    if structured_rescue_result:
-        logger.info(
-            "[TitleGen] 구조화 제목 재구제 성공: score=%s title=%s",
-            structured_rescue_result.get('score'),
-            structured_rescue_result.get('title'),
-        )
-        return structured_rescue_result
-
     best_suggestions = best_result.get('suggestions', []) if isinstance(best_result, dict) else []
     suggestion_text = ', '.join(best_suggestions) if best_suggestions else '없음'
-    logger.warning(
-        "[TitleGen] 모든 재시도/수선 실패 — 최고점 제목으로 soft-accept: "
-        "score=%s min=%s title=%s suggestions=%s",
-        best_score,
-        min_score,
-        best_title,
-        suggestion_text,
+    raise RuntimeError(
+        f"[TitleGen] 제목 생성 실패: {max_attempts}회 재시도 모두 최소 점수 {min_score}점 미달 "
+        f"(최고 {best_score}점, 제목: \"{best_title}\", suggestions: {suggestion_text})"
     )
-    best_breakdown = best_result.get('breakdown', {}) if isinstance(best_result, dict) else {}
-    return {
-        'title': best_title,
-        'score': best_score,
-        'baseScore': int(best_result.get('baseScore', best_score) or 0) if isinstance(best_result, dict) else best_score,
-        'similarityPenalty': int(best_result.get('similarityPenalty', 0) or 0) if isinstance(best_result, dict) else 0,
-        'initialLengthPenalty': int(best_result.get('initialLengthPenalty', 0) or 0) if isinstance(best_result, dict) else 0,
-        'attempts': len(history),
-        'passed': False,
-        'softAccepted': True,
-        'history': history,
-        'breakdown': dict(best_breakdown or {}),
-        'source': 'soft_accept_best_score',
-    }
 
 __all__ = [
     'TITLE_TYPES',
@@ -1296,9 +1002,7 @@ __all__ = [
     'resolve_title_purpose',
     'validate_theme_and_content',
     '_assess_initial_title_length_discipline',
-    '_build_argument_tail_candidates',
     '_compute_similarity_penalty',
-    '_extract_argument_title_cues',
     '_extract_book_title',
     '_extract_topic_person_names',
     '_repair_title_for_missing_keywords',

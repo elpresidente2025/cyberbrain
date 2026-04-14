@@ -23,9 +23,6 @@ from .title_metadata import (
     _extract_date_hint,
 )
 from .title_repairers import (
-    _build_argument_tail_candidates,
-    _extract_argument_title_cues,
-    _is_low_signal_competitor_tail,
     _resolve_competitor_intent_title_keyword,
 )
 
@@ -177,7 +174,7 @@ TITLE_TYPES = {
             {'title': '부산 지방선거, 원칙만으로 이길 수 있을까', 'chars': 20, 'analysis': '도발적 질문 — 가치 논쟁 유발'}
         ],
         'bad': [
-            {'title': '부산 지방선거, AI 전문가 이재성이 경제를 바꾼다', 'problem': '선언형 — 답을 다 알려줘서 클릭할 이유 없음', 'fix': '부산 지방선거, 왜 이 남자가 뛰어들었나'},
+            {'title': '부산 지방선거, AI 전문가 이재성이 경제를 바꾼다', 'problem': '평서체 종결 — 문장형은 경어체(~바꿉니다) 필수', 'fix': '부산 지방선거, 이재성이 경제를 바꿉니다'},
             {'title': '이재성 부산 지방선거, AI 3대 강국?', 'problem': '키워드 나열 — 문장이 아님, 의미 불분명', 'fix': '부산 지방선거, 이재성은 왜 다른가'},
             {'title': '결국 터질 게 터졌습니다... 충격적 현실', 'problem': '낚시 자극 — 구체성 제로, 신뢰 파괴', 'fix': '부산 지방선거, 10만 청년이 떠난 도시의 반란'},
             {'title': '부산 지방선거, 이재명 2호 이재성 원칙 내건 그의 선택은', 'problem': '기계적 모방 — 요소 과밀(5개) + 형식적 미완결 꼬리', 'fix': '부산 지방선거, 이재성은 왜 다른가'},
@@ -1306,27 +1303,13 @@ def build_competitor_intent_title_instruction(params: Dict[str, Any]) -> str:
         return ""
 
     anchor_examples = order_role_keyword_intent_anchor_candidates(intent_keyword, recent_titles)[:3]
-    argument_examples = [
-        candidate
-        for candidate in _build_argument_tail_candidates("", params)
-        if str(candidate).strip() and not _is_low_signal_competitor_tail(candidate)
-    ][:4]
-    cue_examples = _extract_argument_title_cues(params)[:4]
     anchor_xml = "\n".join(
         f"  <anchor>{anchor}</anchor>"
         for anchor in anchor_examples
         if str(anchor).strip()
     ) or f"  <anchor>{build_role_keyword_intent_anchor_text(intent_keyword, variant_index=0)}</anchor>"
-    argument_xml = "\n".join(
-        f"  <argument>{argument}</argument>"
-        for argument in argument_examples
-        if str(argument).strip()
-    ) or "  <argument>이재성 31.7% 앞선 배경</argument>"
-    cue_xml = "\n".join(
-        f"  <cue>{cue}</cue>"
-        for cue in cue_examples
-        if str(cue).strip()
-    ) or "  <cue>정책·역량·지역 현안</cue>"
+    argument_xml = "  <argument>본문에서 뽑은 수치·정책·현장 논지 하나</argument>"
+    cue_xml = "  <cue>정책·역량·지역 현안</cue>"
 
     return f"""
 <competitor_intent_title priority="critical">

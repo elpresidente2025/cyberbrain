@@ -1002,25 +1002,6 @@ def test_calculate_title_quality_score_rejects_generic_report_tail_for_slogan_fa
     assert "보고서형" in str(result["breakdown"]["titleFamily"]["reason"])
 
 
-def test_calculate_title_quality_score_repairs_loyalty_title_with_slogan_tail() -> None:
-    params = {
-        "topic": "대통령님의 지역구를 지켜온 책임감으로, 계양구민에게 가장 충직한 인천광역시의원으로 역할을 해내겠습니다.",
-        "stanceText": "대통령님의 지역구를 지켜온 책임감으로 계양구민 곁을 끝까지 지키겠습니다.",
-        "contentPreview": "인천 계양구에서 당원과 시민을 위해 뛰어온 인천광역시의원 문세종입니다.",
-        "userKeywords": ["문세종"],
-        "fullName": "문세종",
-        "category": "activity-report",
-    }
-
-    result = calculate_title_quality_score("문세종, 계양구민에게 가장 충직한 인천광역시의원 되겠다", params)
-
-    assert result["passed"] is False
-    repaired = str(result.get("repairedTitle") or "")
-    assert repaired.startswith("문세종, ")
-    assert "정책 방향" not in repaired
-    assert ("곁" in repaired) or ("책임" in repaired)
-
-
 def test_build_title_prompt_includes_common_title_anti_patterns_block() -> None:
     prompt = build_title_prompt(
         {
@@ -1203,37 +1184,6 @@ def test_calculate_title_quality_score_rejects_event_announcement_surface_for_no
     assert "eventSurfaceLeak" in result["breakdown"]
 
 
-# synthetic_fixture
-def test_calculate_title_quality_score_repairs_loyalty_self_certification_title() -> None:
-    result = calculate_title_quality_score(
-        "{user_name}, 지역민에게 가장 충직한 시의원 되겠다",
-        {
-            "topic": "{user_name}의 구체적인 정책",
-            "contentPreview": (
-                "지역화폐 부활과 산업단지 활성화, 지역 현안 해결 방안을 "
-                "설명하는 의정활동 보고 글입니다."
-            ),
-            "stanceText": (
-                "시민이 체감하는 정책과 예산 확보 성과를 바탕으로 "
-                "정책 방향과 실행 과제를 제시합니다."
-            ),
-            "userKeywords": ["{user_name}"],
-            "fullName": "{user_name}",
-            "category": "activity-report",
-            "status": "active",
-        },
-        {"autoFitLength": False},
-    )
-
-    repaired = str(result.get("repairedTitle") or "")
-
-    assert result["passed"] is False
-    assert "loyaltySelfCertification" in result["breakdown"]
-    assert repaired
-    assert "충직한" not in repaired
-    assert "{user_name}" in repaired
-
-
 def test_calculate_title_quality_score_repairs_adjacent_focus_keywords_surface() -> None:
     result = calculate_title_quality_score(
         "이재성 전재수 4월 3일 KNN 방송토론 안내",
@@ -1257,67 +1207,6 @@ def test_calculate_title_quality_score_repairs_adjacent_focus_keywords_surface()
     assert result["passed"] is False
     assert "malformedSurface" in result["breakdown"]
     assert result.get("repairedTitle") == "이재성·전재수 4월 3일 KNN 방송토론 안내"
-
-
-def test_generate_and_validate_title_uses_structured_rescue_for_event_title() -> None:
-    async def _fake_generate_fn(_prompt: str) -> str:
-        return "4월 3일 KNN 방송토론 안내"
-
-    def _fake_score(title: str, _params: dict, _options: dict | None = None) -> dict:
-        if title == "이재성·전재수 경선, 4월 3일 KNN 방송토론 안내":
-            return {
-                "score": 74,
-                "passed": True,
-                "suggestions": [],
-                "breakdown": {
-                    "keywordPosition": {"score": 20, "max": 20, "status": "최적", "keyword": "이재성"}
-                },
-            }
-        return {
-            "score": 0,
-            "passed": False,
-            "suggestions": ["주제(topic) 텍스트를 그대로 제목으로 사용하지 마세요."],
-            "breakdown": {
-                "topicCopy": {"score": 0, "max": 100, "status": "실패", "reason": "주제 직복"}
-            },
-        }
-
-    with patch(
-        "agents.common.title_generation.build_structured_title_candidates",
-        return_value=["이재성·전재수 경선, 4월 3일 KNN 방송토론 안내"],
-    ), patch(
-        "agents.common.title_generation.calculate_title_quality_score",
-        side_effect=_fake_score,
-    ):
-        result = asyncio.run(
-            generate_and_validate_title(
-                _fake_generate_fn,
-                {
-                    "topic": "4월 3일 KNN 방송토론 안내",
-                    "contentPreview": "전재수 의원과의 경선 확정 이후 4월 3일 KNN 방송토론 안내",
-                    "stanceText": "전재수 의원과의 경선 확정 이후 4월 3일 KNN 방송토론 승부가 시작됩니다.",
-                    "userKeywords": ["이재성", "전재수"],
-                    "fullName": "이재성",
-                    "category": "current-affairs",
-                    "contextAnalysis": {
-                        "mustPreserve": {
-                            "eventDate": "2026-04-03",
-                            "eventLocation": "KNN",
-                        }
-                    },
-                },
-                {
-                    "minScore": 70,
-                    "maxAttempts": 1,
-                    "candidateCount": 1,
-                    "allowAutoRepair": False,
-                },
-            )
-        )
-
-    assert result["passed"] is True
-    assert result.get("source") == "structured_rescue"
-    assert result["title"] == "이재성·전재수 경선, 4월 3일 KNN 방송토론 안내"
 
 
 def test_generate_and_validate_title_ignores_recent_title_similarity_for_event_announcement() -> None:
@@ -1354,126 +1243,6 @@ def test_generate_and_validate_title_ignores_recent_title_similarity_for_event_a
 
     assert result["passed"] is True
     assert int(result.get("similarityPenalty", 0) or 0) == 0
-
-
-def test_generate_and_validate_title_applies_final_repair_before_raising() -> None:
-    prompts: list[str] = []
-
-    async def _fake_generate_fn(prompt: str) -> str:
-        prompts.append(prompt)
-        if "<final_title_repair" in prompt:
-            return "이재성, 4월 3일 KNN 경선 확정 행사 안내"
-        return "이재성 4월 3일 KNN 경선 확정 행사 안내"
-
-    def _fake_score(title: str, _params, _options=None):
-        if title == "이재성, 4월 3일 KNN 경선 확정 행사 안내":
-            return {
-                "score": 74,
-                "passed": True,
-                "suggestions": [],
-                "breakdown": {"topicMatch": {"score": 20, "max": 25, "status": "충분"}},
-            }
-        return {
-            "score": 68,
-            "passed": False,
-            "suggestions": [
-                '키워드 "이재성" 뒤에 쉼표나 조사를 넣어 다음 단어와 분리하세요. (예: "부산 지방선거, ~")',
-                "제목이 주제와 많이 다릅니다. 주제 핵심어를 반영하세요.",
-            ],
-            "breakdown": {"topicMatch": {"score": 15, "max": 25, "status": "보통"}},
-        }
-
-    with patch("agents.common.title_generation.calculate_title_quality_score", side_effect=_fake_score):
-        result = asyncio.run(
-            generate_and_validate_title(
-                _fake_generate_fn,
-                {
-                    "topic": "",
-                    "contentPreview": "4월 3일 KNN 경선 확정 행사 안내와 참석 요청을 담은 글입니다.",
-                    "stanceText": "4월 3일 KNN 경선 확정 행사 안내를 드립니다.",
-                    "userKeywords": ["이재성"],
-                    "fullName": "이재성",
-                },
-                {
-                    "minScore": 70,
-                    "maxAttempts": 1,
-                    "candidateCount": 1,
-                    "allowAutoRepair": False,
-                    "maxSimilarityPenalty": 0,
-                },
-            )
-        )
-
-    assert result["title"] == "이재성, 4월 3일 KNN 경선 확정 행사 안내"
-    assert result["history"][-1]["source"] == "final_repair"
-    assert any("<final_title_repair" in prompt for prompt in prompts)
-
-
-def test_generate_and_validate_title_retries_final_repair_loop() -> None:
-    prompts: list[str] = []
-    responses = iter(
-        [
-            "이재성 4월 3일 KNN 경선 방송토론 행사 안내",
-            "이재성, 4월 3일 KNN 경선 방송토론 행사 안내",
-            "이재성, 전재수 4월 3일 KNN 경선 토론 안내",
-        ]
-    )
-
-    async def _fake_generate_fn(prompt: str) -> str:
-        prompts.append(prompt)
-        return next(responses)
-
-    def _fake_score(title: str, _params, _options=None):
-        if title == "이재성, 전재수 4월 3일 KNN 경선 토론 안내":
-            return {
-                "score": 74,
-                "passed": True,
-                "suggestions": [],
-                "breakdown": {"topicMatch": {"score": 20, "max": 25, "status": "충분"}},
-            }
-        if title == "이재성, 4월 3일 KNN 경선 방송토론 행사 안내":
-            return {
-                "score": 68,
-                "passed": False,
-                "suggestions": [
-                    "제목이 31자입니다. 30자 이하가 클릭률 최고.",
-                    "제목에 두 검색어를 모두 포함하세요: 이재성, 전재수",
-                ],
-                "breakdown": {"keywordCoverage": {"score": 0, "max": 100, "status": "실패"}},
-            }
-        return {
-            "score": 62,
-            "passed": False,
-            "suggestions": [
-                '키워드 "이재성" 뒤에 쉼표나 조사를 넣어 다음 단어와 분리하세요. (예: "부산 지방선거, ~")',
-                "제목에 두 검색어를 모두 포함하세요: 이재성, 전재수",
-            ],
-            "breakdown": {"keywordCoverage": {"score": 0, "max": 100, "status": "실패"}},
-        }
-
-    with patch("agents.common.title_generation.calculate_title_quality_score", side_effect=_fake_score):
-        result = asyncio.run(
-            generate_and_validate_title(
-                _fake_generate_fn,
-                {
-                    "topic": "",
-                    "contentPreview": "4월 3일 KNN 경선 방송토론 행사 안내와 참석 요청을 담은 글입니다.",
-                    "stanceText": "4월 3일 KNN 경선 방송토론 행사 안내를 드립니다.",
-                    "userKeywords": ["이재성", "전재수"],
-                    "fullName": "이재성",
-                },
-                {
-                    "minScore": 70,
-                    "maxAttempts": 1,
-                    "candidateCount": 1,
-                    "allowAutoRepair": False,
-                    "maxSimilarityPenalty": 0,
-                },
-            )
-        )
-
-    assert result["title"] == "이재성, 전재수 4월 3일 KNN 경선 토론 안내"
-    assert sum(1 for prompt in prompts if "<final_title_repair" in prompt) == 2
 
 
 def test_calculate_title_quality_score_requires_two_independent_user_keywords() -> None:
@@ -1587,56 +1356,6 @@ def test_title_agent_prefers_structured_title_before_llm() -> None:
     asyncio.run(_run())
 
 
-def test_title_agent_uses_full_context_compliance_retry_before_minimal_prompt() -> None:
-    calls: list[dict[str, object]] = []
-
-    async def _fake_generate_and_validate_title(_generate_fn, params, options):
-        calls.append({"params": dict(params), "options": dict(options)})
-        call_index = len(calls)
-        if call_index <= 2:
-            raise RuntimeError(
-                '[TitleGen] 제목 생성 실패: 최소 점수 1점 미달 '
-                '(최고 0점, 제목: "이재성, 전재수 경선 확정…부산 경제, 누가 이끌까?"). '
-                '개선 힌트: 말줄임표("...", "…") 사용 금지. 내용을 자르지 말고 완결된 제목을 작성하세요.'
-            )
-        return {
-            "title": "이재성·전재수 경선 확정, 부산 경제는 누가 이끄나",
-            "score": 78,
-            "history": [],
-        }
-
-    async def _run() -> None:
-        with patch(
-            "agents.core.title_agent.build_structured_title_candidates",
-            return_value=[],
-        ), patch(
-            "agents.core.title_agent.generate_and_validate_title",
-            new=_fake_generate_and_validate_title,
-        ):
-            agent = TitleAgent(options={})
-            result = await agent.process(
-                {
-                    "topic": "전재수 의원과의 경선 확정 이후 부산시장 선거 구도 평가",
-                    "content": "<p>경선 확정 이후 부산 경제와 선거 구도 변화에 관심이 모이고 있습니다.</p>",
-                    "stanceText": "경선 확정을 뜻깊게 생각하며 정책 경쟁으로 부산 경제를 바꾸겠습니다.",
-                    "background": "부산시장 선거 구도와 경제 현안",
-                    "userKeywords": ["이재성", "전재수"],
-                    "author": {"name": "이재성"},
-                    "category": "current-affairs",
-                    "pollFocusBundle": _build_matchup_bundle(),
-                }
-            )
-
-        assert result["title"] == "이재성·전재수 경선 확정, 부산 경제는 누가 이끄나"
-        assert len(calls) == 3
-        third_params = calls[2]["params"]
-        assert third_params.get("contentPreview")
-        assert third_params.get("stanceText")
-        assert third_params.get("titlePromptLite") is False
-
-    asyncio.run(_run())
-
-
 def test_title_agent_raises_when_generated_title_repeats_same_name() -> None:
     async def _fake_generate_and_validate_title(*_args, **_kwargs):
         return {
@@ -1703,97 +1422,6 @@ def test_title_agent_propagates_generation_error_without_safe_fallback() -> None
                 return
 
         raise AssertionError("생성 실패는 safe fallback 없이 그대로 전파되어야 합니다.")
-
-    asyncio.run(_run())
-
-
-def test_title_agent_uses_sentence_topic_fallback_on_compliance_failure() -> None:
-    async def _fake_generate_and_validate_title(*_args, **_kwargs):
-        raise RuntimeError(
-            '[TitleGen] 제목 생성 실패: 최소 점수 70점 미달 '
-            '(최고 0점, 제목: "문세종 의원, 계양구민을 위한 충직한 역할 안내 행사"). '
-            '개선 힌트: 제목의 수식 관계가 어색합니다. "무엇을 위한" 구조를 완결해 다시 작성하세요.'
-        )
-
-    async def _run() -> None:
-        with patch(
-            "agents.core.title_agent.build_structured_title_candidates",
-            return_value=[],
-        ), patch(
-            "agents.core.title_agent.generate_and_validate_title",
-            new=_fake_generate_and_validate_title,
-        ):
-            agent = TitleAgent(options={})
-            result = await agent.process(
-                {
-                    "topic": "대통령님의 지역구를 지켜온 책임감으로, 계양구민에게 가장 충직한 인천광역시의원으로 역할을 해내겠습니다.",
-                    "content": (
-                        "<p>인천 계양구에서 당원과 시민을 위해 뛰어온 인천광역시의원 문세종입니다.</p>"
-                        "<p>계양구을 지역위원회와 시의회 활동을 통해 지역구를 지켜왔고, 계양테크노밸리와 생활 조례 개정에도 힘써 왔습니다.</p>"
-                    ),
-                    "stanceText": (
-                        "인천 계양구에서 당원과 시민을 위해 뛰어온 인천광역시의원 문세종입니다. "
-                        "계양구민에게 가장 충직한 시의원으로 남겠습니다."
-                    ),
-                    "background": "계양구 의정활동과 입법 성과",
-                    "userKeywords": ["문세종"],
-                    "author": {"name": "문세종"},
-                    "category": "current-affairs",
-                }
-            )
-
-        assert result["titleType"] in {"COMPLIANCE_FALLBACK", "COMPLIANCE_FALLBACK_SOFT"}
-        assert "문세종" in result["title"]
-        assert result["titleHistory"][0]["fallbackUsed"] is True
-        assert result["titleHistory"][0]["source"] == "topic_sentence_fallback"
-        assert int(result["titleScore"] or 0) >= 60
-
-    asyncio.run(_run())
-
-
-def test_title_agent_rejects_malformed_soft_fallback_candidate() -> None:
-    async def _fake_generate_and_validate_title(*_args, **_kwargs):
-        raise RuntimeError(
-            '[TitleGen] 제목 생성 실패: 최소 점수 70점 미달 '
-            '(최고 0점, 제목: "문세종, 문세종의 되는 정책").'
-        )
-
-    async def _run() -> None:
-        with patch(
-            "agents.core.title_agent.build_structured_title_candidates",
-            return_value=[],
-        ), patch(
-            "agents.core.title_agent.generate_and_validate_title",
-            new=_fake_generate_and_validate_title,
-        ), patch(
-            "agents.core.title_agent._build_topic_sentence_fallback_candidates",
-            return_value=["문세종, 문세종의 되는 정책"],
-        ), patch(
-            "agents.core.title_agent.calculate_title_quality_score",
-            return_value={
-                "score": 69,
-                "passed": False,
-                "suggestions": ["제목이 주제와 많이 다릅니다. 주제 핵심어를 반영하세요."],
-                "breakdown": {"topicMatch": {"score": 5, "max": 25, "status": "낮음"}},
-            },
-        ):
-            agent = TitleAgent(options={})
-            try:
-                await agent.process(
-                    {
-                        "topic": "계양구 민생 정책 방향",
-                        "content": "<p>계양구민의 삶에 실질적인 도움이 되는 정책을 제안하고 실현해 나가겠습니다.</p>",
-                        "stanceText": "문세종은 계양구민에게 필요한 정책을 제안합니다.",
-                        "userKeywords": ["문세종"],
-                        "author": {"name": "문세종"},
-                        "category": "current-affairs",
-                    }
-                )
-            except RuntimeError as error:
-                assert "제목 생성 실패" in str(error)
-                return
-
-        raise AssertionError("구조 결함 제목은 soft fallback으로 수용되면 안 됩니다.")
 
     asyncio.run(_run())
 
@@ -2037,24 +1665,8 @@ def main() -> None:
             test_calculate_title_quality_score_repairs_adjacent_focus_keywords_surface,
         ),
         (
-            "calculate_title_quality_score_repairs_loyalty_self_certification_title",
-            test_calculate_title_quality_score_repairs_loyalty_self_certification_title,
-        ),
-        (
-            "generate_and_validate_title_uses_structured_rescue_for_event_title",
-            test_generate_and_validate_title_uses_structured_rescue_for_event_title,
-        ),
-        (
             "generate_and_validate_title_ignores_recent_title_similarity_for_event_announcement",
             test_generate_and_validate_title_ignores_recent_title_similarity_for_event_announcement,
-        ),
-        (
-            "generate_and_validate_title_applies_final_repair_before_raising",
-            test_generate_and_validate_title_applies_final_repair_before_raising,
-        ),
-        (
-            "generate_and_validate_title_retries_final_repair_loop",
-            test_generate_and_validate_title_retries_final_repair_loop,
         ),
         (
             "calculate_title_quality_score_requires_two_independent_user_keywords",
@@ -2077,24 +1689,12 @@ def main() -> None:
             test_title_agent_prefers_structured_title_before_llm,
         ),
         (
-            "title_agent_uses_full_context_compliance_retry_before_minimal_prompt",
-            test_title_agent_uses_full_context_compliance_retry_before_minimal_prompt,
-        ),
-        (
             "title_agent_raises_when_generated_title_repeats_same_name",
             test_title_agent_raises_when_generated_title_repeats_same_name,
         ),
         (
             "title_agent_propagates_generation_error_without_safe_fallback",
             test_title_agent_propagates_generation_error_without_safe_fallback,
-        ),
-        (
-            "title_agent_uses_sentence_topic_fallback_on_compliance_failure",
-            test_title_agent_uses_sentence_topic_fallback_on_compliance_failure,
-        ),
-        (
-            "title_agent_rejects_malformed_soft_fallback_candidate",
-            test_title_agent_rejects_malformed_soft_fallback_candidate,
         ),
     ]
     passed = 0

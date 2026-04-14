@@ -1,7 +1,7 @@
 
 import logging
 import re
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 from ..base_agent import Agent
 from ..common.role_keyword_policy import (
@@ -9,16 +9,13 @@ from ..common.role_keyword_policy import (
     extract_person_role_facts_from_text,
 )
 from ..common.title_generation import (
-    _detect_title_structural_defect,
     generate_and_validate_title,
     normalize_title_surface,
     resolve_title_purpose,
 )
 from ..common.title_common import (
-    assess_malformed_title_surface,
     assess_title_focus_name_repetition,
     build_structured_title_candidates,
-    repair_title_focus_name_repetition,
 )
 from ..common.title_scoring import calculate_title_quality_score
 
@@ -31,181 +28,6 @@ TITLE_RESPONSE_SCHEMA = {
     },
     "required": ["title"],
 }
-
-
-def _is_title_compliance_failure(error: Exception) -> bool:
-    message = str(error or "")
-    if not message:
-        return False
-    markers = (
-        "최소 점수",
-        "말줄임표",
-        "중간에 잘린",
-        "비문",
-        "동일 인물명",
-        "제목 문장",
-        "행사 안내 표현",
-        "행사 안내문이 아닌데",
-    )
-    return any(marker in message for marker in markers)
-
-
-def _normalize_topic_fallback_fragment(text: str) -> str:
-    normalized = normalize_title_surface(text) or str(text or "").strip()
-    if not normalized:
-        return ""
-
-    candidate = normalized
-    candidate = re.sub(
-        r"(?:해내겠습니다|하겠습니다|드리겠습니다|입니다|합니다|됩니다|되겠습니다)[.!?]*$",
-        "",
-        candidate,
-    ).strip()
-    candidate = re.sub(r"\s*역할을?\s+해내$", "", candidate).strip()
-    candidate = re.sub(r"\s*역할을?\s*$", "", candidate).strip()
-    candidate = re.sub(r"^\s*(?:앞으로도|끝까지|반드시)\s+", "", candidate).strip()
-    candidate = re.sub(r"(?:으로|로|에게|에서|과|와|의|을|를|은|는|이|가)\s*$", "", candidate).strip()
-    candidate = re.sub(r"\s{2,}", " ", candidate).strip(" ,.:;!?")
-    return normalize_title_surface(candidate) or candidate
-
-
-def _build_topic_sentence_fallback_candidates(params: Dict[str, Any]) -> List[str]:
-    topic = str(params.get("topic") or "").strip()
-    full_name = str(params.get("fullName") or "").strip()
-    user_keywords = params.get("userKeywords") if isinstance(params.get("userKeywords"), list) else []
-    primary_keyword = str(user_keywords[0] or "").strip() if user_keywords else ""
-
-    base_topic = _normalize_topic_fallback_fragment(topic)
-    if not base_topic:
-        return []
-
-    fragments: List[str] = []
-    for raw_fragment in (base_topic,):
-        normalized_fragment = _normalize_topic_fallback_fragment(raw_fragment)
-        if normalized_fragment and normalized_fragment not in fragments:
-            fragments.append(normalized_fragment)
-        if "," in normalized_fragment:
-            left, right = [part.strip() for part in normalized_fragment.split(",", 1)]
-            for split_fragment in (right, left, f"{left} {right}".strip()):
-                normalized_split = _normalize_topic_fallback_fragment(split_fragment)
-                if normalized_split and normalized_split not in fragments:
-                    fragments.append(normalized_split)
-
-    prefixes: List[str] = []
-    for prefix in (primary_keyword, full_name):
-        normalized_prefix = str(prefix or "").strip()
-        if normalized_prefix and normalized_prefix not in prefixes:
-            prefixes.append(normalized_prefix)
-
-    candidates: List[str] = []
-    for fragment in fragments:
-        if fragment and fragment not in candidates:
-            candidates.append(fragment)
-        for prefix in prefixes:
-            if prefix and prefix not in fragment:
-                prefixed = normalize_title_surface(f"{prefix}, {fragment}")
-                if prefixed and prefixed not in candidates:
-                    candidates.append(prefixed)
-
-    return candidates[:8]
-
-
-def _is_safe_fallback_candidate(title: str, params: Dict[str, Any]) -> bool:
-    normalized_title = normalize_title_surface(title) or str(title or "").strip()
-    if not normalized_title:
-        return False
-    if _detect_title_structural_defect(normalized_title):
-        return False
-    malformed_surface = assess_malformed_title_surface(normalized_title, params)
-    if not malformed_surface.get("passed", True):
-        return False
-    validation = assess_title_focus_name_repetition(normalized_title, params)
-    return bool(validation.get("passed", True))
-
-
-def _select_compliance_safe_fallback(
-    params: Dict[str, Any],
-    *,
-    min_score: int,
-    title_purpose: str,
-) -> Optional[Dict[str, Any]]:
-    candidate_pool: List[tuple[str, str]] = []
-    seen_candidates: set[str] = set()
-
-    def _append_candidate(raw_title: str, source: str) -> None:
-        normalized_title = normalize_title_surface(raw_title) or str(raw_title or "").strip()
-        if not normalized_title or normalized_title in seen_candidates:
-            return
-        seen_candidates.add(normalized_title)
-        candidate_pool.append((normalized_title, source))
-
-    for structured_title in build_structured_title_candidates(
-        params,
-        title_purpose=title_purpose,
-        limit=6,
-    ):
-        _append_candidate(str(structured_title or ""), "structured_fallback")
-
-    for fallback_title in _build_topic_sentence_fallback_candidates(params):
-        _append_candidate(fallback_title, "topic_sentence_fallback")
-
-    best_match: Optional[Dict[str, Any]] = None
-    best_score = -1
-    fallback_min_score = max(60, min_score - 10)
-    for candidate_title, source in candidate_pool:
-        normalized_candidate = normalize_title_surface(candidate_title) or candidate_title
-        if not _is_safe_fallback_candidate(normalized_candidate, params):
-            continue
-        validation = assess_title_focus_name_repetition(normalized_candidate, params)
-        if not validation.get("passed", True):
-            repaired_candidate = repair_title_focus_name_repetition(normalized_candidate, params)
-            normalized_candidate = normalize_title_surface(repaired_candidate) or normalized_candidate
-            validation = assess_title_focus_name_repetition(normalized_candidate, params)
-            if not validation.get("passed", True):
-                continue
-
-        score_result = calculate_title_quality_score(normalized_candidate, params)
-        scored_title = normalize_title_surface(
-            str(score_result.get("repairedTitle") or normalized_candidate)
-        ) or normalized_candidate
-        if scored_title != normalized_candidate:
-            rescored_result = calculate_title_quality_score(scored_title, params)
-            if int(rescored_result.get("score") or 0) >= int(score_result.get("score") or 0):
-                score_result = rescored_result
-                normalized_candidate = scored_title
-
-        score = int(score_result.get("score") or 0)
-        if score <= 0:
-            continue
-
-        if score > best_score:
-            best_score = score
-            best_match = {
-                "title": normalized_candidate,
-                "score": score,
-                "source": source,
-                "passed": bool(score_result.get("passed")),
-                "suggestions": list(score_result.get("suggestions") or []),
-                "breakdown": dict(score_result.get("breakdown") or {}),
-            }
-
-        if bool(score_result.get("passed")) and score >= fallback_min_score:
-            return {
-                "title": normalized_candidate,
-                "score": score,
-                "source": source,
-                "passed": bool(score_result.get("passed")),
-                "suggestions": list(score_result.get("suggestions") or []),
-                "breakdown": dict(score_result.get("breakdown") or {}),
-            }
-
-    return (
-        best_match
-        if best_match
-        and bool(best_match.get("passed"))
-        and int(best_match.get("score") or 0) >= fallback_min_score
-        else None
-    )
 
 
 class TitleAgent(Agent):
@@ -451,7 +273,6 @@ class TitleAgent(Agent):
                 self.name,
                 primary_error,
             )
-            # strict retry: 파싱 재시도 강화, 후보 1개, 낮은 temperature
             generation_temperature = 0.2
             generation_top_p = 0.75
             generation_top_k = 20
@@ -472,116 +293,11 @@ class TitleAgent(Agent):
             try:
                 result = await generate_and_validate_title(generate_fn, params, options=strict_retry_options)
             except Exception as strict_error:
-                compliance_failure = (
-                    _is_title_compliance_failure(primary_error)
-                    or _is_title_compliance_failure(strict_error)
+                logger.error(
+                    "[%s] All title generation attempts exhausted. primary=%s | strict=%s",
+                    self.name, primary_error, strict_error,
                 )
-                if compliance_failure:
-                    logger.warning(
-                        "[%s] Strict retry failed on compliance rules. Run full-context compliance retry: %s",
-                        self.name,
-                        strict_error,
-                    )
-                    _json_parse_retries = 3
-                    generation_temperature = 0.1
-                    generation_top_p = 0.65
-                    generation_top_k = 12
-                    compliance_params = {
-                        **params,
-                        'titlePromptLite': False,
-                    }
-                    compliance_options = {
-                        'minScore': min_score,
-                        'maxAttempts': 2,
-                        'candidateCount': 1,
-                        'similarityThreshold': float((self.options or {}).get('similarityThreshold', 0.78)),
-                        'maxSimilarityPenalty': int((self.options or {}).get('maxSimilarityPenalty', 18)),
-                        'recentTitles': params.get('recentTitles', []),
-                        'allowAutoRepair': False,
-                    }
-                    try:
-                        result = await generate_and_validate_title(
-                            generate_fn, compliance_params, options=compliance_options,
-                        )
-                    except Exception as compliance_error:
-                        fallback_result = _select_compliance_safe_fallback(
-                            compliance_params,
-                            min_score=min_score,
-                            title_purpose=title_purpose,
-                        )
-                        if fallback_result:
-                            fallback_title = str(fallback_result.get("title") or "").strip()
-                            fallback_score = int(fallback_result.get("score") or 0)
-                            fallback_source = str(fallback_result.get("source") or "compliance_fallback")
-                            logger.warning(
-                                "[%s] Compliance retry exhausted. Use safe fallback title: %s (score=%s, source=%s)",
-                                self.name,
-                                fallback_title,
-                                fallback_score,
-                                fallback_source,
-                            )
-                            return {
-                                "title": fallback_title,
-                                "titleScore": fallback_score,
-                                "titleHistory": [
-                                    {
-                                        "attempt": -1,
-                                        "title": fallback_title,
-                                        "score": fallback_score,
-                                        "source": fallback_source,
-                                        "suggestions": list(fallback_result.get("suggestions") or []),
-                                        "breakdown": dict(fallback_result.get("breakdown") or {}),
-                                        "fallbackUsed": True,
-                                        "softAccepted": not bool(fallback_result.get("passed")),
-                                    }
-                                ],
-                                "titleType": (
-                                    "COMPLIANCE_FALLBACK"
-                                    if bool(fallback_result.get("passed"))
-                                    else "COMPLIANCE_FALLBACK_SOFT"
-                                ),
-                            }
-                        logger.error(
-                            "[%s] All title generation attempts exhausted. "
-                            "primary=%s | strict=%s | compliance=%s",
-                            self.name, primary_error, strict_error, compliance_error,
-                        )
-                        raise compliance_error
-                else:
-                    # minimal retry: 경량 프롬프트로 generate_and_validate_title 경유 (A 하드페일 보장)
-                    logger.warning(
-                        "[%s] Strict retry failed. Minimal prompt retry via validate: %s",
-                        self.name,
-                        strict_error,
-                    )
-                    _json_parse_retries = 3
-                    generation_temperature = 0.3
-                    generation_top_p = 0.80
-                    generation_top_k = 20
-                    minimal_params = {
-                        **params,
-                        'contentPreview': '',
-                        'backgroundText': '',
-                        'stanceText': '',
-                    }
-                    minimal_options = {
-                        'minScore': 1,
-                        'maxAttempts': 1,
-                        'candidateCount': 1,
-                        'recentTitles': params.get('recentTitles', []),
-                        'allowAutoRepair': False,
-                    }
-                    try:
-                        result = await generate_and_validate_title(
-                            generate_fn, minimal_params, options=minimal_options,
-                        )
-                    except Exception as minimal_error:
-                        logger.error(
-                            "[%s] All title generation attempts exhausted. "
-                            "primary=%s | strict=%s | minimal=%s",
-                            self.name, primary_error, strict_error, minimal_error,
-                        )
-                        raise minimal_error
+                raise strict_error
 
         raw_title = str(result.get('title') or '')
         normalized_title = normalize_title_surface(raw_title) or raw_title
