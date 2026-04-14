@@ -9424,81 +9424,17 @@ def _stabilize_repeated_title(
     poll_fact_table: Optional[Dict[str, Any]] = None,
     poll_focus_bundle: Optional[Dict[str, Any]] = None,
 ) -> tuple[str, Dict[str, Any]]:
+    # repeat-safe fallback 재작성 경로는 본문 greedy regex cue + {name}의 X Y 접착으로
+    # "박지상의 보존하고 교육" 같은 조각 제목을 만들어낸 전력이 있어 제거됐다.
+    # 반복 여부는 메타로만 기록하고, 재작성은 LLM 재프롬프트 경로에만 맡긴다.
     normalized_candidate = _normalize_title_surface_local(candidate_title) or candidate_title
     repeat_meta = _compute_title_repeat_meta(normalized_candidate, recent_titles)
-    if not _title_repeat_needs_fallback(repeat_meta):
-        return normalized_candidate, {
-            "repeated": False,
-            "applied": False,
-            "repeatMeta": repeat_meta,
-            "reason": "",
-        }
-
-    fallback = _build_repeat_safe_title_fallback(
-        current_title=normalized_candidate,
-        recent_titles=recent_titles,
-        topic=topic,
-        content=content,
-        user_keywords=user_keywords,
-        full_name=full_name,
-        category=category,
-        status=status,
-        context_analysis=context_analysis,
-        role_keyword_policy=role_keyword_policy,
-        poll_fact_table=poll_fact_table,
-        poll_focus_bundle=poll_focus_bundle,
-    )
-    stabilized_title = _normalize_title_surface_local(fallback.get("title") or normalized_candidate) or normalized_candidate
-
-    # Guard: reject fallback that regresses topic relevance or duplicates speaker name.
-    # The repeat-safe fallback can emit garbage suffixes when argument_cues are thin,
-    # and we must not replace a topic-relevant draft with a topic-irrelevant one.
-    if stabilized_title and stabilized_title != normalized_candidate:
-        def _topic_overlap_count(title_text: str) -> int:
-            try:
-                from agents.common.title_keywords import extract_topic_keywords
-                topic_kws = extract_topic_keywords(topic or "")
-                if not topic_kws:
-                    return 0
-                normalized_title = re.sub(r"\s+", "", title_text)
-                return sum(1 for kw in topic_kws if kw and kw in normalized_title)
-            except Exception:
-                return 0
-
-        def _speaker_count(title_text: str) -> int:
-            speaker = (full_name or "").strip()
-            if not speaker:
-                return 0
-            return title_text.count(speaker)
-
-        candidate_overlap = _topic_overlap_count(normalized_candidate)
-        fallback_overlap = _topic_overlap_count(stabilized_title)
-        fallback_speaker_dup = _speaker_count(stabilized_title) >= 2
-
-        if fallback_speaker_dup or fallback_overlap < candidate_overlap:
-            logger.warning(
-                "[TitleStabilize] fallback rejected, keeping draft: "
-                "draft=%s fallback=%s draftOverlap=%s fallbackOverlap=%s speakerDup=%s",
-                normalized_candidate,
-                stabilized_title,
-                candidate_overlap,
-                fallback_overlap,
-                fallback_speaker_dup,
-            )
-            return normalized_candidate, {
-                "repeated": True,
-                "applied": False,
-                "repeatMeta": repeat_meta,
-                "fallbackReason": "rejected_topic_regression" if not fallback_speaker_dup else "rejected_speaker_duplication",
-                "fallbackRepeatMeta": fallback.get("repeatMeta") if isinstance(fallback.get("repeatMeta"), dict) else {},
-            }
-
-    return stabilized_title, {
-        "repeated": True,
-        "applied": stabilized_title != normalized_candidate,
+    return normalized_candidate, {
+        "repeated": _title_repeat_needs_fallback(repeat_meta),
+        "applied": False,
         "repeatMeta": repeat_meta,
-        "fallbackReason": str(fallback.get("reason") or "").strip(),
-        "fallbackRepeatMeta": fallback.get("repeatMeta") if isinstance(fallback.get("repeatMeta"), dict) else {},
+        "fallbackReason": "reconstruction_disabled",
+        "fallbackRepeatMeta": {},
     }
 
 
