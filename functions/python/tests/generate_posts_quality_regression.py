@@ -64,10 +64,10 @@ from handlers.generate_posts import (
     _sanitize_auto_keywords,
     _should_carry_recent_titles_from_prior_session,
 )
+from agents.common.h2_repair import repair_generic_surface as _repair_generic_subheading_surface_text
 from handlers.generate_posts_pkg.pipeline import (
     _apply_speaker_name_keyword_max_override,
     _build_title_stance_summary,
-    _repair_generic_subheading_surface_text,
     _repair_self_reference_placeholders_once,
     _repair_keyword_gate_once,
 )
@@ -4658,39 +4658,6 @@ def test_repair_integrity_noise_once_repairs_broken_result_clause_before_blocker
     assert repaired.get("edited") is True
 
 
-def test_final_sentence_polish_applies_poll_focus_contract_to_primary_fact_and_conclusion() -> None:
-    bundle = build_poll_focus_bundle(
-        topic="부산시장 선거 양자대결에서 주진우보다 우세를 보인 이재성의 가능성",
-        user_keywords=["주진우 부산시장", "주진우"],
-        full_name="이재성",
-        text_sources=[
-            "이재성 전 위원장과 주진우 국회의원의 가상대결은 31.7% 대 30.3%였습니다.",
-            "이재성 전 위원장과 박형준 현 부산시장의 양자대결은 30.9% 대 31.3%였습니다.",
-        ],
-    )
-    content = (
-        "<h2>주진우 국회의원과의 가상대결, 이재성의 약진</h2>"
-        "<p>최근 KNN이 서던포스트에 의뢰해 실시한 여론조사 결과는 저에게 큰 의미가 있습니다. "
-        "이재성 전 위원장과 주진우 의원과의 31.7% 대 30.3%로 제가 치열한 승부를 벌일 것으로 나타났습니다.</p>"
-        "<h2>함께 더 나은 부산의 미래</h2>"
-        "<p>주진우 의원과의 가상대결에서 보여준 저의 약진은 변화에 대한 열망을 보여주는 것입니다. 저는 이 모든 결과에 깊이</p>"
-    )
-
-    repaired = _apply_final_sentence_polish_once(
-        content,
-        full_name="이재성",
-        poll_focus_bundle=bundle,
-    )
-    updated = str(repaired.get("content") or "")
-
-    assert "<h2>이재성이 주진우와의 가상대결에서 앞선 이유</h2>" in updated
-    assert "이재성·주진우 가상대결에서는 31.7% 대 30.3%로 나타났습니다." in updated
-    assert "<h2>지금 이재성에 주목해야 하는 이유</h2>" in updated
-    assert "지금 이재성의 경쟁력은 확인됐습니다." in updated
-    assert "저는 이 모든 결과에 깊이" not in updated
-    assert repaired.get("edited") is True
-
-
 def test_final_sentence_polish_preserves_aligned_body_first_heading() -> None:
     bundle = build_poll_focus_bundle(
         topic="부산시장 선거 양자대결에서 주진우보다 우세를 보인 이재성의 가능성",
@@ -4715,52 +4682,6 @@ def test_final_sentence_polish_preserves_aligned_body_first_heading() -> None:
 
     assert "<h2>이재성이 앞선 이유: 검증된 경영 경험</h2>" in updated
     assert "<h2>이재성이 주진우와의 가상대결에서 앞선 이유</h2>" not in updated
-
-
-def test_final_sentence_polish_uses_distinct_question_h2_lanes_and_keeps_intro_line() -> None:
-    bundle = build_poll_focus_bundle(
-        topic="부산시장 선거 양자대결에서 주진우보다 우세를 보인 이재성의 가능성",
-        user_keywords=["주진우 부산시장", "주진우"],
-        full_name="이재성",
-        text_sources=[
-            "이재성 전 위원장과 주진우 국회의원의 가상대결은 31.7% 대 30.3%로 나타났습니다.",
-            "이재성 전 위원장과 박형준 현 부산시장의 양자대결은 30.9% 대 31.3%였습니다.",
-        ],
-    )
-    content = (
-        "<p>이재성, 충분히 이깁니다.</p>"
-        "<h2>주진우 국회의원과의 가상대결, 이재성의 약진</h2>"
-        "<p>최근 KNN이 서던포스트에 의뢰해 실시한 여론조사 결과는 저에게 큰 의미가 있습니다. "
-        "이재성 전 위원장과 주진우 의원과의 31.7% 대 30.3%로 제가 치열한 승부를 벌일 것으로 나타났습니다.</p>"
-        "<h2>이재성, 부산 시민에게 확실히 각인되고 있습니다</h2>"
-        "<p>저의 이름이 부산 시민 여러분께 조금씩 확실히 알려지고 있다는 것은 매우 고무적인 일입니다. "
-        "이는 제가 그동안 시민들과 직접 소통해 온 결과입니다.</p>"
-        "<h2>부산 경제, 이재성이 새로운 활력을 불어넣겠습니다</h2>"
-        "<p>현재 부산 경제는 새로운 활력을 필요로 합니다. 저는 해양 물류와 일자리 중심 정책을 통해 변화를 만들겠습니다.</p>"
-        "<h2>박형준 시장과의 가상대결, 오차 범위 내 접전</h2>"
-        "<p>최근 여론조사 결과는 저의 가능성을 다시 확인시켜 주었습니다. "
-        "이재성 더불어민주당 전 부산시당위원장과 박형준 현 부산시장의 양자대결에서는 30.9% 대 31.3%로 오차 범위 안에서 각축을 벌였습니다.</p>"
-        "<h2>함께 만들어갈 부산의 밝은 미래</h2>"
-        "<p>최근 여론조사에서 주진우 의원과의 가상대결에서 제가 앞서고 있다는 사실은 시민들의 변화 요구를 보여줍니다.</p>"
-    )
-
-    repaired = _apply_final_sentence_polish_once(
-        content,
-        full_name="이재성",
-        poll_focus_bundle=bundle,
-    )
-    updated = str(repaired.get("content") or "")
-
-    assert "<p>이재성, 충분히 이깁니다.</p>" in updated
-    assert updated.count("이재성이 주진우와의 가상대결에서 앞선 이유") == 1
-    assert "이재성 인지도는 왜 부산 시민 사이에서 확장되고 있나" not in updated
-    assert updated.count("부산 경제를 살릴 이재성의 해법") == 1
-    assert "박형준과의 접전은 무엇을 보여주나" not in updated
-    assert updated.count("지금 이재성에 주목해야 하는 이유") == 1
-    assert "이재성의 정책 비전, 지역 발전 해법" not in updated
-    assert "이 흐름은 이재성의 이름과 메시지가 부산 시민 사이에서 조금씩 더 알려지고 있음을 보여줍니다." not in updated
-    assert "부산 경제를 살릴 해법은 지역 산업과 일자리 문제를 함께 풀 수 있는 실질적 정책에 있습니다." in updated
-    assert "이재성·박형준 가상대결에서는 30.9% 대 31.3%로 나타났습니다." in updated
 
 
 # synthetic_fixture
@@ -6270,14 +6191,6 @@ def main() -> None:
         (
             "repair_integrity_noise_once_repairs_broken_result_clause_before_blocker",
             test_repair_integrity_noise_once_repairs_broken_result_clause_before_blocker,
-        ),
-        (
-            "final_sentence_polish_applies_poll_focus_contract_to_primary_fact_and_conclusion",
-            test_final_sentence_polish_applies_poll_focus_contract_to_primary_fact_and_conclusion,
-        ),
-        (
-            "final_sentence_polish_uses_distinct_question_h2_lanes_and_keeps_intro_line",
-            test_final_sentence_polish_uses_distinct_question_h2_lanes_and_keeps_intro_line,
         ),
         (
             "final_sentence_polish_dedupes_duplicate_sections_before_style_overlay",

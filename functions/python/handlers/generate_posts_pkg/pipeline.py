@@ -26,22 +26,7 @@ from firebase_functions import https_fn
 from agents.common.election_rules import check_election_eligibility
 from agents.common.editorial import STRUCTURE_SPEC
 from agents.common.h2_repair import (
-    build_keyword_intent_h2 as _h2_repair_build_keyword_intent_h2,
     build_subheading_role_surface as _h2_repair_build_subheading_role_surface,
-    ensure_keyword_first_slot as _h2_repair_ensure_keyword_first_slot,
-    ensure_user_keyword_first_slot as _h2_repair_ensure_user_keyword_first_slot,
-    is_subheading_subject_noise_sentence as _h2_repair_is_subject_noise_sentence,
-    pick_matchup_counterpart_name as _h2_repair_pick_matchup_counterpart_name,
-    pick_primary_person_name as _h2_repair_pick_primary_person_name,
-    pick_scored_primary_person_name as _h2_repair_pick_scored_primary_person_name,
-    repair_awkward_phrases as _h2_repair_awkward_phrases,
-    repair_branding_phrases as _h2_repair_branding_phrases,
-    repair_entity_consistency as _h2_repair_entity_consistency,
-    repair_generic_surface as _h2_repair_generic_surface,
-    repair_malformed_matchup_heading as _h2_repair_malformed_matchup,
-    repair_speaker_role_mismatch_matchup_heading as _h2_repair_speaker_role_mismatch_matchup,
-    score_subheading_body_names as _h2_repair_score_body_names,
-    third_personize_subheading as _h2_repair_third_personize,
 )
 from agents.common.person_naming import (
     ROLE_TOKEN_PRIORITY,
@@ -2551,49 +2536,6 @@ def _collect_known_person_names(
     return names
 
 
-def _pick_matchup_counterpart_name(
-    section_html: str,
-    *,
-    speaker_name: str,
-    known_names: list[str],
-) -> str:
-    return _h2_repair_pick_matchup_counterpart_name(
-        section_html,
-        speaker_name=speaker_name,
-        known_names=known_names,
-    )
-
-
-def _pick_primary_person_name(text: str, known_names: list[str]) -> str:
-    return _h2_repair_pick_primary_person_name(text, known_names)
-
-
-def _is_subheading_subject_noise_sentence(
-    sentence: str,
-    *,
-    known_names: list[str],
-    preferred_names: list[str],
-) -> bool:
-    return _h2_repair_is_subject_noise_sentence(
-        sentence,
-        known_names=known_names,
-        preferred_names=preferred_names,
-    )
-
-
-def _score_subheading_body_names(
-    section_html: str,
-    *,
-    known_names: list[str],
-    preferred_names: list[str],
-) -> Dict[str, Any]:
-    return _h2_repair_score_body_names(
-        section_html,
-        known_names=known_names,
-        preferred_names=preferred_names,
-    )
-
-
 _HEADING_ALIGNMENT_STOPWORDS = {
     "이유",
     "배경",
@@ -2681,65 +2623,6 @@ def _is_interrogative_heading(text: str) -> bool:
         normalized.endswith("?")
         or normalized.startswith("왜 ")
         or any(token in normalized for token in ("무엇", "어떻게", "인가", "하나"))
-    )
-
-
-def _pick_scored_primary_person_name(
-    scores: Dict[str, int],
-    *,
-    preferred_names: list[str],
-) -> str:
-    return _h2_repair_pick_scored_primary_person_name(
-        scores,
-        preferred_names=preferred_names,
-    )
-
-
-def _third_personize_first_person_subheading_text(
-    heading_inner: str,
-    *,
-    speaker_name: str,
-) -> tuple[str, bool]:
-    return _h2_repair_third_personize(heading_inner, speaker_name=speaker_name)
-
-
-def _build_subheading_role_surface(name: str, role_facts: Optional[Dict[str, str]] = None) -> str:
-    return _h2_repair_build_subheading_role_surface(name, role_facts=role_facts)
-
-
-def _repair_generic_subheading_surface_text(
-    heading_inner: str,
-) -> tuple[str, list[Dict[str, str]]]:
-    return _h2_repair_generic_surface(heading_inner)
-
-
-def _repair_malformed_matchup_subheading_text(
-    heading_inner: str,
-    *,
-    speaker_name: str,
-    known_names: list[str],
-    role_facts: Optional[Dict[str, str]] = None,
-) -> tuple[str, Optional[Dict[str, str]]]:
-    return _h2_repair_malformed_matchup(
-        heading_inner,
-        speaker_name=speaker_name,
-        known_names=known_names,
-        role_facts=role_facts,
-    )
-
-
-def _repair_speaker_role_mismatch_matchup_subheading_text(
-    heading_inner: str,
-    *,
-    speaker_name: str,
-    body_name: str,
-    role_facts: Optional[Dict[str, str]] = None,
-) -> tuple[str, Optional[Dict[str, str]]]:
-    return _h2_repair_speaker_role_mismatch_matchup(
-        heading_inner,
-        speaker_name=speaker_name,
-        body_name=body_name,
-        role_facts=role_facts,
     )
 
 
@@ -3713,7 +3596,7 @@ def _repair_intent_only_role_keyword_mentions_once(
             source_role = str(entry.get("sourceRole") or "").strip()
             source_surface = ""
             if name and source_role:
-                source_surface = _build_subheading_role_surface(name, role_facts={name: source_role}) or f"{name} {source_role}"
+                source_surface = _h2_repair_build_subheading_role_surface(name, role_facts={name: source_role}) or f"{name} {source_role}"
 
             def _replace(match: re.Match[str]) -> str:
                 if len(replacements) >= 6:
@@ -6659,17 +6542,6 @@ def _rewrite_targeted_sentence_issues_once(
     }
 
 
-def _build_poll_focus_pair_sentence(pair: Optional[Dict[str, Any]]) -> str:
-    pair_dict = pair if isinstance(pair, dict) else {}
-    speaker = str(pair_dict.get("speaker") or "").strip()
-    opponent = str(pair_dict.get("opponent") or "").strip()
-    speaker_percent = str(pair_dict.get("speakerPercent") or pair_dict.get("speakerScore") or "").strip()
-    opponent_percent = str(pair_dict.get("opponentPercent") or pair_dict.get("opponentScore") or "").strip()
-    if not speaker or not opponent or not speaker_percent or not opponent_percent:
-        return ""
-    return f"{speaker}·{opponent} 가상대결에서는 {speaker_percent} 대 {opponent_percent}로 나타났습니다."
-
-
 def _drop_incomplete_paragraph_tail_once(content: str) -> Dict[str, Any]:
     base = str(content or "")
     if not base.strip():
@@ -6925,253 +6797,6 @@ def _rewrite_first_paragraph_with_answer_lead(
 
     updated = base[: paragraph_match.start(1)] + updated_inner + base[paragraph_match.end(1) :]
     return {"content": updated, "edited": updated != base}
-
-
-def _apply_poll_focus_contract_once(
-    content: str,
-    *,
-    poll_focus_bundle: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    base = str(content or "")
-    bundle = poll_focus_bundle if isinstance(poll_focus_bundle, dict) else {}
-    if not base.strip() or str(bundle.get("scope") or "").strip().lower() != "matchup":
-        return {"content": base, "edited": False, "actions": []}
-
-    primary_pair = bundle.get("primaryPair") if isinstance(bundle.get("primaryPair"), dict) else {}
-    secondary_pairs = bundle.get("secondaryPairs") if isinstance(bundle.get("secondaryPairs"), list) else []
-    primary_sentence = _build_poll_focus_pair_sentence(primary_pair)
-    speaker = str(primary_pair.get("speaker") or bundle.get("speaker") or "").strip()
-    primary_opponent = str(primary_pair.get("opponent") or "").strip()
-    speaker_percent = str(primary_pair.get("speakerPercent") or primary_pair.get("speakerScore") or "").strip()
-    opponent_percent = str(primary_pair.get("opponentPercent") or primary_pair.get("opponentScore") or "").strip()
-    if not primary_sentence or not speaker or not primary_opponent:
-        return {"content": base, "edited": False, "actions": []}
-
-    allowed_h2_kinds = bundle.get("allowedH2Kinds") if isinstance(bundle.get("allowedH2Kinds"), list) else []
-    h2_config_map: Dict[str, Dict[str, str]] = {}
-    for raw_kind in allowed_h2_kinds:
-        kind = raw_kind if isinstance(raw_kind, dict) else {}
-        kind_id = str(kind.get("id") or "").strip()
-        kind_template = str(kind.get("template") or "").strip()
-        kind_answer_lead = str(kind.get("answerLead") or "").strip()
-        if kind_id and kind_template and kind_id not in h2_config_map:
-            h2_config_map[kind_id] = {
-                "template": kind_template,
-                "answerLead": kind_answer_lead,
-            }
-
-    contest_tokens = ("가상대결", "양자대결", "대결", "접전", "경쟁력", "약진")
-    policy_tokens = ("경제", "비전", "정책", "산업", "일자리", "미래", "혁신", "발전")
-    recognition_tokens = ("인지도", "알려", "각인", "접점")
-    closing_tokens = ("함께", "미래", "약속", "부산 시민", "마무리", "끝으로")
-
-    repaired = base
-    actions: list[str] = []
-    h2_matches = list(H2_TAG_PATTERN.finditer(base))
-    total_h2 = len(h2_matches)
-    if not h2_matches:
-        return {"content": base, "edited": False, "actions": []}
-
-    section_infos: list[Dict[str, Any]] = []
-    used_kinds: set[str] = set()
-    available_kinds = list(h2_config_map.keys())
-
-    for index, match in enumerate(h2_matches):
-        next_start = h2_matches[index + 1].start() if index + 1 < total_h2 else len(base)
-        section_html = base[match.end():next_start]
-        h2_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(match.group(1) or "")))
-        section_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", section_html))
-        combined_plain = _normalize_inline_whitespace(f"{h2_plain} {section_plain}")
-
-        candidate_scores: Dict[str, int] = {}
-        if index == total_h2 - 1 and "closing" in h2_config_map:
-            candidate_scores["closing"] = 120
-
-        if (
-            primary_opponent
-            and primary_opponent in section_plain
-            and (
-                speaker_percent in section_plain
-                or opponent_percent in section_plain
-                or any(token in section_plain for token in contest_tokens)
-            )
-        ):
-            both_percents_present = (
-                speaker_percent
-                and opponent_percent
-                and speaker_percent in section_plain
-                and opponent_percent in section_plain
-            )
-            candidate_scores["primary_matchup"] = 130 if both_percents_present else 110
-
-        matched_secondary_pair: Optional[Dict[str, Any]] = None
-        for pair in secondary_pairs[:2]:
-            pair_dict = pair if isinstance(pair, dict) else {}
-            secondary_opponent = str(pair_dict.get("opponent") or "").strip()
-            secondary_speaker_percent = str(pair_dict.get("speakerPercent") or pair_dict.get("speakerScore") or "").strip()
-            secondary_opponent_percent = str(pair_dict.get("opponentPercent") or pair_dict.get("opponentScore") or "").strip()
-            if (
-                secondary_opponent
-                and secondary_opponent in section_plain
-                and (
-                    secondary_speaker_percent in section_plain
-                    or secondary_opponent_percent in section_plain
-                    or any(token in section_plain for token in contest_tokens)
-                )
-            ):
-                matched_secondary_pair = pair_dict
-                candidate_scores["secondary_matchup"] = 100
-                break
-
-        policy_score = _count_poll_focus_token_hits(combined_plain, policy_tokens)
-        recognition_score = _count_poll_focus_token_hits(combined_plain, recognition_tokens)
-        closing_score = _count_poll_focus_token_hits(combined_plain, closing_tokens)
-
-        if policy_score:
-            candidate_scores["policy"] = max(candidate_scores.get("policy", 0), 20 + policy_score)
-        if recognition_score and not policy_score:
-            candidate_scores["recognition"] = max(candidate_scores.get("recognition", 0), 20 + recognition_score)
-        if closing_score:
-            bonus = 15 if index >= total_h2 - 2 else 0
-            candidate_scores["closing"] = max(candidate_scores.get("closing", 0), 20 + closing_score + bonus)
-
-        ranked_candidates = sorted(candidate_scores.items(), key=lambda item: (-item[1], item[0]))
-        section_kind = ""
-        for candidate, _ in ranked_candidates:
-            if candidate in h2_config_map and candidate not in used_kinds:
-                section_kind = candidate
-                break
-
-        if not section_kind:
-            fallback_order: list[str]
-            if index == 0:
-                fallback_order = ["primary_matchup", "policy", "secondary_matchup", "closing", "recognition"]
-            elif index == total_h2 - 1:
-                fallback_order = ["closing", "secondary_matchup", "policy", "recognition"]
-            else:
-                fallback_order = ["policy", "secondary_matchup", "closing", "recognition"]
-            for fallback_kind in fallback_order:
-                if fallback_kind in h2_config_map and fallback_kind not in used_kinds:
-                    section_kind = fallback_kind
-                    break
-
-        if section_kind:
-            used_kinds.add(section_kind)
-
-        section_infos.append(
-            {
-                "index": index,
-                "match_start": match.start(1),
-                "match_end": match.end(1),
-                "content_start": match.end(),
-                "content_end": next_start,
-                "h2_plain": h2_plain,
-                "section_plain": section_plain,
-                "section_kind": section_kind,
-                "secondary_pair": matched_secondary_pair,
-            }
-        )
-
-    for info in reversed(section_infos):
-        section_kind = str(info.get("section_kind") or "").strip()
-        if not section_kind:
-            continue
-
-        section_html = repaired[info["content_start"] : info["content_end"]]
-        h2_plain = str(info.get("h2_plain") or "").strip()
-        config = h2_config_map.get(section_kind) or {}
-        h2_template = str(config.get("template") or "").strip()
-        answer_lead = str(config.get("answerLead") or "").strip()
-        updated_h2_inner = h2_plain
-        lead_sentences = _split_sentence_like_units(str(info.get("section_plain") or ""))
-        lead_context = " ".join(lead_sentences[:2]).strip() or str(info.get("section_plain") or "")
-        heading_alignment = _compute_heading_body_alignment_score(h2_plain, lead_context)
-        required_heading_cues = {
-            "primary_matchup": ("이유", "배경"),
-            "policy": ("해법", "정책"),
-            "secondary_matchup": ("경쟁력", "접전", "구도"),
-            "closing": ("이유", "주목"),
-        }
-        cue_tokens = required_heading_cues.get(section_kind, ())
-        missing_kind_cue = bool(cue_tokens and not any(token in h2_plain for token in cue_tokens))
-        should_replace_h2 = bool(
-            h2_template
-            and h2_plain
-            and h2_plain != h2_template
-            and (
-                _is_interrogative_heading(h2_plain)
-                or heading_alignment < 0.34
-                or missing_kind_cue
-            )
-        )
-        if should_replace_h2:
-            updated_h2_inner = h2_template
-            actions.append(f"poll_focus_h2:{section_kind}")
-
-        updated_section_html = section_html
-        replace_whole_paragraph = section_kind in {"primary_matchup", "secondary_matchup"}
-        if section_kind == "primary_matchup":
-            answer_lead = primary_sentence
-        elif section_kind == "secondary_matchup":
-            answer_lead = _build_poll_focus_pair_sentence(info.get("secondary_pair"))
-
-        if answer_lead:
-            answer_rewrite = _rewrite_first_paragraph_with_answer_lead(
-                updated_section_html,
-                answer_lead,
-                replace_whole_paragraph=replace_whole_paragraph,
-            )
-            if answer_rewrite.get("edited"):
-                updated_section_html = str(answer_rewrite.get("content") or updated_section_html)
-                actions.append(
-                    f"{'poll_focus_fact' if replace_whole_paragraph else 'poll_focus_answer'}:{section_kind}"
-                )
-
-        all_opponent_names = [primary_opponent] + [
-            str(p.get("opponent") or "").strip()
-            for p in secondary_pairs
-            if str(p.get("opponent") or "").strip()
-        ]
-        poll_tokens_for_check = tuple(
-            t for t in (speaker_percent, opponent_percent) if t
-        )
-        had_paragraphs_before_groundedness = bool(PARAGRAPH_TAG_PATTERN.search(updated_section_html))
-        groundedness_result = _remove_groundedness_violations_from_section(
-            updated_section_html,
-            opponent_names=all_opponent_names,
-            poll_number_tokens=poll_tokens_for_check,
-        )
-        if groundedness_result.get("edited"):
-            groundedness_content = str(groundedness_result.get("content") or updated_section_html)
-            if had_paragraphs_before_groundedness and not PARAGRAPH_TAG_PATTERN.search(groundedness_content):
-                print(
-                    f"⚠️ [PostQA] groundedness 제거 후 섹션 본문이 비었습니다: "
-                    f"kind={section_kind or 'unknown'}, heading='{h2_plain}'"
-                )
-                actions.append(f"groundedness_emptied_section:{section_kind or 'unknown'}")
-            updated_section_html = groundedness_content
-            for g_action in groundedness_result.get("actions") or []:
-                if g_action:
-                    actions.append(f"{g_action}:{section_kind}")
-
-        if updated_section_html != section_html:
-            repaired = repaired[: info["content_start"]] + updated_section_html + repaired[info["content_end"] :]
-        if updated_h2_inner != h2_plain:
-            repaired = repaired[: info["match_start"]] + updated_h2_inner + repaired[info["match_end"] :]
-
-    completion_repair = _drop_incomplete_paragraph_tail_once(repaired)
-    if completion_repair.get("edited"):
-        repaired = str(completion_repair.get("content") or repaired)
-        for action in completion_repair.get("actions") or []:
-            action_text = str(action).strip()
-            if action_text:
-                actions.append(action_text)
-
-    return {
-        "content": repaired,
-        "edited": repaired != base,
-        "actions": actions,
-    }
 
 
 def _build_heading_based_answer_lead(h2_plain: str, *, full_name: str = "") -> str:
@@ -7651,19 +7276,6 @@ def _apply_final_sentence_polish_once(
                 actions.append(action_text)
     if final_style_scrub.get("edited"):
         repaired = str(final_style_scrub.get("content") or repaired)
-
-    poll_focus_contract_repair = _apply_poll_focus_contract_once(
-        repaired,
-        poll_focus_bundle=poll_focus_bundle,
-    )
-    poll_focus_contract_actions = poll_focus_contract_repair.get("actions")
-    if isinstance(poll_focus_contract_actions, list):
-        for action in poll_focus_contract_actions:
-            action_text = str(action).strip()
-            if action_text:
-                actions.append(action_text)
-    if poll_focus_contract_repair.get("edited"):
-        repaired = str(poll_focus_contract_repair.get("content") or repaired)
 
     post_section_dedupe = _dedupe_overlapping_sections_once(repaired)
     post_section_dedupe_actions = post_section_dedupe.get("actions")
