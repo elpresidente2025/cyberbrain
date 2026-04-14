@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional, Tuple
 
 from ..common.classifier import classify_topic
-from ..common.constants import resolve_writing_method
+from ..common.constants import refine_writing_method, resolve_writing_method
 from ..common.editorial import STRUCTURE_SPEC
 from ..common.theminjoo import get_party_stance
 from ..templates.intelligent_selector import select_prompt_parameters
@@ -154,11 +154,21 @@ class SectionRepairMixin:
         writing_method = ''
         if category and category != 'auto':
             writing_method = resolve_writing_method(category, sub_category)
-            print(f"✍️ [StructureAgent] 작법 선택 (카테고리 기반): {writing_method}")
+            refined = refine_writing_method(writing_method, topic=topic, stance_text=stance_text)
+            if refined != writing_method:
+                print(f"✍️ [StructureAgent] 작법 선택 정제: {writing_method} → {refined} (기념·성찰 주제 감지)")
+                writing_method = refined
+            else:
+                print(f"✍️ [StructureAgent] 작법 선택 (카테고리 기반): {writing_method}")
         else:
             classification = await classify_topic(topic)
             writing_method = classification['writingMethod']
-            print(f"🤖 [StructureAgent] 작법 자동 추론: {writing_method} (신뢰도: {classification.get('confidence')}, 소스: {classification.get('source')})")
+            refined = refine_writing_method(writing_method, topic=topic, stance_text=stance_text)
+            if refined != writing_method:
+                print(f"🤖 [StructureAgent] 작법 자동 추론 정제: {writing_method} → {refined} (기념·성찰 주제 감지)")
+                writing_method = refined
+            else:
+                print(f"🤖 [StructureAgent] 작법 자동 추론: {writing_method} (신뢰도: {classification.get('confidence')}, 소스: {classification.get('source')})")
 
         # 2. Build Author Bio
         author_bio, author_name = self.build_author_bio(user_profile)

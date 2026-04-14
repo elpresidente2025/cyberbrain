@@ -1,3 +1,4 @@
+import re
 from typing import Dict, List, Optional
 
 # 사용자 상태별 설정
@@ -40,6 +41,65 @@ def resolve_writing_method(category: str, sub_category: Optional[str] = None) ->
     if sub_category and sub_category in SUBCATEGORY_TO_WRITING_METHOD:
         return SUBCATEGORY_TO_WRITING_METHOD[sub_category]
     return CATEGORY_TO_WRITING_METHOD.get(category, 'emotional_writing')
+
+
+# 기념·추념·성찰·헌사 주제 감지 키워드
+# 이 패턴이 topic/stance 에 보이면 '비판(critical_writing)' 은 어색하다 — 성찰·기념·헌사 톤으로 빠져야 함.
+_COMMEMORATIVE_MARKERS = (
+    # 기념일/주년
+    "주년", "기념일", "기념식", "기념하", "기리",
+    # 추념/추모/헌정
+    "추념", "추모", "헌정", "헌사", "분향", "묵념", "영면", "별세",
+    # 선열/희생/계승
+    "선열", "순국", "산화", "희생자", "유족", "유공자", "계승하", "이어받",
+    # 성찰/되새김
+    "되새기", "되돌아보", "성찰", "새기며",
+    # 축하/축사
+    "축하드립니다", "축하의 말씀", "경축",
+)
+
+_CRITIQUE_MARKERS = (
+    # 비판 대상을 암시하는 명시적 마커
+    "규탄", "책임 추궁", "비판", "고발", "반박", "허위", "조작",
+    "실정", "무능", "직권남용", "망언", "책임지", "퇴진", "사퇴",
+    "의혹", "논란", "프레임", "가짜뉴스", "날조",
+)
+
+
+def detect_commemorative_topic(topic: str, stance_text: str = "") -> bool:
+    """주제·입장문에 기념/추념/성찰 시그널이 있고 비판 대상 시그널이 약한지 판정."""
+    blob = f"{topic or ''}\n{stance_text or ''}"
+    if not blob.strip():
+        return False
+
+    commemorative_hits = sum(1 for marker in _COMMEMORATIVE_MARKERS if marker in blob)
+    if commemorative_hits == 0:
+        return False
+
+    critique_hits = sum(1 for marker in _CRITIQUE_MARKERS if marker in blob)
+    # 기념 신호가 비판 신호를 압도할 때만 commemorative 로 판정.
+    return commemorative_hits >= max(1, critique_hits + 1)
+
+
+def refine_writing_method(
+    writing_method: str,
+    *,
+    topic: str,
+    stance_text: str = "",
+) -> str:
+    """카테고리 기반으로 뽑힌 작법을 주제 문맥으로 한 번 더 정제한다.
+
+    Why: current-affairs 카테고리는 기본적으로 critical_writing 이지만, 실제로는 기념·추념·
+    성찰·헌사 같은 비판 대상 없는 주제도 같은 카테고리로 들어온다. 그런 주제에 critical
+    템플릿을 강제하면 LLM 이 억지 비판 H2 ("X은 바로잡아야 한다" 등) 를 조립해 낸다.
+    주제에 기념 마커가 있고 비판 마커가 약하면 emotional_writing (daily_communication 템플릿) 으로
+    우회시켜 성찰·다짐 톤을 유지한다.
+    """
+    if writing_method != 'critical_writing':
+        return writing_method
+    if detect_commemorative_topic(topic, stance_text):
+        return 'emotional_writing'
+    return writing_method
 
 POLICY_NAMES = {
     'economy': '경제정책',

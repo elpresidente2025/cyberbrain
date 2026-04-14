@@ -194,7 +194,7 @@ def _build_aeo_rules() -> str:
       <bad>이것을 꼭 알아야 합니다</bad>
     </type>
     <type name="명사형" strength="SEO 기본">
-      <good>분당구 정자동 주차장 신설 위치</good>
+      <good>{{지역}} {{동}} 주차장 신설 위치</good>
       <bad>정책 안내</bad>
     </type>
     <type name="데이터형" strength="신뢰성">
@@ -263,7 +263,7 @@ def _build_aeo_examples() -> str:
 <h2_examples name="소제목 교정 예시 (bad → good)">
   <type name="질문형" strength="AEO 최강">
     <good>청년 기본소득, 신청 방법은 무엇인가요?</good>
-    <good>분당구 주차장, 어디에 새로 생기나요?</good>
+    <good>{지역} 주차장, 어디에 새로 생기나요?</good>
     <good>보육료 지원, 얼마까지 받을 수 있나요?</good>
     <good>전세 사기 피해, 어떻게 보상받나요?</good>
     <good>2025년 예산안, 무엇이 달라졌나요?</good>
@@ -274,12 +274,12 @@ def _build_aeo_examples() -> str:
 
   <type name="명사형" strength="SEO 기본">
     <good>청년 기본소득 신청 자격 조건</good>
-    <good>분당구 정자동 주차장 신설 위치</good>
+    <good>{지역} {동} 주차장 신설 위치</good>
     <good>2025년 상반기 예산 집행 현황</good>
     <good>청년 창업 지원 정책 상세 안내</good>
     <good>민원 처리 평균 소요 기간</good>
     <correction before="정책" after="청년 기본소득 신청 자격"/>
-    <correction before="우리 지역의 발전을 위한 노력" after="분당구 주차장 50면 추가 건설"/>
+    <correction before="우리 지역의 발전을 위한 노력" after="{지역} 주차장 50면 추가 건설"/>
     <correction before="여러 가지 사업들" after="청년 일자리·주거 지원 사업"/>
   </type>
 
@@ -310,12 +310,12 @@ def _build_aeo_examples() -> str:
     <good>2024년 vs 2025년 예산 변화 분석</good>
     <good>기존 정책 대비 개선된 3가지</good>
     <good>온라인 vs 오프라인 신청 장단점</good>
-    <good>vs 주진우, 이재성의 약진</good>
-    <good>타 지역 대비 분당구만의 특징</good>
+    <good>vs {상대후보}, {화자}의 약진</good>
+    <good>타 지역 대비 {지역}만의 특징</good>
     <correction before="비교해 보겠습니다" after="청년 기본소득 vs 청년수당 비교"/>
     <correction before="다른 정책들과의 차이" after="기존 정책 대비 개선된 5가지"/>
     <correction before="장점과 단점" after="온라인 vs 오프라인 신청 비교"/>
-    <correction before="주진우 의원과의 가상대결, 제가 앞서가다" after="vs 주진우, 이재성의 약진"/>
+    <correction before="{상대후보}와의 가상대결, 제가 앞서가다" after="vs {상대후보}, {화자}의 약진"/>
   </type>
 
   <checklist>

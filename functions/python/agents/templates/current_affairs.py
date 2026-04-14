@@ -10,28 +10,32 @@ class PromptOption:
 
 WRITING_EXAMPLES = {
     "SOLUTION_FIRST": """
-<reference_example type="대안 우선 구조">
+<reference_example type="핵심 메시지 우선 구조">
   <background>정책/인물/사건에 대한 구체적 정보</background>
   <sample_output format="json">
     <title>[제목]</title>
-    <content><![CDATA[<p>존경하는 [지역] 여러분, [이름]입니다.</p><h2>[대안 제목 - 이렇게 해야 합니다]</h2><p>[구체적 대안: 수치, 연도, 계획 포함]</p><h2>[비판 제목 - 그런데 현재는]</h2><p>[문제 지적 및 대비]</p><h2>[다짐 제목]</h2><p>[대안 재강조]</p>]]></content>
+    <content><![CDATA[<p>존경하는 [지역] 여러분, [이름]입니다.</p><h2>[핵심 메시지 소제목 - 입장문의 가장 강한 주장 한 줄]</h2><p>[구체적 근거/수치/연도/계획 포함]</p><h2>[근거·쟁점 소제목 - 주장을 뒷받침하는 사실·맥락]</h2><p>[사실 정리 및 맥락 제시]</p><h2>[마무리 소제목 - 다짐 또는 결론 한 줄]</h2><p>[핵심 메시지 재강조]</p>]]></content>
     <word_count>1500</word_count>
   </sample_output>
   <guidance>
-    <item>대안을 먼저 제시 (구체적 수치 포함)</item>
-    <item>그 다음 문제를 대비시킴</item>
-    <item>마지막에 다짐으로 대안 재강조</item>
+    <item>입장문에 비판 대상이 명시돼 있을 때만 비판형으로 전개하고, 아닐 때는 성찰·기념·제안 등 주제에 맞는 방향을 선택</item>
+    <item>H2 는 주제에 억지로 '비판'을 붙이지 말 것. 주제가 기념/추념/성찰이면 헌사·다짐·계승 톤으로 유지</item>
+    <item>마지막 H2 는 구체적인 다짐 또는 결론 한 줄로 마무리</item>
   </guidance>
 </reference_example>
 """,
     "PROBLEM_FIRST": """
-<reference_example type="문제 우선 구조 (전통적)">
-  <background>문제 상황에 대한 구체적 정보</background>
+<reference_example type="맥락 우선 구조 (전통적)">
+  <background>현안·이슈에 대한 구체적 정보</background>
   <sample_output format="json">
     <title>[제목]</title>
-    <content><![CDATA[<p>존경하는 [지역] 여러분, [이름]입니다.</p><h2>[문제 제목]</h2><p>[문제 현상 및 데이터]</p><h2>[원인 분석]</h2><p>[왜 이런 일이 발생했는가]</p><h2>[대안 제시]</h2><p>[구체적 해결 방안]</p>]]></content>
+    <content><![CDATA[<p>존경하는 [지역] 여러분, [이름]입니다.</p><h2>[현상·맥락 소제목]</h2><p>[현상 요약 및 데이터]</p><h2>[원인·배경 소제목]</h2><p>[왜 이런 일이 발생했는가 또는 어떤 맥락에서 봐야 하는가]</p><h2>[입장·다짐 소제목]</h2><p>[입장문 기반의 주장·다짐·제안]</p>]]></content>
     <word_count>1500</word_count>
   </sample_output>
+  <guidance>
+    <item>주제가 비판형이 아닐 경우 '문제 제목' 같은 라벨을 따르지 말고 '현상·맥락' 으로 중립 기술</item>
+    <item>입장문에 비판 대상이 없다면 '원인 분석' 자리에도 배경·의미·가치를 서술</item>
+  </guidance>
 </reference_example>
 """
 }
