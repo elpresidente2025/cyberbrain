@@ -25,6 +25,13 @@ from firebase_functions import https_fn
 
 from agents.common.election_rules import check_election_eligibility
 from agents.common.editorial import STRUCTURE_SPEC
+from agents.common.h2_repair import (
+    build_keyword_intent_h2 as _h2_repair_build_keyword_intent_h2,
+    ensure_keyword_first_slot as _h2_repair_ensure_keyword_first_slot,
+    ensure_user_keyword_first_slot as _h2_repair_ensure_user_keyword_first_slot,
+    repair_awkward_phrases as _h2_repair_awkward_phrases,
+    repair_branding_phrases as _h2_repair_branding_phrases,
+)
 from agents.common.person_naming import (
     ROLE_TOKEN_PRIORITY,
     canonical_role_label,
@@ -2495,71 +2502,11 @@ def _find_conflicting_role_keyword(
 
 
 def _build_keyword_intent_h2(keyword: str) -> str:
-    normalized = re.sub(r"\s+", " ", str(keyword or "")).strip()
-    if not normalized:
-        return ""
-
-    if ROLE_KEYWORD_PATTERN.fullmatch(normalized):
-        quoted_candidate = f"'{normalized}' 검색어가 거론되는 이유"
-        if 10 <= len(quoted_candidate) <= 25:
-            return quoted_candidate
-
-    candidates = (
-        f"{normalized} 왜 거론되나?",
-        f"{normalized} 경쟁력은?",
-        f"{normalized} 쟁점은?",
-    )
-    for candidate in candidates:
-        if 10 <= len(candidate) <= 25:
-            return candidate
-
-    fallback = f"{normalized} 쟁점"
-    if len(fallback) > 25:
-        trimmed = normalized[: max(8, 25 - len(" 쟁점"))].rstrip(" ,.:;!?")
-        fallback = f"{trimmed} 쟁점"
-    if len(fallback) < 10:
-        fallback = (fallback + " 분석")[:25]
-    return fallback
+    return _h2_repair_build_keyword_intent_h2(keyword)
 
 
 def _ensure_keyword_in_subheading_once(content: str, keyword: str) -> Dict[str, Any]:
-    base = str(content or "")
-    target_keyword = str(keyword or "").strip()
-    if not base or not target_keyword:
-        return {"content": base, "edited": False}
-
-    h2_matches = list(H2_TAG_PATTERN.finditer(base))
-    if not h2_matches:
-        return {"content": base, "edited": False}
-
-    # 이미 소제목에 키워드가 있으면 유지.
-    for match in h2_matches:
-        heading = re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", str(match.group(1) or ""))).strip()
-        if target_keyword in heading:
-            return {"content": base, "edited": False}
-
-    replacement = _build_keyword_intent_h2(target_keyword)
-    if not replacement:
-        return {"content": base, "edited": False}
-
-    person_name, _ = _extract_keyword_person_role(target_keyword)
-    target_index = 0
-    if person_name:
-        for idx, match in enumerate(h2_matches):
-            heading = re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", str(match.group(1) or ""))).strip()
-            if person_name in heading:
-                target_index = idx
-                break
-
-    target_match = h2_matches[target_index]
-    updated = base[: target_match.start(1)] + replacement + base[target_match.end(1) :]
-    return {
-        "content": updated,
-        "edited": updated != base,
-        "keyword": target_keyword,
-        "headingBefore": str(target_match.group(1) or "").strip(),
-        "headingAfter": replacement,
-    }
+    return _h2_repair_ensure_keyword_first_slot(content, keyword)
 
 
 def _ensure_user_keyword_in_subheading_once(
@@ -2568,32 +2515,9 @@ def _ensure_user_keyword_in_subheading_once(
     *,
     preferred_keyword: str = "",
 ) -> Dict[str, Any]:
-    base = str(content or "")
-    normalized_keywords = [str(item or "").strip() for item in (user_keywords or []) if str(item or "").strip()]
-    if not base or not normalized_keywords:
-        return {"content": base, "edited": False}
-
-    h2_matches = list(H2_TAG_PATTERN.finditer(base))
-    if not h2_matches:
-        return {"content": base, "edited": False}
-
-    for match in h2_matches:
-        heading = re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", str(match.group(1) or ""))).strip()
-        if any(keyword in heading for keyword in normalized_keywords):
-            return {"content": base, "edited": False}
-
-    target_keyword = ""
-    preferred = str(preferred_keyword or "").strip()
-    if preferred and preferred in normalized_keywords:
-        target_keyword = preferred
-    else:
-        target_keyword = normalized_keywords[0]
-
-    target_person_name, target_role = _extract_keyword_person_role(target_keyword)
-    if target_person_name or target_role or ROLE_KEYWORD_PATTERN.fullmatch(target_keyword):
-        return {"content": base, "edited": False}
-
-    return _ensure_keyword_in_subheading_once(base, target_keyword)
+    return _h2_repair_ensure_user_keyword_first_slot(
+        content, user_keywords, preferred_keyword=preferred_keyword
+    )
 
 
 def _collect_known_person_names(
@@ -7233,102 +7157,11 @@ def _rewrite_targeted_sentence_issues_once(
 
 
 def _repair_awkward_h2_phrases_once(content: str) -> Dict[str, Any]:
-    base = str(content or "")
-    if not base.strip():
-        return {"content": base, "edited": False, "actions": []}
-
-    repaired = base
-    actions: list[str] = []
-
-    for match in reversed(list(H2_TAG_PATTERN.finditer(base))):
-        inner = str(match.group(1) or "")
-        plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", inner))
-        if not plain:
-            continue
-
-        updated = plain
-        local_actions: list[str] = []
-
-        if re.search(r"필요성을\s+말씀드립니다$", updated):
-            updated = re.sub(r"필요성을\s+말씀드립니다$", "말씀드립니다", updated)
-            local_actions.append("awkward_h2_pledge_neutralization")
-        if re.search(r"알려지고$", updated):
-            updated = re.sub(r"알려지고$", "알려지고 있습니다", updated)
-            local_actions.append("awkward_h2_incomplete_progressive")
-        if re.search(r":\s*실질적인\s+변화를\s+비$", updated):
-            updated = re.sub(
-                r":\s*실질적인\s+변화를\s+비$",
-                ": 실질적인 변화를 위한 비전",
-                updated,
-            )
-            local_actions.append("awkward_h2_truncated_vision")
-
-        if updated == plain:
-            continue
-
-        repaired = repaired[:match.start(1)] + updated + repaired[match.end(1):]
-        actions.extend(local_actions)
-
-    return {
-        "content": repaired,
-        "edited": repaired != base,
-        "actions": actions,
-    }
+    return _h2_repair_awkward_phrases(content)
 
 
 def _repair_branding_h2_phrases_once(content: str) -> Dict[str, Any]:
-    base = str(content or "")
-    if not base.strip():
-        return {"content": base, "edited": False, "actions": []}
-
-    repaired = base
-    actions: list[str] = []
-    contest_tokens = ("양자대결", "가상대결", "대결", "접전", "승부", "오차 범위", "지지율")
-    recognition_pattern = re.compile(
-        r"^(?P<name>[가-힣]{2,8})\s*,?\s*(?:(?P<region>[가-힣]{2,8})\s*)?시민(?:여러분)?에게\s*"
-        r"(?:조금씩\s*)?(?:더\s*)?확실히\s*알려지(?:고|며)(?:\s*있습니다)?(?:.*)?$"
-    )
-    economy_pattern = re.compile(
-        r"^(?P<region>[가-힣]{2,8})\s*경제는\s*(?P<name>[가-힣]{2,8})(?:입니다)?(?:\s*[:：,，-]\s*.*)?$"
-    )
-
-    for match in reversed(list(H2_TAG_PATTERN.finditer(base))):
-        inner = str(match.group(1) or "")
-        plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", inner))
-        if not plain or "%" in plain or any(token in plain for token in contest_tokens):
-            continue
-
-        updated = plain
-        local_actions: list[str] = []
-
-        recognition_match = recognition_pattern.fullmatch(updated)
-        if recognition_match:
-            name = str(recognition_match.group("name") or "").strip()
-            region = str(recognition_match.group("region") or "").strip()
-            audience = f"{region} 시민 접점 확대" if region else "시민 접점 확대"
-            updated = f"{name} 인지도 상승, {audience}"
-            local_actions.append("branding_h2_recognition_rewrite")
-        else:
-            economy_match = economy_pattern.fullmatch(updated)
-            if economy_match:
-                region = str(economy_match.group("region") or "").strip()
-                name = str(economy_match.group("name") or "").strip()
-                if name.endswith("입니다") and len(name) > 3:
-                    name = name[:-3]
-                updated = f"{region} 경제 재도약, {name}의 정책 비전"
-                local_actions.append("branding_h2_economy_rewrite")
-
-        if updated == plain:
-            continue
-
-        repaired = repaired[:match.start(1)] + updated + repaired[match.end(1):]
-        actions.extend(local_actions)
-
-    return {
-        "content": repaired,
-        "edited": repaired != base,
-        "actions": actions,
-    }
+    return _h2_repair_branding_phrases(content)
 
 
 def _build_poll_focus_pair_sentence(pair: Optional[Dict[str, Any]]) -> str:
@@ -9045,373 +8878,6 @@ def _should_carry_recent_titles_from_prior_session(
         return False
 
     return True
-
-
-def _compute_title_repeat_meta(title: str, recent_titles: list[str]) -> Dict[str, Any]:
-    normalized_title = _normalize_title_surface_local(title)
-    normalized_recent_titles = _normalize_recent_title_memory_values(list(recent_titles or []))
-    if not normalized_title or not normalized_recent_titles:
-        return {
-            "penalty": 0,
-            "maxSimilarity": 0.0,
-            "against": "",
-            "framePenalty": 0,
-            "frameScore": 0,
-            "frameAgainst": "",
-            "frameReasons": [],
-        }
-
-    try:
-        from agents.common.title_generation import _compute_similarity_penalty
-
-        return _compute_similarity_penalty(
-            normalized_title,
-            normalized_recent_titles,
-            threshold=0.68,
-            max_penalty=20,
-        )
-    except Exception as exc:
-        logger.warning("Title repeat meta computation failed (non-fatal): %s", exc)
-        return {
-            "penalty": 0,
-            "maxSimilarity": 0.0,
-            "against": "",
-            "framePenalty": 0,
-            "frameScore": 0,
-            "frameAgainst": "",
-            "frameReasons": [],
-        }
-
-
-def _title_repeat_needs_fallback(meta: Dict[str, Any]) -> bool:
-    penalty = _to_int(meta.get("penalty"), 0)
-    frame_penalty = _to_int(meta.get("framePenalty"), 0)
-    frame_score = _to_int(meta.get("frameScore"), 0)
-    max_similarity = float(meta.get("maxSimilarity") or 0.0)
-    return bool(
-        frame_score >= 5
-        or frame_penalty >= 4
-        or penalty >= 8
-        or max_similarity >= 0.82
-    )
-
-
-def _normalize_person_name_for_title(value: Any) -> str:
-    normalized = re.sub(r"[^가-힣]", "", str(value or ""))
-    if 2 <= len(normalized) <= 8:
-        return normalized
-    return ""
-
-
-def _format_title_percent(value: Any) -> str:
-    try:
-        number = round(float(value), 1)
-    except (TypeError, ValueError):
-        return ""
-    if abs(number - int(number)) < 0.05:
-        return f"{int(number)}%"
-    return f"{number:.1f}%"
-
-
-def _select_title_fallback_pair(
-    *,
-    poll_fact_table: Optional[Dict[str, Any]],
-    full_name: str,
-    user_keywords: list[str],
-) -> Optional[Dict[str, Any]]:
-    speaker = _normalize_person_name_for_title(full_name)
-    pairs = _safe_dict(_safe_dict(poll_fact_table).get("pairs"))
-    if not speaker or not pairs:
-        return None
-
-    keyword_names: set[str] = set()
-    for raw_keyword in user_keywords or []:
-        keyword = str(raw_keyword or "").strip()
-        if not keyword:
-            continue
-        parts = extract_role_keyword_parts(keyword)
-        name = _normalize_person_name_for_title(parts.get("name") or keyword)
-        if name:
-            keyword_names.add(name)
-
-    selected: Optional[Dict[str, Any]] = None
-    selected_key: tuple[int, float, int] | None = None
-    for raw_entry in pairs.values():
-        entry = _safe_dict(raw_entry)
-        left = _normalize_person_name_for_title(entry.get("left"))
-        right = _normalize_person_name_for_title(entry.get("right"))
-        if speaker not in {left, right}:
-            continue
-        opponent = right if speaker == left else left
-        speaker_score = entry.get("leftScore") if speaker == left else entry.get("rightScore")
-        opponent_score = entry.get("rightScore") if speaker == left else entry.get("leftScore")
-        try:
-            margin = abs(float(speaker_score) - float(opponent_score))
-        except (TypeError, ValueError):
-            margin = 99.0
-        relevance = 1 if opponent in keyword_names else 0
-        record_count = len(entry.get("records") or [])
-        sort_key = (relevance, -margin, record_count)
-        if selected is None or sort_key > selected_key:
-            selected = {
-                "speaker": speaker,
-                "opponent": opponent,
-                "speakerScore": speaker_score,
-                "opponentScore": opponent_score,
-            }
-            selected_key = sort_key
-
-    return selected
-
-
-def _build_repeat_safe_title_fallback(
-    *,
-    current_title: str,
-    recent_titles: list[str],
-    topic: str,
-    content: str,
-    user_keywords: list[str],
-    full_name: str,
-    category: str,
-    status: str,
-    context_analysis: Dict[str, Any],
-    role_keyword_policy: Optional[Dict[str, Any]] = None,
-    poll_fact_table: Optional[Dict[str, Any]] = None,
-    poll_focus_bundle: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    normalized_recent_titles = _normalize_recent_title_memory_values(list(recent_titles or []))
-    pair = _select_title_fallback_pair(
-        poll_fact_table=poll_fact_table,
-        full_name=full_name,
-        user_keywords=user_keywords,
-    )
-    speaker = _normalize_person_name_for_title(full_name)
-    role_entries = role_keyword_policy.get("entries") if isinstance(role_keyword_policy, dict) else {}
-
-    prefix_candidates: list[str] = []
-    seen_prefixes: set[str] = set()
-
-    for raw_keyword in user_keywords or []:
-        keyword = str(raw_keyword or "").strip()
-        if not keyword:
-            continue
-        entry = _safe_dict(role_entries.get(keyword)) if isinstance(role_entries, dict) else {}
-        mode = str(entry.get("mode") or "").strip().lower()
-        parts = extract_role_keyword_parts(keyword)
-        allow_title_intent_anchor = bool(entry.get("allowTitleIntentAnchor"))
-        if mode == "blocked" and allow_title_intent_anchor and parts.get("name") and parts.get("role"):
-            for prefix in order_role_keyword_intent_anchor_candidates(
-                keyword,
-                normalized_recent_titles,
-            )[:3]:
-                normalized_prefix = _normalize_title_surface_local(prefix) or prefix
-                if normalized_prefix and normalized_prefix not in seen_prefixes:
-                    seen_prefixes.add(normalized_prefix)
-                    prefix_candidates.append(normalized_prefix)
-            continue
-        if mode == "blocked":
-            continue
-        if mode == "intent_only" and parts.get("name") and parts.get("role"):
-            for prefix in order_role_keyword_intent_anchor_candidates(
-                keyword,
-                normalized_recent_titles,
-            )[:3]:
-                normalized_prefix = _normalize_title_surface_local(prefix) or prefix
-                if normalized_prefix and normalized_prefix not in seen_prefixes:
-                    seen_prefixes.add(normalized_prefix)
-                    prefix_candidates.append(normalized_prefix)
-        else:
-            normalized_prefix = _normalize_title_surface_local(keyword) or keyword
-            if normalized_prefix and normalized_prefix not in seen_prefixes:
-                seen_prefixes.add(normalized_prefix)
-                prefix_candidates.append(normalized_prefix)
-
-    if not prefix_candidates and speaker:
-        prefix_candidates.append(speaker)
-    if not prefix_candidates and topic:
-        prefix_candidates.append(str(topic).strip())
-
-    suffix_candidates: list[str] = []
-    signal_suffix_candidates: list[str] = []
-    seen_signal_suffixes: set[str] = set()
-    competitor_intent_keyword = ""
-    structured_tail_candidates: list[str] = []
-
-    def _append_signal_suffix(value: str) -> None:
-        normalized = _normalize_title_surface_local(value) or str(value or "").strip()
-        if not normalized or normalized in seen_signal_suffixes:
-            return
-        seen_signal_suffixes.add(normalized)
-        signal_suffix_candidates.append(normalized)
-
-    try:
-        from agents.common.title_generation import (
-            _build_argument_tail_candidates,
-            _extract_argument_title_cues,
-            _resolve_competitor_intent_title_keyword,
-        )
-
-        title_params = {
-            "topic": str(topic or ""),
-            "contentPreview": str(content or ""),
-            "keywords": [],
-            "stanceText": "",
-            "fullName": str(full_name or ""),
-            "userKeywords": list(user_keywords or []),
-            "roleKeywordPolicy": role_keyword_policy if isinstance(role_keyword_policy, dict) else {},
-            "pollFocusBundle": poll_focus_bundle if isinstance(poll_focus_bundle, dict) else {},
-            "category": str(category or ""),
-            "status": str(status or ""),
-        }
-        competitor_intent_keyword = str(_resolve_competitor_intent_title_keyword(title_params) or "").strip()
-        structured_tail_candidates = _build_argument_tail_candidates("", title_params)
-        argument_cues = _extract_argument_title_cues(title_params, limit=4)
-    except Exception:
-        argument_cues = []
-
-    for cue in argument_cues:
-        normalized_cue = str(cue or "").strip(" ,.:;!?")
-        if not normalized_cue:
-            continue
-        if speaker and normalized_cue.startswith(speaker):
-            _append_signal_suffix(normalized_cue)
-            continue
-        if speaker:
-            _append_signal_suffix(f"{speaker} {normalized_cue}")
-            _append_signal_suffix(f"{speaker}의 {normalized_cue}")
-        else:
-            _append_signal_suffix(normalized_cue)
-
-    for tail_candidate in structured_tail_candidates:
-        _append_signal_suffix(tail_candidate)
-
-    suffix_candidates.extend(signal_suffix_candidates)
-    if pair and not competitor_intent_keyword:
-        speaker_score = _format_title_percent(pair.get("speakerScore"))
-        opponent_score = _format_title_percent(pair.get("opponentScore"))
-        if speaker and speaker_score and opponent_score:
-            suffix_candidates.extend(
-                [
-                    f"{speaker}과 가상대결 {speaker_score} 대 {opponent_score}",
-                    f"{speaker}과 가상대결서 드러난 접전",
-                    f"{speaker}과 양자대결서 확인된 경쟁력",
-                ]
-            )
-    normalized_current = _normalize_title_surface_local(current_title) or current_title
-
-    if not suffix_candidates:
-        return {
-            "title": normalized_current,
-            "usedFallback": False,
-            "repeatMeta": _compute_title_repeat_meta(normalized_current, normalized_recent_titles),
-            "reason": "no_generic_suffix_candidates",
-        }
-
-    candidate_titles: list[str] = []
-    seen_titles: set[str] = set()
-    for prefix in prefix_candidates[:4]:
-        for suffix in suffix_candidates[:4]:
-            title = _normalize_title_surface_local(f"{prefix}, {suffix}") or f"{prefix}, {suffix}"
-            if not title or title in seen_titles:
-                continue
-            seen_titles.add(title)
-            candidate_titles.append(title)
-
-    if current_title:
-        candidate_titles.append(normalized_current)
-
-    best: Optional[Dict[str, Any]] = None
-    best_safe_alternative: Optional[Dict[str, Any]] = None
-    for candidate in candidate_titles:
-        compliance = _score_title_compliance(
-            title=candidate,
-            topic=topic,
-            content=content,
-            user_keywords=user_keywords,
-            full_name=full_name,
-            category=category,
-            status=status,
-            context_analysis=context_analysis,
-            role_keyword_policy=role_keyword_policy,
-            poll_focus_bundle=poll_focus_bundle,
-        )
-        scored_candidate = (
-            _normalize_title_surface_local(str(compliance.get("title") or candidate))
-            or candidate
-        )
-        repeat_meta = _compute_title_repeat_meta(scored_candidate, normalized_recent_titles)
-        repeat_risky = _title_repeat_needs_fallback(repeat_meta)
-        sort_key = (
-            int(bool(compliance.get("passed")) and not repeat_risky),
-            int(bool(compliance.get("passed"))),
-            max(0, 100 - _to_int(repeat_meta.get("penalty"), 0)),
-            max(0, 100 - _to_int(repeat_meta.get("frameScore"), 0)),
-            _to_int(compliance.get("score"), 0),
-        )
-        record = {
-            "title": scored_candidate,
-            "compliance": compliance,
-            "repeatMeta": repeat_meta,
-            "repeatRisk": repeat_risky,
-            "sortKey": sort_key,
-        }
-        if best is None or sort_key > best.get("sortKey", ()):
-            best = record
-        if (
-            scored_candidate != normalized_current
-            and bool(compliance.get("passed"))
-            and not repeat_risky
-            and (best_safe_alternative is None or sort_key > best_safe_alternative.get("sortKey", ()))
-        ):
-            best_safe_alternative = record
-
-    if best_safe_alternative is not None:
-        best = best_safe_alternative
-
-    if not best:
-        return {
-            "title": normalized_current,
-            "usedFallback": False,
-            "repeatMeta": _compute_title_repeat_meta(normalized_current, normalized_recent_titles),
-            "reason": "no_repeat_safe_candidate",
-        }
-
-    selected_title = str(best.get("title") or "").strip()
-    return {
-        "title": selected_title or normalized_current,
-        "usedFallback": bool(selected_title and selected_title != normalized_current),
-        "repeatMeta": best.get("repeatMeta") or {},
-        "reason": "repeat_safe_fallback",
-    }
-
-
-def _stabilize_repeated_title(
-    *,
-    candidate_title: str,
-    recent_titles: list[str],
-    topic: str,
-    content: str,
-    user_keywords: list[str],
-    full_name: str,
-    category: str,
-    status: str,
-    context_analysis: Dict[str, Any],
-    role_keyword_policy: Optional[Dict[str, Any]] = None,
-    poll_fact_table: Optional[Dict[str, Any]] = None,
-    poll_focus_bundle: Optional[Dict[str, Any]] = None,
-) -> tuple[str, Dict[str, Any]]:
-    # repeat-safe fallback 재작성 경로는 본문 greedy regex cue + {name}의 X Y 접착으로
-    # "박지상의 보존하고 교육" 같은 조각 제목을 만들어낸 전력이 있어 제거됐다.
-    # 반복 여부는 메타로만 기록하고, 재작성은 LLM 재프롬프트 경로에만 맡긴다.
-    normalized_candidate = _normalize_title_surface_local(candidate_title) or candidate_title
-    repeat_meta = _compute_title_repeat_meta(normalized_candidate, recent_titles)
-    return normalized_candidate, {
-        "repeated": _title_repeat_needs_fallback(repeat_meta),
-        "applied": False,
-        "repeatMeta": repeat_meta,
-        "fallbackReason": "reconstruction_disabled",
-        "fallbackRepeatMeta": {},
-    }
 
 
 def _build_independent_final_title_context(
@@ -11222,31 +10688,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         pipeline_result.get("autoKeywords"),
         user_keywords=user_keywords,
     )
-    stabilized_draft_title, draft_repeat_meta = _stabilize_repeated_title(
-        candidate_title=generated_title,
-        recent_titles=request_recent_title_memory,
-        topic=topic,
-        content=generated_content,
-        user_keywords=user_keywords,
-        full_name=full_name,
-        category=category,
-        status=str(data.get("status") or user_profile.get("status") or ""),
-        context_analysis=context_analysis_for_title,
-        role_keyword_policy=role_keyword_policy,
-        poll_fact_table=poll_fact_table,
-        poll_focus_bundle=poll_focus_bundle,
-    )
-    if draft_repeat_meta.get("applied"):
-        logger.info(
-            "Draft title repetition fallback applied: \"%s\" -> \"%s\"",
-            generated_title,
-            stabilized_draft_title,
-        )
-        _append_quality_warning(
-            quality_warnings,
-            "반복 제목을 피하기 위해 초안 제목을 다른 안전한 표현으로 조정했습니다.",
-        )
-    generated_title = stabilized_draft_title
+    generated_title = _normalize_title_surface_local(generated_title) or generated_title
     draft_title = generated_title
     initial_keyword_result = validate_keyword_insertion(
         generated_content,
@@ -12738,65 +12180,11 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             if title_poll_issues:
                 raise ApiError("internal", f"제목 사실관계 불일치: {title_poll_issues[0]}")
 
-            stabilized_final_title, final_repeat_meta = _stabilize_repeated_title(
-                candidate_title=generated_title,
-                recent_titles=recent_title_memory,
-                topic=topic,
-                content=generated_content,
-                user_keywords=user_keywords,
-                full_name=full_name,
-                category=category,
-                status=status_for_validation,
-                context_analysis=context_analysis_for_title,
-                role_keyword_policy=role_keyword_policy,
-                poll_fact_table=poll_fact_table,
-                poll_focus_bundle=poll_focus_bundle,
-            )
-            if final_repeat_meta.get("applied"):
-                logger.info(
-                    "Independent final title repetition fallback applied: \"%s\" -> \"%s\"",
-                    generated_title,
-                    stabilized_final_title,
-                )
-                guarded_repeat_title, repeat_guard_info = _guard_draft_title_nonfatal(
-                    phase="independent_final_repeat_fallback",
-                    candidate_title=stabilized_final_title,
-                    previous_title=title_last_valid,
-                    topic=topic,
-                    content=generated_content,
-                    user_keywords=user_keywords,
-                    full_name=full_name,
-                    category=category,
-                    status=status_for_validation,
-                    context_analysis=context_analysis_for_title,
-                    role_keyword_policy=role_keyword_policy,
-                    recent_titles=recent_title_memory,
-                    poll_fact_table=poll_fact_table,
-                    poll_focus_bundle=poll_focus_bundle,
-                )
-                title_guard_trace.append(repeat_guard_info)
-                generated_title = guarded_repeat_title
-                if repeat_guard_info.get("validated") is True:
-                    title_last_valid = generated_title
-
             independent_final_title["applied"] = True
         except Exception as exc:
             independent_final_title["error"] = str(exc)
             independent_final_title["fallbackUsed"] = True
-            rollback_title, rollback_repeat_meta = _stabilize_repeated_title(
-                candidate_title=draft_title,
-                recent_titles=recent_title_memory,
-                topic=topic,
-                content=generated_content,
-                user_keywords=user_keywords,
-                full_name=full_name,
-                category=category,
-                status=status_for_validation,
-                context_analysis=context_analysis_for_title,
-                role_keyword_policy=role_keyword_policy,
-                poll_fact_table=poll_fact_table,
-                poll_focus_bundle=poll_focus_bundle,
-            )
+            rollback_title = _normalize_title_surface_local(draft_title) or draft_title
             rollback_guarded_title, rollback_guard_info = _guard_draft_title_nonfatal(
                 phase="independent_final_rollback",
                 candidate_title=rollback_title,
@@ -12817,12 +12205,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             generated_title = rollback_guarded_title
             if rollback_guard_info.get("validated") is True:
                 title_last_valid = generated_title
-            if rollback_repeat_meta.get("applied"):
-                _append_quality_warning(
-                    quality_warnings,
-                    "최종 제목 재생성 실패 시 같은 제목으로 되돌아가지 않도록 다른 안전한 제목으로 보정했습니다.",
-                )
-            logger.warning("Independent final title rejected; using draft/repeat-safe title: %s", exc)
+            logger.warning("Independent final title rejected; using draft title: %s", exc)
     else:
         independent_final_title["fallbackUsed"] = True
 
