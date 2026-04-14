@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Box,
@@ -51,6 +51,7 @@ const OnboardingPage = () => {
   const [activeStep, setActiveStep] = useState(0);
   const [stepError, setStepError] = useState('');
   const directionRef = useRef(1);
+  const stayOnOnboardingRef = useRef(false);
 
   const userName = user?.displayName || user?.name;
 
@@ -99,10 +100,18 @@ const OnboardingPage = () => {
     },
   ], [userName, isPreparing]);
 
-  if (!authLoading && user && !isPreview && (isAdmin || isOnboardingComplete(user))) {
-    navigate('/dashboard', { replace: true });
-    return null;
-  }
+  // 최초 진입 시점에 이미 온보딩이 완료된 사용자(또는 관리자)는 대시보드로 보낸다.
+  // savePartial 이후 user가 갱신되면서 재평가되어 personalization 단계를 건너뛰는 문제를 막기 위해
+  // 한 번 "머무르기"로 확정되면 이후 렌더에서는 재평가하지 않는다.
+  useEffect(() => {
+    if (authLoading || !user || isPreview) return;
+    if (stayOnOnboardingRef.current) return;
+    if (isAdmin || isOnboardingComplete(user)) {
+      navigate('/dashboard', { replace: true });
+    } else {
+      stayOnOnboardingRef.current = true;
+    }
+  }, [authLoading, user, isPreview, isAdmin, navigate]);
 
   const stepKey = STEPS[activeStep].key;
 

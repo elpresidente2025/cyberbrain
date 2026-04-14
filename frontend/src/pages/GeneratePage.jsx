@@ -175,7 +175,7 @@ const GeneratePage = () => {
 
   // --- 🧠 커스텀 훅을 통한 핵심 로직 분리 ---
   // 폼의 상태와 관련된 모든 로직을 useGenerateForm 훅이 전담합니다.
-  const { formData, updateForm, resetForm, validateForm, canGenerate } = useGenerateForm(user);
+  const { formData, updateForm, resetForm, validateForm, canGenerate, clearPersistedForm } = useGenerateForm(user);
   // API 통신과 관련된 모든 상태와 함수를 useGenerateAPI 훅이 전담합니다.
   const {
     loading,      // 로딩 중인지 여부 (true/false)
@@ -376,6 +376,8 @@ const GeneratePage = () => {
       const result = await save(draft);
 
       if (result.success) {
+        // 최종 선택 완료 → 브라우저에 임시 보관하던 폼 입력값은 이제 비운다.
+        clearPersistedForm();
         showNotification('원고가 저장되었습니다. 내 원고 목록으로 이동합니다.', 'success');
         // 저장 성공 후 내 원고 목록으로 이동
         setTimeout(() => {
@@ -405,6 +407,8 @@ const GeneratePage = () => {
 
       // 저장 API 결과에 따라 스낵바를 띄움
       if (result.success) {
+        // 최종 선택 완료 → 브라우저에 임시 보관하던 폼 입력값 제거
+        clearPersistedForm();
         showNotification(result.message || '원고가 저장되었습니다.', 'success');
       } else {
         showNotification(result.error || '저장에 실패했습니다.', 'error');

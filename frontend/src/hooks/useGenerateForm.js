@@ -1,7 +1,12 @@
 // frontend/src/hooks/useGenerateForm.js (수정된 최종 버전)
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { hasAdminAccess } from '../utils/authz';
+
+// 원고 생성 폼 입력값을 브라우저에 영속 저장하기 위한 키 prefix.
+// "생성된 원고를 최종 선택(저장)"할 때까지 새로고침/재시작에도 남아 있어야 한다.
+const STORAGE_KEY_PREFIX = 'generateFormDraft:';
+const storageKeyFor = (uid) => (uid ? `${STORAGE_KEY_PREFIX}${uid}` : null);
 
 // 🎯 관리자 시연용 참고자료 (2번 슬롯에 배치)
 const ADMIN_DEMO_INSTRUCTIONS = `인천시, 노선 체계 재정비…"혼잡도로 개선, 고속도로 건설"
@@ -34,6 +39,8 @@ const adminInitialState = {
 };
 
 export const useGenerateForm = (user = null) => {
+  const uid = user?.uid || null;
+
   // 🎯 관리자면 시연용 프리셋, 일반 사용자면 기본 상태
   const getInitialState = () => {
     if (hasAdminAccess(user)) {
@@ -42,8 +49,38 @@ export const useGenerateForm = (user = null) => {
     return initialState;
   };
 
-  // 폼 데이터를 관리하는 상태
-  const [formData, setFormData] = useState(getInitialState);
+  // 폼 데이터를 관리하는 상태. 최초 렌더 시점에는 user가 아직 null일 수 있어
+  // 일단 기본 상태로 초기화하고, user가 준비되면 아래 useEffect에서 localStorage를 복원한다.
+  const [formData, setFormData] = useState(initialState);
+  const hydratedRef = useRef(false);
+
+  // 🗂️ user가 준비되면 localStorage에 저장된 입력값을 복원.
+  //   - 저장된 값이 있으면 그대로 복원 (새로고침/재시작에도 유지)
+  //   - 없으면 사용자 유형별 초기 상태(관리자 프리셋 포함) 적용
+  useEffect(() => {
+    if (!uid || hydratedRef.current) return;
+    hydratedRef.current = true;
+    try {
+      const raw = localStorage.getItem(storageKeyFor(uid));
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          setFormData((prev) => ({ ...prev, ...parsed }));
+          return;
+        }
+      }
+    } catch (_) { /* corrupted json → fall through to preset */ }
+    setFormData(getInitialState());
+  }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 💾 formData 변경 시 localStorage에 동기화. hydration이 끝난 뒤에만 기록해서
+  //    초기 마운트 시 빈 상태로 저장된 값을 덮어쓰지 않도록 한다.
+  useEffect(() => {
+    if (!uid || !hydratedRef.current) return;
+    try {
+      localStorage.setItem(storageKeyFor(uid), JSON.stringify(formData));
+    } catch (_) { /* quota exceeded 등은 무시 */ }
+  }, [uid, formData]);
 
   /**
    * 폼 데이터의 일부를 업데이트하는 함수.
@@ -55,11 +92,22 @@ export const useGenerateForm = (user = null) => {
   }, []);
 
   /**
+   * localStorage에 저장된 폼 입력값을 삭제한다.
+   * 원고가 최종 선택/저장되어 더 이상 임시 상태를 유지할 필요가 없을 때 호출.
+   */
+  const clearPersistedForm = useCallback(() => {
+    const key = storageKeyFor(uid);
+    if (!key) return;
+    try { localStorage.removeItem(key); } catch (_) {}
+  }, [uid]);
+
+  /**
    * 폼 데이터를 초기 상태로 리셋하는 함수.
    */
   const resetForm = useCallback(() => {
     setFormData(getInitialState());
-  }, [user]);
+    clearPersistedForm();
+  }, [user, clearPersistedForm]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * 폼 데이터가 유효한지 검사하는 함수.
@@ -105,6 +153,7 @@ export const useGenerateForm = (user = null) => {
     updateForm,
     resetForm,
     validateForm,
-    canGenerate
+    canGenerate,
+    clearPersistedForm,
   };
 };
