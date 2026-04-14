@@ -17,6 +17,7 @@ PIPELINE_STEPS = {
         {"name": "StructureAgent", "module": "agents.core.structure_agent", "class": "StructureAgent"},
         {"name": "KeywordInjectorAgent", "module": "agents.core.keyword_injector_agent", "class": "KeywordInjectorAgent"},
         {"name": "StyleAgent", "module": "agents.core.style_agent", "class": "StyleAgent"},
+        {"name": "SubheadingAgent", "module": "agents.core.subheading_agent", "class": "SubheadingAgent"},
         {"name": "ComplianceAgent", "module": "agents.core.compliance_agent", "class": "ComplianceAgent"},
         {"name": "SEOAgent", "module": "agents.core.seo_agent", "class": "SEOAgent"},
         {"name": "TitleAgent", "module": "agents.core.title_agent", "class": "TitleAgent"},

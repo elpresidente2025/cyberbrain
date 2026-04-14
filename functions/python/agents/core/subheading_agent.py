@@ -137,6 +137,21 @@ class SubheadingAgent(Agent):
 
     # -------------------------------------------------------------------- main
     async def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            return await self._process_inner(context)
+        except Exception as error:
+            logger.error(
+                f"❌ [{self.name}] process() 실패 — 원본 content 유지: {error}",
+                exc_info=True,
+            )
+            return {
+                "content": context.get("content") or "",
+                "optimized": False,
+                "h2Trace": [],
+                "subheadingStats": {"error": str(error)[:200]},
+            }
+
+    async def _process_inner(self, context: Dict[str, Any]) -> Dict[str, Any]:
         content = context.get("content")
         if not content:
             return {"content": "", "optimized": False, "h2Trace": [], "subheadingStats": {}}

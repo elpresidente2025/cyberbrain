@@ -113,7 +113,7 @@ def handle_step(req: https_fn.Request) -> https_fn.Response:
                 updated_context = {**context, **result}
 
                 # Keep explicit content field for downstream steps.
-                if result.get("content") and agent_name in ["StructureAgent", "WriterAgent"]:
+                if result.get("content") and agent_name in ["StructureAgent", "WriterAgent", "SubheadingAgent"]:
                     updated_context["content"] = result["content"]
 
                 job_manager.save_context(job_id, updated_context)

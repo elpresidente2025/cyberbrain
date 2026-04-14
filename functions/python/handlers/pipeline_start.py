@@ -802,6 +802,7 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
             "userKeywords": normalized_user_keywords,
             "autoKeywords": auto_keywords,
             "userProfile": user_profile,
+            "fullName": full_name,
             "instructions": instructions_text,
             "stanceText": stance_text,
             "newsDataText": news_data_text,
