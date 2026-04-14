@@ -74,6 +74,20 @@ GENERIC_SELF_REFERENCE_PATTERNS = [
     re.compile(r"(?<![가-힣A-Za-z])정치인\s*의원"),
 ]
 
+# 1번 게시물(훅) 시작부가 인사/감사형이면 정책 위반(공감형 훅이 아니라 자기소개).
+# Threads 정책: "자기소개/인사 없이 문제의식·공감으로 시작".
+# 검사 범위: 트리밍된 본문의 처음 ~40자.
+FORBIDDEN_HOOK_OPENERS = [
+    re.compile(r"^\s*안녕하세(?:요|십니까)"),
+    re.compile(r"^\s*반갑습니다"),
+    re.compile(r"^\s*인사\s*(?:드립니다|올립니다|말씀)"),
+    re.compile(r"^[^\n]{0,40}?진심으로\s*감사"),
+    re.compile(r"^[^\n]{0,40}?감사(?:드립니다|합니다|의\s*말씀)"),
+    re.compile(r"^[^\n]{0,40}?감사한\s*마음"),
+    re.compile(r"^[^\n]{0,40}?여러분(?:께|에게)\s*(?:먼저\s*)?감사"),
+    re.compile(r"^[^\n]{0,40}?함께\s*해\s*주시는\s*모든\s*분"),
+]
+
 SIGNATURE_MODE_VALUES = {"auto", "always", "never"}
 SIGNATURE_AUTO_HINTS = (
     "출마",
@@ -587,6 +601,31 @@ def get_source_overlap_stats(content: str, source_text: str, sample_size: int = 
     return {"matched": float(matched), "sampled": float(len(sampled)), "ratio": ratio}
 
 
+def _find_cross_post_duplicate_span(posts: List[Dict[str, Any]], threshold: int = 18) -> Optional[str]:
+    """
+    서로 다른 게시물 쌍에서 공유되는 최장 공통 부분문자열 길이를 검사한다.
+    threshold(공백 제거 후 한글 기준 글자 수) 이상이면 중복 스니펫을 반환.
+    """
+    from difflib import SequenceMatcher
+
+    cleaned: List[str] = []
+    for post in posts or []:
+        content = str((post or {}).get("content", "") or "")
+        content = URL_RE.sub("", content)
+        content = re.sub(r"\s+", "", content)
+        cleaned.append(content)
+
+    for i in range(len(cleaned)):
+        for j in range(i + 1, len(cleaned)):
+            a, b = cleaned[i], cleaned[j]
+            if not a or not b:
+                continue
+            match = SequenceMatcher(None, a, b, autojunk=False).find_longest_match(0, len(a), 0, len(b))
+            if match.size >= threshold:
+                return a[match.a : match.a + match.size]
+    return None
+
+
 def validate_threads_posts_quality(
     posts: List[Dict[str, Any]],
     blog_url: str,
@@ -636,11 +675,23 @@ def validate_threads_posts_quality(
                 )
                 break
 
-    # D. X·임팩트 타래는 1번 게시물(훅)이 원문 고유명사 1개 이상을 반드시 포함해야 한다.
-    if enforce_first_post_signal and source_text and posts:
+    # D. X·Threads 임팩트/서사 타래는 1번 게시물(훅)이 원문 고유명사 1개 이상을 반드시 포함해야 한다.
+    if enforce_first_post_signal and posts:
         first_content = str((posts[0] or {}).get("content", "")).strip()
-        if first_content and not has_source_signal(first_content, source_text):
-            issues.append("1번 게시물(훅)에 원문 고유명사/핵심어가 없어 공허함")
+        if first_content:
+            if source_text and not has_source_signal(first_content, source_text):
+                issues.append("1번 게시물(훅)에 원문 고유명사/핵심어가 없어 공허함")
+            # 인사/감사형 훅 차단: "안녕하세요/반갑습니다/감사드립니다" 등으로 시작 금지.
+            for pattern in FORBIDDEN_HOOK_OPENERS:
+                if pattern.search(first_content):
+                    issues.append("1번 게시물(훅)이 인사/감사형 시작으로 공감형 문제의식이 아님")
+                    break
+
+    # E. 서로 다른 게시물 간에 18자 이상 공통 부분문자열이 나타나면 반복으로 간주.
+    duplicate_span = _find_cross_post_duplicate_span(posts or [])
+    if duplicate_span:
+        snippet = duplicate_span[:24]
+        issues.append(f"게시물 간 동일 문장 반복: \"{snippet}...\"")
 
     if source_text and post_count:
         weak_threshold = max(2, (post_count + 1) // 2)
@@ -1282,6 +1333,7 @@ async def _convert_platform(
             th_min_len,
             th_max_len,
             cleaned_original_content,
+            enforce_first_post_signal=True,
         )
 
         if thread_issues:
@@ -1337,6 +1389,7 @@ async def _convert_platform(
                         th_min_len,
                         th_max_len,
                         cleaned_original_content,
+                        enforce_first_post_signal=True,
                     )
                     if retried_issues:
                         logger.warning("Threads 재생성 후에도 품질 이슈 잔존: %s", ", ".join(retried_issues))

@@ -549,14 +549,31 @@ def build_threads_prompt(
     <link_guidance>{blog_line}</link_guidance>
   </platform_strategy>
 
+  <opening_guard priority="critical">
+    <rule>1번 게시물은 절대 인사·감사·자기소개로 시작하지 않습니다.</rule>
+    <forbidden_openers>
+      <item>안녕하세요 / 반갑습니다 / 인사드립니다 / 인사 올립니다</item>
+      <item>진심으로 감사드립니다 / 감사의 말씀 / 여러분께 먼저 감사</item>
+      <item>함께 해주시는 모든 분들께 / 항상 응원해 주시는</item>
+      <item>저 OOO입니다 / 안녕하세요, OOO입니다</item>
+    </forbidden_openers>
+    <required_opener_style>
+      <item>독자가 느끼는 구체적 불편/문제 상황에서 출발 ("여전히 ~한 분들이 많습니다" 식)</item>
+      <item>원문의 고유명사(인물·지명·정책명·사건명) 1개 이상을 1번 게시물 안에 포함</item>
+      <item>1번 게시물만 읽어도 "무슨 문제에 대한 이야기인지" 판별 가능해야 함</item>
+    </required_opener_style>
+    <rationale>Threads는 서사 플랫폼이며 1번 게시물은 문제의식·공감의 훅이다. 인사/감사로 시작하면 독자가 "또 정치인 의례 글"로 인식해 즉시 이탈한다.</rationale>
+  </opening_guard>
+
   <thread_structure post_range="{min_posts}-{max_posts}" length_per_post="권장 {recommended_len}자 내외, {min_len}~{max_len}자(공백·URL 제외 — 마지막 게시물의 블로그 링크는 글자 수에 포함되지 않음)">
     <distribution_rule>아래 4개 역할을 {min_posts}~{max_posts}개 게시물에 분배한다. 4개 타래가 표준이며, 3개면 "문제의식+약속"을 1번 게시물에서 통합, 5개면 "구체 사례" 역할을 2개 게시물로 나눠 보강한다.</distribution_rule>
 
     <role name="문제의식·공감" typical_position="1">
       <item>왜 지금 이 이야기를 하는지 — 독자가 느끼는 부담/불편에서 출발</item>
-      <item>인사/서론/자기소개 없이 첫 문장부터 문제의식</item>
+      <item>인사/서론/자기소개 없이 첫 문장부터 문제의식 (opening_guard 참고)</item>
       <item>공감형 훅: "여전히 ~한 분들이 너무 많습니다" / "올해만큼은 ~하고 싶습니다" 식</item>
       <item>이 게시물만 봐도 "무슨 이야기를 하려는지"가 전달되어야 함</item>
+      <item>원문 고유명사(인물·지명·정책명) 1개 이상 필수 포함</item>
     </role>
 
     <role name="변화 약속·방향" typical_position="2">
@@ -595,10 +612,14 @@ def build_threads_prompt(
   </writing_rules>
 
   <anti_patterns priority="critical">
-    <item>1번 게시물을 "안녕하세요, ~입니다" 같은 자기소개로 시작</item>
-    <item>각 게시물이 같은 결론 문장을 반복</item>
+    <item>1번 게시물을 "안녕하세요/반갑습니다/감사드립니다/인사 올립니다" 같은 인사·감사·자기소개로 시작</item>
+    <item>"함께 해주시는 모든 분들께" / "진심으로 감사드립니다" 같은 의례성 서두</item>
+    <item>서로 다른 게시물 2개 이상에서 18자 이상 동일한 문장/문장 조각 반복</item>
+    <item>같은 결론/다짐을 두 게시물에서 그대로 재사용</item>
     <item>"요약하면/결론적으로" 같은 LLM 상투어 반복</item>
     <item>변화 약속 역할에서 정책명/키워드만 나열 (서술형 아님)</item>
+    <item>"구체적인 계획과 의지" / "실질적인 변화" 같은 메타 언급으로 구체 사례 회피</item>
+    <item>원문에 없는 고유명사·수치를 창작해 넣음</item>
     <item>마지막이 아닌 게시물에 블로그 링크 배치</item>
     <item>타래 내에서 링크를 두 번 이상 반복</item>
     <item>링크 앞 장황한 CTA 문구</item>
@@ -624,12 +645,13 @@ def build_threads_prompt(
   <final_checklist>
     <item>게시물 수가 {min_posts}~{max_posts}개 범위인가? (4개가 표준)</item>
     <item>각 게시물이 공백·URL 제외 {min_len}~{max_len}자 범위인가? (마지막 게시물의 블로그 링크는 글자 수 제외)</item>
-    <item>1번 게시물이 자기소개/인사 없이 문제의식·공감으로 시작하는가?</item>
+    <item>1번 게시물이 인사/감사/자기소개 없이 구체 문제의식·공감으로 시작하는가?</item>
+    <item>1번 게시물에 원문의 고유명사(인물·지명·정책명·사건명) 1개 이상이 포함됐는가?</item>
+    <item>서로 다른 게시물 간에 18자 이상 동일한 문장/문장 조각 반복이 없는가?</item>
     <item>변화 약속 역할이 나열이 아닌 서술형으로 작성됐는가?</item>
-    <item>구체 사례 게시물에 정책/수치/고유명사가 집중되었는가?</item>
+    <item>구체 사례 게시물에 원문의 정책/수치/고유명사가 집중되었는가? (메타 표현 금지)</item>
     <item>마지막 게시물에 정서적 마무리 + 블로그 링크가 포함됐는가?</item>
     <item>마지막이 아닌 게시물에 링크가 들어가지 않았는가?</item>
-    <item>게시물 간 중복 문장이 과도하지 않은가?</item>
   </final_checklist>
 </task>
 """.strip()
