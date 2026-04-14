@@ -76,6 +76,7 @@ from agents.common.section_contract import (
 )
 from agents.common.stance_filters import looks_like_hashtag_bullet_line
 from agents.core.structure_normalizer import _join_sections, _pad_short_section, _plain_len, _split_into_sections
+from agents.core.subheading_agent import SubheadingAgent
 from services.authz import is_admin_user, is_tester_user
 from services.memory import get_recent_selected_titles
 from services.posts.content_processor import (
@@ -2512,25 +2513,6 @@ def _find_conflicting_role_keyword(
     return ""
 
 
-def _build_keyword_intent_h2(keyword: str) -> str:
-    return _h2_repair_build_keyword_intent_h2(keyword)
-
-
-def _ensure_keyword_in_subheading_once(content: str, keyword: str) -> Dict[str, Any]:
-    return _h2_repair_ensure_keyword_first_slot(content, keyword)
-
-
-def _ensure_user_keyword_in_subheading_once(
-    content: str,
-    user_keywords: list[str],
-    *,
-    preferred_keyword: str = "",
-) -> Dict[str, Any]:
-    return _h2_repair_ensure_user_keyword_first_slot(
-        content, user_keywords, preferred_keyword=preferred_keyword
-    )
-
-
 def _collect_known_person_names(
     *,
     full_name: str,
@@ -2757,21 +2739,6 @@ def _repair_speaker_role_mismatch_matchup_subheading_text(
         heading_inner,
         speaker_name=speaker_name,
         body_name=body_name,
-        role_facts=role_facts,
-    )
-
-
-def _repair_subheading_entity_consistency_once(
-    content: str,
-    known_names: list[str],
-    *,
-    preferred_names: Optional[list[str]] = None,
-    role_facts: Optional[Dict[str, str]] = None,
-) -> Dict[str, Any]:
-    return _h2_repair_entity_consistency(
-        content,
-        known_names=known_names,
-        preferred_names=preferred_names or (),
         role_facts=role_facts,
     )
 
@@ -6692,14 +6659,6 @@ def _rewrite_targeted_sentence_issues_once(
     }
 
 
-def _repair_awkward_h2_phrases_once(content: str) -> Dict[str, Any]:
-    return _h2_repair_awkward_phrases(content)
-
-
-def _repair_branding_h2_phrases_once(content: str) -> Dict[str, Any]:
-    return _h2_repair_branding_phrases(content)
-
-
 def _build_poll_focus_pair_sentence(pair: Optional[Dict[str, Any]]) -> str:
     pair_dict = pair if isinstance(pair, dict) else {}
     speaker = str(pair_dict.get("speaker") or "").strip()
@@ -7692,26 +7651,6 @@ def _apply_final_sentence_polish_once(
                 actions.append(action_text)
     if final_style_scrub.get("edited"):
         repaired = str(final_style_scrub.get("content") or repaired)
-
-    h2_phrase_repair = _repair_awkward_h2_phrases_once(repaired)
-    h2_phrase_actions = h2_phrase_repair.get("actions")
-    if isinstance(h2_phrase_actions, list):
-        for action in h2_phrase_actions:
-            action_text = str(action).strip()
-            if action_text:
-                actions.append(action_text)
-    if h2_phrase_repair.get("edited"):
-        repaired = str(h2_phrase_repair.get("content") or repaired)
-
-    branding_h2_repair = _repair_branding_h2_phrases_once(repaired)
-    branding_h2_actions = branding_h2_repair.get("actions")
-    if isinstance(branding_h2_actions, list):
-        for action in branding_h2_actions:
-            action_text = str(action).strip()
-            if action_text:
-                actions.append(action_text)
-    if branding_h2_repair.get("edited"):
-        repaired = str(branding_h2_repair.get("content") or repaired)
 
     poll_focus_contract_repair = _apply_poll_focus_contract_once(
         repaired,
@@ -10314,6 +10253,12 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         "replacements": [],
         "skippedReason": "",
     }
+    subheading_guard: Dict[str, Any] = {
+        "applied": False,
+        "trace": [],
+        "stats": {},
+        "skippedReason": "",
+    }
     integrity_editor_repair: Dict[str, Any] = {
         "attempted": 0,
         "applied": 0,
@@ -10402,21 +10347,6 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         )
         final_integrity_issues = _detect_integrity_gate_issues(generated_content)
         final_blocking_integrity_issues = _extract_blocking_integrity_issues(final_integrity_issues)
-
-    heading_anchor = _ensure_user_keyword_in_subheading_once(
-        generated_content,
-        gate_user_keywords,
-        preferred_keyword=conflicting_role_keyword if conflicting_role_keyword in gate_user_keywords else "",
-    )
-    if heading_anchor.get("edited"):
-        candidate_content = str(heading_anchor.get("content") or generated_content)
-        if _apply_content_repair("keyword_heading_anchor", candidate_content):
-            logger.info(
-                "검색어 소제목 앵커링 적용: keyword=%s before=%s after=%s",
-                heading_anchor.get("keyword"),
-                heading_anchor.get("headingBefore"),
-                heading_anchor.get("headingAfter"),
-            )
 
     integrity_repair = _repair_integrity_noise_once(generated_content)
     if integrity_repair.get("edited"):
@@ -11441,20 +11371,50 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         user_keywords=user_keywords,
         poll_fact_table=poll_fact_table,
     )
-    h2_entity_repair = _repair_subheading_entity_consistency_once(
-        generated_content,
-        known_person_names,
-        preferred_names=[full_name],
-        role_facts=role_facts,
-    )
-    h2_entity_candidate = str(h2_entity_repair.get("content") or generated_content).strip()
-    subheading_entity_gate["replacements"] = list(h2_entity_repair.get("replacements") or [])
-    if h2_entity_candidate and h2_entity_candidate != generated_content:
-        corrupted, reason = _detect_content_repair_corruption(generated_content, h2_entity_candidate)
+    subheading_context = {
+        "content": generated_content,
+        "topic": topic,
+        "category": category,
+        "userKeywords": user_keywords,
+        "knownPersonNames": known_person_names,
+        "roleFacts": role_facts,
+        "fullName": full_name,
+        "userProfile": user_profile,
+        "stanceText": str((data.get("stanceText") if isinstance(data, dict) else "") or ""),
+        "preferredKeyword": (
+            conflicting_role_keyword
+            if conflicting_role_keyword and conflicting_role_keyword in gate_user_keywords
+            else ""
+        ),
+    }
+    try:
+        subheading_result = _run_async_sync(SubheadingAgent(options={}).process(subheading_context))
+    except Exception as subheading_error:  # pragma: no cover - defensive
+        logger.error("SubheadingAgent 실행 실패: %s", subheading_error)
+        subheading_result = {}
+
+    subheading_result = subheading_result or {}
+    subheading_candidate = str(subheading_result.get("content") or generated_content).strip()
+    subheading_trace = list(subheading_result.get("h2Trace") or [])
+    subheading_stats = dict(subheading_result.get("subheadingStats") or {})
+    subheading_guard["trace"] = subheading_trace
+    subheading_guard["stats"] = subheading_stats
+
+    entity_replacements: list = []
+    for step in subheading_stats.get("h2_repair_chain") or []:
+        if isinstance(step, dict) and step.get("step") == "entity_consistency":
+            reps = step.get("replacements")
+            if isinstance(reps, list):
+                entity_replacements.extend(reps)
+    subheading_entity_gate["replacements"] = entity_replacements
+
+    if subheading_candidate and subheading_candidate != generated_content:
+        corrupted, reason = _detect_content_repair_corruption(generated_content, subheading_candidate)
         if not corrupted:
-            generated_content = h2_entity_candidate
+            generated_content = subheading_candidate
             word_count = _count_chars_no_space(generated_content)
-            subheading_entity_gate["applied"] = True
+            subheading_entity_gate["applied"] = bool(entity_replacements)
+            subheading_guard["applied"] = True
             final_heuristic = run_heuristic_validation_sync(
                 generated_content,
                 status_for_validation,
@@ -11468,9 +11428,10 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             )
         else:
             subheading_entity_gate["skippedReason"] = str(reason or "corruption-risk")
+            subheading_guard["skippedReason"] = str(reason or "corruption-risk")
             logger.warning(
-                "Subheading entity repair BLOCKED by corruption check. replacements=%s reason=%s",
-                subheading_entity_gate.get("replacements"),
+                "SubheadingAgent 결과 corruption check 차단: actions=%s reason=%s",
+                subheading_stats.get("actions"),
                 reason,
             )
 
@@ -12520,6 +12481,12 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                         "subheadingEntityReplacements": list(subheading_entity_gate.get("replacements") or []),
                         "subheadingEntitySkippedReason": str(
                             subheading_entity_gate.get("skippedReason") or ""
+                        ),
+                        "subheadingGuardApplied": bool(subheading_guard.get("applied")),
+                        "subheadingTrace": list(subheading_guard.get("trace") or []),
+                        "subheadingStats": dict(subheading_guard.get("stats") or {}),
+                        "subheadingGuardSkippedReason": str(
+                            subheading_guard.get("skippedReason") or ""
                         ),
                         "integrityEditorRepairAttempted": int(integrity_editor_repair.get("attempted") or 0),
                         "integrityEditorRepairApplied": int(integrity_editor_repair.get("applied") or 0),

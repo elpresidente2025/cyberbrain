@@ -47,7 +47,6 @@ from handlers.generate_posts import (
     _contains_targeted_beyond_boilerplate,
     _detect_integrity_gate_issues,
     _collect_targeted_sentence_polish_candidates,
-    _ensure_user_keyword_in_subheading_once,
     _guard_draft_title_nonfatal,
     _guard_title_after_editor,
     _is_orphan_boilerplate_sentence,
@@ -60,7 +59,6 @@ from handlers.generate_posts import (
     _repair_terminal_sentence_spacing_once,
     _prune_problematic_integrity_fragments,
     _repair_integrity_noise_once,
-    _repair_subheading_entity_consistency_once,
     _score_title_compliance,
     _scrub_suspicious_poll_residue_text,
     _sanitize_auto_keywords,
@@ -96,6 +94,27 @@ from services.posts.validation import (
     validate_keyword_insertion,
 )
 from services.posts.validation.keyword_injection import _rewrite_sentence_with_keyword
+from agents.common.h2_repair import (
+    ensure_user_keyword_first_slot as _h2_ensure_user_keyword_first_slot,
+    repair_entity_consistency as _h2_repair_entity_consistency_once,
+)
+
+
+def _ensure_user_keyword_in_subheading_once(content, user_keywords, *, preferred_keyword=""):
+    return _h2_ensure_user_keyword_first_slot(
+        content, user_keywords, preferred_keyword=preferred_keyword
+    )
+
+
+def _repair_subheading_entity_consistency_once(
+    content, known_names, *, preferred_names=None, role_facts=None
+):
+    return _h2_repair_entity_consistency_once(
+        content,
+        known_names,
+        preferred_names=preferred_names or (),
+        role_facts=role_facts,
+    )
 
 
 def test_rewrite_excess_keyword_sentence() -> None:
@@ -4609,49 +4628,6 @@ def test_final_sentence_polish_drops_leading_numeric_percent_fragment() -> None:
     assert repaired.get("edited") is True
 
 
-def test_final_sentence_polish_repairs_awkward_h2_promise_neutralization() -> None:
-    content = (
-        "<h2>함께 더 나은 부산, 이재성이 필요성을 말씀드립니다</h2>"
-        "<p>부산의 미래를 위한 방향을 말씀드립니다.</p>"
-    )
-    repaired = _apply_final_sentence_polish_once(content, full_name="이재성")
-    updated = str(repaired.get("content") or "")
-
-    assert "<h2>함께 더 나은 부산, 이재성이 말씀드립니다</h2>" in updated
-    assert "필요성을 말씀드립니다</h2>" not in updated
-    assert repaired.get("edited") is True
-
-
-def test_final_sentence_polish_repairs_incomplete_h2_fragments() -> None:
-    content = (
-        "<h2>이재성, 부산 시민에게 조금씩 확실히 알려지고</h2>"
-        "<p>인지도 상승 흐름을 설명합니다.</p>"
-        "<h2>부산 경제는 이재성입니다: 실질적인 변화를 비</h2>"
-        "<p>부산 경제 비전과 실행 방향을 설명합니다.</p>"
-    )
-    repaired = _apply_final_sentence_polish_once(content, full_name="이재성")
-    updated = str(repaired.get("content") or "")
-
-    assert "<h2>이재성 인지도 상승, 부산 시민 접점 확대</h2>" in updated
-    assert "<h2>부산 경제 재도약, 이재성의 정책 비전</h2>" in updated
-    assert "조금씩 확실히 알려지고 있습니다</h2>" not in updated
-    assert "부산 경제는 이재성입니다" not in updated
-    assert repaired.get("edited") is True
-
-
-def test_final_sentence_polish_rewrites_branding_h2_with_trailing_scope_phrase() -> None:
-    content = (
-        "<h2>이재성, 부산 시민에게 확실히 알려지며 당내 경선 넘어선 비전 제시</h2>"
-        "<p>시민 접점 확대 흐름을 설명합니다.</p>"
-    )
-    repaired = _apply_final_sentence_polish_once(content, full_name="이재성")
-    updated = str(repaired.get("content") or "")
-
-    assert "<h2>이재성 인지도 상승, 부산 시민 접점 확대</h2>" in updated
-    assert "당내 경선 넘어선 비전 제시" not in updated
-    assert repaired.get("edited") is True
-
-
 def test_final_sentence_polish_repairs_matchup_result_and_future_role_fragments() -> None:
     content = (
         "<p>주진우 의원과의 가상대결에서 제가 여론조사 결과는 이러한 가능성을 보여줍니다.</p>"
@@ -6286,18 +6262,6 @@ def main() -> None:
         (
             "final_sentence_polish_drops_leading_numeric_percent_fragment",
             test_final_sentence_polish_drops_leading_numeric_percent_fragment,
-        ),
-        (
-            "final_sentence_polish_repairs_awkward_h2_promise_neutralization",
-            test_final_sentence_polish_repairs_awkward_h2_promise_neutralization,
-        ),
-        (
-            "final_sentence_polish_repairs_incomplete_h2_fragments",
-            test_final_sentence_polish_repairs_incomplete_h2_fragments,
-        ),
-        (
-            "final_sentence_polish_rewrites_branding_h2_with_trailing_scope_phrase",
-            test_final_sentence_polish_rewrites_branding_h2_with_trailing_scope_phrase,
         ),
         (
             "final_sentence_polish_repairs_matchup_result_and_future_role_fragments",
