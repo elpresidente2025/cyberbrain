@@ -192,6 +192,14 @@ def count_without_space(text: str) -> int:
     return sum(1 for ch in text if not ch.isspace())
 
 
+def count_content_chars(content: str) -> int:
+    """게시물 본문 글자 수 (공백 + URL 제외)."""
+    if not content:
+        return 0
+    stripped = URL_RE.sub("", content)
+    return count_without_space(stripped)
+
+
 def normalize_blog_url(url: Any) -> str:
     if url is None:
         return ""
@@ -469,17 +477,16 @@ def enforce_x_length_with_link(content: str, blog_url: str, min_len: int, max_le
     if not normalized_url:
         return enforce_length(text, "x", {"maxLengthPerPost": max_len})
 
-    total_len = count_without_space(text)
-    if total_len <= max_len:
+    # URL은 글자 수에서 제외하여 본문 길이만 max_len 이하로 맞춘다.
+    body_len = count_content_chars(text)
+    if body_len <= max_len:
         return text
 
     body = text.replace(normalized_url, "").strip()
-    link_len = count_without_space(normalized_url)
-    body_limit = max(0, max_len - link_len)
-    trimmed_body = trim_to_non_space_limit(body, body_limit)
+    trimmed_body = trim_to_non_space_limit(body, max_len)
     rebuilt = f"{trimmed_body}\n{normalized_url}".strip() if trimmed_body else normalized_url
 
-    # 링크 보존이 우선이므로 최소 길이 미달은 품질 게이트에서 후속 재생성으로 처리한다.
+    # 최소 길이 미달은 품질 게이트에서 후속 재생성으로 처리한다.
     _ = min_len
     return rebuilt
 
@@ -558,9 +565,12 @@ def validate_threads_posts_quality(
     weak_signal_count = 0
     for idx, post in enumerate(posts or [], start=1):
         content = str((post or {}).get("content", "")).strip()
-        length = count_without_space(content)
+        # URL·공백을 제외한 본문 글자 수로 길이 규칙을 판정한다.
+        length = count_content_chars(content)
         if length > max_len:
             issues.append(f"{idx}번 게시물 길이 초과: {length}자 (최대 {max_len}자)")
+        if length < min_len:
+            issues.append(f"{idx}번 게시물 길이 부족: {length}자 (최소 {min_len}자)")
 
         normalized_head = re.sub(r"\s+", " ", content)[:28]
         if normalized_head and normalized_head in repeated_heads:
@@ -675,7 +685,7 @@ def try_parse_json(raw_content: str, platform: str) -> Dict[str, Any]:
                     {
                         "order": int((post or {}).get("order", idx + 1)),
                         "content": post_content,
-                        "wordCount": int((post or {}).get("wordCount", count_without_space(post_content))),
+                        "wordCount": int((post or {}).get("wordCount", count_content_chars(post_content))),
                     }
                 )
 
@@ -754,7 +764,7 @@ def parse_converted_content(
                 {
                     **post,
                     "content": content,
-                    "wordCount": count_without_space(content),
+                    "wordCount": count_content_chars(content),
                 }
             )
         hashtags = validate_hashtags(json_result.get("hashtags", []), platform)
@@ -845,7 +855,7 @@ async def apply_thread_cta_to_last_post(
         updated.append({
             **post,
             "content": cleaned_content,
-            "wordCount": count_without_space(cleaned_content),
+            "wordCount": count_content_chars(cleaned_content),
         })
 
     last_index = len(updated) - 1
@@ -868,7 +878,7 @@ async def apply_thread_cta_to_last_post(
     updated[last_index] = {
         **last_post,
         "content": next_content,
-        "wordCount": count_without_space(next_content),
+        "wordCount": count_content_chars(next_content),
     }
     return updated
 
@@ -1044,9 +1054,9 @@ async def _convert_platform(
                 elif content:
                     converted_result = {
                         "isThread": True,
-                        "posts": [{"order": 1, "content": content, "wordCount": count_without_space(content)}],
+                        "posts": [{"order": 1, "content": content, "wordCount": count_content_chars(content)}],
                         "hashtags": parsed_result.get("hashtags") or generate_default_hashtags(platform),
-                        "totalWordCount": count_without_space(content),
+                        "totalWordCount": count_content_chars(content),
                         "postCount": 1,
                     }
     except Exception as exc:
@@ -1068,11 +1078,11 @@ async def _convert_platform(
             converted_result = {
                 "isThread": True,
                 "posts": [
-                    {"order": 1, "content": p1, "wordCount": count_without_space(p1)},
-                    {"order": 2, "content": p2, "wordCount": count_without_space(p2)},
+                    {"order": 1, "content": p1, "wordCount": count_content_chars(p1)},
+                    {"order": 2, "content": p2, "wordCount": count_content_chars(p2)},
                 ],
                 "hashtags": generate_default_hashtags(platform),
-                "totalWordCount": count_without_space(p1) + count_without_space(p2),
+                "totalWordCount": count_content_chars(p1) + count_content_chars(p2),
                 "postCount": 2,
             }
         else:
@@ -1083,12 +1093,12 @@ async def _convert_platform(
             converted_result = {
                 "isThread": True,
                 "posts": [
-                    {"order": 1, "content": p1, "wordCount": count_without_space(p1)},
-                    {"order": 2, "content": p2, "wordCount": count_without_space(p2)},
-                    {"order": 3, "content": p3, "wordCount": count_without_space(p3)},
+                    {"order": 1, "content": p1, "wordCount": count_content_chars(p1)},
+                    {"order": 2, "content": p2, "wordCount": count_content_chars(p2)},
+                    {"order": 3, "content": p3, "wordCount": count_content_chars(p3)},
                 ],
                 "hashtags": generate_default_hashtags(platform),
-                "totalWordCount": count_without_space(p1) + count_without_space(p2) + count_without_space(p3),
+                "totalWordCount": count_content_chars(p1) + count_content_chars(p2) + count_content_chars(p3),
                 "postCount": 3,
             }
 
@@ -1110,7 +1120,7 @@ async def _convert_platform(
             single_content = inject_signature_line(single_content, signature_text)
         single_content = format_post_for_readability(single_content, platform)
         converted_result["content"] = single_content
-        converted_result["wordCount"] = count_without_space(single_content)
+        converted_result["wordCount"] = count_content_chars(single_content)
         return {"platform": platform, "result": converted_result}
 
     if platform == "x" and posts:
@@ -1269,7 +1279,8 @@ async def _convert_platform(
             except Exception as exc:
                 logger.warning("Threads 품질 보정 재생성 실패(기존 결과 유지): %s", exc)
 
-    total_word_count = sum(count_without_space(post.get("content", "")) for post in posts)
+    # 마지막 게시물 URL 처리 후 wordCount는 모두 URL 제외 기준으로 갱신되어 있다.
+    total_word_count = sum(int(post.get("wordCount", 0) or 0) for post in posts)
     converted_result["posts"] = posts
     converted_result["totalWordCount"] = total_word_count
     converted_result["postCount"] = len(posts)

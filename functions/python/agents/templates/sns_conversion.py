@@ -292,7 +292,7 @@ def build_x_prompt(
 {style_guide}
   </platform_strategy>
 
-  <thread_structure post_range="{min_posts}-{max_posts}" length_per_post="공백 제외 {min_len}~{max_len}자">
+  <thread_structure post_range="{min_posts}-{max_posts}" length_per_post="공백·URL 제외 {min_len}~{max_len}자">
     <post order="1" role="훅">
       <item>첫 줄에서 스크롤을 멈추게 할 강력한 훅</item>
       <item>원문의 핵심 이슈를 단적으로 드러냄</item>
@@ -320,14 +320,14 @@ def build_x_prompt(
       <item>감성적 훅: 질문, 공감, 기억 환기</item>
     </step>
     <step order="2">
-      <item>각 게시물 길이: 권장 {recommended_len}자 내외, 최대 {max_len}자, 최소 {min_len}자 (공백 제외)</item>
+      <item>각 게시물 길이: 권장 {recommended_len}자 내외, 최대 {max_len}자, 최소 {min_len}자 (공백·URL 제외 — 링크는 글자 수에 포함되지 않음)</item>
       <item>게시물 간 문장/훅 중복 최소화</item>
       <item>{blog_line}</item>
     </step>
   </extraction_steps>
 
   <writing_rules>
-    <rule>각 게시물은 공백 제외 최대 {max_len}자 이내로 작성하고, 분량을 억지로 채우지 않습니다.</rule>
+    <rule>각 게시물은 공백·URL 제외 최대 {max_len}자 이내로 작성하고, 분량을 억지로 채우지 않습니다. 마지막 게시물의 블로그 링크는 글자 수에서 제외됩니다.</rule>
     <rule>줄바꿈 카드형 구성(2~5줄)으로 가독성 확보</rule>
     <rule>각 게시물은 독립적으로도 의미가 전달되도록 작성</rule>
     <rule>타래 전반에서 원본 고유명사/핵심 수치/핵심 주장 최소 2개 이상 포함</rule>
@@ -379,7 +379,7 @@ def build_x_prompt(
 
   <final_checklist>
     <item>게시물 수가 {min_posts}~{max_posts}개 범위인가?</item>
-    <item>각 게시물이 공백 제외 {max_len}자 이하인가?</item>
+    <item>각 게시물이 공백·URL 제외 {max_len}자 이하인가? (마지막 게시물의 블로그 링크는 글자 수 제외)</item>
     <item>타래 전반에서 원본 고유명사/수치/핵심 주장을 2개 이상 반영했는가?</item>
     <item>원문 어절/문장을 재사용한 구문이 포함되었는가?</item>
     <item>저품질 CTA 문구가 없는가?</item>
@@ -458,7 +458,7 @@ def build_threads_prompt(
     <link_guidance>{blog_line}</link_guidance>
   </platform_strategy>
 
-  <thread_structure post_range="{min_posts}-{max_posts}" length_per_post="권장 {recommended_len}자 내외, {min_len}~{max_len}자(공백 제외)">
+  <thread_structure post_range="{min_posts}-{max_posts}" length_per_post="권장 {recommended_len}자 내외, {min_len}~{max_len}자(공백·URL 제외 — 마지막 게시물의 블로그 링크는 글자 수에 포함되지 않음)">
     <distribution_rule>아래 4개 역할을 {min_posts}~{max_posts}개 게시물에 분배한다. 4개 타래가 표준이며, 3개면 "문제의식+약속"을 1번 게시물에서 통합, 5개면 "구체 사례" 역할을 2개 게시물로 나눠 보강한다.</distribution_rule>
 
     <role name="문제의식·공감" typical_position="1">
@@ -492,7 +492,7 @@ def build_threads_prompt(
   </thread_structure>
 
   <writing_rules>
-    <rule>각 게시물은 공백 제외 {min_len}~{max_len}자 범위, 권장 {recommended_len}자 내외로 작성</rule>
+    <rule>각 게시물은 공백·URL 제외 {min_len}~{max_len}자 범위, 권장 {recommended_len}자 내외로 작성 (마지막 게시물의 블로그 링크는 글자 수에서 제외)</rule>
     <rule>각 게시물은 독립적으로도 이해 가능해야 함</rule>
     <rule>각 게시물에 원문 표현(문장/어절) 재사용 구문을 1개 이상 포함</rule>
     <rule>서사 흐름(공감 → 약속 → 사례 → 마무리)을 지키고, 같은 내용이 게시물 간 반복되지 않게 한다</rule>
@@ -532,7 +532,7 @@ def build_threads_prompt(
 
   <final_checklist>
     <item>게시물 수가 {min_posts}~{max_posts}개 범위인가? (4개가 표준)</item>
-    <item>각 게시물이 공백 제외 {min_len}~{max_len}자 범위인가?</item>
+    <item>각 게시물이 공백·URL 제외 {min_len}~{max_len}자 범위인가? (마지막 게시물의 블로그 링크는 글자 수 제외)</item>
     <item>1번 게시물이 자기소개/인사 없이 문제의식·공감으로 시작하는가?</item>
     <item>변화 약속 역할이 나열이 아닌 서술형으로 작성됐는가?</item>
     <item>구체 사례 게시물에 정책/수치/고유명사가 집중되었는가?</item>
