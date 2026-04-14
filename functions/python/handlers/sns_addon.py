@@ -534,38 +534,6 @@ def get_source_overlap_stats(content: str, source_text: str, sample_size: int = 
     return {"matched": float(matched), "sampled": float(len(sampled)), "ratio": ratio}
 
 
-def validate_x_post_quality(
-    content: str,
-    source_text: str,
-    blog_url: str,
-    min_len: int,
-    max_len: int,
-) -> List[str]:
-    issues = []
-    text = content or ""
-    actual_len = count_without_space(text)
-    if actual_len > max_len:
-        issues.append(f"길이 초과: {actual_len}자 (최대 {max_len}자)")
-
-    if normalize_blog_url(blog_url) and not has_url(text):
-        issues.append("블로그 링크가 본문에 포함되지 않음")
-
-    if strip_low_quality_blog_cta(text) != text.strip():
-        issues.append('저품질 CTA 문구("자세한 내용은 블로그에서...") 사용')
-
-    if not has_source_signal(text, source_text):
-        issues.append("원문의 고유명사/핵심 수치/핵심 주장 반영 부족")
-    else:
-        overlap = get_source_overlap_stats(text, source_text, sample_size=20)
-        sampled = int(overlap["sampled"])
-        matched = int(overlap["matched"])
-        ratio = overlap["ratio"]
-        if sampled >= 8 and (matched < 3 or ratio < 0.14):
-            issues.append(f"원문 기반 변환 비율 부족: 핵심어 {matched}/{sampled}개 반영")
-
-    return issues
-
-
 def validate_threads_posts_quality(
     posts: List[Dict[str, Any]],
     blog_url: str,
@@ -987,9 +955,8 @@ async def _convert_platform(
                 min_posts = thread_constraints["minPosts"]
                 posts = parsed_result.get("posts", [])
                 has_valid_posts = isinstance(posts, list) and len(posts) >= min_posts
-                is_valid_x = platform == "x" and isinstance(posts, list) and len(posts) == 1
 
-                if has_valid_posts or is_valid_x:
+                if has_valid_posts:
                     thread_result = {
                         "isThread": True,
                         "posts": posts,
@@ -1095,19 +1062,24 @@ async def _convert_platform(
                 "hashtags": generate_default_hashtags(platform),
             }
         elif platform == "x":
-            fallback_core = clean_content(original_content)[:110] or "핵심 정책 메시지를 공유드립니다."
-            fallback_content = strip_low_quality_blog_cta(fallback_core)
+            cleaned_fallback = strip_low_quality_blog_cta(clean_content(original_content))
+            p1 = cleaned_fallback[:110] or "핵심 메시지를 공유드립니다."
+            p2 = cleaned_fallback[110:220].strip() or "앞으로도 현장에서 소통하겠습니다."
             converted_result = {
                 "isThread": True,
-                "posts": [{"order": 1, "content": fallback_content, "wordCount": count_without_space(fallback_content)}],
+                "posts": [
+                    {"order": 1, "content": p1, "wordCount": count_without_space(p1)},
+                    {"order": 2, "content": p2, "wordCount": count_without_space(p2)},
+                ],
                 "hashtags": generate_default_hashtags(platform),
-                "totalWordCount": count_without_space(fallback_content),
-                "postCount": 1,
+                "totalWordCount": count_without_space(p1) + count_without_space(p2),
+                "postCount": 2,
             }
         else:
-            p1 = f"{user_info.get('name', '작성자')}입니다."
-            p2 = clean_content(original_content)[:160] or "핵심 내용을 공유드립니다."
-            p3 = "앞으로도 소통하겠습니다."
+            cleaned_fallback = strip_low_quality_blog_cta(clean_content(original_content))
+            p1 = cleaned_fallback[:300].strip() or "현장에서 만난 목소리에서 출발합니다."
+            p2 = cleaned_fallback[300:600].strip() or "불편은 줄이고, 필요한 변화는 앞당기겠습니다."
+            p3 = "한 걸음씩 곁에서 바꾸어 나가겠습니다."
             converted_result = {
                 "isThread": True,
                 "posts": [
@@ -1142,10 +1114,19 @@ async def _convert_platform(
         return {"platform": platform, "result": converted_result}
 
     if platform == "x" and posts:
-        x_min = platform_config.get("minLengthPerPost", X_MIN_NON_SPACE)
-        x_max = platform_config.get("maxLengthPerPost", X_TARGET_AVG_NON_SPACE)
-        first_content = str(posts[0].get("content", "")).strip()
-        quality_issues = validate_x_post_quality(first_content, cleaned_original_content, blog_url, x_min, x_max)
+        x_min_posts = platform_config.get("minPosts", 2)
+        x_max_posts = platform_config.get("maxPosts", 3)
+        x_min_len = platform_config.get("minLengthPerPost", X_MIN_NON_SPACE)
+        x_max_len = platform_config.get("maxLengthPerPost", X_TARGET_AVG_NON_SPACE)
+        quality_issues = validate_threads_posts_quality(
+            posts,
+            blog_url,
+            x_min_posts,
+            x_max_posts,
+            x_min_len,
+            x_max_len,
+            cleaned_original_content,
+        )
 
         if quality_issues:
             logger.warning("X 품질 게이트 실패, 1회 재생성 시도: %s", ", ".join(quality_issues))
@@ -1179,15 +1160,7 @@ async def _convert_platform(
                     "X 품질 재생성 타임아웃",
                 )
                 retried_parsed = parse_converted_content(retried_text, platform, platform_config)
-                retried_posts = []
-                if retried_parsed.get("isThread"):
-                    retried_posts = retried_parsed.get("posts", [])
-                else:
-                    content = str(retried_parsed.get("content", "")).strip()
-                    if content:
-                        retried_posts = [
-                            {"order": 1, "content": content, "wordCount": count_without_space(content)}
-                        ]
+                retried_posts = retried_parsed.get("posts", []) if retried_parsed.get("isThread") else []
 
                 if retried_posts:
                     retried_posts = await apply_thread_cta_to_last_post(
@@ -1200,25 +1173,29 @@ async def _convert_platform(
                         signature_text=signature_text,
                         include_signature=include_signature,
                     )
-                    retried_content = str(retried_posts[0].get("content", "")).strip()
-                    retried_issues = validate_x_post_quality(
-                        retried_content,
-                        cleaned_original_content,
+                    retried_issues = validate_threads_posts_quality(
+                        retried_posts,
                         blog_url,
-                        x_min,
-                        x_max,
+                        x_min_posts,
+                        x_max_posts,
+                        x_min_len,
+                        x_max_len,
+                        cleaned_original_content,
                     )
                     if retried_issues:
                         logger.warning("X 재생성 후에도 품질 이슈 잔존: %s", ", ".join(retried_issues))
                     else:
                         posts = retried_posts
+                        retried_hashtags = retried_parsed.get("hashtags", [])
+                        if retried_hashtags:
+                            converted_result["hashtags"] = validate_hashtags(retried_hashtags, platform)
             except Exception as exc:
                 logger.warning("X 품질 보정 재생성 실패(기존 결과 유지): %s", exc)
     elif platform == "threads" and posts:
-        th_min_posts = platform_config.get("minPosts", 2)
+        th_min_posts = platform_config.get("minPosts", 3)
         th_max_posts = platform_config.get("maxPosts", 5)
-        th_min_len = platform_config.get("minLengthPerPost", 250)
-        th_max_len = platform_config.get("maxLengthPerPost", 350)
+        th_min_len = platform_config.get("minLengthPerPost", 200)
+        th_max_len = platform_config.get("maxLengthPerPost", 400)
         thread_issues = validate_threads_posts_quality(
             posts,
             blog_url,

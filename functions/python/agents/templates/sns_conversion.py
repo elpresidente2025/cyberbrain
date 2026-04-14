@@ -15,7 +15,7 @@ from typing import Any, Dict
 # 예시 원고(사용자 제공) 기반 X 평균 길이(공백 제외) 정책값
 X_TARGET_AVG_NON_SPACE = 111
 X_MIN_NON_SPACE = 60
-THREADS_MIN_NON_SPACE = 120
+THREADS_MIN_NON_SPACE = 200
 
 # SNS 플랫폼별 제한사항
 SNS_LIMITS: Dict[str, Dict[str, Any]] = {
@@ -36,18 +36,18 @@ SNS_LIMITS: Dict[str, Dict[str, Any]] = {
         "charsPerLine": 32,
         "name": "X(Twitter)",
         "isThread": True,
-        "minPosts": 1,
-        "maxPosts": 1,
+        "minPosts": 2,
+        "maxPosts": 3,
     },
     "threads": {
-        "maxLengthPerPost": 350,
+        "maxLengthPerPost": 400,
         "minLengthPerPost": THREADS_MIN_NON_SPACE,
-        "recommendedMinLength": 250,
+        "recommendedMinLength": 300,
         "hashtagLimit": 3,
         "charsPerLine": 27,
         "name": "Threads",
         "isThread": True,
-        "minPosts": 2,
+        "minPosts": 3,
         "maxPosts": 5,
     },
 }
@@ -208,6 +208,8 @@ def build_x_prompt(
 ) -> str:
     options = options or {}
     hashtag_limit = platform_config.get("hashtagLimit", 2)
+    min_posts = platform_config.get("minPosts", 2)
+    max_posts = platform_config.get("maxPosts", 3)
     min_len = platform_config.get("minLengthPerPost", X_MIN_NON_SPACE)
     recommended_len = platform_config.get("recommendedMinLength", X_TARGET_AVG_NON_SPACE)
     max_len = platform_config.get("maxLengthPerPost", X_TARGET_AVG_NON_SPACE)
@@ -262,11 +264,11 @@ def build_x_prompt(
     link_hint = blog_url or "https://..."
 
     return f"""
-<task type="SNS 변환" platform="x" mode="임팩트 헤드라인" system="전자두뇌비서관">
+<task type="SNS 변환" platform="x" mode="임팩트 타래" system="전자두뇌비서관">
   <source_info>
     <author_name>{user_info.get('name', '정치인')}</author_name>
     <author_role>{user_info.get('position', '의원')}</author_role>
-    <instruction>{source_label}을 X 게시물 1개로 변환하라.</instruction>
+    <instruction>{source_label}을 X 타래({min_posts}~{max_posts}개 게시물)로 변환하라.</instruction>
   </source_info>
 
 {extra_context}
@@ -281,14 +283,33 @@ def build_x_prompt(
     <rule>변환 목적은 신규 원고 작성이 아니라 원문 압축/재배열입니다.</rule>
     <rule>원문의 핵심 표현을 최대한 재사용하고, 길이 제약으로 인한 축약만 허용합니다.</rule>
     <rule>원문에 없는 구호/슬로건/브랜딩 문구를 새로 만들지 않습니다.</rule>
-    <rule>원문 핵심어(고유명사/숫자/정책명) 3개 이상을 본문에 그대로 포함합니다.</rule>
+    <rule>타래 전체에서 원문 핵심어(고유명사/숫자/정책명) 3개 이상을 그대로 포함합니다.</rule>
   </transformation_policy>
 
   <platform_strategy>
-    <description>X는 훑어보는 플랫폼이므로 1개 게시물에 핵심 메시지와 임팩트 요소를 동시에 담아야 한다.</description>
+    <description>X는 훑어보는 플랫폼이므로 훅 → 본문 → (선택) 마무리의 짧은 타래로 구성한다.</description>
     <selected_style>{style_name}</selected_style>
 {style_guide}
   </platform_strategy>
+
+  <thread_structure post_range="{min_posts}-{max_posts}" length_per_post="공백 제외 {min_len}~{max_len}자">
+    <post order="1" role="훅">
+      <item>첫 줄에서 스크롤을 멈추게 할 강력한 훅</item>
+      <item>원문의 핵심 이슈를 단적으로 드러냄</item>
+      <item>인사/서론 금지, 핵심부터 시작</item>
+      <item>링크 금지</item>
+    </post>
+    <post order="2" role="핵심 메시지">
+      <item>원문의 고유명사/수치/정책 중 임팩트 요소 1~2개를 담은 본문</item>
+      <item>{max_posts}개 타래일 때는 링크 금지, {min_posts}개 타래일 때는 마지막 게시물이므로 링크 포함</item>
+    </post>
+    <post order="3" role="마무리" optional="true">
+      <item>입장 정리 또는 다짐</item>
+      <item>마지막 게시물이므로 링크 포함</item>
+    </post>
+    <link_rule priority="critical">블로그 링크는 반드시 타래 마지막 게시물의 마지막 줄에만 URL로 1회 배치하고, 다른 게시물에는 링크를 넣지 않는다</link_rule>
+    <hashtag_rule>해시태그는 마지막 게시물에만 최대 {hashtag_limit}개 배치</hashtag_rule>
+  </thread_structure>
 
   <extraction_steps>
     <step order="1">
@@ -297,41 +318,39 @@ def build_x_prompt(
       <item>수치/규모: 퍼센트, 예산, 건수, 일자리 등 숫자</item>
       <item>실질적 혜택: 누구에게 어떤 변화가 있는지</item>
       <item>감성적 훅: 질문, 공감, 기억 환기</item>
-      <item>서사적 대비: 출신↔현재, 위기↔비전, 숫자↔숫자</item>
     </step>
     <step order="2">
-      <item>감성 훅 또는 핵심 메시지로 시작</item>
-      <item>원본의 임팩트 요소 1~2개 포함</item>
-      <item>구체적 정책/활동 1개 언급</item>
-      <item>길이: 권장 {recommended_len}자 내외, 최대 {max_len}자 (공백 제외)</item>
-      <item>블로그 링크는 게시물 마지막 줄에 URL만 1회 배치</item>
-      <item>해시태그: 최대 {hashtag_limit}개</item>
+      <item>각 게시물 길이: 권장 {recommended_len}자 내외, 최대 {max_len}자, 최소 {min_len}자 (공백 제외)</item>
+      <item>게시물 간 문장/훅 중복 최소화</item>
       <item>{blog_line}</item>
     </step>
   </extraction_steps>
 
   <writing_rules>
-    <rule>최대 {max_len}자 이내(공백 제외)로 작성하고, 분량을 억지로 채우지 않습니다.</rule>
+    <rule>각 게시물은 공백 제외 최대 {max_len}자 이내로 작성하고, 분량을 억지로 채우지 않습니다.</rule>
     <rule>줄바꿈 카드형 구성(2~5줄)으로 가독성 확보</rule>
-    <rule>원본 고유명사/핵심 수치/핵심 주장 최소 1개 이상 포함</rule>
+    <rule>각 게시물은 독립적으로도 의미가 전달되도록 작성</rule>
+    <rule>타래 전반에서 원본 고유명사/핵심 수치/핵심 주장 최소 2개 이상 포함</rule>
     <rule>원문 문장 또는 원문 어절을 직접 재사용한 구문을 1개 이상 포함</rule>
-    <rule>인사/서론 금지, 핵심부터 시작</rule>
     <rule>원본에 없는 사실/수치 추가 금지</rule>
     <rule>원문에 없는 가치판단/수식어 확장 최소화</rule>
     <rule>정치적 입장과 논조 보존</rule>
+    <rule>블로그 링크는 마지막 게시물의 마지막 줄에만 1회 배치하고, 중간 게시물에는 링크를 넣지 않는다</rule>
   </writing_rules>
 
   <anti_patterns priority="critical">
     <item>"자세한 내용은 블로그에서 확인하세요" 같은 저품질 CTA 문구</item>
     <item>링크 앞 장황한 안내 문구</item>
-    <item>블로그 링크를 중간에 넣거나 두 번 이상 반복</item>
+    <item>마지막이 아닌 게시물에 링크 배치</item>
+    <item>타래 내에서 링크를 두 번 이상 반복</item>
     <item>원본 키워드 없는 일반 요약</item>
     <item>원문에 없는 새로운 구호/캐치프레이즈 창작</item>
+    <item>게시물 간 같은 문장/결론 반복</item>
     <item>느낌표/감탄사 남발</item>
   </anti_patterns>
 
   <style_hints type="few_shot">
-    <hint>첫 줄 훅 + 줄바꿈 카드형 + 구체적 사실 + 링크 + 해시태그의 순서를 우선</hint>
+    <hint>첫 게시물은 훅 + 핵심 사실로 구성하고 링크를 넣지 않는다</hint>
     <hint>길이를 줄이려면 형용사보다 고유명사/숫자를 남긴다</hint>
     <hint>신뢰감이 필요한 이슈에서는 차분한 단정형 종결을 사용한다</hint>
   </style_hints>
@@ -343,22 +362,29 @@ def build_x_prompt(
   "posts": [
     {{
       "order": 1,
-      "content": "[훅/핵심 메시지]\\n\\n[임팩트 요소 + 정책]\\n\\n#태그1 #태그2\\n{link_hint}",
-      "wordCount": 148
+      "content": "[훅/핵심 메시지]\\n\\n[원문 임팩트 요소]",
+      "wordCount": 95
+    }},
+    {{
+      "order": 2,
+      "content": "[마무리 메시지]\\n\\n#태그1 #태그2\\n{link_hint}",
+      "wordCount": 100
     }}
   ],
   "hashtags": ["#태그1", "#태그2"],
-  "totalWordCount": 148,
-  "postCount": 1
+  "totalWordCount": 195,
+  "postCount": 2
 }}
   </output_contract>
 
   <final_checklist>
-    <item>{max_len}자 이하인가?</item>
-    <item>원본의 고유명사/수치/핵심 주장을 1개 이상 반영했는가?</item>
+    <item>게시물 수가 {min_posts}~{max_posts}개 범위인가?</item>
+    <item>각 게시물이 공백 제외 {max_len}자 이하인가?</item>
+    <item>타래 전반에서 원본 고유명사/수치/핵심 주장을 2개 이상 반영했는가?</item>
     <item>원문 어절/문장을 재사용한 구문이 포함되었는가?</item>
     <item>저품질 CTA 문구가 없는가?</item>
-    <item>블로그 링크가 본문에 포함되어 있는가?</item>
+    <item>블로그 링크가 마지막 게시물의 마지막 줄에만 1회 배치되었는가?</item>
+    <item>마지막이 아닌 게시물에 링크가 들어가지 않았는가?</item>
   </final_checklist>
 </task>
 """.strip()
@@ -372,11 +398,11 @@ def build_threads_prompt(
 ) -> str:
     options = options or {}
     hashtag_limit = platform_config.get("hashtagLimit", 3)
-    min_posts = platform_config.get("minPosts", 2)
+    min_posts = platform_config.get("minPosts", 3)
     max_posts = platform_config.get("maxPosts", 5)
     min_len = platform_config.get("minLengthPerPost", THREADS_MIN_NON_SPACE)
-    max_len = platform_config.get("maxLengthPerPost", 350)
-    recommended_len = platform_config.get("recommendedMinLength", 250)
+    max_len = platform_config.get("maxLengthPerPost", 400)
+    recommended_len = platform_config.get("recommendedMinLength", 300)
     target_post_count = options.get("targetPostCount")
     blog_url = options.get("blogUrl", "")
     quality_issues = options.get("qualityIssues", [])
@@ -404,7 +430,7 @@ def build_threads_prompt(
 """
 
     return f"""
-<task type="SNS 변환" platform="threads" mode="맥락 설명 타래" system="전자두뇌비서관">
+<task type="SNS 변환" platform="threads" mode="서사·공감 타래" system="전자두뇌비서관">
   <source_info>
     <author_name>{user_info.get('name', '정치인')}</author_name>
     <author_role>{user_info.get('position', '의원')}</author_role>
@@ -427,52 +453,65 @@ def build_threads_prompt(
   </transformation_policy>
 
   <platform_strategy>
-    <description>Threads는 대화와 맥락을 쌓는 플랫폼이므로, 왜 중요한지와 무엇을 할 것인지를 단계적으로 설명한다.</description>
+    <description>Threads는 읽는 경험과 서사를 쌓는 플랫폼이다. X처럼 임팩트 한 방이 아니라, "문제의식 → 약속 → 사례 → 정서적 마무리"의 흐름으로 독자와 함께 걷듯 설명한다.</description>
     <post_count_guidance>{post_count_guidance}</post_count_guidance>
     <link_guidance>{blog_line}</link_guidance>
   </platform_strategy>
 
-  <thread_structure post_range="{min_posts}-{max_posts}" length_per_post="권장 {recommended_len}자 내외, 최대 {max_len}자">
-    <rule>각 게시물은 X보다 길고 설명적으로 작성</rule>
-    <post order="1" role="요약+훅">
-      <item>핵심 메시지와 배경을 함께 담은 요약</item>
-      <item>인사/서론 없이 핵심부터 시작</item>
-      <item>이 게시물만 봐도 전체 맥락 파악 가능</item>
-    </post>
-    <post order="2" role="맥락 설명">
-      <item>왜 이 이슈가 중요한지</item>
-      <item>현황/배경/필요성 설명</item>
-    </post>
-    <post order="3" role="핵심 내용 또는 근거" optional="true">
-      <item>정책/활동/입장의 구체적 내용</item>
-      <item>수치/팩트/사례</item>
-    </post>
-    <post order="4-5" role="추가 설명 또는 전망" optional="true">
-      <item>기대효과/향후 계획</item>
-      <item>추가 근거나 사례</item>
-    </post>
-    <post order="last" role="마무리">
-      <item>입장 정리 또는 다짐</item>
-      <item>해시태그 {hashtag_limit}개 이내</item>
-      <item>블로그 링크는 마지막 줄에 URL만 1회 배치</item>
-    </post>
+  <thread_structure post_range="{min_posts}-{max_posts}" length_per_post="권장 {recommended_len}자 내외, {min_len}~{max_len}자(공백 제외)">
+    <distribution_rule>아래 4개 역할을 {min_posts}~{max_posts}개 게시물에 분배한다. 4개 타래가 표준이며, 3개면 "문제의식+약속"을 1번 게시물에서 통합, 5개면 "구체 사례" 역할을 2개 게시물로 나눠 보강한다.</distribution_rule>
+
+    <role name="문제의식·공감" typical_position="1">
+      <item>왜 지금 이 이야기를 하는지 — 독자가 느끼는 부담/불편에서 출발</item>
+      <item>인사/서론/자기소개 없이 첫 문장부터 문제의식</item>
+      <item>공감형 훅: "여전히 ~한 분들이 너무 많습니다" / "올해만큼은 ~하고 싶습니다" 식</item>
+      <item>이 게시물만 봐도 "무슨 이야기를 하려는지"가 전달되어야 함</item>
+    </role>
+
+    <role name="변화 약속·방향" typical_position="2">
+      <item>큰 방향 2~3개를 서술형 문장으로 제시 (불릿/번호 나열 금지)</item>
+      <item>"불편은 줄이고, 필요한 변화는 앞당기겠습니다" 식의 대비 구조 활용</item>
+      <item>정책명 나열보다 "무엇을 바꾸겠다"는 의지를 문장화</item>
+    </role>
+
+    <role name="구체 사례·정책 예시" typical_position="3 (5개 타래면 3-4)">
+      <item>세부 정책/사례 1~3개만 골라 집중 설명, 디테일은 블로그로 넘김</item>
+      <item>수치/고유명사/정책명을 이 역할에 집중 배치</item>
+      <item>원문의 핵심 팩트를 압축해 재사용</item>
+      <item>5개 타래일 경우: 사례 게시물과 보강 게시물(추가 근거/사례)로 2개 분할</item>
+    </role>
+
+    <role name="정서적 마무리 + 링크" typical_position="마지막 (last)" priority="critical">
+      <item>국민/독자에 대한 다짐·약속·인사로 정서적 매듭</item>
+      <item>마지막 줄에만 블로그 전문 링크를 URL로 1회 배치</item>
+      <item>해시태그는 이 게시물에만 {hashtag_limit}개 이내로</item>
+      <item>"자세한 내용은 블로그에서 확인하세요" 같은 상투적 CTA 대신, 짧은 인간적 인사로 연결</item>
+    </role>
+
+    <link_rule priority="critical">블로그 링크는 반드시 타래 마지막 게시물의 마지막 줄에만 URL로 1회 배치하고, 다른 게시물에는 링크를 넣지 않는다</link_rule>
   </thread_structure>
 
   <writing_rules>
+    <rule>각 게시물은 공백 제외 {min_len}~{max_len}자 범위, 권장 {recommended_len}자 내외로 작성</rule>
     <rule>각 게시물은 독립적으로도 이해 가능해야 함</rule>
-    <rule>각 게시물은 필요한 정보만 담아 간결하게 작성하고, 분량을 억지로 늘리지 않습니다.</rule>
     <rule>각 게시물에 원문 표현(문장/어절) 재사용 구문을 1개 이상 포함</rule>
-    <rule>게시물 간 중복 문장 최소화</rule>
+    <rule>서사 흐름(공감 → 약속 → 사례 → 마무리)을 지키고, 같은 내용이 게시물 간 반복되지 않게 한다</rule>
     <rule>이모지 남발 금지 (필요 시 0~1개)</rule>
     <rule>원본의 정치적 입장과 논조 완전 보존</rule>
     <rule>원본에 없는 사실/수치 추가 금지</rule>
-    <rule>마지막 게시물 마지막 줄에만 블로그 링크 URL을 1회 배치하고 별도 CTA는 쓰지 않는다</rule>
+    <rule>블로그 링크는 마지막 게시물의 마지막 줄에만 1회 배치하고, 중간 게시물에는 링크를 넣지 않는다</rule>
+    <rule>마지막 게시물의 링크 앞에 별도 CTA 문구를 쓰지 않는다</rule>
   </writing_rules>
 
   <anti_patterns priority="critical">
+    <item>1번 게시물을 "안녕하세요, ~입니다" 같은 자기소개로 시작</item>
     <item>각 게시물이 같은 결론 문장을 반복</item>
     <item>"요약하면/결론적으로" 같은 LLM 상투어 반복</item>
-    <item>링크 없는 마무리 또는 해시태그 과다 삽입</item>
+    <item>변화 약속 역할에서 정책명/키워드만 나열 (서술형 아님)</item>
+    <item>마지막이 아닌 게시물에 블로그 링크 배치</item>
+    <item>타래 내에서 링크를 두 번 이상 반복</item>
+    <item>링크 앞 장황한 CTA 문구</item>
+    <item>해시태그 과다 삽입 또는 중간 게시물에 해시태그 분산</item>
   </anti_patterns>
 
 {remediation_block}
@@ -480,22 +519,25 @@ def build_threads_prompt(
   <output_contract format="json">
 {{
   "posts": [
-    {{ "order": 1, "content": "요약 + 훅", "wordCount": 280 }},
-    {{ "order": 2, "content": "맥락 설명", "wordCount": 320 }},
-    {{ "order": 3, "content": "핵심 내용/근거", "wordCount": 300 }},
-    {{ "order": 4, "content": "마무리\\n#태그1 #태그2 #태그3\\n{link_hint}", "wordCount": 260 }}
+    {{ "order": 1, "content": "[문제의식·공감] 독자가 느끼는 부담에서 출발", "wordCount": 280 }},
+    {{ "order": 2, "content": "[변화 약속] 큰 방향 2~3개를 서술형으로", "wordCount": 310 }},
+    {{ "order": 3, "content": "[구체 사례] 정책/수치/고유명사 집중", "wordCount": 340 }},
+    {{ "order": 4, "content": "[정서적 마무리]\\n\\n#태그1 #태그2 #태그3\\n{link_hint}", "wordCount": 290 }}
   ],
   "hashtags": ["#태그1", "#태그2", "#태그3"],
-  "totalWordCount": 1160,
+  "totalWordCount": 1220,
   "postCount": 4
 }}
   </output_contract>
 
   <final_checklist>
-    <item>게시물 수가 {min_posts}~{max_posts}개 범위인가?</item>
-    <item>각 게시물이 {max_len}자 이하인가?</item>
-    <item>타래 전반에서 원문 핵심어/표현 재사용이 충분한가?</item>
-    <item>마지막 게시물에 블로그 링크가 포함됐는가?</item>
+    <item>게시물 수가 {min_posts}~{max_posts}개 범위인가? (4개가 표준)</item>
+    <item>각 게시물이 공백 제외 {min_len}~{max_len}자 범위인가?</item>
+    <item>1번 게시물이 자기소개/인사 없이 문제의식·공감으로 시작하는가?</item>
+    <item>변화 약속 역할이 나열이 아닌 서술형으로 작성됐는가?</item>
+    <item>구체 사례 게시물에 정책/수치/고유명사가 집중되었는가?</item>
+    <item>마지막 게시물에 정서적 마무리 + 블로그 링크가 포함됐는가?</item>
+    <item>마지막이 아닌 게시물에 링크가 들어가지 않았는가?</item>
     <item>게시물 간 중복 문장이 과도하지 않은가?</item>
   </final_checklist>
 </task>
