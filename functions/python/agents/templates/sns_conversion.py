@@ -94,6 +94,48 @@ def _resolve_source_label(options: Dict[str, Any]) -> str:
     return "블로그 원고"
 
 
+# 사용자 프로필이 비어있을 때 들어오는 generic placeholder 값들.
+# 이 값이 프롬프트 <author_*> 태그를 거쳐 LLM 본문에 오염되는 사고를 차단한다.
+_GENERIC_AUTHOR_NAMES = {"", "정치인", "작성자", "사용자", "후보", "의원", "이름"}
+_GENERIC_AUTHOR_ROLES = {"", "정치인", "작성자", "사용자", "의원", "직책"}
+
+
+def _is_generic_author_name(name: str) -> bool:
+    return str(name or "").strip() in _GENERIC_AUTHOR_NAMES
+
+
+def _is_generic_author_role(role: str) -> bool:
+    return str(role or "").strip() in _GENERIC_AUTHOR_ROLES
+
+
+def _build_author_meta_block(user_info: Dict[str, Any]) -> str:
+    """
+    프롬프트 메타의 <author_*> 블록을 생성한다.
+    값이 generic placeholder("정치인", "의원" 등)라면 해당 필드를 생략하고,
+    LLM이 본문에서 자기 자신을 일반명으로 언급하지 않도록 가드레일을 추가한다.
+    """
+    name = str((user_info or {}).get("name", "")).strip()
+    role = str((user_info or {}).get("position", "")).strip()
+    lines = []
+    if name and not _is_generic_author_name(name):
+        lines.append(f"    <author_name>{name}</author_name>")
+    if role and not _is_generic_author_role(role):
+        lines.append(f"    <author_role>{role}</author_role>")
+    if not lines:
+        lines.append("    <author_meta_unavailable>true</author_meta_unavailable>")
+    return "\n".join(lines)
+
+
+_AUTHOR_SELF_REFERENCE_GUARD = """
+<self_reference_guard priority="critical">
+  <rule>author_name/author_role 태그는 메타 정보이며, 본문에 그대로 등장해서는 안 됩니다.</rule>
+  <rule>본문에서 자기 자신(작성자)을 "정치인", "의원님", "작성자", "후보님" 같은 일반명/플레이스홀더로 언급하지 마세요.</rule>
+  <rule>메타 정보에 실제 작성자 이름이 없으면 본문에서도 작성자의 이름/직책을 추측해 넣지 마세요. 원문 화자를 1인칭으로 자연스럽게 표현합니다.</rule>
+  <rule>원문 본문에 등장하는 제3자(후보, 단체, 지명 등)의 고유명사는 당연히 그대로 사용합니다. 이 규칙은 "작성자 자신"만 대상으로 합니다.</rule>
+</self_reference_guard>
+""".strip()
+
+
 def build_facebook_instagram_prompt(
     clean_content: str,
     platform_config: Dict[str, Any],
@@ -121,13 +163,16 @@ def build_facebook_instagram_prompt(
 </remediation_instructions>
 """
 
+    author_meta_block = _build_author_meta_block(user_info)
+
     return f"""
 <task type="SNS 변환" platform="facebook-instagram" mode="공용 단일 게시물" system="전자두뇌비서관">
   <source_info>
-    <author_name>{user_info.get('name', '정치인')}</author_name>
-    <author_role>{user_info.get('position', '의원')}</author_role>
+{author_meta_block}
     <instruction>{source_label}을 Facebook 게시물과 Instagram 캡션에 모두 사용할 수 있는 단일 SNS 원고로 변환하라.</instruction>
   </source_info>
+
+{_AUTHOR_SELF_REFERENCE_GUARD}
 
 {extra_context}
 
@@ -263,13 +308,16 @@ def build_x_prompt(
     blog_line = f"- 블로그 링크: {blog_url}" if blog_url else "- 블로그 링크: https://..."
     link_hint = blog_url or "https://..."
 
+    author_meta_block = _build_author_meta_block(user_info)
+
     return f"""
 <task type="SNS 변환" platform="x" mode="임팩트 타래" system="전자두뇌비서관">
   <source_info>
-    <author_name>{user_info.get('name', '정치인')}</author_name>
-    <author_role>{user_info.get('position', '의원')}</author_role>
+{author_meta_block}
     <instruction>{source_label}을 X 타래({min_posts}~{max_posts}개 게시물)로 변환하라.</instruction>
   </source_info>
+
+{_AUTHOR_SELF_REFERENCE_GUARD}
 
 {extra_context}
 
@@ -284,6 +332,7 @@ def build_x_prompt(
     <rule>원문의 핵심 표현을 최대한 재사용하고, 길이 제약으로 인한 축약만 허용합니다.</rule>
     <rule>원문에 없는 구호/슬로건/브랜딩 문구를 새로 만들지 않습니다.</rule>
     <rule>타래 전체에서 원문 핵심어(고유명사/숫자/정책명) 3개 이상을 그대로 포함합니다.</rule>
+    <rule>1번 게시물(훅)에 원문의 고유명사(인물·지명·단체·사건명 등) 1개 이상을 반드시 포함합니다. 공허한 일반 구호로만 훅을 채우지 않습니다.</rule>
   </transformation_policy>
 
   <platform_strategy>
@@ -429,13 +478,16 @@ def build_threads_prompt(
 </remediation_instructions>
 """
 
+    author_meta_block = _build_author_meta_block(user_info)
+
     return f"""
 <task type="SNS 변환" platform="threads" mode="서사·공감 타래" system="전자두뇌비서관">
   <source_info>
-    <author_name>{user_info.get('name', '정치인')}</author_name>
-    <author_role>{user_info.get('position', '의원')}</author_role>
+{author_meta_block}
     <instruction>{source_label}을 Threads 타래로 변환하라.</instruction>
   </source_info>
+
+{_AUTHOR_SELF_REFERENCE_GUARD}
 
 {extra_context}
 

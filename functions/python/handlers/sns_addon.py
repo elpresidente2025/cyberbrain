@@ -61,6 +61,17 @@ SOURCE_STOPWORDS: Set[str] = {
 X_TARGET_AVG_NON_SPACE = 111
 X_MIN_NON_SPACE = 60
 
+# 프롬프트 메타 플레이스홀더가 본문으로 오염되는 사고를 감지하기 위한 패턴.
+# 예) user_info.name이 비어 "정치인"으로 fallback → LLM이 "정치인 의원님과 함께..." 같은 본문 생성.
+# 원문 자체에 이런 일반명이 포함될 수도 있으나, 타래 각 게시물이 이들 중 하나를 동시에
+# 포함하면 "작성자 자칭" 케이스로 간주하고 재생성을 트리거한다.
+GENERIC_SELF_REFERENCE_PATTERNS = [
+    re.compile(r"정치인\s*(?:의원(?:님)?|후보(?:님)?|작성자)"),
+    re.compile(r"작성자\s*(?:의원(?:님)?|후보(?:님)?|정치인)"),
+    re.compile(r"(?<![가-힣A-Za-z])의원님과\s*함께"),
+    re.compile(r"(?<![가-힣A-Za-z])정치인\s*의원"),
+]
+
 SIGNATURE_MODE_VALUES = {"auto", "always", "never"}
 SIGNATURE_AUTO_HINTS = (
     "출마",
@@ -449,6 +460,39 @@ def strip_blog_url_artifacts(text: str, blog_url: str) -> str:
     return "\n".join(lines).strip()
 
 
+def dedupe_hashtags_in_content(text: str, hashtag_limit: int = 3) -> str:
+    """
+    게시물 본문에 등장하는 해시태그 중복을 제거한다.
+    - #태그 형태를 순서대로 수집해 첫 등장만 남기고 두 번째부터는 삭제.
+    - 한도(hashtag_limit)를 초과한 태그도 삭제.
+    - 해시태그 제거 후 생긴 빈 줄/중복 공백을 정리한다.
+    """
+    content = str(text or "")
+    if not content:
+        return content
+    tag_pattern = re.compile(r"(?<!\w)#[\w가-힣]+")
+    seen: Set[str] = set()
+    kept_count = 0
+
+    def _replace(match: re.Match) -> str:
+        nonlocal kept_count
+        tag = match.group(0)
+        key = tag.lower()
+        if key in seen:
+            return ""
+        if kept_count >= hashtag_limit:
+            return ""
+        seen.add(key)
+        kept_count += 1
+        return tag
+
+    cleaned = tag_pattern.sub(_replace, content)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = "\n".join(line.rstrip() for line in cleaned.splitlines())
+    return cleaned.strip()
+
+
 def trim_to_non_space_limit(text: str, non_space_limit: int) -> str:
     if non_space_limit <= 0:
         return ""
@@ -549,6 +593,7 @@ def validate_threads_posts_quality(
     min_len: int,
     max_len: int,
     source_text: str = "",
+    enforce_first_post_signal: bool = False,
 ) -> List[str]:
     issues = []
     post_count = len(posts or [])
@@ -580,6 +625,20 @@ def validate_threads_posts_quality(
 
         if source_text and not has_source_signal(content, source_text):
             weak_signal_count += 1
+
+        # C. 프롬프트 메타 플레이스홀더가 본문으로 흘러 들어온 경우 재생성 유도.
+        for pattern in GENERIC_SELF_REFERENCE_PATTERNS:
+            if pattern.search(content):
+                issues.append(
+                    f"{idx}번 게시물에 작성자 플레이스홀더('정치인'/'의원님' 등) 표현이 본문에 등장"
+                )
+                break
+
+    # D. X·임팩트 타래는 1번 게시물(훅)이 원문 고유명사 1개 이상을 반드시 포함해야 한다.
+    if enforce_first_post_signal and source_text and posts:
+        first_content = str((posts[0] or {}).get("content", "")).strip()
+        if first_content and not has_source_signal(first_content, source_text):
+            issues.append("1번 게시물(훅)에 원문 고유명사/핵심어가 없어 공허함")
 
     if source_text and post_count:
         weak_threshold = max(2, (post_count + 1) // 2)
@@ -861,6 +920,9 @@ async def apply_thread_cta_to_last_post(
     last_index = len(updated) - 1
     last_post = updated[last_index] if last_index >= 0 else {}
     last_content = str(last_post.get("content", "")).strip()
+    # E. 마지막 게시물 해시태그 중복/과다 제거. URL 재부착 전에 먼저 정리한다.
+    hashtag_limit = SNS_LIMITS.get(platform, {}).get("hashtagLimit", 3)
+    last_content = dedupe_hashtags_in_content(last_content, hashtag_limit=hashtag_limit)
     if include_signature and signature_text:
         last_content = inject_signature_line(last_content, signature_text)
 
@@ -1136,6 +1198,7 @@ async def _convert_platform(
             x_min_len,
             x_max_len,
             cleaned_original_content,
+            enforce_first_post_signal=True,
         )
 
         if quality_issues:
@@ -1191,6 +1254,7 @@ async def _convert_platform(
                         x_min_len,
                         x_max_len,
                         cleaned_original_content,
+                        enforce_first_post_signal=True,
                     )
                     if retried_issues:
                         logger.warning("X 재생성 후에도 품질 이슈 잔존: %s", ", ".join(retried_issues))
