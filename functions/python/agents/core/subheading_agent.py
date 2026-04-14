@@ -38,6 +38,12 @@ from ..common.h2_planning import (
     extract_stance_claims,
     strip_html,
 )
+from ..common.h2_repair import (
+    ensure_user_keyword_first_slot,
+    repair_awkward_phrases,
+    repair_branding_phrases,
+    repair_entity_consistency,
+)
 from ..common.h2_scoring import H2Score, score_h2
 
 logger = logging.getLogger(__name__)
@@ -118,14 +124,25 @@ class SubheadingAgent(Agent):
         if not content:
             return {"content": "", "optimized": False, "h2Trace": [], "subheadingStats": {}}
 
-        full_name = (context.get("author") or {}).get("name", "") or context.get("authorName", "")
+        full_name = (
+            context.get("fullName")
+            or (context.get("author") or {}).get("name", "")
+            or context.get("authorName", "")
+            or ""
+        )
         user_profile = context.get("userProfile") or {}
-        full_region = f"{user_profile.get('regionMetro', '')} {user_profile.get('regionDistrict', '')}".strip()
+        full_region = context.get("fullRegion") or (
+            f"{user_profile.get('regionMetro', '')} {user_profile.get('regionDistrict', '')}".strip()
+        )
         category = context.get("category", "") or "default"
 
         stance_text = context.get("stanceText", "") or ""
         user_keywords = list(context.get("userKeywords") or [])
         topic = context.get("topic", "") or ""
+
+        known_person_names = list(context.get("knownPersonNames") or [])
+        role_facts = context.get("roleFacts") or {}
+        preferred_keyword = context.get("preferredKeyword", "") or ""
 
         if stance_text:
             logger.info(f"[{self.name}] 입장문 {len(stance_text)}자 활용하여 소제목 최적화")
@@ -138,6 +155,9 @@ class SubheadingAgent(Agent):
             stance_text=stance_text,
             user_keywords=user_keywords,
             topic=topic,
+            known_person_names=known_person_names,
+            role_facts=role_facts,
+            preferred_keyword=preferred_keyword,
         )
 
         return {
@@ -157,6 +177,9 @@ class SubheadingAgent(Agent):
         stance_text: str = "",
         user_keywords: Optional[Sequence[str]] = None,
         topic: str = "",
+        known_person_names: Optional[Sequence[str]] = None,
+        role_facts: Optional[Dict[str, Any]] = None,
+        preferred_keyword: str = "",
     ) -> Tuple[str, List[Dict[str, Any]], Dict[str, Any]]:
         matches = list(_H2_PATTERN.finditer(content))
         if not matches:
@@ -244,7 +267,7 @@ class SubheadingAgent(Agent):
             trace[i]["first_score"] = sc.get("score", 0.0)
             trace[i]["first_issues"] = list(sc.get("issues", []))
 
-        # ---------- Phase 4: deterministic pre-repair
+        # ---------- Phase 4a: per-heading deterministic pre-repair (cheap: josa/length/질문형)
         working: List[str] = list(first_attempt)
         current_scores: List[H2Score] = list(first_scores)
         for i, sc in enumerate(first_scores):
@@ -262,6 +285,24 @@ class SubheadingAgent(Agent):
                 current_scores[i] = new_score
                 trace[i]["pre_repair"] = repaired
                 trace[i]["pre_repair_score"] = new_score.get("score", 0.0)
+
+        # ---------- Phase 4b: content-level h2_repair chain (entity/phrase/user-keyword)
+        chain_actions = self._apply_h2_repair_chain(
+            content=content,
+            matches=matches,
+            working=working,
+            originals=originals,
+            trace=trace,
+            plans=plans,
+            current_scores=current_scores,
+            h2_style=h2_style,
+            preferred_types=preferred_types,
+            known_person_names=known_person_names or [],
+            role_facts=role_facts or {},
+            user_keywords=list(user_keywords or []),
+            preferred_keyword=preferred_keyword,
+            full_name=full_name,
+        )
 
         # ---------- Phase 5: LLM repair (≤1 call, batched)
         failing_indices = [
@@ -345,6 +386,7 @@ class SubheadingAgent(Agent):
             "llm_calls": 2 if llm_repair_called else 1,
             "passed_first": sum(1 for sc in first_scores if sc.get("passed")),
             "passed_after_pre_repair": sum(1 for sc in current_scores if sc.get("passed")),
+            "h2_repair_chain": chain_actions,
             "actions": {
                 action: sum(1 for item in trace if item.get("action") == action)
                 for action in (
@@ -651,6 +693,118 @@ class SubheadingAgent(Agent):
 
         text = self._safe_sanitize(text)
         return text
+
+    # --------------------------------------------------- h2_repair content chain
+    def _apply_h2_repair_chain(
+        self,
+        *,
+        content: str,
+        matches: Sequence[re.Match],
+        working: List[str],
+        originals: Sequence[str],
+        trace: List[Dict[str, Any]],
+        plans: Sequence[SectionPlan],
+        current_scores: List[H2Score],
+        h2_style: str,
+        preferred_types: Sequence[str],
+        known_person_names: Sequence[str],
+        role_facts: Dict[str, Any],
+        user_keywords: Sequence[str],
+        preferred_keyword: str,
+        full_name: str,
+    ) -> List[Dict[str, Any]]:
+        """결정론 h2_repair 모듈 체인을 한 번에 적용.
+
+        `working` 헤딩을 콘텐츠로 재조립해 entity_consistency → awkward_phrases →
+        branding_phrases → ensure_user_keyword_first_slot 순으로 호출한 뒤, 변경된
+        헤딩만 추출해 `working`·`current_scores`·`trace`를 갱신한다. LLM 호출 없음.
+        """
+        actions: List[Dict[str, Any]] = []
+        if not matches:
+            return actions
+
+        safe_working: List[str] = []
+        for i in range(len(matches)):
+            heading = working[i] if i < len(working) and working[i] else originals[i]
+            safe_working.append(heading or "")
+        assembled = self._replace_h2_headings(content, matches, safe_working)
+
+        preferred_names: List[str] = []
+        if full_name:
+            preferred_names.append(full_name)
+        for name in known_person_names:
+            if name and name not in preferred_names:
+                preferred_names.append(name)
+
+        if known_person_names:
+            entity_result = repair_entity_consistency(
+                assembled,
+                list(known_person_names),
+                preferred_names=preferred_names,
+                role_facts=role_facts,
+            )
+            if entity_result.get("edited"):
+                assembled = entity_result.get("content") or assembled
+                actions.append(
+                    {
+                        "step": "entity_consistency",
+                        "replacements": entity_result.get("replacements", []),
+                    }
+                )
+
+        awkward_result = repair_awkward_phrases(assembled)
+        if awkward_result.get("edited"):
+            assembled = awkward_result.get("content") or assembled
+            actions.append(
+                {"step": "awkward_phrases", "details": awkward_result.get("actions", [])}
+            )
+
+        branding_result = repair_branding_phrases(assembled)
+        if branding_result.get("edited"):
+            assembled = branding_result.get("content") or assembled
+            actions.append(
+                {"step": "branding_phrases", "details": branding_result.get("actions", [])}
+            )
+
+        if user_keywords:
+            keyword_result = ensure_user_keyword_first_slot(
+                assembled,
+                user_keywords,
+                preferred_keyword=preferred_keyword,
+            )
+            if keyword_result.get("edited"):
+                assembled = keyword_result.get("content") or assembled
+                actions.append({"step": "ensure_user_keyword_first_slot"})
+
+        if not actions:
+            return actions
+
+        new_matches = list(_H2_PATTERN.finditer(assembled))
+        if len(new_matches) != len(matches):
+            logger.warning(
+                "⚠️ [SubheadingAgent] h2_repair chain produced mismatched H2 count "
+                "(expected=%s got=%s) — skipping extraction.",
+                len(matches),
+                len(new_matches),
+            )
+            return actions
+
+        for i, new_match in enumerate(new_matches):
+            new_inner = self._safe_sanitize(new_match.group(1))
+            if not new_inner or new_inner == working[i]:
+                continue
+            trace[i]["h2_repair_chain"] = new_inner
+            working[i] = new_inner
+            new_score = score_h2(
+                new_inner,
+                plans[i],
+                style=h2_style,
+                preferred_types=preferred_types,
+            )
+            trace[i]["h2_repair_chain_score"] = new_score.get("score", 0.0)
+            current_scores[i] = new_score
+
+        return actions
 
     # -------------------------------------------------------------- repair LLM
     async def _repair_failed_headings(

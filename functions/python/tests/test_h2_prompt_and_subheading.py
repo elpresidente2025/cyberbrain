@@ -593,3 +593,198 @@ def test_primary_prompt_injects_category_tone_block_for_current_affairs(
     )
     assert '<h2_category_tone category="current-affairs" style="assertive">' in captured["prompt"]
     assert "특검은 정치 보복이 아니다" in captured["prompt"]
+
+
+# ---------------------------------------------------------------------------
+# SubheadingAgent — h2_repair content-level chain (PR 2)
+# ---------------------------------------------------------------------------
+
+
+def test_subheading_agent_invokes_h2_repair_chain_in_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Phase 4b h2_repair 체인이 entity → awkward → branding → user_keyword 순으로 호출되는지 확인."""
+
+    call_order: list[str] = []
+
+    def _fake_entity(content, known_names, *, preferred_names=(), role_facts=None):
+        call_order.append("entity_consistency")
+        return {"content": content, "edited": False, "replacements": []}
+
+    def _fake_awkward(content):
+        call_order.append("awkward_phrases")
+        return {"content": content, "edited": False, "actions": []}
+
+    def _fake_branding(content):
+        call_order.append("branding_phrases")
+        return {"content": content, "edited": False, "actions": []}
+
+    def _fake_user_keyword(content, user_keywords, *, preferred_keyword=""):
+        call_order.append("ensure_user_keyword_first_slot")
+        return {"content": content, "edited": False}
+
+    monkeypatch.setattr(subheading_module, "repair_entity_consistency", _fake_entity)
+    monkeypatch.setattr(subheading_module, "repair_awkward_phrases", _fake_awkward)
+    monkeypatch.setattr(subheading_module, "repair_branding_phrases", _fake_branding)
+    monkeypatch.setattr(
+        subheading_module, "ensure_user_keyword_first_slot", _fake_user_keyword
+    )
+
+    async def _fake_primary(_prompt: str, **_kwargs):
+        return {
+            "headings": [
+                "청년 기본소득 신청 3단계 절차",
+                "청년 일자리 274명 창출 현황",
+            ]
+        }
+
+    monkeypatch.setattr(subheading_module, "generate_json_async", _fake_primary)
+
+    agent = _make_agent()
+    _run_async(
+        agent.optimize_headings_in_content(
+            content=_sample_content(),
+            category="policy-proposal",
+            full_name="김민우",
+            full_region="한빛시 중앙구",
+            stance_text="",
+            user_keywords=["청년 기본소득", "청년 일자리"],
+            topic="청년 정책",
+            known_person_names=["김민우"],
+            role_facts={},
+            preferred_keyword="청년 기본소득",
+        )
+    )
+
+    assert call_order == [
+        "entity_consistency",
+        "awkward_phrases",
+        "branding_phrases",
+        "ensure_user_keyword_first_slot",
+    ]
+
+
+def test_subheading_agent_h2_repair_chain_applies_branding_edit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """체인에서 변경된 헤딩이 추출되어 working·trace·content에 반영되는지 확인."""
+
+    def _fake_entity(content, *args, **kwargs):
+        return {"content": content, "edited": False, "replacements": []}
+
+    def _fake_awkward(content):
+        return {"content": content, "edited": False, "actions": []}
+
+    def _fake_branding(content):
+        replaced = content.replace(
+            "<h2>청년 기본소득 신청 3단계 절차</h2>",
+            "<h2>청년 기본소득 신청 핵심 정리</h2>",
+        )
+        return {
+            "content": replaced,
+            "edited": replaced != content,
+            "actions": ["branding_neutralized"],
+        }
+
+    def _fake_user_keyword(content, *args, **kwargs):
+        return {"content": content, "edited": False}
+
+    monkeypatch.setattr(subheading_module, "repair_entity_consistency", _fake_entity)
+    monkeypatch.setattr(subheading_module, "repair_awkward_phrases", _fake_awkward)
+    monkeypatch.setattr(subheading_module, "repair_branding_phrases", _fake_branding)
+    monkeypatch.setattr(
+        subheading_module, "ensure_user_keyword_first_slot", _fake_user_keyword
+    )
+
+    async def _fake_primary(_prompt: str, **_kwargs):
+        return {
+            "headings": [
+                "청년 기본소득 신청 3단계 절차",
+                "청년 일자리 274명 창출 현황",
+            ]
+        }
+
+    monkeypatch.setattr(subheading_module, "generate_json_async", _fake_primary)
+
+    agent = _make_agent()
+    rebuilt, trace, stats = _run_async(
+        agent.optimize_headings_in_content(
+            content=_sample_content(),
+            category="policy-proposal",
+            full_name="김민우",
+            full_region="한빛시 중앙구",
+            stance_text="",
+            user_keywords=["청년 기본소득", "청년 일자리"],
+            topic="청년 정책",
+            known_person_names=["김민우"],
+            role_facts={},
+            preferred_keyword="청년 기본소득",
+        )
+    )
+
+    assert "청년 기본소득 신청 핵심 정리" in rebuilt
+    assert trace[0].get("h2_repair_chain") == "청년 기본소득 신청 핵심 정리"
+    chain_steps = [item["step"] for item in stats["h2_repair_chain"]]
+    assert "branding_phrases" in chain_steps
+
+
+def test_subheading_agent_h2_repair_chain_skips_when_no_known_names_and_no_keywords(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """known_person_names·user_keywords 모두 없으면 entity·user_keyword 단계는 생략된다."""
+
+    called: list[str] = []
+
+    def _fake_entity(content, *args, **kwargs):
+        called.append("entity_consistency")
+        return {"content": content, "edited": False, "replacements": []}
+
+    def _fake_awkward(content):
+        called.append("awkward_phrases")
+        return {"content": content, "edited": False, "actions": []}
+
+    def _fake_branding(content):
+        called.append("branding_phrases")
+        return {"content": content, "edited": False, "actions": []}
+
+    def _fake_user_keyword(content, *args, **kwargs):
+        called.append("ensure_user_keyword_first_slot")
+        return {"content": content, "edited": False}
+
+    monkeypatch.setattr(subheading_module, "repair_entity_consistency", _fake_entity)
+    monkeypatch.setattr(subheading_module, "repair_awkward_phrases", _fake_awkward)
+    monkeypatch.setattr(subheading_module, "repair_branding_phrases", _fake_branding)
+    monkeypatch.setattr(
+        subheading_module, "ensure_user_keyword_first_slot", _fake_user_keyword
+    )
+
+    async def _fake_primary(_prompt: str, **_kwargs):
+        return {
+            "headings": [
+                "청년 기본소득 신청 3단계 절차",
+                "청년 일자리 274명 창출 현황",
+            ]
+        }
+
+    monkeypatch.setattr(subheading_module, "generate_json_async", _fake_primary)
+
+    agent = _make_agent()
+    _run_async(
+        agent.optimize_headings_in_content(
+            content=_sample_content(),
+            category="policy-proposal",
+            full_name="",
+            full_region="",
+            stance_text="",
+            user_keywords=[],
+            topic="",
+            known_person_names=[],
+            role_facts={},
+            preferred_keyword="",
+        )
+    )
+
+    assert "entity_consistency" not in called
+    assert "ensure_user_keyword_first_slot" not in called
+    assert "awkward_phrases" in called
+    assert "branding_phrases" in called
