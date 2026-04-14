@@ -334,6 +334,40 @@ def test_score_h2_fails_on_incomplete_ending() -> None:
     assert result["passed"] is False
 
 
+def test_score_h2_fails_on_dangling_subject_particle_without_predicate() -> None:
+    plan = _plan_for("청년의 목소리", "명사형")
+    result = score_h2(
+        "청년의 목소리가 실질적 변화",
+        plan,
+        style="assertive",
+        preferred_types=["명사형", "단정형"],
+    )
+    assert "INCOMPLETE_ENDING" in result["issues"]
+    assert result["passed"] is False
+
+
+def test_score_h2_accepts_subject_particle_with_predicate() -> None:
+    plan = _plan_for("청년의 목소리", "단정형")
+    result = score_h2(
+        "청년의 목소리가 변화를 만든다",
+        plan,
+        style="assertive",
+        preferred_types=["단정형", "명사형"],
+    )
+    assert "INCOMPLETE_ENDING" not in result["issues"]
+
+
+def test_score_h2_skips_profession_ga_suffix_false_positive() -> None:
+    plan = _plan_for("박지상 독립운동가", "명사형")
+    result = score_h2(
+        "박지상 독립운동가 후손의 책임",
+        plan,
+        style="assertive",
+        preferred_types=["명사형"],
+    )
+    assert "INCOMPLETE_ENDING" not in result["issues"]
+
+
 def test_score_h2_blocks_question_form_in_assertive() -> None:
     plan = _plan_for("특검", "단정형")
     result = score_h2(

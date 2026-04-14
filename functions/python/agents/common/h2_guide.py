@@ -51,6 +51,50 @@ _H2_TRAILING_INCOMPLETE_ENDING_RE = re.compile(
     r")$"
 )
 
+# 주어 조사 `가`가 문장 중간에 나타나지만 술어가 전혀 없는 경우를 감지한다.
+# 예: "청년의 목소리가 실질적 변화" — "목소리가" 뒤에 동사/서술어가 없음.
+# 직업 접미사 `-가`로 끝나는 일반명사(정치가, 전문가 등)는 false-positive를 피하기 위해 제외.
+_PROFESSION_GA_SUFFIX = frozenset({
+    "정치가", "전문가", "작곡가", "소설가", "만화가", "애호가",
+    "평론가", "예술가", "작가", "화가", "대가", "명가",
+    "건축가", "사진가", "조각가", "음악가", "무용가",
+    "성악가", "연출가", "문학가", "번역가", "수필가",
+    "미술가", "안무가", "공예가", "여행가", "이론가",
+    "사상가", "교육가", "혁명가", "운동가", "탐험가",
+    "독립운동가", "사업가", "기업가", "자선가",
+})
+_DANGLING_SUBJECT_PARTICLE_RE = re.compile(
+    r"(?<![가-힣])(?P<stem>[가-힣]{2,})가(?=\s+[가-힣])"
+)
+_HEADING_PREDICATE_MARKER_RE = re.compile(
+    r"(?:"
+    r"다|까|요|죠|냐|여|네|지|"
+    r"니다|니까|까요|나요|인가|이다|"
+    r"했다|됐다|간다|온다|된다|한다|"
+    r"습니다|습니까|입니다|입니까|"
+    r"겠다|겠어|겠죠|겠지|겠네|겠나|겠습|"
+    r"하는|되는|있는|없는|싶은|"
+    r"[?!]"
+    r")"
+)
+
+
+def _has_dangling_subject_particle(heading: str) -> bool:
+    stripped = re.sub(r"\s+", " ", str(heading or "")).strip()
+    if len(stripped) < 5:
+        return False
+    if "'" in stripped or '"' in stripped or "“" in stripped:
+        return False
+
+    for match in _DANGLING_SUBJECT_PARTICLE_RE.finditer(stripped):
+        stem = str(match.group("stem") or "")
+        if (stem + "가") in _PROFESSION_GA_SUFFIX:
+            continue
+        tail = stripped[match.end():]
+        if not _HEADING_PREDICATE_MARKER_RE.search(tail):
+            return True
+    return False
+
 
 def normalize_h2_style(style: str = 'aeo') -> str:
     """지원하는 H2 스타일 키를 정규화한다."""
@@ -59,7 +103,11 @@ def normalize_h2_style(style: str = 'aeo') -> str:
 
 
 def has_incomplete_h2_ending(text: str) -> bool:
-    """조사/미완결 어미/잘린 한 글자 토큰으로 끝나는 H2를 감지한다."""
+    """조사/미완결 어미/잘린 한 글자 토큰으로 끝나는 H2를 감지한다.
+
+    또한 주어 조사(`가`)만 있고 서술어가 전혀 없는 '문장 끊김'도 미완결로 본다.
+    예: "청년의 목소리가 실질적 변화" — 술어 누락으로 hard-fail.
+    """
     candidate = re.sub(r'\s+', ' ', str(text or '').strip())
     if not candidate:
         return True
@@ -68,7 +116,10 @@ def has_incomplete_h2_ending(text: str) -> bool:
     if len(last_token) <= 1:
         return True
 
-    return bool(_H2_TRAILING_INCOMPLETE_ENDING_RE.search(last_token))
+    if _H2_TRAILING_INCOMPLETE_ENDING_RE.search(last_token):
+        return True
+
+    return _has_dangling_subject_particle(candidate)
 
 
 def sanitize_h2_text(
