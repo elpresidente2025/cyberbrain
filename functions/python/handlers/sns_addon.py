@@ -19,7 +19,7 @@ from firebase_functions import https_fn
 from agents.common.fact_guard import build_fact_allowlist, find_unsupported_numeric_tokens
 from agents.common.gemini_client import generate_content_async
 from agents.templates.sns_conversion import SNS_LIMITS, build_sns_prompt
-from services.authz import get_admin_access_source
+from services.authz import get_admin_access_source, is_tester_user
 from services.sns_ranker import extract_first_balanced_json, rank_and_select, with_timeout
 
 logger = logging.getLogger(__name__)
@@ -1016,9 +1016,33 @@ async def _convert_platform(
     signature_mode: str,
     signature_text: str,
     source_type: str,
+    stance_text: str = "",
+    news_data_text: str = "",
+    source_topic: str = "",
 ) -> Dict[str, Any]:
     if platform_index > 0:
         await asyncio.sleep(platform_index * 2)
+
+    def _base_prompt_options() -> Dict[str, Any]:
+        """build_sns_prompt의 공통 옵션 — 4개 호출부가 공유."""
+        return {
+            "blogUrl": blog_url,
+            "publishUrl": blog_url,
+            "category": post_data.get("category", ""),
+            "subCategory": post_data.get("subCategory", ""),
+            "topic": source_topic or post_data.get("topic", ""),
+            "title": post_data.get("title", ""),
+            "sourceType": source_type,
+            "stanceText": stance_text,
+            "newsDataText": news_data_text,
+        }
+
+    # 품질 검증 시 소스 시그널 참조 텍스트.
+    # stance_text(작성자 원문)가 주, newsDataText는 사실 보강.
+    # 둘 다 없으면 레거시 blog 본문으로 폴백.
+    signal_source_text = "\n\n".join(
+        [text for text in (stance_text, news_data_text) if text]
+    ).strip() or cleaned_original_content
 
     platform_config = SNS_LIMITS[platform]
     minimum_content_length = 0
@@ -1048,16 +1072,8 @@ async def _convert_platform(
             platform_config,
             post_keywords,
             user_info,
-                {
-                    "blogUrl": blog_url,
-                    "category": post_data.get("category", ""),
-                    "subCategory": post_data.get("subCategory", ""),
-                    "topic": post_data.get("topic", ""),
-                    "title": post_data.get("title", ""),
-                    "sourceType": source_type,
-                    "newsDataText": post_data.get("newsDataText", ""),
-                },
-            )
+            _base_prompt_options(),
+        )
 
         ranked = await with_timeout(
             rank_and_select(
@@ -1113,13 +1129,8 @@ async def _convert_platform(
                             post_keywords,
                             user_info,
                             {
+                                **_base_prompt_options(),
                                 "targetPostCount": length_adjustment["targetPostCount"],
-                                "blogUrl": blog_url,
-                                "category": post_data.get("category", ""),
-                                "subCategory": post_data.get("subCategory", ""),
-                                "topic": post_data.get("topic", ""),
-                                "title": post_data.get("title", ""),
-                                "sourceType": source_type,
                             },
                         )
                         try:
@@ -1251,7 +1262,7 @@ async def _convert_platform(
             x_max_posts,
             x_min_len,
             x_max_len,
-            cleaned_original_content,
+            signal_source_text,
             enforce_first_post_signal=True,
         )
 
@@ -1264,14 +1275,8 @@ async def _convert_platform(
                 post_keywords,
                 user_info,
                 {
-                    "blogUrl": blog_url,
-                    "category": post_data.get("category", ""),
-                    "subCategory": post_data.get("subCategory", ""),
-                    "topic": post_data.get("topic", ""),
-                    "title": post_data.get("title", ""),
+                    **_base_prompt_options(),
                     "qualityIssues": quality_issues,
-                    "sourceType": source_type,
-                    "newsDataText": post_data.get("newsDataText", ""),
                 },
             )
             try:
@@ -1308,7 +1313,7 @@ async def _convert_platform(
                         x_max_posts,
                         x_min_len,
                         x_max_len,
-                        cleaned_original_content,
+                        signal_source_text,
                         enforce_first_post_signal=True,
                     )
                     if retried_issues:
@@ -1332,7 +1337,7 @@ async def _convert_platform(
             th_max_posts,
             th_min_len,
             th_max_len,
-            cleaned_original_content,
+            signal_source_text,
             enforce_first_post_signal=True,
         )
 
@@ -1345,14 +1350,8 @@ async def _convert_platform(
                 post_keywords,
                 user_info,
                 {
-                    "blogUrl": blog_url,
-                    "category": post_data.get("category", ""),
-                    "subCategory": post_data.get("subCategory", ""),
-                    "topic": post_data.get("topic", ""),
-                    "title": post_data.get("title", ""),
+                    **_base_prompt_options(),
                     "qualityIssues": thread_issues,
-                    "sourceType": source_type,
-                    "newsDataText": post_data.get("newsDataText", ""),
                 },
             )
             try:
@@ -1388,7 +1387,7 @@ async def _convert_platform(
                         th_max_posts,
                         th_min_len,
                         th_max_len,
-                        cleaned_original_content,
+                        signal_source_text,
                         enforce_first_post_signal=True,
                     )
                     if retried_issues:
@@ -1427,6 +1426,11 @@ async def _convert_to_sns_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]
     user_data = user_doc.to_dict() or {}
     admin_access_source = get_admin_access_source(user_data)
     is_admin = bool(admin_access_source)
+    is_tester = is_tester_user(user_data)
+    # 재생성(variants가 이미 생성된 상태)을 허용할지 판정.
+    # 일반 계정은 1회로 끝내고, 테스터/관리자만 재시도 가능.
+    allow_regenerate = is_admin or is_tester
+
     post_doc = db.collection("posts").document(post_id_str).get()
     if not post_doc.exists:
         raise ApiError(404, "not-found", "원고를 찾을 수 없습니다.")
@@ -1434,6 +1438,25 @@ async def _convert_to_sns_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]
 
     if post_data.get("userId") != uid:
         raise ApiError(403, "permission-denied", "본인의 원고만 변환할 수 있습니다.")
+
+    # publishUrl 게이트: SNS 원고는 블로그 전문 링크가 필수이므로,
+    # 블로그 발행 후 publishUrl이 등록된 post에 한해서만 SNS 변환을 허용한다.
+    publish_url_raw = str(post_data.get("publishUrl") or "").strip()
+    if not publish_url_raw:
+        raise ApiError(
+            400,
+            "failed-precondition",
+            "SNS 변환은 블로그 발행 URL이 등록된 원고에만 사용할 수 있습니다. 먼저 블로그에 발행한 후 URL을 등록해 주세요.",
+        )
+
+    # 1회 게이트: snsVariantsGeneratedAt이 이미 기록돼 있으면 일반 계정은 재생성 불가.
+    already_generated = bool(post_data.get("snsVariantsGeneratedAt"))
+    if already_generated and not allow_regenerate:
+        raise ApiError(
+            409,
+            "already-exists",
+            "이 원고에 대한 SNS 변환은 이미 완료되었습니다. SNS 원고는 원고당 1회만 생성할 수 있습니다.",
+        )
 
     user_profile = user_data.get("profile", {}) or {}
     user_info = {
@@ -1457,6 +1480,16 @@ async def _convert_to_sns_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]
     source_type = source_payload["sourceType"]
     post_keywords = post_data.get("keywords", "")
     blog_url = normalize_blog_url(post_data.get("publishUrl"))
+
+    # 신규 데이터 모델(sources) 우선, 없으면 레거시 플랫 필드로 폴백.
+    sources_block = post_data.get("sources") or {}
+    stance_text = str(sources_block.get("stanceText") or "").strip()
+    news_data_text = str(
+        sources_block.get("newsDataText") or post_data.get("newsDataText") or ""
+    ).strip()
+    source_topic = str(
+        sources_block.get("topic") or post_data.get("topic") or ""
+    ).strip()
 
     platforms = list(SNS_LIMITS.keys())
     if target_platform:
@@ -1486,6 +1519,9 @@ async def _convert_to_sns_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]
             signature_mode=signature_mode,
             signature_text=signature_text,
             source_type=source_type,
+            stance_text=stance_text,
+            news_data_text=news_data_text,
+            source_topic=source_topic,
         )
         for idx, platform in enumerate(platforms)
     ]
@@ -1514,11 +1550,17 @@ async def _convert_to_sns_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]
     }
     db.collection("sns_conversions").add(conversion_data)
 
-    update_data: Dict[str, Any] = {"snsConvertedAt": firestore.SERVER_TIMESTAMP}
+    update_data: Dict[str, Any] = {
+        "snsConvertedAt": firestore.SERVER_TIMESTAMP,
+        "snsVariantsGeneratedAt": firestore.SERVER_TIMESTAMP,
+    }
     if target_platform:
         update_data[f"snsConversions.{target_platform}"] = results[target_platform]
+        update_data[f"variants.{target_platform}"] = results[target_platform]
     else:
         update_data["snsConversions"] = results
+        for platform_key, platform_result in results.items():
+            update_data[f"variants.{platform_key}"] = platform_result
     db.collection("posts").document(post_id_str).update(update_data)
 
     if not is_admin:

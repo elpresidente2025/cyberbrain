@@ -198,6 +198,43 @@ def _extract_source_type(data: Dict[str, Any]) -> str:
     return "blog_draft"
 
 
+def _normalize_publish_url(raw_value: Any) -> str:
+    """publishUrl 정규화. http(s)://로 시작하는 URL만 허용, 그 외는 빈 문자열."""
+    value = str(raw_value or "").strip()
+    if not value:
+        return ""
+    if not re.match(r"^https?://", value, flags=re.IGNORECASE):
+        return ""
+    return value
+
+
+def _build_sources_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    SNS variant 재구성의 원천이 되는 입력값 묶음.
+    - stanceText: 작성자가 직접 쓴 페이스북/입장문 원문 (주 소스)
+    - newsDataText: 뉴스/데이터 근거 (사실 근거)
+    - topic: 주제 한 줄
+    """
+    return {
+        "stanceText": str(data.get("stanceText") or "").strip(),
+        "newsDataText": str(data.get("newsDataText") or "").strip(),
+        "topic": str(data.get("topic") or "").strip(),
+    }
+
+
+def _build_blog_variant_payload(
+    *, title: str, content: str, word_count: int
+) -> Dict[str, Any]:
+    """
+    variants.blog — 1단계 생성에서 만들어진 블로그 원고.
+    """
+    return {
+        "title": title,
+        "content": content,
+        "wordCount": word_count,
+    }
+
+
 def _record_facebook_entry(uid: str, data: Dict[str, Any], db) -> int | None:
     """stanceText를 Firestore 다이어리 엔트리로 저장하고 누적 카운트를 반환한다."""
     text = str(data.get("stanceText") or "").strip()
@@ -416,19 +453,35 @@ def _save_selected_post_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         word_count = _count_without_html_tags(content)
-        news_data_text = str(data.get("newsDataText") or "").strip()
+        sources_payload = _build_sources_payload(data)
+        blog_variant = _build_blog_variant_payload(
+            title=title, content=content, word_count=word_count
+        )
+        publish_url = _normalize_publish_url(data.get("publishUrl"))
         post_data = {
             "userId": uid,
+            # 카테고리·키워드 등 메타는 최상위에 유지 (목록 필터용)
             "title": title,
-            "topic": str(data.get("topic") or ""),
-            "content": content,
+            "topic": sources_payload["topic"],
             "category": str(data.get("category") or "일반"),
             "subCategory": str(data.get("subCategory") or ""),
             "keywords": data.get("keywords") or "",
+            # 새 데이터 모델: sources = 원천 입력, variants = 매체별 생성물
+            "sources": sources_payload,
+            "variants": {
+                "blog": blog_variant,
+            },
+            # 발행 + SNS 변환 게이트 상태
+            "publishUrl": publish_url,
+            "publishedAt": None,
+            "snsVariantsGeneratedAt": None,
+            # 블로그 읽기 편의용 미러 필드 (canonical = variants.blog)
+            "content": content,
             "wordCount": word_count,
+            # sourceInput/sourceType는 SNS addon 레거시 경로 호환을 위해 남겨둠
+            # (5단계에서 sns_addon이 sources.stanceText로 전환되면 제거)
             "sourceInput": source_input,
             "sourceType": source_type,
-            "newsDataText": news_data_text,
             "status": "scheduled",
             "createdAt": firestore.SERVER_TIMESTAMP,
             "updatedAt": firestore.SERVER_TIMESTAMP,

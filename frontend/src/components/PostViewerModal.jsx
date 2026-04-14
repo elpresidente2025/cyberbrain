@@ -9,6 +9,7 @@ import {
   Box,
   Typography,
   TextField,
+  Tooltip,
   useTheme
 } from '@mui/material';
 import { ContentCopy, Transform, Publish, Link } from '@mui/icons-material';
@@ -112,14 +113,21 @@ export default function PostViewerModal({
     }
   };
 
+  // SNS 변환은 블로그 발행 URL이 있어야 활성화된다 (SNS 원고에 블로그 링크 필수).
+  const hasPublishUrl = Boolean(post?.publishUrl);
+
   // 🆕 SNS 변환 핸들러 (내장)
   const handleSNSClick = (e) => {
     e.stopPropagation();
-    if (canUseSNS) {
-      setSnsOpen(true);
-    } else {
+    if (!canUseSNS) {
       showNotification('준비 중입니다.', 'info');
+      return;
     }
+    if (!hasPublishUrl) {
+      showNotification('먼저 블로그에 발행한 후 URL을 등록해 주세요.', 'warning');
+      return;
+    }
+    setSnsOpen(true);
   };
 
   // 🆕 발행 핸들러 (내장) - 발행 URL이 있으면 링크 표시, 없으면 다이얼로그 오픈
@@ -246,18 +254,26 @@ export default function PostViewerModal({
             발행
           </Button>
 
-          {/* SNS 변환 버튼 (항상 표시, 권한 체크는 내부에서) */}
-          <Button
-            onClick={handleSNSClick}
-            variant="contained"
-            sx={{
-              bgcolor: '#55207D',
-              '&:hover': { bgcolor: '#6d2b93' }
-            }}
-            startIcon={<Transform />}
+          {/* SNS 변환 버튼 — 발행 URL이 있어야 활성화 */}
+          <Tooltip
+            title={!hasPublishUrl ? '먼저 블로그에 발행한 후 URL을 등록해 주세요' : ''}
+            arrow
           >
-            SNS 변환
-          </Button>
+            <span>
+              <Button
+                onClick={handleSNSClick}
+                disabled={!hasPublishUrl}
+                variant="contained"
+                sx={{
+                  bgcolor: '#55207D',
+                  '&:hover': { bgcolor: '#6d2b93' }
+                }}
+                startIcon={<Transform />}
+              >
+                SNS 변환
+              </Button>
+            </span>
+          </Tooltip>
 
           <Button onClick={onClose} color="inherit">
             닫기

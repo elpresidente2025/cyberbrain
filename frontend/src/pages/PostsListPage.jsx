@@ -403,6 +403,10 @@ export default function PostsListPage() {
 
   const handleSNSConvert = (post, e) => {
     if (e) e.stopPropagation();
+    if (!post?.publishUrl) {
+      showNotification('먼저 블로그에 발행한 후 URL을 등록해 주세요.', 'warning');
+      return;
+    }
     setSnsPost(post);
     setSnsModalOpen(true);
   };

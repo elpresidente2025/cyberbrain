@@ -91,35 +91,117 @@ def _build_topic_and_title_block(options: Dict[str, Any]) -> str:
     return f"{topic_block}{title_block}"
 
 
-def _resolve_source_label(options: Dict[str, Any]) -> str:
-    source_type = str((options or {}).get("sourceType") or "").strip().lower()
-    if source_type in {"position_statement", "statement", "stance", "facebook_post", "facebook", "fb"}:
-        return "내 입장문/페이스북 글"
-    return "블로그 원고"
+_ORIGINAL_VOICE_MAX_CHARS = 3000
+_SOURCE_FACTS_MAX_CHARS = 1500
+_STRUCTURE_HINT_MAX_CHARS = 1500
 
 
-_REFERENCE_CONTEXT_MAX_CHARS = 1500
-
-
-def _build_reference_context_block(options: Dict[str, Any]) -> str:
+def _build_original_voice_block(options: Dict[str, Any]) -> str:
     """
-    원고 생성 시 입력됐던 뉴스/데이터 텍스트를 변환 프롬프트에 보조 맥락으로 주입한다.
-    본문에 없는 수치·인용을 LLM이 활용할 수 있게 하되, 출처로만 쓰고 창작은 금지한다.
+    작성자가 직접 쓴 페이스북/입장문 원문. SNS 변환의 주 소스.
+    문체·어휘·일인칭 화법·정치적 입장·문제의식의 기준.
+    """
+    raw = str((options or {}).get("stanceText") or "").strip()
+    if not raw:
+        return ""
+    trimmed = raw[:_ORIGINAL_VOICE_MAX_CHARS]
+    truncated = len(raw) > _ORIGINAL_VOICE_MAX_CHARS
+    note = " (일부 생략됨)" if truncated else ""
+    return (
+        "\n<original_voice role=\"주 소스\" priority=\"critical\">\n"
+        "  <instruction>작성자가 직접 쓴 원문입니다. "
+        "SNS 변환의 문체·어휘·일인칭 화법·정치적 입장·문제의식의 기준이 됩니다. "
+        "이 목소리를 유지하는 것이 최우선이며, 여기 등장하는 표현·고유명사·사실을 그대로 재사용합니다. "
+        "원문에 없는 새 주장·구호·다짐을 만들지 않습니다."
+        f"{note}</instruction>\n"
+        f"  <material>{trimmed}</material>\n"
+        "</original_voice>\n"
+    )
+
+
+def _build_source_facts_block(options: Dict[str, Any]) -> str:
+    """
+    뉴스/데이터 원문. 사실·수치·인용의 근거.
     """
     raw = str((options or {}).get("newsDataText") or "").strip()
     if not raw:
         return ""
-    trimmed = raw[:_REFERENCE_CONTEXT_MAX_CHARS]
-    truncated = len(raw) > _REFERENCE_CONTEXT_MAX_CHARS
-    note = "(일부 생략됨)" if truncated else ""
+    trimmed = raw[:_SOURCE_FACTS_MAX_CHARS]
+    truncated = len(raw) > _SOURCE_FACTS_MAX_CHARS
+    note = " (일부 생략됨)" if truncated else ""
     return (
-        "\n<reference_context role=\"보조 자료\" priority=\"high\">\n"
-        "  <instruction>아래는 이 원고가 만들어질 때 참고된 뉴스/데이터 원문입니다. "
-        "본문에 명시되지 않은 수치·인용·배경이 있을 때만 근거로 활용하고, "
-        "여기 없는 사실을 새로 만들지 않습니다. 본문 우선, 보조 자료는 사실 보강용입니다."
-        f"{(' ' + note) if note else ''}</instruction>\n"
+        "\n<source_facts role=\"사실 근거\" priority=\"high\">\n"
+        "  <instruction>뉴스·데이터 원문입니다. "
+        "수치·인용·사건 배경이 필요할 때만 근거로 사용하고, "
+        "여기 없는 사실을 지어내지 않습니다. 원본의 숫자·고유명사·일자·기관명을 왜곡 없이 그대로 옮깁니다."
+        f"{note}</instruction>\n"
         f"  <material>{trimmed}</material>\n"
-        "</reference_context>\n"
+        "</source_facts>\n"
+    )
+
+
+def _build_structure_hint_block(clean_content: str) -> str:
+    """
+    이미 생성된 블로그 원고. 구조·흐름 참고용.
+    복제 금지 — 본 과제는 블로그 재요약이 아니라 원문 재구성.
+    """
+    text = (clean_content or "").strip()
+    if not text:
+        return ""
+    trimmed = text[:_STRUCTURE_HINT_MAX_CHARS]
+    truncated = len(text) > _STRUCTURE_HINT_MAX_CHARS
+    note = " (일부 생략됨)" if truncated else ""
+    return (
+        "\n<structure_hint role=\"구조 참고\" priority=\"low\">\n"
+        "  <instruction>같은 주제로 이미 만들어진 블로그 원고입니다. "
+        "흐름(도입→본문→마무리)과 키워드 배치를 참고만 하고, 문장을 그대로 복제하지 않습니다. "
+        "본 과제는 이 블로그의 재요약이 아니라 original_voice를 각 매체 포맷으로 재구성하는 것입니다. "
+        "블로그가 일반화·희석해 놓은 표현 대신 original_voice의 원문 표현을 우선 사용합니다."
+        f"{note}</instruction>\n"
+        f"  <material>{trimmed}</material>\n"
+        "</structure_hint>\n"
+    )
+
+
+def _resolve_publish_url(options: Dict[str, Any]) -> str:
+    opts = options or {}
+    for key in ("publishUrl", "blogUrl"):
+        value = str(opts.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _build_publish_url_block(options: Dict[str, Any]) -> str:
+    """
+    발행된 블로그 원문 URL. SNS 타래의 마지막 게시물/마무리 블록에 1회 배치.
+    """
+    url = _resolve_publish_url(options)
+    if not url:
+        return ""
+    return (
+        "\n<publish_url role=\"블로그 전문 링크\" priority=\"critical\">\n"
+        f"  <url>{url}</url>\n"
+        "  <instruction>이 URL은 발행된 블로그 원문 링크이며, 필수로 본문에 배치합니다. "
+        "타래형(X/Threads)은 마지막 게시물의 마지막 줄에만 이 URL을 한 번 배치합니다. "
+        "단일형(Facebook/Instagram)은 본문 하단에 한 번 배치합니다. "
+        "다른 위치에 URL을 넣거나 두 번 반복하지 않고, 도메인만 쓰거나 축약하지 않습니다.</instruction>\n"
+        "</publish_url>\n"
+    )
+
+
+def _build_core_source_blocks(
+    clean_content: str, options: Dict[str, Any]
+) -> str:
+    """
+    변환 프롬프트의 공통 소스 블록 구성:
+    원문(주) → 사실(근거) → 구조(참고) → 링크(필수 배치).
+    """
+    return (
+        _build_original_voice_block(options)
+        + _build_source_facts_block(options)
+        + _build_structure_hint_block(clean_content)
+        + _build_publish_url_block(options)
     )
 
 
@@ -178,8 +260,7 @@ def build_facebook_instagram_prompt(
     chars_per_line = int(platform_config.get("charsPerLine", 22))
     quality_issues = options.get("qualityIssues", [])
     natural_tone_guide = build_sns_natural_tone_guide()
-    extra_context = _build_topic_and_title_block(options) + _build_reference_context_block(options)
-    source_label = _resolve_source_label(options)
+    extra_context = _build_topic_and_title_block(options) + _build_core_source_blocks(clean_content, options)
 
     remediation_block = ""
     if isinstance(quality_issues, list) and quality_issues:
@@ -198,24 +279,21 @@ def build_facebook_instagram_prompt(
 <task type="SNS 변환" platform="facebook-instagram" mode="공용 단일 게시물" system="전자두뇌비서관">
   <source_info>
 {author_meta_block}
-    <instruction>{source_label}을 Facebook 게시물과 Instagram 캡션에 모두 사용할 수 있는 단일 SNS 원고로 변환하라.</instruction>
+    <instruction>작성자의 페이스북/입장문 원문(original_voice)과 뉴스·데이터 근거(source_facts)를 바탕으로, Facebook 게시물과 Instagram 캡션에 모두 사용할 수 있는 단일 SNS 원고로 재구성하라. 이미 만들어진 블로그 원고(structure_hint)는 흐름 참고용일 뿐이며, 블로그 문장을 그대로 가져오지 않는다.</instruction>
   </source_info>
 
 {_AUTHOR_SELF_REFERENCE_GUARD}
 
 {extra_context}
 
-  <source_content>
-{clean_content}
-  </source_content>
-
 {natural_tone_guide}
 
   <transformation_policy priority="critical">
-    <rule>변환 목적은 신규 원고 작성이 아니라 원문을 SNS용 단일 게시물로 압축/재배열하는 것이다.</rule>
-    <rule>원문의 핵심 표현, 고유명사, 숫자, 정책명을 최대한 재사용한다.</rule>
-    <rule>원문에 없는 주장, 수치, 사례, 구호를 새로 만들지 않는다.</rule>
-    <rule>원문 핵심어(고유명사/숫자/정책명) 3개 이상을 본문에 그대로 유지한다.</rule>
+    <rule>이 과제는 블로그 재요약이 아니다. original_voice(작성자 원문)의 문체·어휘·문제의식을 매체 포맷으로 재구성하는 것이다.</rule>
+    <rule>본문에 등장하는 표현·고유명사·일인칭 화법은 가능한 한 original_voice에서 그대로 가져온다.</rule>
+    <rule>수치·인용·사건 배경이 필요할 때는 source_facts에서만 끌어온다. 양쪽 어디에도 없는 사실을 지어내지 않는다.</rule>
+    <rule>structure_hint(블로그 원고)는 흐름·키워드 배치 참고용이며 문장 복제 금지. 블로그가 일반화해 놓은 상투어 대신 original_voice의 원문 표현을 우선한다.</rule>
+    <rule>original_voice의 고유명사/숫자/정책명 3개 이상을 본문에 그대로 유지한다.</rule>
   </transformation_policy>
 
   <platform_strategy>
@@ -287,13 +365,12 @@ def build_x_prompt(
     min_len = platform_config.get("minLengthPerPost", X_MIN_NON_SPACE)
     recommended_len = platform_config.get("recommendedMinLength", X_TARGET_AVG_NON_SPACE)
     max_len = platform_config.get("maxLengthPerPost", X_TARGET_AVG_NON_SPACE)
-    blog_url = options.get("blogUrl", "")
+    blog_url = _resolve_publish_url(options)
     category = options.get("category", "")
     sub_category = options.get("subCategory", "")
     quality_issues = options.get("qualityIssues", [])
     natural_tone_guide = build_sns_natural_tone_guide()
-    extra_context = _build_topic_and_title_block(options) + _build_reference_context_block(options)
-    source_label = _resolve_source_label(options)
+    extra_context = _build_topic_and_title_block(options) + _build_core_source_blocks(clean_content, options)
 
     # Node 로직과 유사한 분기
     is_friendly_style = category in {"일상 소통", "daily-communication"} or (
@@ -343,25 +420,22 @@ def build_x_prompt(
 <task type="SNS 변환" platform="x" mode="임팩트 타래" system="전자두뇌비서관">
   <source_info>
 {author_meta_block}
-    <instruction>{source_label}을 X 타래({min_posts}~{max_posts}개 게시물)로 변환하라.</instruction>
+    <instruction>작성자의 페이스북/입장문 원문(original_voice)과 뉴스·데이터 근거(source_facts)를 바탕으로, X 타래({min_posts}~{max_posts}개 게시물)로 재구성하라. 이미 만들어진 블로그 원고(structure_hint)는 흐름 참고용일 뿐이며, 블로그 문장을 그대로 가져오지 않는다.</instruction>
   </source_info>
 
 {_AUTHOR_SELF_REFERENCE_GUARD}
 
 {extra_context}
 
-  <source_content>
-{clean_content}
-  </source_content>
-
 {natural_tone_guide}
 
   <transformation_policy priority="critical">
-    <rule>변환 목적은 신규 원고 작성이 아니라 원문 압축/재배열입니다.</rule>
-    <rule>원문의 핵심 표현을 최대한 재사용하고, 길이 제약으로 인한 축약만 허용합니다.</rule>
-    <rule>원문에 없는 구호/슬로건/브랜딩 문구를 새로 만들지 않습니다.</rule>
-    <rule>타래 전체에서 원문 핵심어(고유명사/숫자/정책명) 3개 이상을 그대로 포함합니다.</rule>
-    <rule>1번 게시물(훅)에 원문의 고유명사(인물·지명·단체·사건명 등) 1개 이상을 반드시 포함합니다. 공허한 일반 구호로만 훅을 채우지 않습니다.</rule>
+    <rule>이 과제는 블로그 재요약이 아니다. original_voice(작성자 원문)의 문체·메시지·문제의식을 X의 카드형 타래로 재구성하는 것이다.</rule>
+    <rule>원문의 핵심 표현·일인칭 화법·정치적 입장을 original_voice에서 그대로 가져와 사용한다. 길이 제약으로 인한 축약만 허용된다.</rule>
+    <rule>수치·인용·사건 배경이 필요할 때는 source_facts에서만 끌어온다. 양쪽 어디에도 없는 구호·슬로건·브랜딩 문구를 새로 만들지 않는다.</rule>
+    <rule>structure_hint(블로그 원고)는 키워드 배치 참고용이며 문장 복제 금지. 블로그의 일반화·상투어 대신 original_voice의 원문 표현을 우선한다.</rule>
+    <rule>타래 전체에서 original_voice/source_facts의 고유명사·숫자·정책명 3개 이상을 그대로 포함한다.</rule>
+    <rule>1번 게시물(훅)에 original_voice의 고유명사(인물·지명·단체·사건명 등) 1개 이상을 반드시 포함한다. 공허한 일반 구호로만 훅을 채우지 않는다.</rule>
   </transformation_policy>
 
   <platform_strategy>
@@ -492,11 +566,10 @@ def build_threads_prompt(
     max_len = platform_config.get("maxLengthPerPost", 400)
     recommended_len = platform_config.get("recommendedMinLength", 300)
     target_post_count = options.get("targetPostCount")
-    blog_url = options.get("blogUrl", "")
+    blog_url = _resolve_publish_url(options)
     quality_issues = options.get("qualityIssues", [])
     natural_tone_guide = build_sns_natural_tone_guide()
-    extra_context = _build_topic_and_title_block(options) + _build_reference_context_block(options)
-    source_label = _resolve_source_label(options)
+    extra_context = _build_topic_and_title_block(options) + _build_core_source_blocks(clean_content, options)
 
     post_count_guidance = (
         f"게시물 수는 {target_post_count}개로 맞춰주세요."
@@ -523,24 +596,21 @@ def build_threads_prompt(
 <task type="SNS 변환" platform="threads" mode="서사·공감 타래" system="전자두뇌비서관">
   <source_info>
 {author_meta_block}
-    <instruction>{source_label}을 Threads 타래로 변환하라.</instruction>
+    <instruction>작성자의 페이스북/입장문 원문(original_voice)과 뉴스·데이터 근거(source_facts)를 바탕으로, Threads 서사·공감 타래로 재구성하라. 이미 만들어진 블로그 원고(structure_hint)는 흐름 참고용일 뿐이며, 블로그 문장을 그대로 가져오지 않는다.</instruction>
   </source_info>
 
 {_AUTHOR_SELF_REFERENCE_GUARD}
 
 {extra_context}
 
-  <source_content>
-{clean_content}
-  </source_content>
-
 {natural_tone_guide}
 
   <transformation_policy priority="critical">
-    <rule>Threads 변환은 원문을 게시물 단위로 분해/재배열하는 작업입니다.</rule>
-    <rule>각 게시물은 원문 문장(또는 절)을 압축 편집해 구성하고 새 서사를 만들지 않습니다.</rule>
-    <rule>원문에 없는 새로운 주장/수치/구호를 추가하지 않습니다.</rule>
-    <rule>타래 전체에서 원문 핵심어(고유명사/숫자/정책명) 5개 이상을 그대로 유지합니다.</rule>
+    <rule>이 과제는 블로그 재요약이 아니다. original_voice(작성자 원문)의 문체·서사·문제의식을 Threads의 서사형 타래로 재구성하는 것이다.</rule>
+    <rule>각 게시물은 original_voice의 문장·어절·고유명사를 그대로 재사용해 구성하고, 원문에 없는 새 서사·주장·수치·구호를 만들지 않는다.</rule>
+    <rule>수치·인용·사건 배경이 필요할 때는 source_facts에서만 끌어온다. 양쪽 어디에도 없는 사실을 지어내지 않는다.</rule>
+    <rule>structure_hint(블로그 원고)는 흐름·키워드 배치 참고용이며 문장 복제 금지. 블로그가 일반화·희석해 놓은 상투어 대신 original_voice의 원문 표현을 우선한다.</rule>
+    <rule>타래 전체에서 original_voice/source_facts의 고유명사·숫자·정책명 5개 이상을 그대로 유지한다.</rule>
   </transformation_policy>
 
   <platform_strategy>
