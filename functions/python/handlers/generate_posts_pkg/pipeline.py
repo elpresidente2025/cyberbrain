@@ -27,10 +27,21 @@ from agents.common.election_rules import check_election_eligibility
 from agents.common.editorial import STRUCTURE_SPEC
 from agents.common.h2_repair import (
     build_keyword_intent_h2 as _h2_repair_build_keyword_intent_h2,
+    build_subheading_role_surface as _h2_repair_build_subheading_role_surface,
     ensure_keyword_first_slot as _h2_repair_ensure_keyword_first_slot,
     ensure_user_keyword_first_slot as _h2_repair_ensure_user_keyword_first_slot,
+    is_subheading_subject_noise_sentence as _h2_repair_is_subject_noise_sentence,
+    pick_matchup_counterpart_name as _h2_repair_pick_matchup_counterpart_name,
+    pick_primary_person_name as _h2_repair_pick_primary_person_name,
+    pick_scored_primary_person_name as _h2_repair_pick_scored_primary_person_name,
     repair_awkward_phrases as _h2_repair_awkward_phrases,
     repair_branding_phrases as _h2_repair_branding_phrases,
+    repair_entity_consistency as _h2_repair_entity_consistency,
+    repair_generic_surface as _h2_repair_generic_surface,
+    repair_malformed_matchup_heading as _h2_repair_malformed_matchup,
+    repair_speaker_role_mismatch_matchup_heading as _h2_repair_speaker_role_mismatch_matchup,
+    score_subheading_body_names as _h2_repair_score_body_names,
+    third_personize_subheading as _h2_repair_third_personize,
 )
 from agents.common.person_naming import (
     ROLE_TOKEN_PRIORITY,
@@ -2564,53 +2575,15 @@ def _pick_matchup_counterpart_name(
     speaker_name: str,
     known_names: list[str],
 ) -> str:
-    plain = re.sub(r"<[^>]*>", " ", str(section_html or ""))
-    plain = re.sub(r"\s+", " ", plain).strip()
-    normalized_speaker_name = _normalize_person_name(speaker_name)
-    if not plain or not normalized_speaker_name:
-        return ""
-    if normalized_speaker_name not in _normalize_person_name(plain):
-        return ""
-    if not any(token in plain for token in ("양자대결", "가상대결", "대결", "접전", "승부")):
-        return ""
-
-    best_name = ""
-    best_score = 0
-    for name in known_names or []:
-        normalized_name = _normalize_person_name(name)
-        if not normalized_name or normalized_name == normalized_speaker_name:
-            continue
-        score = plain.count(normalized_name)
-        if re.search(
-            rf"{re.escape(normalized_name)}\s+(?:현\s*)?(?:전\s*)?"
-            rf"(?:국회의원|의원|시장|지사|도지사|대표|위원장|장관|후보|예비후보)",
-            plain,
-            re.IGNORECASE,
-        ):
-            score += 2
-        if score > best_score:
-            best_name = normalized_name
-            best_score = score
-    return best_name if best_score > 0 else ""
+    return _h2_repair_pick_matchup_counterpart_name(
+        section_html,
+        speaker_name=speaker_name,
+        known_names=known_names,
+    )
 
 
 def _pick_primary_person_name(text: str, known_names: list[str]) -> str:
-    plain = re.sub(r"<[^>]*>", " ", str(text or ""))
-    plain = re.sub(r"\s+", " ", plain).strip()
-    if not plain or not known_names:
-        return ""
-
-    best_name = ""
-    best_score = 0
-    for name in known_names:
-        normalized = _normalize_person_name(name)
-        if len(normalized) < 2:
-            continue
-        score = plain.count(normalized)
-        if score > best_score:
-            best_name = normalized
-            best_score = score
-    return best_name if best_score > 0 else ""
+    return _h2_repair_pick_primary_person_name(text, known_names)
 
 
 def _is_subheading_subject_noise_sentence(
@@ -2619,40 +2592,11 @@ def _is_subheading_subject_noise_sentence(
     known_names: list[str],
     preferred_names: list[str],
 ) -> bool:
-    plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(sentence or "")))
-    if not plain:
-        return True
-
-    if any(marker in plain for marker in SUBHEADING_SUBJECT_NOISE_MARKERS):
-        return True
-
-    if (
-        any(marker in plain for marker in ("검색어", "키워드", "표현", "문구"))
-        and any(verb in plain for verb in ("거론", "언급", "주목"))
-    ):
-        return True
-
-    preferred_set = {
-        _normalize_person_name(item)
-        for item in preferred_names
-        if len(_normalize_person_name(item)) >= 2
-    }
-    mentioned_non_preferred = any(
-        normalized_name
-        and normalized_name not in preferred_set
-        and normalized_name in plain
-        for normalized_name in (
-            _normalize_person_name(item)
-            for item in known_names
-        )
+    return _h2_repair_is_subject_noise_sentence(
+        sentence,
+        known_names=known_names,
+        preferred_names=preferred_names,
     )
-    if mentioned_non_preferred and any(marker in plain for marker in SUBHEADING_LOW_SIGNAL_MARKERS):
-        return True
-
-    numeric_tokens = SUBHEADING_NUMERIC_TOKEN_PATTERN.findall(plain)
-    if len(numeric_tokens) >= 2 and ("여론조사" in plain or "조사" in plain):
-        return True
-    return False
 
 
 def _score_subheading_body_names(
@@ -2661,54 +2605,11 @@ def _score_subheading_body_names(
     known_names: list[str],
     preferred_names: list[str],
 ) -> Dict[str, Any]:
-    paragraph_matches = list(PARAGRAPH_TAG_PATTERN.finditer(str(section_html or "")))
-    if not paragraph_matches:
-        return {"scores": {}, "filteredText": "", "firstPersonSignal": False}
-
-    filtered_sentences: list[str] = []
-    first_person_signal = False
-    for paragraph_match in paragraph_matches[:SUBHEADING_SIGNAL_PARAGRAPH_LIMIT]:
-        paragraph_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(paragraph_match.group(1) or "")))
-        if not paragraph_plain:
-            continue
-
-        for sentence in _split_sentence_like_units(paragraph_plain):
-            if SUBHEADING_FIRST_PERSON_SIGNAL_PATTERN.search(sentence):
-                first_person_signal = True
-            if _is_subheading_subject_noise_sentence(
-                sentence,
-                known_names=known_names,
-                preferred_names=preferred_names,
-            ):
-                continue
-            filtered_sentences.append(sentence)
-            if len(filtered_sentences) >= SUBHEADING_SIGNAL_SENTENCE_LIMIT:
-                break
-        if len(filtered_sentences) >= SUBHEADING_SIGNAL_SENTENCE_LIMIT:
-            break
-
-    filtered_text = " ".join(filtered_sentences).strip()
-    scores: Dict[str, int] = {}
-    for name in known_names:
-        normalized_name = _normalize_person_name(name)
-        if len(normalized_name) < 2:
-            continue
-        score = filtered_text.count(normalized_name) * 3
-        if score > 0:
-            scores[normalized_name] = score
-
-    if first_person_signal:
-        for preferred in preferred_names:
-            normalized_preferred = _normalize_person_name(preferred)
-            if len(normalized_preferred) < 2:
-                continue
-            scores[normalized_preferred] = int(scores.get(normalized_preferred) or 0) + 2
-
-    return {
-        "scores": scores,
-        "filteredText": filtered_text,
-        "firstPersonSignal": first_person_signal,
-    }
+    return _h2_repair_score_body_names(
+        section_html,
+        known_names=known_names,
+        preferred_names=preferred_names,
+    )
 
 
 _HEADING_ALIGNMENT_STOPWORDS = {
@@ -2806,28 +2707,10 @@ def _pick_scored_primary_person_name(
     *,
     preferred_names: list[str],
 ) -> str:
-    if not scores:
-        return ""
-
-    preferred_set = {
-        _normalize_person_name(item)
-        for item in preferred_names
-        if len(_normalize_person_name(item)) >= 2
-    }
-    best_name = ""
-    best_score = 0
-    for name, score in scores.items():
-        normalized_name = _normalize_person_name(name)
-        score_value = int(score or 0)
-        if score_value <= 0 or len(normalized_name) < 2:
-            continue
-        if score_value > best_score:
-            best_name = normalized_name
-            best_score = score_value
-            continue
-        if score_value == best_score and normalized_name in preferred_set and best_name not in preferred_set:
-            best_name = normalized_name
-    return best_name if best_score > 0 else ""
+    return _h2_repair_pick_scored_primary_person_name(
+        scores,
+        preferred_names=preferred_names,
+    )
 
 
 def _third_personize_first_person_subheading_text(
@@ -2835,172 +2718,17 @@ def _third_personize_first_person_subheading_text(
     *,
     speaker_name: str,
 ) -> tuple[str, bool]:
-    normalized_speaker_name = _clean_full_name_candidate(speaker_name)
-    if not heading_inner or not normalized_speaker_name:
-        return heading_inner, False
-
-    updated_heading = str(heading_inner)
-    changed = False
-    direct_replacements: tuple[tuple[re.Pattern[str], str], ...] = (
-        (re.compile(r"(?<![가-힣])저만의", re.IGNORECASE), f"{normalized_speaker_name}만의"),
-        (re.compile(r"(?<![가-힣])저의", re.IGNORECASE), f"{normalized_speaker_name}의"),
-        (re.compile(r"(?<![가-힣])제가", re.IGNORECASE), f"{normalized_speaker_name}이"),
-        (re.compile(r"(?<![가-힣])저는", re.IGNORECASE), f"{normalized_speaker_name}은"),
-        (re.compile(r"(?<![가-힣])나의", re.IGNORECASE), f"{normalized_speaker_name}의"),
-        (re.compile(r"(?<![가-힣])내가", re.IGNORECASE), f"{normalized_speaker_name}이"),
-        (re.compile(r"(?<![가-힣])나는", re.IGNORECASE), f"{normalized_speaker_name}은"),
-    )
-    for pattern, replacement in direct_replacements:
-        updated_heading, count = pattern.subn(replacement, updated_heading)
-        if count > 0:
-            changed = True
-
-    updated_heading, possessive_count = SUBHEADING_FIRST_PERSON_POSSESSIVE_PATTERN.subn(
-        f"{normalized_speaker_name}의",
-        updated_heading,
-    )
-    if possessive_count > 0:
-        changed = True
-
-    awkward_possessive_pattern = re.compile(
-        rf"(?<![가-힣]){re.escape(normalized_speaker_name)}이\s+"
-        r"((?:[가-힣]{2,8}\s+)?(?:비전|해법|대안|정책|생각|진심|메시지|방향|해결책|경쟁력|가능성|역할))은\?",
-        re.IGNORECASE,
-    )
-    updated_heading, awkward_possessive_count = awkward_possessive_pattern.subn(
-        rf"{normalized_speaker_name}의 \1은?",
-        updated_heading,
-    )
-    if awkward_possessive_count > 0:
-        changed = True
-
-    return updated_heading, changed
+    return _h2_repair_third_personize(heading_inner, speaker_name=speaker_name)
 
 
 def _build_subheading_role_surface(name: str, role_facts: Optional[Dict[str, str]] = None) -> str:
-    normalized_name = _normalize_person_name(name)
-    if not normalized_name:
-        return ""
-    raw_role = str(_safe_dict(role_facts).get(normalized_name) or "").strip()
-    role_label = _canonical_role_label(raw_role)
-    if role_label == "국회의원":
-        return f"{normalized_name} 의원"
-    if raw_role.endswith("시장") and role_label not in {"국회의원", "의원"}:
-        return f"{normalized_name} 시장"
-    if raw_role.endswith("지사") and role_label not in {"국회의원", "의원"}:
-        return f"{normalized_name} 지사"
-    if role_label in {"시장", "지사", "대표", "위원장", "장관", "예비후보", "후보"}:
-        return f"{normalized_name} {role_label}"
-    return normalized_name
-
-
-_CONSECUTIVE_HEADING_TOKEN_RE = re.compile(
-    r"(?<![0-9A-Za-z가-힣])(?P<token>[0-9A-Za-z가-힣]{2,})(?:\s+(?P=token))+(?![0-9A-Za-z가-힣])",
-    re.IGNORECASE,
-)
-_MISSING_OBJECT_PARTICLE_HEADING_RE = re.compile(
-    r"(?P<head>[0-9A-Za-z가-힣]{2,16})\s+위한\s+(?P<tail>[0-9A-Za-z가-힣]{2,24})",
-    re.IGNORECASE,
-)
-_LOW_SIGNAL_MATCHUP_HEADING_PREFIX_RE = re.compile(
-    r"^(?P<prefix>상대\s+후보|상대\s+주자|상대)\s*[,，]\s*(?P<tail>.+(?:구도|쟁점|대결|경쟁).*)$",
-    re.IGNORECASE,
-)
-
-
-def _pick_object_particle_surface(text: str) -> str:
-    normalized = str(text or "").strip()
-    if not normalized:
-        return "을"
-    last_char = normalized[-1]
-    code = ord(last_char)
-    if 0xAC00 <= code <= 0xD7A3:
-        has_batchim = (code - 0xAC00) % 28 != 0
-        return "을" if has_batchim else "를"
-    return "을"
-
-
-def _ends_with_object_particle_surface(text: str) -> bool:
-    normalized = str(text or "").strip()
-    if len(normalized) < 2:
-        return False
-    last_char = normalized[-1]
-    if last_char not in {"을", "를"}:
-        return False
-    stem = normalized[:-1].strip()
-    if not stem:
-        return False
-    return _pick_object_particle_surface(stem) == last_char
+    return _h2_repair_build_subheading_role_surface(name, role_facts=role_facts)
 
 
 def _repair_generic_subheading_surface_text(
     heading_inner: str,
 ) -> tuple[str, list[Dict[str, str]]]:
-    heading_plain = re.sub(r"<[^>]*>", " ", str(heading_inner or ""))
-    heading_plain = re.sub(r"\s+", " ", heading_plain).strip()
-    if not heading_plain:
-        return heading_inner, []
-
-    updated_heading = str(heading_inner)
-    replacements: list[Dict[str, str]] = []
-
-    prefix_repaired_heading, prefix_count = _LOW_SIGNAL_MATCHUP_HEADING_PREFIX_RE.subn(
-        lambda match: str(match.group("tail") or "").strip(),
-        updated_heading,
-        count=1,
-    )
-    if prefix_count > 0 and prefix_repaired_heading != updated_heading:
-        replacements.append(
-            {
-                "from": heading_plain,
-                "to": re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", prefix_repaired_heading)).strip(),
-                "type": "drop_low_signal_matchup_prefix",
-            }
-        )
-        updated_heading = prefix_repaired_heading
-        heading_plain = re.sub(r"<[^>]*>", " ", updated_heading)
-        heading_plain = re.sub(r"\s+", " ", heading_plain).strip()
-
-    deduped_heading, dedupe_count = _CONSECUTIVE_HEADING_TOKEN_RE.subn(
-        lambda match: str(match.group("token") or "").strip(),
-        updated_heading,
-    )
-    if dedupe_count > 0 and deduped_heading != updated_heading:
-        replacements.append(
-            {
-                "from": heading_plain,
-                "to": re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", deduped_heading)).strip(),
-                "type": "duplicate_heading_token",
-            }
-        )
-        updated_heading = deduped_heading
-        heading_plain = re.sub(r"<[^>]*>", " ", updated_heading)
-        heading_plain = re.sub(r"\s+", " ", heading_plain).strip()
-
-    repaired_heading, particle_count = _MISSING_OBJECT_PARTICLE_HEADING_RE.subn(
-        lambda match: (
-            str(match.group(0) or "")
-            if _ends_with_object_particle_surface(str(match.group("head") or "").strip())
-            else (
-                f"{str(match.group('head') or '').strip()}"
-                f"{_pick_object_particle_surface(str(match.group('head') or '').strip())} "
-                f"위한 {str(match.group('tail') or '').strip()}"
-            )
-        ),
-        updated_heading,
-        count=1,
-    )
-    if particle_count > 0 and repaired_heading != updated_heading:
-        replacements.append(
-            {
-                "from": heading_plain,
-                "to": re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", repaired_heading)).strip(),
-                "type": "heading_missing_object_particle",
-            }
-        )
-        updated_heading = repaired_heading
-
-    return updated_heading, replacements
+    return _h2_repair_generic_surface(heading_inner)
 
 
 def _repair_malformed_matchup_subheading_text(
@@ -3010,46 +2738,12 @@ def _repair_malformed_matchup_subheading_text(
     known_names: list[str],
     role_facts: Optional[Dict[str, str]] = None,
 ) -> tuple[str, Optional[Dict[str, str]]]:
-    heading_plain = re.sub(r"<[^>]*>", " ", str(heading_inner or ""))
-    heading_plain = re.sub(r"\s+", " ", heading_plain).strip()
-    normalized_speaker_name = _normalize_person_name(speaker_name)
-    if not heading_plain or not normalized_speaker_name:
-        return heading_inner, None
-    if not any(token in heading_plain for token in ("양자대결", "가상대결", "대결", "접전", "승부", "오차 범위")):
-        return heading_inner, None
-
-    normalized_known_names = [
-        _normalize_person_name(item)
-        for item in (known_names or [])
-        if _normalize_person_name(item) and _normalize_person_name(item) != normalized_speaker_name
-    ]
-    for other_name in normalized_known_names:
-        role_surface = _build_subheading_role_surface(other_name, role_facts=role_facts) or other_name
-        patterns = (
-            re.compile(
-                rf"{re.escape(other_name)}\s+(?:현|전)\s+{re.escape(normalized_speaker_name)}의\s+"
-                rf"(?P<tail>(?:양자대결|가상대결|대결|접전|승부|오차 범위)[^<]*)",
-                re.IGNORECASE,
-            ),
-            re.compile(
-                rf"{re.escape(other_name)}\s+(?:현|전)\s+{re.escape(normalized_speaker_name)}\s+"
-                rf"(?P<tail>(?:양자대결|가상대결|대결|접전|승부|오차 범위)[^<]*)",
-                re.IGNORECASE,
-            ),
-        )
-        for pattern in patterns:
-            updated_heading, count = pattern.subn(
-                lambda match: f"{role_surface}과의 {str(match.group('tail') or '').strip()}",
-                heading_inner,
-                count=1,
-            )
-            if count > 0 and updated_heading != heading_inner:
-                return updated_heading, {
-                    "from": heading_plain,
-                    "to": re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", updated_heading)).strip(),
-                    "type": "malformed_matchup_heading",
-                }
-    return heading_inner, None
+    return _h2_repair_malformed_matchup(
+        heading_inner,
+        speaker_name=speaker_name,
+        known_names=known_names,
+        role_facts=role_facts,
+    )
 
 
 def _repair_speaker_role_mismatch_matchup_subheading_text(
@@ -3059,36 +2753,12 @@ def _repair_speaker_role_mismatch_matchup_subheading_text(
     body_name: str,
     role_facts: Optional[Dict[str, str]] = None,
 ) -> tuple[str, Optional[Dict[str, str]]]:
-    heading_plain = re.sub(r"<[^>]*>", " ", str(heading_inner or ""))
-    heading_plain = re.sub(r"\s+", " ", heading_plain).strip()
-    normalized_speaker_name = _normalize_person_name(speaker_name)
-    normalized_body_name = _normalize_person_name(body_name)
-    if not heading_plain or not normalized_speaker_name or not normalized_body_name:
-        return heading_inner, None
-    if normalized_speaker_name == normalized_body_name:
-        return heading_inner, None
-    if not any(token in heading_plain for token in ("양자대결", "가상대결", "대결", "접전", "승부", "오차 범위")):
-        return heading_inner, None
-
-    role_surface = _build_subheading_role_surface(normalized_body_name, role_facts=role_facts) or normalized_body_name
-    pattern = re.compile(
-        rf"{re.escape(normalized_speaker_name)}\s+(?:현\s*)?(?:전\s*)?"
-        rf"(?:국회의원|의원|시장|지사|도지사|대표|위원장|장관|후보|예비후보)"
-        rf"(?P<tail>\s*(?:과의|와의)?\s*(?:양자대결|가상대결|대결|접전|승부|오차 범위)[^<]*)",
-        re.IGNORECASE,
-    )
-    updated_heading, count = pattern.subn(
-        lambda match: f"{role_surface}{str(match.group('tail') or '')}",
+    return _h2_repair_speaker_role_mismatch_matchup(
         heading_inner,
-        count=1,
+        speaker_name=speaker_name,
+        body_name=body_name,
+        role_facts=role_facts,
     )
-    if count > 0 and updated_heading != heading_inner:
-        return updated_heading, {
-            "from": heading_plain,
-            "to": re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", updated_heading)).strip(),
-            "type": "speaker_role_mismatch_matchup_heading",
-        }
-    return heading_inner, None
 
 
 def _repair_subheading_entity_consistency_once(
@@ -3098,146 +2768,12 @@ def _repair_subheading_entity_consistency_once(
     preferred_names: Optional[list[str]] = None,
     role_facts: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    base = str(content or "")
-    if not base.strip() or not known_names:
-        return {"content": base, "edited": False, "replacements": []}
-
-    normalized_preferred_names = [
-        _normalize_person_name(item)
-        for item in (preferred_names or [])
-        if len(_normalize_person_name(item)) >= 2
-    ]
-    preferred_name_set = set(normalized_preferred_names)
-    h2_matches = list(H2_TAG_PATTERN.finditer(base))
-    if not h2_matches:
-        return {"content": base, "edited": False, "replacements": []}
-
-    replacements: list[Dict[str, str]] = []
-    repaired = base
-    speaker_name = normalized_preferred_names[0] if normalized_preferred_names else ""
-    for idx in range(len(h2_matches) - 1, -1, -1):
-        match = h2_matches[idx]
-        heading_inner = str(match.group(1) or "")
-        heading_plain = re.sub(r"<[^>]*>", " ", heading_inner)
-        heading_plain = re.sub(r"\s+", " ", heading_plain).strip()
-        if not heading_plain:
-            continue
-
-        generic_heading_inner, generic_replacements = _repair_generic_subheading_surface_text(heading_inner)
-        if generic_replacements:
-            repaired = repaired[:match.start(1)] + generic_heading_inner + repaired[match.end(1):]
-            replacements.extend(generic_replacements)
-            heading_inner = generic_heading_inner
-            heading_plain = re.sub(r"<[^>]*>", " ", heading_inner)
-            heading_plain = re.sub(r"\s+", " ", heading_plain).strip()
-
-        updated_heading_inner, renamed_first_person = _third_personize_first_person_subheading_text(
-            heading_inner,
-            speaker_name=speaker_name,
-        )
-        if renamed_first_person:
-            repaired = repaired[:match.start(1)] + updated_heading_inner + repaired[match.end(1):]
-            replacements.append(
-                {
-                    "from": "first_person_pronoun",
-                    "to": speaker_name,
-                    "headingBefore": heading_plain,
-                    "headingAfter": re.sub(
-                        r"\s+",
-                        " ",
-                        re.sub(r"<[^>]*>", " ", updated_heading_inner),
-                    ).strip(),
-                }
-            )
-            heading_inner = updated_heading_inner
-            heading_plain = re.sub(r"<[^>]*>", " ", updated_heading_inner)
-            heading_plain = re.sub(r"\s+", " ", heading_plain).strip()
-        if re.search(r"(검색어|키워드|표현|문구)", heading_plain):
-            continue
-
-        integrity_heading_inner, malformed_replacement = _repair_malformed_matchup_subheading_text(
-            heading_inner,
-            speaker_name=speaker_name,
-            known_names=known_names,
-            role_facts=role_facts,
-        )
-        if malformed_replacement:
-            repaired = repaired[:match.start(1)] + integrity_heading_inner + repaired[match.end(1):]
-            replacements.append(malformed_replacement)
-            heading_inner = integrity_heading_inner
-            heading_plain = re.sub(r"<[^>]*>", " ", integrity_heading_inner)
-            heading_plain = re.sub(r"\s+", " ", heading_plain).strip()
-
-        section_start = match.end()
-        section_end = h2_matches[idx + 1].start() if idx < len(h2_matches) - 1 else len(repaired)
-        section_html = repaired[section_start:section_end]
-        matchup_counterpart_name = _pick_matchup_counterpart_name(
-            section_html,
-            speaker_name=speaker_name,
-            known_names=known_names,
-        )
-        heading_name = _pick_primary_person_name(heading_plain, known_names)
-        subject_signal = _score_subheading_body_names(
-            section_html,
-            known_names=known_names,
-            preferred_names=normalized_preferred_names,
-        )
-        body_scores = subject_signal.get("scores") if isinstance(subject_signal, dict) else {}
-        if not isinstance(body_scores, dict):
-            body_scores = {}
-        body_name = _pick_scored_primary_person_name(
-            {
-                _normalize_person_name(name): int(score or 0)
-                for name, score in body_scores.items()
-                if len(_normalize_person_name(name)) >= 2
-            },
-            preferred_names=normalized_preferred_names,
-        )
-        if matchup_counterpart_name:
-            body_name = matchup_counterpart_name
-        mismatch_heading_inner, mismatch_replacement = _repair_speaker_role_mismatch_matchup_subheading_text(
-            heading_inner,
-            speaker_name=speaker_name,
-            body_name=body_name,
-            role_facts=role_facts,
-        )
-        if mismatch_replacement:
-            repaired = repaired[:match.start(1)] + mismatch_heading_inner + repaired[match.end(1):]
-            replacements.append(mismatch_replacement)
-            continue
-        if not heading_name or not body_name or heading_name == body_name:
-            continue
-        if heading_name in preferred_name_set and body_name not in preferred_name_set:
-            continue
-        body_name_score = int(body_scores.get(body_name) or 0)
-        heading_name_score = int(body_scores.get(heading_name) or 0)
-        if body_name_score <= heading_name_score:
-            continue
-
-        updated_heading_inner, changed = re.subn(
-            re.escape(heading_name),
-            body_name,
-            heading_inner,
-            count=1,
-        )
-        if changed <= 0:
-            continue
-
-        repaired = repaired[:match.start(1)] + updated_heading_inner + repaired[match.end(1):]
-        replacements.append(
-            {
-                "from": heading_name,
-                "to": body_name,
-                "headingBefore": heading_plain,
-                "headingAfter": re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", updated_heading_inner)).strip(),
-            }
-        )
-
-    return {
-        "content": repaired,
-        "edited": repaired != base,
-        "replacements": replacements,
-    }
+    return _h2_repair_entity_consistency(
+        content,
+        known_names=known_names,
+        preferred_names=preferred_names or (),
+        role_facts=role_facts,
+    )
 
 
 def _rewrite_paragraph_blocks(content: str, rewrite_fn) -> str:
