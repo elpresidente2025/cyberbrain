@@ -792,6 +792,8 @@ class SubheadingAgent(Agent):
             },
         }
         print(f"✅ [SubheadingAgent] 완료. stats={stats}")
+        for i, entry in enumerate(trace):
+            print(f"[SubheadingAgent] trace[{i}] {entry}")
         return rebuilt, trace, stats
 
     # ---------------------------------------------------------- Plan / prompt
