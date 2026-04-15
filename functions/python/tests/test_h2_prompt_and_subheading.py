@@ -391,6 +391,31 @@ def test_score_h2_accepts_subject_particle_with_predicate() -> None:
     assert "INCOMPLETE_ENDING" not in result["issues"]
 
 
+def test_score_h2_fails_on_time_continuation_adverb_without_predicate() -> None:
+    # Why: "앞으로도 기업" 처럼 시간 지속 부사 + bare 명사 조합은 서술어가
+    #      없어 의미 미완결. hard-fail 처리되어야 한다.
+    plan = _plan_for("기업 지원", "명사형")
+    result = score_h2(
+        "앞으로도 기업",
+        plan,
+        style="assertive",
+        preferred_types=["명사형"],
+    )
+    assert "INCOMPLETE_ENDING" in result["issues"]
+    assert result["passed"] is False
+
+
+def test_score_h2_accepts_time_continuation_adverb_with_predicate() -> None:
+    plan = _plan_for("기업 지원", "단정형")
+    result = score_h2(
+        "앞으로도 기업을 돕겠습니다",
+        plan,
+        style="assertive",
+        preferred_types=["단정형"],
+    )
+    assert "INCOMPLETE_ENDING" not in result["issues"]
+
+
 def test_score_h2_skips_profession_ga_suffix_false_positive() -> None:
     plan = _plan_for("박지상 독립운동가", "명사형")
     result = score_h2(

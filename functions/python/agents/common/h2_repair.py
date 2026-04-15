@@ -35,6 +35,7 @@ __all__ = [
     "ensure_keyword_first_slot",
     "ensure_user_keyword_first_slot",
     "enforce_anchor_cap",
+    "enforce_user_role_lock",
     "repair_awkward_phrases",
     "repair_branding_phrases",
     "repair_generic_surface",
@@ -270,6 +271,137 @@ def enforce_anchor_cap(
         "edited": bool(actions),
         "actions": actions,
     }
+
+
+_USER_ROLE_TOKENS = (
+    "국회의원",
+    "원내대표",
+    "부대표",
+    "시의원",
+    "구의원",
+    "도의원",
+    "광역시장",
+    "구청장",
+    "군수",
+    "동장",
+    "도지사",
+    "지사",
+    "시장",
+    "부위원장",
+    "위원장",
+    "차관",
+    "장관",
+    "예비후보",
+    "후보",
+    "대표",
+    "의원",
+)
+_USER_ROLE_RE = re.compile(
+    "(" + "|".join(re.escape(token) for token in sorted(_USER_ROLE_TOKENS, key=len, reverse=True)) + ")"
+)
+
+
+def _user_role_tokens_compatible(detected: str, allowed: str) -> bool:
+    det = str(detected or "").strip()
+    allow = str(allowed or "").strip()
+    if not det or not allow:
+        return False
+    if det in allow or allow in det:
+        return True
+    return False
+
+
+def _strip_conflicting_role_around_name(
+    text: str,
+    *,
+    full_name: str,
+    allowed_role: str,
+) -> tuple[str, list[str]]:
+    """heading 안에서 full_name 바로 앞/뒤에 붙은 role token 중 allowed_role 과
+    비호환인 것만 제거한다. 타인 언급에는 손대지 않는다.
+    """
+    base = str(text or "")
+    name = str(full_name or "").strip()
+    allowed = str(allowed_role or "").strip()
+    if not base or not name or not allowed:
+        return base, []
+
+    removed: list[str] = []
+    escaped_name = re.escape(name)
+    role_alt = "|".join(
+        re.escape(token) for token in sorted(_USER_ROLE_TOKENS, key=len, reverse=True)
+    )
+
+    forward_re = re.compile(rf"{escaped_name}(\s*[,·、]?\s*)({role_alt})")
+
+    def _forward_sub(match: re.Match) -> str:
+        detected = match.group(2)
+        if _user_role_tokens_compatible(detected, allowed):
+            return match.group(0)
+        removed.append(detected)
+        return name
+
+    repaired = forward_re.sub(_forward_sub, base)
+
+    reverse_re = re.compile(rf"({role_alt})(\s+){escaped_name}")
+
+    def _reverse_sub(match: re.Match) -> str:
+        detected = match.group(1)
+        if _user_role_tokens_compatible(detected, allowed):
+            return match.group(0)
+        removed.append(detected)
+        return name
+
+    repaired = reverse_re.sub(_reverse_sub, repaired)
+    return repaired, removed
+
+
+def enforce_user_role_lock(
+    headings: Sequence[Any],
+    *,
+    full_name: Any,
+    allowed_role: Any,
+) -> Dict[str, Any]:
+    """사용자 본인 옆에 붙은 role token 이 profile 직책과 호환되지 않으면 제거.
+
+    Why: H2 프롬프트·LLM 가 본문 맥락에 휩쓸려 본인({full_name}) 에게 "국회의원"/
+         "위원장" 같은 타인 역할을 스탬핑하는 사고를 차단한다. profile 의 직책
+         (extract_user_role 로 뽑은 단일 값) 이 SSOT 이며, 그와 호환되지 않는
+         토큰은 본인 앵커 주변에서 조용히 strip 한다.
+    How to apply: SubheadingAgent 재구성 직전 Phase 6.5 에서 enforce_anchor_cap
+                  바로 다음에 호출. 타인 언급(예: "이재명 국회의원") 에는 손대지
+                  않는다 — 반드시 full_name 과 인접한 토큰만 대상.
+    """
+    name = str(full_name or "").strip()
+    allowed = str(allowed_role or "").strip()
+    result: List[str] = [str(h or "") for h in (headings or [])]
+
+    if not name or not allowed or not result:
+        return {"headings": result, "edited": False, "actions": []}
+
+    actions: List[Dict[str, Any]] = []
+    for idx, heading in enumerate(result):
+        repaired, removed = _strip_conflicting_role_around_name(
+            heading,
+            full_name=name,
+            allowed_role=allowed,
+        )
+        if not removed:
+            continue
+        cleaned = re.sub(r"\s{2,}", " ", repaired)
+        cleaned = re.sub(r"\s+([,.])", r"\1", cleaned).strip()
+        if cleaned and cleaned != heading.strip() and len(cleaned) >= 6:
+            result[idx] = cleaned
+            actions.append(
+                {
+                    "index": idx,
+                    "before": heading,
+                    "after": cleaned,
+                    "removed": removed,
+                }
+            )
+
+    return {"headings": result, "edited": bool(actions), "actions": actions}
 
 
 _AWKWARD_PLEDGE_RE = re.compile(r"필요성을\s+말씀드립니다$")

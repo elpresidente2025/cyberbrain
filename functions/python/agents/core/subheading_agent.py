@@ -41,10 +41,13 @@ from ..common.h2_planning import (
     detect_answer_type,
     extract_section_plan,
     extract_stance_claims,
+    extract_user_role,
+    localize_user_role,
     strip_html,
 )
 from ..common.h2_repair import (
     enforce_anchor_cap,
+    enforce_user_role_lock,
     ensure_user_keyword_first_slot,
     repair_awkward_phrases,
     repair_branding_phrases,
@@ -440,6 +443,11 @@ class SubheadingAgent(Agent):
             role_facts=role_facts or {},
             profile=user_profile or {},
         )
+        user_role = localize_user_role(
+            extract_user_role(user_profile or {}),
+            region_metro=(user_profile or {}).get("regionMetro", ""),
+            region_local=(user_profile or {}).get("regionLocal", ""),
+        )
         assigned_entity_surfaces = assign_h2_entity_slots(
             len(plans),
             full_name=full_name,
@@ -486,6 +494,7 @@ class SubheadingAgent(Agent):
                 topic=topic,
                 user_keywords=user_keywords or [],
                 category=category,
+                user_role=user_role,
             )
         except Exception as error:  # pragma: no cover - defensive
             logger.error(f"❌ [SubheadingAgent] Primary generation failed: {error}")
@@ -688,6 +697,28 @@ class SubheadingAgent(Agent):
                 len(anchor_cap_result.get("actions") or []),
             )
 
+        # ---------- Phase 6.6: 본인 직책 잠금 (타인 역할 스탬핑 방지)
+        role_lock_result = enforce_user_role_lock(
+            final_headings,
+            full_name=full_name,
+            allowed_role=user_role,
+        )
+        if role_lock_result.get("edited"):
+            locked_headings = list(role_lock_result.get("headings") or final_headings)
+            for action in role_lock_result.get("actions") or []:
+                idx = action.get("index")
+                if isinstance(idx, int) and 0 <= idx < len(trace):
+                    trace[idx]["role_lock_before"] = action.get("before")
+                    trace[idx]["role_lock_after"] = action.get("after")
+                    trace[idx]["role_lock_removed"] = action.get("removed")
+                    trace[idx]["role_lock_applied"] = True
+            final_headings = locked_headings
+            logger.info(
+                "🔒 [SubheadingAgent] user role lock enforced: allowed=%r edits=%s",
+                user_role,
+                len(role_lock_result.get("actions") or []),
+            )
+
         for i, final in enumerate(final_headings):
             trace[i]["final"] = final
 
@@ -793,6 +824,7 @@ class SubheadingAgent(Agent):
         topic: str = "",
         user_keywords: Optional[Sequence[str]] = None,
         category: str = "",
+        user_role: str = "",
     ) -> List[str]:
         """Primary LLM 호출. 기존 시그니처 호환을 위해 sections/style_config/full_*/stance_text
         positional 파라미터를 유지하고, plans 등 신규 정보는 kwargs 로 받는다.
@@ -836,6 +868,7 @@ class SubheadingAgent(Agent):
             user_keywords=user_keywords or [],
             category=category,
             h2_style=h2_style,
+            user_role=user_role,
         )
 
         schema = {
@@ -894,6 +927,7 @@ class SubheadingAgent(Agent):
         user_keywords: Sequence[str],
         category: str,
         h2_style: str,
+        user_role: str = "",
     ) -> str:
         entity_hints = ", ".join(filter(None, [full_name, full_region])) or "(없음)"
         target_count = len(plans)
@@ -973,6 +1007,7 @@ class SubheadingAgent(Agent):
 - **Preferred Types**: {preferred_types_text}
 - **Topic**: {topic or "(없음)"}
 - **User Keywords**: {keywords_text}
+- **본인 직책 (고정·SSOT)**: {user_role or "(없음)"}
 - **Descriptor Pool (본명 대체 호칭)**: {descriptor_text}
 {stance_block}
 
@@ -987,6 +1022,7 @@ class SubheadingAgent(Agent):
 # [AEO/SEO] Entity Surface 정책 (필수 준수)
 - 각 section 의 `assigned_entity_surface` 가 곧 그 H2 에서 사용해야 할 인물 표면형입니다.
 - 본명({full_name or "(없음)"})은 H2 세트 전체에서 1~2회만 등장해야 합니다 (키워드 스탬핑 방지).
+- 본인({full_name or "(없음)"})의 직책은 **"{user_role or "(미지정)"}"** 단 하나입니다. 본문 맥락이나 타인 언급에서 본 다른 직책(예: 국회의원/위원장/시장/대표 등)을 본인 옆에 **절대** 붙이지 마세요. 본인에게는 이 직책 외의 라벨을 스탬핑하는 순간 hard-fail 입니다.
 - 본명이 아닌 슬롯에는 Descriptor Pool 의 호칭 중 의미가 가장 잘 맞는 것을 사용하되, 본문에 이미 등장한 표현이어야 합니다.
 - `query_intent` 가 `cmp` 면 비교/대결 구조, `tx` 면 절차/방법 구조, `nav` 면 인물·이력 중심 구조, `info` 면 정보 정리형으로 작성하세요.
 - `answer_type` 이 `question-form` 이면 의문형으로, `declarative-list` 면 숫자/항목 정리로, `declarative-fact` 면 단정형 주장으로 표현하세요.

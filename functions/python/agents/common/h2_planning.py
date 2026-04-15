@@ -30,6 +30,8 @@ __all__ = [
     "build_target_keyword_canonical",
     "build_descriptor_pool",
     "assign_h2_entity_slots",
+    "extract_user_role",
+    "localize_user_role",
     "AEO_INTENT_KINDS",
     "AEO_ANSWER_TYPES",
 ]
@@ -497,6 +499,140 @@ def _split_role_label_tokens(value: Any) -> List[str]:
         if token and token.strip()
     ]
     return parts or [raw]
+
+
+def extract_user_role(profile: Optional[Any]) -> str:
+    """사용자 본인 직책(single source of truth)을 profile 에서 뽑아낸다.
+
+    Why: H2 에 사용자 본인 직책을 붙일 때 role_facts, 본문 맥락, descriptor
+         pool 등 여러 소스가 섞이면 "국회의원"/"위원장" 같은 타인 역할이
+         본인에게 스탬핑되는 사고가 난다. 직책의 SSOT 는 profile 에서
+         사용자가 직접 설정한 값뿐이다. Firestore 스키마의 canonical
+         필드는 `position` (국회의원/광역의원/기초의원/광역자치단체장/
+         기초자치단체장) 이므로 그것을 최우선으로 읽고, 없으면 자유 입력
+         필드로 fallback 한다. 단일 라벨이므로 token split 금지.
+    """
+    if not isinstance(profile, dict):
+        return ""
+    for key in ("position", "currentRole", "current_role", "publicRole", "identity", "tagline"):
+        value = profile.get(key)
+        if value is None:
+            continue
+        cleaned = re.sub(r"\s+", " ", str(value)).strip()
+        if cleaned:
+            return cleaned
+    return ""
+
+
+_METRO_SUFFIXES = ("특별자치도", "특별자치시", "광역시", "특별시", "도")
+_WIDE_METRO_SHORTS = {"서울", "부산", "대구", "인천", "광주", "대전", "울산"}
+_PROVINCE_SHORTS = {"경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남"}
+_SPECIAL_PROVINCE_SHORTS = {"제주"}
+_SPECIAL_CITY_SHORTS = {"세종"}
+
+
+def _short_metro_name(metro: Any) -> str:
+    text = re.sub(r"\s+", "", str(metro or "")).strip()
+    if not text:
+        return ""
+    for suffix in _METRO_SUFFIXES:
+        if text.endswith(suffix) and len(text) > len(suffix):
+            return text[: -len(suffix)]
+    return text
+
+
+def _metro_kind(short: str) -> str:
+    if short in _WIDE_METRO_SHORTS:
+        return "wide_metro"
+    if short in _PROVINCE_SHORTS:
+        return "province"
+    if short in _SPECIAL_PROVINCE_SHORTS:
+        return "special_province"
+    if short in _SPECIAL_CITY_SHORTS:
+        return "special_city"
+    return ""
+
+
+def localize_user_role(
+    role: Any,
+    *,
+    region_metro: Any = "",
+    region_local: Any = "",
+) -> str:
+    """일반 계층 명(광역시장/기초의원 등)을 지역과 결합해 실제 호칭으로 변환.
+
+    Why: 사용자가 "광역시장"/"기초의원" 같은 계층 분류만 profile 에 저장하는데
+         이걸 그대로 H2 에 쓰면 어색하다. 지역(regionMetro/regionLocal)과
+         조합해서 "서울시장"/"계양구의원" 같은 실제 호칭으로 바꿔 써야 한다.
+    How to apply: SubheadingAgent 가 extract_user_role 결과를 이 함수에 통과
+                  시켜 최종 user_role 로 사용한다. 이미 지역이 붙어 있거나
+                  매칭 실패 시 원본을 그대로 반환(lossless fallback).
+
+    규칙:
+    - 광역자치단체장 + 광역시/특별자치시 → "{short}시장"
+    - 광역자치단체장 + 도/특별자치도 → "{short}도지사"
+    - 기초자치단체장 + 기초시 → "{local}장" (수원시 → 수원시장)
+    - 기초자치단체장 + 군 → "{local}수" (양평군 → 양평군수)
+    - 기초자치단체장 + 자치구 → "{local}청장" (계양구 → 계양구청장)
+    - 광역의원 + 광역시/특별자치시 → "{short}시의원"
+    - 광역의원 + 도/특별자치도 → "{short}도의원"
+    - 기초의원 + 자치구/기초시/군 → "{local}의원"
+    """
+    raw = re.sub(r"\s+", " ", str(role or "")).strip()
+    if not raw:
+        return ""
+
+    compact = re.sub(r"\s+", "", raw)
+    short_metro = _short_metro_name(region_metro)
+    kind = _metro_kind(short_metro)
+    local = re.sub(r"\s+", "", str(region_local or "")).strip()
+
+    # 이미 지역이 붙은 구체적 호칭이면 그대로 반환.
+    if short_metro and short_metro in compact and compact != short_metro:
+        return raw
+    if local and local in compact and compact != local:
+        return raw
+
+    if compact in ("광역자치단체장", "광역단체장", "광역시장", "특별시장", "도지사"):
+        if kind in ("wide_metro", "special_city"):
+            return f"{short_metro}시장"
+        if kind in ("province", "special_province"):
+            return f"{short_metro}도지사"
+
+    if compact in ("기초자치단체장", "기초단체장", "시장", "군수", "구청장") and local:
+        if local.endswith("시"):
+            return f"{local}장"
+        if local.endswith("군"):
+            return f"{local}수"
+        if local.endswith("구"):
+            return f"{local}청장"
+
+    if compact in ("광역의원", "시도의원"):
+        if kind in ("wide_metro", "special_city"):
+            return f"{short_metro}시의원"
+        if kind in ("province", "special_province"):
+            return f"{short_metro}도의원"
+
+    if compact == "시의원":
+        if local.endswith("시"):
+            return f"{local}의원"
+        if kind in ("wide_metro", "special_city"):
+            return f"{short_metro}시의원"
+
+    if compact == "도의원":
+        if kind in ("province", "special_province"):
+            return f"{short_metro}도의원"
+
+    if compact == "기초의원" and local:
+        if local.endswith(("구", "시", "군")):
+            return f"{local}의원"
+
+    if compact == "구의원" and local.endswith("구"):
+        return f"{local}의원"
+    if compact == "군의원" and local.endswith("군"):
+        return f"{local}의원"
+
+    return raw
 
 
 def build_descriptor_pool(

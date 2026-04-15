@@ -74,6 +74,12 @@ _PROFESSION_GA_SUFFIX = frozenset({
 _DANGLING_SUBJECT_PARTICLE_RE = re.compile(
     r"(?<![가-힣])(?P<stem>[가-힣]{2,})가(?=\s+[가-힣])"
 )
+# "앞으로도 기업", "계속 청년" 처럼 시간 지속·미래 지향 부사가 서술어 없이
+# bare 명사구로만 끝나는 H2 를 감지한다. 이런 부사는 반드시 동사/형용사
+# 서술어를 동반해야 의미가 완결된다.
+_TIME_CONTINUATION_ADVERB_RE = re.compile(
+    r"(?:^|[\s,])(?:앞으로도|앞으로|이제는|이제|계속|꾸준히|지속적으로|끝까지)(?=\s|$)"
+)
 _HEADING_PREDICATE_MARKER_RE = re.compile(
     r"(?:"
     r"다|까|요|죠|냐|여|네|지|"
@@ -130,7 +136,37 @@ def has_incomplete_h2_ending(text: str) -> bool:
     if len(last_token) >= 2 and _H2_TRAILING_VERBAL_MODIFIER_RE.search(last_token):
         return True
 
-    return _has_dangling_subject_particle(candidate)
+    if _has_dangling_subject_particle(candidate):
+        return True
+
+    if _has_dangling_time_continuation_adverb(candidate):
+        return True
+
+    return False
+
+
+def _has_dangling_time_continuation_adverb(heading: str) -> bool:
+    """시간 지속 부사(앞으로도/계속/끝까지 등) + bare 명사 조합을 탐지.
+
+    예: "앞으로도 기업" → 부사 뒤에 서술어 없이 명사만 있어 의미 미완결.
+    부사 뒤에 서술어 마커(다/까/요, 하는/되는 등) 또는 물음표가 존재하면 정상.
+    """
+    stripped = re.sub(r"\s+", " ", str(heading or "")).strip()
+    if len(stripped) < 5:
+        return False
+
+    match = _TIME_CONTINUATION_ADVERB_RE.search(stripped)
+    if not match:
+        return False
+
+    tail = stripped[match.end():].strip()
+    if not tail:
+        return True
+
+    if _HEADING_PREDICATE_MARKER_RE.search(tail):
+        return False
+
+    return True
 
 
 def sanitize_h2_text(

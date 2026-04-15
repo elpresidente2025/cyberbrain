@@ -29,7 +29,8 @@ from agents.common.h2_planning import (
     classify_section_intent,
     detect_answer_type,
 )
-from agents.common.h2_repair import enforce_anchor_cap
+from agents.common.h2_planning import extract_user_role, localize_user_role
+from agents.common.h2_repair import enforce_anchor_cap, enforce_user_role_lock
 from agents.common.h2_scoring import (
     H2_AEO_ADVISORIES,
     H2_HARD_FAIL_ISSUES,
@@ -478,3 +479,222 @@ class TestAnchorCap:
         result = enforce_anchor_cap(headings, full_name="", cap=1)
         assert result["edited"] is False
         assert result["headings"] == headings
+
+
+# ---------------------------------------------------------------------------
+# extract_user_role / enforce_user_role_lock
+# ---------------------------------------------------------------------------
+
+
+class TestUserRoleLock:
+    def test_extract_user_role_prefers_position(self) -> None:
+        # Why: Firestore 정식 스키마는 `position`. profile 저장 핸들러가
+        #      canonicalize 한 값(국회의원/광역의원/기초의원/광역자치단체장/
+        #      기초자치단체장) 이 여기로 들어온다.
+        profile = {
+            "position": "기초의원",
+            "currentRole": "시의원",
+            "identity": "정책 실무자",
+        }
+        assert extract_user_role(profile) == "기초의원"
+
+    def test_extract_user_role_falls_back_when_position_missing(self) -> None:
+        profile = {
+            "currentRole": "",
+            "current_role": "시의원",
+            "identity": "정책 실무자",
+        }
+        assert extract_user_role(profile) == "시의원"
+
+    def test_extract_user_role_empty_profile(self) -> None:
+        assert extract_user_role({}) == ""
+        assert extract_user_role(None) == ""
+
+    def test_enforce_user_role_lock_strips_conflicting_role_after_name(self) -> None:
+        # Why: 본인("홍길동")은 시의원인데 LLM 이 본문 맥락의 "국회의원"/"위원장"
+        #      을 본인 옆에 스탬핑하는 사고가 있었다. allowed_role 과 비호환인
+        #      토큰은 본인 앵커 주변에서만 제거한다.
+        headings = [
+            "홍길동 국회의원의 청년 정책 약속",
+            "샘플구 교통 혼잡, 해법은 무엇일까?",
+            "홍길동 위원장이 본 지역 경제",
+        ]
+        result = enforce_user_role_lock(
+            headings,
+            full_name="홍길동",
+            allowed_role="시의원",
+        )
+        assert result["edited"] is True
+        out = result["headings"]
+        assert "국회의원" not in out[0]
+        assert "위원장" not in out[2]
+        assert out[1] == headings[1]
+
+    def test_enforce_user_role_lock_preserves_compatible_role(self) -> None:
+        headings = ["홍길동 시의원의 약속은 무엇인가?"]
+        result = enforce_user_role_lock(
+            headings,
+            full_name="홍길동",
+            allowed_role="시의원",
+        )
+        assert result["edited"] is False
+        assert result["headings"] == headings
+
+    def test_enforce_user_role_lock_does_not_touch_other_persons(self) -> None:
+        # 본인 앵커와 무관한 "이재명 국회의원" 언급은 건드리지 않아야 한다.
+        headings = ["이재명 국회의원과의 토론에서 드러난 쟁점"]
+        result = enforce_user_role_lock(
+            headings,
+            full_name="홍길동",
+            allowed_role="시의원",
+        )
+        assert result["edited"] is False
+        assert result["headings"] == headings
+
+    def test_enforce_user_role_lock_noop_when_allowed_role_empty(self) -> None:
+        headings = ["홍길동 국회의원의 약속"]
+        result = enforce_user_role_lock(
+            headings,
+            full_name="홍길동",
+            allowed_role="",
+        )
+        assert result["edited"] is False
+        assert result["headings"] == headings
+
+
+# ---------------------------------------------------------------------------
+# localize_user_role
+# ---------------------------------------------------------------------------
+
+
+class TestLocalizeUserRole:
+    # Why: Firestore canonical `position` 값("기초의원"/"광역의원"/"광역자치단체장"
+    #      등)은 일반 계층 라벨이지 본인을 칭할 표면은 아니다. 지역과 결합해
+    #      "계양구의원", "서울시장" 같은 실제 직함으로 변환되어야 프롬프트에서
+    #      본인 호칭 고정이 뜻을 갖는다.
+
+    def test_wide_metro_head_becomes_si_jang(self) -> None:
+        assert (
+            localize_user_role(
+                "광역자치단체장",
+                region_metro="서울특별시",
+                region_local="",
+            )
+            == "서울시장"
+        )
+
+    def test_province_head_becomes_do_jisa(self) -> None:
+        assert (
+            localize_user_role(
+                "광역자치단체장",
+                region_metro="경기도",
+                region_local="",
+            )
+            == "경기도지사"
+        )
+
+    def test_sejong_special_city_head(self) -> None:
+        assert (
+            localize_user_role(
+                "광역자치단체장",
+                region_metro="세종특별자치시",
+                region_local="",
+            )
+            == "세종시장"
+        )
+
+    def test_local_head_si(self) -> None:
+        assert (
+            localize_user_role(
+                "기초자치단체장",
+                region_metro="경기도",
+                region_local="수원시",
+            )
+            == "수원시장"
+        )
+
+    def test_local_head_gu(self) -> None:
+        assert (
+            localize_user_role(
+                "기초자치단체장",
+                region_metro="인천광역시",
+                region_local="계양구",
+            )
+            == "계양구청장"
+        )
+
+    def test_local_head_gun(self) -> None:
+        assert (
+            localize_user_role(
+                "기초자치단체장",
+                region_metro="경기도",
+                region_local="양평군",
+            )
+            == "양평군수"
+        )
+
+    def test_metro_council_member_wide(self) -> None:
+        assert (
+            localize_user_role(
+                "광역의원",
+                region_metro="서울특별시",
+                region_local="",
+            )
+            == "서울시의원"
+        )
+
+    def test_metro_council_member_province(self) -> None:
+        assert (
+            localize_user_role(
+                "광역의원",
+                region_metro="경기도",
+                region_local="",
+            )
+            == "경기도의원"
+        )
+
+    def test_local_council_member_gu(self) -> None:
+        assert (
+            localize_user_role(
+                "기초의원",
+                region_metro="인천광역시",
+                region_local="계양구",
+            )
+            == "계양구의원"
+        )
+
+    def test_local_council_member_si(self) -> None:
+        assert (
+            localize_user_role(
+                "기초의원",
+                region_metro="경기도",
+                region_local="수원시",
+            )
+            == "수원시의원"
+        )
+
+    def test_preserves_national_role(self) -> None:
+        # 국회의원은 지역에 관계없이 그대로 통과.
+        assert (
+            localize_user_role(
+                "국회의원",
+                region_metro="서울특별시",
+                region_local="강남구",
+            )
+            == "국회의원"
+        )
+
+    def test_preserves_already_localized_title(self) -> None:
+        # 이미 지역이 박힌 표면("계양구의원") 은 그대로 유지.
+        assert (
+            localize_user_role(
+                "계양구의원",
+                region_metro="인천광역시",
+                region_local="계양구",
+            )
+            == "계양구의원"
+        )
+
+    def test_empty_role_returns_empty(self) -> None:
+        assert localize_user_role("", region_metro="서울특별시", region_local="") == ""
+        assert localize_user_role(None, region_metro="", region_local="") == ""
