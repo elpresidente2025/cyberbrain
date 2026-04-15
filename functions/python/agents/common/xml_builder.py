@@ -201,9 +201,10 @@ def build_writing_rules_section(author_name: str, target_word_count: int) -> str
     <heading-rules type="AEO-optimized">
       <good-types>
         <type name="질문형">~ 신청 방법은 무엇인가요?</type>
-        <type name="데이터형">~ 5대 핵심 성과</type>
-        <type name="정보형">~ 신청 자격 및 절차 안내</type>
-        <type name="비교형">기존 정책 vs 신규 공약 차이점</type>
+        <type name="목표형">~을 위한 3가지 약속</type>
+        <type name="이유형">~이 필요한 이유</type>
+        <type name="대조형">기존 정책 vs 신규 공약, 무엇이 다른가</type>
+        <type name="사례형">~ 5대 핵심 성과</type>
       </good-types>
       <banned>관련 내용, 정책 안내 (너무 모호함)</banned>
     </heading-rules>

@@ -16,6 +16,7 @@ from agents.common.h2_guide import (
     H2_MAX_LENGTH,
     build_category_tone_block,
     get_category_tone,
+    resolve_category_archetypes,
     sanitize_h2_text,
 )
 from agents.common.h2_planning import (
@@ -155,8 +156,9 @@ def test_subheading_agent_uses_ssot_rules_and_normalizes_length(
 def test_get_category_tone_resolves_current_affairs_to_assertive() -> None:
     tone = get_category_tone("current-affairs")
     assert tone["style"] == "assertive"
-    assert "주장형" in tone["preferred_types"]
-    assert any("아니다" in ex or "질서" in ex or "없다" in ex for ex in tone["examples"])
+    pool = resolve_category_archetypes("current-affairs")
+    assert "주장형" in pool["primary"]
+    assert any("아니다" in ex or "이유" in ex or "없다" in ex for ex in tone["examples"])
 
 
 def test_get_category_tone_falls_back_to_default_on_unknown() -> None:
@@ -168,13 +170,30 @@ def test_get_category_tone_falls_back_to_default_on_unknown() -> None:
 def test_build_category_tone_block_emits_examples_for_current_affairs() -> None:
     block = build_category_tone_block("current-affairs")
     assert '<h2_category_tone category="current-affairs" style="assertive">' in block
-    assert "<preferred_types>" in block
+    assert "<primary_archetypes>" in block
+    assert "주장형" in block
     assert "특검은 정치 보복이 아니다" in block
 
 
-def test_build_category_tone_block_empty_for_default() -> None:
-    # default 카테고리는 예시가 비어 있으므로 빈 문자열 반환 (프롬프트 노이즈 방지)
-    assert build_category_tone_block("default") == ""
+def test_build_category_tone_block_emits_archetypes_for_default() -> None:
+    # default 카테고리는 예시가 없지만 아키타입 풀은 명시된다
+    block = build_category_tone_block("default")
+    assert '<h2_category_tone category="default" style="aeo">' in block
+    assert "<primary_archetypes>" in block
+
+
+def test_build_category_tone_block_honors_commemorative_override() -> None:
+    block = build_category_tone_block("current-affairs", commemorative=True)
+    # 기념/성찰 오버라이드 시 주장·이유 아키타입만 노출
+    assert "주장형, 이유형" in block
+    assert "auxiliary_archetypes" not in block
+
+
+def test_build_category_tone_block_honors_matchup_override() -> None:
+    block = build_category_tone_block("current-affairs", matchup=True)
+    # 매치업 오버라이드: 질문·대조 주, 사례 보조
+    assert "질문형, 대조형" in block
+    assert "사례형" in block
 
 
 # ---------------------------------------------------------------------------
@@ -183,22 +202,21 @@ def test_build_category_tone_block_empty_for_default() -> None:
 
 
 def _policy_style_config() -> dict:
+    # preferred_types 를 비워서 카테고리 아키타입 풀(resolve_category_archetypes)이 사용되도록 한다.
     return {
         "style": "aeo",
-        "description": "정책 제안 카테고리는 구체적인 정보형 소제목을 사용합니다.",
-        "preferred_types": ["데이터형", "명사형", "절차형"],
+        "description": "정책 제안 카테고리는 질문·목표·주장·이유 아키타입을 사용합니다.",
     }
 
 
 def _assertive_style_config() -> dict:
     return {
         "style": "assertive",
-        "description": "논평/시사 카테고리는 주장형 소제목을 사용합니다.",
-        "preferred_types": ["주장형", "명사형", "단정형", "비판형"],
+        "description": "논평/시사 카테고리는 주장·이유·질문 아키타입을 사용합니다.",
     }
 
 
-def test_extract_section_plan_picks_procedural_type_from_markers() -> None:
+def test_extract_section_plan_picks_goal_type_from_procedural_markers() -> None:
     plan = extract_section_plan(
         section_text="청년 기본소득 신청은 정해진 절차로 진행되며 준비 서류를 미리 확인해야 합니다.",
         index=0,
@@ -208,25 +226,24 @@ def test_extract_section_plan_picks_procedural_type_from_markers() -> None:
         full_name="김민우",
         full_region="한빛시 중앙구",
     )
-    assert plan["suggested_type"] == "절차형"
+    # 절차 마커는 새 시스템에서 목표형으로 흡수된다 (약속/이행 promise).
+    assert plan["suggested_type"] == "목표형"
     assert plan["must_include_keyword"] == "청년 기본소득"
     assert plan["key_claim"].startswith("청년 기본소득")
 
 
-def test_extract_section_plan_picks_data_type_from_numerics() -> None:
+def test_extract_section_plan_picks_evidence_type_from_numerics() -> None:
     plan = extract_section_plan(
         section_text="상반기에 국비 120억을 확보하고 청년 일자리 274명을 창출했습니다.",
         index=0,
         category="activity-report",
-        style_config={
-            "style": "aeo",
-            "preferred_types": ["데이터형", "명사형"],
-        },
+        style_config={"style": "aeo"},
         user_keywords=[],
         full_name="",
         full_region="",
     )
-    assert plan["suggested_type"] == "데이터형"
+    # 숫자·실적 마커는 사례형으로 매핑된다 (activity-report 의 auxiliary pool).
+    assert plan["suggested_type"] == "사례형"
     assert any("120억" in n or "274명" in n for n in plan["numerics"])
 
 
@@ -254,10 +271,11 @@ def test_pick_suggested_type_assertive_declarative() -> None:
     text = "특검은 정치 보복이 아니며 진실 규명의 수단이 되어야 한다."
     suggested = pick_suggested_type(
         text,
-        preferred_types=["단정형", "비판형", "명사형"],
+        preferred_types=["주장형", "이유형"],
         style="assertive",
     )
-    assert suggested in ("단정형", "비판형")
+    # 단정 tail("한다") 이 주장형에 매핑된다.
+    assert suggested == "주장형"
 
 
 def test_extract_key_claim_respects_length_band() -> None:
@@ -302,7 +320,7 @@ def test_score_h2_passes_for_clean_aeo_question_form() -> None:
         "청년 기본소득, 신청 방법은?",
         plan,
         style="aeo",
-        preferred_types=["질문형", "명사형", "데이터형"],
+        preferred_types=["질문형", "주장형", "사례형"],
     )
     assert result["passed"] is True
     assert result["score"] >= H2_MIN_PASSING_SCORE
@@ -310,12 +328,12 @@ def test_score_h2_passes_for_clean_aeo_question_form() -> None:
 
 
 def test_score_h2_fails_when_keyword_missing() -> None:
-    plan = _plan_for("청년 기본소득", "명사형")
+    plan = _plan_for("청년 기본소득", "주장형")
     result = score_h2(
         "지역 경제의 다양한 도전 과제",
         plan,
         style="aeo",
-        preferred_types=["명사형", "데이터형"],
+        preferred_types=["주장형", "사례형"],
     )
     assert "KEYWORD_MISSING" in result["issues"]
     # 하드 게이트 — KEYWORD_MISSING 은 점수 총합과 무관하게 passed=False
@@ -323,12 +341,12 @@ def test_score_h2_fails_when_keyword_missing() -> None:
 
 
 def test_score_h2_fails_on_incomplete_ending() -> None:
-    plan = _plan_for("청년 기본소득", "명사형")
+    plan = _plan_for("청년 기본소득", "주장형")
     result = score_h2(
         "청년 기본소득을 확대하는",
         plan,
         style="aeo",
-        preferred_types=["명사형"],
+        preferred_types=["주장형"],
     )
     assert "INCOMPLETE_ENDING" in result["issues"]
     assert result["passed"] is False
@@ -339,7 +357,7 @@ def test_score_h2_fails_on_verbal_modifier_ending() -> None:
 
     용언 관형형(다할/이어갈/해낼/펼칠)은 수식할 명사가 붙지 않으면 미완결.
     """
-    plan = _plan_for("청년 책임", "명사형")
+    plan = _plan_for("청년 책임", "주장형")
     for heading in (
         "청년 정치인, 공동체 책임 다할",
         "청년 정치인, 독립정신을 이어갈",
@@ -350,7 +368,7 @@ def test_score_h2_fails_on_verbal_modifier_ending() -> None:
             heading,
             plan,
             style="aeo",
-            preferred_types=["명사형"],
+            preferred_types=["주장형"],
         )
         assert "INCOMPLETE_ENDING" in result["issues"], heading
         assert result["passed"] is False, heading
@@ -358,35 +376,35 @@ def test_score_h2_fails_on_verbal_modifier_ending() -> None:
 
 def test_score_h2_accepts_verbal_modifier_with_noun() -> None:
     """관형형 뒤에 수식 명사가 있으면 완결 — false positive 방지."""
-    plan = _plan_for("청년 약속", "명사형")
+    plan = _plan_for("청년 약속", "주장형")
     result = score_h2(
         "청년이 지킬 약속 3가지",
         plan,
         style="aeo",
-        preferred_types=["명사형"],
+        preferred_types=["주장형"],
     )
     assert "INCOMPLETE_ENDING" not in result["issues"]
 
 
 def test_score_h2_fails_on_dangling_subject_particle_without_predicate() -> None:
-    plan = _plan_for("청년의 목소리", "명사형")
+    plan = _plan_for("청년의 목소리", "주장형")
     result = score_h2(
         "청년의 목소리가 실질적 변화",
         plan,
         style="assertive",
-        preferred_types=["명사형", "단정형"],
+        preferred_types=["주장형", "이유형"],
     )
     assert "INCOMPLETE_ENDING" in result["issues"]
     assert result["passed"] is False
 
 
 def test_score_h2_accepts_subject_particle_with_predicate() -> None:
-    plan = _plan_for("청년의 목소리", "단정형")
+    plan = _plan_for("청년의 목소리", "주장형")
     result = score_h2(
         "청년의 목소리가 변화를 만든다",
         plan,
         style="assertive",
-        preferred_types=["단정형", "명사형"],
+        preferred_types=["주장형", "이유형"],
     )
     assert "INCOMPLETE_ENDING" not in result["issues"]
 
@@ -394,76 +412,76 @@ def test_score_h2_accepts_subject_particle_with_predicate() -> None:
 def test_score_h2_fails_on_time_continuation_adverb_without_predicate() -> None:
     # Why: "앞으로도 기업" 처럼 시간 지속 부사 + bare 명사 조합은 서술어가
     #      없어 의미 미완결. hard-fail 처리되어야 한다.
-    plan = _plan_for("기업 지원", "명사형")
+    plan = _plan_for("기업 지원", "주장형")
     result = score_h2(
         "앞으로도 기업",
         plan,
         style="assertive",
-        preferred_types=["명사형"],
+        preferred_types=["주장형"],
     )
     assert "INCOMPLETE_ENDING" in result["issues"]
     assert result["passed"] is False
 
 
 def test_score_h2_accepts_time_continuation_adverb_with_predicate() -> None:
-    plan = _plan_for("기업 지원", "단정형")
+    plan = _plan_for("기업 지원", "주장형")
     result = score_h2(
         "앞으로도 기업을 돕겠습니다",
         plan,
         style="assertive",
-        preferred_types=["단정형"],
+        preferred_types=["주장형"],
     )
     assert "INCOMPLETE_ENDING" not in result["issues"]
 
 
 def test_score_h2_skips_profession_ga_suffix_false_positive() -> None:
-    plan = _plan_for("박지상 독립운동가", "명사형")
+    plan = _plan_for("홍길동 독립운동가", "주장형")
     result = score_h2(
-        "박지상 독립운동가 후손의 책임",
+        "홍길동 독립운동가 후손의 책임",
         plan,
         style="assertive",
-        preferred_types=["명사형"],
+        preferred_types=["주장형"],
     )
     assert "INCOMPLETE_ENDING" not in result["issues"]
 
 
 def test_score_h2_blocks_question_form_in_assertive() -> None:
-    plan = _plan_for("특검", "단정형")
+    plan = _plan_for("특검", "주장형")
     result = score_h2(
         "특검은 정치 보복인가요?",
         plan,
         style="assertive",
-        preferred_types=["단정형", "비판형"],
+        preferred_types=["주장형", "이유형"],
     )
     assert "QUESTION_FORM_IN_ASSERTIVE" in result["issues"]
     assert result["passed"] is False
 
 
 def test_score_h2_accepts_assertive_declarative() -> None:
-    plan = _plan_for("특검", "단정형")
+    plan = _plan_for("특검", "주장형")
     result = score_h2(
         "특검은 정치 보복이 아니다",
         plan,
         style="assertive",
-        preferred_types=["단정형", "명사형"],
+        preferred_types=["주장형", "이유형"],
     )
     assert result["passed"] is True
 
 
 def test_score_h2_length_band_penalty_out_of_best_range() -> None:
-    plan = _plan_for("청년", "명사형")
-    short_result = score_h2("청년 정책 요약", plan, style="aeo", preferred_types=["명사형"])
-    best_result = score_h2("청년 기본소득 5대 핵심 정책 정리", plan, style="aeo", preferred_types=["명사형"])
+    plan = _plan_for("청년", "주장형")
+    short_result = score_h2("청년 정책 요약", plan, style="aeo", preferred_types=["주장형"])
+    best_result = score_h2("청년 기본소득 5대 핵심 정책 정리", plan, style="aeo", preferred_types=["주장형"])
     assert short_result["breakdown"]["length"]["raw"] < best_result["breakdown"]["length"]["raw"]
 
 
 def test_score_h2_banned_pattern_penalty() -> None:
-    plan = _plan_for("청년 기본소득", "명사형")
+    plan = _plan_for("청년 기본소득", "주장형")
     result = score_h2(
         "청년 기본소득 저는 제가 해냅니다",
         plan,
         style="aeo",
-        preferred_types=["명사형"],
+        preferred_types=["주장형"],
     )
     assert any("BANNED_PATTERN" in issue for issue in result["issues"])
 

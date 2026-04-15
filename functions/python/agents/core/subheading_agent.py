@@ -19,8 +19,10 @@ import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..base_agent import Agent
+from ..common.constants import detect_commemorative_topic
 from ..common.gemini_client import StructuredOutputError, generate_json_async
 from ..common.h2_guide import (
+    H2_ARCHETYPE_DESCRIPTIONS,
     H2_BEST_RANGE,
     H2_MAX_LENGTH,
     H2_MIN_LENGTH,
@@ -29,6 +31,7 @@ from ..common.h2_guide import (
     get_category_tone,
     has_incomplete_h2_ending,
     normalize_h2_style,
+    resolve_category_archetypes,
     sanitize_h2_text,
 )
 from ..common.h2_planning import (
@@ -133,12 +136,9 @@ class SubheadingAgent(Agent):
         super().__init__(name, options)
         self.model_name = (options or {}).get("modelName", "gemini-2.0-flash")
 
-    # ------------------------------------------------------------------ compat
     def get_style_config(self, category: str) -> Dict[str, Any]:
-        """h2_guide.get_category_tone 결과를 레거시 키(preferredTypes)와 호환되도록 반환."""
-        tone = dict(get_category_tone(category))
-        tone.setdefault("preferredTypes", tone.get("preferred_types") or [])
-        return tone
+        """h2_guide.get_category_tone 결과를 style_config 로 반환."""
+        return dict(get_category_tone(category))
 
     # -------------------------------------------------------------------- main
     async def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -406,10 +406,22 @@ class SubheadingAgent(Agent):
         )
 
         style_config = self.get_style_config(category)
+        is_commemorative = detect_commemorative_topic(topic, stance_text)
+        if is_commemorative:
+            style_config["commemorative"] = True
         h2_style = normalize_h2_style(style_config.get("style"))
-        preferred_types = list(
+        override_types = list(
             style_config.get("preferred_types") or style_config.get("preferredTypes") or []
         )
+        if override_types:
+            preferred_types = override_types
+        else:
+            pool = resolve_category_archetypes(
+                category or "default",
+                commemorative=is_commemorative,
+                matchup=False,
+            )
+            preferred_types = list(pool["primary"]) + list(pool["auxiliary"])
 
         section_texts: List[str] = []
         originals: List[str] = []
@@ -932,16 +944,21 @@ class SubheadingAgent(Agent):
         entity_hints = ", ".join(filter(None, [full_name, full_region])) or "(없음)"
         target_count = len(plans)
         style_description = str(style_config.get("description") or "").strip() or "(없음)"
-        preferred_types_text = (
-            ", ".join(
-                str(item).strip()
-                for item in (
-                    style_config.get("preferred_types") or style_config.get("preferredTypes") or []
-                )
-                if str(item).strip()
-            )
-            or "(없음)"
+        archetype_pool = resolve_category_archetypes(
+            category or "default",
+            commemorative=bool(style_config.get("commemorative")),
+            matchup=bool(style_config.get("matchup")),
         )
+        primary_archetypes = archetype_pool.get("primary", [])
+        auxiliary_archetypes = archetype_pool.get("auxiliary", [])
+        primary_text = ", ".join(primary_archetypes) or "(없음)"
+        auxiliary_text = ", ".join(auxiliary_archetypes) or "(없음)"
+        archetype_desc_lines = [
+            f"  - {name}: {H2_ARCHETYPE_DESCRIPTIONS[name]}"
+            for name in (primary_archetypes + auxiliary_archetypes)
+            if name in H2_ARCHETYPE_DESCRIPTIONS
+        ]
+        archetype_desc_text = "\n".join(archetype_desc_lines) or "  - (없음)"
         is_assertive = h2_style == "assertive"
         role_name = (
             "정치 논평 전문 에디터"
@@ -1004,7 +1021,10 @@ class SubheadingAgent(Agent):
 - **Context**: {entity_hints}
 - **Target Count**: {target_count} Headings
 - **Style Summary**: {style_description}
-- **Preferred Types**: {preferred_types_text}
+- **주 아키타입 (이 중에서 선택)**: {primary_text}
+- **보조 아키타입 (본문이 주 아키타입에 맞지 않을 때만 사용)**: {auxiliary_text}
+- **아키타입 설명**:
+{archetype_desc_text}
 - **Topic**: {topic or "(없음)"}
 - **User Keywords**: {keywords_text}
 - **본인 직책 (고정·SSOT)**: {user_role or "(없음)"}
@@ -1424,32 +1444,30 @@ class SubheadingAgent(Agent):
 
     # --------------------------------------------------------- fallback heading
     def _deterministic_fallback_heading(self, plan: SectionPlan) -> str:
-
         keyword = str(plan.get("must_include_keyword") or "").strip()
         suggested_type = str(plan.get("suggested_type") or "")
         numerics = list(plan.get("numerics") or [])
         key_claim = str(plan.get("key_claim") or "").strip()
 
+        def _claim_declarative_ok() -> bool:
+            return 12 <= len(key_claim) <= 22 and key_claim.endswith(("다", "다."))
+
         templates = {
-            "질문형": lambda: f"{keyword}, 어떻게 신청하나요?" if keyword else "",
-            "명사형": lambda: f"{keyword} 핵심 정리" if keyword else "",
-            "데이터형": lambda: (
-                f"{keyword} {numerics[0]} 현황" if keyword and numerics else (f"{keyword} 핵심 정리" if keyword else "")
-            ),
-            "절차형": lambda: f"{keyword} 신청 3단계 절차" if keyword else "",
-            "비교형": lambda: f"{keyword} 비교 핵심 정리" if keyword else "",
-            "단정형": lambda: (
-                key_claim if 12 <= len(key_claim) <= 22 and key_claim.endswith(("다", "다.")) else (f"{keyword}은 바로잡아야 한다" if keyword else "")
+            "질문형": lambda: f"{keyword}, 무엇이 달라지나요?" if keyword else "",
+            "목표형": lambda: (
+                f"{keyword}을 위한 3가지 약속" if keyword else ""
             ),
             "주장형": lambda: (
-                key_claim if 12 <= len(key_claim) <= 22 and key_claim.endswith(("다", "다.")) else (f"{keyword}은 바로잡아야 한다" if keyword else "")
+                key_claim if _claim_declarative_ok() else (f"{keyword}은 바로잡아야 한다" if keyword else "")
             ),
-            "비판형": lambda: (
-                (key_claim[:20].rstrip() + " 태도") if key_claim else (f"{keyword}의 구조적 한계" if keyword else "")
+            "이유형": lambda: f"{keyword}이 필요한 이유" if keyword else "",
+            "대조형": lambda: f"{keyword}, 무엇이 다른가" if keyword else "",
+            "사례형": lambda: (
+                f"{keyword} {numerics[0]} 현장 기록" if keyword and numerics else (f"{keyword} 현장 사례 3선" if keyword else "")
             ),
         }
 
-        raw = templates.get(suggested_type, lambda: (f"{keyword} 핵심 정리" if keyword else key_claim))()
+        raw = templates.get(suggested_type, lambda: (f"{keyword}이 필요한 이유" if keyword else key_claim))()
         raw = raw.strip()
         if not raw:
             return ""

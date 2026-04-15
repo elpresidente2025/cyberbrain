@@ -6,6 +6,7 @@
 """
 
 import re
+from typing import Dict, List
 
 # ---------------------------------------------------------------------------
 # 상수 (validator, normalizer, agent 공통)
@@ -222,30 +223,36 @@ def _build_aeo_rules() -> str:
     return f"""<h2_rules name="소제목 작성 규칙 (AEO+SEO)" severity="critical">
   <length min="{H2_OPTIMAL_MIN}" max="{H2_MAX_LENGTH}" optimal="{H2_BEST_RANGE}"/>
   <keyword_position>핵심 키워드를 문장 앞쪽 1/3에 배치</keyword_position>
+  <principle>소제목은 '약속(promise)', 본문은 '이행(fulfillment)'. 6 아키타입 중 하나를 골라 본문이 답할 약속을 던진다.</principle>
 
-  <types>
-    <type name="질문형" strength="AEO 최강" ratio="40% 이상 권장">
+  <archetypes>
+    <archetype name="질문형" strength="AEO 최강">
       <good>청년 기본소득, 신청 방법은?</good>
       <good>전세 사기 피해, 어떻게 보상받나요?</good>
       <bad>이것을 꼭 알아야 합니다</bad>
-    </type>
-    <type name="명사형" strength="SEO 기본">
-      <good>{{지역}} {{동}} 주차장 신설 위치</good>
-      <bad>정책 안내</bad>
-    </type>
-    <type name="데이터형" strength="신뢰성">
-      <good>청년 일자리 274명 창출 방법</good>
-      <bad>좋은 성과를 냈습니다</bad>
-    </type>
-    <type name="절차형" strength="실용성">
-      <good>청년 기본소득 신청 3단계 절차</good>
-      <bad>신청하는 방법</bad>
-    </type>
-    <type name="비교형" strength="차별화">
-      <good>기존 정책 대비 개선된 3가지</good>
+    </archetype>
+    <archetype name="목표형" strength="약속·다짐">
+      <good>청년 일자리를 위한 3가지 약속</good>
+      <good>통학로 안전, 반드시 지키겠습니다</good>
+      <bad>열심히 노력하겠습니다</bad>
+    </archetype>
+    <archetype name="주장형" strength="입장 선명화">
+      <good>청년 기본소득은 필수다</good>
+      <bad>청년 정책에 대한 생각</bad>
+    </archetype>
+    <archetype name="이유형" strength="배경·근거">
+      <good>청년 기본소득이 필요한 이유</good>
+      <bad>배경 설명</bad>
+    </archetype>
+    <archetype name="대조형" strength="차별화">
+      <good>기존 정책 vs 청년 기본소득, 무엇이 다른가</good>
       <bad>비교해 보겠습니다</bad>
-    </type>
-  </types>
+    </archetype>
+    <archetype name="사례형" strength="증거·현장">
+      <good>청년 일자리 274명 창출 현장</good>
+      <bad>좋은 성과를 냈습니다</bad>
+    </archetype>
+  </archetypes>
 
   <banned>
     추상적 표현("노력", "열전", "마음"),
@@ -254,33 +261,34 @@ def _build_aeo_rules() -> str:
     서술어 포함("~에 대한 설명", "~을 알려드립니다"),
     키워드 없는 짧은 제목("정책", "방법", "소개"),
     1인칭 표현("저는", "제가", "나는", "내가")
-    후보명+약속형 선언("이름이 반드시 해내겠습니다" 등 - 소제목은 주장형이 아닌 정보형)
   </banned>
 
-  <aeo_rule>H2 바로 아래 첫 문장(40~60자)은 해당 질문/주제에 대한 직접 답변으로 작성할 것.</aeo_rule>
+  <aeo_rule>H2 바로 아래 첫 문장(40~60자)은 해당 소제목(약속)에 대한 직접 답변으로 작성할 것.</aeo_rule>
 </h2_rules>"""
 
 
 def _build_assertive_rules() -> str:
     return f"""<h2_rules name="논평용 소제목 작성 규칙" severity="critical">
   <length min="{H2_OPTIMAL_MIN}" max="{H2_MAX_LENGTH}" optimal="{H2_BEST_RANGE}"/>
-  <style>주장형 또는 명사형 (질문형 절대 금지)</style>
-  <tone>단정적, 비판적, 명확한 입장 표명</tone>
+  <style>주장·이유·질문 아키타입 중에서 선택</style>
+  <tone>단정적, 논리적, 명확한 입장 표명</tone>
 
-  <types>
-    <type name="단정형" pattern="~이다, ~해야 한다">
+  <archetypes>
+    <archetype name="주장형" pattern="~이다, ~해야 한다, 바로잡/회피/한계">
       <good>특검은 정치 보복이 아니다</good>
       <good>당당하면 피할 이유 없다</good>
-    </type>
-    <type name="비판형" pattern="대상을 명시한 비판">
-      <good>진실 규명을 거부하는 태도</good>
-    </type>
-    <type name="명사형" pattern="핵심 쟁점 명시">
-      <good>특검법의 정당성과 의의</good>
-    </type>
-  </types>
+      <good>권한 남용은 바로잡아야 한다</good>
+    </archetype>
+    <archetype name="이유형" pattern="배경/까닭/원인/이유">
+      <good>권한 남용을 묵인할 수 없는 이유</good>
+      <good>왜 진실 규명이 지금 필요한가</good>
+    </archetype>
+    <archetype name="질문형" pattern="본문이 답할 질문">
+      <good>특검은 누구를 위한 절차인가</good>
+    </archetype>
+  </archetypes>
 
-  <forbidden>질문형 소제목 ("~인가요?", "~일까요?", "~는?", "~할까?") 절대 금지</forbidden>
+  <forbidden>어조만 모방한 단정("최고", "혁명적") 금지. 추상 제목("논평", "입장") 금지.</forbidden>
 </h2_rules>"""
 
 
@@ -297,67 +305,57 @@ def build_h2_examples(style: str = 'aeo') -> str:
 def _build_aeo_examples() -> str:
     return """
 <h2_examples name="소제목 교정 예시 (bad → good)">
-  <type name="질문형" strength="AEO 최강">
+  <archetype name="질문형" strength="AEO 최강">
     <good>청년 기본소득, 신청 방법은 무엇인가요?</good>
     <good>{지역} 주차장, 어디에 새로 생기나요?</good>
     <good>보육료 지원, 얼마까지 받을 수 있나요?</good>
-    <good>전세 사기 피해, 어떻게 보상받나요?</good>
-    <good>2025년 예산안, 무엇이 달라졌나요?</good>
     <correction before="청년 기본소득에 대한 상세한 설명" after="청년 기본소득, 신청 방법은?"/>
     <correction before="이것을 꼭 알아야 합니다" after="보육료 지원 자격, 확인 방법은?"/>
-    <correction before="청년 지원 정책에 관한 모든 것을 알려드립니다" after="청년 기본소득, 어떻게 신청하나요?"/>
-  </type>
+  </archetype>
 
-  <type name="명사형" strength="SEO 기본">
-    <good>청년 기본소득 신청 자격 조건</good>
-    <good>{지역} {동} 주차장 신설 위치</good>
-    <good>2025년 상반기 예산 집행 현황</good>
-    <good>청년 창업 지원 정책 상세 안내</good>
-    <good>민원 처리 평균 소요 기간</good>
-    <correction before="정책" after="청년 기본소득 신청 자격"/>
-    <correction before="우리 지역의 발전을 위한 노력" after="{지역} 주차장 50면 추가 건설"/>
-    <correction before="여러 가지 사업들" after="청년 일자리·주거 지원 사업"/>
-  </type>
+  <archetype name="목표형" strength="약속·다짐">
+    <good>청년 일자리를 위한 3가지 약속</good>
+    <good>통학로 안전, 이렇게 지키겠습니다</good>
+    <good>지역 의료 공백 해소 로드맵</good>
+    <correction before="열심히 노력하겠습니다" after="청년 일자리를 위한 3가지 약속"/>
+    <correction before="최선을 다하겠습니다" after="통학로 안전, 이렇게 지키겠습니다"/>
+  </archetype>
 
-  <type name="데이터" strength="신뢰성">
-    <good>2025년 상반기 5대 주요 성과</good>
-    <good>청년 일자리 274명 창출 방법</good>
-    <good>민원 처리 14일→3일 단축 과정</good>
-    <good>국비 120억 확보 세부 내역</good>
-    <good>교통 사고율 40% 감소 요인 분석</good>
-    <correction before="좋은 성과를 냈습니다" after="청년 일자리 274명 창출 성과"/>
-    <correction before="예산을 많이 확보했어요" after="국비 120억 확보 성공"/>
-    <correction before="개선되었습니다" after="민원 처리 14일→3일 개선"/>
-  </type>
+  <archetype name="주장형" strength="입장 선명화">
+    <good>청년 기본소득은 필수다</good>
+    <good>지역 격차는 바로잡아야 한다</good>
+    <correction before="청년 정책에 대한 입장" after="청년 기본소득은 필수다"/>
+    <correction before="지역 격차 문제" after="지역 격차는 바로잡아야 한다"/>
+  </archetype>
 
-  <type name="절차" strength="실용성">
-    <good>청년 기본소득 신청 3단계 절차</good>
-    <good>온라인 민원 신청 필수 서류 목록</good>
-    <good>보육료 지원금 수령까지 소요 기간</good>
-    <good>주차장 건설 추진 일정 및 완공일</good>
-    <good>전세 사기 피해 신고 방법 안내</good>
-    <correction before="신청하는 방법" after="청년 기본소득 신청 3단계"/>
-    <correction before="이렇게 하면 됩니다" after="온라인 민원 신청 필수 서류"/>
-    <correction before="준비 사항에 대하여" after="청년 창업 지원 신청 준비 서류"/>
-  </type>
+  <archetype name="이유형" strength="배경·근거">
+    <good>청년 기본소득이 필요한 이유</good>
+    <good>국비 120억 확보의 배경</good>
+    <good>왜 지금 개편이 필요한가</good>
+    <correction before="배경 설명" after="청년 기본소득이 필요한 이유"/>
+    <correction before="왜 이걸 해야 할까" after="왜 지금 개편이 필요한가"/>
+  </archetype>
 
-  <type name="비교" strength="차별화">
-    <good>청년 기본소득 vs 청년 수당 차이점</good>
-    <good>2024년 vs 2025년 예산 변화 분석</good>
+  <archetype name="대조형" strength="차별화">
+    <good>청년 기본소득 vs 청년 수당, 무엇이 다른가</good>
+    <good>2024년 vs 2025년 예산 변화</good>
     <good>기존 정책 대비 개선된 3가지</good>
-    <good>온라인 vs 오프라인 신청 장단점</good>
-    <good>vs {상대후보}, {화자}의 약진</good>
-    <good>타 지역 대비 {지역}만의 특징</good>
-    <correction before="비교해 보겠습니다" after="청년 기본소득 vs 청년수당 비교"/>
-    <correction before="다른 정책들과의 차이" after="기존 정책 대비 개선된 5가지"/>
+    <correction before="비교해 보겠습니다" after="청년 기본소득 vs 청년수당, 무엇이 다른가"/>
     <correction before="장점과 단점" after="온라인 vs 오프라인 신청 비교"/>
-    <correction before="{상대후보}와의 가상대결, 제가 앞서가다" after="vs {상대후보}, {화자}의 약진"/>
-  </type>
+  </archetype>
+
+  <archetype name="사례형" strength="증거·현장">
+    <good>2025년 상반기 5대 주요 성과</good>
+    <good>청년 일자리 274명 창출 현장</good>
+    <good>민원 처리 14일→3일 단축 사례</good>
+    <correction before="좋은 성과를 냈습니다" after="청년 일자리 274명 창출 현장"/>
+    <correction before="개선되었습니다" after="민원 처리 14일→3일 단축 사례"/>
+  </archetype>
 
   <checklist>
     <must>12~25자 범위 (네이버 최적 15~22자)</must>
     <must>핵심 키워드를 앞 1/3에 배치</must>
-    <must>질문형 또는 명확한 명사형 구조</must>
+    <must>6 아키타입 중 하나로 본문이 답할 약속을 던질 것</must>
     <must>H2 바로 아래 첫 문장(40~60자)은 직접 답변</must>
     <ban>10자 미만 또는 25자 초과</ban>
     <ban>"이것", "그것", "관련" 등 모호한 지시어</ban>
@@ -373,35 +371,32 @@ def _build_aeo_examples() -> str:
 def _build_assertive_examples() -> str:
     return """
 <h2_examples name="논평용 소제목 교정 예시 (bad → good)">
-  <type name="단정형" strength="입장 선명화">
+  <archetype name="주장형" strength="입장 선명화">
     <good>특검은 정치 보복이 아니다</good>
     <good>당당하면 피할 이유 없다</good>
     <good>권한 남용은 바로잡아야 한다</good>
     <correction before="특검에 대해 생각해 봅시다" after="특검은 정치 보복이 아니다"/>
-    <correction before="이 사안을 어떻게 봐야 할까?" after="권한 남용은 바로잡아야 한다"/>
-  </type>
+    <correction before="이 사안을 어떻게 봐야 할까" after="권한 남용은 바로잡아야 한다"/>
+  </archetype>
 
-  <type name="비판형" strength="쟁점 압축">
-    <good>진실 규명을 거부하는 태도</good>
-    <good>책임 회피로는 해명되지 않는다</good>
-    <good>국민 신뢰를 무너뜨린 결정</good>
-    <correction before="문제가 있어 보입니다" after="국민 신뢰를 무너뜨린 결정"/>
-    <correction before="여러 논란이 이어지고 있습니다" after="책임 회피로는 해명되지 않는다"/>
-  </type>
+  <archetype name="이유형" strength="배경·근거">
+    <good>권한 남용을 묵인할 수 없는 이유</good>
+    <good>왜 진실 규명이 지금 필요한가</good>
+    <good>책임 회피가 부른 구조적 한계</good>
+    <correction before="여러 논란이 이어지고 있습니다" after="책임 회피가 부른 구조적 한계"/>
+    <correction before="배경 정리" after="권한 남용을 묵인할 수 없는 이유"/>
+  </archetype>
 
-  <type name="명사형" strength="핵심 쟁점 명시">
-    <good>특검법의 정당성과 의의</good>
-    <good>거짓 해명의 구조적 한계</good>
-    <good>민주주의 질서를 지키는 기준</good>
-    <correction before="논평" after="특검법의 정당성과 의의"/>
-    <correction before="관련 입장 정리" after="거짓 해명의 구조적 한계"/>
-  </type>
+  <archetype name="질문형" strength="쟁점 제기">
+    <good>특검은 누구를 위한 절차인가</good>
+    <good>민주주의 질서, 어디까지 지킬 것인가</good>
+    <correction before="관련 입장 정리" after="특검은 누구를 위한 절차인가"/>
+  </archetype>
 
   <checklist>
     <must>12~25자 범위 (네이버 최적 15~22자)</must>
-    <must>질문형 대신 주장형 또는 명사형 사용</must>
+    <must>주장·이유·질문 아키타입 중 하나로 쟁점을 명시</must>
     <must>핵심 쟁점을 직접 드러내는 표현 사용</must>
-    <ban>"~인가요?", "~일까요?" 같은 질문형 어미</ban>
     <ban>"생각해 봅시다", "함께 보시죠" 같은 완곡한 유도문</ban>
     <ban>"정책", "입장", "논평"처럼 내용 없는 추상 제목</ban>
   </checklist>
@@ -410,54 +405,199 @@ def _build_assertive_examples() -> str:
 
 
 # ---------------------------------------------------------------------------
+# H2 Archetype System — "소제목이 약속, 본문이 이행" AEO 구조 (6 아키타입)
+# ---------------------------------------------------------------------------
+#
+# Why: 전통적 표면 분류(명사형/단정형/데이터형…)는 어조/문장 형태만 구분할 뿐
+#      소제목이 본문과 맺는 Q/A 계약을 드러내지 못했다. AEO 효과는 "소제목이
+#      예고(질문/목표/주장/이유/대조/사례), 본문 첫 문장이 그 예고에 직답"
+#      구조에서 나온다. 6 아키타입은 각 소제목이 만드는 '약속의 종류' 를
+#      의미 기능 단위로 고정한다.
+#
+# 탐지 우선순위(먼저 매치된 아키타입 승):
+#   질문형 → 대조형 → 사례형 → 목표형 → 이유형 → 주장형
+#   (overlap 시 더 구체적인 쪽 우선)
+
+H2_ARCHETYPE_NAMES = ("질문형", "목표형", "주장형", "이유형", "대조형", "사례형")
+
+H2_ARCHETYPE_DESCRIPTIONS = {
+    "질문형": "본문이 답해야 할 질문을 소제목으로 던진다. PAA·스니펫에 가장 강함.",
+    "목표형": "약속/목표/다짐을 소제목으로 선언하고 본문에서 이행 방안을 제시한다.",
+    "주장형": "명확한 입장·단정을 소제목으로 던지고 본문에서 근거로 뒷받침한다.",
+    "이유형": "왜 그런지/배경이 무엇인지를 소제목으로 예고하고 본문에서 원인을 풀어낸다.",
+    "대조형": "두 대상을 맞붙여 비교를 예고하고 본문에서 대비를 전개한다.",
+    "사례형": "숫자·실적·현장 데이터를 예고하고 본문에서 증거를 나열한다.",
+}
+
+# Regex detectors — heading 1개를 주면 어떤 아키타입인지 판정한다.
+_H2_ARCH_QUESTION_RE = re.compile(
+    r"(?:\?$|[나까]요\??$|인가요?\??$|인가\??$|할까\??$|는가\??$|는지\??$|어떻게|무엇|언제|어디|어디서|왜)"
+)
+_H2_ARCH_GOAL_RE = re.compile(
+    r"(약속|목표|다짐|하겠|내겠|만들겠|지키겠|추진|실행|계획|비전|로드맵|이행|해내)"
+)
+_H2_ARCH_CLAIM_RE = re.compile(
+    r"(이다$|아니다$|한다$|해야(?:\s?한다)?$|없다$|된다$|않다$|뿐이다$|마땅하다$|"
+    r"거부|회피|남용|파괴|왜곡|무너|실패|한계|정당|필수|핵심|바로잡)"
+)
+_H2_ARCH_REASON_RE = re.compile(
+    r"(^왜\s|왜\s[가-힣]|이유|까닭|배경|원인|까닭은|왜냐|때문)"
+)
+_H2_ARCH_CONTRAST_RE = re.compile(
+    r"(vs|VS|대비|차이|비교|맞대결|대결|대조|양자|맞붙)"
+)
+_H2_ARCH_EVIDENCE_RE = re.compile(
+    r"(\d|현장|사례|실적|성과|통계|데이터|실태|현황|내역|명단|집계|분석)"
+)
+
+_H2_ARCHETYPE_DETECTORS = (
+    ("질문형", _H2_ARCH_QUESTION_RE),
+    ("대조형", _H2_ARCH_CONTRAST_RE),
+    ("사례형", _H2_ARCH_EVIDENCE_RE),
+    ("목표형", _H2_ARCH_GOAL_RE),
+    ("이유형", _H2_ARCH_REASON_RE),
+    ("주장형", _H2_ARCH_CLAIM_RE),
+)
+
+
+def detect_h2_archetype(heading: str) -> str:
+    """단일 heading 이 어느 아키타입에 해당하는지 판정한다.
+
+    우선순위: 질문형 > 대조형 > 사례형 > 목표형 > 이유형 > 주장형.
+    하나도 매치되지 않으면 빈 문자열("").
+    """
+    text = re.sub(r"\s+", " ", str(heading or "")).strip()
+    if not text:
+        return ""
+    for name, pattern in _H2_ARCHETYPE_DETECTORS:
+        if pattern.search(text):
+            return name
+    return ""
+
+
+def is_h2_archetype(heading: str, archetype: str) -> bool:
+    """heading 이 특정 아키타입 패턴에 해당하는지 검사(우선순위 무시)."""
+    text = re.sub(r"\s+", " ", str(heading or "")).strip()
+    target = str(archetype or "").strip()
+    if not text or not target:
+        return False
+    for name, pattern in _H2_ARCHETYPE_DETECTORS:
+        if name == target:
+            return bool(pattern.search(text))
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Category → Archetype Map
+# ---------------------------------------------------------------------------
+#
+# 각 카테고리는 주 아키타입 2~4개 + 보조 0~2개. LLM 은 이 안에서만 선택한다.
+# 오버라이드:
+#   - 기념/추념/성찰 주제: 주장형·이유형만 허용 (보조 없음)
+#   - 여론조사 매치업: 질문형·대조형 주, 사례형 보조
+
+CATEGORY_ARCHETYPE_MAP = {
+    "current-affairs": {"primary": ["질문형", "주장형", "이유형"], "auxiliary": ["대조형", "사례형"]},
+    "policy-proposal": {"primary": ["질문형", "목표형", "주장형", "이유형"], "auxiliary": ["사례형"]},
+    "activity-report": {"primary": ["목표형", "이유형"], "auxiliary": ["사례형"]},
+    "daily-communication": {"primary": ["질문형", "이유형"], "auxiliary": ["사례형"]},
+    "local-issues": {"primary": ["질문형", "목표형", "주장형", "이유형"], "auxiliary": ["사례형"]},
+    "educational-content": {"primary": ["질문형", "이유형"], "auxiliary": ["대조형", "사례형"]},
+    "default": {"primary": ["질문형", "주장형", "이유형"], "auxiliary": ["대조형", "사례형"]},
+}
+
+_COMMEMORATIVE_ARCHETYPES = {"primary": ["주장형", "이유형"], "auxiliary": []}
+_MATCHUP_ARCHETYPES = {"primary": ["질문형", "대조형"], "auxiliary": ["사례형"]}
+
+
+def resolve_category_archetypes(
+    category: str,
+    *,
+    commemorative: bool = False,
+    matchup: bool = False,
+) -> Dict[str, List[str]]:
+    """카테고리 + 주제 플래그로 허용 아키타입 풀(primary, auxiliary)을 결정한다.
+
+    우선순위: 매치업 > 기념/성찰 > 카테고리 기본.
+    """
+    if matchup:
+        return {
+            "primary": list(_MATCHUP_ARCHETYPES["primary"]),
+            "auxiliary": list(_MATCHUP_ARCHETYPES["auxiliary"]),
+        }
+    if commemorative:
+        return {
+            "primary": list(_COMMEMORATIVE_ARCHETYPES["primary"]),
+            "auxiliary": list(_COMMEMORATIVE_ARCHETYPES["auxiliary"]),
+        }
+    key = str(category or "").strip()
+    pool = CATEGORY_ARCHETYPE_MAP.get(key) or CATEGORY_ARCHETYPE_MAP["default"]
+    return {"primary": list(pool["primary"]), "auxiliary": list(pool["auxiliary"])}
+
+
+# ---------------------------------------------------------------------------
 # Category Tone Anchor — SUBHEADING_STYLES.examples 흡수 (카테고리별 톤 예시)
 # ---------------------------------------------------------------------------
 CATEGORY_TONE_EXAMPLES = {
     'current-affairs': {
         'style': 'assertive',
-        'description': '논평/시사 카테고리는 주장형 소제목을 사용합니다.',
-        'preferred_types': ['주장형', '명사형'],
+        'description': '시사 비평은 주장·이유·질문 아키타입을 사용합니다.',
         'examples': [
-            '"신공안 프레임"은 책임 회피에 불과하다',
             '특검은 정치 보복이 아니다',
+            '왜 진실 규명이 지금 필요한가',
+            '권한 남용을 묵인할 수 없는 이유',
             '당당하면 피할 이유 없다',
-            '민주주의의 기본 질서를 지켜야',
         ],
     },
     'policy-proposal': {
         'style': 'aeo',
-        'description': '정책 제안 카테고리는 구체적인 정보형 소제목을 사용합니다.',
-        'preferred_types': ['데이터형', '명사형', '절차형'],
+        'description': '정책 제안은 질문·목표·주장·이유 아키타입을 사용합니다.',
         'examples': [
-            '청년 일자리 3대 핵심 전략',
-            '국비 100억 확보 내역',
-            '교통 체계 개편 5단계 로드맵',
+            '청년 기본소득, 어떻게 신청하나요?',
+            '청년 일자리를 위한 3대 약속',
+            '교통 체계 개편이 필요한 이유',
+            '국비 100억 확보의 배경',
         ],
     },
     'activity-report': {
         'style': 'aeo',
-        'description': '의정활동 보고는 성과 중심 소제목을 사용합니다.',
-        'preferred_types': ['데이터형', '명사형'],
+        'description': '의정 활동 보고는 목표·이유 아키타입을 사용합니다.',
         'examples': [
-            '국정감사 5대 핵심 성과',
-            '지역 현안 해결 실적',
-            '국회 발의 법안 현황',
+            '국정감사에서 지켜낸 3가지 약속',
+            '발의 법안의 추진 배경',
+            '지역 현안 해결을 위한 다음 단계',
         ],
     },
     'daily-communication': {
         'style': 'aeo',
-        'description': '일상 소통은 친근한 질문형도 허용됩니다.',
-        'preferred_types': ['질문형', '명사형'],
+        'description': '일상 소통은 질문·이유 아키타입을 사용합니다.',
         'examples': [
-            '요즘 어떻게 지내시나요?',
-            '함께 나눈 이야기들',
-            '시민 여러분께 전하는 말씀',
+            '요즘 시민들께 가장 많이 듣는 말은?',
+            '이 약속을 다시 새기는 이유',
+            '현장에서 만난 목소리, 무엇을 배웠나',
+        ],
+    },
+    'local-issues': {
+        'style': 'aeo',
+        'description': '지역 현안은 질문·목표·주장·이유 아키타입을 사용합니다.',
+        'examples': [
+            '주차난, 가장 시급한 해법은?',
+            '통학로 안전을 위한 3가지 약속',
+            '예산 재배분이 필요한 이유',
+        ],
+    },
+    'educational-content': {
+        'style': 'aeo',
+        'description': '교육/설명 콘텐츠는 질문·이유 아키타입을 사용합니다.',
+        'examples': [
+            '이 제도, 무엇이 달라졌나요?',
+            '규정 개정의 핵심 배경',
+            '기존 제도 vs 개정안, 무엇이 다른가',
         ],
     },
     'default': {
         'style': 'aeo',
-        'description': '기본 AEO 최적화 스타일을 사용합니다.',
-        'preferred_types': ['질문형', '명사형', '데이터형'],
+        'description': '기본 AEO 최적화 스타일 — 질문·주장·이유 아키타입을 사용합니다.',
         'examples': [],
     },
 }
@@ -471,31 +611,45 @@ def get_category_tone(category: str) -> dict:
     return CATEGORY_TONE_EXAMPLES['default']
 
 
-def build_category_tone_block(category: str) -> str:
+def build_category_tone_block(
+    category: str,
+    *,
+    commemorative: bool = False,
+    matchup: bool = False,
+) -> str:
     """카테고리별 톤 예시를 프롬프트용 XML 블록으로 반환한다.
 
     h2_guide의 일반 few-shot과 별도로, 카테고리마다 고유한 어조 앵커를 제공한다.
-    예시 목록이 비어 있는 카테고리(default)에는 빈 문자열을 반환해 프롬프트 노이즈를
-    방지한다.
+    주 아키타입/보조 아키타입 목록을 함께 노출해 LLM 이 어떤 '약속의 종류' 안에서
+    선택해야 하는지 명시한다. 예시 목록이 비어 있는 카테고리(default)에도 아키타입
+    정보는 내보낸다.
     """
     tone = get_category_tone(category)
+    pool = resolve_category_archetypes(
+        category, commemorative=commemorative, matchup=matchup
+    )
+    primary = pool["primary"]
+    auxiliary = pool["auxiliary"]
     examples = [str(item).strip() for item in (tone.get('examples') or []) if str(item).strip()]
-    if not examples:
-        return ''
 
     style = normalize_h2_style(tone.get('style'))
     description = str(tone.get('description') or '').strip()
-    preferred_types = ', '.join(
-        str(item).strip() for item in (tone.get('preferred_types') or []) if str(item).strip()
-    )
 
     lines = [
         f'<h2_category_tone category="{category}" style="{style}">',
     ]
     if description:
         lines.append(f'  <description>{description}</description>')
-    if preferred_types:
-        lines.append(f'  <preferred_types>{preferred_types}</preferred_types>')
+    if primary:
+        joined = ', '.join(primary)
+        lines.append(f'  <primary_archetypes>{joined}</primary_archetypes>')
+    if auxiliary:
+        joined = ', '.join(auxiliary)
+        lines.append(f'  <auxiliary_archetypes>{joined}</auxiliary_archetypes>')
+    for archetype in primary + auxiliary:
+        desc = H2_ARCHETYPE_DESCRIPTIONS.get(archetype, '')
+        if desc:
+            lines.append(f'  <archetype name="{archetype}">{desc}</archetype>')
     for example in examples:
         safe = example.replace('<', '&lt;').replace('>', '&gt;')
         lines.append(f'  <good>{safe}</good>')

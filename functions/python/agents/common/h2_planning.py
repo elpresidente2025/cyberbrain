@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable, List, Optional, Sequence, TypedDict
 
+from .h2_guide import resolve_category_archetypes
 from .title_common import extract_numbers_from_content
 
 __all__ = [
@@ -224,7 +225,11 @@ def pick_suggested_type(
     preferred_types: Sequence[str],
     style: str = "aeo",
 ) -> str:
-    """섹션 본문 특징으로 type을 추정한다. preferred_types 내에서만 선택."""
+    """섹션 본문 특징으로 아키타입을 추정한다. preferred_types 풀 안에서만 선택.
+
+    Why: 6 아키타입(질문/목표/주장/이유/대조/사례) 중 섹션 본문 마커와 가장
+    잘 맞는 하나를 고른다. 허용 풀이 비어 있으면 주장형을 기본값으로 반환.
+    """
     text = strip_html(section_text)
     preferred = [str(t).strip() for t in (preferred_types or ()) if str(t).strip()]
 
@@ -234,36 +239,51 @@ def pick_suggested_type(
                 return candidate
         return None
 
-    if style == "assertive":
-        if any(marker in text for marker in _CRITICAL_MARKERS):
-            chosen = pick("비판형", "단정형", "명사형", "주장형")
-            if chosen:
-                return chosen
-        if _DECLARATIVE_TAIL_RE.search(text[-40:]):
-            chosen = pick("단정형", "주장형", "명사형")
-            if chosen:
-                return chosen
-        return pick("단정형", "주장형", "명사형") or (preferred[0] if preferred else "단정형")
+    lowered = text.lower()
 
-    # AEO 스타일
-    if _NUMERIC_LEAD_RE.search(text):
-        chosen = pick("데이터형", "명사형", "절차형")
-        if chosen:
-            return chosen
-    if any(marker in text for marker in _PROCEDURAL_MARKERS):
-        chosen = pick("절차형", "명사형", "데이터형")
-        if chosen:
-            return chosen
-    if any(marker in text for marker in _COMPARATIVE_MARKERS):
-        chosen = pick("비교형", "명사형")
-        if chosen:
-            return chosen
-    if text.rstrip().endswith("?") or "어떻게" in text or "무엇" in text:
-        chosen = pick("질문형", "명사형")
+    # 질문/의문사 마커: 질문형 최우선
+    if text.rstrip().endswith("?") or "어떻게" in text or "무엇" in text or "왜" in text:
+        chosen = pick("질문형", "이유형")
         if chosen:
             return chosen
 
-    return preferred[0] if preferred else "명사형"
+    # 대조 마커
+    if any(marker in lowered for marker in _COMPARATIVE_MARKERS):
+        chosen = pick("대조형", "주장형")
+        if chosen:
+            return chosen
+
+    # 숫자/현장/실적 마커: 사례형
+    if _NUMERIC_LEAD_RE.search(text) or any(
+        marker in text for marker in ("현장", "실적", "성과", "사례", "통계", "데이터")
+    ):
+        chosen = pick("사례형", "주장형")
+        if chosen:
+            return chosen
+
+    # 배경/이유 마커
+    if any(marker in text for marker in ("배경", "이유", "까닭", "원인", "때문")):
+        chosen = pick("이유형", "주장형")
+        if chosen:
+            return chosen
+
+    # 약속/목표 마커 + 절차 마커는 목표형에 흡수
+    if any(marker in text for marker in ("약속", "목표", "다짐", "하겠", "추진", "계획", "로드맵")) or any(
+        marker in text for marker in _PROCEDURAL_MARKERS
+    ):
+        chosen = pick("목표형", "주장형")
+        if chosen:
+            return chosen
+
+    # 단정 tail 또는 비판 마커: 주장형
+    if _DECLARATIVE_TAIL_RE.search(text[-40:]) or any(
+        marker in text for marker in _CRITICAL_MARKERS
+    ):
+        chosen = pick("주장형", "이유형")
+        if chosen:
+            return chosen
+
+    return preferred[0] if preferred else "주장형"
 
 
 # ---------------------------------------------------------------------------
@@ -281,8 +301,15 @@ def extract_section_plan(
     full_name: str = "",
     full_region: str = "",
     extra_entities: Optional[Sequence[str]] = None,
+    commemorative: bool = False,
+    matchup: bool = False,
 ) -> SectionPlan:
-    """섹션 한 개에 대한 SectionPlan 을 생성한다."""
+    """섹션 한 개에 대한 SectionPlan 을 생성한다.
+
+    commemorative/matchup 플래그는 카테고리 아키타입 풀을 오버라이드한다.
+    style_config.preferred_types 가 명시적으로 지정돼 있으면 그것을 우선
+    사용(레거시 호환). 그렇지 않으면 카테고리 → 아키타입 매핑으로 resolve.
+    """
     raw_slice = str(section_text or "")[:_SECTION_TEXT_MAX_LEN]
     cleaned = strip_html(raw_slice)
 
@@ -295,7 +322,19 @@ def extract_section_plan(
     numerics_bundle = extract_numbers_from_content(cleaned) or {}
     numerics = list(numerics_bundle.get("numbers") or [])
 
-    preferred_types = list(style_config.get("preferred_types") or style_config.get("preferredTypes") or [])
+    override_types = list(
+        style_config.get("preferred_types") or style_config.get("preferredTypes") or []
+    )
+    commemorative_flag = commemorative or bool(style_config.get("commemorative"))
+    matchup_flag = matchup or bool(style_config.get("matchup"))
+    if override_types:
+        preferred_types = override_types
+    else:
+        pool = resolve_category_archetypes(
+            category, commemorative=commemorative_flag, matchup=matchup_flag
+        )
+        preferred_types = list(pool["primary"]) + list(pool["auxiliary"])
+
     style = str(style_config.get("style") or "aeo").strip().lower() or "aeo"
 
     suggested_type = pick_suggested_type(
@@ -353,9 +392,9 @@ def extract_stance_claims(stance_text: str) -> StanceBrief:
     dominant_type = ""
     joined = " ".join(top_claims)
     if any(marker in joined for marker in _CRITICAL_MARKERS):
-        dominant_type = "비판형"
+        dominant_type = "이유형"
     elif _DECLARATIVE_TAIL_RE.search(joined):
-        dominant_type = "단정형"
+        dominant_type = "주장형"
 
     return StanceBrief(
         top_claims=top_claims,

@@ -13,11 +13,14 @@ import re
 from typing import Dict, List, Optional, TypedDict
 
 from .h2_guide import (
+    H2_ARCHETYPE_NAMES,
     H2_MAX_LENGTH,
     H2_MIN_LENGTH,
     _H2_CONSECUTIVE_DUPLICATE_TOKEN_RE,
     _H2_DUPLICATED_PARTICLE_RE,
+    detect_h2_archetype,
     has_incomplete_h2_ending,
+    is_h2_archetype,
     normalize_h2_style,
 )
 from .h2_planning import SectionPlan
@@ -171,35 +174,49 @@ def _keyword_first_third_score(heading: str, keyword: str) -> float:
     return 0.0
 
 
+def _archetype_match_score(
+    heading: str,
+    primary_archetypes: List[str],
+    auxiliary_archetypes: List[str],
+) -> float:
+    """아키타입 기반 type 점수.
+
+    Why: "소제목이 약속, 본문이 이행" AEO 구조에서 소제목은 6 아키타입
+    (질문/목표/주장/이유/대조/사례) 중 허용 풀 안에 들어야 한다. 기본 풀(primary)
+    에 해당하면 1.0, 보조 풀(auxiliary)이면 0.5, 둘 다 밖이면 0.0.
+    """
+    text = str(heading or "")
+    if not text:
+        return 0.0
+
+    primary = [str(a).strip() for a in (primary_archetypes or ()) if str(a).strip()]
+    auxiliary = [str(a).strip() for a in (auxiliary_archetypes or ()) if str(a).strip()]
+
+    for archetype in primary:
+        if is_h2_archetype(text, archetype):
+            return 1.0
+    for archetype in auxiliary:
+        if is_h2_archetype(text, archetype):
+            return 0.5
+    return 0.0
+
+
 def _type_match_score(heading: str, suggested_type: str, preferred_types: List[str]) -> float:
-    heading = str(heading or "")
-    suggested_type = str(suggested_type or "")
+    """레거시 시그니처 shim — preferred_types 를 primary 아키타입 풀로 간주한다.
 
-    def match_type(type_name: str) -> bool:
-        if not type_name:
-            return False
-        if type_name == "질문형":
-            return bool(_QUESTION_TAIL_RE.search(heading) or heading.rstrip().endswith("?"))
-        if type_name == "데이터형":
-            return bool(_DATA_PRESENCE_RE.search(heading))
-        if type_name == "절차형":
-            return bool(_PROCEDURAL_RE.search(heading))
-        if type_name == "비교형":
-            return bool(_COMPARATIVE_RE.search(heading))
-        if type_name in ("단정형", "주장형"):
-            return bool(_DECLARATIVE_TAIL_RE.search(heading.rstrip()))
-        if type_name == "비판형":
-            return bool(_CRITICAL_RE.search(heading))
-        if type_name == "명사형":
-            return not bool(_QUESTION_TAIL_RE.search(heading))
-        return False
+    suggested_type 은 plan 이 제안한 archetype 이름 (h2_planning.pick_suggested_type
+    가 생성). primary 매치 1.0, 다른 preferred 매치 0.5 로 유지한다.
+    """
+    text = str(heading or "")
+    suggested = str(suggested_type or "").strip()
+    preferred = [str(a).strip() for a in (preferred_types or ()) if str(a).strip()]
 
-    if match_type(suggested_type):
+    if suggested and is_h2_archetype(text, suggested):
         return 1.0
-    for alt in preferred_types or ():
-        if alt == suggested_type:
+    for archetype in preferred:
+        if archetype == suggested:
             continue
-        if match_type(alt):
+        if is_h2_archetype(text, archetype):
             return 0.5
     return 0.0
 
