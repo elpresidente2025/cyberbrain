@@ -40,9 +40,15 @@ INFO_GAP_PATTERNS: List[Pattern[str]] = [
     re.compile(r'(나|까|는가|을까|ㄹ까|할까|될까)\s*$'),     # 미완결 종결 어미
     re.compile(r'(?:^|[\s,])왜\s'),                           # 왜 질문
     re.compile(r'(?:^|[\s,])어떻게\s'),                       # 어떻게 질문
+    re.compile(r'(?:^|[\s,])(?:무엇이|무엇을|얼마(?:나|까지)|'
+               r'어디서?|언제|어느)'),                        # 기타 의문사
     re.compile(r'(이유|비결|비책|속내|답은|선택은|판단은|한\s*수|'
                r'이정표|전환점)\s*$'),                        # 미완결 명사 마무리
     re.compile(r'(그\s*이유|그\s*속내|그\s*답|그\s*선택)'),  # 지시어 미완결
+    # "N가지 [X]" 는 독자가 "그 N개가 뭔지" 궁금해하는 info_gap 장치.
+    # 단, 모호한 X("것/점/사항") 는 제외 — 구체 명사(조건/과제/이유/방법/
+    # 쟁점/원칙/단계/기준/지표) 와 함께 있어야 함.
+    re.compile(r'\d+\s*가지\s*(?:조건|과제|방법|이유|쟁점|원칙|축|단계|기준|지표)'),
 ]
 
 
@@ -112,7 +118,7 @@ _INSTITUTION_FALSE_POSITIVES: FrozenSet[str] = frozenset({
 _NUMERIC_UNIT_PATTERN = re.compile(
     r'(\d+(?:\.\d+)?)\s*'
     r'(억원|억|만원|만|천만원|조|%|퍼센트|명|건|가구|곳|대|개|호|주년|년|월|일|'
-    r'기|차|세|회|번|위|석|권|종|세대|시|분|초|km|킬로|배|시간)'
+    r'기|차|세|회|번|위|석|권|종|세대|시|분|초|km|킬로|배|시간|가지|단계|개월)'
 )
 
 # 기관·법인 접미 (위원회/회의체/부서/법안 등)
@@ -269,14 +275,56 @@ def count_slots_used_in_title(title: str, opportunities: Dict[str, List[str]]) -
 
 
 # ---------------------------------------------------------------------------
+# ANSWER ANCHOR — AEO 관점에서 "답변 엔진이 매칭할 수 있는" 앵커 단서
+# ---------------------------------------------------------------------------
+#
+# concrete_slot 은 "본문 재료를 인용했나" 만 본다. 그런데 재료만 인용하고
+# 쿼리 형태가 수사적 반문(`완성할까?`) 으로 끝나면 답변 엔진이 이 제목을
+# 실사용자 쿼리에 매칭할 수 없다. answer_anchor 는 "쿼리 형태 자체의
+# 구체성" 을 본다:
+#   - 수치 + 단위 (25% 감면, 3가지 조건, 60만 개 일자리)
+#   - 답변 예고 리스트 (N가지 조건/방법/이유/과제/쟁점)
+#   - 구체 선택지 제시 ("A·B 중 어디로", "A vs B")
+#   - 정책 행동 동사 (감면·개정·발의·공백 해소·직결·유치)
+#
+# 신호 1개당 +1, 최대 3. narrative_arc 는 2 로 축소해 총점 15 를 유지.
+
+ANSWER_ANCHOR_PATTERNS: List[Pattern[str]] = [
+    # N가지 답변 예고 리스트 — "3가지 조건", "5가지 과제", "4가지 쟁점"
+    re.compile(r'\d+\s*가지\s*(?:조건|과제|방법|이유|쟁점|원칙|축|단계|기준|지표)'),
+    # 수치 + 정책 행동 — "25% 감면", "274명 창출", "60만 개 일자리"
+    re.compile(
+        r'\d+(?:,\d{3})*\s*(?:%|퍼센트|억|만원|원|명|건|가구|곳|개|회|배|위|종)\s*'
+        r'(?:감면|창출|확보|유치|절감|달성|개정|발의|시행|배정|지원|투입|증액)'
+    ),
+    # 구체 선택지 제시 — "A·B 중 어디로", "A·B 중 무엇이" (A·B 는 다어절 허용)
+    re.compile(
+        r'[가-힣A-Za-z0-9]{2,}(?:\s+[가-힣A-Za-z0-9]+){0,3}\s*[·•]\s*'
+        r'[가-힣A-Za-z0-9]{2,}(?:\s+[가-힣A-Za-z0-9]+){0,3}\s*중\s*'
+        r'(?:어디로?|어느|무엇이|누가|언제)'
+    ),
+    # 비교 앵커 — "[기준] 수준 [행동]", "A vs B"
+    re.compile(r'[가-힣A-Za-z0-9]{2,}\s*(?:수준|대비|수준으로)\s*'
+               r'(?:도약|진입|추격|견인|근접|추월)'),
+    # 정책 행동 동사 단독 (수치 없이도 구체성 강함)
+    re.compile(r'(취득세\s*감면|조례\s*개정안\s*(?:발의|통과|시행)|'
+               r'광역교통망\s*확정|공백\s*해소|앵커기업\s*유치|'
+               r'직결\s*노선|역세권\s*지정|도첨산단\s*지정)'),
+    # "N개 중 유일" / "N중 최초" — 답변 엔진이 매우 선호하는 랭킹 쿼리
+    re.compile(r'\d+\s*(?:개|곳|시도|시·도|개\s*시도)\s*(?:중\s*)?(?:유일|최초|최다|최대|최소)'),
+]
+
+
+# ---------------------------------------------------------------------------
 # HOOK QUALITY ASSESSMENT — 차원별 독립 가산
 # ---------------------------------------------------------------------------
 
 HOOK_DIMENSION_MAX: Dict[str, int] = {
     'info_gap': 4,        # 질문/미완결 서사 1개라도 있으면 +4
     'concrete_slot': 6,   # 본문 고유 재료를 n개 인용 → n * 2 (최대 6)
-    'narrative_arc': 3,   # 변화/대비 구조
-    'specificity': 2,     # 제목 길이 대비 고유명사 비중
+    'narrative_arc': 2,   # 변화/대비 구조 (축소: 3 → 2)
+    'specificity': 1,     # 제목 길이 대비 고유명사 비중 (축소: 2 → 1)
+    'answer_anchor': 2,   # AEO 앵커 (신규)
 }
 HOOK_TOTAL_MAX: int = sum(HOOK_DIMENSION_MAX.values())  # 15
 
@@ -296,6 +344,21 @@ def _count_narrative_arc_signals(title: str) -> Tuple[int, List[str]]:
         return 0, []
     hits: List[str] = []
     for pat in NARRATIVE_ARC_PATTERNS:
+        if pat.search(title):
+            hits.append(pat.pattern)
+    return len(hits), hits
+
+
+def _count_answer_anchor_signals(title: str) -> Tuple[int, List[str]]:
+    """AEO 답변 앵커 신호 개수를 반환.
+
+    answer_anchor 차원은 (수치+단위+행동, N가지 리스트, 선택지, 비교,
+    정책 행동 동사, 랭킹 쿼리) 중 독립적으로 걸리는 신호를 센다.
+    """
+    if not title:
+        return 0, []
+    hits: List[str] = []
+    for pat in ANSWER_ANCHOR_PATTERNS:
         if pat.search(title):
             hits.append(pat.pattern)
     return len(hits), hits
@@ -350,10 +413,24 @@ def assess_title_hook_quality(
     clean_title = str(title or '').strip()
     features: List[str] = []
 
+    # AEO hollow 는 info_gap 을 무효화한다 — "완성할까?" 같은 수사적 반문은
+    # 표면만 물음표일 뿐 실제 정보 격차가 없다. 제목이 family-독립적으로
+    # aeo_hollow 로 걸리면 info_gap 점수를 0 으로 밀어서 "수사적 반문으로
+    # 4점 챙기는" 경로를 막는다.
+    try:
+        from .title_family_rules import assess_universal_aeo_hollow
+        aeo_hollow_check = assess_universal_aeo_hollow(clean_title)
+    except Exception:
+        aeo_hollow_check = {'hollow': False}
+    is_aeo_hollow = bool(aeo_hollow_check.get('hollow'))
+
     # info_gap
     gap_count, gap_signals = _count_info_gap_signals(clean_title)
     info_gap_score = HOOK_DIMENSION_MAX['info_gap'] if gap_count >= 1 else 0
-    if info_gap_score:
+    if is_aeo_hollow and info_gap_score:
+        info_gap_score = 0
+        features.append('AEO공허(질문무효)')
+    elif info_gap_score:
         features.append('정보격차')
 
     # concrete_slot
@@ -376,7 +453,19 @@ def assess_title_hook_quality(
     if specificity_score:
         features.append('고유밀도')
 
-    total = info_gap_score + concrete_slot_score + narrative_arc_score + specificity_score
+    # answer_anchor — AEO 관점의 "답변 엔진이 매칭할 수 있는" 앵커
+    anchor_count, anchor_signals = _count_answer_anchor_signals(clean_title)
+    answer_anchor_score = min(anchor_count, HOOK_DIMENSION_MAX['answer_anchor'])
+    if answer_anchor_score:
+        features.append(f'답변앵커×{min(anchor_count, HOOK_DIMENSION_MAX["answer_anchor"])}')
+
+    total = (
+        info_gap_score
+        + concrete_slot_score
+        + narrative_arc_score
+        + specificity_score
+        + answer_anchor_score
+    )
 
     # 누락된 slot 재료 — 제목이 "쓸 수 있었는데 안 쓴" 카테고리만 뽑는다
     missed: List[str] = []
@@ -386,6 +475,26 @@ def assess_title_hook_quality(
         if token_list and category not in matched_categories:
             sample = ', '.join(token_list[:2])
             missed.append(f'{category}({sample})')
+
+    # body_reuse pressure — 본문에 수치/정책 재료가 풍부한데 제목이 하나도
+    # 재사용하지 않으면 "flat" 으로 강등. concrete_slot 이 이미 카테고리
+    # 단위로만 보상하기 때문에, 본문이 아무리 풍부해도 한 토큰만 살짝 건드리고
+    # 끝나는 타이틀이 '턱걸이 ok' 로 올라오는 걸 방지한다.
+    total_tokens_available = int(slot_usage.get('total', 0) or 0)
+    body_reuse_penalty = 0
+    has_answer_anchor = answer_anchor_score >= 1
+    # 강한 AEO 조합(정보격차 만점 + 답변앵커)은 penalty 면제.
+    # 이 경우 제목이 본문 고유명사 대신 질의 프레임으로 AEO 가치를 제공한다.
+    strong_aeo_composition = info_gap_score >= 4 and has_answer_anchor
+    if strong_aeo_composition:
+        pass
+    elif total_tokens_available >= 5 and slot_used_categories == 0:
+        body_reuse_penalty = 1 if has_answer_anchor else 3
+        features.append('본문재활용부족' if has_answer_anchor else '본문재활용없음')
+    elif total_tokens_available >= 8 and slot_used_categories <= 1:
+        body_reuse_penalty = 1 if has_answer_anchor else 2
+        features.append('본문재활용희박')
+    total = max(0, total - body_reuse_penalty)
 
     if total >= 9:
         status = 'strong'
@@ -420,7 +529,13 @@ def assess_title_hook_quality(
                 'max': HOOK_DIMENSION_MAX['specificity'],
                 'signals': list(specificity_meta.get('signals') or []),
             },
+            'answer_anchor': {
+                'score': answer_anchor_score,
+                'max': HOOK_DIMENSION_MAX['answer_anchor'],
+                'signals': anchor_signals,
+            },
         },
+        'body_reuse_penalty': body_reuse_penalty,
         'features': features,
         'missed_opportunities': missed,
         'opportunities': opportunities or {},
@@ -616,12 +731,17 @@ def render_hook_rubric_block() -> str:
     """scorer 가 사용하는 rubric 을 LLM 에게 동일한 차원으로 공개한다."""
     return (
         '<hook_quality_rubric>\n'
-        '  <note>아래 4 차원 중 concrete_slot + specificity 조합만으로는 부족하다. '
-        'info_gap 또는 narrative_arc 중 최소 하나를 반드시 추가로 채워야 '
-        'few-shot 수준의 제목이다. 자세한 달성법은 &lt;rule id="hook_must_have_tension"&gt; 참조.</note>\n'
+        '  <note>아래 5 차원 중 concrete_slot + specificity 조합만으로는 부족하다. '
+        'info_gap / narrative_arc / answer_anchor 중 최소 하나는 반드시 같이 '
+        '채워야 few-shot 수준의 제목이다. 자세한 달성법은 '
+        '&lt;rule id="hook_must_have_tension"&gt; + '
+        '&lt;rule id="aeo_answerable_query_form"&gt; 참조. '
+        'body_reuse: &lt;slot_opportunities&gt; 에 5개 이상 재료가 있는데 '
+        '제목이 하나도 재사용하지 않으면 -3점 자동 감점된다.</note>\n'
         f'  <dimension id="info_gap" max="{HOOK_DIMENSION_MAX["info_gap"]}">'
-        '질문/미완결 서사 — "왜", "어떻게", "~나", "~까", 물음표 종결, '
-        '"이유/비결/선택은" 같은 명사 마무리.</dimension>\n'
+        '질문/미완결 서사 — "왜", "어떻게", "얼마나", "무엇이 달라졌나" 같은 '
+        '의문사 기반 실질 질문. 수사적 반문("완성할까?", "가능할까?") 은 '
+        'hollow 로 탈락된다.</dimension>\n'
         f'  <dimension id="concrete_slot" max="{HOOK_DIMENSION_MAX["concrete_slot"]}">'
         'slot_opportunities 에서 뽑아 쓴 지역·수치·기관·연도·정책명. '
         '카테고리 1개당 +2 (최대 3 카테고리).</dimension>\n'
@@ -630,6 +750,11 @@ def render_hook_rubric_block() -> str:
         '"274명 창출".</dimension>\n'
         f'  <dimension id="specificity" max="{HOOK_DIMENSION_MAX["specificity"]}">'
         '숫자+단위 토큰, 따옴표/괄호 고유어 인용.</dimension>\n'
+        f'  <dimension id="answer_anchor" max="{HOOK_DIMENSION_MAX["answer_anchor"]}">'
+        'AEO 답변 앵커 — "[N]가지 조건/과제/방법", "25% 감면/확보/유치", '
+        '"A·B 중 어디로", "판교 수준 도약", "17개 시도 중 유일" 같은 '
+        '답변 엔진이 실사용자 쿼리에 매칭할 수 있는 구체 앵커. '
+        '신호 1개당 +1.</dimension>\n'
         '</hook_quality_rubric>\n'
     )
 

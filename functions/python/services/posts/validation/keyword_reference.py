@@ -175,9 +175,21 @@ def _extract_person_name_from_keyword(keyword: Any) -> str:
     normalized = re.sub(r"\s+", " ", str(keyword or "")).strip()
     if not normalized:
         return ""
-    first_token = str(normalized.split(" ", 1)[0] or "").strip()
+    tokens = [token for token in normalized.split(" ") if token]
+    if not tokens:
+        return ""
+    first_token = str(tokens[0] or "").strip()
     if _looks_like_compact_person_keyword(first_token):
-        return first_token
+        if len(tokens) == 1:
+            return first_token
+        rest = " ".join(tokens[1:]).strip()
+        # Why: "계양 테크노밸리" 같은 장소·사업명 키워드에서 첫 토큰("계양")만 보고
+        #      사람 이름으로 오인하면 뒷부분("테크노밸리")이 역할로 해석돼
+        #      결국 "상대"로 치환되는 버그가 있었다. rest 가 실제 역할 라벨일 때만
+        #      사람 키워드로 인정한다.
+        if _normalize_reduced_role_label(rest) or _extract_geographic_role_label(rest):
+            return first_token
+        return ""
     collapsed = re.sub(r"\s+", "", normalized)
     if _looks_like_compact_person_keyword(collapsed):
         return collapsed

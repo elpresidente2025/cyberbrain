@@ -36,9 +36,87 @@ HOLLOW_COLLECTIVE_TOKENS: FrozenSet[str] = frozenset({
 HOLLOW_VIRTUE_TOKENS: FrozenSet[str] = frozenset({
     '책임', '가치', '길', '약속', '뜻', '꿈', '비전', '마음',
 })
+# AEO 관점에서 공허한 "정책 추상화" 토큰. 본문에 `취득세 25% 감면`, `60만 개
+# 일자리` 같은 구체 정책명·수치가 있는데 제목이 `숙원 사업`, `최대 현안`,
+# `핵심 과제` 같은 추상 대체어로 덮어버리면, 답변 엔진이 이 글을 실사용자
+# 쿼리에 매칭할 방법이 사라진다. hollow_slogan 과 마찬가지로 구체 앵커가
+# 함께 있으면 면책한다.
+HOLLOW_POLICY_ABSTRACTION_TOKENS: FrozenSet[str] = frozenset({
+    '숙원', '숙원사업', '최대현안', '핵심과제', '주요과제',
+    '중점과제', '주요쟁점', '대과제', '대사업',
+})
 HOLLOW_ABSTRACT_TOKENS: FrozenSet[str] = (
-    HOLLOW_COLLECTIVE_TOKENS | HOLLOW_VIRTUE_TOKENS
+    HOLLOW_COLLECTIVE_TOKENS
+    | HOLLOW_VIRTUE_TOKENS
+    | HOLLOW_POLICY_ABSTRACTION_TOKENS
 )
+
+
+# family 와 무관하게 모든 제목에 적용되는 AEO hollow 패턴.
+# SLOGAN_COMMITMENT 의 hollow_slogan_patterns 와 분리해 관리하는 이유:
+#   - hollow_slogan 은 "공동체 책임 다합니다" 처럼 다짐형 family 안에서만
+#     문제가 되는 조합이라 family 안쪽에 둔다.
+#   - 반면 "숙원 사업 완성할까?", "최대 현안 해결" 같은 정책 추상화는 어떤
+#     family 로 라우팅되든 AEO 품질을 떨어뜨린다. answer engine 이 제목을
+#     실사용자 쿼리("취득세 감면 조례", "광역교통망 계획")에 매칭시킬
+#     구체 앵커가 사라지기 때문이다.
+UNIVERSAL_AEO_HOLLOW_PATTERNS: List[Pattern[str]] = _compile([
+    # 정책 추상화 honorific
+    r'(숙원\s*사업|숙원\s*과제|최대\s*현안|핵심\s*과제|주요\s*쟁점|'
+    r'중점\s*과제|주요\s*과제)',
+    # "N년 숙원" / "4년간 ~" 같은 기간 + 추상어 조합 (본문 수치로 대체해야 함)
+    r'\d+\s*년\s*(?:간|동안)?\s*(?:숙원|현안|과제|비전)',
+    # 상태 변화 추상어 단독 (구체 대상 없이)
+    r'(?:반드시\s*)?(완성할까|완성하겠|해내겠|이뤄내겠|만들어가|이끌어가)\s*[?？.]?\s*$',
+])
+
+# UNIVERSAL_AEO hollow 를 면제시킬 구체 앵커.
+# SLOGAN_COMMITMENT 의 hollow_rescue 보다 엄격하게 좁힌다:
+#   - 단순 시설명·기관명(테크노밸리/산업단지/신도시 등) 은 rescue 에서 제외.
+#     이런 단어는 topic/검색어에 이미 들어 있는 경우가 많고, 제목이 "~는
+#     숙원 사업" 처럼 평탄하게 도망치는 걸 덮는 면죄부로 쓰인다.
+#   - 허용되는 앵커는 두 종류뿐이다:
+#     (a) 수치 + 단위 (25%, 60만 개, 274명) — 답변 엔진이 그 자체로 매칭
+#     (b) 구체 행동·제도 동사 (감면/개정/발의/제정/시행/공백 해소) — 정책의
+#         "무엇이 어떻게" 축. 단순 명사(조례/법안) 는 action 동사와 같이
+#         있을 때만 인정한다.
+UNIVERSAL_AEO_RESCUE_PATTERNS: List[Pattern[str]] = _compile([
+    r'\d+(?:,\d{3})*\s*(?:억|만원|원|%|퍼센트|명|건|가구|곳|개|회|배|주년|위|종)',
+    r'(?:조례|법안|특별법|개정안|시행령)\s*(?:발의|개정|제정|통과|시행)',
+    r'(감면|공백\s*해소|추가\s*감면|직결|연결|지정|착공|준공|유치|확보|절감|'
+    r'반환|환수|지급|배정|신청|접수|선정|인가|허가|승인|고시)',
+])
+
+
+def assess_universal_aeo_hollow(title: str) -> Dict[str, Any]:
+    """family 와 무관하게 AEO 공허 패턴을 검사한다.
+
+    제목에 UNIVERSAL_AEO_HOLLOW 가 걸리고, 구체 앵커(수치/정책 고유명) 가
+    하나도 없으면 hollow 로 플래그한다. assess_family_fit 와 독립적으로
+    호출돼, 어떤 family 라도 공통 AEO 기준을 강제한다.
+
+    반환:
+        {'hollow': bool, 'matched': str | None, 'reason': str | None}
+    """
+    title_text = str(title or '').strip()
+    if not title_text:
+        return {'hollow': False, 'matched': None, 'reason': None}
+    has_rescue = any(p.search(title_text) for p in UNIVERSAL_AEO_RESCUE_PATTERNS)
+    if has_rescue:
+        return {'hollow': False, 'matched': None, 'reason': None}
+    for pattern in UNIVERSAL_AEO_HOLLOW_PATTERNS:
+        m = pattern.search(title_text)
+        if m:
+            matched = str(m.group(0) or '').strip()
+            return {
+                'hollow': True,
+                'matched': matched,
+                'reason': (
+                    f'제목이 "{matched}" 같은 정책 추상어로 평탄화됐습니다. '
+                    '본문의 구체 수치·정책명·기관명 중 하나를 제목에 직접 인용하세요.'
+                ),
+            }
+    return {'hollow': False, 'matched': None, 'reason': None}
 
 
 TITLE_FAMILY_RULES: Dict[str, Dict[str, Any]] = {
@@ -280,6 +358,11 @@ def assess_family_fit(title: str, family: str) -> Dict[str, Any]:
             anti_match = m
             break
 
+    # family 와 무관한 AEO hollow (숙원 사업/최대 현안 류 정책 추상화) —
+    # positive/anti 판정보다 먼저 검사한다. positive 가 이겨도 AEO hollow 는
+    # 강등해야 하기 때문이다.
+    aeo_hollow = assess_universal_aeo_hollow(title_text)
+
     if positive:
         hollow_patterns = rule.get('hollow_slogan_patterns') or []
         if hollow_patterns:
@@ -307,6 +390,18 @@ def assess_family_fit(title: str, family: str) -> Dict[str, Any]:
                         'matched': matched,
                         'hollow': True,
                     }
+        if aeo_hollow['hollow']:
+            return {
+                'passed': True,
+                'score': 5,
+                'max': 10,
+                'status': 'neutral',
+                'reason': aeo_hollow['reason'] or '',
+                'family': normalized_family,
+                'matched': aeo_hollow['matched'],
+                'hollow': True,
+                'aeo_hollow': True,
+            }
         return {
             'passed': True,
             'score': 10,

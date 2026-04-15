@@ -159,6 +159,35 @@ def test_build_keyword_replacement_pool_avoids_issue_tokens() -> None:
     assert "이 사안" not in pool
 
 
+def test_reduce_excess_place_keyword_does_not_leak_generic_person_reference() -> None:
+    # Why: "샘플구 샘플단지" 같이 첫 토큰이 2글자 한글인 장소·사업명 키워드가
+    #      이전에는 사람 이름("샘플구")으로 오인돼 뒷부분이 역할로 해석되면서
+    #      최종 치환 결과가 bare "상대" 로 떨어지는 버그가 있었다.
+    content = (
+        "<p>샘플구 샘플단지 활성화에 매진해 온 저는 이 사업의 성공을 약속합니다. "
+        "샘플구 샘플단지의 성공적인 조성은 지역 경제를 살립니다. "
+        "샘플구 샘플단지는 미래 산업의 허브가 될 것입니다. "
+        "샘플구 샘플단지를 세계적 단지로 만들겠습니다. "
+        "샘플구 샘플단지에 대한 기대가 큽니다. "
+        "샘플구 샘플단지의 완성을 향해 나아갑니다. "
+        "샘플구 샘플단지 조성에는 협력이 필수입니다. "
+        "샘플구 샘플단지 프로젝트가 본격 추진됩니다.</p>"
+    )
+    user_keywords = ["샘플구 샘플단지"]
+
+    reduced = _reduce_excess_user_keyword_mentions(
+        content,
+        "샘플구 샘플단지",
+        user_keywords,
+        target_max=4,
+    )
+
+    updated = str(reduced.get("content") or "")
+    assert "상대" not in updated
+    assert "상대 의원" not in updated
+    assert "상대의" not in updated
+
+
 def test_should_keep_must_include_stance_filters_meta_and_branding_lines() -> None:
     assert _should_keep_must_include_stance("부산의 산업 전환 속도를 더 높여야 합니다.", "이재성") is True
     assert _should_keep_must_include_stance("이재성도 충분히 이깁니다.", "이재성") is False
