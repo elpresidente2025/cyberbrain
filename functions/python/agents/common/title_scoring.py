@@ -688,6 +688,7 @@ def calculate_title_quality_score(
     # region 은 모든 제목이 달고 있는 기본 틀이라 umbrella 해소 지표가 못 되고,
     # 본문이 비어 있어 후보가 0개면 게이트를 건너뛴다(프로필 전용 케이스).
     # 행사 안내 제목은 일정·장소 전달이 목적이라 적용하지 않는다.
+    anchor_coverage: Dict[str, Any] = {'passed': True, 'skipped': True}
     if title_purpose != 'event_announcement':
         anchor_coverage = _assess_body_anchor_coverage(title, params)
         if not anchor_coverage.get('passed', True) and not anchor_coverage.get('skipped'):
@@ -1100,7 +1101,50 @@ def calculate_title_quality_score(
         'status': '있음' if impact_score > 0 else '없음',
         'features': impact_features
     }
-    
+
+    # Body anchor strength — 같은 본문 앵커 게이트를 통과한 후보들 중에서
+    # "정말로 구체적인" 앵커(정책명·기관명·연도) 를 인용한 제목이 tiebreaker
+    # 에서 이기도록 20점 차원을 추가한다. 구체 앵커가 들어간 제목은 자연히
+    # 표면 요소가 많아 impact 의 정보과밀 -2 와 numbers "없음" 감점을 떠안기
+    # 때문에, numeric-only 대비 최소 10점 이상 앞서야 tiebreaker 로 기능한다.
+    # 본문이 비어 게이트가 skip 된 경우(프로필 전용) 는 max=0 으로 N/A 처리해
+    # 점수 상한이 내려가지 않도록 한다.
+    if anchor_coverage.get('skipped'):
+        breakdown['bodyAnchorStrength'] = {
+            'score': 0,
+            'max': 0,
+            'status': 'N/A',
+        }
+    else:
+        hit_buckets = list(anchor_coverage.get('hitBuckets') or [])
+        anchor_strength_score = 0
+        if 'policy' in hit_buckets:
+            anchor_strength_score += 8
+        if 'institution' in hit_buckets:
+            anchor_strength_score += 6
+        if 'year' in hit_buckets:
+            anchor_strength_score += 5
+        if 'numeric' in hit_buckets:
+            anchor_strength_score += 2
+        anchor_strength_score = min(anchor_strength_score, 20)
+        if anchor_strength_score >= 12:
+            anchor_status = '강함'
+        elif anchor_strength_score >= 6:
+            anchor_status = '보통'
+        else:
+            anchor_status = '약함'
+        breakdown['bodyAnchorStrength'] = {
+            'score': anchor_strength_score,
+            'max': 20,
+            'status': anchor_status,
+            'hitBuckets': hit_buckets,
+        }
+        if anchor_strength_score <= 2:
+            suggestions.append(
+                '본문에 정책명·기관명·연도 같은 구체 고유 앵커가 있는데 제목이 '
+                '이를 사용하지 않았습니다. 그쪽을 인용하면 점수가 크게 오릅니다.'
+            )
+
     # Total Score
     total_score = sum(item.get('score', 0) for item in breakdown.values())
     max_possible = sum(item.get('max', 0) for item in breakdown.values())
