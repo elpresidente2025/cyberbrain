@@ -14,7 +14,6 @@ LLM 호출 예산: 최대 2회 (primary + repair 1회). 전부 pass 시 LLM #2�
 
 from __future__ import annotations
 
-import logging
 import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -70,8 +69,6 @@ from ..common.h2_scoring import (
     score_h2,
     score_h2_aeo,
 )
-
-logger = logging.getLogger(__name__)
 
 SUBHEADING_RESPONSE_SCHEMA = {
     "type": "object",
@@ -145,9 +142,9 @@ class SubheadingAgent(Agent):
         try:
             return await self._process_inner(context)
         except Exception as error:
-            logger.error(
-                f"❌ [{self.name}] process() 실패 — 원본 content 유지: {error}",
-                exc_info=True,
+            import traceback
+            print(
+                f"❌ [{self.name}] process() 실패 — 원본 content 유지: {error}\n{traceback.format_exc()}"
             )
             return {
                 "content": context.get("content") or "",
@@ -189,7 +186,7 @@ class SubheadingAgent(Agent):
         preferred_keyword = context.get("preferredKeyword", "") or ""
 
         if stance_text:
-            logger.info(f"[{self.name}] 입장문 {len(stance_text)}자 활용하여 소제목 최적화")
+            print(f"[{self.name}] 입장문 {len(stance_text)}자 활용하여 소제목 최적화")
 
         optimized_content, trace, stats = await self.optimize_headings_in_content(
             content=content,
@@ -374,7 +371,7 @@ class SubheadingAgent(Agent):
                 for action in ("matchup_template", "fallback_original")
             },
         }
-        logger.info(f"✅ [SubheadingAgent] 매치업 모드 완료. stats={stats}")
+        print(f"✅ [SubheadingAgent] 매치업 모드 완료. stats={stats}")
         return {
             "content": rebuilt,
             "optimized": True,
@@ -401,7 +398,7 @@ class SubheadingAgent(Agent):
         if not matches:
             return content, [], {"matches": 0}
 
-        logger.info(
+        print(
             f"✨ [SubheadingAgent] 소제목 {len(matches)}개 최적화 시작 (Category: {category})"
         )
 
@@ -509,11 +506,11 @@ class SubheadingAgent(Agent):
                 user_role=user_role,
             )
         except Exception as error:  # pragma: no cover - defensive
-            logger.error(f"❌ [SubheadingAgent] Primary generation failed: {error}")
+            print(f"❌ [SubheadingAgent] Primary generation failed: {error}")
             first_attempt = []
 
         if not first_attempt or len(first_attempt) != len(plans):
-            logger.warning(
+            print(
                 "⚠️ [SubheadingAgent] 1차 생성 개수 불일치/실패. 결정론적 fallback으로 진행."
             )
             first_attempt = [""] * len(plans)
@@ -613,7 +610,7 @@ class SubheadingAgent(Agent):
                 )
                 llm_repair_called = True
             except Exception as error:
-                logger.error(f"❌ [SubheadingAgent] LLM repair batch failed: {error}")
+                print(f"❌ [SubheadingAgent] LLM repair batch failed: {error}")
                 repaired_map = {}
 
             for idx, new_heading in repaired_map.items():
@@ -703,10 +700,9 @@ class SubheadingAgent(Agent):
                     trace[idx]["anchor_cap_after"] = action.get("after")
                     trace[idx]["anchor_cap_applied"] = True
             final_headings = capped_headings
-            logger.info(
-                "🔧 [SubheadingAgent] anchor cap enforced: cap=%s, edits=%s",
-                anchor_cap_value,
-                len(anchor_cap_result.get("actions") or []),
+            print(
+                f"🔧 [SubheadingAgent] anchor cap enforced: cap={anchor_cap_value}, "
+                f"edits={len(anchor_cap_result.get('actions') or [])}"
             )
 
         # ---------- Phase 6.6: 본인 직책 잠금 (타인 역할 스탬핑 방지)
@@ -725,10 +721,9 @@ class SubheadingAgent(Agent):
                     trace[idx]["role_lock_removed"] = action.get("removed")
                     trace[idx]["role_lock_applied"] = True
             final_headings = locked_headings
-            logger.info(
-                "🔒 [SubheadingAgent] user role lock enforced: allowed=%r edits=%s",
-                user_role,
-                len(role_lock_result.get("actions") or []),
+            print(
+                f"🔒 [SubheadingAgent] user role lock enforced: allowed={user_role!r} "
+                f"edits={len(role_lock_result.get('actions') or [])}"
             )
 
         for i, final in enumerate(final_headings):
@@ -796,7 +791,7 @@ class SubheadingAgent(Agent):
                 )
             },
         }
-        logger.info(f"✅ [SubheadingAgent] 완료. stats={stats}")
+        print(f"✅ [SubheadingAgent] 완료. stats={stats}")
         return rebuilt, trace, stats
 
     # ---------------------------------------------------------- Plan / prompt
@@ -915,16 +910,15 @@ class SubheadingAgent(Agent):
                 cleaned = self._safe_sanitize(heading)
                 processed.append(cleaned)
             if len(processed) != target_count:
-                logger.warning(
-                    "⚠️ [SubheadingAgent] primary 응답 개수 불일치: expected=%s got=%s",
-                    target_count,
-                    len(processed),
+                print(
+                    f"⚠️ [SubheadingAgent] primary 응답 개수 불일치: "
+                    f"expected={target_count} got={len(processed)}"
                 )
             return processed
         except StructuredOutputError as error:
-            logger.error(f"❌ [SubheadingAgent] Structured output validation failed: {error}")
+            print(f"❌ [SubheadingAgent] Structured output validation failed: {error}")
         except Exception as error:
-            logger.error(f"❌ [SubheadingAgent] Generation failed: {error}")
+            print(f"❌ [SubheadingAgent] Generation failed: {error}")
         return []
 
     def _build_primary_prompt(
@@ -1306,11 +1300,9 @@ class SubheadingAgent(Agent):
 
         new_matches = list(_H2_PATTERN.finditer(assembled))
         if len(new_matches) != len(matches):
-            logger.warning(
-                "⚠️ [SubheadingAgent] h2_repair chain produced mismatched H2 count "
-                "(expected=%s got=%s) — skipping extraction.",
-                len(matches),
-                len(new_matches),
+            print(
+                f"⚠️ [SubheadingAgent] h2_repair chain produced mismatched H2 count "
+                f"(expected={len(matches)} got={len(new_matches)}) — skipping extraction."
             )
             return actions
 
@@ -1424,10 +1416,10 @@ class SubheadingAgent(Agent):
                 required_keys=("repairs",),
             )
         except StructuredOutputError as error:
-            logger.error(f"❌ [SubheadingAgent] Repair structured output failed: {error}")
+            print(f"❌ [SubheadingAgent] Repair structured output failed: {error}")
             return {}
         except Exception as error:
-            logger.error(f"❌ [SubheadingAgent] Repair call failed: {error}")
+            print(f"❌ [SubheadingAgent] Repair call failed: {error}")
             return {}
 
         repairs = payload.get("repairs") or []
