@@ -71,14 +71,21 @@ NARRATIVE_ARC_PATTERNS: List[Pattern[str]] = [
 # ---------------------------------------------------------------------------
 
 # 지역명 접미사 (행정구역 단위) — 한국 지명 패턴 기반, 특정 지역 하드코드 없음
+# 🔑 두 가지 경계 강제:
+#   1) negative lookbehind `(?<![가-힣])` — 왼쪽 단어 경계. 이게 없으면
+#      "인천광역시의원" 안에서 "천광역시" 가 substring 으로 잡힌다.
+#   2) prefix 최소 길이 2 — 한국 행정구역 이름에 1자 prefix 는 사실상
+#      존재하지 않는다("서울특별시"·"인천광역시"·"경기도"·"제주시"·"강남구"
+#      모두 2자 이상). 이걸 풀어두면 "감면"(→ 감+면), "이동"(→ 이+동),
+#      "수리"(→ 수+리) 같은 1자 prefix 일반어가 끝없이 오탐으로 들어온다.
 _REGION_SUFFIX_PATTERNS: List[Pattern[str]] = [
     # 광역 단위
-    re.compile(r'[가-힣]{1,4}(?:특별시|광역시|특별자치시|특별자치도)'),
-    re.compile(r'[가-힣]{1,3}(?:도|시)(?=[\s,.에의은는이가을를]|$)'),
+    re.compile(r'(?<![가-힣])[가-힣]{2,4}(?:특별시|광역시|특별자치시|특별자치도)'),
+    re.compile(r'(?<![가-힣])[가-힣]{2,3}(?:도|시)(?=[\s,.에의은는이가을를]|$)'),
     # 기초 단위
-    re.compile(r'[가-힣]{1,4}(?:구|군|시)(?=[\s,.에의은는이가을를]|$)'),
+    re.compile(r'(?<![가-힣])[가-힣]{2,4}(?:구|군|시)(?=[\s,.에의은는이가을를]|$)'),
     # 하위 단위
-    re.compile(r'[가-힣]{1,4}(?:동|읍|면|리)(?=[\s,.에의은는이가을를]|$)'),
+    re.compile(r'(?<![가-힣])[가-힣]{2,4}(?:동|읍|면|리)(?=[\s,.에의은는이가을를]|$)'),
 ]
 
 # 접미사는 맞지만 지역이 아닌 일반 명사 블랙리스트 — 단순 표면 매칭 오탐 방지
@@ -88,11 +95,16 @@ _REGION_FALSE_POSITIVES: FrozenSet[str] = frozenset({
     '처리', '관리', '정리', '수리', '거리', '자리', '머리', '우리',
     '소리', '다리', '도리', '진리', '원리', '논리', '윤리', '부리',
     '종리', '분리', '무리', '뿌리', '다리', '사리',
+    # ~리 외래어 복합어 (~valley 음차) — 지역명이 아니라 단지/산단 이름
+    '테크노밸리', '실리콘밸리', '바이오밸리', '그린밸리', '디지털밸리',
     # ~도 일반 명사
     '정도', '제도', '강도', '각도', '태도', '속도', '기도', '인도',
     '용도', '위도', '경도', '보도', '지도', '고도',
     # ~시 일반 명사 (실제 시 이름은 보통 2글자 이상)
     '수시', '당시', '즉시', '동시', '이시', '일시', '시시',
+    # ~도시 복합어 — "자족도시/신도시" 등은 도시 유형 일반어이지 지명이 아니다
+    '도시', '자족도시', '신도시', '계획도시', '혁신도시',
+    '스마트도시', '위성도시', '전원도시', '미래도시', '생태도시',
     # ~동 일반 명사
     '행동', '감동', '운동', '활동', '노동', '충동', '이동',
     '독립운동', '민주운동', '사회운동', '시민운동', '학생운동',
@@ -155,6 +167,22 @@ def _dedupe_preserve_order(items: List[str]) -> List[str]:
     return out
 
 
+def _substring_dedupe_preserve_order(items: List[str]) -> List[str]:
+    """다른 항목의 진부분집합(proper substring) 인 토큰을 제거한다.
+
+    "인천광역시" + "천광역시" 처럼 lookbehind 를 뚫고 들어온 오탐이 남아
+    있어도 최종 단계에서 더 긴 쪽만 남겨 LLM 프롬프트·스코어러에 일관된
+    앵커만 노출되도록 한다. 길이가 같은 완전 중복은 이미 상위 함수
+    `_dedupe_preserve_order` 에서 제거된 상태로 들어온다.
+    """
+    out: List[str] = []
+    for item in items:
+        if any(item != other and item in other for other in items):
+            continue
+        out.append(item)
+    return out
+
+
 def _extract_by_patterns(
     text: str,
     patterns: List[Pattern[str]],
@@ -203,17 +231,24 @@ def extract_slot_opportunities(
     combined = f'{topic_text}\n{content_text}'
     params_dict = params if isinstance(params, dict) else {}
 
-    # 지역 — params 의 사용자 프로필에서 우선 읽고, 없으면 본문 패턴 추출
+    # 지역 — params 의 사용자 프로필에서 우선 읽고, 없으면 본문 패턴 추출.
+    # 🔑 필드명은 Firestore canonical(handlers/profile.py) 그대로:
+    #   regionMetro(광역) / regionLocal(기초) / electoralDistrict(선거구).
+    # 과거 이름이던 regionDistrict/regionTown 은 DB 에 존재하지 않는 유령
+    # 필드라 읽지 않는다.
     region_hints: List[str] = []
-    for key in ('regionDistrict', 'regionTown', 'regionMetro', 'region'):
+    for key in ('regionLocal', 'electoralDistrict', 'regionMetro'):
         val = str(params_dict.get(key) or '').strip()
         if val:
             region_hints.append(val)
     region_surface = _extract_by_patterns(
         combined, _REGION_SUFFIX_PATTERNS, blacklist=_REGION_FALSE_POSITIVES
     )
-    # 본문 패턴이 프로필과 겹치면 중복 제거
-    region_all = _dedupe_preserve_order(region_hints + region_surface)
+    # 본문 패턴이 프로필과 겹치면 중복 제거 + "천광역시 ⊂ 인천광역시"
+    # 형태의 substring 오탐까지 최종 단계에서 걷어낸다.
+    region_all = _substring_dedupe_preserve_order(
+        _dedupe_preserve_order(region_hints + region_surface)
+    )
 
     # 수치 + 단위 — 매칭된 원문 텍스트를 그대로 보존
     numeric_tokens: List[str] = []
@@ -413,24 +448,13 @@ def assess_title_hook_quality(
     clean_title = str(title or '').strip()
     features: List[str] = []
 
-    # AEO hollow 는 info_gap 을 무효화한다 — "완성할까?" 같은 수사적 반문은
-    # 표면만 물음표일 뿐 실제 정보 격차가 없다. 제목이 family-독립적으로
-    # aeo_hollow 로 걸리면 info_gap 점수를 0 으로 밀어서 "수사적 반문으로
-    # 4점 챙기는" 경로를 막는다.
-    try:
-        from .title_family_rules import assess_universal_aeo_hollow
-        aeo_hollow_check = assess_universal_aeo_hollow(clean_title)
-    except Exception:
-        aeo_hollow_check = {'hollow': False}
-    is_aeo_hollow = bool(aeo_hollow_check.get('hollow'))
-
-    # info_gap
+    # info_gap — 수사적 반문("완성할까?") 도 1차적으로는 정보 격차로 보상하지만,
+    # 본문 구체 앵커가 하나도 없으면 scorer 상위의 body_anchor_coverage gate
+    # (title_scoring._assess_body_anchor_coverage) 에서 어차피 실격 처리된다.
+    # hollow regex 블랙리스트는 여기서 들지 않는다.
     gap_count, gap_signals = _count_info_gap_signals(clean_title)
     info_gap_score = HOOK_DIMENSION_MAX['info_gap'] if gap_count >= 1 else 0
-    if is_aeo_hollow and info_gap_score:
-        info_gap_score = 0
-        features.append('AEO공허(질문무효)')
-    elif info_gap_score:
+    if info_gap_score:
         features.append('정보격차')
 
     # concrete_slot
@@ -728,61 +752,38 @@ def render_slot_opportunities_block(
 
 
 def render_hook_rubric_block() -> str:
-    """scorer 가 사용하는 rubric 을 LLM 에게 동일한 차원/토큰/패턴으로 공개한다.
+    """scorer 가 사용하는 rubric 을 LLM 에게 동일한 차원/신호로 공개한다.
 
-    Why: 프롬프트와 scorer 가 따로 운영되면 LLM 은 산문 규칙만 보고 regex 를
-    회피한다. 이 블록은 실제 채점 코드에서 쓰는 HOLLOW_POLICY_ABSTRACTION_TOKENS
-    와 ANSWER_ANCHOR_PATTERNS 를 그대로 꺼내 보여 주고, flat = 실격이라는
-    통과선을 명시해 generation 기준 = scoring 기준 = 하나가 되도록 한다.
+    Why: 프롬프트와 scorer 가 분기하면 LLM 은 산문 규칙만 보고 실제 채점을
+    회피한다. 이 블록은 scorer 의 dimension/신호 정의만 그대로 노출한다. 정적
+    forbidden regex 는 쓰지 않고, 본문 구체 앵커 인용 여부는 별도의
+    <available_slots> / body_anchor_coverage 게이트가 본문 추출 기반으로
+    강제한다.
     """
-    # 실제 채점에서 쓰는 토큰/패턴을 직접 import — 이 블록의 내용과 scorer 가
-    # 분기하는 일이 생기지 않도록.
-    from .title_family_rules import HOLLOW_POLICY_ABSTRACTION_TOKENS
-
-    forbidden_tokens = " / ".join(sorted(HOLLOW_POLICY_ABSTRACTION_TOKENS))
-    forbidden_patterns = (
-        '(a) 정책 추상 honorific: "숙원 사업", "숙원 과제", "최대 현안", '
-        '"핵심 과제", "주요 쟁점", "중점 과제", "주요 과제"\n'
-        '    (b) "N년 숙원/현안/과제/비전" 같은 기간+추상어 조합\n'
-        '    (c) "완성할까?", "해내겠습니다", "이뤄내겠습니다", "만들어가겠습니다" '
-        '같은 추상 상태 변화 (구체 대상 없이)'
-    )
     required_anchors = (
         '(i) "[N]가지 조건/과제/방법/이유/쟁점/원칙/단계/기준/지표" 리스트 예고형\n'
         '    (ii) "[수치][단위] 감면/유치/확보/절감/배정/지급" 처럼 '
         '숫자+행동 동사\n'
         '    (iii) "[고유명 A]·[고유명 B] 중 어디로/어느" 선택지 질문형\n'
         '    (iv) "[상위 기준] 수준 도약/진입/추격/근접" 비교 앵커\n'
-        '    (v) "취득세 감면", "조례 개정안 발의/통과/시행", "광역교통망 확정", '
-        '"공백 해소", "앵커기업 유치", "직결 노선", "역세권 지정", '
-        '"도첨산단 지정" 같은 구체 정책 행동\n'
+        '    (v) 본문에서 뽑힌 구체 정책·조례·사업·행동 동사를 그대로 인용\n'
         '    (vi) "17개 시도 중 유일/최초/최다" 순위 질의'
     )
 
     return (
         '<hook_quality_rubric enforce="strict" shared_with="scorer">\n'
         '  <contract>이 블록은 scorer(title_hook_quality.assess_title_hook_quality) '
-        '가 사용하는 rubric 을 그대로 노출한다. 아래 forbidden / required 규칙은 '
-        '프롬프트 장식이 아니라 실제 regex 채점으로 강제된다. '
-        'status == "flat" 으로 채점되면 calculate_title_quality_score 가 '
-        '자동 실격(0점) 처리하고 재생성을 트리거한다. '
-        '통과선: status &gt;= "ok" (총점 &gt;= 5 / 15).</contract>\n'
+        '가 사용하는 rubric 을 그대로 노출한다. 아래 required / dimension 정의는 '
+        '프롬프트 장식이 아니라 실제 신호 채점으로 강제된다. '
+        '통과선: status &gt;= "ok" (총점 &gt;= 5 / 15). '
+        '추가로 본문에서 뽑힌 구체 앵커(정책·기관·수치·연도) 중 최소 1개를 '
+        '제목에 직접 인용해야 하며, 없으면 body_anchor_coverage 게이트에서 '
+        '자동 실격 처리된다.</contract>\n'
         '  <note>concrete_slot + specificity 조합만으로는 부족하다. '
         'info_gap / narrative_arc / answer_anchor 중 최소 하나는 반드시 같이 '
         '채워야 few-shot 수준의 제목이다. '
         'body_reuse: &lt;slot_opportunities&gt; 에 5개 이상 재료가 있는데 '
         '제목이 하나도 재사용하지 않으면 -3점 자동 감점.</note>\n'
-        '  <forbidden_tokens reason="hollow_policy_abstraction">\n'
-        f'    <list>{forbidden_tokens}</list>\n'
-        '    <rule>위 토큰이 제목에 들어가면 hollow=True, info_gap_score 강제 0, '
-        'status=flat 으로 채점된다. 본문의 구체 정책·수치로 대체하라.</rule>\n'
-        '  </forbidden_tokens>\n'
-        '  <forbidden_patterns reason="universal_aeo_hollow">\n'
-        f'    <list>{forbidden_patterns}</list>\n'
-        '    <rule>위 패턴은 family 와 무관하게 모든 제목에 적용된다. '
-        '구체 수치(25%, 17개 등) 또는 구체 행동 동사(감면/발의/유치 등) 가 '
-        '같이 있으면 면제되지만, 없으면 자동 실격.</rule>\n'
-        '  </forbidden_patterns>\n'
         '  <required_answer_anchors>\n'
         f'    <list>{required_anchors}</list>\n'
         '    <rule>answer_anchor &gt;= 1 이 되도록 위 유형 중 최소 1개를 반드시 '
@@ -790,8 +791,8 @@ def render_hook_rubric_block() -> str:
         '  </required_answer_anchors>\n'
         f'  <dimension id="info_gap" max="{HOOK_DIMENSION_MAX["info_gap"]}">'
         '질문/미완결 서사 — "왜", "어떻게", "얼마나", "무엇이 달라졌나" 같은 '
-        '의문사 기반 실질 질문. 수사적 반문("완성할까?", "가능할까?") 은 '
-        'hollow 로 탈락된다.</dimension>\n'
+        '의문사 기반 실질 질문. 본문 구체 앵커가 없는 수사적 반문은 '
+        'body_anchor_coverage 게이트에서 실격된다.</dimension>\n'
         f'  <dimension id="concrete_slot" max="{HOOK_DIMENSION_MAX["concrete_slot"]}">'
         'slot_opportunities 에서 뽑아 쓴 지역·수치·기관·연도·정책명. '
         '카테고리 1개당 +2 (최대 3 카테고리).</dimension>\n'

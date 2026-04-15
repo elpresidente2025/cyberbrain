@@ -106,6 +106,14 @@ class TitleAgent(Agent):
             'userKeywords': user_keywords, # User intent keywords
             'keywords': generated_keywords, # SEO extracts
             'fullName': full_name,
+            # 🔑 프로필 지역/직책 필드 — extract_slot_opportunities 가
+            # 본문 표면추출보다 먼저 읽어 "자족도시/천광역시" 같은 오탐을
+            # 원천 차단한다. 필드명은 Firestore 스키마(handlers/profile.py)
+            # 의 canonical name 을 그대로 사용한다.
+            'regionMetro': str(user_profile.get('regionMetro') or '').strip(),
+            'regionLocal': str(user_profile.get('regionLocal') or '').strip(),
+            'electoralDistrict': str(user_profile.get('electoralDistrict') or '').strip(),
+            'position': str(user_profile.get('position') or '').strip(),
             'category': category,
             'status': status,
             'titleScope': title_scope,

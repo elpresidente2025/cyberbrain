@@ -168,8 +168,17 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
         keywords,
         role_keyword_policy,
     )
-    user_few_shot = build_user_provided_few_shot_instruction(primary_type['id'], params)
-    skeleton_protocol = build_title_skeleton_protocol(primary_type['id'], params)
+    # 🔑 Phase 3 — skeleton / few-shot 이 body 앵커에 바인딩되도록 먼저 뽑는다.
+    # scorer(title_hook_quality) 와 동일한 함수를 사용해 한 번만 계산하고,
+    # 그 결과 map 을 skeleton_protocol / few_shot / slot_opportunities_xml
+    # 세 블록이 공유한다. 한 번 더 아래에서 재계산하지 않도록 주의.
+    slot_opportunities_map = extract_slot_opportunities(topic, content_preview, params)
+    user_few_shot = build_user_provided_few_shot_instruction(
+        primary_type['id'], params, slot_opportunities=slot_opportunities_map
+    )
+    skeleton_protocol = build_title_skeleton_protocol(
+        primary_type['id'], params, slot_opportunities=slot_opportunities_map
+    )
     common_anti_patterns = build_common_title_anti_pattern_instruction()
     narrative_principle_xml = '' if prompt_lite else _render_narrative_principle_xml(primary_type.get('principle', ''))
 
@@ -233,7 +242,8 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     # 보여 준다. 이 블록 덕분에 LLM 은 "어떤 지역/수치/기관/정책명을
     # 제목에 넣으면 점수가 올라가는지" 사전에 알 수 있다. hook_rubric
     # 블록도 동시에 주입해 scorer 가 볼 기준을 LLM 이 그대로 본다.
-    slot_opportunities_map = extract_slot_opportunities(topic, content_preview, params)
+    # Phase 3 이후 `slot_opportunities_map` 은 skeleton_protocol /
+    # user_few_shot 생성 전에 이미 한 번 계산돼 있다. 여기서 재계산 금지.
     slot_preferences_map = compute_slot_preferences(
         slot_opportunities_map,
         topic=topic,

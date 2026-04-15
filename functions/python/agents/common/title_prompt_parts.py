@@ -770,12 +770,20 @@ TITLE_SKELETONS: Dict[str, List[Dict[str, Any]]] = {
 }
 
 
-def build_title_skeleton_protocol(type_id: str, params: Optional[Dict[str, Any]] = None) -> str:
+def build_title_skeleton_protocol(
+    type_id: str,
+    params: Optional[Dict[str, Any]] = None,
+    slot_opportunities: Optional[Dict[str, List[str]]] = None,
+) -> str:
     """Return a structured construction protocol block for the selected title family.
 
     The LLM must pick exactly one skeleton and fill slots with current topic/keyword/author
     data, instead of inventing a new structure. Each skeleton is labeled with the scoring
     features it triggers so the model can optimize for the rubric directly.
+
+    slot_opportunities — `extract_slot_opportunities` 가 반환한 typed bucket 맵.
+    있으면 <available_slots> 에 본문 앵커를 슬롯명별로 노출해 "이 제목에 어떤
+    구체 토큰을 넣을 수 있는지" 를 LLM 에게 직접 보여 준다.
     """
     resolved_id = str(type_id or '').strip() or 'VIRAL_HOOK'
     skeletons = TITLE_SKELETONS.get(resolved_id) or TITLE_SKELETONS.get('VIRAL_HOOK') or []
@@ -828,6 +836,34 @@ def build_title_skeleton_protocol(type_id: str, params: Optional[Dict[str, Any]]
         slot_hint_lines.append(f'    <slot name="인물명|화자">{full_name}</slot>')
     if topic:
         slot_hint_lines.append(f'    <slot name="topic_원문">{topic[:80]}</slot>')
+
+    # 🔑 Phase 3 — body 앵커 주입.
+    # extract_slot_opportunities 가 넘겨준 typed bucket 을 skeleton 의
+    # 대괄호 슬롯명 기준으로 렌더한다. 예: region bucket 의 토큰은
+    # "[지역명]/[장소명]" 슬롯에 들어갈 수 있음을 pipe 로 분리해 노출.
+    # 같은 토큰이 여러 슬롯에 대응해도 LLM 이 골라 쓰도록 한 줄에 모아 준다.
+    bucket_label_to_brackets: Dict[str, List[str]] = {}
+    for bracket, buckets in _BRACKET_TO_OPPORTUNITY_BUCKETS.items():
+        for bucket in buckets:
+            bucket_label_to_brackets.setdefault(bucket, []).append(bracket)
+
+    if isinstance(slot_opportunities, dict):
+        bucket_order = ('region', 'policy', 'institution', 'numeric', 'year')
+        for bucket in bucket_order:
+            items = slot_opportunities.get(bucket) if slot_opportunities else None
+            if not isinstance(items, list) or not items:
+                continue
+            cleaned = [str(x).strip() for x in items if str(x or '').strip()]
+            if not cleaned:
+                continue
+            bracket_names = bucket_label_to_brackets.get(bucket, [])
+            # 같은 bucket 에 대응하는 대괄호 슬롯을 pipe 로 묶는다.
+            slot_name = '|'.join(bracket_names[:6]) if bracket_names else bucket
+            joined = ' | '.join(cleaned[:5])
+            slot_hint_lines.append(
+                f'    <slot name="{slot_name}" bucket="{bucket}">{joined}</slot>'
+            )
+
     slot_hint_xml = '\n'.join(slot_hint_lines) or '    <slot name="(없음)">입력 정보에서 추출</slot>'
 
     # SEO 키워드와 인물명이 동일한 경우의 충돌 회피 규칙
@@ -1049,7 +1085,85 @@ def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[st
         logger.error(f'Error in get_keyword_strategy_instruction: {e}')
         return ''
 
-def _build_few_shot_slot_values(params: Dict[str, Any]) -> Dict[str, str]:
+# ---------------------------------------------------------------------------
+# Phase 3 — skeleton 대괄호 슬롯을 body 앵커 typed bucket 으로 연결
+# ---------------------------------------------------------------------------
+#
+# `extract_slot_opportunities` 는 본문·토픽·프로필에서 region/policy/
+# institution/numeric/year 다섯 개 bucket 의 앵커를 뽑아낸다.
+# few-shot 템플릿·skeleton 이 쓰는 대괄호 슬롯 이름은 그와 1:N 으로 대응한다.
+# 이 매핑을 통해 (1) skeleton protocol 의 <available_slots> 에 "어떤 토큰을
+# 어떤 슬롯에 넣을 수 있는지" 를 LLM 에게 직접 보여 주고, (2) few-shot
+# rendered_examples 의 placeholder default("한빛시/김민우/청년주거지원") 대신
+# 실제 본문 앵커가 채워지도록 한다.
+_BRACKET_TO_OPPORTUNITY_BUCKETS: Dict[str, List[str]] = {
+    '지역명': ['region'],
+    '장소명': ['region', 'institution'],
+    '정책명': ['policy'],
+    '법안명': ['policy'],
+    '조례명': ['policy'],
+    '사업명': ['policy'],
+    '이슈명': ['policy'],
+    '정책쟁점': ['policy'],
+    '현안': ['policy'],
+    '핵심주제': ['policy'],
+    '문제명': ['policy'],
+    '민원주제': ['policy'],
+    '기관명': ['institution'],
+    '위원회': ['institution'],
+    '수치': ['numeric'],
+    '수량': ['numeric'],
+    '금액': ['numeric'],
+    '숫자': ['numeric'],
+    '대안수': ['numeric'],
+    '건수': ['numeric'],
+    '성과수': ['numeric'],
+    '핵심성과수': ['numeric'],
+    '개선수치': ['numeric'],
+    '혜택수치': ['numeric'],
+    '연도/분기': ['year'],
+    '월/분기': ['year'],
+    '기간': ['year', 'numeric'],
+    '개관시기': ['year'],
+    '날짜': ['year'],
+}
+
+_NUMERIC_SPLIT_RE = re.compile(r'(\d+(?:\.\d+)?)(.*)$')
+
+
+def _split_numeric_token(token: str) -> tuple[str, str]:
+    """'25%' → ('25', '%'), '120억' → ('120', '억'), '17개' → ('17', '개')."""
+    text = str(token or '').strip()
+    if not text:
+        return '', ''
+    m = _NUMERIC_SPLIT_RE.match(text)
+    if not m:
+        return text, ''
+    return m.group(1).strip(), m.group(2).strip()
+
+
+def _first_opportunity(
+    slot_opportunities: Optional[Dict[str, List[str]]],
+    buckets: List[str],
+) -> str:
+    """Return the first non-empty item across the given buckets, in order."""
+    if not isinstance(slot_opportunities, dict):
+        return ''
+    for bucket in buckets:
+        items = slot_opportunities.get(bucket)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            text = str(item or '').strip()
+            if text:
+                return text
+    return ''
+
+
+def _build_few_shot_slot_values(
+    params: Dict[str, Any],
+    slot_opportunities: Optional[Dict[str, List[str]]] = None,
+) -> Dict[str, str]:
     default_slot_values: Dict[str, str] = {
         '지역명': '한빛시',
         '장소명': '시민회관',
@@ -1149,6 +1263,34 @@ def _build_few_shot_slot_values(params: Dict[str, Any]) -> Dict[str, str]:
             '핵심주제': topic_label or default_slot_values['핵심주제'],
         }
     )
+
+    # 🔑 Phase 3 — body 앵커 override.
+    # slot_opportunities 가 전달되면 placeholder default / topic_label 대신
+    # 실제 본문·토픽·프로필에서 추출한 토큰으로 슬롯을 덮어쓴다. 이렇게
+    # 해야 rendered_examples 가 허구 앵커("한빛시", "청년주거지원") 대신
+    # 현재 글의 실제 정책·지역·수치로 렌더되고, LLM 이 그걸 그대로 복사해
+    # 제목을 만든다. 빈 bucket 은 덮어쓰지 않아 기존 topic_label fallback 을
+    # 유지한다.
+    if isinstance(slot_opportunities, dict) and slot_opportunities:
+        for bracket, buckets in _BRACKET_TO_OPPORTUNITY_BUCKETS.items():
+            value = _first_opportunity(slot_opportunities, buckets)
+            if not value:
+                continue
+            if bracket in ('수치', '수량', '숫자', '대안수', '건수',
+                           '성과수', '핵심성과수', '개선수치'):
+                numeric_part, _unit_part = _split_numeric_token(value)
+                slot_values[bracket] = numeric_part or value
+            elif bracket == '혜택수치':
+                slot_values[bracket] = value
+            else:
+                slot_values[bracket] = value
+        # numeric bucket 의 첫 토큰에서 단위를 뽑아 [단위] 슬롯도 동기화
+        first_numeric = _first_opportunity(slot_opportunities, ['numeric'])
+        if first_numeric:
+            _num_part, unit_part = _split_numeric_token(first_numeric)
+            if unit_part:
+                slot_values['단위'] = unit_part
+
     return slot_values
 
 def _render_slot_template(template: str, slot_values: Dict[str, str]) -> str:
@@ -1180,7 +1322,11 @@ def build_common_title_anti_pattern_instruction() -> str:
 """.strip()
 
 
-def build_user_provided_few_shot_instruction(type_id: str, params: Optional[Dict[str, Any]] = None) -> str:
+def build_user_provided_few_shot_instruction(
+    type_id: str,
+    params: Optional[Dict[str, Any]] = None,
+    slot_opportunities: Optional[Dict[str, List[str]]] = None,
+) -> str:
     requested_type_id = str(type_id or '').strip()
     resolved_type_id = requested_type_id
     few_shot = USER_PROVIDED_TITLE_FEW_SHOT.get(resolved_type_id)
@@ -1188,7 +1334,7 @@ def build_user_provided_few_shot_instruction(type_id: str, params: Optional[Dict
         logger.info("[TitleGen] 사용자 few-shot 미정의 타입: %s", resolved_type_id)
         return ''
 
-    slot_values = _build_few_shot_slot_values(params or {})
+    slot_values = _build_few_shot_slot_values(params or {}, slot_opportunities)
     slot_guide = '\n'.join([
         f'    <slot name="{k}" value="{v}" />'
         for k, v in list(slot_values.items())[:12]

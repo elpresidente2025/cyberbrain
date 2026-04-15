@@ -76,6 +76,78 @@ _NON_EVENT_ANNOUNCEMENT_SURFACE_PATTERNS = (
 
 
 
+_BODY_ANCHOR_BUCKETS = ('policy', 'institution', 'numeric', 'year')
+
+
+def _assess_body_anchor_coverage(title: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """제목이 본문에서 뽑힌 구체 앵커(정책·기관·수치·연도) 중 최소 1개를 인용했는지 검증.
+
+    region 만 포함된 제목은 통과시키지 않는다 — region 은 모든 제목이 기본으로 달고
+    있는 틀이라 umbrella 해소의 지표가 되지 못한다. policy/institution/numeric/year
+    버킷 중 어느 하나라도 후보가 있을 때만 게이트를 적용하고, 본문이 비어 있어
+    후보가 전혀 없으면 skip 한다(프로필 전용 케이스 보호).
+    """
+    normalized_title = str(title or '').strip()
+    if not normalized_title:
+        return {'passed': True, 'skipped': True}
+
+    try:
+        from .title_hook_quality import extract_slot_opportunities
+    except Exception:
+        return {'passed': True, 'skipped': True}
+
+    topic = str(params.get('topic') or '')
+    content_preview = str(params.get('contentPreview') or '')
+    try:
+        slots = extract_slot_opportunities(topic, content_preview, params) or {}
+    except Exception:
+        return {'passed': True, 'skipped': True}
+
+    has_any_candidate = any(
+        isinstance(slots.get(bucket), list) and slots.get(bucket)
+        for bucket in _BODY_ANCHOR_BUCKETS
+    )
+    if not has_any_candidate:
+        return {'passed': True, 'skipped': True}
+
+    compact_title = re.sub(r'\s+', '', normalized_title)
+    hit_buckets: List[str] = []
+    hit_tokens: List[str] = []
+    for bucket in _BODY_ANCHOR_BUCKETS:
+        items = slots.get(bucket) or []
+        for token in items:
+            compact_token = re.sub(r'\s+', '', str(token or ''))
+            if not compact_token:
+                continue
+            if compact_token in compact_title:
+                hit_buckets.append(bucket)
+                hit_tokens.append(str(token))
+                break
+
+    if hit_buckets:
+        return {
+            'passed': True,
+            'hitBuckets': hit_buckets,
+            'hitTokens': hit_tokens,
+        }
+
+    available = {
+        bucket: list((slots.get(bucket) or [])[:3])
+        for bucket in _BODY_ANCHOR_BUCKETS
+        if slots.get(bucket)
+    }
+    reason = (
+        '제목에 본문 구체 앵커(정책명·법안명·기관명·수치·연도) 가 '
+        '하나도 인용되지 않았습니다. 본문에서 뽑힌 후보 중 1개 이상을 '
+        '제목 문장에 직접 포함하세요.'
+    )
+    return {
+        'passed': False,
+        'reason': reason,
+        'available': available,
+    }
+
+
 def _repair_third_person_possessive_title_surface(title: str) -> str:
     repaired = normalize_title_surface(str(title or "").strip())
     if not repaired:
@@ -607,42 +679,38 @@ def calculate_title_quality_score(
             'suggestions': [role_reason],
         }
 
-    # AEO hollow gate — render_hook_rubric_block 이 프롬프트로 노출하는
-    # forbidden_tokens / forbidden_patterns 와 정확히 동일한 regex 를 돌려,
-    # LLM 이 산문 규칙을 무시하고 만든 공허 제목(예: "N년 숙원 사업 완성할까?",
-    # "최대 현안 해결 가능할까?") 을 자동 실격시킨다.
+    # Body anchor coverage gate — 같은 extract_slot_opportunities 파이프라인으로
+    # 본문에서 뽑힌 구체 앵커(정책·기관·수치·연도 버킷) 중 최소 1개가 제목에
+    # 실제로 인용됐는지 검증한다. generator 프롬프트의 <available_slots> 와
+    # scorer 가 동일한 버킷을 공유하므로, "프롬프트엔 후보가 있는데 제목엔
+    # 아무 앵커도 없는" hollow 제목이 자동으로 실격된다.
     #
-    # 이 gate 는 hook rubric 전체(status=='flat') 가 아니라 **hollow 패턴만**
-    # 차단한다. 선언형/다짐형처럼 AEO 문법이 아닌 정상 제목이 부수적으로
-    # flat 점수를 받는 경우와 분리하기 위함.
-    #
-    # 행사 안내 제목은 일정·장소 전달이 목적이라 이 체크를 건너뛴다.
+    # region 은 모든 제목이 달고 있는 기본 틀이라 umbrella 해소 지표가 못 되고,
+    # 본문이 비어 있어 후보가 0개면 게이트를 건너뛴다(프로필 전용 케이스).
+    # 행사 안내 제목은 일정·장소 전달이 목적이라 적용하지 않는다.
     if title_purpose != 'event_announcement':
-        from .title_family_rules import assess_universal_aeo_hollow
-        aeo_hollow = assess_universal_aeo_hollow(title)
-        if aeo_hollow.get('hollow'):
-            matched = str(aeo_hollow.get('matched') or '').strip()
-            hollow_reason = str(
-                aeo_hollow.get('reason')
-                or f'제목에 공허 추상어("{matched}") 가 포함되고 구체 앵커가 없습니다.'
+        anchor_coverage = _assess_body_anchor_coverage(title, params)
+        if not anchor_coverage.get('passed', True) and not anchor_coverage.get('skipped'):
+            anchor_reason = str(
+                anchor_coverage.get('reason')
+                or '제목에 본문 구체 앵커가 인용되지 않았습니다.'
             )
             return {
                 'score': 0,
                 'breakdown': {
-                    'hookQuality': {
+                    'bodyAnchorCoverage': {
                         'score': 0,
                         'max': 100,
-                        'status': '실격(AEO공허)',
-                        'reason': hollow_reason,
-                        'matched': matched,
+                        'status': '실격(본문앵커없음)',
+                        'reason': anchor_reason,
+                        'available': dict(anchor_coverage.get('available') or {}),
                     }
                 },
                 'passed': False,
                 'suggestions': [
-                    hollow_reason
-                    + ' <hook_quality_rubric> 의 required_answer_anchors 유형 중 '
-                    '최소 1개(수치+행동, 선택지 질문, N가지 리스트, 비교 앵커, '
-                    '구체 정책 동사) 를 본문에서 뽑아 제목에 직접 인용하세요.'
+                    anchor_reason
+                    + ' <available_slots> 의 policy/institution/numeric/year '
+                    '버킷에서 본문 고유 토큰 1개 이상을 골라 제목에 직접 넣으세요.'
                 ],
             }
 
