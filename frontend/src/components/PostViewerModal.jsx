@@ -204,14 +204,14 @@ export default function PostViewerModal({
               variant="h6"
               sx={{
                 fontWeight: 700,
-                color: '#000000 !important',
+                color: 'text.primary',
                 marginBottom: '1rem',
                 paddingBottom: '0.5rem',
                 borderBottom: '2px solid',
                 borderColor: 'primary.main',
                 '&, & *': {
-                  color: '#000000 !important'
-                }
+                  color: 'text.primary',
+                },
               }}
             >
               제목: {post?.title || '제목 없음'}
