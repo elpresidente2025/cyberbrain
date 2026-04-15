@@ -728,16 +728,66 @@ def render_slot_opportunities_block(
 
 
 def render_hook_rubric_block() -> str:
-    """scorer 가 사용하는 rubric 을 LLM 에게 동일한 차원으로 공개한다."""
+    """scorer 가 사용하는 rubric 을 LLM 에게 동일한 차원/토큰/패턴으로 공개한다.
+
+    Why: 프롬프트와 scorer 가 따로 운영되면 LLM 은 산문 규칙만 보고 regex 를
+    회피한다. 이 블록은 실제 채점 코드에서 쓰는 HOLLOW_POLICY_ABSTRACTION_TOKENS
+    와 ANSWER_ANCHOR_PATTERNS 를 그대로 꺼내 보여 주고, flat = 실격이라는
+    통과선을 명시해 generation 기준 = scoring 기준 = 하나가 되도록 한다.
+    """
+    # 실제 채점에서 쓰는 토큰/패턴을 직접 import — 이 블록의 내용과 scorer 가
+    # 분기하는 일이 생기지 않도록.
+    from .title_family_rules import HOLLOW_POLICY_ABSTRACTION_TOKENS
+
+    forbidden_tokens = " / ".join(sorted(HOLLOW_POLICY_ABSTRACTION_TOKENS))
+    forbidden_patterns = (
+        '(a) 정책 추상 honorific: "숙원 사업", "숙원 과제", "최대 현안", '
+        '"핵심 과제", "주요 쟁점", "중점 과제", "주요 과제"\n'
+        '    (b) "N년 숙원/현안/과제/비전" 같은 기간+추상어 조합\n'
+        '    (c) "완성할까?", "해내겠습니다", "이뤄내겠습니다", "만들어가겠습니다" '
+        '같은 추상 상태 변화 (구체 대상 없이)'
+    )
+    required_anchors = (
+        '(i) "[N]가지 조건/과제/방법/이유/쟁점/원칙/단계/기준/지표" 리스트 예고형\n'
+        '    (ii) "[수치][단위] 감면/유치/확보/절감/배정/지급" 처럼 '
+        '숫자+행동 동사\n'
+        '    (iii) "[고유명 A]·[고유명 B] 중 어디로/어느" 선택지 질문형\n'
+        '    (iv) "[상위 기준] 수준 도약/진입/추격/근접" 비교 앵커\n'
+        '    (v) "취득세 감면", "조례 개정안 발의/통과/시행", "광역교통망 확정", '
+        '"공백 해소", "앵커기업 유치", "직결 노선", "역세권 지정", '
+        '"도첨산단 지정" 같은 구체 정책 행동\n'
+        '    (vi) "17개 시도 중 유일/최초/최다" 순위 질의'
+    )
+
     return (
-        '<hook_quality_rubric>\n'
-        '  <note>아래 5 차원 중 concrete_slot + specificity 조합만으로는 부족하다. '
+        '<hook_quality_rubric enforce="strict" shared_with="scorer">\n'
+        '  <contract>이 블록은 scorer(title_hook_quality.assess_title_hook_quality) '
+        '가 사용하는 rubric 을 그대로 노출한다. 아래 forbidden / required 규칙은 '
+        '프롬프트 장식이 아니라 실제 regex 채점으로 강제된다. '
+        'status == "flat" 으로 채점되면 calculate_title_quality_score 가 '
+        '자동 실격(0점) 처리하고 재생성을 트리거한다. '
+        '통과선: status &gt;= "ok" (총점 &gt;= 5 / 15).</contract>\n'
+        '  <note>concrete_slot + specificity 조합만으로는 부족하다. '
         'info_gap / narrative_arc / answer_anchor 중 최소 하나는 반드시 같이 '
-        '채워야 few-shot 수준의 제목이다. 자세한 달성법은 '
-        '&lt;rule id="hook_must_have_tension"&gt; + '
-        '&lt;rule id="aeo_answerable_query_form"&gt; 참조. '
+        '채워야 few-shot 수준의 제목이다. '
         'body_reuse: &lt;slot_opportunities&gt; 에 5개 이상 재료가 있는데 '
-        '제목이 하나도 재사용하지 않으면 -3점 자동 감점된다.</note>\n'
+        '제목이 하나도 재사용하지 않으면 -3점 자동 감점.</note>\n'
+        '  <forbidden_tokens reason="hollow_policy_abstraction">\n'
+        f'    <list>{forbidden_tokens}</list>\n'
+        '    <rule>위 토큰이 제목에 들어가면 hollow=True, info_gap_score 강제 0, '
+        'status=flat 으로 채점된다. 본문의 구체 정책·수치로 대체하라.</rule>\n'
+        '  </forbidden_tokens>\n'
+        '  <forbidden_patterns reason="universal_aeo_hollow">\n'
+        f'    <list>{forbidden_patterns}</list>\n'
+        '    <rule>위 패턴은 family 와 무관하게 모든 제목에 적용된다. '
+        '구체 수치(25%, 17개 등) 또는 구체 행동 동사(감면/발의/유치 등) 가 '
+        '같이 있으면 면제되지만, 없으면 자동 실격.</rule>\n'
+        '  </forbidden_patterns>\n'
+        '  <required_answer_anchors>\n'
+        f'    <list>{required_anchors}</list>\n'
+        '    <rule>answer_anchor &gt;= 1 이 되도록 위 유형 중 최소 1개를 반드시 '
+        '포함하라. 없으면 info_gap 만으로 통과할 수 없고 flat 으로 실격된다.</rule>\n'
+        '  </required_answer_anchors>\n'
         f'  <dimension id="info_gap" max="{HOOK_DIMENSION_MAX["info_gap"]}">'
         '질문/미완결 서사 — "왜", "어떻게", "얼마나", "무엇이 달라졌나" 같은 '
         '의문사 기반 실질 질문. 수사적 반문("완성할까?", "가능할까?") 은 '
@@ -751,10 +801,8 @@ def render_hook_rubric_block() -> str:
         f'  <dimension id="specificity" max="{HOOK_DIMENSION_MAX["specificity"]}">'
         '숫자+단위 토큰, 따옴표/괄호 고유어 인용.</dimension>\n'
         f'  <dimension id="answer_anchor" max="{HOOK_DIMENSION_MAX["answer_anchor"]}">'
-        'AEO 답변 앵커 — "[N]가지 조건/과제/방법", "25% 감면/확보/유치", '
-        '"A·B 중 어디로", "판교 수준 도약", "17개 시도 중 유일" 같은 '
-        '답변 엔진이 실사용자 쿼리에 매칭할 수 있는 구체 앵커. '
-        '신호 1개당 +1.</dimension>\n'
+        'AEO 답변 앵커 — 위 required_answer_anchors 참조. 신호 1개당 +1.</dimension>\n'
+        '  <pass_gate>status=flat → 실격. 반드시 ok(&gt;=5/15) 이상.</pass_gate>\n'
         '</hook_quality_rubric>\n'
     )
 

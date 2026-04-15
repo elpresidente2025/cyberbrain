@@ -607,6 +607,45 @@ def calculate_title_quality_score(
             'suggestions': [role_reason],
         }
 
+    # AEO hollow gate — render_hook_rubric_block 이 프롬프트로 노출하는
+    # forbidden_tokens / forbidden_patterns 와 정확히 동일한 regex 를 돌려,
+    # LLM 이 산문 규칙을 무시하고 만든 공허 제목(예: "N년 숙원 사업 완성할까?",
+    # "최대 현안 해결 가능할까?") 을 자동 실격시킨다.
+    #
+    # 이 gate 는 hook rubric 전체(status=='flat') 가 아니라 **hollow 패턴만**
+    # 차단한다. 선언형/다짐형처럼 AEO 문법이 아닌 정상 제목이 부수적으로
+    # flat 점수를 받는 경우와 분리하기 위함.
+    #
+    # 행사 안내 제목은 일정·장소 전달이 목적이라 이 체크를 건너뛴다.
+    if title_purpose != 'event_announcement':
+        from .title_family_rules import assess_universal_aeo_hollow
+        aeo_hollow = assess_universal_aeo_hollow(title)
+        if aeo_hollow.get('hollow'):
+            matched = str(aeo_hollow.get('matched') or '').strip()
+            hollow_reason = str(
+                aeo_hollow.get('reason')
+                or f'제목에 공허 추상어("{matched}") 가 포함되고 구체 앵커가 없습니다.'
+            )
+            return {
+                'score': 0,
+                'breakdown': {
+                    'hookQuality': {
+                        'score': 0,
+                        'max': 100,
+                        'status': '실격(AEO공허)',
+                        'reason': hollow_reason,
+                        'matched': matched,
+                    }
+                },
+                'passed': False,
+                'suggestions': [
+                    hollow_reason
+                    + ' <hook_quality_rubric> 의 required_answer_anchors 유형 중 '
+                    '최소 1개(수치+행동, 선택지 질문, N가지 리스트, 비교 앵커, '
+                    '구체 정책 동사) 를 본문에서 뽑아 제목에 직접 인용하세요.'
+                ],
+            }
+
     event_anchor_context: Dict[str, Any] = {
         'dateHint': '',
         'bookTitle': '',
