@@ -51,6 +51,14 @@ _H2_TRAILING_INCOMPLETE_ENDING_RE = re.compile(
     r"겠(?:다|습)?|하는|있는|없는"
     r")$"
 )
+# 조건부/가정 접속 어미 "~면" 계열. 종속절 접속어라 주절이 없으면 문장 미완결.
+# 예: "대장지구와 비교하면" → 주절 누락. "학생이면" → 주절 누락.
+# 반드시 stem (1+ 한글 음절) 이 선행해야 매칭되도록 `[가-힣]+` 앵커를 둔다.
+# 이렇게 하면 "측면/국면/방면/이면(뒷면)/라면(음식)" 같은 명사 단독형은 제외되고
+# 오직 용언 어간 + 조건부 어미 결합형만 잡힌다.
+_H2_CONDITIONAL_TAIL_RE = re.compile(
+    r"[가-힣]+(?:하|되|이|라|려|으려|으)면$"
+)
 # 관형형 어미 `-(으)ㄹ` 단독 종결 감지. 용언(하다/가다/내다/되다/오다/보다/치다/키다)
 # 의 관형형이 수식 대상 없이 H2 끝에 남으면 미완결이다.
 # 예: "공동체 책임 다할", "정신을 이어갈", "꿈을 펼칠"
@@ -132,6 +140,9 @@ def has_incomplete_h2_ending(text: str) -> bool:
         return True
 
     if _H2_TRAILING_INCOMPLETE_ENDING_RE.search(last_token):
+        return True
+
+    if _H2_CONDITIONAL_TAIL_RE.search(last_token):
         return True
 
     if len(last_token) >= 2 and _H2_TRAILING_VERBAL_MODIFIER_RE.search(last_token):
