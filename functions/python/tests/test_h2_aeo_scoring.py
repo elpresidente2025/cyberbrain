@@ -187,6 +187,24 @@ class TestBuildDescriptorPool:
         )
         assert len(pool) <= 4
 
+    def test_excludes_other_person_role_facts(self) -> None:
+        # Why: role_facts 는 소스 기사에서 추출된 다인물 역할 맵이다.
+        #      본인("홍길동") 외의 역할이 descriptor 로 들어가면 H2 에
+        #      엉뚱한 직책이 스탬핑된다. 본인 역할만 허용.
+        pool = build_descriptor_pool(
+            full_name="홍길동",
+            full_region="샘플시 샘플구",
+            profile={"currentRole": "시의원"},
+            role_facts={
+                "홍길동": "시의원",
+                "아무개": "국회의원",
+                "누군가": "위원장",
+            },
+        )
+        assert "시의원" in pool
+        assert "국회의원" not in pool
+        assert "위원장" not in pool
+
 
 # ---------------------------------------------------------------------------
 # assign_h2_entity_slots

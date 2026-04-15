@@ -537,9 +537,11 @@ def build_descriptor_pool(
             pool.append(f"{short_region} 청년 정치인")
             pool.append(f"{short_region} 정책 실무자")
 
-    if isinstance(role_facts, dict):
-        for value in role_facts.values():
-            pool.extend(_split_role_label_tokens(value))
+    # Why: role_facts 는 소스 텍스트에서 추출된 다인물 역할 맵이다.
+    #      본인 역할은 위에서 이미 추가했으므로, 여기서 values() 전체를 다시
+    #      순회하면 타인의 역할(예: "국회의원", "위원장")이 본인 descriptor
+    #      pool 에 섞여 들어가 H2 에 엉뚱한 직책이 스탬핑된다. 본인 외 역할은
+    #      descriptor 로 절대 쓰지 않는다.
 
     cleaned: List[str] = []
     seen: set = set()
