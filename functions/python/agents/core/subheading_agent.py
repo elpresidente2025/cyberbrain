@@ -1250,12 +1250,14 @@ class SubheadingAgent(Agent):
             safe_working.append(heading or "")
         assembled = self._replace_h2_headings(content, matches, safe_working)
 
+        # preferred_names 는 repair_entity_consistency 의 "화자 보호" 가드로
+        # 소비된다(h2_repair.py 1151). 여기 known_person_names 를 섞으면
+        # 본인(full_name)과 타인이 동일 우선순위가 되어 본인 이름이 H2 에서
+        # 타인 혹은 generic("지역/지방") 로 치환되는 Bug 1 경로가 열린다.
+        # 반드시 본인 full_name 만 넣는다.
         preferred_names: List[str] = []
         if full_name:
             preferred_names.append(full_name)
-        for name in known_person_names:
-            if name and name not in preferred_names:
-                preferred_names.append(name)
 
         if known_person_names:
             entity_result = repair_entity_consistency(

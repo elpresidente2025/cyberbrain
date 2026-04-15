@@ -486,6 +486,73 @@ def test_score_h2_banned_pattern_penalty() -> None:
     assert any("BANNED_PATTERN" in issue for issue in result["issues"])
 
 
+def test_score_h2_fails_on_adnominal_etm_ending() -> None:
+    """관형형 전성어미 `-(으)ㄴ/-는` 단독 종결은 미완결 (Bug 3).
+
+    "더딘", "가는", "느린" 같이 수식할 명사 없이 ETM 으로 끝나면
+    kiwi 형태소 분석이 미완결로 판정해야 한다.
+    """
+    plan = _plan_for("대장지구", "이유형")
+    for heading in (
+        "대장지구 개발, 진척이 더딘",
+        "대장지구 재정비 속도가 느린",
+    ):
+        result = score_h2(
+            heading,
+            plan,
+            style="aeo",
+            preferred_types=["이유형"],
+        )
+        assert "INCOMPLETE_ENDING" in result["issues"], heading
+        assert result["passed"] is False, heading
+
+
+def test_score_h2_hard_fails_when_question_archetype_not_met() -> None:
+    """plan 이 `질문형` archetype 을 배정했는데 output 이 의문형이 아니면 hard-fail (Bug 2)."""
+    plan = _plan_for("청년 기본소득", "질문형")
+    result = score_h2(
+        "청년 기본소득, 지역 예산 확보 절차",
+        plan,
+        style="aeo",
+        preferred_types=["질문형", "사례형"],
+    )
+    assert "H2_QUESTION_FORM_REQUIRED" in result["issues"]
+    assert result["passed"] is False
+
+
+def test_score_h2_accepts_question_archetype_with_question_form() -> None:
+    """질문형 배정에 의문 종결 어미가 있으면 통과."""
+    plan = _plan_for("청년 기본소득", "질문형")
+    result = score_h2(
+        "청년 기본소득, 신청 방법은 무엇일까요?",
+        plan,
+        style="aeo",
+        preferred_types=["질문형"],
+    )
+    assert "H2_QUESTION_FORM_REQUIRED" not in result["issues"]
+
+
+def test_repair_entity_consistency_never_replaces_speaker_name() -> None:
+    """Bug 1: preferred_names 가 오염돼도 speaker(본인 full_name)는 H2 에서 치환되지 않는다."""
+    from agents.common.h2_repair import repair_entity_consistency
+
+    content = (
+        "<h2>샘플구 개발, 홍길동이 이끈다</h2>\n"
+        "<p>아무개 시장이 샘플구 개발 전권을 쥐고 있다. 아무개 시장은 매주 현장을 방문한다.</p>\n"
+    )
+    # preferred_names 에 홍길동(본인) 과 아무개(타인)이 섞여 있는 dilution 상황을 모사.
+    result = repair_entity_consistency(
+        content,
+        known_names=["홍길동", "아무개"],
+        preferred_names=["홍길동", "아무개"],
+        role_facts={},
+    )
+    assert "홍길동" in result["content"]
+    # speaker_name == 홍길동 이므로 heading 의 홍길동이 아무개로 치환돼선 안 된다.
+    assert "아무개이 이끈다" not in result["content"]
+    assert "아무개가 이끈다" not in result["content"]
+
+
 # ---------------------------------------------------------------------------
 # SubheadingAgent — Plan → Gen → Score → Repair 통합
 # ---------------------------------------------------------------------------

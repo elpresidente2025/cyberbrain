@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, TypedDict
 
+from . import korean_morph
 from .h2_guide import (
     H2_ARCHETYPE_NAMES,
     H2_MAX_LENGTH,
@@ -70,6 +71,11 @@ H2_HARD_FAIL_ISSUES = frozenset(
         "QUESTION_FORM_IN_ASSERTIVE",
         "DUPLICATE_PARTICLE_OR_TOKEN",
         "H2_EMOTION_APPEAL",
+        # plan 의 suggested_type 이 "질문형" 인데 실제 heading 이
+        # 의문 종결어미/의문부호를 갖추지 못한 경우. plan archetype 과
+        # 실제 output 이 어긋나면 LLM repair 결과가 쓰레기여도 점수만
+        # 합격하는 것을 막기 위해 hard-fail 로 격상한다.
+        "H2_QUESTION_FORM_REQUIRED",
     }
 )
 
@@ -332,6 +338,11 @@ def score_h2(
         issues.append("QUESTION_FORM_IN_ASSERTIVE")
     breakdown["assertive_gate"] = {"raw": assertive_raw, "weighted": assertive_weighted}
 
+    # plan 이 "질문형" archetype 을 배정했는데 실제 heading 이 질문 형태가 아니면
+    # hard-fail. 점수만 합격해서 의문형 공백을 그대로 두는 것을 차단한다.
+    if suggested_type == "질문형" and not _has_question_form(heading_text):
+        issues.append("H2_QUESTION_FORM_REQUIRED")
+
     dup_raw, dup_fail = _duplicate_score(heading_text)
     dup_weighted = dup_raw * _WEIGHTS["duplicate"]
     if dup_fail:
@@ -495,6 +506,11 @@ def _has_question_form(heading: str) -> bool:
     text = str(heading or "").strip()
     if not text:
         return False
+    # Kiwi 형태소 분석: 종결어미 EF 가 의문형 whitelist 에 속하거나 의문 부사+EC.
+    # 실패 시 None 반환 → regex fallback.
+    kiwi_verdict = korean_morph.is_question_form(text)
+    if kiwi_verdict is True:
+        return True
     if text.rstrip().endswith("?"):
         return True
     if _QUESTION_TAIL_RE.search(text):

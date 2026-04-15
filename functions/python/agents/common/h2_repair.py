@@ -1150,6 +1150,11 @@ def repair_entity_consistency(
             continue
         if heading_name in preferred_name_set and body_name not in preferred_name_set:
             continue
+        # 방어 가드: 화자(speaker_name, 즉 본인 full_name)는 H2 에서 절대로
+        # 다른 이름으로 치환되지 않는다. preferred_names 가 상위 호출자에서
+        # 오염되더라도 화자 이름만은 지킨다 (Bug 1 재발 방지).
+        if speaker_name and heading_name == speaker_name:
+            continue
         body_name_score = int(body_scores.get(body_name) or 0)
         heading_name_score = int(body_scores.get(heading_name) or 0)
         if body_name_score <= heading_name_score:

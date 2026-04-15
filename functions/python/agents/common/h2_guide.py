@@ -8,6 +8,8 @@
 import re
 from typing import Dict, List
 
+from . import korean_morph
+
 # ---------------------------------------------------------------------------
 # 상수 (validator, normalizer, agent 공통)
 # ---------------------------------------------------------------------------
@@ -133,6 +135,12 @@ def has_incomplete_h2_ending(text: str) -> bool:
     """
     candidate = re.sub(r'\s+', ' ', str(text or '').strip())
     if not candidate:
+        return True
+
+    # Kiwi 형태소 분석: ETM(관형형), EC(연결어미), 명사구 파일업, 조사 단독 종결.
+    # 실패 시 None 반환 — regex fallback 으로 내려간다.
+    kiwi_verdict = korean_morph.is_incomplete_ending(candidate)
+    if kiwi_verdict is True:
         return True
 
     last_token = candidate.split(' ')[-1]
