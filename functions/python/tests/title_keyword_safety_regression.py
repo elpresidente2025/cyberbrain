@@ -216,39 +216,6 @@ def test_sanitize_h2_text_truncates_exact_max_length_incomplete_ending() -> None
     assert len(result) <= 25
 
 
-def test_sanitize_h2_text_truncates_at_word_boundary() -> None:
-    try:
-        sanitize_h2_text("?댁옱??vs ?꾩옱?? 遺??誘몃옒瑜?嫄?吏꾩쭨 ?밸?")
-    except ValueError as error:
-        assert "25" in str(error)
-    else:
-        raise AssertionError("과도한 소제목이 잘리지 않고 거부되어야 합니다.")
-
-
-def test_sanitize_h2_text_truncates_exact_max_length_incomplete_ending() -> None:
-    text = "遺?곌꼍????곸떊, ?쒕? ?щ윭遺꾧낵 ?④퍡 ?대쨪?닿쿋"
-
-    assert len(text) == 25
-
-    try:
-        sanitize_h2_text(text, max_length=25)
-    except ValueError as error:
-        assert "미완결" in str(error)
-    else:
-        raise AssertionError("미완결 어절로 끝나는 소제목은 잘리지 않고 거부되어야 합니다.")
-
-
-def test_sanitize_h2_text_truncates_exact_max_length_incomplete_ending() -> None:
-    text = ("가" * 24) + "을"
-
-    try:
-        sanitize_h2_text(text, max_length=25)
-    except ValueError as error:
-        assert "미완결" in str(error)
-    else:
-        raise AssertionError("미완결 어절로 끝나는 소제목은 잘리지 않고 거부되어야 합니다.")
-
-
 def test_generate_h2_text_falls_back_instead_of_cutting_fragment() -> None:
     result = _generate_h2_text("<p>?댁옱??vs ?꾩옱?? 遺??誘몃옒瑜?嫄?吏꾩쭨 ?밸? ?쒖옉?낅땲??</p>", 2)
 
