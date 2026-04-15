@@ -33,7 +33,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         let naverUser = checkNaverUser();
 
@@ -46,24 +46,51 @@ export const AuthProvider = ({ children }) => {
           naverUser = null;
         }
 
+        let initialUser;
         if (naverUser) {
-          const updatedUser = normalizeAuthUser({
+          initialUser = normalizeAuthUser({
             ...naverUser,
             email: naverUser.email || firebaseUser.email || firebaseUser.providerData?.[0]?.email,
           });
 
-          if (updatedUser?.email && !naverUser.email) {
-            localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+          if (initialUser?.email && !naverUser.email) {
+            localStorage.setItem('currentUser', JSON.stringify(initialUser));
           }
-
-          setUser(updatedUser);
         } else {
-          setUser(normalizeAuthUser({
+          initialUser = normalizeAuthUser({
             uid: firebaseUser.uid,
             provider: 'naver',
             displayName: firebaseUser.displayName || '사용자',
             email: firebaseUser.email,
-          }));
+          });
+        }
+
+        setUser(initialUser);
+
+        // 백엔드에서 최신 프로필을 가져와 병합한다.
+        // 온보딩 완료 여부(status/position/regionMetro 등)는 OnboardingGuard가
+        // user 객체의 필드로 판정하기 때문에, loading=false 로 내려가기 전에
+        // 반드시 프로필이 채워져 있어야 재방문 시 온보딩 화면으로 잘못 보내지 않는다.
+        try {
+          const getUserProfile = httpsCallable(functions, 'getUserProfile');
+          const result = await getUserProfile({
+            __naverAuth: {
+              uid: initialUser.uid,
+              provider: 'naver',
+            },
+          });
+
+          if (result.data?.profile) {
+            const refreshedUser = normalizeAuthUser({
+              ...initialUser,
+              ...result.data.profile,
+              uid: initialUser.uid,
+            });
+            localStorage.setItem('currentUser', JSON.stringify(refreshedUser));
+            setUser(refreshedUser);
+          }
+        } catch (profileError) {
+          console.warn('초기 프로필 조회 실패 (캐시 사용):', profileError?.message || profileError);
         }
       } else {
         setUser(null);

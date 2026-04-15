@@ -35,8 +35,23 @@ const NaverCallback = lazy(() => import('./pages/auth/NaverCallback.jsx'));
 const RestoreAdminPage = lazy(() => import('./pages/RestoreAdminPage.jsx'));
 const TermsPage = lazy(() => import('./pages/TermsPage.jsx'));
 
+// Vite 는 배포로 교체된 청크 URL 을 만나면 preload 에러를 던진다.
+// 즉시 새로고침으로 최신 청크를 받도록 처리하되,
+// 같은 세션 안에서 반복적으로 실패하는 경우 무한 새로고침 루프가 되지 않도록
+// 최근에 한 번이라도 새로고침했으면 이후 에러는 그대로 둔다.
 window.addEventListener('vite:preloadError', (event) => {
+  const KEY = 'vitePreloadReloadAt';
+  const now = Date.now();
+  const lastReloadAt = Number(sessionStorage.getItem(KEY) || 0);
+  if (lastReloadAt && now - lastReloadAt < 60_000) {
+    console.error(
+      'Vite preload error persists after recent reload — skipping reload to avoid an infinite loop.',
+      event,
+    );
+    return;
+  }
   console.warn('Vite preload error caught. Reloading page to fetch latest chunks...', event);
+  sessionStorage.setItem(KEY, String(now));
   window.location.reload();
 });
 
