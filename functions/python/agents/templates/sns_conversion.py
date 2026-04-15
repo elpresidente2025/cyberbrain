@@ -488,7 +488,7 @@ def build_x_prompt(
 
   <writing_rules>
     <rule>각 게시물은 공백·URL 제외 {min_len}~{max_len}자 범위 안에서 작성합니다. {min_len}자 미만 게시물은 허용되지 않으며, 권장 {recommended_len}자 내외로 본문을 채웁니다. 마지막 게시물의 블로그 링크·해시태그는 글자 수에서 제외됩니다.</rule>
-    <rule>줄바꿈 카드형 구성(2~5줄)으로 가독성 확보</rule>
+    <rule priority="critical">각 게시물은 줄바꿈 카드형 구성으로 작성합니다. 한 게시물 안에서 2~4개의 짧은 블록으로 나누고, 블록 사이에 빈 줄(\n\n)을 넣습니다. 한 덩어리 벽 같은 문단으로 쓰지 않습니다. 블록 하나당 1~2문장으로 유지합니다.</rule>
     <rule>각 게시물은 독립적으로도 의미가 전달되도록 작성</rule>
     <rule>타래 전반에서 원본 고유명사/핵심 수치/핵심 주장 최소 2개 이상 포함</rule>
     <rule>원문 문장 또는 원문 어절을 직접 재사용한 구문을 1개 이상 포함</rule>
@@ -499,6 +499,7 @@ def build_x_prompt(
   </writing_rules>
 
   <anti_patterns priority="critical">
+    <item>줄바꿈 없이 한 문단으로 이어 붙인 "벽 텍스트" — 모바일에서 빽빽하게 보여 즉시 이탈 유발</item>
     <item>"자세한 내용은 블로그에서 확인하세요" 같은 저품질 CTA 문구</item>
     <item>링크 앞 장황한 안내 문구</item>
     <item>마지막이 아닌 게시물에 링크 배치</item>
@@ -523,12 +524,12 @@ def build_x_prompt(
   "posts": [
     {{
       "order": 1,
-      "content": "[훅/핵심 메시지]\\n\\n[원문 임팩트 요소]",
+      "content": "[훅 블록 — 1문장]\\n\\n[원문 고유명사 포함 본문 — 1~2문장]\\n\\n[짧은 매듭 — 1문장]",
       "wordCount": 95
     }},
     {{
       "order": 2,
-      "content": "[마무리 메시지]\\n\\n#태그1 #태그2\\n{link_hint}",
+      "content": "[마무리 블록 — 1~2문장]\\n\\n#태그1 #태그2\\n{link_hint}",
       "wordCount": 100
     }}
   ],
@@ -541,6 +542,7 @@ def build_x_prompt(
   <final_checklist>
     <item>게시물 수가 {min_posts}~{max_posts}개 범위인가?</item>
     <item>각 게시물의 본문이 공백·URL 제외 {min_len}자 이상, {max_len}자 이하인가? (권장 {recommended_len}자 내외, 마지막 게시물의 블로그 링크·해시태그는 글자 수 제외)</item>
+    <item>각 게시물이 2~4개의 짧은 블록으로 줄바꿈(\\n\\n) 되어 있는가? (벽 텍스트 금지)</item>
     <item>1번 게시물(훅)에 원문의 고유명사(인물·지명·단체·사건명) 1개 이상이 포함됐는가?</item>
     <item>타래 전반에서 원본 고유명사/수치/핵심 주장을 2개 이상 반영했는가?</item>
     <item>원문 어절/문장을 재사용한 구문이 포함되었는가?</item>
@@ -671,6 +673,7 @@ def build_threads_prompt(
 
   <writing_rules>
     <rule>각 게시물은 공백·URL 제외 {min_len}~{max_len}자 범위, 권장 {recommended_len}자 내외로 작성 (마지막 게시물의 블로그 링크는 글자 수에서 제외)</rule>
+    <rule priority="critical">각 게시물은 줄바꿈 카드형 구성으로 작성합니다. 한 게시물 안에서 3~5개의 짧은 문장 블록으로 나누고, 블록 사이에 빈 줄(\n\n)을 넣습니다. 한 덩어리 벽 같은 문단으로 쓰지 않습니다. 블록 하나당 1~2문장, 한 줄은 모바일 가독성을 위해 25자 내외를 넘기지 않도록 합니다.</rule>
     <rule>각 게시물은 독립적으로도 이해 가능해야 함</rule>
     <rule>각 게시물에 원문 표현(문장/어절) 재사용 구문을 1개 이상 포함</rule>
     <rule>서사 흐름(공감 → 약속 → 사례 → 마무리)을 지키고, 같은 내용이 게시물 간 반복되지 않게 한다</rule>
@@ -682,6 +685,7 @@ def build_threads_prompt(
   </writing_rules>
 
   <anti_patterns priority="critical">
+    <item>줄바꿈 없이 한 문단으로 이어 붙인 "벽 텍스트" — 모바일에서 빽빽하게 보여 즉시 이탈 유발</item>
     <item>1번 게시물을 "안녕하세요/반갑습니다/감사드립니다/인사 올립니다" 같은 인사·감사·자기소개로 시작</item>
     <item>"함께 해주시는 모든 분들께" / "진심으로 감사드립니다" 같은 의례성 서두</item>
     <item>서로 다른 게시물 2개 이상에서 18자 이상 동일한 문장/문장 조각 반복</item>
@@ -701,10 +705,10 @@ def build_threads_prompt(
   <output_contract format="json">
 {{
   "posts": [
-    {{ "order": 1, "content": "[문제의식·공감] 독자가 느끼는 부담에서 출발", "wordCount": 280 }},
-    {{ "order": 2, "content": "[변화 약속] 큰 방향 2~3개를 서술형으로", "wordCount": 310 }},
-    {{ "order": 3, "content": "[구체 사례] 정책/수치/고유명사 집중", "wordCount": 340 }},
-    {{ "order": 4, "content": "[정서적 마무리]\\n\\n#태그1 #태그2 #태그3\\n{link_hint}", "wordCount": 290 }}
+    {{ "order": 1, "content": "[문제의식 첫 블록 — 1~2문장]\\n\\n[공감 블록 — 1~2문장]\\n\\n[원문 고유명사 포함 블록 — 1~2문장]", "wordCount": 280 }},
+    {{ "order": 2, "content": "[변화 방향 1 — 서술형 1~2문장]\\n\\n[변화 방향 2 — 서술형 1~2문장]\\n\\n[대비 구조 마무리 — 1문장]", "wordCount": 310 }},
+    {{ "order": 3, "content": "[사례 도입 — 1문장]\\n\\n[정책/수치/고유명사 본문 — 2문장]\\n\\n[의미 해설 — 1문장]", "wordCount": 340 }},
+    {{ "order": 4, "content": "[정서적 매듭 — 1~2문장]\\n\\n[짧은 인간적 인사 — 1문장]\\n\\n#태그1 #태그2 #태그3\\n{link_hint}", "wordCount": 290 }}
   ],
   "hashtags": ["#태그1", "#태그2", "#태그3"],
   "totalWordCount": 1220,
@@ -715,6 +719,7 @@ def build_threads_prompt(
   <final_checklist>
     <item>게시물 수가 {min_posts}~{max_posts}개 범위인가? (4개가 표준)</item>
     <item>각 게시물이 공백·URL 제외 {min_len}~{max_len}자 범위인가? (마지막 게시물의 블로그 링크는 글자 수 제외)</item>
+    <item>각 게시물이 3~5개의 짧은 블록으로 줄바꿈(\\n\\n) 되어 있는가? (벽 텍스트 금지)</item>
     <item>1번 게시물이 인사/감사/자기소개 없이 구체 문제의식·공감으로 시작하는가?</item>
     <item>1번 게시물에 원문의 고유명사(인물·지명·정책명·사건명) 1개 이상이 포함됐는가?</item>
     <item>서로 다른 게시물 간에 18자 이상 동일한 문장/문장 조각 반복이 없는가?</item>
