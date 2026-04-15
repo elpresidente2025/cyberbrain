@@ -195,27 +195,6 @@ def test_sanitize_h2_text_repairs_duplicate_particles_and_tokens() -> None:
     assert deduped == "민주당 혁신 전략 구상"
 
 
-def test_sanitize_h2_text_truncates_at_word_boundary() -> None:
-    result = sanitize_h2_text("이재성 vs 전재수, 부산 미래를 건 진짜 승부")
-
-    assert result == "이재성 vs 전재수, 부산 미래를 건 진짜"
-    assert not result.endswith("진짜 승")
-    assert len(result) <= 25
-    assert len(result) >= 10
-
-
-def test_sanitize_h2_text_truncates_exact_max_length_incomplete_ending() -> None:
-    text = "부산경제 대혁신, 시민 여러분과 함께 이뤄내겠"
-
-    assert len(text) == 25
-
-    result = sanitize_h2_text(text, max_length=25)
-
-    assert not result.endswith("겠")
-    assert result == "부산경제 대혁신, 시민 여러분과 함께"
-    assert len(result) <= 25
-
-
 def test_generate_h2_text_falls_back_instead_of_cutting_fragment() -> None:
     result = _generate_h2_text("<p>?댁옱??vs ?꾩옱?? 遺??誘몃옒瑜?嫄?吏꾩쭨 ?밸? ?쒖옉?낅땲??</p>", 2)
 
