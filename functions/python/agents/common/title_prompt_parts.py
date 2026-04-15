@@ -104,12 +104,12 @@ USER_PROVIDED_TITLE_FEW_SHOT: Dict[str, Dict[str, Any]] = {
     'ISSUE_ANALYSIS': {
         'name': '정계 이슈·분석 (국가 정책·거시)',
         'templates': [
-            {'template': '[이슈명], 실제로 뭐가 달라질까?', 'intent': '변화 궁금증 유도'},
-            {'template': '[정책쟁점], 어떻게 개선할까?', 'intent': '해법 탐색형'},
+            {'template': '[이슈명], 실제로 무엇이 달라지는가', 'intent': '변화 궁금증 유도'},
+            {'template': '[정책쟁점], [개선수] 단계 개선 경로', 'intent': '해법 탐색형'},
             {'template': '[문제명], [대안수]대 대안 제시', 'intent': '분석-대안 구조'},
         ],
         'bad_to_fix': [
-            {'bad': '정치 현실에 대해 생각해 봅시다', 'fix_template': '[이슈명], 실제로 뭐가 달라질까?'},
+            {'bad': '정치 현실에 대해 생각해 봅시다', 'fix_template': '[이슈명], 실제로 무엇이 달라지는가'},
             {'bad': '문제가 많습니다', 'fix_template': '[문제명], [대안수]대 대안 제시'},
         ],
     },
@@ -176,7 +176,7 @@ TITLE_TYPES = {
             {'title': '부산 지방선거에 뛰어든 부두 노동자의 아들', 'chars': 21, 'analysis': '서사 아크 — 출신 배경이 호기심 유발'},
             {'title': '부산 지방선거, 이재성은 왜 다른가', 'chars': 17, 'analysis': '간결 도발형 — 짧고 강렬한 질문'},
             {'title': '부산 지방선거, 10만 청년이 떠난 도시의 반란', 'chars': 22, 'analysis': '수치+사건형 — 팩트 충격 + 사건 암시'},
-            {'title': '부산 지방선거, 원칙만으로 이길 수 있을까', 'chars': 20, 'analysis': '도발적 질문 — 가치 논쟁 유발'}
+            {'title': '부산 지방선거, 원칙만으로 이기는 후보', 'chars': 18, 'analysis': '도발적 선언 — 가치 논쟁 유발'}
         ],
         'bad': [
             {'title': '부산 지방선거, AI 전문가 이재성이 경제를 바꾼다', 'problem': '평서체 종결 — 문장형은 경어체(~바꿉니다) 필수', 'fix': '부산 지방선거, 이재성이 경제를 바꿉니다'},
@@ -306,14 +306,14 @@ TITLE_TYPES = {
         'pattern': '이슈명 + 질문형 또는 대안 제시',
         'naverTip': '질문형(?)으로 호기심 자극',
         'good': [
-            {'title': '지방 분권 개혁, 실제로 뭐가 달라질까?', 'chars': 19, 'analysis': '이슈 + 궁금증'},
-            {'title': '정치 자금 투명성, 어떻게 개선할까?', 'chars': 18, 'analysis': '이슈 + 해결책 질문'},
+            {'title': '지방 분권 개혁, 실제로 무엇이 달라지는가', 'chars': 20, 'analysis': '이슈 + 구체 변화 지시'},
+            {'title': '정치 자금 투명성, 3단계 개선 경로', 'chars': 17, 'analysis': '이슈 + 답 예고 리스트'},
             {'title': '양극화 문제, 4대 대안 제시', 'chars': 14, 'analysis': '문제 + 대안 개수'},
-            {'title': '교육 격차, 재정 투자로 뭐가 달라질까?', 'chars': 19, 'analysis': '수단 + 효과 질문'},
-            {'title': '선거 제도 개혁, 왜 시급한가?', 'chars': 15, 'analysis': '이슈 + 당위성'}
+            {'title': '교육 격차, 재정 투자로 무엇이 바뀌는가', 'chars': 19, 'analysis': '수단 + 효과 지시'},
+            {'title': '선거 제도 개혁, 왜 시급한가', 'chars': 14, 'analysis': '이슈 + 당위성'}
         ],
         'bad': [
-            {'title': '정치 현실에 대해 생각해 봅시다', 'problem': '너무 철학적', 'fix': '지방 분권 개혁, 실제로 뭐가 달라질까?'},
+            {'title': '정치 현실에 대해 생각해 봅시다', 'problem': '너무 철학적', 'fix': '지방 분권 개혁, 실제로 무엇이 달라지는가'},
             {'title': '문제가 많습니다', 'problem': '불만 토로', 'fix': '양극화 문제, 4대 대안 제시'}
         ]
     },
@@ -428,10 +428,10 @@ TITLE_SKELETONS: Dict[str, List[Dict[str, Any]]] = {
         },
         {
             'id': 'S5',
-            'pattern': '[SEO키워드], [가치/수단]만으로 [동사] 수 있을까',
-            'example': '부산 지방선거, 원칙만으로 이길 수 있을까',
-            'triggers': 'keywordPosition+쉼표, impact:질문형(까)',
-            'note': '도발적 질문 — 가치 논쟁',
+            'pattern': '[SEO키워드], [가치/수단]만으로 이기는 [인물/진영]',
+            'example': '부산 지방선거, 원칙만으로 이기는 후보',
+            'triggers': 'keywordPosition+쉼표, 도발적 선언',
+            'note': '도발적 선언 — 가치 논쟁 평서체',
         },
     ],
     'DATA_BASED': [
@@ -659,17 +659,17 @@ TITLE_SKELETONS: Dict[str, List[Dict[str, Any]]] = {
     'ISSUE_ANALYSIS': [
         {
             'id': 'S1',
-            'pattern': '[이슈명], 실제로 뭐가 달라질까?',
-            'example': '지방 분권 개혁, 실제로 뭐가 달라질까?',
-            'triggers': 'impact:질문형(?)',
-            'note': '이슈 + 변화 궁금증',
+            'pattern': '[이슈명], 실제로 무엇이 달라지는가',
+            'example': '지방 분권 개혁, 실제로 무엇이 달라지는가',
+            'triggers': 'impact:의문사(무엇)',
+            'note': '이슈 + 구체 변화 지시',
         },
         {
             'id': 'S2',
-            'pattern': '[정책쟁점], 어떻게 개선할까?',
-            'example': '정치 자금 투명성, 어떻게 개선할까?',
-            'triggers': 'impact:질문형(?), impact:원인질문(어떻게)',
-            'note': '쟁점 + 해결 질문',
+            'pattern': '[정책쟁점], [개선수] 단계 개선 경로',
+            'example': '정치 자금 투명성, 3단계 개선 경로',
+            'triggers': 'numbers, 답변 예고 리스트',
+            'note': '쟁점 + 답 예고 리스트',
         },
         {
             'id': 'S3',
@@ -680,10 +680,10 @@ TITLE_SKELETONS: Dict[str, List[Dict[str, Any]]] = {
         },
         {
             'id': 'S4',
-            'pattern': '[이슈명], [수단명사]로 뭐가 달라질까?',
-            'example': '교육 격차, 재정 투자로 뭐가 달라질까?',
-            'triggers': 'impact:질문형(?)',
-            'note': '수단 + 효과 질문',
+            'pattern': '[이슈명], [수단명사]로 무엇이 바뀌는가',
+            'example': '교육 격차, 재정 투자로 무엇이 바뀌는가',
+            'triggers': 'impact:의문사(무엇)',
+            'note': '수단 + 효과 지시',
         },
         {
             'id': 'S5',

@@ -37,7 +37,10 @@ from typing import Any, Dict, FrozenSet, List, Optional, Pattern, Tuple
 
 INFO_GAP_PATTERNS: List[Pattern[str]] = [
     re.compile(r'\?\s*$'),                                   # 물음표 종결
-    re.compile(r'(나|까|는가|을까|ㄹ까|할까|될까)\s*$'),     # 미완결 종결 어미
+    # 수사적 반문("할까?/될까?/을까?") 은 info_gap 보상에서 제거.
+    # 답변 엔진이 매칭 못하는 감상형 꼬리를 모델이 재생산하지 않도록
+    # 종결 어미 리워드는 "~인가/~는가/~나" 계열(의문사 기반) 로만 한정한다.
+    re.compile(r'(?:는가|인가|었나|했나)\s*$'),
     re.compile(r'(?:^|[\s,])왜\s'),                           # 왜 질문
     re.compile(r'(?:^|[\s,])어떻게\s'),                       # 어떻게 질문
     re.compile(r'(?:^|[\s,])(?:무엇이|무엇을|얼마(?:나|까지)|'
@@ -146,10 +149,18 @@ _INSTITUTION_SUFFIX_PATTERNS: List[Pattern[str]] = [
     re.compile(r'[가-힣A-Za-z0-9]{2,}(?:청|국|부|처|센터|본부)(?=[\s,.은는이가을를에의]|$)'),
 ]
 
-# 정책·법안·제도 접미
+# 정책·법안·제도 접미 — "취득세 감면 조례" 처럼 띄어쓴 다단어 정책명도
+# 잡도록 공백 토큰 1~2개를 허용한다. 단일 글자 `제` 는 "산업경제" 같은
+# 일반 명사를 false positive 로 삼키므로 제외한다(`제도` 는 유지).
 _POLICY_SUFFIX_PATTERNS: List[Pattern[str]] = [
-    re.compile(r'[가-힣A-Za-z0-9]{2,}(?:법|법안|조례|특별법|기본법|개정안|시행령|시행규칙)'),
-    re.compile(r'[가-힣A-Za-z0-9]{2,}(?:제도|제|정책|사업|프로젝트|이니셔티브|기획|공약)'),
+    re.compile(
+        r'(?:[가-힣A-Za-z0-9]{2,}\s*){1,2}'
+        r'(?:법|법안|조례|특별법|기본법|개정안|시행령|시행규칙)'
+    ),
+    re.compile(
+        r'(?:[가-힣A-Za-z0-9]{2,}\s*){1,2}'
+        r'(?:제도|정책|사업|프로젝트|이니셔티브|기획|공약)'
+    ),
 ]
 
 # 연도·기념일
