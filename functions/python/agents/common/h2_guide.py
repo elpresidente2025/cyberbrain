@@ -225,15 +225,24 @@ def _build_aeo_rules() -> str:
   <keyword_position>핵심 키워드를 문장 앞쪽 1/3에 배치</keyword_position>
   <principle>소제목은 '약속(promise)', 본문은 '이행(fulfillment)'. 6 아키타입 중 하나를 골라 본문이 답할 약속을 던진다.</principle>
 
+  <surface_diversity severity="critical">
+    6개 H2 전체에서 **같은 표면형**이 3개 이상 반복되면 본문이 단조롭게 읽힌다. 특히 쉼표(,)로 두 구를 끊어 잇는 형태("X, Y입니다" / "X, Y인가요?")는 AEO에 강력하지만 **6개 중 최대 2개까지만** 사용하고, 나머지는 아래 형태를 섞어 분산할 것:
+    (a) 완결형 서술문: "청년 기본소득은 필수다"
+    (b) 완결형 질문문: "보육료 지원 한도는 얼마인가요"
+    (c) 구두점 없는 명사구: "2024년 상반기 5대 성과"
+    (d) 동사 종결형: "통학로 안전을 반드시 지키겠습니다"
+    한 가지 형태만 6번 반복하면 품질 실패로 간주한다.
+  </surface_diversity>
+
   <archetypes>
     <archetype name="질문형" strength="AEO 최강">
       <good>청년 기본소득, 신청 방법은?</good>
-      <good>전세 사기 피해, 어떻게 보상받나요?</good>
+      <good>보육료 지원 한도는 얼마까지 가능한가요</good>
       <bad>이것을 꼭 알아야 합니다</bad>
     </archetype>
     <archetype name="목표형" strength="약속·다짐">
       <good>청년 일자리를 위한 3가지 약속</good>
-      <good>통학로 안전, 반드시 지키겠습니다</good>
+      <good>통학로 안전을 반드시 지키겠습니다</good>
       <bad>열심히 노력하겠습니다</bad>
     </archetype>
     <archetype name="주장형" strength="입장 선명화">
@@ -245,7 +254,7 @@ def _build_aeo_rules() -> str:
       <bad>배경 설명</bad>
     </archetype>
     <archetype name="대조형" strength="차별화">
-      <good>기존 정책 vs 청년 기본소득, 무엇이 다른가</good>
+      <good>기존 정책과 청년 기본소득은 어떻게 다른가</good>
       <bad>비교해 보겠습니다</bad>
     </archetype>
     <archetype name="사례형" strength="증거·현장">
@@ -306,19 +315,22 @@ def _build_aeo_examples() -> str:
     return """
 <h2_examples name="소제목 교정 예시 (bad → good)">
   <archetype name="질문형" strength="AEO 최강">
-    <good>청년 기본소득, 신청 방법은 무엇인가요?</good>
-    <good>{지역} 주차장, 어디에 새로 생기나요?</good>
-    <good>보육료 지원, 얼마까지 받을 수 있나요?</good>
-    <correction before="청년 기본소득에 대한 상세한 설명" after="청년 기본소득, 신청 방법은?"/>
-    <correction before="이것을 꼭 알아야 합니다" after="보육료 지원 자격, 확인 방법은?"/>
+    <!-- 쉼표형·완결형·의문구형을 섞어라. 한 형태만 반복하면 본문 전체가 단조로워진다. -->
+    <good form="쉼표형">청년 기본소득, 신청 방법은 무엇인가요?</good>
+    <good form="완결형">보육료 지원 한도는 얼마까지 가능한가요?</good>
+    <good form="의문구형">{지역} 주차장은 어디에 새로 들어서나</good>
+    <correction before="청년 기본소득에 대한 상세한 설명" after="청년 기본소득은 어떻게 신청하나요?"/>
+    <correction before="이것을 꼭 알아야 합니다" after="보육료 지원 자격은 어떻게 확인하나"/>
   </archetype>
 
   <archetype name="목표형" strength="약속·다짐">
-    <good>청년 일자리를 위한 3가지 약속</good>
-    <good>통학로 안전, 이렇게 지키겠습니다</good>
-    <good>지역 의료 공백 해소 로드맵</good>
+    <!-- 명사구·쉼표형·동사종결형을 섞어라. -->
+    <good form="명사구형">청년 일자리를 위한 3가지 약속</good>
+    <good form="쉼표형">통학로 안전, 이렇게 지키겠습니다</good>
+    <good form="명사구형">지역 의료 공백 해소 로드맵</good>
+    <good form="동사종결형">청년 주거 문제를 함께 풀어가겠습니다</good>
     <correction before="열심히 노력하겠습니다" after="청년 일자리를 위한 3가지 약속"/>
-    <correction before="최선을 다하겠습니다" after="통학로 안전, 이렇게 지키겠습니다"/>
+    <correction before="최선을 다하겠습니다" after="통학로 안전을 이렇게 지키겠습니다"/>
   </archetype>
 
   <archetype name="주장형" strength="입장 선명화">
@@ -337,11 +349,13 @@ def _build_aeo_examples() -> str:
   </archetype>
 
   <archetype name="대조형" strength="차별화">
-    <good>청년 기본소득 vs 청년 수당, 무엇이 다른가</good>
-    <good>2024년 vs 2025년 예산 변화</good>
-    <good>기존 정책 대비 개선된 3가지</good>
-    <correction before="비교해 보겠습니다" after="청년 기본소득 vs 청년수당, 무엇이 다른가"/>
-    <correction before="장점과 단점" after="온라인 vs 오프라인 신청 비교"/>
+    <!-- vs 표기·쉼표형·완결형을 섞어라. 전부 "X vs Y, Z?" 형태면 독자가 피로해진다. -->
+    <good form="쉼표형">청년 기본소득 vs 청년 수당, 무엇이 다른가</good>
+    <good form="명사구형">2024년 vs 2025년 예산 변화</good>
+    <good form="명사구형">기존 정책 대비 개선된 3가지</good>
+    <good form="완결형">작년 예산과 올해 예산은 어떻게 달라졌나</good>
+    <correction before="비교해 보겠습니다" after="청년 기본소득과 청년수당은 어떻게 다른가"/>
+    <correction before="장점과 단점" after="온라인 신청과 오프라인 신청을 비교합니다"/>
   </archetype>
 
   <archetype name="사례형" strength="증거·현장">
@@ -357,6 +371,7 @@ def _build_aeo_examples() -> str:
     <must>핵심 키워드를 앞 1/3에 배치</must>
     <must>6 아키타입 중 하나로 본문이 답할 약속을 던질 것</must>
     <must>H2 바로 아래 첫 문장(40~60자)은 직접 답변</must>
+    <must>문장 형태 다양성: 6개 H2 전체에서 쉼표(,)로 두 구를 끊어 잇는 형태(예: "X, Y합니다" / "X, Y인가요?")는 **최대 2개**. 나머지는 완결형 서술문·완결형 질문문·구두점 없는 명사구·동사종결형 등 서로 다른 형태로 분산할 것. 같은 표면형이 3개 이상 반복되면 본문 전체가 단조롭게 보인다.</must>
     <ban>10자 미만 또는 25자 초과</ban>
     <ban>"이것", "그것", "관련" 등 모호한 지시어</ban>
     <ban>"최고", "혁명적", "놀라운" 등 과장 표현</ban>
