@@ -293,7 +293,36 @@ def assess_family_fit(title: str, family: str) -> Dict[str, Any]:
             'family': normalized_family,
         }
 
-    positive = any(p.search(title_text) for p in rule.get('positive_patterns', []))
+    # Kiwi-first verdict 로 수사적 반문 / 공약 분류를 확정해 regex positive 목록을
+    # 선별적으로 보정한다. Kiwi 실패 시 verdict=None → 기존 regex 경로 그대로.
+    verdict_class = None
+    try:
+        from agents.common import korean_morph  # local import to avoid cycle
+        verdict = korean_morph.classify_title_ending(title_text)
+        if isinstance(verdict, dict):
+            verdict_class = verdict.get('class')
+    except Exception:
+        verdict_class = None
+
+    positive_patterns = list(rule.get('positive_patterns', []))
+
+    # VIRAL_HOOK 에서 수사적 반문이면 어미 계열 positive 를 무효화한다.
+    # (`는가|인가|었나|했나` 계열 regex 는 여전히 "완성할까?" 에는 매칭 안 되지만,
+    # 향후 동일 어미가 의문사 없이 섞여 들어와도 Kiwi 가 먼저 막도록 이중 안전망.)
+    if normalized_family == 'VIRAL_HOOK' and verdict_class == 'rhetorical_question':
+        def _is_ending_regex(p):
+            src = getattr(p, 'pattern', '')
+            return '갔나' in src or '인가' in src or src.startswith('[?？]')
+        positive_patterns = [p for p in positive_patterns if not _is_ending_regex(p)]
+
+    positive = any(p.search(title_text) for p in positive_patterns)
+
+    # SLOGAN_COMMITMENT: Kiwi 가 commitment 로 분류하면 regex 매칭이 실패해도
+    # positive 로 인정. 공약 종결 변형(올립니다/드리겠/하겠습니다/앞장서겠 등) 을
+    # regex 열거 대신 단일 판정으로 커버.
+    if normalized_family == 'SLOGAN_COMMITMENT' and verdict_class == 'commitment':
+        positive = True
+
     anti_match = None
     for pattern in rule.get('anti_patterns', []):
         m = pattern.search(title_text)

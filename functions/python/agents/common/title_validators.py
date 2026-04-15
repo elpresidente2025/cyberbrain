@@ -100,7 +100,18 @@ def validate_event_announcement_title(title: str, params: Dict[str, Any]) -> Dic
         '의혹',
         '논란',
     )
-    if any(phrase in cleaned for phrase in banned_phrases) or '?' in cleaned:
+    # Kiwi-first: 수사적 반문 어미(물음표 없는 "완성할까"/"이뤄낼까" 변형 포함) 는
+    # 이벤트 안내와 맞지 않는 톤이므로 차단한다. Kiwi 실패 시 기존 regex 경로만.
+    kiwi_rhetorical = False
+    try:
+        from agents.common import korean_morph  # local import
+        _verdict = korean_morph.classify_title_ending(cleaned)
+        if isinstance(_verdict, dict) and _verdict.get('class') == 'rhetorical_question':
+            kiwi_rhetorical = True
+    except Exception:
+        kiwi_rhetorical = False
+
+    if any(phrase in cleaned for phrase in banned_phrases) or '?' in cleaned or kiwi_rhetorical:
         return {
             'passed': False,
             'reason': (

@@ -384,7 +384,28 @@ def _count_info_gap_signals(title: str) -> Tuple[int, List[str]]:
     if not title:
         return 0, []
     hits: List[str] = []
+
+    # Kiwi-first: 수사적 반문은 info_gap 보상에서 제외, 실질 질문은 보장 가산.
+    # Kiwi 실패(verdict=None) 시에는 regex fallback 만 실행.
+    try:
+        from agents.common import korean_morph  # local import to avoid cycle
+        verdict = korean_morph.classify_title_ending(title)
+    except Exception:
+        verdict = None
+
+    verdict_class = verdict.get("class") if isinstance(verdict, dict) else None
+
+    if verdict_class == "real_question":
+        hits.append("kiwi:real_question")
+    # rhetorical_question 이면 어미 regex 축("는가|인가|었나|했나" / "\?$") 은 건너뛴다.
+    skip_ending_regex = verdict_class == "rhetorical_question"
+
     for pat in INFO_GAP_PATTERNS:
+        if skip_ending_regex and pat.pattern in (
+            r'\?\s*$',
+            r'(?:는가|인가|었나|했나)\s*$',
+        ):
+            continue
         if pat.search(title):
             hits.append(pat.pattern)
     return len(hits), hits

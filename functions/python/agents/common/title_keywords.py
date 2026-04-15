@@ -561,6 +561,18 @@ def _assess_title_frame_alignment(
 
     has_contest_context = any(token in title_text for token in contest_tokens)
     has_question_frame = "?" in str(title or "") or any(token in title_text for token in question_tokens)
+    # Kiwi-first: 종결 어미 변형(될까요/됐을까/되었을까/하겠습니까 등)을
+    # 형태소 단위로 인식해 question_tokens 열거를 보강한다.
+    try:
+        from agents.common import korean_morph  # local import
+        _verdict = korean_morph.classify_title_ending(str(title or ""))
+        if isinstance(_verdict, dict) and _verdict.get("class") in (
+            "real_question",
+            "rhetorical_question",
+        ):
+            has_question_frame = True
+    except Exception:
+        pass
     has_directional_frame = any(token in title_text for token in directional_tokens)
 
     if required_people and len(matched_people) < required_people:
@@ -734,7 +746,21 @@ def _has_unsupported_reversal_frame(title: str) -> bool:
         "역전당했나",
         "반전하나",
     )
-    if not any(token in title_text for token in reversal_tokens):
+    matches_legacy_token = any(token in title_text for token in reversal_tokens)
+
+    # Kiwi-first: "뒤집/역전/반전" 의미어 + rhetorical_question 어미 조합이면
+    # 변형 열거(뒤집을까요/뒤집었을까/역전하겠나 등) 를 자동 커버.
+    matches_kiwi_rhetorical_reversal = False
+    if any(token in title_text for token in ("뒤집", "역전", "반전")):
+        try:
+            from agents.common import korean_morph  # local import
+            _verdict = korean_morph.classify_title_ending(title_text)
+            if isinstance(_verdict, dict) and _verdict.get("class") == "rhetorical_question":
+                matches_kiwi_rhetorical_reversal = True
+        except Exception:
+            pass
+
+    if not (matches_legacy_token or matches_kiwi_rhetorical_reversal):
         return False
 
     support_tokens = (

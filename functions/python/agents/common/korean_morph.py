@@ -15,12 +15,37 @@
 
 from __future__ import annotations
 
+import os
+import re
 import threading
-from typing import Optional, Sequence, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 _KIWI_LOCK = threading.Lock()
 _KIWI_INSTANCE = None
 _KIWI_INIT_FAILED = False
+
+
+def _environment_is_kiwi_hostile() -> bool:
+    """Kiwi C++ 백엔드가 현재 환경에서 안전하게 뜰 수 있는지 사전 판별.
+
+    Windows 에서 홈 경로에 비ASCII 문자(한글 사용자명 등)가 포함되면 kiwipiepy
+    의 모델 로더가 힙 손상(STATUS_HEAP_CORRUPTION) 으로 프로세스 전체를 터뜨린다.
+    Python try/except 로는 잡히지 않으므로, 실제 Kiwi() 호출 전에 환경 변수로
+    이 조건을 사전 검사해 해당 환경에서는 아예 생성하지 않고 None 을 반환한다.
+
+    Cloud Functions(Linux, ASCII 경로) 프로덕션에는 영향 없음.
+    """
+    if os.name != "nt":
+        return False
+    for key in ("USERPROFILE", "HOME", "TEMP", "TMP"):
+        value = os.environ.get(key, "")
+        if not value:
+            continue
+        try:
+            value.encode("ascii")
+        except UnicodeEncodeError:
+            return True
+    return False
 
 
 def get_kiwi():
@@ -32,6 +57,9 @@ def get_kiwi():
     if _KIWI_INSTANCE is not None:
         return _KIWI_INSTANCE
     if _KIWI_INIT_FAILED:
+        return None
+    if _environment_is_kiwi_hostile():
+        _KIWI_INIT_FAILED = True
         return None
     with _KIWI_LOCK:
         if _KIWI_INSTANCE is not None:
@@ -191,6 +219,80 @@ def is_incomplete_ending(text: str) -> Optional[bool]:
         return True
 
     return False
+
+
+_DECLARATIVE_EF_FORMS = frozenset({"다", "네", "지", "어", "야", "요", "죠"})
+
+# 다짐/공약 종결 — EF 단독으로는 잘 안 잡히므로 surface regex 보조
+_COMMITMENT_SURFACE_RE = re.compile(
+    r"(겠습니다|하겠다|드리겠|드립니다|하겠습니다|올리겠|올립니다|약속드립|앞장서겠)\s*[.!?？!]*\s*$"
+)
+_COMMITMENT_EF_FORMS = frozenset({"겠", "ᆸ니다", "습니다"})
+
+
+def classify_title_ending(title: str) -> Optional[Dict[str, str]]:
+    """제목의 종결 형태를 형태소 분석으로 분류한다.
+
+    반환:
+      {
+        'class': 'rhetorical_question' | 'real_question' | 'declarative'
+               | 'commitment' | 'noun_end' | 'other',
+        'form':  마지막 내용 토큰의 form (없으면 ""),
+        'tag':   마지막 내용 토큰의 POS 태그 (없으면 ""),
+      }
+      None — Kiwi 초기화 실패. 호출부는 regex fallback 으로 내려가야 함.
+
+    분류 규칙:
+      1. commitment surface regex 매칭              → 'commitment'
+      2. EF ∈ _QUESTION_EF_FORMS + 의문사 없음       → 'rhetorical_question'
+      3. EF ∈ _QUESTION_EF_FORMS + 의문사 있음       → 'real_question'
+      4. '?' 로 끝나는데 EF 가 위에 안 걸린 경우     → 'real_question' (보수)
+      5. EF ∈ _COMMITMENT_EF_FORMS                   → 'commitment'
+      6. EF ∈ _DECLARATIVE_EF_FORMS                  → 'declarative'
+      7. 마지막 토큰 tag ∈ _NOUN_TAGS                → 'noun_end'
+      8. 그 외                                       → 'other'
+    """
+    plain = str(title or "").strip()
+    if not plain:
+        return {"class": "other", "form": "", "tag": ""}
+
+    tokens = tokenize(plain)
+    if tokens is None:
+        return None
+
+    last = _last_content_token(tokens)
+    last_form = last.form if last is not None else ""
+    last_tag = last.tag if last is not None else ""
+
+    # Commitment surface 매칭이 가장 강력 — EF 가 "ᆸ니다" 로 잡혀도 공약 톤이면 우선
+    if _COMMITMENT_SURFACE_RE.search(plain):
+        return {"class": "commitment", "form": last_form, "tag": last_tag}
+
+    if last is not None and last.tag == "EF":
+        if last.form in _QUESTION_EF_FORMS:
+            if any(cue in plain for cue in _INTERROGATIVE_CUES):
+                return {"class": "real_question", "form": last_form, "tag": last_tag}
+            return {"class": "rhetorical_question", "form": last_form, "tag": last_tag}
+        if last.form in _COMMITMENT_EF_FORMS:
+            return {"class": "commitment", "form": last_form, "tag": last_tag}
+        if last.form in _DECLARATIVE_EF_FORMS:
+            return {"class": "declarative", "form": last_form, "tag": last_tag}
+
+    # EC 로 잡혔지만 의문 단서가 있으면 real_question 으로 승격
+    if last is not None and last.tag == "EC" and last.form in _QUESTION_EC_FORMS:
+        if any(cue in plain for cue in _INTERROGATIVE_CUES):
+            return {"class": "real_question", "form": last_form, "tag": last_tag}
+
+    # 물음표로 끝나지만 EF 가 위 분기를 못 탄 경우 — 의문사 유무로 분류
+    if plain.rstrip().endswith("?"):
+        if any(cue in plain for cue in _INTERROGATIVE_CUES):
+            return {"class": "real_question", "form": last_form, "tag": last_tag}
+        return {"class": "rhetorical_question", "form": last_form, "tag": last_tag}
+
+    if last is not None and last.tag in _NOUN_TAGS:
+        return {"class": "noun_end", "form": last_form, "tag": last_tag}
+
+    return {"class": "other", "form": last_form, "tag": last_tag}
 
 
 def last_token_info(text: str) -> Optional[Tuple[str, str]]:
