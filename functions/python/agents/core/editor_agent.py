@@ -145,6 +145,21 @@ class EditorAgent(Agent):
             ):
                 constrained['editSummary'].append("사용자 문체 일부 반영")
 
+            # 4. post-humanize 필수 키워드 최소 등장 검증 (경고만, 자동 치환 안 함)
+            # humanize 가 지시어로 과치환해 고유명사 빈도가 떨어지는 케이스를 플래그.
+            MIN_BODY_OCCURRENCES = 3
+            plain_body_final = re.sub(r'<[^>]+>', ' ', constrained['content'])
+            plain_body_final = re.sub(r'\s+', ' ', plain_body_final).strip()
+            for keyword in (user_keywords or []):
+                kw = str(keyword).strip()
+                if not kw:
+                    continue
+                body_count = plain_body_final.count(kw)
+                if body_count < MIN_BODY_OCCURRENCES:
+                    constrained['editSummary'].append(
+                        f"필수 키워드 '{kw}' 본문 {body_count}회 — 기준({MIN_BODY_OCCURRENCES}회) 미달, 지시어 과치환 검토"
+                    )
+
             return constrained
 
         except Exception as e:
@@ -561,17 +576,19 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
 - 특히 도입, 연결, 강조, 결론에 우선 적용하고 나머지는 최소한으로 손봅니다.
 """.strip()
 
-        # 고유명사 보호 목록 (사용자 지정 키워드) — 사이에 "의" 삽입 금지용
+        # 고유명사 보호 목록 (사용자 지정 키워드) — 사이에 "의" 삽입 금지 + 최소 등장 횟수
         proper_noun_note = ""
         if user_keywords:
             protected = [str(k).strip() for k in user_keywords if str(k).strip()]
             if protected:
                 joined = ", ".join(f'"{name}"' for name in protected)
                 proper_noun_note = (
-                    "[고유명사 보호 목록]\n"
+                    "[고유명사 보호 목록 — 필수 키워드]\n"
                     f"{joined}\n"
                     "- 위 고유명사는 한 덩어리입니다. 어절 사이에 속격 조사 '의'를 넣지 말고 원형대로 붙여 쓰세요.\n"
-                    "- 예: '계양 테크노밸리'를 '계양의 테크노밸리'로 풀어쓰지 않습니다."
+                    "  예: '계양 테크노밸리'를 '계양의 테크노밸리'로 풀어쓰지 않습니다.\n"
+                    "- 필수 키워드는 본문 전체에서 최소 3회 이상, 각 섹션의 첫 문장에는 반드시 고유명사 원형으로 등장해야 합니다.\n"
+                    "- 지시어('이곳', '이 사업', '우리 지역')로 과도하게 바꾸면 무엇을 가리키는지 흐려집니다. 섹션이 바뀌면 지시어 대신 고유명사를 다시 씁니다."
                 )
 
         # 직전 단계에서 감지된 비문 의심 신호 — humanize 가 우선 재검토
@@ -580,7 +597,12 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
             suspicious = [
                 s for s in edit_summary
                 if isinstance(s, str)
-                and ("주술 불일치" in s or "속격" in s or "중복 조사" in s)
+                and (
+                    "주술 불일치" in s
+                    or "속격" in s
+                    or "중복 조사" in s
+                    or "이중 주어" in s
+                )
             ]
             if suspicious:
                 lines = "\n".join(f"- {line}" for line in suspicious)
@@ -614,6 +636,16 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
 - 속격 '의' 체인: 한 문장에 속격 조사 "의"가 3회 이상 사슬처럼 이어지는 경우. 특히 위 보호 목록의 고유명사가 "X의 Y"로 풀어써져서 "X의 Y의 Z"가 되는 경우.
   예: BAD "A의 B의 성공적인 조성" (A B가 한 고유명사)
        GOOD "A B의 성공적인 조성"
+- 이중 주어: 한 절(쉼표·연결어미 없이 이어지는 덩어리) 안에 "~가/~이"가 두 번 연이어 나오고, 서술어가 동사(형용사 제외)인 경우. 주어가 둘이라 누가 주체인지 흐려진다.
+  예: BAD "부천 대장지구가 기초단체장이 영업 사원을 자처하며 유치를 성사시킨 사례"
+       GOOD "부천 대장지구에서는 기초단체장이 영업 사원을 자처하며 유치를 성사시킨 사례"
+       또는 "부천 대장지구의 기초단체장이 영업 사원을 자처하며 유치를 성사시킨 사례"
+- 추상 동작명사 모호: "활성화·완성·추진·조성·개선" 류 동작성 추상 명사를 수식 명사구 없이 조사("을/를/에")와 붙여 쓰면 무엇의 X인지 알 수 없다. 반드시 앞에 수식 명사구를 붙이거나 구체어로 치환한다.
+  예: BAD "활성화에 매달려 온 저는 성공적인 완성을 꿈꾸고 있습니다."
+       GOOD "계양 테크노밸리 활성화에 매달려 온 저는 이 사업의 성공적인 조성을 꿈꾸고 있습니다."
+- 시점 역행: "~을 통과시켰습니다 / 시행되고 있습니다" 같이 이미 완료된 행동을 서술한 뒤, 같은 맥락에서 "~이 필요합니다 / 해야 합니다" 같은 당위 문장을 이어 붙이지 말 것. 이미 한 일은 과거·현재완료로 닫고, 앞으로 할 일만 미래형으로 이어 붙인다.
+  예: BAD "조례는 본회의를 통과하여 지난 9월부터 시행되고 있습니다. 성공적인 조성을 위해 이러한 노력이 필요합니다."
+       GOOD "조례는 본회의를 통과하여 지난 9월부터 시행되고 있습니다. 이번 개정이 성공적인 조성의 첫 단추가 될 것입니다."
 
 [2단계 - 교정]
 - 의미, 사실, 수치, 고유명사, 정치적 입장은 유지합니다.
@@ -681,12 +713,15 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
         if sentences:  # None 이면 Kiwi 불가 → 스킵
             mismatch_count = 0
             genitive_chain_count = 0
+            double_nom_count = 0
             for sent in sentences:
                 if korean_morph.detect_subject_predicate_mismatch(sent) is True:
                     mismatch_count += 1
                 chain = korean_morph.find_genitive_chain(sent, min_count=3)
                 if chain:
                     genitive_chain_count += 1
+                if korean_morph.detect_double_nominative(sent) is True:
+                    double_nom_count += 1
             if mismatch_count:
                 summary.append(
                     f"주술 불일치 의심 문장 {mismatch_count}건 — humanize 단계 재검토"
@@ -694,6 +729,10 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
             if genitive_chain_count:
                 summary.append(
                     f"속격 '의' 체인 3회+ 문장 {genitive_chain_count}건 — humanize 단계 단축 검토"
+                )
+            if double_nom_count:
+                summary.append(
+                    f"이중 주어 의심 문장 {double_nom_count}건 — humanize 단계 절 분리 검토"
                 )
 
         # 2. 과다 키워드 강제 분산 (reduceKeywordSpam)

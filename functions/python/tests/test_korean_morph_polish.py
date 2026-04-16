@@ -189,6 +189,51 @@ class TestDetectSubjectPredicateMismatchFallback:
 
 
 # ──────────────────────────────────────────────────────────────────────
+# detect_double_nominative
+# ──────────────────────────────────────────────────────────────────────
+
+
+@kiwi_required
+class TestDetectDoubleNominative:
+    def test_clean_single_subject(self) -> None:
+        """JKS 1개 → 정상."""
+        result = korean_morph.detect_double_nominative("시민이 참여합니다.")
+        assert result is False
+
+    def test_double_nominative_verb(self) -> None:
+        """JKS 2개 + EC 없음 + 주동사 VV → 비문 의심."""
+        result = korean_morph.detect_double_nominative(
+            "샘플구가 기관장이 영업 사원을 자처하며 사례를 성사시켰다."
+        )
+        assert result is True
+
+    def test_legal_double_subject_adjective(self) -> None:
+        """이중주격 + 형용사 VA → 합법 예외."""
+        result = korean_morph.detect_double_nominative("아이가 키가 크다")
+        assert result is False
+
+    def test_two_clauses_with_connector(self) -> None:
+        """JKS 사이에 EC('-고/-며') 있으면 별개 절 → 정상."""
+        result = korean_morph.detect_double_nominative(
+            "시민이 참여하고 기업이 투자한다."
+        )
+        assert result is False
+
+    def test_empty(self) -> None:
+        result = korean_morph.detect_double_nominative("")
+        assert result is False
+
+
+class TestDetectDoubleNominativeFallback:
+    def test_returns_none_when_kiwi_unavailable(self, monkeypatch) -> None:
+        monkeypatch.setattr(korean_morph, "get_kiwi", lambda: None)
+        result = korean_morph.detect_double_nominative(
+            "샘플구가 기관장이 성사시켰다."
+        )
+        assert result is None
+
+
+# ──────────────────────────────────────────────────────────────────────
 # find_genitive_chain
 # ──────────────────────────────────────────────────────────────────────
 

@@ -424,6 +424,66 @@ def detect_subject_predicate_mismatch(sentence: str) -> Optional[bool]:
     return has_first_person and has_third_person
 
 
+def detect_double_nominative(sentence: str) -> Optional[bool]:
+    """한 절(clause) 안에 주격조사 JKS("이"/"가")가 2회 이상 연이어 나오는 비문.
+
+    예: "부천 대장지구가 기초단체장이 영업 사원을 자처하며 성사시킨 사례..."
+        → "대장지구가" + "기초단체장이" 사이에 절 경계(EC) 없음
+        → 뒤따르는 주동사가 VV("성사시키다") → 비문 의심.
+
+    합법 예외 (이중주격 구문):
+      "아이가 키가 크다"         — 술어 VA(형용사)
+      "나는 그가 좋다"           — "나는"은 JX라 JKS 카운트에 포함 안 됨
+      "커피가 맛이 좋다"         — 술어 VA
+    주동사가 VA/VCP/VCN 이면 False 로 처리해 false positive 회피.
+
+    알고리즘:
+      1. tokenize → JKS(이/가) 위치 수집.
+      2. 연속한 두 JKS 사이에 EC(연결어미)가 있으면 절이 분리된 것 → False.
+      3. 두 번째 JKS 이후 첫 용언 태그를 본다.
+         - VA/VCP/VCN → False (합법 이중주격)
+         - VV/VX     → True  (비문 의심)
+         - 용언 없음  → False
+
+    반환:
+      True  — 이중 주어 비문 의심
+      False — 정상 또는 합법 이중주격
+      None  — Kiwi 불가
+    """
+    tokens = tokenize(sentence)
+    if tokens is None:
+        return None
+    if not tokens:
+        return False
+
+    jks_indices = [
+        i for i, tok in enumerate(tokens)
+        if tok.tag == "JKS" and tok.form in ("이", "가")
+    ]
+    if len(jks_indices) < 2:
+        return False
+
+    # 인접한 두 JKS 쌍을 훑어, 그 사이에 EC 가 없고 뒤이은 주동사가 VV 인 쌍이 있으면 True
+    for idx_a, idx_b in zip(jks_indices, jks_indices[1:]):
+        between = tokens[idx_a + 1 : idx_b]
+        if any(t.tag == "EC" for t in between):
+            continue  # 절 경계가 있으면 합법
+        # 두 번째 JKS 이후 첫 용언 탐색
+        predicate = None
+        for tok in tokens[idx_b + 1 :]:
+            if tok.tag in _MAIN_PREDICATE_TAGS:
+                predicate = tok
+                break
+        if predicate is None:
+            continue
+        if predicate.tag in ("VA", "VCP", "VCN"):
+            continue  # 이중주격 합법 구문
+        if predicate.tag in ("VV", "VX"):
+            return True
+
+    return False
+
+
 def find_genitive_chain(
     sentence: str, min_count: int = 3
 ) -> Optional[List[int]]:
