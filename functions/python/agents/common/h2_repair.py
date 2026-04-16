@@ -18,6 +18,7 @@ pipeline.py는 기존 `_build_keyword_intent_h2` / `_ensure_*_subheading_once` /
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any, Dict, List, Sequence
 
@@ -35,6 +36,7 @@ __all__ = [
     "ensure_keyword_first_slot",
     "ensure_user_keyword_first_slot",
     "enforce_anchor_cap",
+    "enforce_keyword_diversity",
     "enforce_user_role_lock",
     "repair_awkward_phrases",
     "repair_branding_phrases",
@@ -265,6 +267,86 @@ def enforce_anchor_cap(
         if candidate and candidate != original.strip():
             result[idx] = candidate
             actions.append({"index": idx, "before": original, "after": candidate})
+
+    return {
+        "headings": result,
+        "edited": bool(actions),
+        "actions": actions,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Keyword diversity — H2 세트 내 동일 user_keyword 반복 방지
+# ---------------------------------------------------------------------------
+
+# 키워드 뒤에 올 수 있는 한국어 조사 (스트립 시 함께 제거)
+_KEYWORD_TRAILING_PARTICLE_RE = re.compile(
+    r"(?:은|는|이|가|을|를|의|에|에서|으로|과|와|도|만),?\s*"
+)
+
+
+def _strip_keyword_from_heading(heading: str, keyword: str) -> str:
+    """H2 에서 keyword + 후행 조사/쉼표를 제거해 남은 부분을 반환.
+
+    `_strip_name_from_heading` 과 비슷하지만 keyword 는 이름보다 길 수 있어
+    prefix/suffix 위치만 시도한다.
+    """
+    text = str(heading or "").strip()
+    escaped = re.escape(keyword)
+
+    # prefix: "계양 테크노밸리, 앵커 기업 유치에 청신호" → "앵커 기업 유치에 청신호"
+    prefix = re.match(
+        rf"^{escaped}\s*(?:은|는|이|가|을|를|의|에|에서|으로|과|와|도|만)?\s*[,·]?\s*(.+)$",
+        text,
+    )
+    if prefix:
+        candidate = prefix.group(1).strip()
+        if _is_valid_stripped_heading(candidate):
+            return candidate
+
+    # suffix: "앵커 기업, 계양 테크노밸리" → "앵커 기업"
+    suffix = re.match(rf"^(.+?)\s*[,·]\s*{escaped}\s*$", text)
+    if suffix:
+        candidate = suffix.group(1).strip()
+        if _is_valid_stripped_heading(candidate):
+            return candidate
+
+    return ""
+
+
+def enforce_keyword_diversity(
+    headings: Sequence[Any],
+    *,
+    user_keywords: Sequence[str],
+    cap_ratio: float = 0.5,
+) -> Dict[str, Any]:
+    """H2 세트에서 동일 user_keyword 가 과반 이상 반복되면 초과분을 스트립한다.
+
+    `enforce_anchor_cap` 과 동일한 구조: 앞쪽 cap 개는 유지, 나머지는
+    `_strip_keyword_from_heading` 으로 keyword 를 제거한다. 제거 결과가 유효하지
+    않으면 원본 유지 (lossless).
+    """
+    result: List[str] = [str(h or "") for h in (headings or [])]
+    if len(result) <= 2 or not user_keywords:
+        return {"headings": result, "edited": False, "actions": []}
+
+    cap = max(1, math.ceil(len(result) * cap_ratio))
+    actions: List[Dict[str, Any]] = []
+
+    for kw in user_keywords:
+        keyword = str(kw or "").strip()
+        if not keyword:
+            continue
+        indices = [i for i, h in enumerate(result) if keyword in h]
+        if len(indices) <= cap:
+            continue
+        for idx in indices[cap:]:
+            original = result[idx]
+            candidate = _strip_keyword_from_heading(original, keyword)
+            if candidate and candidate != original.strip():
+                result[idx] = candidate
+                actions.append({"index": idx, "keyword": keyword,
+                                "before": original, "after": candidate})
 
     return {
         "headings": result,

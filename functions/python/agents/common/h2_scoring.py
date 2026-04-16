@@ -9,6 +9,7 @@ SubheadingAgent의 Plan → Gen → Score → Repair 파이프라인에서 세 �
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Dict, List, Optional, TypedDict
 
@@ -90,6 +91,7 @@ H2_AEO_ADVISORIES = frozenset(
         "H2_ENTITY_ANCHOR_MISSING",
         "H2_ENTITY_ANCHOR_EXCESS",
         "H2_KEYWORD_STAMP_WARNING",
+        "H2_USER_KEYWORD_STAMP",
         "H2_SIBLING_SUFFIX_OVERLAP",
         "H2_BODY_ECHO_FIRST_SENTENCE",
         "H2_QA_PAIRING_FAIL",
@@ -545,6 +547,7 @@ def score_h2_aeo(
     target_keyword_canonical: str = "",
     section_index: int = 0,
     section_count: int = 0,
+    user_keywords: Optional[List[str]] = None,
 ) -> Dict[str, object]:
     """단일 H2 에 AEO 관점의 soft score + 어드바이저리 이슈를 반환한다.
 
@@ -642,6 +645,17 @@ def score_h2_aeo(
             elif anchor_count > anchor_cap:
                 issues.append("H2_KEYWORD_STAMP_WARNING")
                 entity_distribution_score = 0.4
+            # user_keyword 반복 스탬핑 감지
+            kw_cap = max(1, math.ceil(section_count * 0.5))
+            for kw in (user_keywords or []):
+                kw_clean = str(kw or "").strip()
+                if not kw_clean:
+                    continue
+                kw_count = sum(1 for h in all_headings if kw_clean in h)
+                if kw_count > kw_cap:
+                    issues.append("H2_USER_KEYWORD_STAMP")
+                    entity_distribution_score = min(entity_distribution_score, 0.4)
+                    break
     breakdown["entity_distribution"] = entity_distribution_score
 
     weights = {

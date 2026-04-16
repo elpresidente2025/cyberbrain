@@ -41,6 +41,7 @@ from ..common.h2_planning import (
     build_target_keyword_canonical,
     classify_section_intent,
     detect_answer_type,
+    distribute_keyword_assignments,
     extract_section_plan,
     extract_stance_claims,
     extract_user_role,
@@ -49,6 +50,7 @@ from ..common.h2_planning import (
 )
 from ..common.h2_repair import (
     enforce_anchor_cap,
+    enforce_keyword_diversity,
     enforce_user_role_lock,
     ensure_user_keyword_first_slot,
     repair_awkward_phrases,
@@ -726,6 +728,24 @@ class SubheadingAgent(Agent):
                 f"edits={len(role_lock_result.get('actions') or [])}"
             )
 
+        # ---------- Phase 6.7: user keyword 반복 스탬핑 방지
+        kw_diversity_result = enforce_keyword_diversity(
+            final_headings,
+            user_keywords=list(user_keywords or []),
+        )
+        if kw_diversity_result.get("edited"):
+            div_headings = list(kw_diversity_result.get("headings") or final_headings)
+            for action in kw_diversity_result.get("actions") or []:
+                idx = action.get("index")
+                if isinstance(idx, int) and 0 <= idx < len(trace):
+                    trace[idx]["keyword_diversity_before"] = action.get("before")
+                    trace[idx]["keyword_diversity_after"] = action.get("after")
+            final_headings = div_headings
+            print(
+                f"🔑 [SubheadingAgent] keyword diversity enforced: "
+                f"edits={len(kw_diversity_result.get('actions') or [])}"
+            )
+
         for i, final in enumerate(final_headings):
             trace[i]["final"] = final
 
@@ -807,7 +827,7 @@ class SubheadingAgent(Agent):
         full_region: str,
         user_keywords: Sequence[str],
     ) -> List[SectionPlan]:
-        return [
+        plans = [
             extract_section_plan(
                 section_text=text,
                 index=i,
@@ -819,6 +839,7 @@ class SubheadingAgent(Agent):
             )
             for i, text in enumerate(section_texts)
         ]
+        return distribute_keyword_assignments(plans)
 
     async def generate_aeo_subheadings(
         self,
@@ -848,7 +869,7 @@ class SubheadingAgent(Agent):
         if plans and len(plans) == target_count:
             resolved_plans = list(plans)
         else:
-            resolved_plans = [
+            resolved_plans = distribute_keyword_assignments([
                 extract_section_plan(
                     section_text=sections[i],
                     index=i,
@@ -859,7 +880,7 @@ class SubheadingAgent(Agent):
                     full_region=full_region,
                 )
                 for i in range(target_count)
-            ]
+            ])
 
         resolved_brief = stance_brief or (
             extract_stance_claims(stance_text) if stance_text else StanceBrief(

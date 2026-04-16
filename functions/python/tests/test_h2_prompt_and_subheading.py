@@ -491,7 +491,13 @@ def test_score_h2_fails_on_adnominal_etm_ending() -> None:
 
     "더딘", "가는", "느린" 같이 수식할 명사 없이 ETM 으로 끝나면
     kiwi 형태소 분석이 미완결로 판정해야 한다.
+    이 테스트는 kiwi 가 동작하는 환경(Linux / ASCII 경로 Windows) 에서만 유효.
     """
+    from agents.common.korean_morph import get_kiwi
+
+    if get_kiwi() is None:
+        pytest.skip("kiwipiepy unavailable (Windows non-ASCII path)")
+
     plan = _plan_for("대장지구", "이유형")
     for heading in (
         "대장지구 개발, 진척이 더딘",
