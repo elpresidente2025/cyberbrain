@@ -261,6 +261,12 @@ class TitleAgent(Agent):
                 raise StructuredOutputError("title is empty")
             return title
 
+        # allowDegradedPass: 호출 측(예: 파이프라인 최종 제목 단계) 이 설정하면,
+        # 모든 재시도가 min_score 미달이어도 하드 게이트(length/role/anchor) 통과한
+        # best_result 를 예외 대신 반환하도록 generate_and_validate_title 에 위임.
+        # 설정 안 되면 기존 엄격 동작(예외) 유지.
+        allow_degraded_pass = bool((self.options or {}).get('allowDegradedPass', False))
+
         primary_options = {
             'minScore': min_score,
             'maxAttempts': 2,
@@ -269,6 +275,7 @@ class TitleAgent(Agent):
             'maxSimilarityPenalty': int((self.options or {}).get('maxSimilarityPenalty', 18)),
             'recentTitles': params.get('recentTitles', []),
             'allowAutoRepair': False,
+            'allowDegradedPass': allow_degraded_pass,
             'temperature': generation_temperature,
             'onProgress': lambda p: logger.debug(f"[{self.name}] Attempt {p['attempt']} finished. Score: {p.get('score', 0)}")
         }
@@ -293,6 +300,7 @@ class TitleAgent(Agent):
                 'maxSimilarityPenalty': int((self.options or {}).get('maxSimilarityPenalty', 18)),
                 'recentTitles': params.get('recentTitles', []),
                 'allowAutoRepair': False,
+                'allowDegradedPass': allow_degraded_pass,
                 'temperature': generation_temperature,
                 'onProgress': lambda p: logger.debug(
                     f"[{self.name}] Strict retry attempt {p['attempt']} finished. Score: {p.get('score', 0)}"
@@ -333,6 +341,7 @@ class TitleAgent(Agent):
                 'maxSimilarityPenalty': int((self.options or {}).get('maxSimilarityPenalty', 18)),
                 'recentTitles': retry_params.get('recentTitles', []),
                 'allowAutoRepair': False,
+                'allowDegradedPass': allow_degraded_pass,
                 'temperature': generation_temperature,
             }
             try:

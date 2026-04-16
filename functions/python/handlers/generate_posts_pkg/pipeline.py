@@ -8056,6 +8056,11 @@ def _generate_independent_final_title(
         normalized_model_name = str(model_name or "").strip()
         if normalized_model_name:
             options["modelName"] = normalized_model_name
+        # 차선 통과 허용 — 최종 제목 단계에서 min_score 미달이어도 하드 게이트
+        # (length/role/bodyAnchorCoverage) 통과한 best_result 가 있다면
+        # draft_title 로 silently rollback 하지 않고 그걸 받는다. anchor 가
+        # 붙은 차선 제목이 anchor 가 없는 초안 제목보다 AEO 관점에서 낫다.
+        options["allowDegradedPass"] = True
         title_agent = TitleAgent(options=options)
         result = _run_async_sync(title_agent.run(context))
         raw_title = str((result or {}).get("title") or "").strip()
@@ -11318,6 +11323,56 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     else:
         independent_final_title["fallbackUsed"] = True
 
+    # 최종 제목이 본문 앵커(정책·기관·수치·연도) 중 하나라도 인용했는지 확인.
+    # allowDegradedPass 경로가 열려 있어도 후보가 전무하거나 rollback 으로
+    # draft_title 이 채택된 경로에서는 "본문 앵커 전무" 제목이 남을 수 있다.
+    # 여기서 최종 content 기준으로 누수를 검출해 quality_warning 으로 노출한다
+    # (배포는 막지 않되 관측 가능하게).
+    final_title_anchor_warning: str = ""
+    try:
+        from agents.common.title_scoring import _assess_body_anchor_coverage
+        anchor_params_check: Dict[str, Any] = {
+            "topic": topic,
+            "stanceText": str((data or {}).get("stanceText") or ""),
+            "contentPreview": generated_content,
+            "fullName": full_name,
+            "regionLocal": str(user_profile.get("regionLocal") or ""),
+            "regionMetro": str(user_profile.get("regionMetro") or ""),
+            "category": category,
+        }
+        anchor_probe = _assess_body_anchor_coverage(generated_title, anchor_params_check)
+        if (
+            anchor_probe
+            and not anchor_probe.get("skipped")
+            and not anchor_probe.get("passed", True)
+        ):
+            available_map = anchor_probe.get("available") or {}
+            hint_tokens: list[str] = []
+            for bucket_name in ("policy", "institution", "numeric", "year"):
+                for tok in (available_map.get(bucket_name) or [])[:2]:
+                    tok_s = str(tok or "").strip()
+                    if tok_s and tok_s not in hint_tokens:
+                        hint_tokens.append(tok_s)
+                if len(hint_tokens) >= 3:
+                    break
+            hint_suffix = (
+                f" 후보: {', '.join(hint_tokens[:3])}" if hint_tokens else ""
+            )
+            final_title_anchor_warning = (
+                "최종 제목이 본문의 구체 앵커(정책·기관·수치·연도)를 "
+                "하나도 인용하지 않아 AEO 가 약합니다." + hint_suffix
+            )
+            logger.warning(
+                "[FinalTitle] body anchor coverage 실격: title=%r anchors=%s",
+                generated_title,
+                available_map,
+            )
+            independent_final_title["finalAnchorWarning"] = final_title_anchor_warning
+    except Exception as anchor_probe_exc:
+        logger.debug(
+            "[FinalTitle] anchor coverage probe failed: %s", anchor_probe_exc
+        )
+
     final_heuristic = run_heuristic_validation_sync(
         generated_content,
         status_for_validation,
@@ -11355,6 +11410,8 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             quality_warnings,
             "제목 규칙 보정을 위해 자동 롤백이 적용되었습니다.",
         )
+    if final_title_anchor_warning:
+        _append_quality_warning(quality_warnings, final_title_anchor_warning)
     poll_content_warnings = list((_safe_dict(poll_fact_guard.get("content")).get("warnings") or []))
     if poll_content_warnings:
         _append_quality_warning(

@@ -768,6 +768,11 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
     max_attempts = int(options.get('maxAttempts', 3))
     candidate_count = max(1, int(options.get('candidateCount', 5)))
     allow_auto_repair = bool(options.get('allowAutoRepair', True))
+    # allowDegradedPass: 모든 재시도가 min_score 미달이어도, best_result 가 하드
+    # 게이트(length/role/bodyAnchorCoverage) 를 통과했다면(adjustedScore > 0) 예외
+    # 대신 best_result 를 반환한다. 호출 측이 "anchor 는 붙였으나 topicMatch 가
+    # 낮은" 차선책 제목이라도 받기를 원할 때 True. 실격(score=0) 은 여전히 예외.
+    allow_degraded_pass = bool(options.get('allowDegradedPass', False))
     similarity_threshold = float(options.get('similarityThreshold', 0.78))
     similarity_threshold = min(max(similarity_threshold, 0.50), 0.95)
     max_similarity_penalty = max(0, int(options.get('maxSimilarityPenalty', 18)))
@@ -1158,6 +1163,40 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
 
     best_suggestions = best_result.get('suggestions', []) if isinstance(best_result, dict) else []
     suggestion_text = ', '.join(best_suggestions) if best_suggestions else '없음'
+
+    # 차선 통과 경로 — soft 점수는 미달이나 하드 게이트(length/role/anchor) 는
+    # 통과(adjustedScore > 0) 한 best_result 를 호출 측이 원하면 반환한다.
+    # pipeline 의 최종 제목 생성은 이 경로가 있어야 "anchor=실격" 으로 draft
+    # 제목에 silently rollback 되는 구멍을 막는다.
+    if allow_degraded_pass and best_score > 0 and isinstance(best_result, dict):
+        best_breakdown = dict(best_result.get('breakdown') or {})
+        anchor_breakdown = best_breakdown.get('bodyAnchorCoverage')
+        if isinstance(anchor_breakdown, dict) and '실격' in str(anchor_breakdown.get('status') or ''):
+            # 이론상 score=0 이므로 여기엔 안 들어오지만, 방어적으로 거절.
+            pass
+        else:
+            logger.warning(
+                "[TitleGen] 차선 통과: min_score=%s 미달이지만 하드 게이트 통과한 "
+                "best_result(score=%s, title=%r) 를 반환합니다. suggestions=%s",
+                min_score,
+                best_score,
+                best_title,
+                suggestion_text,
+            )
+            return {
+                'title': best_title,
+                'score': best_score,
+                'baseScore': int(best_result.get('baseScore', 0) or 0),
+                'similarityPenalty': int(best_result.get('similarityPenalty', 0) or 0),
+                'initialLengthPenalty': int(best_result.get('initialLengthPenalty', 0) or 0),
+                'attempts': max_attempts,
+                'passed': False,
+                'degradedPass': True,
+                'minScore': min_score,
+                'history': history,
+                'breakdown': best_breakdown,
+            }
+
     raise RuntimeError(
         f"[TitleGen] 제목 생성 실패: {max_attempts}회 재시도 모두 최소 점수 {min_score}점 미달 "
         f"(최고 {best_score}점, 제목: \"{best_title}\", suggestions: {suggestion_text})"

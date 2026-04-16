@@ -386,3 +386,218 @@ def test_render_slot_block_marks_body_exclusive():
 
     xml = render_slot_opportunities_block(opps)
     assert 'body_exclusive="true"' in xml, f"body_exclusive 속성 없음:\n{xml}"
+
+
+# ---------------------------------------------------------------------------
+# ① 시설·인프라 고유명 coverage 확장
+#   - 산업단지/산단/테크노밸리/캠퍼스/타운/특화지구 → institution bucket
+#   - 역명(2~3자 + 역), 다만 지역/광역/전역 같은 일반어는 배제
+# ---------------------------------------------------------------------------
+
+
+def test_institution_bucket_captures_industrial_complex():
+    """본문의 '도시첨단산업단지'·'마곡산단' 이 institution bucket 에 잡힌다."""
+    from agents.common.title_hook_quality import extract_slot_opportunities
+
+    content = (
+        "경기 부천 대장지구나 서울 마곡산단에 비해 발전 속도가 더디다. "
+        "도시첨단산업단지 2단계 지정을 신속히 완료하겠습니다."
+    )
+    opps = extract_slot_opportunities(
+        topic="샘플구 특화지구 2단계",
+        content=content,
+        params={"regionLocal": "샘플구"},
+    )
+    institutions = opps.get("institution") or []
+    assert "마곡산단" in institutions, f"마곡산단 누락: {institutions}"
+    assert "도시첨단산업단지" in institutions, f"도시첨단산업단지 누락: {institutions}"
+
+
+def test_institution_bucket_captures_station_names():
+    """본문의 '박촌역', '계양역' 이 institution bucket 에 잡힌다."""
+    from agents.common.title_hook_quality import extract_slot_opportunities
+
+    content = "박촌역 직결과 계양역 연결 등 여러 노선 검토가 이루어지고 있다."
+    opps = extract_slot_opportunities(
+        topic="광역교통망 확충",
+        content=content,
+        params={"regionLocal": "샘플구"},
+    )
+    institutions = opps.get("institution") or []
+    assert "박촌역" in institutions, f"박촌역 누락: {institutions}"
+    assert "계양역" in institutions, f"계양역 누락: {institutions}"
+
+
+def test_institution_bucket_rejects_general_area_words():
+    """'공업지역', '수도권', '지역' 같은 일반어는 institution 에 들어가지 않는다."""
+    from agents.common.title_hook_quality import extract_slot_opportunities
+
+    content = (
+        "인천 내 공업지역 물량 재배치를 통한 도시첨단산업단지 2단계 지정이 "
+        "시급하다. 수도권 마지막 노른자 땅이다."
+    )
+    opps = extract_slot_opportunities(
+        topic="샘플구 2단계",
+        content=content,
+        params={"regionLocal": "샘플구"},
+    )
+    institutions = opps.get("institution") or []
+    for forbidden in ("공업지역", "지역", "수도권", "광역"):
+        assert forbidden not in institutions, (
+            f"일반어 '{forbidden}' 가 institution 에 섞임: {institutions}"
+        )
+
+
+def test_region_bucket_rejects_particle_form():
+    """'~에도' 보조사 결합형이 region 에 잡히지 않는다."""
+    from agents.common.title_hook_quality import extract_slot_opportunities
+
+    content = (
+        "인재 양성과 유치에도 힘쓸 것입니다. 조성에도 속도를 내겠습니다."
+    )
+    opps = extract_slot_opportunities(
+        topic="샘플구 2단계",
+        content=content,
+        params={"regionLocal": "샘플구"},
+    )
+    region = opps.get("region") or []
+    for forbidden in ("유치에도", "조성에도", "추진에도"):
+        assert forbidden not in region, f"조사형 '{forbidden}' 가 region 에 섞임: {region}"
+
+
+# ---------------------------------------------------------------------------
+# ③ stem stripping — 기초 행정구역 접미
+# ---------------------------------------------------------------------------
+
+
+def test_slot_stem_strips_admin_suffix_gu():
+    """'계양구' stem '계양' 이 제목에 매칭된다."""
+    from agents.common.title_hook_quality import _slot_token_used_in_title
+
+    assert _slot_token_used_in_title("계양 테크노밸리 2단계", "계양구")
+
+
+def test_slot_stem_strips_admin_suffix_keeps_two_char_guard():
+    """len(stem) >= 2 가드로 '구' 같은 1자 stem 은 매칭 안 됨."""
+    from agents.common.title_hook_quality import _slot_token_used_in_title
+
+    # "연구" 는 stem "연" (1자) 이라 매칭 실패해야 한다.
+    assert not _slot_token_used_in_title("연 보고서", "연구")
+
+
+def test_topic_keyword_stem_strips_admin_suffix():
+    """_topic_keyword_matches_text 도 admin suffix stem fallback 작동."""
+    from agents.common.title_keywords import _topic_keyword_matches_text
+
+    # 제목 "계양 테크노밸리" 가 topic 키워드 "계양구" 에 stem 매칭돼야 함.
+    assert _topic_keyword_matches_text("계양구", "계양 테크노밸리 2단계")
+
+
+# ---------------------------------------------------------------------------
+# ② allowDegradedPass — soft 점수 미달이어도 하드 게이트 통과한 best_result 반환
+# ---------------------------------------------------------------------------
+
+
+def test_generate_and_validate_title_degraded_pass_returns_best():
+    """min_score 미달이어도 allowDegradedPass=True 면 best_result 반환."""
+    import asyncio
+    from agents.common import title_generation as tg
+
+    # generate_fn 은 단순히 정해진 제목 반환.
+    fake_title = "샘플구 도시첨단산업단지 2단계 지정 완성"
+
+    async def fake_generate_fn(prompt: str) -> str:
+        return fake_title
+
+    # calculate_title_quality_score 가 아래 점수/결과 반환하도록 stub.
+    original_score = tg.calculate_title_quality_score
+
+    def fake_score(title, params, options=None):
+        # 하드 게이트 통과(score>0) + soft 점수 min_score 미달
+        return {
+            "score": 50,
+            "rawScore": 60,
+            "maxScore": 120,
+            "passed": False,
+            "breakdown": {
+                "bodyAnchorCoverage": {"score": 100, "max": 100, "status": "OK"},
+                "topicMatch": {"score": 5, "max": 25, "status": "낮음"},
+            },
+            "suggestions": ["topicMatch 낮음"],
+        }
+
+    tg.calculate_title_quality_score = fake_score  # type: ignore
+    try:
+        params = {
+            "topic": "샘플구 2단계",
+            "contentPreview": "...도시첨단산업단지 2단계 지정 본문...",
+            "fullName": "홍길동",
+        }
+        # allowDegradedPass=True — 예외 대신 best_result 반환해야 함.
+        result = asyncio.run(
+            tg.generate_and_validate_title(
+                fake_generate_fn,
+                params,
+                options={
+                    "minScore": 70,
+                    "maxAttempts": 1,
+                    "candidateCount": 1,
+                    "allowDegradedPass": True,
+                    "allowAutoRepair": False,
+                },
+            )
+        )
+        assert result.get("degradedPass") is True, f"degradedPass flag 누락: {result}"
+        assert result.get("passed") is False
+        assert result.get("title") == fake_title
+        assert int(result.get("score") or 0) < 70
+    finally:
+        tg.calculate_title_quality_score = original_score  # type: ignore
+
+
+def test_generate_and_validate_title_degraded_pass_off_raises():
+    """allowDegradedPass=False (기본) 면 기존대로 RuntimeError 발생."""
+    import asyncio
+    import pytest
+    from agents.common import title_generation as tg
+
+    async def fake_generate_fn(prompt: str) -> str:
+        return "샘플구 도시첨단산업단지 2단계 지정 완성"
+
+    original_score = tg.calculate_title_quality_score
+
+    def fake_score(title, params, options=None):
+        return {
+            "score": 50,
+            "rawScore": 60,
+            "maxScore": 120,
+            "passed": False,
+            "breakdown": {
+                "bodyAnchorCoverage": {"score": 100, "max": 100, "status": "OK"},
+            },
+            "suggestions": ["low"],
+        }
+
+    tg.calculate_title_quality_score = fake_score  # type: ignore
+    try:
+        params = {
+            "topic": "샘플구 2단계",
+            "contentPreview": "...",
+            "fullName": "홍길동",
+        }
+        with pytest.raises(RuntimeError, match="최소 점수"):
+            asyncio.run(
+                tg.generate_and_validate_title(
+                    fake_generate_fn,
+                    params,
+                    options={
+                        "minScore": 70,
+                        "maxAttempts": 1,
+                        "candidateCount": 1,
+                        "allowDegradedPass": False,
+                        "allowAutoRepair": False,
+                    },
+                )
+            )
+    finally:
+        tg.calculate_title_quality_score = original_score  # type: ignore
