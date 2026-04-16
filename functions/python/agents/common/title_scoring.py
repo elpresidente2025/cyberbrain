@@ -205,10 +205,19 @@ def _assess_initial_title_length_discipline(title: str) -> Dict[str, Any]:
             'inOptimalRange': False,
         }
 
-    if TITLE_LENGTH_OPTIMAL_MAX < title_length <= TITLE_LENGTH_HARD_MAX:
+    if TITLE_LENGTH_OPTIMAL_MAX < title_length <= 39:
         return {
             'length': title_length,
-            'penalty': 12,
+            'penalty': 6,
+            'status': 'long_borderline',
+            'requiresRetry': False,
+            'inOptimalRange': False,
+        }
+
+    if 39 < title_length <= TITLE_LENGTH_HARD_MAX:
+        return {
+            'length': title_length,
+            'penalty': 10,
             'status': 'long_borderline',
             'requiresRetry': True,
             'inOptimalRange': False,

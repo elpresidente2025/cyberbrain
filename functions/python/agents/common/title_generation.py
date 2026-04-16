@@ -410,10 +410,10 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 
 <rules priority="critical">
   <rule id="length_target">제목은 기본적으로 {TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자로 작성 (최우선 목표).</rule>
-  <rule id="length_max">{TITLE_LENGTH_HARD_MAX}자 이내 (네이버 검색결과 잘림 방지) - 절대 초과 금지.</rule>
-  <rule id="length_floor">{TITLE_LENGTH_HARD_MIN}자 미만 금지. {TITLE_LENGTH_HARD_MIN}-14자와 31-{TITLE_LENGTH_HARD_MAX}자는 예외 구간이므로 가급적 피할 것.</rule>
+  <rule id="length_max">{TITLE_LENGTH_HARD_MAX}자 이내 (네이버 모바일 검색 잘림 방지) - 절대 초과 금지.</rule>
+  <rule id="length_floor">{TITLE_LENGTH_HARD_MIN}자 미만 금지. {TITLE_LENGTH_HARD_MIN}-14자와 {TITLE_LENGTH_OPTIMAL_MAX+1}-{TITLE_LENGTH_HARD_MAX}자는 예외 구간이므로 가급적 피할 것.</rule>
   <rule id="length_self_check">출력 직전에 제목 글자 수를 직접 세고, {TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자가 아니면 내부에서 다시 써서 맞춘 뒤 최종 1개만 출력.</rule>
-  <rule id="no_length_repair_dependency">길이가 길다고 느껴지면 뒤를 자르지 말고, 정보 요소를 줄여 더 짧은 새 문장으로 다시 작성. 31-35자 예외 통과에 기대지 말 것.</rule>
+  <rule id="no_length_repair_dependency">길이가 길다고 느껴지면 뒤를 자르지 말고, 정보 요소를 줄여 더 짧은 새 문장으로 다시 작성. {TITLE_LENGTH_OPTIMAL_MAX+1}-{TITLE_LENGTH_HARD_MAX}자 예외 통과에 기대지 말 것.</rule>
   <rule id="no_slot_placeholder">슬롯 플레이스홀더([행사명], [지역명], [정책명] 등)를 제목에 그대로 출력하지 마세요.</rule>
   <rule id="no_ellipsis">말줄임표("...") 절대 금지</rule>
   <rule id="no_first_person_title">메인 제목에는 1인칭(저는/제가/저의/제 정책/나의/내가) 금지. 화자 이름·정책명·수치 중심의 기사형 제목으로 작성.</rule>
