@@ -144,3 +144,83 @@ class TestCheckPostSubstitutionGrammarFallback:
         monkeypatch.setattr(korean_morph, "get_kiwi", lambda: None)
         result = korean_morph.check_post_substitution_grammar("원문", "치환문")
         assert result is None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# detect_subject_predicate_mismatch
+# ──────────────────────────────────────────────────────────────────────
+
+
+@kiwi_required
+class TestDetectSubjectPredicateMismatch:
+    def test_simple_first_person(self) -> None:
+        """'저는' 만 주어 → 정상."""
+        result = korean_morph.detect_subject_predicate_mismatch(
+            "저는 최선을 다합니다."
+        )
+        assert result is False
+
+    def test_mismatch_case(self) -> None:
+        """'저는' + 제3자 주어 공존 → 의심 플래그."""
+        result = korean_morph.detect_subject_predicate_mismatch(
+            "저는 이러한 노력이 큰 효과를 낼 것입니다."
+        )
+        assert result is True
+
+    def test_third_person_only(self) -> None:
+        """'저는' 없음 → 정상."""
+        result = korean_morph.detect_subject_predicate_mismatch(
+            "이러한 노력이 큰 효과를 낼 것입니다."
+        )
+        assert result is False
+
+    def test_empty(self) -> None:
+        result = korean_morph.detect_subject_predicate_mismatch("")
+        assert result is False
+
+
+class TestDetectSubjectPredicateMismatchFallback:
+    def test_returns_none_when_kiwi_unavailable(self, monkeypatch) -> None:
+        monkeypatch.setattr(korean_morph, "get_kiwi", lambda: None)
+        result = korean_morph.detect_subject_predicate_mismatch(
+            "저는 이러한 노력이 큰 효과를 낼 것입니다."
+        )
+        assert result is None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# find_genitive_chain
+# ──────────────────────────────────────────────────────────────────────
+
+
+@kiwi_required
+class TestFindGenitiveChain:
+    def test_no_chain(self) -> None:
+        """'의' 1회만 → 임계 미만, 빈 리스트."""
+        result = korean_morph.find_genitive_chain("청년 정책의 방향")
+        assert result == []
+
+    def test_three_chain(self) -> None:
+        """'의' 3회 이상 → 플래그."""
+        result = korean_morph.find_genitive_chain(
+            "샘플구의 샘플 사업의 성공적인 조성의 필요성"
+        )
+        assert result is not None
+        assert len(result) >= 3
+
+    def test_custom_min_count(self) -> None:
+        """min_count=2 로 완화하면 2회도 탐지."""
+        result = korean_morph.find_genitive_chain("X의 Y의 Z", min_count=2)
+        assert result is not None
+        assert len(result) >= 2
+
+    def test_empty(self) -> None:
+        result = korean_morph.find_genitive_chain("")
+        assert result == []
+
+
+class TestFindGenitiveChainFallback:
+    def test_returns_none_when_kiwi_unavailable(self, monkeypatch) -> None:
+        monkeypatch.setattr(korean_morph, "get_kiwi", lambda: None)
+        result = korean_morph.find_genitive_chain("X의 Y의 Z의 W")
+        assert result is None

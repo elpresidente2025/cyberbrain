@@ -133,6 +133,8 @@ class EditorAgent(Agent):
                 title=constrained['title'],
                 speaker_name=speaker_name,
                 style_instruction=style_instruction,
+                user_keywords=user_keywords,
+                edit_summary=constrained.get('editSummary', []),
             )
             constrained['content'] = humanized.get('content', constrained['content'])
             constrained['editSummary'] = constrained['editSummary'] + humanized.get('changes', [])
@@ -444,6 +446,8 @@ class EditorAgent(Agent):
         title: str,
         speaker_name: str = "",
         style_instruction: str = "",
+        user_keywords: Optional[List[str]] = None,
+        edit_summary: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """oh-my-humanizer 스타일 2차 LLM 패스.
 
@@ -458,6 +462,8 @@ class EditorAgent(Agent):
             title,
             speaker_name,
             style_instruction=style_instruction,
+            user_keywords=user_keywords,
+            edit_summary=edit_summary,
         )
         try:
             result = await generate_json_async(
@@ -538,6 +544,8 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
         title: str,
         speaker_name: str = "",
         style_instruction: str = "",
+        user_keywords: Optional[List[str]] = None,
+        edit_summary: Optional[List[str]] = None,
     ) -> str:
         speaker_note = (
             f'화자는 "{speaker_name}"입니다. 화자 정체성을 바꾸지 마세요.'
@@ -553,23 +561,64 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
 - 특히 도입, 연결, 강조, 결론에 우선 적용하고 나머지는 최소한으로 손봅니다.
 """.strip()
 
+        # 고유명사 보호 목록 (사용자 지정 키워드) — 사이에 "의" 삽입 금지용
+        proper_noun_note = ""
+        if user_keywords:
+            protected = [str(k).strip() for k in user_keywords if str(k).strip()]
+            if protected:
+                joined = ", ".join(f'"{name}"' for name in protected)
+                proper_noun_note = (
+                    "[고유명사 보호 목록]\n"
+                    f"{joined}\n"
+                    "- 위 고유명사는 한 덩어리입니다. 어절 사이에 속격 조사 '의'를 넣지 말고 원형대로 붙여 쓰세요.\n"
+                    "- 예: '계양 테크노밸리'를 '계양의 테크노밸리'로 풀어쓰지 않습니다."
+                )
+
+        # 직전 단계에서 감지된 비문 의심 신호 — humanize 가 우선 재검토
+        prior_flags_note = ""
+        if edit_summary:
+            suspicious = [
+                s for s in edit_summary
+                if isinstance(s, str)
+                and ("주술 불일치" in s or "속격" in s or "중복 조사" in s)
+            ]
+            if suspicious:
+                lines = "\n".join(f"- {line}" for line in suspicious)
+                prior_flags_note = (
+                    "[직전 단계 감지 신호 — 우선 재검토]\n"
+                    f"{lines}\n"
+                    "- 이 항목들은 단순 의심 신호이므로 실제 문장 문맥을 보고 판단해 고치세요."
+                )
+
         return f"""당신은 AI가 생성한 한국어 정치 원고를 더 사람답고 자연스럽게 다듬는 편집자입니다.
 {speaker_note}
 
 {style_note}
 
+{proper_noun_note}
+
+{prior_flags_note}
+
 아래 원고를 3단계로 처리하세요.
 
 [1단계 - 감지]
-다음과 같은 AI 티 표현을 찾으세요.
+다음과 같은 AI 티 표현과 비문을 찾으세요.
 - 과도한 대칭 구조와 추상적 수식
 - 뜻은 약한데 그럴듯해 보이는 표현
 - 결론과 다짐 문장이 지나치게 형식적인 경우
 - 연결어가 기계적으로 반복되는 경우
+- 주술 불일치: 문장이 "저는"으로 시작했는데 중간에 다른 주어("~이/~가")를 끼워 넣고 그 다른 주어의 서술어("~할 것입니다")로 닫히는 경우. "저는"이 갈 곳 없이 떠 있다.
+  예: BAD "저는 이러한 노력이 큰 효과를 낼 것입니다."
+       GOOD "저는 이러한 노력이 큰 효과를 내리라 기대합니다."
+       또는 "이러한 노력이 큰 효과를 낼 것입니다." (저는 제거)
+- 속격 '의' 체인: 한 문장에 속격 조사 "의"가 3회 이상 사슬처럼 이어지는 경우. 특히 위 보호 목록의 고유명사가 "X의 Y"로 풀어써져서 "X의 Y의 Z"가 되는 경우.
+  예: BAD "A의 B의 성공적인 조성" (A B가 한 고유명사)
+       GOOD "A B의 성공적인 조성"
 
 [2단계 - 교정]
 - 의미, 사실, 수치, 고유명사, 정치적 입장은 유지합니다.
 - 문장 흐름, 연결, 호흡, 어미 반복만 더 자연스럽게 바꿉니다.
+- 고유명사 보호 목록에 있는 이름은 어절 사이에 "의"를 넣지 말고 붙여 씁니다.
 - 사용자 문체 지시가 있으면 전체 재작성 없이 일부 문장에만 반영합니다.
 - 5단 구조와 HTML 형식은 유지합니다.
 
@@ -622,6 +671,30 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
                     summary.append(
                         f"치환 후 중복 조사 {len(dup_tokens)}건 감지 — 수동 확인 필요"
                     )
+
+        # 1.5. 문장 레벨 비문 스캔 (치환 여부와 무관하게 항상 수행)
+        # 자동 교정은 하지 않음 — 플래그만 남겨 후속 _humanize_pass LLM 이 재검토하게 한다.
+        from ..common import korean_morph
+        plain_body = re.sub(r'<[^>]+>', ' ', updated_content)
+        plain_body = re.sub(r'\s+', ' ', plain_body).strip()
+        sentences = korean_morph.split_sentences(plain_body)
+        if sentences:  # None 이면 Kiwi 불가 → 스킵
+            mismatch_count = 0
+            genitive_chain_count = 0
+            for sent in sentences:
+                if korean_morph.detect_subject_predicate_mismatch(sent) is True:
+                    mismatch_count += 1
+                chain = korean_morph.find_genitive_chain(sent, min_count=3)
+                if chain:
+                    genitive_chain_count += 1
+            if mismatch_count:
+                summary.append(
+                    f"주술 불일치 의심 문장 {mismatch_count}건 — humanize 단계 재검토"
+                )
+            if genitive_chain_count:
+                summary.append(
+                    f"속격 '의' 체인 3회+ 문장 {genitive_chain_count}건 — humanize 단계 단축 검토"
+                )
 
         # 2. 과다 키워드 강제 분산 (reduceKeywordSpam)
         # Porting strict logic: max 6 times allowed

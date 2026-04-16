@@ -11,7 +11,7 @@
 - agents/common/h2_guide.py (has_incomplete_h2_ending)
 - agents/common/h2_scoring.py (_has_question_form, 명사구 hard-fail)
 - agents/core/structure_normalizer.py (_split_sentences Kiwi 우선 전환)
-- agents/core/editor_agent.py (apply_hard_constraints 치환 후 문법 검증)
+- agents/core/editor_agent.py (apply_hard_constraints 치환 후 문법 검증 + 문장 레벨 비문 스캔)
 - (확장 가능) agents/common/title_hook_quality.py, stylometry/features/ 등
 """
 
@@ -377,3 +377,70 @@ def check_post_substitution_grammar(
         "has_duplicate_particle": len(dup) > 0,
         "is_incomplete": bool(inc),
     }
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 문장 구조 비문 탐지 (주술 불일치 / 속격 체인)
+# ──────────────────────────────────────────────────────────────────────
+
+
+def detect_subject_predicate_mismatch(sentence: str) -> Optional[bool]:
+    """한 문장에 1인칭 주어("저는")와 제3자 주격주어(NN*+JKS)가 공존하는지.
+
+    비문 의심 패턴:
+      "저는 X가 Y를 낼 것입니다." — '저는'이 고립돼 서술어는 'X'의 것.
+
+    주의: 의심 신호일 뿐 확정 아님. "저는 X가 Y라고 생각합니다" 같은 인용절은
+    합법이다. 호출부는 자동 교정하지 말고 LLM(_humanize_pass) 재검토 힌트로
+    쓴다.
+
+    반환:
+      True  — 두 주어 공존 → 의심
+      False — 공존 아님
+      None  — Kiwi 불가
+    """
+    tokens = tokenize(sentence)
+    if tokens is None:
+        return None
+    if not tokens:
+        return False
+
+    has_first_person = False
+    has_third_person = False
+    for i, tok in enumerate(tokens):
+        # 1인칭 주어: "저"(NP) + "는"(JX)
+        if tok.form == "저" and tok.tag == "NP":
+            if i + 1 < len(tokens):
+                nxt = tokens[i + 1]
+                if nxt.tag == "JX" and nxt.form == "는":
+                    has_first_person = True
+        # 제3자 주어: 명사(NN*) + "이"/"가"(JKS)
+        if tok.tag in _NOUN_TAGS and i + 1 < len(tokens):
+            nxt = tokens[i + 1]
+            if nxt.tag == "JKS" and nxt.form in ("이", "가"):
+                has_third_person = True
+
+    return has_first_person and has_third_person
+
+
+def find_genitive_chain(
+    sentence: str, min_count: int = 3
+) -> Optional[List[int]]:
+    """한 문장에서 속격조사 "의"(JKG) 가 min_count 회 이상이면 offset 리스트 반환.
+
+    반환:
+      [offset, ...] — min_count 충족 시 등장 위치 전부
+      []            — min_count 미만
+      None          — Kiwi 불가
+    """
+    tokens = tokenize(sentence)
+    if tokens is None:
+        return None
+    offsets = [
+        tok.start
+        for tok in tokens
+        if tok.tag == "JKG" and tok.form == "의"
+    ]
+    if len(offsets) >= min_count:
+        return offsets
+    return []
