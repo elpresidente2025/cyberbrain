@@ -36,6 +36,7 @@ __all__ = [
     "extract_user_role",
     "localize_user_role",
     "distribute_keyword_assignments",
+    "canonicalize_entity_surface",
     "AEO_INTENT_KINDS",
     "AEO_ANSWER_TYPES",
 ]
@@ -51,6 +52,12 @@ _SENTENCE_SPLIT_RE = re.compile(r"(?<=[\.!?。])\s+|(?<=다)\s+(?=[가-힣A-Z])"
 _TOKEN_RE = re.compile(r"[가-힣A-Za-z0-9]{2,}")
 _PROPER_NOUN_RE = re.compile(r"[가-힣]{2,4}(?:시|구|군|동|읍|면|도|광역시|특별시)")
 _NUMERIC_LEAD_RE = re.compile(r"\d")
+
+# 행정 단위 접미사 (변이형 canonical stem 추출용).
+# 길이 긴 접미사를 먼저 시도하도록 alternation 순서 유지.
+_ENTITY_SUFFIX_RE = re.compile(
+    r"(?:광역시|특별자치시|특별시|특별자치도|자치시|자치도|시|구|군|동|읍|면|도)$"
+)
 
 _PROCEDURAL_MARKERS = ("단계", "절차", "방법", "순서", "신청", "접수", "가이드")
 _COMPARATIVE_MARKERS = ("vs", "대비", "비교", "차이", "기존 ")
@@ -302,6 +309,28 @@ def pick_must_include_keyword(
     return ordered[0][0]
 
 
+def canonicalize_entity_surface(value: Any) -> str:
+    """지역/고유명사 변이형을 공통 stem 으로 정규화.
+
+    예: "인천" / "인천시" / "인천광역시" → 모두 "인천".
+        "계양구" → "계양". "경기도" → "경기".
+
+    Why: 동일 entity 가 다른 행정단위 접미사로 표기되면 단순 문자열 매칭으로는
+         별개 키워드로 보여 `distribute_keyword_assignments` / `enforce_keyword_diversity`
+         의 cap 규제를 우회한다. canonical stem 으로 묶어야 변이형 반복 스탬핑을 막는다.
+    How to apply: 카운팅/dedupe 키로만 사용. 실제 표시/제거 작업은 원본 표면형 기준.
+
+    stem 이 2 글자 미만으로 줄면 원본 유지 (접미사 단독어 "시"/"도" 등 보호).
+    """
+    text = str(value or "").strip()
+    if len(text) < 2:
+        return text
+    stem = _ENTITY_SUFFIX_RE.sub("", text).strip()
+    if len(stem) < 2:
+        return text
+    return stem
+
+
 def distribute_keyword_assignments(
     plans: List[SectionPlan],
 ) -> List[SectionPlan]:
@@ -310,42 +339,53 @@ def distribute_keyword_assignments(
     cap = ceil(len(plans) * 0.5). 한 키워드가 cap 이상 들어가면 초과분의
     `must_include_keyword` 를 해당 plan 의 `candidate_keywords` 에서 대안을 찾아
     교체한다. 대안이 없으면 빈 문자열 (scoring 에서 KEYWORD_MISSING hard-fail 미적용).
+
+    변이형 정규화: "인천" / "인천시" / "인천광역시" 는 canonical stem "인천" 으로
+    동일 entity 취급해 카운팅. 표면형만 다른 반복 스탬핑을 막는다.
     """
     if len(plans) <= 2:
         return plans
 
     cap = math.ceil(len(plans) * 0.5)
 
-    # 키워드 → 인덱스 목록
-    kw_indices: dict[str, list[int]] = {}
+    # canonical stem → section 인덱스 목록
+    canonical_indices: dict[str, list[int]] = {}
     for i, plan in enumerate(plans):
         kw = str(plan.get("must_include_keyword") or "").strip()
-        if kw:
-            kw_indices.setdefault(kw, []).append(i)
+        if not kw:
+            continue
+        canonical = canonicalize_entity_surface(kw)
+        canonical_indices.setdefault(canonical, []).append(i)
 
-    # 이미 배정된 키워드 카운트 (교체 시 갱신)
-    assigned_counts: dict[str, int] = {k: len(v) for k, v in kw_indices.items()}
+    # 이미 배정된 canonical 카운트 (교체 시 갱신)
+    assigned_counts: dict[str, int] = {c: len(v) for c, v in canonical_indices.items()}
 
-    for kw, indices in kw_indices.items():
+    for canonical, indices in canonical_indices.items():
         if len(indices) <= cap:
             continue
         # 앞쪽 cap 개는 유지, 나머지는 대안으로 교체
         excess = indices[cap:]
         for idx in excess:
             plan = plans[idx]
-            candidates = [
-                str(c).strip()
-                for c in (plan.get("candidate_keywords") or [])
-                if str(c).strip() and str(c).strip() != kw
-            ]
+            alt_candidates: list[tuple[str, str]] = []
+            for raw_alt in plan.get("candidate_keywords") or []:
+                alt_text = str(raw_alt or "").strip()
+                if not alt_text:
+                    continue
+                alt_canonical = canonicalize_entity_surface(alt_text)
+                if alt_canonical == canonical:
+                    # 변이형(예: "인천시") 은 동일 entity 로 보고 대안에서 제외
+                    continue
+                alt_candidates.append((alt_text, alt_canonical))
+
             replacement = ""
-            for alt in candidates:
-                if assigned_counts.get(alt, 0) < cap:
-                    replacement = alt
-                    assigned_counts[alt] = assigned_counts.get(alt, 0) + 1
+            for alt_text, alt_canonical in alt_candidates:
+                if assigned_counts.get(alt_canonical, 0) < cap:
+                    replacement = alt_text
+                    assigned_counts[alt_canonical] = assigned_counts.get(alt_canonical, 0) + 1
                     break
             plan["must_include_keyword"] = replacement
-            assigned_counts[kw] -= 1
+            assigned_counts[canonical] -= 1
 
     return plans
 

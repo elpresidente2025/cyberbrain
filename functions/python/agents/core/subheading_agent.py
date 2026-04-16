@@ -755,10 +755,27 @@ class SubheadingAgent(Agent):
                 f"edits={len(role_lock_result.get('actions') or [])}"
             )
 
-        # ---------- Phase 6.7: user keyword 반복 스탬핑 방지
+        # ---------- Phase 6.7: user keyword / entity 반복 스탬핑 방지
+        # plan.entity_hints (h2_planning 이 kiwi + stopstem 필터로 걸러낸 고유명사)
+        # 와 full_name / full_region 을 합쳐 변이형 포함 카운팅으로 cap 규제.
+        aggregated_entity_hints: List[str] = []
+        seen_hint: set = set()
+        for anchor in (full_name, full_region):
+            token = str(anchor or "").strip()
+            if token and token not in seen_hint:
+                seen_hint.add(token)
+                aggregated_entity_hints.append(token)
+        for plan in plans:
+            for hint in plan.get("entity_hints") or []:
+                token = str(hint or "").strip()
+                if token and token not in seen_hint:
+                    seen_hint.add(token)
+                    aggregated_entity_hints.append(token)
+
         kw_diversity_result = enforce_keyword_diversity(
             final_headings,
             user_keywords=list(user_keywords or []),
+            entity_hints=aggregated_entity_hints,
         )
         if kw_diversity_result.get("edited"):
             div_headings = list(kw_diversity_result.get("headings") or final_headings)

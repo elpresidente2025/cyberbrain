@@ -1045,3 +1045,114 @@ def test_deterministic_fallback_allows_clean_keyword_for_case_template() -> None
     heading = agent._deterministic_fallback_heading(clean_plan)
     assert "청년 기본소득" in heading
     assert "274명" in heading
+
+
+# ---------------------------------------------------------------------------
+# Entity surface variant canonicalization — "인천"/"인천시"/"인천광역시" 등은
+# 동일 entity 로 묶여 cap 규제 대상이 된다.
+# ---------------------------------------------------------------------------
+
+
+def test_canonicalize_entity_surface_groups_administrative_variants() -> None:
+    from agents.common.h2_planning import canonicalize_entity_surface
+
+    assert canonicalize_entity_surface("샘플") == "샘플"
+    assert canonicalize_entity_surface("샘플시") == "샘플"
+    assert canonicalize_entity_surface("샘플광역시") == "샘플"
+    assert canonicalize_entity_surface("샘플특별시") == "샘플"
+    assert canonicalize_entity_surface("샘플구") == "샘플"
+    assert canonicalize_entity_surface("샘플군") == "샘플"
+    assert canonicalize_entity_surface("샘플도") == "샘플"
+
+
+def test_canonicalize_entity_surface_preserves_short_tokens() -> None:
+    from agents.common.h2_planning import canonicalize_entity_surface
+
+    # stem 이 1 글자 이하로 줄면 원본 유지 (단독 접미사 방어)
+    assert canonicalize_entity_surface("시") == "시"
+    assert canonicalize_entity_surface("도") == "도"
+    assert canonicalize_entity_surface("") == ""
+
+
+def test_distribute_keyword_assignments_treats_variants_as_same_entity() -> None:
+    """6 개 섹션 plan 의 must_include_keyword 가 '샘플'/'샘플시'/'샘플광역시' 로
+    표면형만 다르게 분산된 경우, canonical '샘플' 로 묶여 cap=3 을 초과한
+    4 번째부터 대안으로 교체된다.
+    """
+    from agents.common.h2_planning import distribute_keyword_assignments
+
+    plans = [
+        {"must_include_keyword": "샘플", "candidate_keywords": ["샘플", "경제"]},
+        {"must_include_keyword": "샘플시", "candidate_keywords": ["샘플시", "청년"]},
+        {"must_include_keyword": "샘플광역시", "candidate_keywords": ["샘플광역시", "교육"]},
+        {"must_include_keyword": "샘플", "candidate_keywords": ["샘플", "복지"]},
+        {"must_include_keyword": "샘플시", "candidate_keywords": ["샘플시", "산업"]},
+        {"must_include_keyword": "샘플광역시", "candidate_keywords": ["샘플광역시", "문화"]},
+    ]
+    result = distribute_keyword_assignments(plans)
+
+    # cap = ceil(6 * 0.5) = 3. 앞 3개는 변이형 그대로 유지, 뒤 3개는 대안으로 교체.
+    assert result[0]["must_include_keyword"] == "샘플"
+    assert result[1]["must_include_keyword"] == "샘플시"
+    assert result[2]["must_include_keyword"] == "샘플광역시"
+    # 뒤 3개는 canonical '샘플' 계열이 아닌 대안으로 교체돼야 한다
+    for idx in (3, 4, 5):
+        replaced = result[idx]["must_include_keyword"]
+        assert replaced not in {"샘플", "샘플시", "샘플광역시"}, (
+            f"plan[{idx}] 가 여전히 '샘플' canonical 에 속함: {replaced!r}"
+        )
+
+
+def test_enforce_keyword_diversity_accepts_entity_hints() -> None:
+    """entity_hints 로 전달된 지역명도 변이형 포함해 cap 규제 대상이 된다.
+
+    cap = ceil(4 * 0.5) = 2. 앞 2개 유지, 뒤 2개는 매칭된 표면형을 strip.
+    strip 결과가 >= 8 글자여야 유효하므로 본문을 넉넉히 사용한다.
+    """
+    from agents.common.h2_repair import enforce_keyword_diversity
+
+    headings = [
+        "샘플시, 청년 정책 대전환의 출발",  # keep (surface "샘플시")
+        "샘플광역시, 교육 혁신 종합 로드맵",  # keep (surface "샘플광역시")
+        "샘플, 지역 경제 재도약의 설계도",  # strip → "지역 경제 재도약의 설계도"
+        "샘플시, 복지 확대 정책 종합 패키지",  # strip → "복지 확대 정책 종합 패키지"
+    ]
+    result = enforce_keyword_diversity(
+        headings,
+        user_keywords=[],
+        entity_hints=["샘플", "샘플시", "샘플광역시"],
+    )
+
+    assert result["edited"], "변이형 4회 반복은 strip 되어야 함"
+    edited_headings = result["headings"]
+    # 앞 2개는 원본 유지 (cap 이내)
+    assert edited_headings[0] == "샘플시, 청년 정책 대전환의 출발"
+    assert edited_headings[1] == "샘플광역시, 교육 혁신 종합 로드맵"
+    # 뒤 2개는 canonical "샘플" 계열 표면형이 제거됐다
+    assert "샘플" not in edited_headings[2]
+    assert "샘플" not in edited_headings[3]
+    # action 메타데이터: index 2/3, canonical "샘플"
+    action_indices = {a["index"] for a in result["actions"]}
+    assert action_indices == {2, 3}
+    for action in result["actions"]:
+        assert action.get("canonical") == "샘플"
+
+
+def test_enforce_keyword_diversity_user_keywords_still_regulated() -> None:
+    """기존 user_keywords 경로도 유지 — 변이형 없이 동일 표면 반복 시 strip."""
+    from agents.common.h2_repair import enforce_keyword_diversity
+
+    headings = [
+        "청년 기본소득, 지역 살리는 첫걸음의 시작",
+        "청년 기본소득, 교육 혁신의 본격 출발",
+        "청년 기본소득, 산업 재도약 설계도 공개",
+        "청년 기본소득, 복지 확대 로드맵 제시",
+    ]
+    result = enforce_keyword_diversity(
+        headings,
+        user_keywords=["청년 기본소득"],
+    )
+    assert result["edited"]
+    # cap = 2 → 뒤 2개는 strip 대상
+    action_indices = {a["index"] for a in result["actions"]}
+    assert action_indices.issubset({2, 3})

@@ -22,6 +22,7 @@ import math
 import re
 from typing import Any, Dict, List, Sequence
 
+from .h2_planning import canonicalize_entity_surface
 from .person_naming import (
     canonical_role_label,
     clean_full_name_candidate,
@@ -318,35 +319,72 @@ def enforce_keyword_diversity(
     headings: Sequence[Any],
     *,
     user_keywords: Sequence[str],
+    entity_hints: Sequence[str] = (),
     cap_ratio: float = 0.5,
 ) -> Dict[str, Any]:
-    """H2 세트에서 동일 user_keyword 가 과반 이상 반복되면 초과분을 스트립한다.
+    """H2 세트에서 동일 user_keyword / entity 가 과반 이상 반복되면 초과분을 스트립한다.
 
-    `enforce_anchor_cap` 과 동일한 구조: 앞쪽 cap 개는 유지, 나머지는
-    `_strip_keyword_from_heading` 으로 keyword 를 제거한다. 제거 결과가 유효하지
-    않으면 원본 유지 (lossless).
+    Args:
+        headings: H2 리스트.
+        user_keywords: 사용자 지정 키워드 (반복 스탬핑 금지 대상).
+        entity_hints: 자동 추출된 entity (지역명/고유명사 등) - 변이형 포함 카운팅.
+            예: "인천", "인천시", "인천광역시" 는 canonical stem "인천" 으로 묶어
+            과반 규제를 적용. 표면형만 바꿔 cap 을 회피하는 걸 막는다.
+        cap_ratio: 최대 허용 비율 (기본 0.5 = 과반).
+
+    앞쪽 cap 개는 유지, 나머지는 `_strip_keyword_from_heading` 으로 매칭된 표면형을
+    제거한다. 제거 결과가 유효하지 않으면 원본 유지 (lossless).
     """
     result: List[str] = [str(h or "") for h in (headings or [])]
-    if len(result) <= 2 or not user_keywords:
+    if len(result) <= 2:
         return {"headings": result, "edited": False, "actions": []}
 
     cap = max(1, math.ceil(len(result) * cap_ratio))
     actions: List[Dict[str, Any]] = []
 
-    for kw in user_keywords:
-        keyword = str(kw or "").strip()
-        if not keyword:
+    # 중복 제거된 표면형 목록 작성 — user_keywords 우선, entity_hints 뒤에 append
+    seen_surfaces: set = set()
+    regulated_surfaces: List[str] = []
+    for source in (user_keywords or (), entity_hints or ()):
+        for item in source:
+            surface = str(item or "").strip()
+            if not surface or surface in seen_surfaces:
+                continue
+            seen_surfaces.add(surface)
+            regulated_surfaces.append(surface)
+
+    if not regulated_surfaces:
+        return {"headings": result, "edited": False, "actions": []}
+
+    # canonical stem 으로 그룹화 — 변이형("인천시"/"인천광역시") 을 묶어 카운트
+    canonical_groups: Dict[str, List[str]] = {}
+    for surface in regulated_surfaces:
+        canonical = canonicalize_entity_surface(surface)
+        canonical_groups.setdefault(canonical, []).append(surface)
+
+    for canonical, surfaces in canonical_groups.items():
+        # 긴 표면형을 먼저 매칭해야 "샘플광역시" 가 "샘플" 로 짧게 끊기지 않는다
+        sorted_surfaces = sorted(surfaces, key=len, reverse=True)
+        # 각 heading 에서 이 canonical 그룹의 표면형 중 하나라도 매치되는 인덱스 수집
+        matched: List[tuple[int, str]] = []
+        for idx, heading in enumerate(result):
+            matched_surface = next((s for s in sorted_surfaces if s in heading), "")
+            if matched_surface:
+                matched.append((idx, matched_surface))
+        if len(matched) <= cap:
             continue
-        indices = [i for i, h in enumerate(result) if keyword in h]
-        if len(indices) <= cap:
-            continue
-        for idx in indices[cap:]:
+        for idx, surface in matched[cap:]:
             original = result[idx]
-            candidate = _strip_keyword_from_heading(original, keyword)
+            candidate = _strip_keyword_from_heading(original, surface)
             if candidate and candidate != original.strip():
                 result[idx] = candidate
-                actions.append({"index": idx, "keyword": keyword,
-                                "before": original, "after": candidate})
+                actions.append({
+                    "index": idx,
+                    "keyword": surface,
+                    "canonical": canonical,
+                    "before": original,
+                    "after": candidate,
+                })
 
     return {
         "headings": result,
