@@ -234,32 +234,151 @@ def _dedupe_preserve_order(items: Iterable[str]) -> List[str]:
     return result
 
 
+def _filter_by_body_presence(tokens: Iterable[str], body: str) -> List[str]:
+    """body 에 실제 등장하는 토큰만 유지. 빈 문자열/None 은 제외.
+
+    Why: H2 는 자기 밑에 딸린 본문을 "정답" 으로 간주한 질문·주장이어야 한다.
+         body 에 없는 토큰이 candidate_keywords 풀로 흘러들어가면
+         `distribute_keyword_assignments` 가 초과분 plan 을 "본문에 없는 대안"
+         으로 재배치하고, LLM 프롬프트에 노출돼 섹션 본문과 동떨어진 H2 를
+         유도한다.
+    How to apply: user_keywords, entity_hints 를 candidate_keywords 풀에 넣기
+         전에 이 필터를 통과시킨다. body 에서 직접 뽑은 noun candidates 는
+         이미 body 소속이므로 재필터 불필요.
+    """
+    haystack = str(body or "")
+    if not haystack:
+        return []
+    out: List[str] = []
+    for tok in tokens or ():
+        text = str(tok or "").strip()
+        if not text:
+            continue
+        if text in haystack:
+            out.append(text)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Key claim / keyword / type 추출
 # ---------------------------------------------------------------------------
 
 
-def extract_key_claim(section_text: str, *, style: str = "aeo") -> str:
-    """섹션 본문의 첫 유의미 문장을 키 클레임으로 선택한다.
+_KEY_CLAIM_DECLARATIVE_TAIL_RE = re.compile(
+    r"(?:이다|한다|된다|있다|없다|해야\s*한다|해야\s*합니다|"
+    r"있습니다|없습니다|됩니다|합니다|입니다|"
+    r"하겠습니다|했습니다|것입니다|것이다|ㄹ\s*것입니다)"
+    r"\s*[.\"”’']*$"
+)
 
-    길이 밴드(15~80자)를 만족하는 첫 문장 → 만족하는 문장이 없으면 가장 긴
-    문장을 80자로 절단.
+_KEY_CLAIM_CLAIM_KEYWORDS: tuple = (
+    "주장", "강조", "약속", "다짐", "제안", "추진", "관철", "실천",
+    "기여", "확보", "개선", "촉진", "강화", "개편", "개혁", "지원",
+    "감면", "확대", "통과", "발의", "대응", "해결", "마련", "구축",
+    "도입", "완수", "실현", "집중", "전념", "앞장", "책임", "헌신",
+)
+
+_KEY_CLAIM_GREETING_MARKERS: tuple = (
+    "존경하는", "사랑하는", "당원 여러분", "시민 여러분",
+    "동지 여러분", "주민 여러분", "안녕하", "반갑", "인사드립",
+)
+
+_KEY_CLAIM_SELF_INTRO_RE = re.compile(
+    r"(?:저는|저희는|제가)\s*[^.!?]{0,30}?"
+    r"(?:입니다|출신입니다|소속입니다|의원입니다|시장입니다|후보입니다|"
+    r"대표입니다|의원이며|의원으로서|시장으로서|후보로서|대표로서)"
+)
+
+_KEY_CLAIM_FILLER_PREFIXES: tuple = (
+    "이를 위해", "이러한 ", "따라서", "그리고 ", "그러나 ",
+    "또한 ", "한편 ", "더불어 ", "아울러 ", "그래서 ", "그러므로 ",
+)
+
+
+def _score_key_claim_sentence(
+    sentence: str,
+    *,
+    index: int,
+    total: int,
+) -> int:
+    """문장 하나에 대해 "섹션 주장 문장" 가능성 스코어를 계산한다.
+
+    길이 밴드(15~80) 통과가 기본 조건. 탈락 시 매우 낮은 값(-10_000) 반환.
+    """
+    length = len(sentence)
+    if length < _KEY_CLAIM_MIN_LEN or length > _KEY_CLAIM_MAX_LEN:
+        return -10_000
+
+    score = 0
+
+    # 단정·선언 어미 (결론성 / 주장 성격)
+    if _KEY_CLAIM_DECLARATIVE_TAIL_RE.search(sentence):
+        score += 3
+
+    # 주장/행동 키워드
+    if any(kw in sentence for kw in _KEY_CLAIM_CLAIM_KEYWORDS):
+        score += 2
+
+    # 뒤쪽 위치 보너스 (결론부 선호)
+    if total > 1 and index >= total // 2:
+        score += 2
+
+    # 인사말 / 호격 페널티
+    if any(marker in sentence for marker in _KEY_CLAIM_GREETING_MARKERS):
+        score -= 5
+
+    # 자기소개 페널티 ("저는 ~ 입니다")
+    if _KEY_CLAIM_SELF_INTRO_RE.search(sentence):
+        score -= 4
+
+    # 전환어/군더더기 시작 페널티
+    if any(sentence.startswith(prefix) for prefix in _KEY_CLAIM_FILLER_PREFIXES):
+        score -= 2
+
+    # 첫 문장 약한 페널티 (인사·도입 확률 높음)
+    if index == 0:
+        score -= 1
+
+    return score
+
+
+def extract_key_claim(section_text: str, *, style: str = "aeo") -> str:
+    """섹션 본문의 주장/결론 문장을 키 클레임으로 선택한다.
+
+    Why: H2 는 섹션 본문을 정답으로 간주한 질문·주장이어야 한다. 기존 구현은
+         "길이 밴드 통과하는 첫 문장" 을 뽑아 인사말·자기소개·도입부 문장이
+         key_claim 으로 박혔고, 그 결과 H2 가 본문 답이 아닌 본문 첫 문장을
+         포장하는 형태가 됐다.
+    How to apply: 모든 문장에 (a) 단정 어미, (b) 주장/행동 키워드, (c) 후반부
+         위치 보너스, (d) 인사말·자기소개·전환어 페널티를 합산한 스코어를
+         매겨 최상위 선택. 동점이면 등장 순서대로 안정 정렬.
+
+    Fallback: 모든 문장이 길이 밴드에서 탈락하면 가장 긴 문장을 80자로 절단해
+    반환 (기존 동작 유지).
     """
     text = strip_html(section_text)
     if not text:
         return ""
 
     candidates = _split_sentences(text)
-    for sentence in candidates:
-        length = len(sentence)
-        if _KEY_CLAIM_MIN_LEN <= length <= _KEY_CLAIM_MAX_LEN:
-            return sentence
+    if not candidates:
+        return text[:_KEY_CLAIM_MAX_LEN].rstrip()
 
-    if candidates:
-        longest = max(candidates, key=len)
-        return longest[:_KEY_CLAIM_MAX_LEN].rstrip()
+    total = len(candidates)
+    best_sentence = ""
+    best_score = -10_000
+    for idx, sentence in enumerate(candidates):
+        score = _score_key_claim_sentence(sentence, index=idx, total=total)
+        if score > best_score:
+            best_score = score
+            best_sentence = sentence
 
-    return text[:_KEY_CLAIM_MAX_LEN].rstrip()
+    if best_sentence and best_score > -9_000:
+        return best_sentence
+
+    # 길이 밴드 통과 문장이 하나도 없으면 가장 긴 문장 절단
+    longest = max(candidates, key=len)
+    return longest[:_KEY_CLAIM_MAX_LEN].rstrip()
 
 
 def pick_must_include_keyword(
@@ -512,9 +631,15 @@ def extract_section_plan(
         cleaned, preferred_types=preferred_types, style=style
     )
 
+    # Body-presence filter: candidate_keywords 풀에는 섹션 본문에 실제 등장하는
+    # 토큰만 담는다. user_keywords / entity_hints 가 이 섹션 본문과 무관하면
+    # `distribute_keyword_assignments` 의 대안 후보에서 제외되고 LLM 프롬프트에도
+    # 노출되지 않아 H2 가 섹션 본문을 답으로 간주하는 구조를 지킬 수 있다.
     candidate_keywords = _dedupe_preserve_order(
-        list(user_keywords or ())
-        + [hint for hint in entity_hints if hint]
+        _filter_by_body_presence(user_keywords or (), cleaned)
+        + _filter_by_body_presence(
+            (hint for hint in entity_hints if hint), cleaned
+        )
         + _extract_noun_candidates(cleaned)
     )[:10]
 

@@ -77,6 +77,10 @@ H2_HARD_FAIL_ISSUES = frozenset(
         # 실제 output 이 어긋나면 LLM repair 결과가 쓰레기여도 점수만
         # 합격하는 것을 막기 위해 hard-fail 로 격상한다.
         "H2_QUESTION_FORM_REQUIRED",
+        # H2 가 자기 아래 섹션 본문을 답으로 삼지 않음.
+        # "H2 = 본문이 정답인 질문/주장" 원칙을 깨고 본문에 없는 키워드·
+        # 날조 약어·다른 주제를 H2 로 올린 경우 hard-fail.
+        "BODY_ALIGNMENT_LOW",
     }
 )
 
@@ -100,14 +104,33 @@ H2_AEO_ADVISORIES = frozenset(
 )
 
 _WEIGHTS = {
-    "length": 0.20,
-    "keyword": 0.20,
-    "type": 0.15,
-    "banned": 0.15,
-    "ending": 0.15,
-    "assertive_gate": 0.10,
-    "duplicate": 0.05,
+    "length": 0.17,
+    "keyword": 0.17,
+    "type": 0.13,
+    "banned": 0.13,
+    "ending": 0.13,
+    "assertive_gate": 0.09,
+    "body_alignment": 0.14,
+    "duplicate": 0.04,
 }
+
+
+# H2 content token 추출용 — 조사/어미/불용어 배제한 2+ 글자 내용어
+_H2_ALIGNMENT_TOKEN_RE = re.compile(r"[가-힣A-Za-z]{2,}")
+_H2_ALIGNMENT_STOPWORDS = frozenset(
+    {
+        "하는", "되는", "이다", "있다", "없다", "있는", "없는",
+        "대한", "관련", "위한", "통해", "통한", "위해", "대해",
+        "지금", "이번", "우리", "여러분", "모든", "다른", "새로운",
+        "오늘", "지난", "앞으로", "지속", "그리고", "하지만",
+        "그러나", "또한", "한편", "다시", "계속",
+    }
+)
+
+# H2 가 본문 답이 아닐 때 hard-fail 로 격상하는 coverage 임계
+_BODY_ALIGNMENT_HARD_FAIL = 0.34
+# 부분 감점만 주는 soft 임계 (이 사이는 비례 스코어)
+_BODY_ALIGNMENT_FULL_PASS = 0.67
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +159,64 @@ _PROCEDURAL_RE = re.compile(r"(단계|절차|방법|순서|가이드)")
 _COMPARATIVE_RE = re.compile(r"(vs|대비|차이|비교)")
 _DECLARATIVE_TAIL_RE = re.compile(r"(이다|아니다|한다|해야|없다|된다)$")
 _CRITICAL_RE = re.compile(r"(거부|회피|남용|파괴|왜곡|무너|실패|한계)")
+
+
+def _h2_content_tokens(text: str) -> List[str]:
+    """H2 / 본문 alignment 비교용 content token 을 추출한다.
+
+    kiwi 가 사용 가능하면 NNG/NNP/NNB 명사만 남긴다 (어근 수준 매칭).
+    실패 시 정규식 fallback — 2+ 글자 한글/영문 토큰에서 불용어 제거.
+    """
+    plain = str(text or "").strip()
+    if not plain:
+        return []
+    kiwi_nouns = korean_morph.extract_nouns(plain)
+    if kiwi_nouns is not None:
+        return [tok for tok in kiwi_nouns if len(tok) >= 2 and tok not in _H2_ALIGNMENT_STOPWORDS]
+    return [
+        tok for tok in _H2_ALIGNMENT_TOKEN_RE.findall(plain)
+        if tok not in _H2_ALIGNMENT_STOPWORDS
+    ]
+
+
+def _body_alignment_coverage(heading: str, section_text: str) -> float:
+    """H2 content token 중 섹션 본문에 substring 으로 등장하는 비율.
+
+    Why: "H2 는 그 아래 본문을 정답으로 간주한 질문/주장" 원칙 — H2 의
+         내용어(명사)가 본문에 실제로 근거를 두고 있어야 한다. 본문에 없는
+         키워드·날조 약어·다른 주제를 H2 에 꽂으면 coverage 가 낮게 나온다.
+    How to apply: 반환값은 0.0~1.0. 본문 또는 heading token 이 없으면 1.0
+         (체크 생략). score_h2 는 이 값을 기반으로 BODY_ALIGNMENT_LOW 판정.
+
+    매칭은 substring 기준(부분 일치) — "인천광역시" 가 본문 "인천광역시의원"
+    안에 있으면 매칭으로 친다. kiwi 경로에서는 명사 form 기준이라 노이즈가
+    적어 substring 매칭이 안전.
+    """
+    heading_tokens = _h2_content_tokens(heading)
+    if not heading_tokens:
+        return 1.0
+    body = str(section_text or "").strip()
+    if not body:
+        return 1.0
+    # 중복 토큰 제거 (같은 단어가 H2 에서 2번 나와도 1 counting)
+    unique_tokens = list(dict.fromkeys(heading_tokens))
+    matched = sum(1 for tok in unique_tokens if tok in body)
+    return matched / len(unique_tokens)
+
+
+def _body_alignment_score(coverage: float) -> float:
+    """coverage → raw score(0.0~1.0) 변환.
+
+    >= _BODY_ALIGNMENT_FULL_PASS (0.67) : 1.0 만점
+    <= _BODY_ALIGNMENT_HARD_FAIL (0.34) : 0.0 바닥
+    그 사이: 선형 보간
+    """
+    if coverage >= _BODY_ALIGNMENT_FULL_PASS:
+        return 1.0
+    if coverage <= _BODY_ALIGNMENT_HARD_FAIL:
+        return 0.0
+    span = _BODY_ALIGNMENT_FULL_PASS - _BODY_ALIGNMENT_HARD_FAIL
+    return round((coverage - _BODY_ALIGNMENT_HARD_FAIL) / span, 4)
 
 
 # ---------------------------------------------------------------------------
@@ -351,6 +432,21 @@ def score_h2(
         issues.append("DUPLICATE_PARTICLE_OR_TOKEN")
     breakdown["duplicate"] = {"raw": dup_raw, "weighted": dup_weighted}
 
+    # H2 가 본문을 정답으로 삼고 있는가 — content token coverage 기반
+    section_text = str(plan.get("section_text") or "")
+    alignment_coverage = _body_alignment_coverage(heading_text, section_text)
+    alignment_raw = _body_alignment_score(alignment_coverage)
+    alignment_weighted = alignment_raw * _WEIGHTS["body_alignment"]
+    if alignment_coverage < _BODY_ALIGNMENT_HARD_FAIL:
+        issues.append("BODY_ALIGNMENT_LOW")
+    elif alignment_coverage < _BODY_ALIGNMENT_FULL_PASS:
+        issues.append("BODY_ALIGNMENT_PARTIAL")
+    breakdown["body_alignment"] = {
+        "raw": alignment_raw,
+        "weighted": alignment_weighted,
+        "coverage": round(alignment_coverage, 4),
+    }
+
     total = round(
         length_weighted
         + keyword_weighted
@@ -358,6 +454,7 @@ def score_h2(
         + banned_weighted
         + ending_weighted
         + assertive_weighted
+        + alignment_weighted
         + dup_weighted,
         4,
     )

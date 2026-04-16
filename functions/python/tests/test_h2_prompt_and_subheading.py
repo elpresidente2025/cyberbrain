@@ -286,6 +286,59 @@ def test_extract_key_claim_respects_length_band() -> None:
     assert 15 <= len(claim) <= 80
 
 
+def test_extract_key_claim_skips_greeting_first_sentence() -> None:
+    """인사말 첫 문장보다 뒤쪽 주장 문장을 우선 선택해야 한다.
+
+    본문은 H2 아래 섹션의 "정답" — 인사말이 key_claim 으로 박히면 H2 가
+    본문 결론을 못 반영한다.
+    """
+    section = (
+        "존경하는 샘플구 주민 여러분, 반갑습니다. "
+        "저는 지난 4년간 지역 활성화를 위해 쉼 없이 달려왔습니다. "
+        "앞으로도 광역교통망 확충과 앵커기업 유치를 위해 전념하겠습니다."
+    )
+    claim = extract_key_claim(section, style="aeo")
+    assert "존경하는" not in claim, (
+        f"인사말이 key_claim 으로 선택됨: {claim!r}"
+    )
+    # 주장·행동 키워드(전념) 포함된 결론 문장이 선호되어야 함
+    assert "전념" in claim or "앵커기업" in claim or "광역교통망" in claim
+
+
+def test_extract_key_claim_skips_self_intro_sentence() -> None:
+    """'저는 ~ 의원입니다' 형태 자기소개는 key_claim 후보에서 밀려야 한다."""
+    section = (
+        "저는 샘플구에서 당원과 시민을 위해 뛰어온 샘플광역시의원 홍길동입니다. "
+        "지역 경제 재도약을 위해 취득세 감면 조례 개정안을 발의해 통과시켰습니다."
+    )
+    claim = extract_key_claim(section, style="aeo")
+    assert "홍길동입니다" not in claim
+    assert "조례" in claim or "통과" in claim or "발의" in claim
+
+
+def test_extract_key_claim_prefers_declarative_conclusion() -> None:
+    """뒤쪽에 위치한 단정·주장 어미 문장이 도입부 문장보다 선호되어야 한다."""
+    section = (
+        "2018년 3기 신도시로 지정된 이후 발전 속도가 더뎠습니다. "
+        "경기 인근 지구와 비교해 뒤처진 산단이라는 평가를 받고 있습니다. "
+        "앵커기업 유치를 위한 세제 혜택을 반드시 확대해야 합니다."
+    )
+    claim = extract_key_claim(section, style="aeo")
+    # 결론부("확대해야 합니다")가 도입부("지정된 이후...")보다 우선되어야 함
+    assert "확대" in claim or "앵커" in claim, (
+        f"도입 문장이 선택됨: {claim!r}"
+    )
+
+
+def test_extract_key_claim_falls_back_to_longest_when_no_band_hit() -> None:
+    """모든 문장이 길이 밴드(15~80) 탈락이면 가장 긴 문장을 절단해 반환."""
+    short_only = "짧음. 매우 짧음. 또 짧음."
+    claim = extract_key_claim(short_only, style="aeo")
+    # 최소 1 개 문장에서 뽑혀야 하고, 빈 문자열은 아니어야 함
+    assert claim
+    assert len(claim) <= 80
+
+
 def test_extract_stance_claims_dedupes_top_claims() -> None:
     brief = extract_stance_claims(
         "특검은 정치 보복이 아니다. 특검은 정치 보복이 아니다. 당당하면 피할 이유가 없다."
@@ -1138,6 +1191,107 @@ def test_enforce_keyword_diversity_accepts_entity_hints() -> None:
         assert action.get("canonical") == "샘플"
 
 
+# ---------------------------------------------------------------------------
+# Body alignment — H2 가 자기 아래 본문을 정답으로 삼는지 검증
+# ---------------------------------------------------------------------------
+
+
+def test_score_h2_flags_body_alignment_low_when_heading_talks_about_different_topic() -> None:
+    """H2 에 박힌 명사 대부분이 본문에 없으면 BODY_ALIGNMENT_LOW hard-fail."""
+    plan = {
+        "section_text": (
+            "과거 우리 지역은 전국 광역시 중 유일하게 산업단지 입주 기업에 대한 "
+            "취득세 감면 조례가 없었습니다. 2014년 이후 10여 년간 움직임이 없어 "
+            "기업 유치 경쟁에서 불리한 위치에 있었습니다. 조성 중인 신규 산단 "
+            "여러 곳의 경쟁력이 약화되었다는 평가를 받아왔습니다."
+        ),
+        "suggested_type": "주장형",
+        "must_include_keyword": "샘플 테크노밸리",
+        "candidate_keywords": ["샘플 테크노밸리"],
+        "numerics": ["10"],
+        "entity_hints": [],
+        "user_keywords": ["샘플 테크노밸리"],
+        "key_claim": "",
+    }
+    # H2 는 "샘플 테크노밸리" 를 얘기하지만 본문은 "취득세 감면 조례 공백"이 주제
+    heading = "샘플 테크노밸리, 10년 공백 바로잡기"
+    result = score_h2(heading, plan)
+
+    assert "BODY_ALIGNMENT_LOW" in result["issues"], (
+        f"본문과 동떨어진 H2 가 통과됨: coverage={result['breakdown'].get('body_alignment', {}).get('coverage')}"
+    )
+    assert not result["passed"], "BODY_ALIGNMENT_LOW 은 hard-fail 이어야 함"
+
+
+def test_score_h2_passes_body_alignment_when_heading_tokens_in_body() -> None:
+    """H2 의 내용 토큰이 본문에 등장하면 body_alignment 만점·이슈 없음."""
+    plan = {
+        "section_text": (
+            "취득세 감면 조례 개정안이 본회의를 통과해 9월부터 시행되고 있습니다. "
+            "기본 감면 외에도 추가 감면을 받을 수 있도록 했습니다. "
+            "기업 유치 경쟁력 확보의 중요한 신호탄이 될 것입니다."
+        ),
+        "suggested_type": "주장형",
+        "must_include_keyword": "취득세 감면",
+        "candidate_keywords": ["취득세 감면", "조례", "기업 유치"],
+        "numerics": [],
+        "entity_hints": [],
+        "user_keywords": ["취득세 감면"],
+        "key_claim": "",
+    }
+    heading = "취득세 감면 조례, 기업 유치 경쟁력 회복"
+    result = score_h2(heading, plan)
+
+    assert "BODY_ALIGNMENT_LOW" not in result["issues"]
+    assert "BODY_ALIGNMENT_PARTIAL" not in result["issues"]
+    alignment = result["breakdown"].get("body_alignment", {})
+    assert alignment.get("coverage", 0.0) >= 0.67
+
+
+def test_score_h2_skips_body_alignment_when_section_text_empty() -> None:
+    """plan 에 section_text 가 없으면 coverage 체크 생략 (raw=1.0)."""
+    plan = {
+        "section_text": "",
+        "suggested_type": "주장형",
+        "must_include_keyword": "청년 기본소득",
+        "candidate_keywords": ["청년 기본소득"],
+        "numerics": [],
+        "entity_hints": [],
+        "user_keywords": ["청년 기본소득"],
+        "key_claim": "",
+    }
+    heading = "청년 기본소득, 지역 경제 활성화의 첫걸음"
+    result = score_h2(heading, plan)
+
+    # section_text 없을 때는 coverage 체크 생략 → alignment 이슈 없음
+    assert "BODY_ALIGNMENT_LOW" not in result["issues"]
+    alignment = result["breakdown"].get("body_alignment", {})
+    assert alignment.get("raw") == 1.0
+
+
+def test_score_h2_partial_alignment_is_soft_warning_not_hard_fail() -> None:
+    """coverage 0.34~0.67 구간은 감점만 있고 hard-fail 은 아니다."""
+    plan = {
+        "section_text": (
+            "본 정책은 지역 일자리 창출을 위한 종합 대책입니다. "
+            "신규 산업단지 조성과 함께 진행됩니다."
+        ),
+        "suggested_type": "주장형",
+        "must_include_keyword": "일자리",
+        "candidate_keywords": ["일자리", "산업단지"],
+        "numerics": [],
+        "entity_hints": [],
+        "user_keywords": ["일자리"],
+        "key_claim": "",
+    }
+    # "일자리" + "산업단지" 는 본문 있음 / "대전환" + "설계도" 는 본문 없음
+    heading = "일자리 산업단지, 대전환 설계도"
+    result = score_h2(heading, plan)
+
+    # partial warning 은 허용 (hard-fail 아님)
+    assert "BODY_ALIGNMENT_LOW" not in result["issues"]
+
+
 def test_enforce_keyword_diversity_user_keywords_still_regulated() -> None:
     """기존 user_keywords 경로도 유지 — 변이형 없이 동일 표면 반복 시 strip."""
     from agents.common.h2_repair import enforce_keyword_diversity
@@ -1156,3 +1310,108 @@ def test_enforce_keyword_diversity_user_keywords_still_regulated() -> None:
     # cap = 2 → 뒤 2개는 strip 대상
     action_indices = {a["index"] for a in result["actions"]}
     assert action_indices.issubset({2, 3})
+
+
+# ---------------------------------------------------------------------------
+# candidate_keywords body-presence filter — 본문에 없는 user_keyword/entity_hint 는
+# candidate_keywords 풀에서 제거돼 distribute_keyword_assignments 의 대안으로 쓰이지 않는다.
+# ---------------------------------------------------------------------------
+
+
+def test_extract_section_plan_drops_user_keyword_absent_from_body() -> None:
+    """user_keyword 가 이 섹션 본문에 없으면 candidate_keywords 에서 제외된다."""
+    plan = extract_section_plan(
+        section_text=(
+            "지역 산단 기업에 대한 취득세 감면 조례가 9월 본회의를 통과했습니다. "
+            "신규 기업 유치 경쟁력의 중요한 토대가 될 것입니다."
+        ),
+        index=0,
+        category="policy-proposal",
+        style_config=_policy_style_config(),
+        # '샘플 테크노밸리' 는 본문에 없다 — candidate_keywords 에서 빠져야 함
+        user_keywords=["샘플 테크노밸리", "취득세 감면"],
+        full_name="",
+        full_region="",
+    )
+    candidates = plan.get("candidate_keywords") or []
+    assert "샘플 테크노밸리" not in candidates, (
+        f"본문에 없는 user_keyword 가 candidate_keywords 에 남아 있음: {candidates}"
+    )
+    assert "취득세 감면" in candidates, (
+        f"본문에 있는 user_keyword 가 candidate_keywords 에서 사라짐: {candidates}"
+    )
+
+
+def test_extract_section_plan_drops_entity_hint_absent_from_body() -> None:
+    """full_name/full_region 이 이 섹션 본문에 없으면 candidate_keywords 에서 제외된다."""
+    plan = extract_section_plan(
+        section_text=(
+            "청년 일자리 확대를 위해 신규 산업단지 조성 사업을 본격화합니다. "
+            "지역 경제 재도약의 출발점이 될 것입니다."
+        ),
+        index=0,
+        category="policy-proposal",
+        style_config=_policy_style_config(),
+        user_keywords=[],
+        # 본인 이름과 지역이 이 섹션 본문에 등장하지 않음
+        full_name="홍길동",
+        full_region="샘플시",
+    )
+    candidates = plan.get("candidate_keywords") or []
+    assert "홍길동" not in candidates
+    assert "샘플시" not in candidates
+
+
+def test_extract_section_plan_keeps_entity_hint_present_in_body() -> None:
+    """본문에 등장하는 full_name/full_region 은 candidate_keywords 에 남는다."""
+    plan = extract_section_plan(
+        section_text=(
+            "홍길동 의원은 샘플시 청년 일자리 확대 공약을 발표했습니다. "
+            "샘플시 산업단지 조성과 함께 추진됩니다."
+        ),
+        index=0,
+        category="policy-proposal",
+        style_config=_policy_style_config(),
+        user_keywords=[],
+        full_name="홍길동",
+        full_region="샘플시",
+    )
+    candidates = plan.get("candidate_keywords") or []
+    assert "홍길동" in candidates
+    assert "샘플시" in candidates
+
+
+def test_distribute_keyword_assignments_does_not_reassign_to_absent_keyword() -> None:
+    """extract_section_plan → distribute_keyword_assignments 통합 경로에서,
+    본문에 없는 user_keyword 는 재배치 대안으로 선택되지 않는다.
+    """
+    from agents.common.h2_planning import distribute_keyword_assignments
+
+    # 4 개 섹션 — 앞 3 개는 '샘플' canonical, 마지막 1 개는 다른 주제.
+    # '유령 키워드' 는 어떤 섹션 본문에도 없으므로 candidate_keywords 에서 제외돼야 함.
+    section_texts = [
+        "샘플시 청년 일자리 공약이 발표됐습니다. 지역 경제 재도약의 출발점입니다.",
+        "샘플시 교육 혁신 로드맵이 공개됐습니다. 학교 현장의 변화가 기대됩니다.",
+        "샘플광역시 복지 확대 패키지가 추진됩니다. 취약 계층 지원이 강화됩니다.",
+        "취득세 감면 조례 개정안이 본회의를 통과했습니다. 기업 유치 경쟁력이 회복됩니다.",
+    ]
+    plans = [
+        extract_section_plan(
+            section_text=section_texts[i],
+            index=i,
+            category="policy-proposal",
+            style_config=_policy_style_config(),
+            # '유령 키워드' 는 어떤 본문에도 없음
+            user_keywords=["유령 키워드"],
+            full_name="",
+            full_region="",
+        )
+        for i in range(4)
+    ]
+    result = distribute_keyword_assignments(plans)
+    for plan in result:
+        assert plan.get("must_include_keyword") != "유령 키워드", (
+            "본문에 없는 user_keyword 가 재배치 대안으로 선택됨"
+        )
+        candidates = plan.get("candidate_keywords") or []
+        assert "유령 키워드" not in candidates
