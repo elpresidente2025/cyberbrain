@@ -484,6 +484,35 @@ def detect_double_nominative(sentence: str) -> Optional[bool]:
     return False
 
 
+def find_duplicate_stems(
+    sentence: str, min_count: int = 2
+) -> Optional[List[Tuple[str, int]]]:
+    """한 문장 내에서 동일 용언 어간(VV/VA)이 `min_count` 회 이상 반복되는지 탐지.
+
+    예:
+      "정주 여건과 광역교통망이 충분히 갖춰진 자족도시의 면모를 갖추기 위해서는"
+        → 어간 "갖추" 가 VV 로 2회 → [("갖추", 2)]
+
+    합법 반복(무방):
+      - 단어 자체가 달라도 같은 어간이 반복되면 플래그 — 윤문 단계에서 상위 문맥으로 판단.
+      - 보조용언(VX)·지정사(VCP/VCN)는 빈번히 반복되므로 카운트하지 않는다.
+
+    반환:
+      [(stem_form, count), ...] — 기준 충족 어간 목록 (빈 리스트면 반복 없음)
+      None                      — Kiwi 불가
+    """
+    tokens = tokenize(sentence)
+    if tokens is None:
+        return None
+    if not tokens:
+        return []
+    counts: Dict[str, int] = {}
+    for tok in tokens:
+        if tok.tag in ("VV", "VA"):
+            counts[tok.form] = counts.get(tok.form, 0) + 1
+    return [(stem, n) for stem, n in counts.items() if n >= min_count]
+
+
 def find_genitive_chain(
     sentence: str, min_count: int = 3
 ) -> Optional[List[int]]:

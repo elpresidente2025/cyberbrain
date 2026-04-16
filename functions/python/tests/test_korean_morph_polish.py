@@ -234,6 +234,52 @@ class TestDetectDoubleNominativeFallback:
 
 
 # ──────────────────────────────────────────────────────────────────────
+# find_duplicate_stems
+# ──────────────────────────────────────────────────────────────────────
+
+
+@kiwi_required
+class TestFindDuplicateStems:
+    def test_no_repeat(self) -> None:
+        """동일 어간 반복 없음 → 빈 리스트."""
+        result = korean_morph.find_duplicate_stems(
+            "정주 여건과 광역교통망을 충분히 마련해야 합니다"
+        )
+        assert result == []
+
+    def test_same_stem_twice(self) -> None:
+        """'갖추' 어간 2회 (갖춰진 + 갖추기) → 플래그."""
+        result = korean_morph.find_duplicate_stems(
+            "광역교통망이 갖춰진 자족도시의 면모를 갖추기 위해서는"
+        )
+        assert result is not None
+        # 어간 중 하나라도 >=2 나와야 함
+        stems = [stem for stem, _count in result]
+        assert "갖추" in stems
+
+    def test_custom_min_count(self) -> None:
+        """min_count=3 으로 올리면 2회는 빠져야 한다."""
+        result = korean_morph.find_duplicate_stems(
+            "광역교통망이 갖춰진 자족도시의 면모를 갖추기 위해서는",
+            min_count=3,
+        )
+        assert result == []
+
+    def test_empty(self) -> None:
+        result = korean_morph.find_duplicate_stems("")
+        assert result == []
+
+
+class TestFindDuplicateStemsFallback:
+    def test_returns_none_when_kiwi_unavailable(self, monkeypatch) -> None:
+        monkeypatch.setattr(korean_morph, "get_kiwi", lambda: None)
+        result = korean_morph.find_duplicate_stems(
+            "광역교통망이 갖춰진 자족도시의 면모를 갖추기 위해서는"
+        )
+        assert result is None
+
+
+# ──────────────────────────────────────────────────────────────────────
 # find_genitive_chain
 # ──────────────────────────────────────────────────────────────────────
 

@@ -602,6 +602,8 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
                     or "속격" in s
                     or "중복 조사" in s
                     or "이중 주어" in s
+                    or "동일 어간 반복" in s
+                    or "지시어 고립" in s
                 )
             ]
             if suspicious:
@@ -646,6 +648,26 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
 - 시점 역행: "~을 통과시켰습니다 / 시행되고 있습니다" 같이 이미 완료된 행동을 서술한 뒤, 같은 맥락에서 "~이 필요합니다 / 해야 합니다" 같은 당위 문장을 이어 붙이지 말 것. 이미 한 일은 과거·현재완료로 닫고, 앞으로 할 일만 미래형으로 이어 붙인다.
   예: BAD "조례는 본회의를 통과하여 지난 9월부터 시행되고 있습니다. 성공적인 조성을 위해 이러한 노력이 필요합니다."
        GOOD "조례는 본회의를 통과하여 지난 9월부터 시행되고 있습니다. 이번 개정이 성공적인 조성의 첫 단추가 될 것입니다."
+- 주술 혼합 (능동+피동): "저는 ~을 확보하고 ~이 개선될 것이라고 생각합니다"처럼 한 문장 안에서 '저는'이 능동 동작(확보하다)과 피동 서술(개선되다)을 함께 이끄는 경우. '저는'은 자신의 판단·기대 동사(생각하다/기대하다/전망하다/봅니다)로만 닫고, 외부 변화는 분리된 절로 쓰거나 완전 피동으로 정렬한다.
+  예: BAD "저는 이번 개정으로 세제 인센티브의 형평성을 확보하고 앵커기업 유치 여건도 개선될 것이라고 생각합니다."
+       GOOD "이번 개정으로 세제 인센티브의 형평성이 확보되고 앵커기업 유치 여건도 개선될 것이라고 저는 봅니다."
+       또는 "저는 이번 개정으로 세제 인센티브의 형평성을 바로잡고, 앵커기업 유치 여건을 개선하겠습니다."
+- 명사구 스태킹: 한 구 안에서 "N1의 N2 N3 N4의 N5" 처럼 명사구를 3개 이상 연속해서 포개지 마세요. 하나는 동사/서술로, 하나는 관형절(~하는 N)로 풀어 쓰면 문장이 숨을 쉽니다.
+  예: BAD "세제 인센티브를 통한 기업 유치 경쟁력 회복의 중요한 신호탄"
+       GOOD "세제 인센티브로 기업 유치 경쟁력을 되살리는 중요한 신호탄"
+- 지시어 역전: 직전 문장이 '문제/현실/한계/부재' 같이 부정적 상태로 닫혔는데 바로 뒤에 "이를 위해 ~해야 합니다"로 이어지면, "이를"이 문제 자체를 가리켜 논리가 뒤집힙니다. 이럴 때는 "이를 해소하려면 / 그래서 / 이러한 상황을 바꾸려면"으로 교체합니다.
+  예: BAD "~은 이중 규제의 꼬리표를 달고 있는 것이 현실입니다. 이를 위해 ~을 신속히 완료해야 합니다."
+       GOOD "~은 이중 규제의 꼬리표를 달고 있는 것이 현실입니다. 이 상황을 해소하려면 ~을 신속히 완료해야 합니다."
+- 병렬 구조 혼합: "A와 B이/가 ~한 점"처럼 '~와/과'로 묶는 두 항목의 문법 성격이 다르면 문장이 꼬입니다. 양쪽 다 명사구(체언)로 통일하거나, 양쪽 다 관형절(~이 ~한 것)로 통일하세요.
+  예: BAD "'일자리 창출' 공약 이행 실태와 '매립지 종료' 공약이 사실상 달성되지 못한 점"
+       GOOD "'일자리 창출'과 '매립지 종료' 공약이 사실상 달성되지 못한 점"
+       또는 "'일자리 창출' 공약 이행 실태와 '매립지 종료' 공약의 미이행"
+- 어조 혼입: 한 문단 안에서 선언체("하겠습니다/기대합니다")와 당위체/평문("~것이 중요합니다 / ~할 필요가 있습니다")이 섞이지 않게 합니다. 화자의 목소리가 주된 어조라면 끝까지 그 어조로 닫고, 객관 평문이 필요하면 별도 문단으로 분리하세요.
+  예: BAD "저는 ~에 최선을 다하겠습니다. 이 과제에 매진하는 것이 중요합니다."
+       GOOD "저는 ~에 최선을 다하겠습니다. 이 과제에 끝까지 매진하겠습니다."
+- 어휘 반복: 같은 용언의 어간(예: "갖추"의 "갖춰진/갖추기")이 한 문장 안에 2회 이상 나오면 한쪽을 유의어로 바꾸거나 구조를 바꿉니다.
+  예: BAD "광역교통망이 갖춰진 자족도시의 면모를 갖추기 위해서는"
+       GOOD "광역교통망이 갖춰진 자족도시로 자리 잡으려면"
 
 [2단계 - 교정]
 - 의미, 사실, 수치, 고유명사, 정치적 입장은 유지합니다.
@@ -714,6 +736,7 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
             mismatch_count = 0
             genitive_chain_count = 0
             double_nom_count = 0
+            duplicate_stem_count = 0
             for sent in sentences:
                 if korean_morph.detect_subject_predicate_mismatch(sent) is True:
                     mismatch_count += 1
@@ -722,6 +745,9 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
                     genitive_chain_count += 1
                 if korean_morph.detect_double_nominative(sent) is True:
                     double_nom_count += 1
+                dup_stems = korean_morph.find_duplicate_stems(sent, min_count=2)
+                if dup_stems:
+                    duplicate_stem_count += 1
             if mismatch_count:
                 summary.append(
                     f"주술 불일치 의심 문장 {mismatch_count}건 — humanize 단계 재검토"
@@ -734,6 +760,39 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
                 summary.append(
                     f"이중 주어 의심 문장 {double_nom_count}건 — humanize 단계 절 분리 검토"
                 )
+            if duplicate_stem_count:
+                summary.append(
+                    f"동일 어간 반복 문장 {duplicate_stem_count}건 — humanize 단계 어휘 다양화 검토"
+                )
+
+        # 1.6. H2 섹션 첫 문장 지시어 고립 스캔
+        # "이 사업/이곳/이 정책/이러한 노력" 류가 섹션 시작 위치에 오면 referent 가
+        # 앞 섹션까지 거슬러 가야 해석됨 → humanize 에 경고.
+        try:
+            import re as _re
+            # <h2>...</h2> 뒤에 이어지는 첫 <p>...</p> 추출
+            section_blocks = _re.findall(
+                r'<h2[^>]*>.*?</h2>\s*(<p[^>]*>.*?</p>)',
+                updated_content,
+                flags=_re.DOTALL | _re.IGNORECASE,
+            )
+            orphan_section_count = 0
+            _ORPHAN_RE = _re.compile(
+                r'^\s*(?:이|그|저)\s*(?:사업|정책|조치|조례|노력|곳|것|분|때|문제|사안|사례|현상|방침|계획)'
+            )
+            for block in section_blocks:
+                # <p> 안쪽 텍스트만 추출 후 선두만 본다 (첫 문장 앞부분이면 족함)
+                inner = _re.sub(r'<[^>]+>', ' ', block)
+                inner = _re.sub(r'\s+', ' ', inner).strip()
+                if _ORPHAN_RE.match(inner):
+                    orphan_section_count += 1
+            if orphan_section_count:
+                summary.append(
+                    f"섹션 첫 문장 지시어 고립 {orphan_section_count}건 — humanize 단계 고유명사 원형 복원 검토"
+                )
+        except Exception:
+            # 지시어 스캔은 보조 — 실패해도 파이프라인 중단하지 않음.
+            pass
 
         # 2. 과다 키워드 강제 분산 (reduceKeywordSpam)
         # Porting strict logic: max 6 times allowed
