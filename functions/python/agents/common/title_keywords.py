@@ -36,7 +36,15 @@ def _topic_keyword_matches_text(keyword: str, text: str) -> bool:
     normalized_text = re.sub(r"\s+", "", str(text or "")).strip().lower()
     if not normalized_text:
         return False
-    return any(variant.lower() in normalized_text for variant in _expand_topic_keyword_variants(keyword))
+    if any(variant.lower() in normalized_text for variant in _expand_topic_keyword_variants(keyword)):
+        return True
+    try:
+        from .title_hook_quality import _slot_token_used_in_title
+        if _slot_token_used_in_title(text, keyword):
+            return True
+    except Exception:
+        pass
+    return False
 
 
 _SURFACE_TOPIC_PARTICLE_SUFFIXES = (

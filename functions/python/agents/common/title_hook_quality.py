@@ -287,23 +287,26 @@ def extract_slot_opportunities(
     }
 
 
+_SLOT_STEM_SUFFIXES = (
+    '위원회', '협의회', '의회', '재단', '공단', '기금',
+    '법안', '특별법', '기본법', '개정안', '조례',
+    '제도', '정책', '사업', '프로젝트', '공약',
+    '특별시', '광역시', '특별자치시', '특별자치도',
+)
+
+
 def _slot_token_used_in_title(title: str, token: str) -> bool:
     if not title or not token:
         return False
-    # 전체 매칭이 우선, 그 다음 핵심 어근(접미 1~2자 제거) 매칭 허용
-    if token in title:
+    compact_title = re.sub(r'\s+', '', title)
+    compact_token = re.sub(r'\s+', '', token)
+    if compact_token and compact_token in compact_title:
         return True
-    # "주민참여예산시민위원회" → "주민참여예산" 같은 핵심 어근만 써도 인정
-    stems: List[str] = []
-    for suffix in ('위원회', '협의회', '의회', '재단', '공단', '기금',
-                   '법안', '특별법', '기본법', '개정안', '조례',
-                   '제도', '정책', '사업', '프로젝트', '공약',
-                   '특별시', '광역시', '특별자치시', '특별자치도'):
-        if token.endswith(suffix) and len(token) - len(suffix) >= 2:
-            stems.append(token[: -len(suffix)])
-    for stem in stems:
-        if stem and stem in title:
-            return True
+    for suffix in _SLOT_STEM_SUFFIXES:
+        if compact_token.endswith(suffix) and len(compact_token) - len(suffix) >= 2:
+            stem = compact_token[: -len(suffix)]
+            if stem and stem in compact_title:
+                return True
     return False
 
 

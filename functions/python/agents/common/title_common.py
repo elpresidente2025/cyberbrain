@@ -86,7 +86,9 @@ def detect_content_type(content_preview: str, category: str) -> str:
         # Priority for user content signals
         if has_time_terms and ('보고' in text or '리포트' in text or '현황' in text):
             return 'TIME_BASED'
-        if has_legal_terms or (has_policy_terms and not has_question):
+        if has_legal_terms and not has_question:
+            return 'EXPERT_KNOWLEDGE'
+        if has_policy_terms and not has_question:
             return 'EXPERT_KNOWLEDGE'
         if has_commentary_terms and has_politician_names:
             return 'COMMENTARY'
@@ -228,7 +230,7 @@ def select_title_family(params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if has_numbers:
         _boost("DATA_BASED", 4, "수치/단위 신호")
     if has_question:
-        _boost("QUESTION_ANSWER", 4, "질문형 신호")
+        _boost("QUESTION_ANSWER", 6, "질문형 신호")
     if has_comparison and has_numbers:
         _boost("COMPARISON", 6, "비교/대조 수치 신호")
     elif has_comparison:
@@ -236,7 +238,9 @@ def select_title_family(params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if has_local_terms:
         _boost("LOCAL_FOCUSED", 4, "지역 단위 신호")
     if has_legal_terms:
-        if legal_is_dominant:
+        if has_question:
+            _boost("EXPERT_KNOWLEDGE", 1, "법안/조례 보조 (질문 톤 우세)")
+        elif legal_is_dominant:
             _boost("EXPERT_KNOWLEDGE", 6, "법안/조례 신호 (주요)")
         else:
             _boost("EXPERT_KNOWLEDGE", 2, "법안/조례 신호 (부수)")

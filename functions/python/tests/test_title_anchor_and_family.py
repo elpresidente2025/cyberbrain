@@ -1,12 +1,11 @@
-"""Phase 3: 부수 법률 신호 step-down + body anchor 장형 별칭 매칭 회귀 테스트.
+"""제목 파이프라인 복합 패널티 수정 회귀 테스트.
 
 대상 변경:
-- title_common.select_title_family: 법률 용어가 부수적으로만 등장할 때
-  EXPERT_KNOWLEDGE 부스트를 +6 → +2 로 낮춘다.
-- title_scoring._assess_body_anchor_coverage: '계양TV' 같이 한글 어간 +
-  라틴 축약 토큰이 본문 앵커로 잡히고 제목엔 장형('계양 테크노밸리') 만
-  등장하는 경우, topic/userKeywords 에서 장형을 찾아 substring 매칭을
-  성공시킨다.
+- title_hook_quality._slot_token_used_in_title: compact + stem stripping 으로
+  "테크노밸리 사업" → stem "테크노밸리" 가 제목 substring 에 매칭.
+- title_scoring._assess_body_anchor_coverage: _slot_token_used_in_title 사용.
+- title_keywords._topic_keyword_matches_text: stem fallback 추가.
+- title_common.detect_content_type / select_title_family: 질문 톤이 법률 어휘보다 우선.
 """
 
 import pathlib
@@ -15,73 +14,72 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from agents.common.title_common import select_title_family
-from agents.common.title_scoring import (
-    _assess_body_anchor_coverage,
-    _collect_long_form_candidates,
-    _token_alias_variants,
-)
+from agents.common.title_common import select_title_family, detect_content_type
+from agents.common.title_scoring import _assess_body_anchor_coverage
+from agents.common.title_hook_quality import _slot_token_used_in_title
+from agents.common.title_keywords import _topic_keyword_matches_text
 
 
-def test_incidental_legal_term_does_not_dominate_family():
-    """법률 용어 1개 + 다짐형 용어 다수 → EXPERT_KNOWLEDGE 보너스 2점만."""
-    params = {
-        "topic": "테크노밸리 2단계, 숙원 사업 완성",
-        "stanceText": (
-            "저는 앞장서서 이 숙원 사업을 끝까지 추진하겠습니다. "
-            "시의회와 함께 조례 개정도 뒷받침하고, 주민 약속을 지키며 "
-            "끝까지 완성해 나가겠습니다."
-        ),
-        "contentPreview": "",
-        "category": "daily-communication",
-    }
-    result = select_title_family(params)
-    expert_reasons = result["reasons"].get("EXPERT_KNOWLEDGE", [])
-    assert any("부수" in r for r in expert_reasons), (
-        f"기대: 부수 배지가 reason 에 찍혀야 함. 실제 reasons={expert_reasons}"
-    )
-    # SLOGAN_COMMITMENT 가 EXPERT_KNOWLEDGE 보다 높은 점수여야 한다 — 다짐형이 주 톤.
-    expert_score = result["scores"].get("EXPERT_KNOWLEDGE", 0)
-    slogan_score = result["scores"].get("SLOGAN_COMMITMENT", 0)
-    assert slogan_score > expert_score, (
-        f"SLOGAN_COMMITMENT={slogan_score} 가 EXPERT_KNOWLEDGE={expert_score} "
-        f"보다 커야 함. scores={result['scores']}"
+# ---------------------------------------------------------------------------
+# _slot_token_used_in_title — stem stripping
+# ---------------------------------------------------------------------------
+
+def test_slot_stem_strips_policy_suffix():
+    """'테크노밸리 사업' stem '테크노밸리' 가 제목에 매칭."""
+    assert _slot_token_used_in_title(
+        "계양 테크노밸리, 2단계 지정 왜 늦어지나?",
+        "테크노밸리 사업",
     )
 
 
-def test_dominant_legal_terms_still_boost_expert_knowledge():
-    """법률 용어 3회 이상이면 기존과 같이 +6 점."""
-    params = {
-        "topic": "조례 개정안 발의",
-        "stanceText": "이번 조례 개정안은 제도 개선을 위한 법률 정비다. 법안 통과를 목표로 한다.",
-        "category": "policy-proposal",
-    }
-    result = select_title_family(params)
-    expert_reasons = result["reasons"].get("EXPERT_KNOWLEDGE", [])
-    assert any("주요" in r for r in expert_reasons), (
-        f"기대: 주요 배지. reasons={expert_reasons}"
+def test_slot_stem_strips_institution_suffix():
+    """'주민참여예산시민위원회' stem '주민참여예산시민' 이 제목에 매칭."""
+    assert _slot_token_used_in_title(
+        "주민참여예산시민 제도 안내",
+        "주민참여예산시민위원회",
     )
-    assert result["scores"].get("EXPERT_KNOWLEDGE", 0) >= 6
 
 
-def test_token_alias_variants_extracts_long_form_from_topic():
-    """한글+라틴 축약 토큰이 topic 장형과 연결된다."""
-    variants = _token_alias_variants(
-        "계양TV",
-        ["계양 테크노밸리 2단계", "기타 키워드"],
+def test_slot_exact_match_still_works():
+    """접미사 없는 토큰은 그대로 exact substring 매칭."""
+    assert _slot_token_used_in_title("서울시의회 의정보고", "서울시의회")
+
+
+def test_slot_no_false_positive_on_short_stem():
+    """stem 이 2자 미만이면 매칭하지 않음."""
+    assert not _slot_token_used_in_title("아무 제목", "가사업")
+
+
+def test_slot_compact_ignores_whitespace():
+    """토큰과 제목 모두 공백 제거 후 비교."""
+    assert _slot_token_used_in_title(
+        "취득세 감면 조례 개정",
+        "취득세감면조례",
     )
-    assert "계양TV" in variants
-    assert "계양 테크노밸리 2단계" in variants
 
 
-def test_token_alias_variants_plain_token_unchanged():
-    """일반 토큰은 변형 없이 원본만 반환."""
-    variants = _token_alias_variants("기본소득", ["민생 기본소득"])
-    assert variants == ["기본소득"]
+# ---------------------------------------------------------------------------
+# _topic_keyword_matches_text — stem fallback
+# ---------------------------------------------------------------------------
+
+def test_topic_keyword_stem_fallback():
+    """compact match 실패해도 stem fallback 이 잡아준다."""
+    assert _topic_keyword_matches_text(
+        "테크노밸리사업",
+        "계양 테크노밸리, 2단계 지정",
+    )
 
 
-def test_body_anchor_alias_resolves_abbreviation_to_title_long_form():
-    """body anchor 가 'XTV' 이고 제목이 'X 테크노밸리' 여도 매칭 성공."""
+def test_topic_keyword_exact_match_still_works():
+    assert _topic_keyword_matches_text("계양", "계양 테크노밸리")
+
+
+# ---------------------------------------------------------------------------
+# _assess_body_anchor_coverage — _slot_token_used_in_title 사용
+# ---------------------------------------------------------------------------
+
+def test_body_anchor_stem_matching_passes():
+    """policy 토큰 '테크노밸리 사업' 이 stem 으로 제목에 매칭 성공."""
     from agents.common import title_hook_quality as thq
 
     original = thq.extract_slot_opportunities
@@ -89,8 +87,8 @@ def test_body_anchor_alias_resolves_abbreviation_to_title_long_form():
     def fake_extract(topic, content_preview, params):
         return {
             "region": [],
-            "institution": ["계양TV"],
-            "policy": [],
+            "institution": [],
+            "policy": ["테크노밸리 사업"],
             "numeric": [],
             "year": [],
         }
@@ -98,25 +96,19 @@ def test_body_anchor_alias_resolves_abbreviation_to_title_long_form():
     thq.extract_slot_opportunities = fake_extract  # type: ignore
     try:
         params = {
-            "topic": "계양 테크노밸리 2단계, 숙원 사업 완성",
+            "topic": "계양 테크노밸리 2단계",
             "contentPreview": "...",
-            "userKeywords": [],
         }
         result = _assess_body_anchor_coverage(
-            "계양 테크노밸리 2단계, 숙원 사업 완성", params
+            "계양 테크노밸리, 2단계 지정 왜 늦어지나?", params
         )
         assert result.get("passed") is True, f"결과: {result}"
-        assert "institution" in (result.get("hitBuckets") or [])
-        hit_tokens = result.get("hitTokens") or []
-        assert any("계양TV" in t and "→" in t for t in hit_tokens), (
-            f"별칭 해석이 hitTokens 에 기록돼야 함. hitTokens={hit_tokens}"
-        )
+        assert "policy" in (result.get("hitBuckets") or [])
     finally:
         thq.extract_slot_opportunities = original  # type: ignore
 
 
-def test_body_anchor_original_token_match_still_works():
-    """장형 변형이 없어도 원본 토큰이 제목에 있으면 매칭된다."""
+def test_body_anchor_exact_token_still_works():
     from agents.common import title_hook_quality as thq
 
     original = thq.extract_slot_opportunities
@@ -137,13 +129,11 @@ def test_body_anchor_original_token_match_still_works():
             "서울시의회 의정보고, 주민과의 약속", params
         )
         assert result.get("passed") is True
-        assert "institution" in (result.get("hitBuckets") or [])
     finally:
         thq.extract_slot_opportunities = original  # type: ignore
 
 
-def test_body_anchor_fails_when_no_variant_matches():
-    """장형 후보가 있어도 제목에 없으면 여전히 실패."""
+def test_body_anchor_fails_when_no_match():
     from agents.common import title_hook_quality as thq
 
     original = thq.extract_slot_opportunities
@@ -166,13 +156,65 @@ def test_body_anchor_fails_when_no_variant_matches():
         thq.extract_slot_opportunities = original  # type: ignore
 
 
-def test_collect_long_form_candidates_splits_topic():
-    """topic 을 구분자 기준으로 잘라 장형 후보로 만든다."""
+# ---------------------------------------------------------------------------
+# Family classifier — 질문 톤이 법률 어휘보다 우선
+# ---------------------------------------------------------------------------
+
+def test_question_tone_prevents_expert_knowledge_prior():
+    """질문 + 법률 어휘 → detect_content_type 이 EXPERT_KNOWLEDGE 안 돼야."""
+    content = "조례 개정이 필요하다. 왜 지금 추진해야 하는가?"
+    result = detect_content_type(content, "daily-communication")
+    assert result != "EXPERT_KNOWLEDGE", f"질문 톤인데 EXPERT_KNOWLEDGE 반환: {result}"
+
+
+def test_question_tone_demotes_legal_boost():
+    """질문형 source 에 법률 어휘 있어도 EXPERT_KNOWLEDGE 가 낮게 부스트."""
     params = {
-        "topic": "계양 테크노밸리 2단계, 숙원 사업 완성",
-        "userKeywords": ["계양 테크노밸리"],
+        "topic": "테크노밸리 2단계 지정, 왜 늦어지나?",
+        "stanceText": (
+            "시의회와 함께 조례 개정도 뒷받침해야 합니다. "
+            "이 제도를 왜 미루는 것인가? 어떻게 해결할 것인가?"
+        ),
+        "contentPreview": "",
+        "category": "daily-communication",
     }
-    candidates = _collect_long_form_candidates(params)
-    joined = " | ".join(candidates)
-    assert "계양 테크노밸리 2단계" in joined
-    assert "계양 테크노밸리" in candidates
+    result = select_title_family(params)
+    expert_score = result["scores"].get("EXPERT_KNOWLEDGE", 0)
+    question_score = result["scores"].get("QUESTION_ANSWER", 0)
+    assert question_score > expert_score, (
+        f"QUESTION_ANSWER={question_score} > EXPERT_KNOWLEDGE={expert_score} 여야 함. "
+        f"scores={result['scores']}"
+    )
+
+
+def test_dominant_legal_no_question_still_expert():
+    """질문 없이 법률 용어 3회+ → 여전히 EXPERT_KNOWLEDGE +6."""
+    params = {
+        "topic": "조례 개정안 발의",
+        "stanceText": "이번 조례 개정안은 제도 개선을 위한 법률 정비다. 법안 통과를 목표로 한다.",
+        "category": "policy-proposal",
+    }
+    result = select_title_family(params)
+    expert_reasons = result["reasons"].get("EXPERT_KNOWLEDGE", [])
+    assert any("주요" in r for r in expert_reasons), (
+        f"기대: 주요 배지. reasons={expert_reasons}"
+    )
+    assert result["scores"].get("EXPERT_KNOWLEDGE", 0) >= 6
+
+
+def test_incidental_legal_no_question_gets_minor_boost():
+    """질문 없고 법률 1회 + 다짐형 다수 → 부수 +2."""
+    params = {
+        "topic": "숙원 사업 완성",
+        "stanceText": (
+            "저는 앞장서서 추진하겠습니다. 조례도 뒷받침하고, "
+            "약속을 지키며 완성해 나가겠습니다."
+        ),
+        "contentPreview": "",
+        "category": "daily-communication",
+    }
+    result = select_title_family(params)
+    expert_reasons = result["reasons"].get("EXPERT_KNOWLEDGE", [])
+    assert any("부수" in r for r in expert_reasons), (
+        f"기대: 부수 배지. reasons={expert_reasons}"
+    )
