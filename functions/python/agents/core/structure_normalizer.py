@@ -98,6 +98,11 @@ def _strip_tags(html: str) -> str:
 
 
 def _split_sentences(text: str) -> List[str]:
+    from ..common import korean_morph
+    kiwi_result = korean_morph.split_sentences(text)
+    if kiwi_result is not None:
+        return kiwi_result
+    # fallback: 기존 regex
     chunks = re.split(r"(?<=[.!?])\s+", (text or "").strip())
     return [chunk.strip() for chunk in chunks if chunk and chunk.strip()]
 
@@ -232,24 +237,6 @@ def _compress_section_overflow(section_html: str, target_max: int) -> str:
         result = result.replace(target_p, new_p, 1)
 
     return result
-
-
-def _generate_h2_text(p_block: str, index: int) -> str:
-    plain = _strip_tags(p_block)
-    first_sentence = _split_sentences(plain)[0] if _split_sentences(plain) else plain
-    normalized = re.sub(r"\s+", " ", first_sentence).strip().rstrip(".!?")
-    candidates: List[str] = [normalized]
-    for separator in (",", ":", ";", "·", " - ", " — ", " – ", "("):
-        if separator not in normalized:
-            continue
-        fragment = normalized.split(separator, 1)[0].strip().rstrip(".!?")
-        if fragment and fragment not in candidates:
-            candidates.append(fragment)
-    candidate = re.sub(r"[은는이가을를에의와과로만도]$", "", candidate).strip()
-    candidate = candidate.rstrip(".!?")
-    if not candidate or len(candidate) < 3:
-        candidate = f"핵심 주제 {index}"
-    return candidate
 
 
 def _generate_h2_text(p_block: str, index: int) -> str:

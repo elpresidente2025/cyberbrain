@@ -42,9 +42,6 @@ PLEDGE_REPLACEMENTS = [
     (r'하겠(?:습니다)?', '할 필요가 있습니다')
 ]
 
-# 서명 마커 (요약문 삽입 위치 파악용)
-SIGNATURE_REGEX = r'(<p[^>]*>\s*감사합니다\.?\s*<\/p>|<p[^>]*>\s*감사드립니다\.?\s*<\/p>|<p[^>]*>\s*고맙습니다\.?\s*<\/p>|<p[^>]*>\s*[^<]*드림\s*<\/p>|감사합니다|감사드립니다|고맙습니다|사랑합니다|드림)'
-
 class EditorAgent(Agent):
     def __init__(self, name: str = 'EditorAgent', options: Optional[Dict[str, Any]] = None):
         super().__init__(name, options)
@@ -618,6 +615,13 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
             
             if original_content != updated_content:
                 summary.append("선거법 위험 표현 기계적 완화 적용")
+                # Kiwi 기반 치환 후 문법 검증 (중복 조사 탐지)
+                from ..common import korean_morph
+                dup_tokens = korean_morph.find_duplicate_particles(updated_content)
+                if dup_tokens:  # None 이면 Kiwi 불가 → 스킵
+                    summary.append(
+                        f"치환 후 중복 조사 {len(dup_tokens)}건 감지 — 수동 확인 필요"
+                    )
 
         # 2. 과다 키워드 강제 분산 (reduceKeywordSpam)
         # Porting strict logic: max 6 times allowed
@@ -638,9 +642,8 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
                     f"키워드 과다('{keyword}' {count}회) 감지 - 문장 파손 방지를 위해 자동 치환은 수행하지 않음 ({excess}회 초과)"
                 )
 
-        # 3. Double Transformation Check ("것일 것입니다" -> "것입니다")
-        updated_content = re.sub(r'것일 것입니다', '것입니다', updated_content)
-        updated_content = re.sub(r'것일 것', '것', updated_content)
+        # Double Transformation 은 content_processor.GRAMMATICAL_ERROR_PATTERNS 에서
+        # 더 포괄적으로 처리하므로 여기서는 제거함.
 
         return {
             'content': updated_content,

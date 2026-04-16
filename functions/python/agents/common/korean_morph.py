@@ -10,6 +10,8 @@
 소비처:
 - agents/common/h2_guide.py (has_incomplete_h2_ending)
 - agents/common/h2_scoring.py (_has_question_form, 명사구 hard-fail)
+- agents/core/structure_normalizer.py (_split_sentences Kiwi 우선 전환)
+- agents/core/editor_agent.py (apply_hard_constraints 치환 후 문법 검증)
 - (확장 가능) agents/common/title_hook_quality.py, stylometry/features/ 등
 """
 
@@ -18,7 +20,7 @@ from __future__ import annotations
 import os
 import re
 import threading
-from typing import Dict, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 _KIWI_LOCK = threading.Lock()
 _KIWI_INSTANCE = None
@@ -304,3 +306,74 @@ def last_token_info(text: str) -> Optional[Tuple[str, str]]:
     if last is None:
         return None
     return (last.form, last.tag)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 윤문(polish) 단계 지원 함수
+# ──────────────────────────────────────────────────────────────────────
+
+_DUPLICATE_CHECK_TAGS = _PARTICLE_TAGS | frozenset({"EF"})
+
+
+def split_sentences(text: str) -> Optional[List[str]]:
+    """Kiwi 의 split_into_sents 로 문장 분할. 실패 시 None (호출부 regex fallback)."""
+    plain = str(text or "").strip()
+    if not plain:
+        return []
+    kiwi = get_kiwi()
+    if kiwi is None:
+        return None
+    try:
+        results = kiwi.split_into_sents(plain)
+        return [s.text.strip() for s in results if s.text.strip()]
+    except Exception as err:  # pragma: no cover
+        print(f"[korean_morph] split_into_sents 실패: {err}")
+        return None
+
+
+def find_duplicate_particles(text: str) -> Optional[List[Tuple[int, str, str]]]:
+    """연속 동일 조사(JK*)/종결어미(EF) 중복을 탐지한다.
+
+    반환:
+      [(char_offset, form, tag), ...] — 중복인 두 번째 토큰 위치.
+      빈 리스트 — 중복 없음.
+      None — Kiwi 불가.
+    """
+    tokens = tokenize(text)
+    if tokens is None:
+        return None
+    duplicates: List[Tuple[int, str, str]] = []
+    prev = None
+    for tok in tokens:
+        if tok.tag in _TRAILING_SKIP_TAGS:
+            continue
+        if (
+            prev is not None
+            and tok.tag in _DUPLICATE_CHECK_TAGS
+            and prev.tag == tok.tag
+            and tok.form == prev.form
+        ):
+            duplicates.append((tok.start, tok.form, tok.tag))
+        prev = tok
+    return duplicates
+
+
+def check_post_substitution_grammar(
+    _original: str, substituted: str
+) -> Optional[Dict[str, bool]]:
+    """치환 전후 문장의 비문 가능성을 플래그한다.
+
+    반환:
+      {"has_duplicate_particle": bool, "is_incomplete": bool}
+      None — Kiwi 불가.
+    """
+    dup = find_duplicate_particles(substituted)
+    if dup is None:
+        return None
+    inc = is_incomplete_ending(substituted)
+    if inc is None:
+        return None
+    return {
+        "has_duplicate_particle": len(dup) > 0,
+        "is_incomplete": bool(inc),
+    }
