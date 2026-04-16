@@ -78,6 +78,52 @@ _NON_EVENT_ANNOUNCEMENT_SURFACE_PATTERNS = (
 
 _BODY_ANCHOR_BUCKETS = ('policy', 'institution', 'numeric', 'year')
 
+_KOREAN_LATIN_ABBREV_RE = re.compile(r'^([가-힣]{2,})([A-Z]{2,5})$')
+
+
+def _collect_long_form_candidates(params: Dict[str, Any]) -> List[str]:
+    """제목/본문 축약 토큰을 풀어낼 때 참조할 장형 후보를 수집한다.
+
+    본문에서 'XTV' 같은 축약을 만들고, 제목은 'X 테크노밸리' 같은 장형을 쓰는 경우
+    substring 매칭이 실패하기 때문에, topic·userKeywords 에서 장형 후보를 뽑아
+    변형 매칭에 쓴다.
+    """
+    candidates: List[str] = []
+    topic = str(params.get('topic') or '')
+    for phrase in re.split(r'[,，.·:;()\[\]\-—–/|]+', topic):
+        phrase = phrase.strip()
+        if phrase:
+            candidates.append(phrase)
+    user_keywords = params.get('userKeywords')
+    if isinstance(user_keywords, list):
+        for kw in user_keywords:
+            kw_str = str(kw or '').strip()
+            if kw_str:
+                candidates.append(kw_str)
+    return candidates
+
+
+def _token_alias_variants(token: str, long_form_candidates: List[str]) -> List[str]:
+    """한글-라틴 축약 토큰(예: '계양TV') 에 대해 장형 별칭 후보를 반환한다.
+
+    token 이 `([한글]+)([A-Z]{2,5})` 형태이고, long_form_candidates 에 같은 한글 어간으로
+    시작하는 장형 표현이 있으면 이를 변형 목록에 추가한다. 원본 토큰은 항상 포함.
+    """
+    variants: List[str] = [str(token or '').strip()]
+    token_str = str(token or '').strip()
+    match = _KOREAN_LATIN_ABBREV_RE.match(token_str)
+    if not match:
+        return variants
+    korean_stem = match.group(1)
+    for kw in long_form_candidates:
+        kw_str = str(kw or '').strip()
+        if not kw_str or kw_str == token_str:
+            continue
+        if kw_str.startswith(korean_stem) and len(kw_str) > len(korean_stem):
+            if kw_str not in variants:
+                variants.append(kw_str)
+    return variants
+
 
 def _assess_body_anchor_coverage(title: str, params: Dict[str, Any]) -> Dict[str, Any]:
     """제목이 본문에서 뽑힌 구체 앵커(정책·기관·수치·연도) 중 최소 1개를 인용했는지 검증.
@@ -111,17 +157,27 @@ def _assess_body_anchor_coverage(title: str, params: Dict[str, Any]) -> Dict[str
         return {'passed': True, 'skipped': True}
 
     compact_title = re.sub(r'\s+', '', normalized_title)
+    long_form_candidates = _collect_long_form_candidates(params)
     hit_buckets: List[str] = []
     hit_tokens: List[str] = []
     for bucket in _BODY_ANCHOR_BUCKETS:
         items = slots.get(bucket) or []
         for token in items:
-            compact_token = re.sub(r'\s+', '', str(token or ''))
-            if not compact_token:
+            token_str = str(token or '').strip()
+            if not token_str:
                 continue
-            if compact_token in compact_title:
+            matched_variant = None
+            for variant in _token_alias_variants(token_str, long_form_candidates):
+                compact_variant = re.sub(r'\s+', '', variant)
+                if compact_variant and compact_variant in compact_title:
+                    matched_variant = variant
+                    break
+            if matched_variant:
                 hit_buckets.append(bucket)
-                hit_tokens.append(str(token))
+                if matched_variant == token_str:
+                    hit_tokens.append(token_str)
+                else:
+                    hit_tokens.append(f'{token_str}→{matched_variant}')
                 break
 
     if hit_buckets:

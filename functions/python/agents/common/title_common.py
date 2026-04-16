@@ -208,7 +208,10 @@ def select_title_family(params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         or re.search(r'(어떻게|무엇|왜|얼마|언제|어떤)', source_text)
     )
     has_comparison = bool(re.search(r'(→|vs|대비|격차|앞섰|추월|개선|감소|증가|변화)', source_text, re.IGNORECASE))
-    has_legal_terms = bool(re.search(r'(법안|조례|법률|제도|개정|발의|통과|제정)', source_text))
+    legal_term_hits = len(re.findall(r'(법안|조례|법률|제도|개정|발의|통과|제정|시행령|입법)', source_text))
+    has_legal_terms = legal_term_hits > 0
+    commitment_term_hits = len(re.findall(r'(완성|추진|집중|만들|이루|책임|하겠|드립|지키|앞장|약속|다짐|실현)', source_text))
+    legal_is_dominant = legal_term_hits >= 3 or (legal_term_hits >= 2 and commitment_term_hits <= legal_term_hits)
     has_policy_terms = bool(re.search(r'(정책|공약|비전|예산|입법|의정|추진|현안|민생|기본소득|지역화폐)', source_text))
     has_time_terms = bool(re.search(r'(상반기|하반기|분기|월간|연간|보고서|리포트|브리핑|뉴스레터)', source_text))
     has_local_terms = bool(re.search(r'[가-힣]+(동|구|군|시|읍|면|리)(?:[가-힣]|\s|,|$)', source_text))
@@ -233,7 +236,10 @@ def select_title_family(params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if has_local_terms:
         _boost("LOCAL_FOCUSED", 4, "지역 단위 신호")
     if has_legal_terms:
-        _boost("EXPERT_KNOWLEDGE", 6, "법안/조례 신호")
+        if legal_is_dominant:
+            _boost("EXPERT_KNOWLEDGE", 6, "법안/조례 신호 (주요)")
+        else:
+            _boost("EXPERT_KNOWLEDGE", 2, "법안/조례 신호 (부수)")
     elif has_policy_terms and not has_question:
         _boost("EXPERT_KNOWLEDGE", 3, "정책/추진 신호")
     if has_time_terms:
