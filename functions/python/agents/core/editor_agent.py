@@ -591,7 +591,10 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
                     "- 지시어('이곳', '이 사업', '우리 지역')로 과도하게 바꾸면 무엇을 가리키는지 흐려집니다. 섹션이 바뀌면 지시어 대신 고유명사를 다시 씁니다."
                 )
 
-        # 직전 단계에서 감지된 비문 의심 신호 — humanize 가 우선 재검토
+        # 직전 단계에서 감지된 비문 — humanize 가 반드시 수정
+        # (형태소 분석기 + regex 가 이미 문장을 특정했으므로 LLM 은 해당 문장만
+        # 집중 수정하면 된다. 이전 버전은 "N건" 카운트만 넘겨 LLM 이 위치 특정에
+        # 실패하는 경우가 많았다.)
         prior_flags_note = ""
         if edit_summary:
             suspicious = [
@@ -602,16 +605,19 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
                     or "속격" in s
                     or "중복 조사" in s
                     or "이중 주어" in s
-                    or "동일 어간 반복" in s
+                    or "어간 반복" in s
                     or "지시어 고립" in s
+                    or "지시어 역전" in s
                 )
             ]
             if suspicious:
                 lines = "\n".join(f"- {line}" for line in suspicious)
                 prior_flags_note = (
-                    "[직전 단계 감지 신호 — 우선 재검토]\n"
+                    "[직전 단계 감지 — 다음 문장들은 반드시 수정하세요]\n"
                     f"{lines}\n"
-                    "- 이 항목들은 단순 의심 신호이므로 실제 문장 문맥을 보고 판단해 고치세요."
+                    "- 위 인용된 문장을 본문에서 찾아 해당 문장만 골라 고치세요. 문장 전체가 자연스러워질 때까지 바꾸되, 의미·수치·고유명사는 유지합니다.\n"
+                    "- 아래 [1단계-감지] 의 각 규칙별 BAD/GOOD 예시를 이 문장들에 그대로 적용하세요.\n"
+                    "- 위 문장을 손대지 않으면 이 윤문은 실패한 것으로 간주합니다."
                 )
 
         return f"""당신은 AI가 생성한 한국어 정치 원고를 더 사람답고 자연스럽게 다듬는 편집자입니다.
@@ -727,43 +733,49 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
                     )
 
         # 1.5. 문장 레벨 비문 스캔 (치환 여부와 무관하게 항상 수행)
-        # 자동 교정은 하지 않음 — 플래그만 남겨 후속 _humanize_pass LLM 이 재검토하게 한다.
+        # 자동 교정은 하지 않음 — humanize 가 정확히 어느 문장인지 찾을 수 있도록
+        # 문제 문장 원문을 editSummary 에 박아 전달한다. (이전 버전은 "N건" 카운트만
+        # 남겨 LLM 이 위치 특정을 못하고 규칙을 무시하는 문제가 있었음.)
         from ..common import korean_morph
+
+        def _truncate_sentence_for_flag(text: str, limit: int = 120) -> str:
+            """flag 문자열에 들어갈 문장 축약. 너무 길면 말줄임."""
+            stripped = (text or "").strip()
+            if len(stripped) <= limit:
+                return stripped
+            return stripped[: limit - 1] + "…"
+
         plain_body = re.sub(r'<[^>]+>', ' ', updated_content)
         plain_body = re.sub(r'\s+', ' ', plain_body).strip()
         sentences = korean_morph.split_sentences(plain_body)
         if sentences:  # None 이면 Kiwi 불가 → 스킵
-            mismatch_count = 0
-            genitive_chain_count = 0
-            double_nom_count = 0
-            duplicate_stem_count = 0
             for sent in sentences:
                 if korean_morph.detect_subject_predicate_mismatch(sent) is True:
-                    mismatch_count += 1
+                    summary.append(
+                        f"주술 불일치 — 다음 문장 재검토: \"{_truncate_sentence_for_flag(sent)}\""
+                    )
                 chain = korean_morph.find_genitive_chain(sent, min_count=3)
                 if chain:
-                    genitive_chain_count += 1
+                    summary.append(
+                        f"속격 '의' 체인 3회+ — 다음 문장 축약: \"{_truncate_sentence_for_flag(sent)}\""
+                    )
                 if korean_morph.detect_double_nominative(sent) is True:
-                    double_nom_count += 1
+                    summary.append(
+                        f"이중 주어 — 다음 문장 절 분리: \"{_truncate_sentence_for_flag(sent)}\""
+                    )
                 dup_stems = korean_morph.find_duplicate_stems(sent, min_count=2)
                 if dup_stems:
-                    duplicate_stem_count += 1
-            if mismatch_count:
-                summary.append(
-                    f"주술 불일치 의심 문장 {mismatch_count}건 — humanize 단계 재검토"
-                )
-            if genitive_chain_count:
-                summary.append(
-                    f"속격 '의' 체인 3회+ 문장 {genitive_chain_count}건 — humanize 단계 단축 검토"
-                )
-            if double_nom_count:
-                summary.append(
-                    f"이중 주어 의심 문장 {double_nom_count}건 — humanize 단계 절 분리 검토"
-                )
-            if duplicate_stem_count:
-                summary.append(
-                    f"동일 어간 반복 문장 {duplicate_stem_count}건 — humanize 단계 어휘 다양화 검토"
-                )
+                    stems_str = ", ".join(stem for stem, _n in dup_stems)
+                    summary.append(
+                        f"어간 반복('{stems_str}') — 다음 문장 유의어 교체: \"{_truncate_sentence_for_flag(sent)}\""
+                    )
+
+            # 인접 쌍: "이를 위해" 지시어 역전
+            for prev_s, next_s in zip(sentences, sentences[1:]):
+                if korean_morph.detect_purpose_pointer_inversion(prev_s, next_s) is True:
+                    summary.append(
+                        f"지시어 역전 — '이를 위해' 가 부정 상태를 받음. 직전 문장: \"{_truncate_sentence_for_flag(prev_s)}\" / 해당 문장: \"{_truncate_sentence_for_flag(next_s)}\""
+                    )
 
         # 1.6. H2 섹션 첫 문장 지시어 고립 스캔
         # "이 사업/이곳/이 정책/이러한 노력" 류가 섹션 시작 위치에 오면 referent 가
@@ -776,20 +788,23 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
                 updated_content,
                 flags=_re.DOTALL | _re.IGNORECASE,
             )
-            orphan_section_count = 0
-            _ORPHAN_RE = _re.compile(
-                r'^\s*(?:이|그|저)\s*(?:사업|정책|조치|조례|노력|곳|것|분|때|문제|사안|사례|현상|방침|계획)'
+            # 두 종류 패턴:
+            # (a) "이/그/저" + 사업·정책·... 류 일반명사 (referent 모호)
+            # (b) "이는/이로써/이로/이를/이러한" 단독 지시어 (referent 이전 섹션까지)
+            _ORPHAN_WITH_NOUN_RE = _re.compile(
+                r'^\s*(?:이|그|저)\s*(?:사업|정책|조치|조례|노력|곳|것|분|때|문제|사안|사례|현상|방침|계획|성과|비전|과제|원칙|방안)'
+            )
+            _ORPHAN_STANDALONE_RE = _re.compile(
+                r'^\s*(?:이는|이로써|이로|이를|이러한)\s'
             )
             for block in section_blocks:
                 # <p> 안쪽 텍스트만 추출 후 선두만 본다 (첫 문장 앞부분이면 족함)
                 inner = _re.sub(r'<[^>]+>', ' ', block)
                 inner = _re.sub(r'\s+', ' ', inner).strip()
-                if _ORPHAN_RE.match(inner):
-                    orphan_section_count += 1
-            if orphan_section_count:
-                summary.append(
-                    f"섹션 첫 문장 지시어 고립 {orphan_section_count}건 — humanize 단계 고유명사 원형 복원 검토"
-                )
+                if _ORPHAN_WITH_NOUN_RE.match(inner) or _ORPHAN_STANDALONE_RE.match(inner):
+                    summary.append(
+                        f"섹션 첫 문장 지시어 고립 — 고유명사 원형 복원: \"{inner[:120] + ('…' if len(inner) > 120 else '')}\""
+                    )
         except Exception:
             # 지시어 스캔은 보조 — 실패해도 파이프라인 중단하지 않음.
             pass

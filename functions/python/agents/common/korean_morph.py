@@ -484,6 +484,83 @@ def detect_double_nominative(sentence: str) -> Optional[bool]:
     return False
 
 
+# 직전 문장이 "부정적 상태" 로 닫혔음을 암시하는 표면 형태
+# (LLM 이 "~한 실정/현실/문제/오명/한계 + 입니다" 류로 찍는 경우가 대부분)
+_NEGATIVE_STATE_CLOSERS: Tuple[str, ...] = (
+    "실정입니다",
+    "실정이다",
+    "현실입니다",
+    "현실이다",
+    "문제입니다",
+    "한계입니다",
+    "한계를 안고 있습니다",
+    "오명",  # "오명을 안고 있습니다", "오명을 쓰고 있습니다"
+    "평가를 받고 있습니다",
+    "평가를 받아왔습니다",
+    "상황입니다",
+    "없습니다",
+    "없었습니다",
+    "부족합니다",
+    "부족했습니다",
+    "못하고 있습니다",
+    "못해 왔습니다",
+    "못했습니다",
+    "뒤처져 있습니다",
+    "더딘",  # "발전 속도가 더딘"
+)
+
+# "이를 위해" 류 — 부정 문장을 목적으로 받으면 역전
+_PURPOSE_POINTERS: Tuple[str, ...] = (
+    "이를 위해",
+    "이를 위하여",
+    "이를 통해",
+    "이를 통하여",
+    "이에 따라",  # 때로 역전 (부정 상태를 "따라서 해결하겠다" 로 연결)
+)
+
+
+def detect_purpose_pointer_inversion(
+    prev_sentence: str, next_sentence: str
+) -> Optional[bool]:
+    """인접 두 문장 쌍에서 "이를 위해/이를 통해" 역전 구조 탐지.
+
+    패턴:
+      prev: "… 평가를 받고 있습니다." (부정적 상태 closer)
+      next: "이를 위해 ~을 완료하겠습니다."
+      → "이를" 이 부정적 상태 자체를 목적으로 가리켜 논리가 뒤집힘.
+
+    반환:
+      True  — 역전 의심
+      False — 정상
+      None  — Kiwi 의존 없음, 항상 None 반환은 없음 (표면 regex 기반이라 안전)
+    """
+    prev = str(prev_sentence or "").strip()
+    nxt = str(next_sentence or "").strip()
+    if not prev or not nxt:
+        return False
+
+    # next 가 목적 지시어로 시작하는지
+    starts_with_pointer = False
+    for pointer in _PURPOSE_POINTERS:
+        if nxt.startswith(pointer):
+            starts_with_pointer = True
+            break
+    if not starts_with_pointer:
+        return False
+
+    # prev 가 부정적 상태로 닫혔는지
+    # (문장 끝 구두점·공백 제거 후 tail 검사)
+    tail = prev.rstrip(" .!?。")
+    for closer in _NEGATIVE_STATE_CLOSERS:
+        if tail.endswith(closer):
+            return True
+        # "오명을 안고 있습니다" 처럼 closer 가 중간형인 경우 부분 매칭도 허용
+        if closer == "오명" and "오명" in tail[-30:]:
+            return True
+
+    return False
+
+
 def find_duplicate_stems(
     sentence: str, min_count: int = 2
 ) -> Optional[List[Tuple[str, int]]]:

@@ -234,6 +234,51 @@ class TestDetectDoubleNominativeFallback:
 
 
 # ──────────────────────────────────────────────────────────────────────
+# detect_purpose_pointer_inversion (Kiwi 무관 — 표면 regex)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestDetectPurposePointerInversion:
+    """직전 문장이 부정 상태 closer 로 닫혔는데 다음 문장이 "이를 위해" 로 시작하는 역전 탐지."""
+
+    def test_negative_state_to_purpose_pointer(self) -> None:
+        """오명 + 이를 위해 → 역전."""
+        prev = "'뒤처진 산단'이라는 평가를 받고 있습니다."
+        nxt = "이를 위해 2단계 지정을 신속히 완료하겠습니다."
+        assert korean_morph.detect_purpose_pointer_inversion(prev, nxt) is True
+
+    def test_positive_state_to_purpose_pointer(self) -> None:
+        """긍정 상태 + 이를 위해 → 정상."""
+        prev = "계양구 발전이라는 목표가 분명합니다."
+        nxt = "이를 위해 2단계 지정을 신속히 완료하겠습니다."
+        assert korean_morph.detect_purpose_pointer_inversion(prev, nxt) is False
+
+    def test_no_pointer(self) -> None:
+        """이를 위해 없음 → 정상."""
+        prev = "발전 속도가 더딘 현실입니다."
+        nxt = "하지만 이번 개정으로 바로잡을 것입니다."
+        assert korean_morph.detect_purpose_pointer_inversion(prev, nxt) is False
+
+    def test_i_tonghae_variant(self) -> None:
+        """'이를 통해' 변형도 포착."""
+        prev = "조례가 없어 기업 유치 경쟁에서 불리한 위치에 있습니다."
+        nxt = "이를 통해 앵커기업을 유치하고자 합니다."
+        # "있습니다" 로 끝나지만 "없다" 의미 → _NEGATIVE_STATE_CLOSERS 목록은
+        # "없습니다" 계열만 커버. 이 케이스는 False (과탐지 방지).
+        assert korean_morph.detect_purpose_pointer_inversion(prev, nxt) is False
+
+    def test_omyeong_middle_form(self) -> None:
+        """'오명을 안고 있습니다' — closer 부분 매칭."""
+        prev = "'뒤처진 산단' 오명을 안고 있습니다."
+        nxt = "이를 위해 경쟁력 회복에 총력을 기울이겠습니다."
+        assert korean_morph.detect_purpose_pointer_inversion(prev, nxt) is True
+
+    def test_empty(self) -> None:
+        assert korean_morph.detect_purpose_pointer_inversion("", "이를 위해 …") is False
+        assert korean_morph.detect_purpose_pointer_inversion("현실입니다.", "") is False
+
+
+# ──────────────────────────────────────────────────────────────────────
 # find_duplicate_stems
 # ──────────────────────────────────────────────────────────────────────
 
