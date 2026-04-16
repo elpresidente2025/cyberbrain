@@ -246,6 +246,7 @@ def extract_slot_opportunities(
     content_text = str(content or '')
     combined = f'{topic_text}\n{content_text}'
     params_dict = params if isinstance(params, dict) else {}
+    stance_text = str(params_dict.get('stanceText') or '')
 
     # 지역 — params 의 사용자 프로필에서 우선 읽고, 없으면 본문 패턴 추출.
     # 🔑 필드명은 Firestore canonical(handlers/profile.py) 그대로:
@@ -278,13 +279,27 @@ def extract_slot_opportunities(
     policies = _extract_by_patterns(combined, _POLICY_SUFFIX_PATTERNS)
     years = _extract_by_patterns(combined, _YEAR_PATTERNS)
 
-    return {
+    buckets: Dict[str, List[str]] = {
         'region': region_all[:4],
         'numeric': numeric_all[:6],
         'institution': institutions[:3],
         'policy': policies[:3],
         'year': years[:3],
     }
+
+    # 🔑 body-exclusive 메타 — topic/stanceText 에는 없고 본문에서만 발견된
+    # 고유 토큰을 bucket 별로 분리해 둔다. generator 프롬프트와 scorer 모두
+    # 이 메타 필드를 읽어 "topic 재포장" 과 "본문 재료 실사용" 을 구분한다.
+    # 언더스코어 접두로 시작하는 메타 키라 기존 bucket 소비자(bucket name
+    # 화이트리스트로 iterate 하는 title_keywords / title_prompt_parts) 에는
+    # 영향을 주지 않는다.
+    body_exclusive_meta: Dict[str, List[str]] = {}
+    for bucket_name, tokens in buckets.items():
+        exclusive = [t for t in tokens if _is_body_exclusive(t, topic_text, stance_text)]
+        if exclusive:
+            body_exclusive_meta[bucket_name] = exclusive
+    buckets['_bodyExclusive'] = body_exclusive_meta  # type: ignore[assignment]
+    return buckets
 
 
 _SLOT_STEM_SUFFIXES = (
@@ -310,6 +325,34 @@ def _slot_token_used_in_title(title: str, token: str) -> bool:
     return False
 
 
+def _is_body_exclusive(token: str, topic: str, stance: str) -> bool:
+    """token 이 topic/stanceText 에 compact substring 으로 등장하지 않으면 body-exclusive.
+
+    "본문에서 뽑혔는데 topic/stanceText 입력에는 없는 고유 재료" 를 식별하는 게
+    목적이다. compact 비교(공백 제거) 로 띄어쓰기 차이를 흡수하고, stem
+    stripping 으로 "테크노밸리 사업" 같은 접미사 확장형이 topic "테크노밸리"
+    에 먹히도록 한다 — 이 경우 token 은 topic 의 단순 확장이라 body-exclusive
+    가 아니다.
+
+    - 빈 토큰 → False (애초에 앵커 후보가 아님)
+    - topic/stance 모두 비어 있음 → True (비교할 참조가 없으므로 기본은 exclusive)
+    """
+    compact_token = re.sub(r'\s+', '', token or '')
+    if not compact_token:
+        return False
+    compact_ref = re.sub(r'\s+', '', (topic or '') + (stance or ''))
+    if not compact_ref:
+        return True
+    if compact_token in compact_ref:
+        return False
+    for suffix in _SLOT_STEM_SUFFIXES:
+        if compact_token.endswith(suffix):
+            stem = compact_token[: -len(suffix)]
+            if len(stem) >= 2 and stem in compact_ref:
+                return False
+    return True
+
+
 def count_slots_used_in_title(title: str, opportunities: Dict[str, List[str]]) -> Dict[str, Any]:
     """제목이 slot_opportunities 중 몇 개를 인용했는지 센다."""
     if not title or not opportunities:
@@ -319,6 +362,9 @@ def count_slots_used_in_title(title: str, opportunities: Dict[str, List[str]]) -
     total = 0
     used = 0
     for category, tokens in opportunities.items():
+        # 언더스코어 접두 키(`_bodyExclusive` 등) 는 bucket 이 아닌 메타라 스킵.
+        if isinstance(category, str) and category.startswith('_'):
+            continue
         token_list = [t for t in (tokens or []) if isinstance(t, str) and t.strip()]
         total += len(token_list)
         hit = [t for t in token_list if _slot_token_used_in_title(title, t)]
@@ -749,14 +795,27 @@ def render_slot_opportunities_block(
         return ''
     has_any = any(
         [t for t in (tokens or []) if isinstance(t, str) and t.strip()]
-        for tokens in opportunities.values()
+        for key, tokens in opportunities.items()
+        if not (isinstance(key, str) and key.startswith('_'))
     )
     if not has_any:
         return ''
 
     preferences = preferences or {}
+    # body_exclusive 메타는 `_bodyExclusive` 키에 bucket 별 리스트로 담겨 있다.
+    # 없거나 형태가 다르면 안전하게 빈 맵으로 취급.
+    body_exclusive_raw = opportunities.get('_bodyExclusive') if isinstance(opportunities, dict) else None
+    body_exclusive_map: Dict[str, set] = {}
+    if isinstance(body_exclusive_raw, dict):
+        for key, vals in body_exclusive_raw.items():
+            if isinstance(key, str) and isinstance(vals, list):
+                body_exclusive_map[key] = {v for v in vals if isinstance(v, str)}
+
     lines: List[str] = []
     for category, tokens in opportunities.items():
+        # 언더스코어 접두 메타 키는 렌더링에서 제외.
+        if isinstance(category, str) and category.startswith('_'):
+            continue
         token_list = [t for t in (tokens or []) if isinstance(t, str) and t.strip()]
         if not token_list:
             continue
@@ -764,10 +823,17 @@ def render_slot_opportunities_block(
         preferred_token = preferences.get(category)
         if preferred_token and preferred_token in token_list:
             token_list = [preferred_token] + [t for t in token_list if t != preferred_token]
-        items_xml = ''.join(
-            (f'<item preferred="true">{t}</item>' if t == preferred_token else f'<item>{t}</item>')
-            for t in token_list
-        )
+        exclusive_set = body_exclusive_map.get(category, set())
+
+        def _item_xml(tok: str) -> str:
+            attrs = ''
+            if tok == preferred_token:
+                attrs += ' preferred="true"'
+            if tok in exclusive_set:
+                attrs += ' body_exclusive="true"'
+            return f'<item{attrs}>{tok}</item>'
+
+        items_xml = ''.join(_item_xml(t) for t in token_list)
         lines.append(f'  <category id="{category}" label="{label}">{items_xml}</category>')
 
     has_any_preferred = any(preferences.values()) if preferences else False
@@ -776,12 +842,20 @@ def render_slot_opportunities_block(
         '"화자의 직책 정책" 을 반영한 최우선 재료다.'
         if has_any_preferred else ''
     )
+    has_any_body_exclusive = any(body_exclusive_map.values())
+    body_exclusive_hint = (
+        ' body_exclusive="true" 가 달린 토큰은 topic 에는 없고 본문에서만 발견된 '
+        '구체 재료다. 이런 토큰이 하나라도 있으면 제목은 그 중 최소 1개를 반드시 '
+        '인용해야 한다 — topic 에 있던 단어만 재조합하면 "재료 재포장" 이라 '
+        '제목이 구체성을 얻지 못한다.'
+        if has_any_body_exclusive else ''
+    )
     note = (
         f'아래는 본문·토픽·프로필에서 자동 추출한 "제목에 넣을 수 있는 구체 재료" 다. '
         f'제목은 이 중 최소 {require_min} 개 카테고리에서 한 토큰 이상을 그대로 '
         f'인용해야 한다. 여기 없는 재료를 지어내지 말고, 이 재료를 few-shot good '
         f'예시처럼 자연스럽게 배치하라. 재료가 여러 개라면 정보 요소 3개 이하 '
-        f'규칙과 상충하지 않는 선에서 조합한다.{preferred_hint}'
+        f'규칙과 상충하지 않는 선에서 조합한다.{preferred_hint}{body_exclusive_hint}'
     )
     return (
         f'<slot_opportunities require_min="{require_min}">\n'

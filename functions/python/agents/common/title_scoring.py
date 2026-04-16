@@ -92,11 +92,16 @@ def _assess_body_anchor_coverage(title: str, params: Dict[str, Any]) -> Dict[str
         return {'passed': True, 'skipped': True}
 
     try:
-        from .title_hook_quality import extract_slot_opportunities, _slot_token_used_in_title
+        from .title_hook_quality import (
+            extract_slot_opportunities,
+            _slot_token_used_in_title,
+            _is_body_exclusive,
+        )
     except Exception:
         return {'passed': True, 'skipped': True}
 
     topic = str(params.get('topic') or '')
+    stance_text = str(params.get('stanceText') or '')
     content_preview = str(params.get('contentPreview') or '')
     try:
         slots = extract_slot_opportunities(topic, content_preview, params) or {}
@@ -109,6 +114,18 @@ def _assess_body_anchor_coverage(title: str, params: Dict[str, Any]) -> Dict[str
     )
     if not has_any_candidate:
         return {'passed': True, 'skipped': True}
+
+    # 🔑 body-exclusive 후보가 글 전체에 하나라도 존재하는지 먼저 파악.
+    # 존재 여부는 scorer 의 suggestion 메시지 발동 조건으로 쓰인다
+    # (후보는 있는데 제목이 안 썼으면 안내).
+    has_body_exclusive_available = False
+    for bucket in _BODY_ANCHOR_BUCKETS:
+        for tok in (slots.get(bucket) or []):
+            if _is_body_exclusive(str(tok or ''), topic, stance_text):
+                has_body_exclusive_available = True
+                break
+        if has_body_exclusive_available:
+            break
 
     hit_buckets: List[str] = []
     hit_tokens: List[str] = []
@@ -124,10 +141,16 @@ def _assess_body_anchor_coverage(title: str, params: Dict[str, Any]) -> Dict[str
                 break
 
     if hit_buckets:
+        body_exclusive_hits = [
+            tok for tok in hit_tokens
+            if _is_body_exclusive(tok, topic, stance_text)
+        ]
         return {
             'passed': True,
             'hitBuckets': hit_buckets,
             'hitTokens': hit_tokens,
+            'bodyExclusiveHits': body_exclusive_hits,
+            'hasBodyExclusiveAvailable': has_body_exclusive_available,
         }
 
     available = {
@@ -144,6 +167,7 @@ def _assess_body_anchor_coverage(title: str, params: Dict[str, Any]) -> Dict[str
         'passed': False,
         'reason': reason,
         'available': available,
+        'hasBodyExclusiveAvailable': has_body_exclusive_available,
     }
 
 
@@ -1126,6 +1150,7 @@ def calculate_title_quality_score(
         }
     else:
         hit_buckets = list(anchor_coverage.get('hitBuckets') or [])
+        body_exclusive_hits = list(anchor_coverage.get('bodyExclusiveHits') or [])
         anchor_strength_score = 0
         if 'policy' in hit_buckets:
             anchor_strength_score += 8
@@ -1135,6 +1160,14 @@ def calculate_title_quality_score(
             anchor_strength_score += 5
         if 'numeric' in hit_buckets:
             anchor_strength_score += 2
+        # 🔑 body-exclusive 가산 — topic/stance 에는 없고 본문에서만 발견된
+        # 토큰을 실제로 제목에 넣었으면 +6. cap 20 fold-in 이라 max_possible
+        # 분모는 불변, tiebreaker 로 기능한다. "테크노밸리"(topic 공유) 만
+        # 넣은 제목(policy 8점) vs "도시첨단산업단지"(body-exclusive) 까지
+        # 넣은 제목(policy 8 + exclusive 6 = 14점) 이 명확히 갈린다.
+        has_body_exclusive_hit = bool(body_exclusive_hits)
+        if has_body_exclusive_hit:
+            anchor_strength_score += 6
         anchor_strength_score = min(anchor_strength_score, 20)
         if anchor_strength_score >= 12:
             anchor_status = '강함'
@@ -1147,11 +1180,17 @@ def calculate_title_quality_score(
             'max': 20,
             'status': anchor_status,
             'hitBuckets': hit_buckets,
+            'bodyExclusiveHits': body_exclusive_hits,
         }
         if anchor_strength_score <= 2:
             suggestions.append(
                 '본문에 정책명·기관명·연도 같은 구체 고유 앵커가 있는데 제목이 '
                 '이를 사용하지 않았습니다. 그쪽을 인용하면 점수가 크게 오릅니다.'
+            )
+        if not has_body_exclusive_hit and anchor_coverage.get('hasBodyExclusiveAvailable'):
+            suggestions.append(
+                '본문에만 등장하는 고유 정책명·기관명이 있는데 제목은 topic 에 있던 '
+                '단어만 재사용했습니다. body_exclusive 토큰 1개를 넣으면 +6점.'
             )
 
     # Total Score

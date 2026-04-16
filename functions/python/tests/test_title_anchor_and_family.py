@@ -218,3 +218,171 @@ def test_incidental_legal_no_question_gets_minor_boost():
     assert any("부수" in r for r in expert_reasons), (
         f"기대: 부수 배지. reasons={expert_reasons}"
     )
+
+
+# ---------------------------------------------------------------------------
+# body-exclusive anchor — topic/stance 에는 없고 본문에서만 발견된 토큰을
+# LLM 이 실제로 제목에 쓰도록 유도하기 위한 판정/가산 로직
+# ---------------------------------------------------------------------------
+
+def test_body_exclusive_detection_true():
+    """topic 에 없는 구체 정책명은 body-exclusive."""
+    from agents.common.title_hook_quality import _is_body_exclusive
+
+    assert _is_body_exclusive(
+        "도시첨단산업단지 2단계 지정",
+        topic="샘플구 특화지구 2단계",
+        stance="",
+    ) is True
+
+
+def test_body_exclusive_topic_shared_false():
+    """topic 에 이미 있는 단어는 body-exclusive 아님."""
+    from agents.common.title_hook_quality import _is_body_exclusive
+
+    assert _is_body_exclusive(
+        "특화지구",
+        topic="샘플구 특화지구",
+        stance="",
+    ) is False
+
+
+def test_body_exclusive_stem_strip_matches_topic():
+    """stem stripping: 접미사 확장형은 topic stem 에 먹혀 body-exclusive 아님."""
+    from agents.common.title_hook_quality import _is_body_exclusive
+
+    # "특화지구 사업" 은 stem "특화지구" 가 topic 에 있음 → 본문 전용이 아님
+    assert _is_body_exclusive(
+        "특화지구 사업",
+        topic="특화지구",
+        stance="",
+    ) is False
+
+
+def test_body_exclusive_empty_reference_returns_true():
+    """topic/stance 모두 비면 기본 exclusive."""
+    from agents.common.title_hook_quality import _is_body_exclusive
+
+    assert _is_body_exclusive("고유정책명", topic="", stance="") is True
+
+
+def test_body_anchor_coverage_reports_exclusive_hits():
+    """fake slot 주입 — 제목이 body-exclusive 토큰 인용 시 bodyExclusiveHits 에 포함."""
+    from agents.common import title_hook_quality as thq
+
+    original = thq.extract_slot_opportunities
+
+    def fake_extract(topic, content_preview, params):
+        # 두 토큰 모두 policy bucket — 하나는 topic 공유, 하나는 본문 전용
+        return {
+            "region": [],
+            "institution": [],
+            "policy": ["도시첨단산업단지 2단계 지정", "특화지구"],
+            "numeric": [],
+            "year": [],
+        }
+
+    thq.extract_slot_opportunities = fake_extract  # type: ignore
+    try:
+        params = {
+            "topic": "샘플구 특화지구 2단계",
+            "stanceText": "",
+            "contentPreview": "...",
+        }
+
+        # 1) body-exclusive 토큰만 인용한 제목
+        result_exclusive = _assess_body_anchor_coverage(
+            "샘플구 도시첨단산업단지 2단계 지정을 완성합니다", params
+        )
+        assert result_exclusive.get("passed") is True
+        assert "도시첨단산업단지 2단계 지정" in (
+            result_exclusive.get("bodyExclusiveHits") or []
+        )
+
+        # 2) topic 공유 토큰만 인용한 제목 → bodyExclusiveHits 는 비어야 함
+        result_shared = _assess_body_anchor_coverage(
+            "샘플구 특화지구 2단계 완성", params
+        )
+        assert result_shared.get("passed") is True
+        assert not (result_shared.get("bodyExclusiveHits") or [])
+        # 후보는 존재하므로 hasBodyExclusiveAvailable 은 True
+        assert result_shared.get("hasBodyExclusiveAvailable") is True
+    finally:
+        thq.extract_slot_opportunities = original  # type: ignore
+
+
+def test_body_anchor_strength_bonus_for_exclusive():
+    """동일 policy bucket 이어도 body-exclusive 토큰 인용 시 +6점 우위."""
+    from agents.common import title_hook_quality as thq
+    from agents.common.title_scoring import calculate_title_quality_score
+
+    original = thq.extract_slot_opportunities
+
+    def fake_extract(topic, content_preview, params):
+        return {
+            "region": [],
+            "institution": [],
+            "policy": ["도시첨단산업단지 2단계 지정", "특화지구"],
+            "numeric": [],
+            "year": [],
+        }
+
+    thq.extract_slot_opportunities = fake_extract  # type: ignore
+    try:
+        params = {
+            "topic": "샘플구 특화지구 2단계",
+            "stanceText": "",
+            "contentPreview": "...본문에 도시첨단산업단지 2단계 지정이 나옵니다...",
+            "fullName": "홍길동",
+        }
+
+        # A: topic 공유 토큰만 인용 (body-exclusive 0)
+        score_a = calculate_title_quality_score(
+            "샘플구 특화지구, 홍길동이 2단계 완성을 책임집니다", params
+        )
+        # B: body-exclusive 토큰까지 인용
+        score_b = calculate_title_quality_score(
+            "샘플구, 홍길동이 도시첨단산업단지 2단계 지정을 완성합니다", params
+        )
+
+        anchor_a = (score_a.get("breakdown") or {}).get("bodyAnchorStrength") or {}
+        anchor_b = (score_b.get("breakdown") or {}).get("bodyAnchorStrength") or {}
+
+        assert anchor_a.get("score", 0) + 6 <= anchor_b.get("score", 0), (
+            f"기대: B.score >= A.score + 6. a={anchor_a}, b={anchor_b}"
+        )
+        # B 는 bodyExclusiveHits 가 비어 있지 않아야 함
+        assert anchor_b.get("bodyExclusiveHits"), f"B 에 exclusive hit 없음: {anchor_b}"
+    finally:
+        thq.extract_slot_opportunities = original  # type: ignore
+
+
+def test_render_slot_block_marks_body_exclusive():
+    """render_slot_opportunities_block 출력에 body_exclusive='true' 속성이 등장.
+
+    본문에만 있는 policy 접미사("사업" / "조례") 토큰이 있으면 body_exclusive 로
+    분류돼 <item> 에 속성이 달려야 한다.
+    """
+    from agents.common.title_hook_quality import (
+        extract_slot_opportunities,
+        render_slot_opportunities_block,
+    )
+
+    # topic 은 일반 문구, 본문엔 policy 접미사를 가진 고유명이 등장
+    params = {"regionLocal": "샘플구"}
+    opps = extract_slot_opportunities(
+        topic="샘플구 2단계 추진 의지",
+        content=(
+            "체육문화센터 건립 사업을 속도 있게 추진하겠다. "
+            "취득세 감면 조례 개정도 함께 발의한다."
+        ),
+        params=params,
+    )
+    # _bodyExclusive 메타가 dict 에 있어야 함
+    meta = opps.get("_bodyExclusive")
+    assert isinstance(meta, dict)
+    # policy bucket 에 body-exclusive 토큰이 하나 이상 있어야 함
+    assert meta.get("policy"), f"policy body-exclusive 없음: opps={opps}"
+
+    xml = render_slot_opportunities_block(opps)
+    assert 'body_exclusive="true"' in xml, f"body_exclusive 속성 없음:\n{xml}"

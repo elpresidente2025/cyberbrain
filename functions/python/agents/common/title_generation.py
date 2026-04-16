@@ -450,6 +450,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     - 왜 금지인가: 답변 엔진은 "숙원 사업 완성할까?" 를 어떤 실사용자 쿼리에도 매칭시킬 수 없다. 반면 "취득세 25% 추가 감면", "광역교통망 박촌역 직결", "17개 시도 중 유일" 같은 구체 앵커는 그 자체가 쿼리이자 답이다.
     - 올바른 방법: &lt;slot_opportunities&gt; 의 policy/institution/numeric 카테고리 중 가장 뾰족한 토큰을 골라 제목 본체로 삼고, 추상어는 수식어로만 쓰거나 아예 버려라. 예시 구조: `[지명] [정책명] [수치/상태]`, `[지명] [쟁점], [선택지 A]·[선택지 B] 중 어디로`, `[지명] [사업명], [상위 기준] 수준 도약 [N]가지 조건`.
     이 룰을 어기면 aeo_hollow 로 태깅되어 family fit 점수가 10 → 5 로 강등된다.</rule>
+  <rule id="require_body_exclusive_anchor_when_present" priority="critical">&lt;slot_opportunities&gt; 에 body_exclusive="true" 가 달린 토큰이 1개 이상 존재한다면, 제목은 그 중 최소 1개를 직접 인용해야 한다. body_exclusive 토큰은 topic 필드에는 없고 본문에서만 발견된 고유 재료로, 제목에 이걸 넣어야 "topic 재포장" 이 아닌 "본문이 실제로 담고 있는 이야기" 가 된다. topic 에 있던 토큰만 재조합해 체크박스를 충족시키는 패턴은 구체성이 올라가지 않아 bodyAnchorStrength 차원에서 감점되며, 여러 후보 중 tiebreaker 에서 body_exclusive 를 인용한 후보가 +6점 앞선다. body_exclusive 후보가 하나도 없는 경우(본문과 topic 이 거의 같은 짧은 post) 에만 이 룰이 면제된다.</rule>
   <rule id="aeo_answerable_query_form" priority="critical">제목은 "실사용자가 답변 엔진·검색창에 칠 법한 쿼리" 형태여야 한다. 기자·주민·기업 담당자가 실제로 입력하는 쿼리는 다음 세 가지 패턴으로 수렴한다:
     1. **사실 조회형**: `[지명] [정책명] [수치/상태]` — 예: `[지명] 취득세 25% 감면, 17개 시도 중 유일 공백 해소`
     2. **선택지 질문형**: `[지명] [쟁점], [고유명 A]·[고유명 B] 중 [의문사]` — 예: `[지명] 광역교통망, [역명 A] 직결·[역명 B] 연결 중 어디로?`
