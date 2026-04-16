@@ -224,3 +224,88 @@ class TestFindGenitiveChainFallback:
         monkeypatch.setattr(korean_morph, "get_kiwi", lambda: None)
         result = korean_morph.find_genitive_chain("X의 Y의 Z의 W")
         assert result is None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# extract_nouns
+# ──────────────────────────────────────────────────────────────────────
+
+
+@kiwi_required
+class TestExtractNouns:
+    def test_basic(self) -> None:
+        result = korean_morph.extract_nouns("청년 정책의 방향")
+        assert result is not None
+        # 명사만 — 조사/어미 제외
+        assert "청년" in result
+        assert "정책" in result
+        assert "방향" in result
+        # 조사 "의" 는 들어가면 안 됨
+        assert "의" not in result
+
+    def test_strips_particles(self) -> None:
+        result = korean_morph.extract_nouns("사업을 추진한다")
+        assert result is not None
+        assert "사업" in result
+        # 조사·동사 어간은 제외
+        assert "을" not in result
+
+    def test_empty(self) -> None:
+        assert korean_morph.extract_nouns("") == []
+
+    def test_none_string(self) -> None:
+        assert korean_morph.extract_nouns(None) == []
+
+
+class TestExtractNounsFallback:
+    def test_returns_none_when_kiwi_unavailable(self, monkeypatch) -> None:
+        monkeypatch.setattr(korean_morph, "get_kiwi", lambda: None)
+        result = korean_morph.extract_nouns("사업 추진")
+        assert result is None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# tokens_share_stem
+# ──────────────────────────────────────────────────────────────────────
+
+
+@kiwi_required
+class TestTokensShareStem:
+    def test_extended_form(self) -> None:
+        """확장형 ~ 기본형: 명사 집합이 superset ⇒ True."""
+        result = korean_morph.tokens_share_stem("테크노밸리 사업", "테크노밸리")
+        assert result is True
+
+    def test_reversed_order(self) -> None:
+        """방향성 대칭: 인자 순서 바꿔도 동일."""
+        result = korean_morph.tokens_share_stem("테크노밸리", "테크노밸리 사업")
+        assert result is True
+
+    def test_compound_noun_overlap(self) -> None:
+        """복합 명사구 ~ 부분 일치: 교집합이 있으면 True."""
+        result = korean_morph.tokens_share_stem("취득세 감면 조례", "취득세 감면")
+        assert result is True
+
+    def test_no_overlap(self) -> None:
+        """교집합 없음 ⇒ False."""
+        result = korean_morph.tokens_share_stem("도시첨단산업단지", "특화지구")
+        assert result is False
+
+    def test_compatibility_case(self) -> None:
+        """title_hook_quality 호환성 케이스 (body-exclusive False 여야 함)."""
+        # 제목 세션의 _is_body_exclusive 내부 사용 패턴:
+        # token="특화지구 사업", ref="특화지구" 의 명사 토큰 "특화지구"
+        result = korean_morph.tokens_share_stem("특화지구 사업", "특화지구")
+        assert result is True
+
+    def test_empty(self) -> None:
+        """어느 한 쪽이 비어 있으면 False."""
+        assert korean_morph.tokens_share_stem("", "정책") is False
+        assert korean_morph.tokens_share_stem("정책", "") is False
+
+
+class TestTokensShareStemFallback:
+    def test_returns_none_when_kiwi_unavailable(self, monkeypatch) -> None:
+        monkeypatch.setattr(korean_morph, "get_kiwi", lambda: None)
+        result = korean_morph.tokens_share_stem("테크노밸리 사업", "테크노밸리")
+        assert result is None

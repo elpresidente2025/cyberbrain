@@ -12,7 +12,8 @@
 - agents/common/h2_scoring.py (_has_question_form, 명사구 hard-fail)
 - agents/core/structure_normalizer.py (_split_sentences Kiwi 우선 전환)
 - agents/core/editor_agent.py (apply_hard_constraints 치환 후 문법 검증 + 문장 레벨 비문 스캔)
-- (확장 가능) agents/common/title_hook_quality.py, stylometry/features/ 등
+- agents/common/title_hook_quality.py (_is_body_exclusive — tokens_share_stem/extract_nouns)
+- (확장 가능) stylometry/features/ 등
 """
 
 from __future__ import annotations
@@ -444,3 +445,52 @@ def find_genitive_chain(
     if len(offsets) >= min_count:
         return offsets
     return []
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 토큰 어근 비교 (제목 hook 품질 등 타 파이프라인과 공유)
+# ──────────────────────────────────────────────────────────────────────
+
+
+def extract_nouns(text: str) -> Optional[List[str]]:
+    """text 에서 명사 형태소(NNG/NNP/NNB) 의 form 리스트 반환.
+
+    중복 제거하지 않고 등장 순서 보존. 조사·어미·용언·관형사 등은 제외.
+
+    반환:
+      List[str] — 명사 form 리스트 (빈 텍스트는 빈 리스트)
+      None      — Kiwi 불가
+    """
+    plain = str(text or "").strip()
+    if not plain:
+        return []
+    tokens = tokenize(plain)
+    if tokens is None:
+        return None
+    return [tok.form for tok in tokens if tok.tag in _NOUN_TAGS]
+
+
+def tokens_share_stem(token_a: str, token_b: str) -> Optional[bool]:
+    """두 한국어 토큰이 같은 명사 어근을 공유하는지 판정.
+
+    조사/어미/용언을 제거한 뒤 양쪽의 명사 형태소 집합을 구하고, 교집합이
+    비어 있지 않으면 True. 방향성 대칭.
+
+    예:
+      "테크노밸리 사업"  ~ "테크노밸리"      → True  ({테크노밸리} 공유)
+      "취득세 감면 조례" ~ "취득세 감면"     → True  ({취득세, 감면} 공유)
+      "특화지구 사업"    ~ "특화지구"        → True  ({특화, 지구} 공유)
+      "도시첨단산업단지" ~ "특화지구"        → False (교집합 없음)
+
+    반환:
+      True  — 명사 어근 공유
+      False — 공유 없음 또는 한 쪽에 명사 없음
+      None  — Kiwi 불가 (호출부 fallback 필요)
+    """
+    nouns_a = extract_nouns(token_a)
+    nouns_b = extract_nouns(token_b)
+    if nouns_a is None or nouns_b is None:
+        return None
+    if not nouns_a or not nouns_b:
+        return False
+    return bool(set(nouns_a) & set(nouns_b))
