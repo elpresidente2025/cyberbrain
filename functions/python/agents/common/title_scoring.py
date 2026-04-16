@@ -205,7 +205,8 @@ def _assess_initial_title_length_discipline(title: str) -> Dict[str, Any]:
             'inOptimalRange': False,
         }
 
-    if TITLE_LENGTH_OPTIMAL_MAX < title_length <= 39:
+    long_mid = (TITLE_LENGTH_OPTIMAL_MAX + TITLE_LENGTH_HARD_MAX) // 2
+    if TITLE_LENGTH_OPTIMAL_MAX < title_length <= long_mid:
         return {
             'length': title_length,
             'penalty': 6,
@@ -214,7 +215,7 @@ def _assess_initial_title_length_discipline(title: str) -> Dict[str, Any]:
             'inOptimalRange': False,
         }
 
-    if 39 < title_length <= TITLE_LENGTH_HARD_MAX:
+    if long_mid < title_length <= TITLE_LENGTH_HARD_MAX:
         return {
             'length': title_length,
             'penalty': 10,
