@@ -81,6 +81,11 @@ H2_HARD_FAIL_ISSUES = frozenset(
         # "H2 = 본문이 정답인 질문/주장" 원칙을 깨고 본문에 없는 키워드·
         # 날조 약어·다른 주제를 H2 로 올린 경우 hard-fail.
         "BODY_ALIGNMENT_LOW",
+        # heading 이 6개 AEO 아키타입 (질문형/목표형/주장형/이유형/대조형/
+        # 사례형) 중 어디에도 매치되지 않음 = 약속(promise) 이 아니라
+        # 단순 토픽 설명에 그친 경우. 예: "정책 방향 제시", "지난 4년간 조성".
+        # suggested_type 과 어긋나기(= TYPE_MISMATCH) 보다 한 단계 더 나쁜 상태.
+        "ARCHETYPE_MISMATCH",
     }
 )
 
@@ -399,6 +404,15 @@ def score_h2(
     if type_raw < 1.0:
         issues.append("TYPE_MISMATCH")
     breakdown["type"] = {"raw": type_raw, "weighted": type_weighted}
+
+    # AEO 아키타입 미매치 — TYPE_MISMATCH 보다 한 단계 강한 게이트.
+    # Why: "정책 방향 제시", "~ 조성" 같이 어떤 약속 성격(질문/주장/목표/
+    # 이유/대조/사례) 도 갖지 못한 heading 은 본문 미리보기/제목 뒤풀이일 뿐
+    # H2 로서의 promise 기능이 없다. hard-fail 로 격상해 repair 를 강제한다.
+    detected_archetype = detect_h2_archetype(heading_text)
+    if not detected_archetype:
+        issues.append("ARCHETYPE_MISMATCH")
+    breakdown["archetype"] = {"detected": detected_archetype or ""}
 
     banned_hits = _banned_pattern_hits(heading_text, normalized_style)
     banned_raw = _banned_pattern_score(len(banned_hits))

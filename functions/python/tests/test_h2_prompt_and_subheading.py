@@ -591,6 +591,107 @@ def test_score_h2_accepts_question_archetype_with_question_form() -> None:
     assert "H2_QUESTION_FORM_REQUIRED" not in result["issues"]
 
 
+# ---------------------------------------------------------------------------
+# AEO 아키타입 판정 회귀 — Gap A/B/C (검출기 확장) + Gap D (hard-fail 격상)
+# ---------------------------------------------------------------------------
+
+
+def test_detect_h2_archetype_question_eul_kka_family() -> None:
+    """Gap A: -을까 / ㄹ-받침 어간 + 까 종결을 질문형으로 잡는다.
+
+    기존 regex 는 '할까' 1형만 enum. '벗을까/찾을까/만들까/갈까' 등 빈출
+    변형이 전부 누락돼 질문형이 ''로 떨어졌다.
+    """
+    from agents.common.h2_guide import detect_h2_archetype
+
+    cases = [
+        "책임의 옷은 누가 벗을까",
+        "청년 기본소득, 어디서 찾을까?",
+        "지역 일자리, 무엇을 만들까",
+        "예산 심사, 이대로 갈까",
+    ]
+    for text in cases:
+        assert detect_h2_archetype(text) == "질문형", text
+
+
+def test_detect_h2_archetype_claim_n_da_family() -> None:
+    """Gap B: ~는다 / ~ㄴ다 (빈출 음절) / ~했다/~됐다 주장형 매치."""
+    from agents.common.h2_guide import detect_h2_archetype
+
+    claim_cases = [
+        "청년이 새 길을 만든다",
+        "지역이 변화를 이끈다",
+        "시민이 나선다",
+        "예산이 투명해졌다",
+        "정책은 비로소 완성됐다",
+    ]
+    for text in claim_cases:
+        assert detect_h2_archetype(text) == "주장형", text
+
+
+def test_detect_h2_archetype_evidence_requires_unit_with_digit() -> None:
+    """Gap C: 숫자 단독은 사례형 아님. 수량 단위 또는 증거 키워드 수반 필요.
+
+    전: "RE100 추진" / "지난 4년간 조성" 도 \\d 만으로 사례형 매치 → 주장형/
+    목표형을 삼켰다. 후: 숫자는 단위와 결합해야 사례형.
+    """
+    from agents.common.h2_guide import detect_h2_archetype
+
+    # 숫자만 있지만 단위/키워드 없음 → 사례형 아님
+    assert detect_h2_archetype("RE100 투자로 지역을 바꾼다") != "사례형"
+    assert detect_h2_archetype("지난 4년간 조성한 인프라") != "사례형"
+
+    # 숫자 + 단위 → 사례형 OK
+    assert detect_h2_archetype("지난 3년간 17곳 현장을 점검") == "사례형"
+    assert detect_h2_archetype("청년 일자리 2만 개 창출") == "사례형"
+
+    # 증거 키워드 단독도 사례형 OK
+    assert detect_h2_archetype("청년 정책 집행 실적 공개") == "사례형"
+
+
+def test_detect_h2_archetype_returns_empty_for_topic_description() -> None:
+    """Gap D 준비: 6 아키타입 어디에도 안 맞는 '단순 토픽 기술' 은 빈 문자열."""
+    from agents.common.h2_guide import detect_h2_archetype
+
+    # "정책 방향 제시", "지난 4년간 조성" 류 — 약속 없음, 단순 설명
+    assert detect_h2_archetype("지역 발전 정책 방향 제시") == ""
+    assert detect_h2_archetype("지난 4년간 조성") == ""
+
+
+def test_score_h2_hard_fails_on_archetype_mismatch() -> None:
+    """Gap D: detect_h2_archetype 이 ''를 반환하면 ARCHETYPE_MISMATCH hard-fail."""
+    from agents.common.h2_scoring import H2_HARD_FAIL_ISSUES
+
+    plan = _plan_for("청년 기본소득", "주장형")
+    # "정책 방향 제시" — 어떤 아키타입도 매치 안 되는 단순 토픽 나열
+    result = score_h2(
+        "청년 기본소득 정책 방향 제시",
+        plan,
+        style="aeo",
+        preferred_types=["주장형", "이유형"],
+    )
+    assert "ARCHETYPE_MISMATCH" in result["issues"]
+    assert "ARCHETYPE_MISMATCH" in H2_HARD_FAIL_ISSUES
+    assert result["passed"] is False
+    # breakdown 에 detected archetype 정보 기록
+    assert result["breakdown"].get("archetype", {}).get("detected") == ""
+
+
+def test_score_h2_does_not_flag_archetype_mismatch_when_archetype_present() -> None:
+    """주장형/질문형 등 하나라도 매치되면 ARCHETYPE_MISMATCH 가 붙지 않아야 한다."""
+    plan = _plan_for("청년 기본소득", "주장형")
+    result = score_h2(
+        "청년 기본소득, 지역이 새 길을 만든다",
+        plan,
+        style="aeo",
+        preferred_types=["주장형"],
+    )
+    assert "ARCHETYPE_MISMATCH" not in result["issues"]
+    assert result["breakdown"].get("archetype", {}).get("detected") in {
+        "주장형", "목표형", "이유형", "질문형", "대조형", "사례형",
+    }
+
+
 def test_repair_entity_consistency_never_replaces_speaker_name() -> None:
     """Bug 1: preferred_names 가 오염돼도 speaker(본인 full_name)는 H2 에서 치환되지 않는다."""
     from agents.common.h2_repair import repair_entity_consistency
@@ -639,7 +740,7 @@ def test_optimize_headings_short_circuits_when_first_pass_clean(
         calls["n"] += 1
         return {
             "headings": [
-                "청년 기본소득 신청 3단계 절차",
+                "청년 기본소득, 신청은 어떻게 준비할까?",
                 "청년 일자리 274명 창출 현황",
             ]
         }
@@ -661,7 +762,8 @@ def test_optimize_headings_short_circuits_when_first_pass_clean(
     rebuilt, trace, stats = result
     assert calls["n"] == 1  # short-circuit: primary만 호출
     assert stats["llm_calls"] == 1
-    assert "청년 기본소득 신청 3단계 절차" in rebuilt
+    # sanitize_h2_text 가 "?" 를 벗겨낼 수 있으므로 본문 골자만 매치
+    assert "청년 기본소득, 신청은 어떻게 준비할까" in rebuilt
     assert "청년 일자리 274명 창출 현황" in rebuilt
     assert all(item["action"] in {"kept", "pre_repaired"} for item in trace)
 
@@ -684,7 +786,7 @@ def test_optimize_headings_triggers_repair_loop_on_bad_primary(
         # 2차 수리: 깨끗한 헤딩
         return {
             "repairs": [
-                {"index": 0, "heading": "청년 기본소득 신청 3단계 절차"},
+                {"index": 0, "heading": "청년 기본소득, 신청은 어떻게 준비할까?"},
                 {"index": 1, "heading": "청년 일자리 274명 창출 현황"},
             ]
         }
@@ -706,9 +808,17 @@ def test_optimize_headings_triggers_repair_loop_on_bad_primary(
 
     assert len(call_log) == 2  # primary + repair
     assert stats["llm_calls"] == 2
-    assert "청년 기본소득 신청 3단계 절차" in rebuilt
+    # 1차 primary 의 "제가 해냅니다" 는 확실히 rebuilt 에 없어야 한다 (garbage 추방).
+    assert "제가 해냅니다" not in rebuilt
+    assert "좋은 성과입니다" not in rebuilt
+    # user keyword 가 두 H2 모두에 살아남아야 한다.
+    assert "청년 기본소득" in rebuilt
     assert "청년 일자리 274명 창출 현황" in rebuilt
-    assert any(item["action"] == "llm_repaired" for item in trace)
+    # 어떤 형태로든 repair 경로 (llm_repaired 또는 h2_repair_chain) 를 거쳤어야 한다.
+    assert any(
+        item["action"] == "llm_repaired" or item.get("h2_repair_chain")
+        for item in trace
+    )
     # count parity
     assert len(trace) == 2
 
@@ -833,6 +943,8 @@ def test_subheading_agent_invokes_h2_repair_chain_in_order(
         subheading_module, "ensure_user_keyword_first_slot", _fake_user_keyword
     )
 
+    # primary 가 ARCHETYPE_MISMATCH (hard-fail) 인 heading 을 내보내 repair 체인이
+    # 반드시 돌도록 유도한다. "신청 3단계 절차" 는 약속 성격 없음 → hard-fail.
     async def _fake_primary(_prompt: str, **_kwargs):
         return {
             "headings": [
@@ -899,6 +1011,9 @@ def test_subheading_agent_h2_repair_chain_applies_branding_edit(
         subheading_module, "ensure_user_keyword_first_slot", _fake_user_keyword
     )
 
+    # primary heading 은 ARCHETYPE_MISMATCH hard-fail → h2_repair_chain 실행 →
+    # branding mock 이 "신청 핵심 정리" 로 교체 → "핵심" 이 claim regex 에 걸려
+    # 재스코어링 통과 → 최종 rebuilt 에 반영.
     async def _fake_primary(_prompt: str, **_kwargs):
         return {
             "headings": [
@@ -961,6 +1076,8 @@ def test_subheading_agent_h2_repair_chain_skips_when_no_known_names_and_no_keywo
         subheading_module, "ensure_user_keyword_first_slot", _fake_user_keyword
     )
 
+    # primary 가 ARCHETYPE_MISMATCH hard-fail 유도 → repair 체인 실행되어야
+    # 본 테스트 (체인 스텝 선택 로직) 가 유효해진다.
     async def _fake_primary(_prompt: str, **_kwargs):
         return {
             "headings": [

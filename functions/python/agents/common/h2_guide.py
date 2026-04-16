@@ -464,14 +464,42 @@ H2_ARCHETYPE_DESCRIPTIONS = {
 }
 
 # Regex detectors — heading 1개를 주면 어떤 아키타입인지 판정한다.
+#
+# 설계: kiwi 형태소 분석이 가능하면 `_detect_archetype_kiwi` 가 1차 판정
+# (종결어미 EF 태그 기반). kiwi 불가 환경(Windows 한글 username 등) 에서는
+# 아래 regex 가 fallback 으로 동작한다. regex 는 빈출 surface form 위주로
+# 확장돼 있으며, 드문 표면형은 kiwi 에 의존한다.
+
 _H2_ARCH_QUESTION_RE = re.compile(
-    r"(?:\?$|[나까]요\??$|인가요?\??$|인가\??$|할까\??$|는가\??$|는지\??$|어떻게|무엇|언제|어디|어디서|왜)"
+    r"(?:\?$|"
+    # "-요/-까" 어말 결합형
+    r"[나까]요\??$|인가요?\??$|인가\??$|"
+    # 받침 있는 어간 + -을까: 벗을까, 찾을까, 먹을까, 읽을까, 물을까
+    r"[가-힣]+을까\??$|"
+    # 빈출 ㄹ 받침 용언 어간 + 까 (갈까/올까/볼까/될까/할까/풀까/만들까 등)
+    r"[가-힣]*(?:갈|걸|골|굴|길|날|놀|달|돌|들|말|몰|물|밀|발|볼|불|살|설|솔|쓸|"
+    r"알|얼|열|올|울|일|잘|절|졸|줄|질|찰|칠|탈|털|팔|풀|할|홀)까\??$|"
+    # 의문 종결 복합 어미
+    r"는가\??$|는지\??$|을지\??$|"
+    # 의문 대명사·부사 (본문 어디에나 존재하면 질문 성격)
+    r"어떻게|무엇|언제|어디|어디서|왜)"
 )
 _H2_ARCH_GOAL_RE = re.compile(
     r"(약속|목표|다짐|하겠|내겠|만들겠|지키겠|추진|실행|계획|비전|로드맵|이행|해내)"
 )
 _H2_ARCH_CLAIM_RE = re.compile(
-    r"(이다$|아니다$|한다$|해야(?:\s?한다)?$|없다$|된다$|않다$|뿐이다$|마땅하다$|"
+    r"("
+    # 단정/선언 종결어미 (literal)
+    r"이다$|아니다$|한다$|된다$|없다$|있다$|"
+    r"해야(?:\s?한다)?$|않다$|뿐이다$|마땅하다$|"
+    # -는다 (받침 있는 어간 + 는다): 찾는다, 읽는다, 받는다, 짓는다
+    r"는다\.?$|"
+    # -ㄴ다 (받침 ㄴ + 다) 빈출 음절 enum: 만든다/이끈다/펼친다/나선다/돈다/
+    # 간다/온다/준다/탄다/쏜다/튼다/쩐다/찐다/빈다/본다/편다/앞선다
+    r"[가-힣]*(?:든|끈|친|선|돈|간|온|준|큰|탄|쏜|튼|찬|빈|편|본)다\.?$|"
+    # 과거형 논평조: ~했다/~됐다/~졌다 (피동 포함: 해졌다/높아졌다/바뀌어졌다)
+    r"[가-힣]*했다\.?$|[가-힣]*됐다\.?$|[가-힣]*졌다\.?$|"
+    # 주장형 어휘 키워드 (종결 무관)
     r"거부|회피|남용|파괴|왜곡|무너|실패|한계|정당|필수|핵심|바로잡)"
 )
 _H2_ARCH_REASON_RE = re.compile(
@@ -480,8 +508,23 @@ _H2_ARCH_REASON_RE = re.compile(
 _H2_ARCH_CONTRAST_RE = re.compile(
     r"(vs|VS|대비|차이|비교|맞대결|대결|대조|양자|맞붙)"
 )
+# 사례형 엄격화: 숫자 단독으로는 매치 안 시킴.
+# 숫자 + 이산(countable) 수량 단위 동반 OR 증거 키워드 동반 시에만 사례형.
+# Why: 기존 `\d` 는 "RE100" 의 100, "4년간" 의 4 만 보고도 사례형 판정 →
+# 주장형·목표형이 사례형에 삼켜졌다. AEO 사례형은 "숫자·실적·현장 데이터"
+# 라는 증거 예고 성격이므로, 실제 **갯수/비율/금액** 컨텍스트를 요구한다.
+#
+# 제외 (의도적): 년/년간/개월/달/일/주/시간/분/초 같은 **기간** 단위.
+# "지난 4년간 조성" / "3개월 동안" 은 단순 서사 배경이지 증거 예고가 아니다.
+# 진짜 기간형 evidence 는 대부분 증거 키워드(실적/성과/기록) 를 동반하므로
+# 그쪽 분기에서 커버된다.
 _H2_ARCH_EVIDENCE_RE = re.compile(
-    r"(\d|현장|사례|실적|성과|통계|데이터|실태|현황|내역|명단|집계|분석)"
+    r"(?:"
+    r"\d+\s*(?:건|명|회|차례|차|대|개|곳|"
+    r"%|퍼센트|억|만|천|원|조|달러|배|위|등|명당|건당|인|명분)|"
+    r"현장|사례|실적|성과|통계|데이터|실태|현황|내역|명단|집계|분석|"
+    r"결과|기록|확보\s*\d|체결\s*\d"
+    r")"
 )
 
 _H2_ARCHETYPE_DETECTORS = (
@@ -494,15 +537,79 @@ _H2_ARCHETYPE_DETECTORS = (
 )
 
 
+def _detect_archetype_kiwi(text: str) -> "str | None":
+    """Kiwi 형태소 분석 기반 아키타입 판정. None 이면 kiwi 불가 → regex fallback.
+
+    우선순위(regex 와 동일): 질문형 > 대조형 > 사례형 > 목표형 > 이유형 > 주장형.
+
+    - 질문형: `is_question_form` True (EF ∈ _QUESTION_EF_FORMS 또는 `?` 종결)
+    - 대조형/이유형: surface keyword (kiwi 개입 없음, regex 와 동일)
+    - 사례형: 엄격화된 evidence regex
+    - 목표형: goal keyword 또는 commitment EF
+    - 주장형: declarative EF 또는 claim keyword
+    """
+    plain = str(text or "").strip()
+    if not plain:
+        return None
+
+    # 1. 질문형 — kiwi EF 판정 (kiwi 불가 시 None 반환 → fallback)
+    qf = korean_morph.is_question_form(plain)
+    if qf is None:
+        return None
+    if qf:
+        return "질문형"
+
+    # 2. 대조형 — surface keyword
+    if _H2_ARCH_CONTRAST_RE.search(plain):
+        return "대조형"
+
+    # 3. 사례형 — 엄격화된 evidence regex
+    if _H2_ARCH_EVIDENCE_RE.search(plain):
+        return "사례형"
+
+    # 이후 분기에서 EF class 를 재사용
+    cls = korean_morph.classify_title_ending(plain)
+    cls_class = (cls or {}).get("class", "")
+
+    # 4. 목표형 — surface keyword OR commitment EF
+    if _H2_ARCH_GOAL_RE.search(plain):
+        return "목표형"
+    if cls_class == "commitment":
+        return "목표형"
+
+    # 5. 이유형 — surface keyword
+    if _H2_ARCH_REASON_RE.search(plain):
+        return "이유형"
+
+    # 6. 주장형 — declarative EF OR claim regex (surface)
+    if cls_class == "declarative":
+        return "주장형"
+    if _H2_ARCH_CLAIM_RE.search(plain):
+        return "주장형"
+
+    return ""
+
+
 def detect_h2_archetype(heading: str) -> str:
     """단일 heading 이 어느 아키타입에 해당하는지 판정한다.
 
     우선순위: 질문형 > 대조형 > 사례형 > 목표형 > 이유형 > 주장형.
     하나도 매치되지 않으면 빈 문자열("").
+
+    kiwi 사용 가능: 형태소 분석(EF 태그) 기반 우선 판정. 종결어미 다양성을
+    정확히 커버한다 ("벗을까"/"만든다" 등).
+    kiwi 불가: regex fallback — 빈출 surface form 를 enum 으로 매칭.
     """
     text = re.sub(r"\s+", " ", str(heading or "")).strip()
     if not text:
         return ""
+
+    # Kiwi 우선
+    kiwi_result = _detect_archetype_kiwi(text)
+    if kiwi_result is not None:
+        return kiwi_result
+
+    # Regex fallback
     for name, pattern in _H2_ARCHETYPE_DETECTORS:
         if pattern.search(text):
             return name
@@ -510,11 +617,30 @@ def detect_h2_archetype(heading: str) -> str:
 
 
 def is_h2_archetype(heading: str, archetype: str) -> bool:
-    """heading 이 특정 아키타입 패턴에 해당하는지 검사(우선순위 무시)."""
+    """heading 이 특정 아키타입 패턴에 해당하는지 검사(우선순위 무시).
+
+    kiwi 가능 시 kiwi 1차 판정이 target 과 일치하면 True.
+    kiwi 불가 또는 kiwi 가 빈 문자열을 반환(아키타입 미매치) 하면 regex 폴백.
+    """
     text = re.sub(r"\s+", " ", str(heading or "")).strip()
     target = str(archetype or "").strip()
     if not text or not target:
         return False
+
+    kiwi_result = _detect_archetype_kiwi(text)
+    if kiwi_result is not None and kiwi_result != "":
+        # kiwi 가 구체 아키타입을 반환 → 그 결과를 우선 신뢰
+        if kiwi_result == target:
+            return True
+        # 다른 아키타입이 매치됐다면, target 도 동시에 매치될 수 있는지
+        # regex 로 재확인 (우선순위 무시). 예: "~만든다" 는 주장형이지만
+        # target="주장형" 체크 시 True 가 돼야 함.
+        for name, pattern in _H2_ARCHETYPE_DETECTORS:
+            if name == target:
+                return bool(pattern.search(text))
+        return False
+
+    # kiwi 불가 또는 kiwi 미매치 → 순수 regex
     for name, pattern in _H2_ARCHETYPE_DETECTORS:
         if name == target:
             return bool(pattern.search(text))
