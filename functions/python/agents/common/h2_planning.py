@@ -15,6 +15,7 @@ import math
 import re
 from typing import Any, Iterable, List, Optional, Sequence, TypedDict
 
+from . import korean_morph
 from .h2_guide import resolve_category_archetypes
 from .title_common import extract_numbers_from_content
 
@@ -96,6 +97,8 @@ class SectionPlan(TypedDict, total=False):
     numerics: List[str]
     entity_hints: List[str]
     key_claim: str
+    # user 가 명시한 키워드. deterministic fallback 템플릿의 키워드 안전 검사에서 allowlist 로 사용.
+    user_keywords: List[str]
     # AEO 확장 필드
     query_intent: str
     answer_type: str
@@ -132,6 +135,84 @@ def _split_sentences(text: str) -> List[str]:
 
 def _tokenize(text: str) -> List[str]:
     return _TOKEN_RE.findall(str(text or ""))
+
+
+# kiwi 형태소 분석 기반 명사 추출 헬퍼.
+# _PROPER_NOUN_RE (묵은 정규식) 가 "약화시키는"→"약화시", "외에도"→"외에도" 같은
+# 동사·조사 조각을 고유명사로 오인하는 문제를 해결하기 위해 kiwi 태그를 1차로 사용.
+# kiwi 초기화 실패 시(Windows 한글 username 등) 호출부가 regex fallback 을 사용.
+_KOREAN_MORPH_NOUN_TAGS = frozenset({"NNG", "NNP", "NNB"})
+
+# 기존 _PROPER_NOUN_RE 경로로만 잡힐 때 오매칭되기 쉬운 stem 접두 목록.
+# stem + (시/도/군/동/...) 형태의 false-positive 제거용.
+_PROPER_NOUN_STOPSTEMS = frozenset(
+    {
+        "외에", "위에", "아래", "뒤에", "앞에", "이에", "그에",
+        "하기", "되기", "이기", "보기", "가기", "오기", "있기", "없기",
+        "받기", "쓰기", "듣기", "말기", "끝나",
+        "약화", "강화", "활성", "변화", "발생", "증가", "감소",
+        "성장", "악화", "완화",
+    }
+)
+
+
+def _kiwi_extract_nouns(text: str) -> Optional[List[str]]:
+    """NNG/NNP/NNB 태그 토큰의 form 을 순서대로 반환. Kiwi 불가 시 None."""
+    tokens = korean_morph.tokenize(text)
+    if tokens is None:
+        return None
+    return [
+        tok.form
+        for tok in tokens
+        if tok.tag in _KOREAN_MORPH_NOUN_TAGS and len(tok.form) >= 2
+    ]
+
+
+def _kiwi_extract_proper_nouns(text: str) -> Optional[List[str]]:
+    """NNP(고유명사) 태그만 반환. Kiwi 불가 시 None."""
+    tokens = korean_morph.tokenize(text)
+    if tokens is None:
+        return None
+    return [
+        tok.form
+        for tok in tokens
+        if tok.tag == "NNP" and len(tok.form) >= 2
+    ]
+
+
+def _filter_regex_proper_nouns(matches: Iterable[str]) -> List[str]:
+    """regex fallback 에서 stem 이 stop-list 에 걸리는 false-positive 제거."""
+    out: List[str] = []
+    for raw in matches or ():
+        m = str(raw or "").strip()
+        if len(m) < 2:
+            continue
+        # 접미사 한 글자를 떼어낸 stem 부분 검사
+        stem = m[:-1]
+        if stem in _PROPER_NOUN_STOPSTEMS:
+            continue
+        out.append(m)
+    return out
+
+
+def _extract_proper_nouns(text: str) -> List[str]:
+    """kiwi 우선 → 실패 시 regex + stopstem 필터 fallback."""
+    kiwi_result = _kiwi_extract_proper_nouns(text)
+    if kiwi_result is not None:
+        return kiwi_result
+    return _filter_regex_proper_nouns(_PROPER_NOUN_RE.findall(str(text or "")))
+
+
+def _extract_noun_candidates(text: str) -> List[str]:
+    """kiwi 우선으로 본문 명사 후보를 뽑는다. 실패 시 기존 _tokenize 경로로 우회.
+
+    candidate_keywords 풀을 깨끗한 명사만으로 채우기 위한 함수. 조사/동사 활용형
+    같은 조각이 섞이지 않도록 kiwi 의 NNG/NNP/NNB 태그만 통과시킨다.
+    """
+    kiwi_result = _kiwi_extract_nouns(text)
+    if kiwi_result is not None:
+        return kiwi_result
+    return [tok for tok in _tokenize(str(text or "")) if tok not in _STOPWORDS]
 
 
 def _dedupe_preserve_order(items: Iterable[str]) -> List[str]:
@@ -366,7 +447,7 @@ def extract_section_plan(
     entity_hints = _dedupe_preserve_order(
         list(extra_entities or ()) + [full_name, full_region]
     )
-    proper_nouns = _PROPER_NOUN_RE.findall(cleaned)
+    proper_nouns = _extract_proper_nouns(cleaned)
     entity_hints = _dedupe_preserve_order(entity_hints + proper_nouns)
 
     numerics_bundle = extract_numbers_from_content(cleaned) or {}
@@ -394,7 +475,7 @@ def extract_section_plan(
     candidate_keywords = _dedupe_preserve_order(
         list(user_keywords or ())
         + [hint for hint in entity_hints if hint]
-        + [tok for tok in _tokenize(cleaned) if tok not in _STOPWORDS]
+        + _extract_noun_candidates(cleaned)
     )[:10]
 
     must_include = pick_must_include_keyword(
@@ -416,6 +497,7 @@ def extract_section_plan(
         numerics=numerics,
         entity_hints=entity_hints,
         key_claim=key_claim,
+        user_keywords=[str(k).strip() for k in (user_keywords or ()) if str(k).strip()],
     )
 
 

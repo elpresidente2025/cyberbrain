@@ -938,3 +938,110 @@ def test_subheading_agent_h2_repair_chain_skips_when_no_known_names_and_no_keywo
     assert "ensure_user_keyword_first_slot" not in called
     assert "awkward_phrases" in called
     assert "branding_phrases" in called
+
+
+# ---------------------------------------------------------------------------
+# kiwi/regex 기반 고유명사·명사 후보 정화 (h2_planning 잔재 정리)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_section_plan_rejects_verb_stem_si_false_proper_noun() -> None:
+    """'약화시키는' → '약화시' 같은 동사 사동접미 '-시-' 오매칭을 걸러낸다."""
+    plan = extract_section_plan(
+        section_text="경쟁력을 약화시키는 제도의 공백을 바로잡겠습니다.",
+        index=0,
+        category="policy-proposal",
+        style_config=_policy_style_config(),
+        user_keywords=["제도 개선"],
+        full_name="",
+        full_region="",
+    )
+    assert "약화시" not in plan.get("entity_hints", [])
+    assert "약화시" not in plan.get("candidate_keywords", [])
+
+
+def test_extract_section_plan_rejects_adverb_do_false_proper_noun() -> None:
+    """'외에도' (부사+보조사) 가 행정구 접미 '도' 로 오매칭되어 entity_hints 로 들어가면 안 된다.
+
+    candidate_keywords 에는 (kiwi 비활성 fallback 시) 자연 토큰으로 여전히 섞일 수 있으나,
+    deterministic 템플릿 가드가 final defense 로 '외에도' 를 차단한다 — 해당 동작은
+    test_deterministic_fallback_rejects_polluted_keyword_for_case_template 에서 검증.
+    """
+    plan = extract_section_plan(
+        section_text="기본 감면 외에도 취득세를 최대 25% 추가 감면합니다.",
+        index=0,
+        category="policy-proposal",
+        style_config=_policy_style_config(),
+        user_keywords=["취득세 감면"],
+        full_name="",
+        full_region="",
+    )
+    assert "외에도" not in plan.get("entity_hints", [])
+
+
+def test_extract_section_plan_keeps_legitimate_administrative_proper_nouns() -> None:
+    """정상 지역명(경기도/수원시)은 여전히 entity_hints 로 살아남아야 한다."""
+    plan = extract_section_plan(
+        section_text="경기도 수원시에 위치한 공장이 이전 대상 목록에 포함됐습니다.",
+        index=0,
+        category="policy-proposal",
+        style_config=_policy_style_config(),
+        user_keywords=[],
+        full_name="",
+        full_region="",
+    )
+    hints = set(plan.get("entity_hints", []))
+    assert "경기도" in hints
+    assert "수원시" in hints
+
+
+def test_extract_section_plan_exposes_user_keywords_for_template_guard() -> None:
+    """deterministic fallback 템플릿 가드용으로 plan 에 user_keywords 가 실려야 한다."""
+    plan = extract_section_plan(
+        section_text="청년 기본소득으로 지역 경제를 살립니다.",
+        index=0,
+        category="policy-proposal",
+        style_config=_policy_style_config(),
+        user_keywords=["청년 기본소득", "지역 경제"],
+        full_name="",
+        full_region="",
+    )
+    assert plan.get("user_keywords") == ["청년 기본소득", "지역 경제"]
+
+
+def test_deterministic_fallback_rejects_polluted_keyword_for_case_template() -> None:
+    """오염된 키워드('약화시')가 사례형 템플릿 '{kw} {숫자} 현장 기록'에 들어가면 안 된다.
+
+    allowlist(user_keywords + entity_hints)에 없고 조사/어미 suffix 로 끝나면 가드가
+    keyword 를 빈 문자열로 치환 → 사례형 람다가 '' 반환 → fallback heading 은 '' 반환.
+    """
+    agent = SubheadingAgent()
+    polluted_plan = {
+        "must_include_keyword": "약화시",
+        "suggested_type": "사례형",
+        "numerics": ["2022년"],
+        "key_claim": "",
+        "candidate_keywords": ["약화시", "2022년"],
+        "entity_hints": [],
+        "user_keywords": [],
+    }
+    heading = agent._deterministic_fallback_heading(polluted_plan)
+    assert "현장 기록" not in heading
+    assert heading == ""
+
+
+def test_deterministic_fallback_allows_clean_keyword_for_case_template() -> None:
+    """정상 키워드('청년 기본소득')는 사례형 템플릿을 그대로 통과해야 한다."""
+    agent = SubheadingAgent()
+    clean_plan = {
+        "must_include_keyword": "청년 기본소득",
+        "suggested_type": "사례형",
+        "numerics": ["274명"],
+        "key_claim": "",
+        "candidate_keywords": ["청년 기본소득", "274명"],
+        "entity_hints": [],
+        "user_keywords": ["청년 기본소득"],
+    }
+    heading = agent._deterministic_fallback_heading(clean_plan)
+    assert "청년 기본소득" in heading
+    assert "274명" in heading

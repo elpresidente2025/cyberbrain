@@ -129,6 +129,33 @@ _JOSA_TAIL_TOKENS = (
     "로",
 )
 
+# 결정론적 fallback 템플릿에 키워드로 들어가서는 안 되는 조사/어미 suffix.
+# "외에도", "약화시" 같은 조각이 must_include_keyword 로 잘못 전파됐을 때를 막는 2차 방어선.
+_UNSAFE_KEYWORD_SUFFIXES = (
+    "에도", "으로도", "으로", "부터", "까지", "에서", "에게",
+    "도", "시", "를", "을", "은", "는", "이", "가", "에", "의", "과", "와", "만",
+)
+
+
+def _keyword_is_template_safe(keyword: str, plan: Dict[str, Any]) -> bool:
+    """deterministic fallback 템플릿에 넣어도 안전한 키워드인지 판정.
+
+    allowlist 는 user_keywords + entity_hints (둘 다 깨끗한 소스):
+      - user_keywords: 호출자가 명시한 키워드.
+      - entity_hints: h2_planning 에서 stopstem 필터 거친 고유명사 + full_name/full_region.
+
+    allowlist 에 없고 조사/어미 suffix 로 끝나면 "약화시", "외에도" 같은 조각이므로 탈락.
+    """
+    kw = str(keyword or "").strip()
+    if len(kw) < 2:
+        return False
+    allowlist = set(plan.get("user_keywords") or []) | set(plan.get("entity_hints") or [])
+    if kw in allowlist:
+        return True
+    if kw.endswith(_UNSAFE_KEYWORD_SUFFIXES):
+        return False
+    return True
+
 
 class SubheadingAgent(Agent):
     def __init__(self, name: str = "SubheadingAgent", options: Optional[Dict[str, Any]] = None):
@@ -1462,6 +1489,10 @@ class SubheadingAgent(Agent):
     # --------------------------------------------------------- fallback heading
     def _deterministic_fallback_heading(self, plan: SectionPlan) -> str:
         keyword = str(plan.get("must_include_keyword") or "").strip()
+        # 오염된 키워드("약화시", "외에도" 등)가 템플릿에 꽂히는 것을 차단.
+        # 빈 문자열로 치환하면 대부분 템플릿 람다가 "" 를 반환 → 호출부가 원본 유지.
+        if keyword and not _keyword_is_template_safe(keyword, plan):
+            keyword = ""
         suggested_type = str(plan.get("suggested_type") or "")
         numerics = list(plan.get("numerics") or [])
         key_claim = str(plan.get("key_claim") or "").strip()
