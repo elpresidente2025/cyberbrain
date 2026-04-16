@@ -373,6 +373,27 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 
 <role>네이버 블로그 제목 전문가 (클릭률 1위 카피라이터)</role>
 
+<source_tone_analysis priority="critical">
+  <instruction>
+    제목을 쓰기 전에 먼저 &lt;input&gt; 의 content_preview 와 stance_summary 를 읽고
+    "이 원문의 지배적 톤" 을 한 단어로 판정하라. 톤은 제목의 각도를 결정하는
+    기초 재료이며, 판정 없이 쓴 제목은 원문과 어긋난다. regex/형태소 기반 분류기가
+    평행으로 돌지만, 너의 1차 판정이 관측 기준이다.
+  </instruction>
+  <allowed_tones>
+    <tone id="pledge">공약·다짐 — "하겠습니다/이루겠습니다/책임지겠습니다/만들겠습니다" 류 1인칭 약속 종결 어미가 반복되거나, 화자가 유권자에게 직접 약속을 선언하는 톤. 제목은 공약 선언형 또는 다짐형 경어체 평서문으로 맞추는 것이 기본이다.</tone>
+    <tone id="report">사실 전달·보고 — 정책·사건·수치를 제3자 시점으로 서술하는 톤. 종결 어미가 "~입니다/~했습니다/~됩니다" 같은 보고형이거나 주어가 화자 자신이 아닌 경우. 제목은 팩트 중심 평서문 또는 의문사 기반 실질 질문으로 맞춘다.</tone>
+    <tone id="question">실질 의문 제기 — "왜/어떻게/얼마/무엇이" 로 시작하는 실제 질문을 던지고 본문이 그에 답하는 톤. 제목도 의문사 기반 질문형으로 맞춘다. (수사적 반문 "~할까?/될까?" 는 제목에서 금지)</tone>
+    <tone id="commentary">평가·논평 — 상황·정책·상대에 대한 주관적 평가·비판이 주를 이루는 톤. 제목은 도발적 평서문 또는 대비 구조.</tone>
+    <tone id="hybrid">둘 이상의 톤이 섞여 있고 어느 하나가 지배적이지 않음. 이 경우 제목은 본문의 구체 재료(&lt;slot_opportunities&gt;)를 최우선으로 삼는다.</tone>
+  </allowed_tones>
+  <output_contract>
+    JSON 응답의 "sourceTone" 필드에 위 id 중 하나(pledge/report/question/commentary/hybrid) 를 소문자 영문으로 기입한다.
+    JSON 응답의 "sourceToneReason" 필드에 80자 이내로 판정 근거를 한국어로 적는다 (예: "본문 문단 끝마다 '-하겠습니다' 반복 → pledge").
+    판정이 끝난 뒤에만 제목을 생성하고, 제목의 종결·각도는 위 판정에 맞춘다.
+  </output_contract>
+</source_tone_analysis>
+
 {objective_block}
 
 <content_type detected="{primary_type['id']}">

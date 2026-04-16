@@ -25,6 +25,13 @@ TITLE_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
         "title": {"type": "string"},
+        # Phase 1 (source-tone self-judgment) — LLM 이 원문을 읽고 먼저 판정한
+        # 톤을 함께 반환. regex/Kiwi family classifier 를 점진적으로 대체하기
+        # 위한 관측 필드. 허용값은 프롬프트에서 명시. schema 는 required 에서
+        # 제외해 기존 응답 호환성 유지(구버전 프롬프트 / 미기입 시 payload 에
+        # 안 실려도 파싱 성공).
+        "sourceTone": {"type": "string"},
+        "sourceToneReason": {"type": "string"},
     },
     "required": ["title"],
 }
@@ -246,7 +253,7 @@ class TitleAgent(Agent):
                 prompt,
                 model_name=self.model_name,
                 temperature=generation_temperature,
-                max_output_tokens=220,
+                max_output_tokens=260,
                 retries=2,
                 response_schema=TITLE_RESPONSE_SCHEMA,
                 required_keys=("title",),
@@ -259,6 +266,18 @@ class TitleAgent(Agent):
             title = str(payload.get('title') or '').strip()
             if not title:
                 raise StructuredOutputError("title is empty")
+            # Phase 1 관측 — LLM 자기판정 source tone 을 로그로 남겨 기존
+            # select_title_family regex 판정과 대조 가능하게 한다. 아직 파이프라인
+            # 동작에는 반영하지 않는다(순수 로깅).
+            tone = str(payload.get('sourceTone') or '').strip().lower()
+            tone_reason = str(payload.get('sourceToneReason') or '').strip()
+            if tone:
+                logger.info(
+                    "[TitleAgent] source_tone_self_judgment tone=%s reason=%s title=%r",
+                    tone,
+                    tone_reason[:120],
+                    title,
+                )
             return title
 
         # allowDegradedPass: 호출 측(예: 파이프라인 최종 제목 단계) 이 설정하면,

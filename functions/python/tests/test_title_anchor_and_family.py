@@ -601,3 +601,59 @@ def test_generate_and_validate_title_degraded_pass_off_raises():
             )
     finally:
         tg.calculate_title_quality_score = original_score  # type: ignore
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 — source_tone_analysis 블록이 build_title_prompt 에 주입되는지
+# ---------------------------------------------------------------------------
+
+def test_build_title_prompt_emits_source_tone_analysis_block():
+    """일반 제목 경로에서 source_tone_analysis 블록이 프롬프트 상단에 등장한다."""
+    from agents.common.title_generation import build_title_prompt
+
+    prompt = build_title_prompt({
+        "topic": "샘플구 샘플사업 2단계",
+        "contentPreview": "샘플구의 샘플사업 2단계 지정이 예정됐습니다. 책임지고 완성하겠습니다.",
+        "fullName": "홍길동",
+        "userKeywords": ["샘플구"],
+    })
+
+    assert "<source_tone_analysis" in prompt, "source_tone_analysis 오프닝 태그 누락"
+    assert "</source_tone_analysis>" in prompt, "source_tone_analysis 클로징 태그 누락"
+    for tone_id in ("pledge", "report", "question", "commentary", "hybrid"):
+        assert f'id="{tone_id}"' in prompt, f"톤 id={tone_id} 블록 누락"
+    assert "sourceTone" in prompt, "sourceTone 필드 지시 누락"
+    assert "sourceToneReason" in prompt, "sourceToneReason 필드 지시 누락"
+
+
+def test_build_title_prompt_source_tone_block_precedes_objective():
+    """source_tone_analysis 는 objective 보다 먼저 등장해야 LLM 이 톤 판정을 먼저 한다."""
+    from agents.common.title_generation import build_title_prompt
+
+    prompt = build_title_prompt({
+        "topic": "샘플구 정책 브리핑",
+        "contentPreview": "샘플구 정책 브리핑 본문입니다.",
+        "fullName": "홍길동",
+    })
+
+    tone_idx = prompt.find("<source_tone_analysis")
+    obj_idx = prompt.find("<objective>")
+    assert tone_idx != -1 and obj_idx != -1, "블록 중 하나가 없음"
+    assert tone_idx < obj_idx, (
+        "source_tone_analysis 는 objective 블록보다 먼저 배치돼야 한다 "
+        f"(tone_idx={tone_idx}, obj_idx={obj_idx})"
+    )
+
+
+def test_title_response_schema_includes_source_tone_fields():
+    """TITLE_RESPONSE_SCHEMA 에 sourceTone/sourceToneReason 가 선택 필드로 포함된다."""
+    from agents.core.title_agent import TITLE_RESPONSE_SCHEMA
+
+    props = TITLE_RESPONSE_SCHEMA.get("properties") or {}
+    assert "sourceTone" in props
+    assert "sourceToneReason" in props
+    # 기존 응답 호환성: required 에서 제외돼 있어야 한다.
+    required = set(TITLE_RESPONSE_SCHEMA.get("required") or [])
+    assert "sourceTone" not in required
+    assert "sourceToneReason" not in required
+    assert "title" in required
