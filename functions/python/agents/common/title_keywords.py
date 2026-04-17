@@ -266,17 +266,26 @@ def _extract_slot_based_required_keywords(
     opportunities = extract_slot_opportunities(topic, content, params)
     if not isinstance(opportunities, dict):
         return []
-    # 구체성 우선순위: region → policy → institution → numeric → year.
-    # 지역/정책/기관은 고유명사 성격이 강하고, 수치/연도는 부차 재료다.
-    ordered_categories = ('region', 'policy', 'institution', 'numeric', 'year')
-    result: List[str] = []
+    # topicMatch 는 "제목이 주제를 반영하는가" 만 본다. body-exclusive
+    # 토큰 인센티브는 bodyAnchorStrength 차원이 별도로 담당하므로, 여기서
+    # body-exclusive 를 섞으면 "국토교통부/계양구청" 같은 배경 행위자가
+    # 필수 키워드가 되어 topicMatch 를 불필요하게 깎는다.
+    #
+    # topic 표면 토큰을 기본으로 쓰되, topic 이 너무 짧아 토큰이 1개
+    # 이하면 slot 에서 범용 앵커(지역/기관)를 보충한다.
+    topic_base = _extract_surface_topic_tokens(topic, limit=limit)
+    if len(topic_base) >= 2:
+        return topic_base[:limit]
+
+    result: List[str] = list(topic_base)
+    seen: set[str] = set(result)
+    ordered_categories = ('region', 'institution', 'policy')
     for category in ordered_categories:
         for token in opportunities.get(category, []) or []:
             cleaned = re.sub(r"\s+", "", str(token or "")).strip()
-            if not cleaned or len(cleaned) < 2:
+            if not cleaned or len(cleaned) < 2 or cleaned in seen:
                 continue
-            if cleaned in result:
-                continue
+            seen.add(cleaned)
             result.append(cleaned)
             if len(result) >= limit:
                 return result

@@ -772,3 +772,82 @@ def test_tone_family_compatibility_hybrid_all():
     for family in ('SLOGAN_COMMITMENT', 'QUESTION_ANSWER', 'DATA_BASED', 'COMMENTARY'):
         result = assess_tone_family_compatibility('hybrid', family)
         assert result['compatible'], f'hybrid should be compatible with {family}'
+
+
+# ── region 도 화이트리스트 / 교통 인프라 패턴 ──
+
+
+def test_region_whitelist_rejects_false_do_suffix():
+    """'광역철도', '분석도', '감면도' 같은 비지명 ~도 토큰이 region 에 안 잡힘."""
+    from agents.common.title_hook_quality import extract_slot_opportunities
+
+    content = '광역철도 유치를 추진한다. B/C 분석도 완료됐다. 취득세 감면도 추진한다.'
+    slots = extract_slot_opportunities('샘플 주제', content, {})
+    region = slots.get('region', [])
+    assert '광역철도' not in region
+    assert '분석도' not in region
+    assert '감면도' not in region
+
+
+def test_region_whitelist_accepts_real_province():
+    """실제 도 이름(경기도, 강원도 등)은 정상 매칭."""
+    from agents.common.title_hook_quality import extract_slot_opportunities
+
+    content = '경기도 샘플시 일대에서 사업이 진행된다. 강원도 관광 개발도 병행한다.'
+    slots = extract_slot_opportunities('샘플 주제', content, {})
+    region = slots.get('region', [])
+    assert '경기도' in region
+
+
+def test_transport_infra_captured_as_institution():
+    """'광역철도' 가 institution bucket 에 잡히고, 조사 '로' 가 붙은 형태는 제외."""
+    from agents.common.title_hook_quality import extract_slot_opportunities
+
+    content = '광역철도 유치. 광역철도로 전환. 경부도로 확장.'
+    slots = extract_slot_opportunities('샘플 주제', content, {})
+    inst = slots.get('institution', [])
+    assert '광역철도' in inst
+    assert '경부도로' in inst
+    assert '광역철도로' not in inst
+
+
+def test_policy_plan_suffix_captured():
+    """'구축계획', '발전전략' 등 계획·전략 접미 정책명이 policy 에 잡힘."""
+    from agents.common.title_hook_quality import extract_slot_opportunities
+
+    content = '인천시 도시철도망 구축계획에 반영. 지역 균형발전 전략 수립.'
+    slots = extract_slot_opportunities('샘플 주제', content, {})
+    policy = slots.get('policy', [])
+    joined = ' '.join(policy)
+    assert '구축계획' in joined, f'policy should contain 구축계획, got {policy}'
+    assert '전략' in joined, f'policy should contain 전략, got {policy}'
+
+
+def test_slot_keywords_use_topic_base_when_sufficient():
+    """topic 토큰이 2개 이상이면 body-exclusive 를 섞지 않는다."""
+    from agents.common.title_keywords import compute_required_topic_keywords
+
+    topic = '샘플구 테크노밸리 2단계'
+    content = '샘플구 테크노밸리 2단계 사업의 핵심은 광역철도 유치다.'
+    kws = compute_required_topic_keywords(
+        topic, {'topic': topic, 'contentPreview': content}, content=content,
+    )
+    assert '테크노밸리' in kws or any('테크노' in k for k in kws)
+    assert '광역철도' not in kws, 'body-exclusive 는 topicMatch 에 섞이면 안 됨'
+
+
+def test_title_with_body_exclusive_passes_topic_match():
+    """topic 토큰 + body-exclusive 토큰을 쓴 제목이 topicMatch 높음."""
+    from agents.common.title_scoring import calculate_title_quality_score
+
+    title = '샘플구 테크노밸리 광역철도, 2026년 추진 현황 공개'
+    params = {
+        'topic': '샘플구 테크노밸리 2단계',
+        'contentPreview': '샘플구 테크노밸리 2단계 사업의 핵심은 광역철도 유치다. 2026년 상반기 추진.',
+        'stanceText': '',
+        'userKeywords': ['샘플구 테크노밸리'],
+        'authorName': '홍길동',
+    }
+    result = calculate_title_quality_score(title, params)
+    topic_match = result['breakdown']['topicMatch']
+    assert topic_match['score'] >= 15, f'topicMatch should be 보통 or higher, got {topic_match}'
