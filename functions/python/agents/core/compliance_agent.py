@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from ..base_agent import Agent
 from ..common.fact_guard import validate_with_llm, build_fact_allowlist
 from ..common.framing_rules import OVERRIDE_KEYWORDS, HIGH_RISK_KEYWORDS, POLITICAL_FRAMES
-from ..common.election_rules import get_election_stage, validate_election_content, sanitize_election_content, resolve_election_context
+from ..common.election_rules import get_election_stage, validate_election_content, resolve_election_context
 from ..common.editorial import TITLE_SPEC
 
 logger = logging.getLogger(__name__)

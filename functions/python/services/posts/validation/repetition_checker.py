@@ -29,18 +29,6 @@ ALLOWED_ENDINGS: List[re.Pattern[str]] = [
     re.compile(r"답니다\.?$"),
 ]
 
-EXPLICIT_PLEDGE_PATTERNS: List[re.Pattern[str]] = [
-    re.compile(r"약속드립니다"),
-    re.compile(r"약속합니다"),
-    re.compile(r"공약합니다"),
-    re.compile(r"반드시.*하겠습니다"),
-    re.compile(r"꼭.*하겠습니다"),
-    re.compile(r"제가.*하겠습니다"),
-    re.compile(r"저는.*하겠습니다"),
-    re.compile(r"당선되면"),
-    re.compile(r"당선\s*후"),
-]
-
 def extract_sentences(text: str) -> List[str]:
     plain_text = _strip_html(text)
     if not plain_text:
@@ -54,102 +42,6 @@ def extract_sentences(text: str) -> List[str]:
 
 def is_allowed_ending(sentence: str) -> bool:
     return any(pattern.search(sentence or "") for pattern in ALLOWED_ENDINGS)
-
-
-def is_explicit_pledge(sentence: str) -> bool:
-    return any(pattern.search(sentence or "") for pattern in EXPLICIT_PLEDGE_PATTERNS)
-
-
-def contains_pledge_candidate(sentence: str) -> bool:
-    return bool(re.search(r"겠[습어]", sentence or ""))
-
-
-def _extract_json_object(raw: str) -> Optional[Dict[str, Any]]:
-    text = (raw or "").strip()
-    if not text:
-        return None
-    text = re.sub(r"```(?:json)?\s*([\s\S]*?)```", r"\1", text).strip()
-    try:
-        parsed = json.loads(text)
-        return parsed if isinstance(parsed, dict) else None
-    except json.JSONDecodeError:
-        pass
-    match = re.search(r"\{[\s\S]*\}", text)
-    if not match:
-        return None
-    try:
-        parsed = json.loads(match.group(0))
-        return parsed if isinstance(parsed, dict) else None
-    except json.JSONDecodeError:
-        return None
-
-
-async def check_pledges_with_llm(
-    sentences: Sequence[str],
-    model_name: str = "gemini-2.5-flash",
-) -> List[Dict[str, Any]]:
-    if not sentences:
-        return []
-
-    prompt = f"""당신은 대한민국 선거법 전문가입니다.
-아래 문장들이 "정치인 본인의 선거 공약/약속"인지 판단하세요.
-
-[판단 기준]
-- 공약 O: 정치인 본인이 주어로, 미래에 ~하겠다는 약속
-  예: "일자리를 만들겠습니다", "교통 문제를 해결하겠습니다"
-
-- 공약 X: 다음은 공약이 아님
-  예: "비가 오겠습니다" (날씨 예측)
-  예: "좋은 결과가 있겠습니다" (희망/기대)
-  예: "정부가 해야겠습니다" (제3자 당위)
-  예: "함께 만들어가겠습니다" (시민 참여 호소, 맥락에 따라)
-
-[검증 대상 문장]
-{chr(10).join(f'{i + 1}. "{s}"' for i, s in enumerate(sentences))}
-
-[출력 형식 - JSON]
-{{
-  "results": [
-    {{ "index": 1, "isPledge": true/false, "reason": "판단 근거" }},
-    ...
-  ]
-}}"""
-
-    try:
-        from agents.common.gemini_client import generate_content_async
-
-        response = await generate_content_async(
-            prompt,
-            model_name=model_name,
-            temperature=0.1,
-            response_mime_type="application/json",
-        )
-        parsed = _extract_json_object(response) or {}
-        results = parsed.get("results")
-        if not isinstance(results, list):
-            raise ValueError("results 필드 없음")
-
-        normalized: list[Dict[str, Any]] = []
-        for idx, item in enumerate(results):
-            if not isinstance(item, dict):
-                continue
-            item_index = int(item.get("index", idx + 1))
-            source_idx = max(1, item_index) - 1
-            sentence = sentences[source_idx] if source_idx < len(sentences) else sentences[idx]
-            normalized.append(
-                {
-                    "sentence": sentence,
-                    "isPledge": bool(item.get("isPledge")),
-                    "reason": str(item.get("reason") or "판단 근거 없음"),
-                }
-            )
-        return normalized
-    except Exception as exc:
-        logger.warning("LLM 공약 검증 실패, 보수적 처리: %s", exc)
-        return [
-            {"sentence": sentence, "isPledge": True, "reason": "LLM 검증 실패 - 보수적 처리"}
-            for sentence in sentences
-        ]
 
 
 def _collect_bribery_violations(plain_text: str) -> List[Dict[str, Any]]:
@@ -190,47 +82,14 @@ async def detect_election_law_violation_hybrid(
     *,
     model_name: str = "gemini-2.5-flash",
 ) -> Dict[str, Any]:
+    """형사 위험(기부행위·허위사실·후보자비방)만 검증한다."""
     if not status:
         return {"passed": True, "violations": [], "skipped": True}
 
     election_stage = get_election_stage(status)
-    if not election_stage or election_stage.get("name") != "STAGE_1":
-        return {"passed": True, "violations": [], "skipped": True}
-
     full_text = f"{title or ''} {content or ''}"
-    sentences = extract_sentences(full_text)
-    violations: list[Dict[str, Any]] = []
-    llm_candidates: list[str] = []
-
-    for sentence in sentences:
-        if is_explicit_pledge(sentence):
-            violations.append(
-                {
-                    "sentence": sentence[:60] + ("..." if len(sentence) > 60 else ""),
-                    "type": "EXPLICIT_PLEDGE",
-                    "reason": "명시적 공약 표현",
-                }
-            )
-            continue
-        if is_allowed_ending(sentence):
-            continue
-        if contains_pledge_candidate(sentence):
-            llm_candidates.append(sentence)
-
-    if llm_candidates:
-        llm_results = await check_pledges_with_llm(llm_candidates, model_name=model_name)
-        for result in llm_results:
-            if result.get("isPledge"):
-                sentence = str(result.get("sentence") or "")
-                violations.append(
-                    {
-                        "sentence": sentence[:60] + ("..." if len(sentence) > 60 else ""),
-                        "type": "LLM_DETECTED",
-                        "reason": str(result.get("reason") or "공약성 표현"),
-                    }
-                )
-
     plain_text = _strip_html(full_text)
+    violations: list[Dict[str, Any]] = []
     violations.extend(_collect_bribery_violations(plain_text))
     violations.extend(_collect_fact_violations(plain_text))
 
@@ -240,8 +99,6 @@ async def detect_election_law_violation_hybrid(
         "status": status,
         "stage": election_stage.get("name"),
         "stats": {
-            "totalSentences": len(sentences),
-            "llmChecked": len(llm_candidates),
             "violationCount": len(violations),
         },
     }

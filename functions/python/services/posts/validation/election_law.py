@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from typing import Any, Dict, List, Optional
 
 from agents.common.election_rules import get_election_stage
-from agents.common.fact_guard import extract_numeric_tokens, find_unsupported_numeric_tokens
 from agents.common.legal import ViolationDetector
 
 from ._shared import _strip_html
-from .repetition_checker import contains_pledge_candidate, extract_sentences, is_allowed_ending
+from .repetition_checker import extract_sentences
 
 logger = logging.getLogger(__name__)
 
@@ -199,92 +197,6 @@ def _build_violation_response(
         "skipped": skipped,
     }
 
-def _extract_json_object(raw: str) -> Optional[Dict[str, Any]]:
-    text = (raw or "").strip()
-    if not text:
-        return None
-    text = re.sub(r"```(?:json)?\s*([\s\S]*?)```", r"\1", text).strip()
-    try:
-        parsed = json.loads(text)
-        return parsed if isinstance(parsed, dict) else None
-    except json.JSONDecodeError:
-        pass
-    match = re.search(r"\{[\s\S]*\}", text)
-    if not match:
-        return None
-    try:
-        parsed = json.loads(match.group(0))
-        return parsed if isinstance(parsed, dict) else None
-    except json.JSONDecodeError:
-        return None
-
-
-async def check_pledges_with_llm(
-    sentences: Sequence[str],
-    model_name: str = "gemini-2.5-flash",
-) -> List[Dict[str, Any]]:
-    if not sentences:
-        return []
-
-    prompt = f"""당신은 대한민국 선거법 전문가입니다.
-아래 문장들이 "정치인 본인의 선거 공약/약속"인지 판단하세요.
-
-[판단 기준]
-- 공약 O: 정치인 본인이 주어로, 미래에 ~하겠다는 약속
-  예: "일자리를 만들겠습니다", "교통 문제를 해결하겠습니다"
-
-- 공약 X: 다음은 공약이 아님
-  예: "비가 오겠습니다" (날씨 예측)
-  예: "좋은 결과가 있겠습니다" (희망/기대)
-  예: "정부가 해야겠습니다" (제3자 당위)
-  예: "함께 만들어가겠습니다" (시민 참여 호소, 맥락에 따라)
-
-[검증 대상 문장]
-{chr(10).join(f'{i + 1}. "{s}"' for i, s in enumerate(sentences))}
-
-[출력 형식 - JSON]
-{{
-  "results": [
-    {{ "index": 1, "isPledge": true/false, "reason": "판단 근거" }},
-    ...
-  ]
-}}"""
-
-    try:
-        from agents.common.gemini_client import generate_content_async
-
-        response = await generate_content_async(
-            prompt,
-            model_name=model_name,
-            temperature=0.1,
-            response_mime_type="application/json",
-        )
-        parsed = _extract_json_object(response) or {}
-        results = parsed.get("results")
-        if not isinstance(results, list):
-            raise ValueError("results 필드 없음")
-
-        normalized: list[Dict[str, Any]] = []
-        for idx, item in enumerate(results):
-            if not isinstance(item, dict):
-                continue
-            item_index = int(item.get("index", idx + 1))
-            source_idx = max(1, item_index) - 1
-            sentence = sentences[source_idx] if source_idx < len(sentences) else sentences[idx]
-            normalized.append(
-                {
-                    "sentence": sentence,
-                    "isPledge": bool(item.get("isPledge")),
-                    "reason": str(item.get("reason") or "판단 근거 없음"),
-                }
-            )
-        return normalized
-    except Exception as exc:
-        logger.warning("LLM 공약 검증 실패, 보수적 처리: %s", exc)
-        return [
-            {"sentence": sentence, "isPledge": True, "reason": "LLM 검증 실패 - 보수적 처리"}
-            for sentence in sentences
-        ]
 
 
 def _collect_bribery_violations(plain_text: str) -> List[Dict[str, Any]]:
@@ -321,56 +233,17 @@ async def detect_election_law_violation_hybrid(
     model_name: str = "gemini-2.5-flash",
     source_texts: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
+    """형사 위험(기부행위·허위사실·후보자비방)만 검증한다.
+
+    공직선거법 제59조 3항에 따라 온라인(SNS/블로그) 게시글은
+    선거운동 시기 제한이 면제되므로, 공약성 표현은 검증하지 않는다.
+    """
     if not status:
         return _build_violation_response(violations=[], status=status, skipped=True)
 
     election_stage = get_election_stage(status)
-    if not election_stage or election_stage.get("name") != "STAGE_1":
-        return _build_violation_response(
-            violations=[],
-            status=status,
-            stage_name=str(election_stage.get("name") or ""),
-            skipped=True,
-        )
-
-    full_text = f"{title or ''} {content or ''}"
-    sentences = extract_sentences(full_text)
+    plain_text = _strip_html(f"{title or ''} {content or ''}")
     violations: list[Dict[str, Any]] = []
-    llm_candidates: list[str] = []
-
-    for sentence in sentences:
-        if is_explicit_pledge(sentence):
-            _append_violation_item(
-                violations,
-                violation_type="EXPLICIT_PLEDGE",
-                severity="HIGH",
-                reason="명시적 공약 표현",
-                sentence=sentence,
-                matched_text=sentence,
-                repair_hint='"~하겠습니다" 같은 약속 표현을 정책 필요성·검토 표현으로 바꾸세요.',
-            )
-            continue
-        if is_allowed_ending(sentence):
-            continue
-        if contains_pledge_candidate(sentence):
-            llm_candidates.append(sentence)
-
-    if llm_candidates:
-        llm_results = await check_pledges_with_llm(llm_candidates, model_name=model_name)
-        for result in llm_results:
-            if result.get("isPledge"):
-                sentence = str(result.get("sentence") or "")
-                _append_violation_item(
-                    violations,
-                    violation_type="LLM_DETECTED",
-                    severity="HIGH",
-                    reason=str(result.get("reason") or "공약성 표현"),
-                    sentence=sentence,
-                    matched_text=sentence,
-                    repair_hint='"~하겠습니다"류 공약성 표현을 정책 필요성·검토 표현으로 바꾸세요.',
-                )
-
-    plain_text = _strip_html(full_text)
     violations.extend(_collect_bribery_violations(plain_text))
     violations.extend(_collect_fact_violations(plain_text, source_texts=source_texts))
     return _build_violation_response(
@@ -386,72 +259,17 @@ def detect_election_law_violation(
     *,
     source_texts: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
+    """형사 위험(기부행위·허위사실·후보자비방)만 검증한다.
+
+    공직선거법 제59조 3항에 따라 온라인(SNS/블로그) 게시글은
+    선거운동 시기 제한이 면제되므로, 공약성 표현은 검증하지 않는다.
+    """
     if not status:
         return _build_violation_response(violations=[], status=status, skipped=True)
 
     election_stage = get_election_stage(status)
-    if not election_stage or election_stage.get("name") != "STAGE_1":
-        return _build_violation_response(
-            violations=[],
-            status=status,
-            stage_name=str(election_stage.get("name") or ""),
-            skipped=True,
-        )
-
     plain_text = _strip_html(f"{title or ''} {content or ''}")
-    sentences = extract_sentences(plain_text)
-
-    pledge_patterns = [
-        r"추진하겠습니다",
-        r"실현하겠습니다",
-        r"만들겠습니다",
-        r"해내겠습니다",
-        r"전개하겠습니다",
-        r"제공하겠습니다",
-        r"활성화하겠습니다",
-        r"개선하겠습니다",
-        r"확대하겠습니다",
-        r"강화하겠습니다",
-        r"설립하겠습니다",
-        r"구축하겠습니다",
-        r"마련하겠습니다",
-        r"지원하겠습니다",
-        r"해결하겠습니다",
-        r"바꾸겠습니다",
-        r"펼치겠습니다",
-        r"이루겠습니다",
-        r"열겠습니다",
-        r"세우겠습니다",
-        r"이뤄내겠습니다",
-        r"해드리겠습니다",
-        r"드리겠습니다",
-        r"약속드리겠습니다",
-        r"바꿉니다",
-        r"만듭니다",
-        r"이룹니다",
-        r"해결합니다",
-        r"약속합니다",
-        r"실현합니다",
-        r"책임집니다",
-    ]
-
     violation_items: list[Dict[str, Any]] = []
-    for pattern in pledge_patterns:
-        matches = list(re.finditer(pattern, plain_text))
-        if not matches:
-            continue
-        matched_text = matches[0].group(0)
-        sentence = _extract_sentence_for_match(sentences, matched_text)
-        _append_violation_item(
-            violation_items,
-            violation_type="pledge_expression",
-            severity="HIGH",
-            reason=f'"{matched_text}" ({len(matches)}회) - 공약성 표현',
-            sentence=sentence,
-            matched_text=matched_text,
-            repair_hint='"~하겠습니다"를 "필요합니다", "추진이 필요합니다", "검토하겠습니다"처럼 완곡하게 바꾸세요.',
-        )
-
     violation_items.extend(_collect_bribery_violations(plain_text))
     violation_items.extend(_collect_fact_violations(plain_text, source_texts=source_texts))
     return _build_violation_response(

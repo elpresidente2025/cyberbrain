@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..generation_stages import GENERATION_STAGES
 from .date_validation import extract_date_weekday_pairs, repair_date_weekday_pairs, validate_date_weekday_pairs
-from .election_law import check_pledges_with_llm, detect_election_law_violation, detect_election_law_violation_hybrid
+from .election_law import detect_election_law_violation, detect_election_law_violation_hybrid
 from .heuristics import (
     BIPARTISAN_FORBIDDEN_PHRASES,
     calculate_praise_proportion,
@@ -39,24 +39,18 @@ from .keyword_validation import (
 )
 from .repetition_checker import (
     ALLOWED_ENDINGS,
-    EXPLICIT_PLEDGE_PATTERNS,
-    contains_pledge_candidate,
     detect_near_duplicate_sentences,
     detect_phrase_repetition,
     detect_sentence_repetition,
     enforce_repetition_requirements,
     extract_sentences,
     is_allowed_ending,
-    is_explicit_pledge,
 )
 from .title_quality import validate_title_quality
 from .workflow import evaluate_quality_with_llm, validate_and_retry
 
 extractSentences = extract_sentences
 isAllowedEnding = is_allowed_ending
-isExplicitPledge = is_explicit_pledge
-containsPledgeCandidate = contains_pledge_candidate
-checkPledgesWithLLM = check_pledges_with_llm
 detectElectionLawViolationHybrid = detect_election_law_violation_hybrid
 detectSentenceRepetition = detect_sentence_repetition
 detectPhraseRepetition = detect_phrase_repetition
@@ -85,14 +79,10 @@ evaluateQualityWithLLM = evaluate_quality_with_llm
 
 __all__ = [
     "ALLOWED_ENDINGS",
-    "EXPLICIT_PLEDGE_PATTERNS",
     "BIPARTISAN_FORBIDDEN_PHRASES",
     "GENERATION_STAGES",
     "extract_sentences",
     "is_allowed_ending",
-    "is_explicit_pledge",
-    "contains_pledge_candidate",
-    "check_pledges_with_llm",
     "detect_election_law_violation_hybrid",
     "detect_sentence_repetition",
     "detect_phrase_repetition",
