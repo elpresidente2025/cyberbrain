@@ -174,3 +174,33 @@ class TestHumanizePromptAliasInjection:
             keyword_aliases={"무관한키워드": ["약어"]},
         )
         assert "키워드 변형어" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# humanize 프롬프트 — "저는" 과다 반복 규칙 존재 확인
+# ---------------------------------------------------------------------------
+
+class TestHumanizePromptFirstPersonRule:
+    """_build_humanize_prompt_v2 에 '저는' 과다 반복 규칙이 포함되는지 검증."""
+
+    def test_first_person_rule_in_prompt(self):
+        from agents.core.editor_agent import EditorAgent
+        agent = EditorAgent()
+        prompt = agent._build_humanize_prompt_v2(
+            content="<p>본문</p>",
+            title="제목",
+        )
+        assert '"저는" 문두 과다 반복' in prompt
+
+    def test_first_person_flag_passed_to_humanize(self):
+        """edit_summary 에 '저는' 플래그가 있으면 prior_flags_note 에 포함."""
+        from agents.core.editor_agent import EditorAgent
+        agent = EditorAgent()
+        flag = "'저는' 문두 과다 반복 — 전체 20문장 중 12문장(60%)이 '저는'으로 시작."
+        prompt = agent._build_humanize_prompt_v2(
+            content="<p>본문</p>",
+            title="제목",
+            edit_summary=[flag],
+        )
+        assert "직전 단계 감지" in prompt
+        assert "저는" in prompt
