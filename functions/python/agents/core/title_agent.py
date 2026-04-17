@@ -272,7 +272,7 @@ class TitleAgent(Agent):
             tone = str(payload.get('sourceTone') or '').strip().lower()
             tone_reason = str(payload.get('sourceToneReason') or '').strip()
             if tone:
-                logger.info(
+                logger.warning(
                     "[TitleAgent] source_tone_self_judgment tone=%s reason=%s title=%r",
                     tone,
                     tone_reason[:120],
