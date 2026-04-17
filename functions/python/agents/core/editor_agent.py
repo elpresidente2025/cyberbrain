@@ -768,6 +768,22 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
                         f"치환 후 중복 조사 {len(dup_tokens)}건 감지 — 수동 확인 필요"
                     )
 
+        # 1.2. 고유명사 속격 "의" 삽입 기계적 치환
+        # LLM이 "계양 테크노밸리" → "계양의 테크노밸리"로 풀어쓰는 것을
+        # 프롬프트로 막지 못하므로 post-processing으로 확정 치환한다.
+        for kw in (user_keywords or []):
+            kw = str(kw).strip()
+            if not kw:
+                continue
+            parts = kw.split()
+            if len(parts) < 2:
+                continue
+            for i in range(len(parts) - 1):
+                broken = parts[i] + "의 " + " ".join(parts[i + 1:])
+                if broken in updated_content:
+                    updated_content = updated_content.replace(broken, kw)
+                    summary.append(f"고유명사 '{kw}' 속격 분해 기계적 복원")
+
         # 1.5. 문장 레벨 비문 스캔 (치환 여부와 무관하게 항상 수행)
         # 자동 교정은 하지 않음 — humanize 가 정확히 어느 문장인지 찾을 수 있도록
         # 문제 문장 원문을 editSummary 에 박아 전달한다. (이전 버전은 "N건" 카운트만

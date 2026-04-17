@@ -9564,6 +9564,34 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         raw_generation_profile = profile_bundle.get("generationProfile")
     generation_profile = _safe_dict(raw_generation_profile)
     keyword_aliases = _safe_dict(profile_bundle.get("keywordAliases"))
+    # 캐싱된 별칭이 없으면 현재 요청 텍스트에서 즉시 추출
+    if not keyword_aliases:
+        try:
+            _alias_corpus_parts = []
+            _raw_stance = str(data.get("stanceText") or "").strip()
+            if _raw_stance:
+                _alias_corpus_parts.append(_raw_stance)
+            for _bio_entry in (profile_bundle.get("bioEntries") or []):
+                _bio_text = str((_bio_entry if isinstance(_bio_entry, dict) else {}).get("content") or "").strip()
+                if _bio_text:
+                    _alias_corpus_parts.append(_bio_text)
+            _alias_corpus = "\n\n".join(_alias_corpus_parts)
+            if _alias_corpus and len(_alias_corpus) >= 50:
+                from rag_manager import extract_keyword_aliases as _extract_aliases
+                keyword_aliases = _safe_dict(
+                    _run_async_sync(_extract_aliases(_alias_corpus, user_keywords=_normalize_keywords(data.get("keywords"))))
+                )
+                if keyword_aliases and uid:
+                    try:
+                        firestore.client().collection("bios").document(uid).set(
+                            {"keywordAliases": keyword_aliases}, merge=True
+                        )
+                        logger.info("[AliasExtract] 생성 시점 추출 %d건 — uid=%s", len(keyword_aliases), uid)
+                    except Exception:
+                        pass
+        except Exception as _alias_exc:
+            logger.warning("[AliasExtract] 생성 시점 추출 실패(무시): %s", _alias_exc)
+            keyword_aliases = {}
     style_polish_mode = str(data.get("stylePolishMode") or "light").strip().lower()
     if style_polish_mode not in {"light", "medium"}:
         style_polish_mode = "light"
