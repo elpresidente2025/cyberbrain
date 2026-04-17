@@ -302,3 +302,59 @@ class TestFirstPersonMechanicalReduction:
                 count += 1
             result_parts.append(cur)
         assert count == 0  # 연속이 아니므로 제거 없음
+
+
+# ---------------------------------------------------------------------------
+# 프롬프트 누출 감지 — personalization hints 가 본문에 복사되면 제거
+# ---------------------------------------------------------------------------
+
+class TestPromptLeakageDetection:
+    """apply_hard_constraints 의 프롬프트 누출 감지 검증."""
+
+    def test_leaked_sentence_removed(self):
+        from agents.core.editor_agent import EditorAgent
+        agent = EditorAgent()
+        content = (
+            "<p>좋은 정책을 추진합니다.</p>"
+            "<p>저는 신선한 관점에서, 그리고 따뜻하고 친근한 어조로 "
+            "모든 계층을 포용하는 수용적 표현을 사용하며 "
+            "지역현안과 주민들의 실제 경험을 구체적으로 반영하고자 노력했습니다.</p>"
+        )
+        result = agent.apply_hard_constraints(
+            content=content,
+            title="제목",
+            user_keywords=[],
+            status="현역",
+        )
+        assert "신선한 관점" not in result["content"]
+        assert "좋은 정책을 추진합니다" in result["content"]
+        summaries = " ".join(result.get("editSummary", []))
+        assert "프롬프트 누출" in summaries
+
+    def test_clean_content_untouched(self):
+        from agents.core.editor_agent import EditorAgent
+        agent = EditorAgent()
+        content = "<p>저는 교통 문제를 해결하기 위해 노력합니다.</p>"
+        result = agent.apply_hard_constraints(
+            content=content,
+            title="제목",
+            user_keywords=[],
+            status="현역",
+        )
+        assert "교통 문제를 해결" in result["content"]
+        summaries = " ".join(result.get("editSummary", []))
+        assert "프롬프트 누출" not in summaries
+
+    def test_single_phrase_not_removed(self):
+        """키프레이즈 1개만 포함된 문장은 정상 문장으로 간주."""
+        from agents.core.editor_agent import EditorAgent
+        agent = EditorAgent()
+        # "신선한 관점에서" 1개만 — 실제 정치인이 쓸 수 있는 표현
+        content = "<p>저는 신선한 관점에서 이 문제를 바라봅니다.</p>"
+        result = agent.apply_hard_constraints(
+            content=content,
+            title="제목",
+            user_keywords=[],
+            status="현역",
+        )
+        assert "신선한 관점" in result["content"]

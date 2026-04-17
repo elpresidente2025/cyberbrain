@@ -852,6 +852,56 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
         if error:
             summary.append(f"LLM 실패로 인한 자동 보정: {error}")
 
+        # 0. 프롬프트 누출 감지 및 제거
+        # personalization_guide 의 hints 조각이 본문에 그대로 복사되는 현상 차단.
+        # 문장 단위로 매칭해서, 키프레이즈를 2개 이상 포함하는 문장을 통째로 제거.
+        _PROMPT_LEAK_PHRASES = [
+            "신선한 관점에서",
+            "따뜻하고 친근한 어조",
+            "모든 계층을 포용하는 수용적 표현",
+            "지역현안과 주민들의 실제 경험을 구체적으로 반영",
+            "지역 용어를 사용",
+            "개인적 경험과 사례를 풍부하게 포함",
+            "구체적인 숫자와 데이터를 적극적으로",
+            "미래 비전과 발전 방향을 제시",
+            "보수보다 혁신을 강조하는 진보적 관점",
+            "안정성과 전통 가치를 중시하는 보수적 관점",
+            "균형잡힌 중도적 관점에서",
+            "협력과 소통을 강조하는 협업적 표현",
+            "격식있고 전문적인 어조",
+        ]
+
+        def _remove_leaked_sentences(html: str) -> tuple[str, int]:
+            """<p> 블록 내 문장 중 프롬프트 키프레이즈를 2개+ 포함하면 제거."""
+            removed = 0
+
+            def _clean_p(m: re.Match) -> str:
+                nonlocal removed
+                full = m.group(0)
+                inner_m = re.match(r'(<p[^>]*>)(.*?)(</p>)', full, re.DOTALL)
+                if not inner_m:
+                    return full
+                open_tag, inner, close_tag = inner_m.groups()
+                # 문장 분리
+                sents = re.split(r'(?<=[.?!])\s+', inner)
+                clean = []
+                for s in sents:
+                    hit = sum(1 for phrase in _PROMPT_LEAK_PHRASES if phrase in s)
+                    if hit >= 2:
+                        removed += 1
+                    else:
+                        clean.append(s)
+                if not clean:
+                    return ""  # 전체 <p> 가 누출이면 태그째 제거
+                return f"{open_tag}{' '.join(clean)}{close_tag}"
+
+            result = re.sub(r'<p[^>]*>.*?</p>', _clean_p, html, flags=re.DOTALL)
+            return result, removed
+
+        updated_content, leak_count = _remove_leaked_sentences(updated_content)
+        if leak_count:
+            summary.append(f"프롬프트 누출 문장 {leak_count}건 제거")
+
         # 1. 선거법 위반 표현 필터 (기계적 치환)
         # Node.js switched to LLM delegation, but kept regex as fallback/safety. 
         # Since user complained about rules not being followed, strict regex is safer.

@@ -69,6 +69,7 @@ def build_daily_communication_prompt(options: dict) -> str:
         hints_section = f"""
 <personalization_guide>
 {personalized_hints}
+주의: 위 가이드는 글쓰기 방향 지시입니다. 이 문구를 본문에 직접 인용하거나 복사하지 마세요.
 </personalization_guide>
 """
 
