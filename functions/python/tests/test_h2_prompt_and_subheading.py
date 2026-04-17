@@ -1640,3 +1640,59 @@ def test_score_h2_aeo_flags_register_mismatch() -> None:
         full_name="홍길동",
     )
     assert "H2_REGISTER_MISMATCH" in result["issues"]
+
+
+# ── 서술형 아키타입 ──
+
+
+def test_detect_archetype_narrative_basic() -> None:
+    """사전형 종결(열다, 묻다, 잇다)은 서술형으로 감지되어야 한다."""
+    from agents.common.h2_guide import detect_h2_archetype
+
+    assert detect_h2_archetype("지역 경제의 새 판을 열다") == "서술형"
+    assert detect_h2_archetype("주민 목소리에 귀를 기울이다") == "서술형"
+    assert detect_h2_archetype("도시 재생이 삶을 바꾸다") == "서술형"
+
+
+def test_detect_archetype_narrative_not_claim() -> None:
+    """주장형 단정 패턴(이다/한다/없다)은 여전히 주장형이어야 한다."""
+    from agents.common.h2_guide import detect_h2_archetype
+
+    assert detect_h2_archetype("청년 기본소득은 필수다") == "주장형"
+    assert detect_h2_archetype("지역 격차는 바로잡아야 한다") == "주장형"
+    assert detect_h2_archetype("대안은 없다") == "주장형"
+
+
+def test_narrative_not_archetype_mismatch() -> None:
+    """서술형이 인식되면 ARCHETYPE_MISMATCH hard-fail이 발생하지 않아야 한다."""
+    plan: dict = {
+        "suggested_type": "서술형",
+        "primary_archetypes": ["질문형", "주장형"],
+        "auxiliary_archetypes": ["서술형"],
+    }
+    result = score_h2("지역 경제의 새 판을 열다", plan)
+    assert "ARCHETYPE_MISMATCH" not in result["issues"]
+
+
+def test_score_h2_aeo_flags_narrative_overuse() -> None:
+    """서술형이 세트에서 2회 이상이면 H2_NARRATIVE_OVERUSE 이슈."""
+    from agents.common.h2_scoring import score_h2_aeo
+
+    result = score_h2_aeo(
+        "지역 경제의 새 판을 열다",
+        siblings=["주민 목소리에 귀를 기울이다", "청년 정책은 어떻게 바뀌나"],
+        full_name="홍길동",
+    )
+    assert "H2_NARRATIVE_OVERUSE" in result["issues"]
+
+
+def test_score_h2_aeo_no_narrative_overuse_single() -> None:
+    """서술형이 세트에서 1회면 H2_NARRATIVE_OVERUSE 미발생."""
+    from agents.common.h2_scoring import score_h2_aeo
+
+    result = score_h2_aeo(
+        "지역 경제의 새 판을 열다",
+        siblings=["청년 정책은 어떻게 바뀌나", "지역 격차는 바로잡아야 한다"],
+        full_name="홍길동",
+    )
+    assert "H2_NARRATIVE_OVERUSE" not in result["issues"]

@@ -245,7 +245,7 @@ def _build_aeo_rules() -> str:
     return f"""<h2_rules name="소제목 작성 규칙 (AEO+SEO)" severity="critical">
   <length min="{H2_OPTIMAL_MIN}" max="{H2_MAX_LENGTH}" optimal="{H2_BEST_RANGE}"/>
   <keyword_position>핵심 키워드를 문장 앞쪽 1/3에 배치</keyword_position>
-  <principle>소제목은 '약속(promise)', 본문은 '이행(fulfillment)'. 6 아키타입 중 하나를 골라 본문이 답할 약속을 던진다.</principle>
+  <principle>소제목은 '약속(promise)', 본문은 '이행(fulfillment)'. 7 아키타입 중 하나를 골라 본문이 답할 약속을 던진다.</principle>
 
   <surface_diversity severity="critical">
     6개 H2 전체에서 **같은 표면형**이 3개 이상 반복되면 본문이 단조롭게 읽힌다. 특히 쉼표(,)로 두 구를 끊어 잇는 형태("X, Y입니다" / "X, Y인가요?")는 AEO에 강력하지만 **6개 중 최대 2개까지만** 사용하고, 나머지는 아래 형태를 섞어 분산할 것:
@@ -282,6 +282,12 @@ def _build_aeo_rules() -> str:
     <archetype name="사례형" strength="증거·현장">
       <good>청년 일자리 274명 창출 현장</good>
       <bad>좋은 성과를 냈습니다</bad>
+    </archetype>
+    <archetype name="서술형" strength="담담한 사태 제시" limit="글당 최대 1회">
+      <good>지역 경제의 새 판을 열다</good>
+      <good>주민 목소리에 귀를 기울이다</good>
+      <bad>열심히 하다</bad>
+      <note>동사 사전형(기본형) 종결. 절제된 톤으로 임팩트를 주지만 남용하면 단조로워진다. 6개 H2 중 최대 1개만 사용할 것.</note>
     </archetype>
   </archetypes>
 
@@ -388,10 +394,18 @@ def _build_aeo_examples() -> str:
     <correction before="개선되었습니다" after="민원 처리 14일→3일 단축 사례"/>
   </archetype>
 
+  <archetype name="서술형" strength="담담한 사태 제시" limit="글당 최대 1회">
+    <good>지역 경제의 새 판을 열다</good>
+    <good>주민 목소리에 귀를 기울이다</good>
+    <good>도시 재생이 현장을 바꾸다</good>
+    <correction before="열심히 하다" after="지역 경제의 새 판을 열다"/>
+    <note>동사 사전형(기본형) 종결. 절제된 톤으로 임팩트를 주지만 남용하면 단조로워진다. 6개 H2 중 최대 1개만 사용할 것.</note>
+  </archetype>
+
   <checklist>
     <must>12~25자 범위 (네이버 최적 15~22자)</must>
     <must>핵심 키워드를 앞 1/3에 배치</must>
-    <must>6 아키타입 중 하나로 본문이 답할 약속을 던질 것</must>
+    <must>7 아키타입 중 하나로 본문이 답할 약속을 던질 것</must>
     <must>H2 바로 아래 첫 문장(40~60자)은 직접 답변</must>
     <must>문장 형태 다양성: 6개 H2 전체에서 쉼표(,)로 두 구를 끊어 잇는 형태(예: "X, Y합니다" / "X, Y인가요?")는 **최대 2개**. 나머지는 완결형 서술문·완결형 질문문·구두점 없는 명사구·동사종결형 등 서로 다른 형태로 분산할 것. 같은 표면형이 3개 이상 반복되면 본문 전체가 단조롭게 보인다.</must>
     <ban>10자 미만 또는 25자 초과</ban>
@@ -442,7 +456,7 @@ def _build_assertive_examples() -> str:
 
 
 # ---------------------------------------------------------------------------
-# H2 Archetype System — "소제목이 약속, 본문이 이행" AEO 구조 (6 아키타입)
+# H2 Archetype System — "소제목이 약속, 본문이 이행" AEO 구조 (7 아키타입)
 # ---------------------------------------------------------------------------
 #
 # Why: 전통적 표면 분류(명사형/단정형/데이터형…)는 어조/문장 형태만 구분할 뿐
@@ -455,7 +469,7 @@ def _build_assertive_examples() -> str:
 #   질문형 → 대조형 → 사례형 → 목표형 → 이유형 → 주장형
 #   (overlap 시 더 구체적인 쪽 우선)
 
-H2_ARCHETYPE_NAMES = ("질문형", "목표형", "주장형", "이유형", "대조형", "사례형")
+H2_ARCHETYPE_NAMES = ("질문형", "목표형", "주장형", "이유형", "대조형", "사례형", "서술형")
 
 H2_ARCHETYPE_DESCRIPTIONS = {
     "질문형": "본문이 답해야 할 질문을 소제목으로 던진다. PAA·스니펫에 가장 강함.",
@@ -493,7 +507,9 @@ _H2_ARCH_GOAL_RE = re.compile(
 _H2_ARCH_CLAIM_RE = re.compile(
     r"("
     # 단정/선언 종결어미 (literal)
-    r"이다$|아니다$|한다$|된다$|없다$|있다$|"
+    # Note: 독립 "이다$" 제거 — "기울이다"/"줄이다" 등 사동사 오매칭 방지.
+    # 긍정 지정사(copula) 패턴은 아니다/뿐이다/마땅하다 + 주장형 키워드로 커버.
+    r"아니다$|한다$|된다$|없다$|있다$|"
     r"해야(?:\s?한다)?$|않다$|뿐이다$|마땅하다$|"
     # -는다 (받침 있는 어간 + 는다): 찾는다, 읽는다, 받는다, 짓는다
     r"는다\.?$|"
@@ -505,6 +521,10 @@ _H2_ARCH_CLAIM_RE = re.compile(
     # 주장형 어휘 키워드 (종결 무관)
     r"거부|회피|남용|파괴|왜곡|무너|실패|한계|정당|필수|핵심|바로잡)"
 )
+# 서술형: 동사/형용사 사전형(기본형) 종결 — 열다, 묻다, 잇다, 나서다, 돌아보다
+# 주장형(한다/된다/이다 등 단정 패턴)에 매치되지 않은 나머지 "~다" 종결을 포착.
+# 우선순위상 주장형 뒤에 위치하므로 단정 패턴이 먼저 잡힌다.
+_H2_ARCH_NARRATIVE_RE = re.compile(r"[가-힣]+다\.?$")
 _H2_ARCH_REASON_RE = re.compile(
     r"(^왜\s|왜\s[가-힣]|이유|까닭|배경|원인|까닭은|왜냐|때문)"
 )
@@ -537,6 +557,7 @@ _H2_ARCHETYPE_DETECTORS = (
     ("목표형", _H2_ARCH_GOAL_RE),
     ("이유형", _H2_ARCH_REASON_RE),
     ("주장형", _H2_ARCH_CLAIM_RE),
+    ("서술형", _H2_ARCH_NARRATIVE_RE),
 )
 
 
@@ -584,11 +605,16 @@ def _detect_archetype_kiwi(text: str) -> "str | None":
     if _H2_ARCH_REASON_RE.search(plain):
         return "이유형"
 
-    # 6. 주장형 — declarative EF OR claim regex (surface)
-    if cls_class == "declarative":
-        return "주장형"
+    # 6. 주장형 — claim regex (surface) 먼저 체크
     if _H2_ARCH_CLAIM_RE.search(plain):
         return "주장형"
+
+    # 7. 서술형 — declarative EF 이지만 주장형 claim 패턴이 아닌 사전형 종결
+    #    (열다, 묻다, 잇다, 나서다 등)
+    if cls_class == "declarative":
+        return "서술형"
+    if _H2_ARCH_NARRATIVE_RE.search(plain):
+        return "서술형"
 
     return ""
 
@@ -660,13 +686,13 @@ def is_h2_archetype(heading: str, archetype: str) -> bool:
 #   - 여론조사 매치업: 질문형·대조형 주, 사례형 보조
 
 CATEGORY_ARCHETYPE_MAP = {
-    "current-affairs": {"primary": ["질문형", "주장형", "이유형"], "auxiliary": ["대조형", "사례형"]},
-    "policy-proposal": {"primary": ["질문형", "목표형", "주장형", "이유형"], "auxiliary": ["사례형"]},
-    "activity-report": {"primary": ["목표형", "이유형"], "auxiliary": ["사례형"]},
-    "daily-communication": {"primary": ["질문형", "이유형"], "auxiliary": ["사례형"]},
-    "local-issues": {"primary": ["질문형", "목표형", "주장형", "이유형"], "auxiliary": ["사례형"]},
-    "educational-content": {"primary": ["질문형", "이유형"], "auxiliary": ["대조형", "사례형"]},
-    "default": {"primary": ["질문형", "주장형", "이유형"], "auxiliary": ["대조형", "사례형"]},
+    "current-affairs": {"primary": ["질문형", "주장형", "이유형"], "auxiliary": ["대조형", "사례형", "서술형"]},
+    "policy-proposal": {"primary": ["질문형", "목표형", "주장형", "이유형"], "auxiliary": ["사례형", "서술형"]},
+    "activity-report": {"primary": ["목표형", "이유형"], "auxiliary": ["사례형", "서술형"]},
+    "daily-communication": {"primary": ["질문형", "이유형"], "auxiliary": ["사례형", "서술형"]},
+    "local-issues": {"primary": ["질문형", "목표형", "주장형", "이유형"], "auxiliary": ["사례형", "서술형"]},
+    "educational-content": {"primary": ["질문형", "이유형"], "auxiliary": ["대조형", "사례형", "서술형"]},
+    "default": {"primary": ["질문형", "주장형", "이유형"], "auxiliary": ["대조형", "사례형", "서술형"]},
 }
 
 _COMMEMORATIVE_ARCHETYPES = {"primary": ["주장형", "이유형"], "auxiliary": []}

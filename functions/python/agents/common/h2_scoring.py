@@ -788,6 +788,16 @@ def score_h2_aeo(
         issues.append("H2_REGISTER_MISMATCH")
         uniqueness_score = min(uniqueness_score, 0.5)
 
+    # 서술형(사전형 종결) 빈도 제한: 글당 최대 1회
+    if detect_h2_archetype(text) == "서술형":
+        narrative_count = sum(
+            1 for h in all_headings_for_overlap
+            if detect_h2_archetype(h) == "서술형"
+        )
+        if narrative_count > 1:
+            issues.append("H2_NARRATIVE_OVERUSE")
+            uniqueness_score = min(uniqueness_score, 0.5)
+
     breakdown["uniqueness"] = uniqueness_score
 
     body_tokens = _body_first_sentence_tokens(body_first_sentence)
