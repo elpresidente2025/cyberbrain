@@ -154,6 +154,123 @@ USER_PROVIDED_TITLE_FEW_SHOT: Dict[str, Dict[str, Any]] = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# Title Archetype Ending Constraints
+# ---------------------------------------------------------------------------
+# 각 family 별 종결형 제약. classify_title_ending() 반환값(class) 기준.
+# H2 아키타입 검출(h2_guide.py)이 소제목에서 효과를 본 패턴을 제목에 이식.
+#   Prong 1 (prompt): build_archetype_constraint_block() → LLM 에게 제약 고지
+#   Prong 2 (scorer): _assess_title_ending_constraint() → 위반 시 감점
+TITLE_ENDING_CONSTRAINTS: Dict[str, Dict[str, Any]] = {
+    'SLOGAN_COMMITMENT': {
+        'label': '슬로건·다짐형',
+        'allowed_endings': ['commitment', 'noun_end'],
+        'forbidden_endings': ['real_question', 'rhetorical_question'],
+        'forbidden_reason': '슬로건·다짐형 제목은 질문형 종결이 아니라 경어체 다짐(-겠습니다/-드립니다) 또는 명사구로 끝나야 합니다.',
+        'prompt_instruction': '종결은 반드시 다짐형 경어체(-겠습니다/-드립니다/-지킵니다) 또는 명사구. 의문형(-을까?/-할까?/-인가요?/-는?) 절대 금지.',
+        'penalty_points': 15,
+    },
+    'QUESTION_ANSWER': {
+        'label': '질문-해답',
+        'allowed_endings': ['real_question'],
+        'forbidden_endings': ['commitment'],
+        'forbidden_reason': '질문-해답형 제목은 실질 의문문(의문사+?)으로 끝나야 합니다. 다짐형 종결은 이 패밀리에 맞지 않습니다.',
+        'prompt_instruction': '종결은 반드시 실질 의문문(왜/어떻게/얼마/무엇 + ?). 수사적 반문(-할까?/-될까?) 금지.',
+        'penalty_points': 12,
+    },
+    'DATA_BASED': {
+        'label': '구체적 데이터',
+        'allowed_endings': ['noun_end', 'declarative', 'commitment'],
+        'forbidden_endings': ['rhetorical_question'],
+        'forbidden_reason': '데이터 기반 제목은 수치+성과 명사구 또는 선언형으로 끝나야 합니다. 수사적 반문은 데이터 신뢰를 약화시킵니다.',
+        'prompt_instruction': '종결은 수치+성과 명사구, 경어체 선언형, 또는 다짐형. 수사적 반문(-할까?) 금지.',
+        'penalty_points': 10,
+    },
+    'COMPARISON': {
+        'label': '비교·대조',
+        'allowed_endings': ['noun_end', 'declarative', 'real_question'],
+        'forbidden_endings': ['rhetorical_question'],
+        'forbidden_reason': '비교·대조 제목은 전후 대비 명사구 또는 실질 질문으로 끝나야 합니다.',
+        'prompt_instruction': '종결은 대비 구조 명사구(→), 경어체 선언형, 또는 실질 의문문. 수사적 반문 금지.',
+        'penalty_points': 8,
+    },
+    'LOCAL_FOCUSED': {
+        'label': '지역 맞춤형',
+        'allowed_endings': ['noun_end', 'declarative', 'commitment', 'real_question'],
+        'forbidden_endings': ['rhetorical_question'],
+        'forbidden_reason': '지역 맞춤형 제목은 지역+수치 명사구, 경어체, 또는 실질 질문으로 끝나야 합니다.',
+        'prompt_instruction': '종결은 지역+수치 명사구, 경어체 선언형, 다짐형, 또는 실질 의문문. 수사적 반문 금지.',
+        'penalty_points': 8,
+    },
+    'EXPERT_KNOWLEDGE': {
+        'label': '전문 지식',
+        'allowed_endings': ['noun_end', 'declarative', 'real_question'],
+        'forbidden_endings': ['rhetorical_question'],
+        'forbidden_reason': '전문 지식 제목은 법안/조례 명사구 또는 경어체로 끝나야 합니다.',
+        'prompt_instruction': '종결은 전문 용어 명사구 또는 경어체 선언형. 수사적 반문 금지.',
+        'penalty_points': 8,
+    },
+    'TIME_BASED': {
+        'label': '시간 중심',
+        'allowed_endings': ['noun_end', 'declarative'],
+        'forbidden_endings': ['rhetorical_question', 'commitment'],
+        'forbidden_reason': '시간 중심 제목은 시점+성과 명사구 또는 선언형으로 끝나야 합니다. 다짐형이나 수사적 반문은 정기 보고 톤에 맞지 않습니다.',
+        'prompt_instruction': '종결은 시점+성과 명사구 또는 경어체 선언형. 다짐형/수사적 반문 금지.',
+        'penalty_points': 8,
+    },
+    'ISSUE_ANALYSIS': {
+        'label': '이슈·분석',
+        'allowed_endings': ['noun_end', 'declarative', 'real_question'],
+        'forbidden_endings': ['rhetorical_question'],
+        'forbidden_reason': '이슈 분석 제목은 분석 명사구, 선언형, 또는 실질 질문으로 끝나야 합니다.',
+        'prompt_instruction': '종결은 분석 명사구, 경어체 선언형, 또는 실질 의문문. 수사적 반문 금지.',
+        'penalty_points': 8,
+    },
+    'VIRAL_HOOK': {
+        'label': '서사 후킹',
+        'allowed_endings': ['noun_end', 'declarative', 'real_question', 'other'],
+        'forbidden_endings': ['rhetorical_question'],
+        'forbidden_reason': '서사 후킹 제목은 미완결 서사 또는 실질 질문으로 끝나야 합니다. 수사적 반문은 AEO 에서 금지입니다.',
+        'prompt_instruction': '종결은 미완결 명사, 실질 의문문(왜/어떻게), 또는 도발적 평서문. -할까?/-될까? 수사적 반문 절대 금지.',
+        'penalty_points': 10,
+    },
+    'COMMENTARY': {
+        'label': '논평·관점',
+        'allowed_endings': ['noun_end', 'declarative', 'real_question'],
+        'forbidden_endings': ['commitment', 'rhetorical_question'],
+        'forbidden_reason': '논평·관점 제목은 도발적 평서문 또는 쟁점 질문으로 끝나야 합니다. 다짐형은 논평 톤에 맞지 않습니다.',
+        'prompt_instruction': '종결은 단정적 평서문 또는 쟁점 실질 질문. 다짐형(-겠습니다) 및 수사적 반문 금지.',
+        'penalty_points': 10,
+    },
+}
+
+
+def build_archetype_constraint_block(family_id: str) -> str:
+    """family 별 종결형 제약을 프롬프트 XML 블록으로 반환한다."""
+    constraint = TITLE_ENDING_CONSTRAINTS.get(str(family_id or '').strip())
+    if not constraint:
+        return ''
+    instruction = constraint.get('prompt_instruction', '')
+    if not instruction:
+        return ''
+    forbidden = constraint.get('forbidden_endings', [])
+    allowed = constraint.get('allowed_endings', [])
+    forbidden_xml = '\n'.join(
+        f'    <forbidden>{e}</forbidden>' for e in forbidden
+    )
+    allowed_xml = '\n'.join(
+        f'    <allowed>{e}</allowed>' for e in allowed
+    )
+    return f"""<archetype_ending_constraint family="{family_id}" priority="critical">
+  <instruction>{instruction}</instruction>
+  <ending_rules>
+{allowed_xml}
+{forbidden_xml}
+  </ending_rules>
+  <enforcement>이 제약은 content_type 분류에서 결정론적으로 도출됐다. sourceTone 자기판정과 무관하게 반드시 준수할 것. 위반 시 scorer 에서 감점 처리된다.</enforcement>
+</archetype_ending_constraint>"""
+
+
 TITLE_TYPES = {
     'VIRAL_HOOK': {
         'id': 'VIRAL_HOOK',

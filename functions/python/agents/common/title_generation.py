@@ -41,6 +41,7 @@ from .title_prompt_parts import (
     TITLE_TYPES,
     build_common_title_anti_pattern_instruction,
     build_competitor_intent_title_instruction,
+    build_archetype_constraint_block,
     build_event_title_policy_instruction,
     build_poll_focus_title_instruction,
     build_title_skeleton_protocol,
@@ -160,7 +161,8 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
         detected_type_id = 'ISSUE_ANALYSIS'
 
     primary_type = TITLE_TYPES.get(detected_type_id) or TITLE_TYPES['DATA_BASED']
-    
+    archetype_constraint_block = build_archetype_constraint_block(detected_type_id)
+
     number_validation = extract_numbers_from_content(content_preview)
     election_compliance = get_election_compliance_instruction(status)
     keyword_strategy = get_keyword_strategy_instruction(
@@ -393,6 +395,8 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     판정이 끝난 뒤에만 제목을 생성하고, 제목의 종결·각도는 위 판정에 맞춘다.
   </output_contract>
 </source_tone_analysis>
+
+{archetype_constraint_block}
 
 {objective_block}
 

@@ -657,3 +657,118 @@ def test_title_response_schema_includes_source_tone_fields():
     assert "sourceTone" not in required
     assert "sourceToneReason" not in required
     assert "title" in required
+
+
+# ── Archetype ending constraint tests ──────────────────────────────
+
+
+def test_archetype_constraint_block_rendered_for_slogan():
+    from agents.common.title_prompt_parts import build_archetype_constraint_block
+
+    block = build_archetype_constraint_block('SLOGAN_COMMITMENT')
+    assert '<archetype_ending_constraint' in block
+    assert 'family="SLOGAN_COMMITMENT"' in block
+    assert '질문' in block or 'forbidden' in block
+
+
+def test_archetype_constraint_block_empty_for_unknown():
+    from agents.common.title_prompt_parts import build_archetype_constraint_block
+
+    assert build_archetype_constraint_block('NONEXISTENT') == ''
+
+
+def test_archetype_constraint_block_in_prompt():
+    from agents.common.title_generation import build_title_prompt
+
+    prompt = build_title_prompt({
+        "topic": "샘플구 시민 약속",
+        "contentPreview": "샘플구 시민 여러분께 약속드리겠습니다.",
+        "fullName": "홍길동",
+        "_forcedType": "SLOGAN_COMMITMENT",
+    })
+    assert "<archetype_ending_constraint" in prompt
+    tone_idx = prompt.find("</source_tone_analysis>")
+    arch_idx = prompt.find("<archetype_ending_constraint")
+    obj_idx = prompt.find("<objective")
+    assert tone_idx < arch_idx < obj_idx
+
+
+def test_ending_constraint_slogan_forbids_question():
+    from agents.common.title_scoring import _assess_title_ending_constraint
+
+    result = _assess_title_ending_constraint(
+        '샘플구 테크노밸리, 4년간 무엇이 달라졌을까요?',
+        {'_forcedType': 'SLOGAN_COMMITMENT'},
+    )
+    assert not result['passed']
+    assert result['ending_class'] in ('real_question', 'rhetorical_question')
+
+
+def test_ending_constraint_slogan_allows_commitment():
+    from agents.common.title_scoring import _assess_title_ending_constraint
+
+    result = _assess_title_ending_constraint(
+        '홍길동, 샘플구를 책임감으로 끝까지 뛰겠습니다',
+        {'_forcedType': 'SLOGAN_COMMITMENT'},
+    )
+    assert result['passed']
+
+
+def test_ending_constraint_question_answer_allows_real_question():
+    from agents.common.title_scoring import _assess_title_ending_constraint
+
+    result = _assess_title_ending_constraint(
+        '샘플구 청년 주거, 월세 지원 얼마까지?',
+        {'_forcedType': 'QUESTION_ANSWER'},
+    )
+    assert result['passed']
+
+
+def test_ending_constraint_commentary_forbids_commitment():
+    from agents.common.title_scoring import _assess_title_ending_constraint
+
+    result = _assess_title_ending_constraint(
+        '홍길동, 샘플구를 끝까지 지키겠습니다',
+        {'_forcedType': 'COMMENTARY'},
+    )
+    assert not result['passed']
+
+
+def test_regex_fallback_detects_commitment():
+    from agents.common.title_scoring import _detect_ending_class_regex_fallback
+
+    assert _detect_ending_class_regex_fallback('끝까지 뛰겠습니다') == 'commitment'
+
+
+def test_regex_fallback_detects_real_question():
+    from agents.common.title_scoring import _detect_ending_class_regex_fallback
+
+    assert _detect_ending_class_regex_fallback('월세 지원 얼마까지?') == 'real_question'
+
+
+def test_regex_fallback_detects_rhetorical_question():
+    from agents.common.title_scoring import _detect_ending_class_regex_fallback
+
+    assert _detect_ending_class_regex_fallback('성과를 낼 수 있을까?') == 'rhetorical_question'
+
+
+def test_tone_family_compatibility_pledge_slogan():
+    from agents.common.title_common import assess_tone_family_compatibility
+
+    result = assess_tone_family_compatibility('pledge', 'SLOGAN_COMMITMENT')
+    assert result['compatible']
+
+
+def test_tone_family_compatibility_pledge_question_answer():
+    from agents.common.title_common import assess_tone_family_compatibility
+
+    result = assess_tone_family_compatibility('pledge', 'QUESTION_ANSWER')
+    assert not result['compatible']
+
+
+def test_tone_family_compatibility_hybrid_all():
+    from agents.common.title_common import assess_tone_family_compatibility
+
+    for family in ('SLOGAN_COMMITMENT', 'QUESTION_ANSWER', 'DATA_BASED', 'COMMENTARY'):
+        result = assess_tone_family_compatibility('hybrid', family)
+        assert result['compatible'], f'hybrid should be compatible with {family}'

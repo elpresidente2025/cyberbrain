@@ -278,6 +278,17 @@ class TitleAgent(Agent):
                     tone_reason[:120],
                     title,
                 )
+                from agents.common.title_common import (
+                    assess_tone_family_compatibility,
+                    resolve_title_family,
+                )
+                selected_family = resolve_title_family(params)
+                compat = assess_tone_family_compatibility(tone, selected_family)
+                if not compat.get('compatible', True):
+                    logger.warning(
+                        "[TitleAgent] tone_family_incompatibility %s",
+                        compat.get('reason', ''),
+                    )
             return title
 
         # allowDegradedPass: 호출 측(예: 파이프라인 최종 제목 단계) 이 설정하면,

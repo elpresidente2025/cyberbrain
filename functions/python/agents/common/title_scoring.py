@@ -1,7 +1,10 @@
 """?? ?? ??? ?? ??? ??."""
 
+import logging
 import re
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from .title_common import (
     SLOT_PLACEHOLDER_NAMES,
@@ -77,6 +80,65 @@ _NON_EVENT_ANNOUNCEMENT_SURFACE_PATTERNS = (
 
 
 _BODY_ANCHOR_BUCKETS = ('policy', 'institution', 'numeric', 'year')
+
+_COMMITMENT_ENDING_RE = re.compile(
+    r'(겠습니다|하겠다|드리겠|드립니다|올립니다|약속드립|앞장서겠|뛰겠습니다|'
+    r'지키겠습니다|이루겠습니다|만들겠습니다|책임지겠습니다|완성하겠습니다)\s*[.!]*\s*$'
+)
+_INTERROGATIVE_CUES_TITLE = ('왜', '무엇', '무슨', '어떻게', '어떤', '어디', '언제', '누가', '얼마', '몇')
+
+
+def _detect_ending_class_regex_fallback(title: str) -> str:
+    """kiwi 불가 시 제목 종결형을 regex 로 분류한다."""
+    s = str(title or '').strip()
+    if not s:
+        return 'other'
+    if _COMMITMENT_ENDING_RE.search(s):
+        return 'commitment'
+    if s.rstrip().endswith('?') or re.search(r'[?？]\s*$', s):
+        if any(cue in s for cue in _INTERROGATIVE_CUES_TITLE):
+            return 'real_question'
+        return 'rhetorical_question'
+    if re.search(r'(나요|인가요|인가|는가|는지|을지|까요)\s*$', s):
+        if any(cue in s for cue in _INTERROGATIVE_CUES_TITLE):
+            return 'real_question'
+        return 'rhetorical_question'
+    if re.search(r'(합니다|됩니다|입니다|습니다)\s*[.!]*\s*$', s):
+        return 'declarative'
+    last_token = s.split()[-1] if s.split() else ''
+    if re.fullmatch(r'[가-힣]{2,}', last_token) and not re.search(r'(다|요|까|나|지)$', last_token):
+        return 'noun_end'
+    return 'other'
+
+
+def _assess_title_ending_constraint(title: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """제목 종결형이 family 아키타입 제약에 부합하는지 평가한다."""
+    from .title_prompt_parts import TITLE_ENDING_CONSTRAINTS
+    from . import korean_morph
+
+    selected_family = resolve_title_family(params)
+    constraint = TITLE_ENDING_CONSTRAINTS.get(selected_family)
+    if not constraint:
+        return {'passed': True, 'penalty': 0, 'ending_class': '', 'family': selected_family, 'reason': ''}
+
+    normalized = normalize_title_surface(title) or str(title or '').strip()
+    ending_info = korean_morph.classify_title_ending(normalized)
+
+    if ending_info is None:
+        ending_class = _detect_ending_class_regex_fallback(normalized)
+    else:
+        ending_class = ending_info.get('class', 'other')
+
+    forbidden = constraint.get('forbidden_endings', [])
+    if ending_class in forbidden:
+        return {
+            'passed': False,
+            'penalty': int(constraint.get('penalty_points', 10)),
+            'ending_class': ending_class,
+            'family': selected_family,
+            'reason': constraint.get('forbidden_reason', ''),
+        }
+    return {'passed': True, 'penalty': 0, 'ending_class': ending_class, 'family': selected_family, 'reason': ''}
 
 
 def _assess_body_anchor_coverage(title: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -822,6 +884,34 @@ def calculate_title_quality_score(
     family_fit_reason = str(family_fit.get('reason') or '').strip()
     if family_fit_reason:
         suggestions.append(family_fit_reason)
+
+    # Archetype ending constraint (soft penalty Phase 1)
+    ending_constraint = _assess_title_ending_constraint(title, params)
+    if not ending_constraint.get('passed', True):
+        _ec_penalty = int(ending_constraint.get('penalty', 10))
+        _ec_reason = str(ending_constraint.get('reason') or '')
+        breakdown['endingConstraint'] = {
+            'score': max(0, 10 - _ec_penalty),
+            'max': 10,
+            'status': '위반',
+            'ending_class': ending_constraint.get('ending_class', ''),
+            'family': ending_constraint.get('family', ''),
+        }
+        if _ec_reason:
+            suggestions.append(_ec_reason)
+        logger.warning(
+            "[TitleScorer] ending_constraint_violation family=%s ending=%s title=%r",
+            ending_constraint.get('family', ''),
+            ending_constraint.get('ending_class', ''),
+            title,
+        )
+    else:
+        breakdown['endingConstraint'] = {
+            'score': 10,
+            'max': 10,
+            'status': '준수',
+            'ending_class': ending_constraint.get('ending_class', ''),
+        }
 
     # 1. Length Score (Max 20)
     if TITLE_LENGTH_OPTIMAL_MIN <= title_length <= TITLE_LENGTH_OPTIMAL_MAX:

@@ -309,6 +309,41 @@ def resolve_title_family(params: Optional[Dict[str, Any]]) -> str:
         return selected_family
     return "VIRAL_HOOK"
 
+# ---------------------------------------------------------------------------
+# Tone ↔ Family 호환성 맵 (Phase 1: 로깅 전용)
+# ---------------------------------------------------------------------------
+TONE_FAMILY_COMPATIBILITY: Dict[str, set] = {
+    'pledge': {'SLOGAN_COMMITMENT', 'LOCAL_FOCUSED', 'DATA_BASED'},
+    'report': {'DATA_BASED', 'TIME_BASED', 'COMPARISON', 'LOCAL_FOCUSED', 'EXPERT_KNOWLEDGE', 'ISSUE_ANALYSIS'},
+    'question': {'QUESTION_ANSWER', 'VIRAL_HOOK', 'ISSUE_ANALYSIS'},
+    'commentary': {'COMMENTARY', 'ISSUE_ANALYSIS', 'VIRAL_HOOK', 'COMPARISON'},
+    'hybrid': set(_TITLE_FAMILY_IDS),
+}
+
+
+def assess_tone_family_compatibility(
+    source_tone: str,
+    selected_family: str,
+) -> Dict[str, Any]:
+    """LLM sourceTone 자기판정과 regex family 선택의 호환성을 평가한다."""
+    tone = str(source_tone or '').strip().lower()
+    family = str(selected_family or '').strip()
+    if not tone or tone not in TONE_FAMILY_COMPATIBILITY:
+        return {'compatible': True, 'tone': tone, 'family': family, 'reason': ''}
+    compatible_families = TONE_FAMILY_COMPATIBILITY[tone]
+    if family in compatible_families:
+        return {'compatible': True, 'tone': tone, 'family': family, 'reason': ''}
+    return {
+        'compatible': False,
+        'tone': tone,
+        'family': family,
+        'reason': (
+            f'LLM sourceTone="{tone}" 이지만 regex family="{family}" 와 비호환. '
+            f'"{tone}" 호환 family: {", ".join(sorted(compatible_families))}'
+        ),
+    }
+
+
 def extract_numbers_from_content(content: str) -> Dict[str, Any]:
     if not content:
         return {'numbers': [], 'instruction': ''}
