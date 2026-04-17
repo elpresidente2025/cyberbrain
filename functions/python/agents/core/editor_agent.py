@@ -149,6 +149,23 @@ class EditorAgent(Agent):
             ):
                 constrained['editSummary'].append("사용자 문체 일부 반영")
 
+            # 3.5. post-humanize 고유명사 속격 "의" 재삽입 기계적 치환
+            # humanize LLM이 "계양의 테크노밸리"를 다시 집어넣을 수 있으므로
+            # apply_hard_constraints 에서 한 번, humanize 이후 한 번 더 돌린다.
+            post_content = constrained['content']
+            for kw in (user_keywords or []):
+                kw_clean = str(kw).strip()
+                if not kw_clean:
+                    continue
+                parts = kw_clean.split()
+                if len(parts) < 2:
+                    continue
+                for i in range(len(parts) - 1):
+                    broken = parts[i] + "의 " + " ".join(parts[i + 1:])
+                    if broken in post_content:
+                        post_content = post_content.replace(broken, kw_clean)
+            constrained['content'] = post_content
+
             # 4. post-humanize 필수 키워드 최소 등장 검증 (경고만, 자동 치환 안 함)
             # humanize 가 지시어로 과치환해 고유명사 빈도가 떨어지는 케이스를 플래그.
             MIN_BODY_OCCURRENCES = 3
