@@ -1028,10 +1028,11 @@ AI가 이미 학습하고 있습니다.
                   sx={{
                     fontWeight: 700,
                     color: 'var(--color-primary)',
-                    fontSize: { xs: '2.5rem', sm: '3.5rem', md: '5rem', lg: '6rem' },
+                    fontSize: 'clamp(2.2rem, 10vw, 6rem)',
                     letterSpacing: '-0.03em',
                     lineHeight: 1,
-                    mb: 2
+                    mb: 2,
+                    whiteSpace: 'nowrap'
                   }}
                 >
                   월 50,000원
