@@ -1440,10 +1440,28 @@ class SubheadingAgent(Agent):
         tone_block = build_category_tone_block(category or "default")
         tone_section = f"\n{tone_block}\n" if tone_block else ""
 
+        _ARCHETYPE_PATTERN_HINTS = {
+            "질문형": "종결: -까/-나/-나요/-인가요 (예: '무엇이 달라지나', '어떻게 준비할까')",
+            "목표형": "종결: -겠습니다/-위한/-약속 (예: '3가지 약속', '반드시 지키겠습니다')",
+            "주장형": "종결: -ㄴ다/-는다/-해야 한다/-필수다 (예: '바로잡아야 한다', '필수다')",
+            "이유형": "종결: -이유/-까닭/-때문 (예: '필요한 이유', '주목해야 할 까닭')",
+            "대조형": "종결: -다른가/-차이/-반면 (예: '어떻게 다른가', '무엇이 다른가')",
+            "사례형": "숫자+단위 필수 (예: '274명 창출 현장', '50% 감면 실적')",
+        }
+
         failed_xml_parts: List[str] = []
         for idx in failing_indices:
             plan = plans[idx]
-            issues_text = ", ".join(issues_map.get(idx, [])) or "(없음)"
+            raw_issues = issues_map.get(idx, [])
+            issues_parts = []
+            for iss in raw_issues:
+                if iss == "ARCHETYPE_MISMATCH":
+                    stype = str(plan.get("suggested_type") or "")
+                    hint = _ARCHETYPE_PATTERN_HINTS.get(stype, "")
+                    issues_parts.append(f"ARCHETYPE_MISMATCH — {stype} 패턴 불일치. {hint}" if hint else iss)
+                else:
+                    issues_parts.append(iss)
+            issues_text = ", ".join(issues_parts) or "(없음)"
             ctx_slice = str(plan.get("section_text") or "")[:400]
             numerics = ", ".join(plan.get("numerics") or []) or "(없음)"
             failed_xml_parts.append(
