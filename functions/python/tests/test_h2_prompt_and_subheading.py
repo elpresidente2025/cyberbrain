@@ -1557,3 +1557,42 @@ def test_distribute_keyword_assignments_does_not_reassign_to_absent_keyword() ->
         )
         candidates = plan.get("candidate_keywords") or []
         assert "유령 키워드" not in candidates
+
+
+def test_detect_sibling_prefix_overlap_catches_duplicate_lead() -> None:
+    """첫 어절이 같은 H2 가 2개 이상이면 overlap 반환."""
+    from agents.common.h2_scoring import detect_sibling_prefix_overlap
+
+    headings = [
+        "인천, 17개 시도 중 유일한 미감면",
+        "인천, 뒤처진 산단 오명 벗을 수 있을까",
+        "계양구, 서울 접근성으로 도약할 수 있을까",
+    ]
+    overlaps = detect_sibling_prefix_overlap(headings)
+    tokens = [tok for tok, _ in overlaps]
+    assert "인천" in tokens
+
+
+def test_detect_sibling_prefix_overlap_no_false_positive() -> None:
+    """첫 어절이 모두 다르면 빈 리스트."""
+    from agents.common.h2_scoring import detect_sibling_prefix_overlap
+
+    headings = [
+        "계양 테크노밸리, 지난 4년 무엇을 했나",
+        "인천시, 무엇이 달라지나요",
+        "산업 단지 취득세, 최대 75% 감면",
+    ]
+    assert detect_sibling_prefix_overlap(headings) == []
+
+
+def test_score_h2_aeo_flags_prefix_overlap_in_siblings() -> None:
+    """형제 H2 와 첫 어절이 겹치면 H2_SIBLING_PREFIX_OVERLAP 이슈 발생."""
+    from agents.common.h2_scoring import score_h2_aeo
+
+    result = score_h2_aeo(
+        "인천, 뒤처진 산단 오명 벗을 수 있을까",
+        siblings=["인천, 17개 시도 중 유일한 미감면"],
+        full_name="홍길동",
+    )
+    assert "H2_SIBLING_PREFIX_OVERLAP" in result["issues"]
+    assert result["breakdown"]["uniqueness"] <= 0.5

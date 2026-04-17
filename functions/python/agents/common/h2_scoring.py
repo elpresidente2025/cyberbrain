@@ -41,6 +41,7 @@ __all__ = [
     "count_entity_distribution",
     "compute_anchor_cap",
     "detect_sibling_suffix_overlap",
+    "detect_sibling_prefix_overlap",
 ]
 
 
@@ -615,6 +616,25 @@ def detect_sibling_suffix_overlap(headings: List[str]) -> List[tuple]:
     return overlaps
 
 
+def detect_sibling_prefix_overlap(headings: List[str]) -> List[tuple]:
+    """인접 H2 간 첫 어절 중복을 탐지한다.
+
+    "인천, …" 이 연속 2개 이상이면 독자에게 복붙 느낌을 준다.
+    """
+    cleaned = [str(h or "").strip() for h in headings or []]
+    cleaned = [h for h in cleaned if h]
+    if len(cleaned) < 2:
+        return []
+
+    first_counts: Dict[str, int] = {}
+    for heading in cleaned:
+        tokens = re.findall(r"[가-힣A-Za-z0-9]+", heading)
+        if tokens:
+            first_counts[tokens[0]] = first_counts.get(tokens[0], 0) + 1
+
+    return [(tok, cnt) for tok, cnt in first_counts.items() if cnt >= 2]
+
+
 def _has_question_form(heading: str) -> bool:
     text = str(heading or "").strip()
     if not text:
@@ -718,7 +738,8 @@ def score_h2_aeo(
             issues.append("H2_CANONICAL_FORM_MISMATCH")
 
     sibling_list = [str(item or "").strip() for item in (siblings or []) if str(item).strip()]
-    overlaps = detect_sibling_suffix_overlap(sibling_list + [text])
+    all_headings_for_overlap = sibling_list + [text]
+    overlaps = detect_sibling_suffix_overlap(all_headings_for_overlap)
     if len(overlaps) >= _SIBLING_SUFFIX_OVERLAP_THRESHOLD:
         issues.append("H2_SIBLING_SUFFIX_OVERLAP")
         uniqueness_score = 0.4
@@ -726,6 +747,12 @@ def score_h2_aeo(
         uniqueness_score = 0.7
     else:
         uniqueness_score = 1.0
+
+    prefix_overlaps = detect_sibling_prefix_overlap(all_headings_for_overlap)
+    if prefix_overlaps:
+        issues.append("H2_SIBLING_PREFIX_OVERLAP")
+        uniqueness_score = min(uniqueness_score, 0.5)
+
     breakdown["uniqueness"] = uniqueness_score
 
     body_tokens = _body_first_sentence_tokens(body_first_sentence)
