@@ -7602,11 +7602,14 @@ def _extract_content_payload(text: str) -> str:
     return ""
 
 
-def _run_async_sync(coro):
+def _run_async_sync(coro, timeout_sec=45):
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
-        return loop.run_until_complete(coro)
+        return loop.run_until_complete(asyncio.wait_for(coro, timeout=timeout_sec))
+    except asyncio.TimeoutError:
+        logger.warning("[_run_async_sync] timeout (%ds) 초과", timeout_sec)
+        return None
     finally:
         try:
             pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
