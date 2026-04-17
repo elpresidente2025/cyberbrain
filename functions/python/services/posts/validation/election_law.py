@@ -16,7 +16,7 @@ from .repetition_checker import contains_pledge_candidate, extract_sentences, is
 
 logger = logging.getLogger(__name__)
 
-_NUMBER_CLAIM_PATTERN = re.compile(r"[0-9]+%|[0-9]+명|[0-9]+건|[0-9]+억|[0-9]+조")
+_NUMBER_CLAIM_PATTERN = re.compile(r"[0-9]+(?:\.[0-9]+)?(?:%|명|건|억|조)")
 _OPPONENT_FACT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(상대|경쟁|타)\s*후보.*?(했습니다|했다|받았|의혹)"),
     re.compile(r"(상대|경쟁)\s*진영.*?(했습니다|했다|받았)"),
@@ -115,15 +115,29 @@ def _format_violation_summary(item: Dict[str, Any]) -> str:
     return summary
 
 
-def _collect_fact_violation_items(plain_text: str) -> List[Dict[str, Any]]:
+def _collect_fact_violation_items(
+    plain_text: str,
+    source_texts: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
     sentences = extract_sentences(plain_text)
     violations: list[Dict[str, Any]] = []
+
+    # 사용자 입력 원문에 이미 존재하는 수치는 면제한다.
+    # 원재료(stanceText/newsDataText)는 사용자가 자기 SNS에 게시했던 글이므로
+    # 수치의 근거는 사용자 본인에게 있다.
+    source_numerics: set[str] = set()
+    if source_texts:
+        for src in source_texts:
+            if src:
+                source_numerics.update(_NUMBER_CLAIM_PATTERN.findall(str(src)))
 
     number_claims = _NUMBER_CLAIM_PATTERN.findall(plain_text)
     if number_claims:
         has_source = re.search(r"\[출처:|출처:|자료:", plain_text, re.IGNORECASE)
         if not has_source:
             for claim in number_claims[:3]:
+                if claim in source_numerics:
+                    continue
                 sentence = _extract_sentence_for_match(sentences, claim)
                 _append_violation_item(
                     violations,
@@ -292,8 +306,11 @@ def _collect_bribery_violations(plain_text: str) -> List[Dict[str, Any]]:
     return violations
 
 
-def _collect_fact_violations(plain_text: str) -> List[Dict[str, Any]]:
-    return _collect_fact_violation_items(plain_text)
+def _collect_fact_violations(
+    plain_text: str,
+    source_texts: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    return _collect_fact_violation_items(plain_text, source_texts=source_texts)
 
 
 async def detect_election_law_violation_hybrid(
@@ -302,6 +319,7 @@ async def detect_election_law_violation_hybrid(
     title: str = "",
     *,
     model_name: str = "gemini-2.5-flash",
+    source_texts: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     if not status:
         return _build_violation_response(violations=[], status=status, skipped=True)
@@ -354,14 +372,20 @@ async def detect_election_law_violation_hybrid(
 
     plain_text = _strip_html(full_text)
     violations.extend(_collect_bribery_violations(plain_text))
-    violations.extend(_collect_fact_violations(plain_text))
+    violations.extend(_collect_fact_violations(plain_text, source_texts=source_texts))
     return _build_violation_response(
         violations=violations,
         status=status,
         stage_name=str(election_stage.get("name") or ""),
     )
 
-def detect_election_law_violation(content: str, status: str | None, title: str = "") -> Dict[str, Any]:
+def detect_election_law_violation(
+    content: str,
+    status: str | None,
+    title: str = "",
+    *,
+    source_texts: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     if not status:
         return _build_violation_response(violations=[], status=status, skipped=True)
 
@@ -429,7 +453,7 @@ def detect_election_law_violation(content: str, status: str | None, title: str =
         )
 
     violation_items.extend(_collect_bribery_violations(plain_text))
-    violation_items.extend(_collect_fact_violations(plain_text))
+    violation_items.extend(_collect_fact_violations(plain_text, source_texts=source_texts))
     return _build_violation_response(
         violations=violation_items,
         status=status,

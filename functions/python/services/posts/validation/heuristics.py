@@ -91,6 +91,7 @@ def run_heuristic_validation_sync(
 ) -> Dict[str, Any]:
     options = options or {}
     fact_allowlist = options.get("factAllowlist")
+    source_texts = options.get("sourceTexts")
 
     issues: list[str] = []
 
@@ -110,7 +111,7 @@ def run_heuristic_validation_sync(
         )
         issues.append(f"⚠️ 유사 문장 감지: {summary}")
 
-    election_result = detect_election_law_violation(content, status, title)
+    election_result = detect_election_law_violation(content, status, title, source_texts=source_texts)
     if not election_result.get("passed", True):
         issues.append(_format_election_law_issue_text(election_result))
 

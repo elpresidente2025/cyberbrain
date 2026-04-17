@@ -9833,6 +9833,13 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     stance_count = _extract_stance_count(pipeline_result)
     min_required_chars = _calc_min_required_chars(target_word_count, stance_count)
     status_for_validation = str(data.get("status") or user_profile.get("status") or "")
+    # 사용자 원문 텍스트: 이미 SNS에 게시했던 글이므로 여기에 포함된 수치는
+    # 선거법 수치 출처 검증에서 면제한다.
+    _source_texts_for_heuristic = [
+        str(data.get("stanceText") or "").strip(),
+        str(data.get("newsDataText") or "").strip(),
+    ]
+    _source_texts_for_heuristic = [t for t in _source_texts_for_heuristic if t]
     title_last_valid = ""
     title_guard_trace: list[Dict[str, Any]] = []
     independent_final_title: Dict[str, Any] = {
@@ -9990,6 +9997,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             generated_content,
             status_for_validation,
             generated_title,
+            options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
         )
         legal_issues = _extract_legal_gate_issues(final_heuristic)
         final_speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
@@ -10026,6 +10034,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         generated_content,
         status_for_validation,
         generated_title,
+        options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
     )
     initial_repetition_issues = _extract_repetition_gate_issues(initial_heuristic)
     initial_legal_issues = _extract_legal_gate_issues(initial_heuristic)
@@ -10147,6 +10156,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         generated_content,
         status_for_validation,
         generated_title,
+        options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
     )
     repetition_issues = _extract_repetition_gate_issues(heuristic_result)
     if repetition_issues:
@@ -10216,6 +10226,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     generated_content,
                     status_for_validation,
                     generated_title,
+                    options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
                 )
                 repetition_issues = _extract_repetition_gate_issues(heuristic_result)
             else:
@@ -10259,6 +10270,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                         generated_content,
                         status_for_validation,
                         generated_title,
+                        options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
                     )
                     repetition_issues = _extract_repetition_gate_issues(heuristic_result)
                 else:
@@ -10286,6 +10298,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         generated_content,
         status_for_validation,
         generated_title,
+        options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
     )
     legal_issues = _extract_legal_gate_issues(final_heuristic)
     integrity_issues = _detect_integrity_gate_issues(generated_content)
@@ -10426,6 +10439,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     generated_content,
                     status_for_validation,
                     generated_title,
+                    options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
                 )
                 legal_issues = _extract_legal_gate_issues(final_heuristic)
             else:
@@ -10467,6 +10481,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         generated_content,
         status_for_validation,
         generated_title,
+        options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
     )
     legal_issues = _extract_legal_gate_issues(final_heuristic)
     if legal_issues:
@@ -10502,6 +10517,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     generated_content,
                     status_for_validation,
                     generated_title,
+                    options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
                 )
                 legal_issues = _extract_legal_gate_issues(final_heuristic)
             else:
@@ -10641,6 +10657,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     generated_content,
                     status_for_validation,
                     generated_title,
+                    options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
                 )
                 legal_issues = _extract_legal_gate_issues(final_heuristic)
             else:
@@ -10757,6 +10774,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         generated_content,
         status_for_validation,
         generated_title,
+        options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
     )
     legal_issues = _extract_legal_gate_issues(final_heuristic)
     final_speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
@@ -10780,6 +10798,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     generated_content,
                     status_for_validation,
                     generated_title,
+                    options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
                 )
                 legal_issues = _extract_legal_gate_issues(final_heuristic)
             else:
@@ -10812,6 +10831,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     generated_content,
                     status_for_validation,
                     generated_title,
+                    options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
                 )
                 legal_issues = _extract_legal_gate_issues(final_heuristic)
             else:
@@ -10865,6 +10885,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             generated_content,
             status_for_validation,
             generated_title,
+            options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
         )
         legal_issues = _extract_legal_gate_issues(final_heuristic)
 
@@ -10883,6 +10904,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             generated_content,
             status_for_validation,
             generated_title,
+            options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
         )
         legal_issues = _extract_legal_gate_issues(final_heuristic)
 
@@ -10907,6 +10929,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 generated_content,
                 status_for_validation,
                 generated_title,
+                options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
             )
             legal_issues = _extract_legal_gate_issues(final_heuristic)
             final_speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
@@ -10942,6 +10965,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 generated_content,
                 status_for_validation,
                 generated_title,
+                options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
             )
             legal_issues = _extract_legal_gate_issues(final_heuristic)
             final_speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
@@ -10972,6 +10996,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 generated_content,
                 status_for_validation,
                 generated_title,
+                options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
             )
             legal_issues = _extract_legal_gate_issues(final_heuristic)
             final_speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
@@ -11007,6 +11032,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 generated_content,
                 status_for_validation,
                 generated_title,
+                options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
             )
             legal_issues = _extract_legal_gate_issues(final_heuristic)
             final_speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
@@ -11073,6 +11099,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 generated_content,
                 status_for_validation,
                 generated_title,
+                options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
             )
             legal_issues = _extract_legal_gate_issues(final_heuristic)
             final_speaker_issues = _extract_speaker_consistency_issues(generated_content, full_name)
@@ -11415,6 +11442,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         generated_content,
         status_for_validation,
         generated_title,
+        options={"sourceTexts": _source_texts_for_heuristic} if _source_texts_for_heuristic else None,
     )
     legal_issues = _extract_legal_gate_issues(final_heuristic)
 
