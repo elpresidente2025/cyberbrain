@@ -509,30 +509,34 @@ def _build_style_guide_prompt(style_fingerprint: Dict[str, Any], compact: bool =
 
 
 def generate_personalized_hints(bio_metadata: Dict[str, Any] | None) -> str:
-    """Bio 메타데이터 기반 개인화 힌트 생성."""
+    """Bio 메타데이터 기반 개인화 힌트 생성.
+
+    반환값은 XML 구조화된 지시문. 각 <rule> 에 category 속성이 붙어
+    LLM 이 "작성 지시"와 "인용할 콘텐츠"를 혼동하지 않도록 한다.
+    """
     if not bio_metadata:
         return ""
 
-    hints: list[str] = []
+    rules: list[str] = []
     political_stance = bio_metadata.get("politicalStance") or {}
 
     if (political_stance.get("progressive") or 0) > 0.7:
-        hints.append("보수보다 혁신을 강조하는 진보적 관점으로 작성")
+        rules.append('<rule category="관점">혁신·변화를 강조하는 진보적 관점으로 논지를 전개하세요.</rule>')
     elif (political_stance.get("conservative") or 0) > 0.7:
-        hints.append("안정성과 전통 가치를 중시하는 보수적 관점으로 작성")
+        rules.append('<rule category="관점">안정성과 전통 가치를 중시하는 보수적 관점으로 논지를 전개하세요.</rule>')
     elif (political_stance.get("moderate") or 0) > 0.8:
-        hints.append("균형잡힌 중도적 관점에서 다양한 의견을 수용하여 작성")
+        rules.append('<rule category="관점">균형 잡힌 중도적 관점에서 다양한 의견을 수용하세요.</rule>')
 
     comm_style = bio_metadata.get("communicationStyle") or {}
     if comm_style.get("tone") == "warm":
-        hints.append("따뜻하고 친근한 어조 사용")
+        rules.append('<rule category="어조">친근하고 따뜻한 어조를 유지하세요.</rule>')
     elif comm_style.get("tone") == "formal":
-        hints.append("격식있고 전문적인 어조 사용")
+        rules.append('<rule category="어조">격식 있고 전문적인 어조를 유지하세요.</rule>')
 
     if comm_style.get("approach") == "inclusive":
-        hints.append("모든 계층을 포용하는 수용적 표현")
+        rules.append('<rule category="표현">다양한 계층을 포용하는 표현을 사용하세요.</rule>')
     elif comm_style.get("approach") == "collaborative":
-        hints.append("협력과 소통을 강조하는 협업적 표현")
+        rules.append('<rule category="표현">협력과 소통을 강조하는 표현을 사용하세요.</rule>')
 
     policy_focus = bio_metadata.get("policyFocus") or {}
     if policy_focus:
@@ -543,24 +547,28 @@ def generate_personalized_hints(bio_metadata: Dict[str, Any] | None) -> str:
         )[0]
         top_policy_key, top_policy_info = top_policy
         if float((top_policy_info or {}).get("weight") or 0) > 0.6:
-            hints.append(f"{POLICY_NAMES.get(top_policy_key, top_policy_key)} 관점에서 표현")
+            label = POLICY_NAMES.get(top_policy_key, top_policy_key)
+            rules.append(f'<rule category="정책">{label} 분야 관점을 반영하세요.</rule>')
 
     local_connection = bio_metadata.get("localConnection") or {}
     if float(local_connection.get("strength") or 0) > 0.8:
-        hints.append("지역현안과 주민들의 실제 경험을 구체적으로 반영")
+        rules.append('<rule category="지역">지역 현안과 주민의 실제 경험을 녹여 쓰세요.</rule>')
         local_keywords = local_connection.get("keywords") or []
         if local_keywords:
-            hints.append(f"지역 용어 사용: {', '.join(local_keywords[:3])}")
+            kw_str = ", ".join(local_keywords[:3])
+            rules.append(f'<rule category="지역용어">다음 지역명을 자연스럽게 사용하세요: {kw_str}</rule>')
 
     prefs = ((bio_metadata.get("generationProfile") or {}).get("likelyPreferences")) or {}
     if float(prefs.get("includePersonalExperience") or 0) > 0.8:
-        hints.append("개인적 경험과 사례를 풍부하게 포함")
+        rules.append('<rule category="소재">화자의 개인적 경험과 사례를 구체적으로 포함하세요.</rule>')
     if float(prefs.get("useStatistics") or 0) > 0.7:
-        hints.append("구체적인 숫자와 데이터를 적극적으로 사용")
+        rules.append('<rule category="소재">구체적인 숫자·데이터를 근거로 사용하세요.</rule>')
     if float(prefs.get("focusOnFuture") or 0) > 0.7:
-        hints.append("미래 비전과 발전 방향을 제시")
+        rules.append('<rule category="소재">미래 비전과 발전 방향을 제시하세요.</rule>')
 
-    return " | ".join(hints)
+    if not rules:
+        return ""
+    return "\n".join(rules)
 
 
 def _get_age_sensitive_family_expression(family_status: str, age_decade: str | None) -> str:
