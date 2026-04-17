@@ -283,11 +283,11 @@ def _build_aeo_rules() -> str:
       <good>청년 일자리 274명 창출 현장</good>
       <bad>좋은 성과를 냈습니다</bad>
     </archetype>
-    <archetype name="서술형" strength="담담한 사태 제시" limit="글당 최대 1회">
+    <archetype name="서술형" strength="담담한 사태 제시" limit="글당 0~1회">
       <good>지역 경제의 새 판을 열다</good>
       <good>주민 목소리에 귀를 기울이다</good>
       <bad>열심히 하다</bad>
-      <note>동사 사전형(기본형) 종결. 절제된 톤으로 임팩트를 주지만 남용하면 단조로워진다. 6개 H2 중 최대 1개만 사용할 것.</note>
+      <note>동사 사전형(기본형) 종결. 절제된 톤으로 임팩트를 주지만 남용하면 단조로워진다. 6개 H2 중 0~1개만 사용할 것.</note>
     </archetype>
   </archetypes>
 
@@ -394,12 +394,12 @@ def _build_aeo_examples() -> str:
     <correction before="개선되었습니다" after="민원 처리 14일→3일 단축 사례"/>
   </archetype>
 
-  <archetype name="서술형" strength="담담한 사태 제시" limit="글당 최대 1회">
+  <archetype name="서술형" strength="담담한 사태 제시" limit="글당 0~1회">
     <good>지역 경제의 새 판을 열다</good>
     <good>주민 목소리에 귀를 기울이다</good>
     <good>도시 재생이 현장을 바꾸다</good>
     <correction before="열심히 하다" after="지역 경제의 새 판을 열다"/>
-    <note>동사 사전형(기본형) 종결. 절제된 톤으로 임팩트를 주지만 남용하면 단조로워진다. 6개 H2 중 최대 1개만 사용할 것.</note>
+    <note>동사 사전형(기본형) 종결. 절제된 톤으로 임팩트를 주지만 남용하면 단조로워진다. 6개 H2 중 0~1개만 사용할 것.</note>
   </archetype>
 
   <checklist>
