@@ -1543,7 +1543,7 @@ class SubheadingAgent(Agent):
             "이유형": lambda: f"{keyword}이 필요한 이유" if keyword else "",
             "대조형": lambda: f"{keyword}, 무엇이 다른가" if keyword else "",
             "사례형": lambda: (
-                f"{keyword} {numerics[0]} 현장 기록" if keyword and numerics else (f"{keyword} 현장 사례 3선" if keyword else "")
+                f"{keyword} {numerics[0]}, 핵심 변화는" if keyword and numerics else ""
             ),
         }
 

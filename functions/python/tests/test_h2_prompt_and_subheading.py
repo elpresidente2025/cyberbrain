@@ -1240,6 +1240,7 @@ def test_deterministic_fallback_allows_clean_keyword_for_case_template() -> None
     heading = agent._deterministic_fallback_heading(clean_plan)
     assert "청년 기본소득" in heading
     assert "274명" in heading
+    assert "핵심 변화는" in heading
 
 
 # ---------------------------------------------------------------------------
@@ -1596,3 +1597,46 @@ def test_score_h2_aeo_flags_prefix_overlap_in_siblings() -> None:
     )
     assert "H2_SIBLING_PREFIX_OVERLAP" in result["issues"]
     assert result["breakdown"]["uniqueness"] <= 0.5
+
+
+def test_sanitize_h2_text_preserves_internal_quotes() -> None:
+    """내부 인용구 따옴표는 보존하고, 전체를 감싼 대칭 따옴표만 제거한다."""
+    assert sanitize_h2_text("인천, 17개 시도 중 유일한 '미감면'") == "인천, 17개 시도 중 유일한 '미감면'"
+    assert sanitize_h2_text("'전체를 감싼 따옴표'") == "전체를 감싼 따옴표"
+    assert sanitize_h2_text('"쌍따옴표 감쌈"') == "쌍따옴표 감쌈"
+
+
+def test_detect_register_mismatch_catches_polite_plain_mix() -> None:
+    """경어체(-인가요)와 평서체(-되나)가 혼재하면 True."""
+    from agents.common.h2_scoring import detect_register_mismatch
+
+    headings = [
+        "광역교통망, 해법은 무엇인가요",
+        "취득세 감면 얼마나 되나",
+        "문세종, 취득세 감면으로 무엇을 노리나",
+    ]
+    assert detect_register_mismatch(headings) is True
+
+
+def test_detect_register_mismatch_passes_uniform_plain() -> None:
+    """전부 평서체면 False."""
+    from agents.common.h2_scoring import detect_register_mismatch
+
+    headings = [
+        "취득세 감면 얼마나 되나",
+        "문세종, 무엇을 노리나",
+        "계양구, 도약할 수 있을까",
+    ]
+    assert detect_register_mismatch(headings) is False
+
+
+def test_score_h2_aeo_flags_register_mismatch() -> None:
+    """형제와 register 가 다르면 H2_REGISTER_MISMATCH 이슈 발생."""
+    from agents.common.h2_scoring import score_h2_aeo
+
+    result = score_h2_aeo(
+        "취득세 감면 얼마나 되나",
+        siblings=["광역교통망, 해법은 무엇인가요"],
+        full_name="홍길동",
+    )
+    assert "H2_REGISTER_MISMATCH" in result["issues"]

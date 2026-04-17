@@ -42,6 +42,7 @@ __all__ = [
     "compute_anchor_cap",
     "detect_sibling_suffix_overlap",
     "detect_sibling_prefix_overlap",
+    "detect_register_mismatch",
 ]
 
 
@@ -635,6 +636,36 @@ def detect_sibling_prefix_overlap(headings: List[str]) -> List[tuple]:
     return [(tok, cnt) for tok, cnt in first_counts.items() if cnt >= 2]
 
 
+_POLITE_TAIL_RE = re.compile(
+    r"(인가요|일까요|할까요|는가요|나요|인지요|ㄹ까요|인가요)\s*\??$"
+)
+_PLAIN_TAIL_RE = re.compile(
+    r"(인가|일까|할까|는가|되나|하나|을까|ㄹ까)\s*\??$"
+)
+
+
+def _detect_h2_register(heading: str) -> str:
+    """H2 종결어미의 register 를 판정: 'polite', 'plain', '' (판정불가)."""
+    text = str(heading or "").strip().rstrip("?")
+    if not text:
+        return ""
+    if _POLITE_TAIL_RE.search(text + "?"):
+        return "polite"
+    if _PLAIN_TAIL_RE.search(text + "?"):
+        return "plain"
+    return ""
+
+
+def detect_register_mismatch(headings: List[str]) -> bool:
+    """H2 세트 내 경어체/평서체 혼재 여부를 반환한다."""
+    registers = set()
+    for h in headings or []:
+        r = _detect_h2_register(h)
+        if r:
+            registers.add(r)
+    return len(registers) >= 2
+
+
 def _has_question_form(heading: str) -> bool:
     text = str(heading or "").strip()
     if not text:
@@ -751,6 +782,10 @@ def score_h2_aeo(
     prefix_overlaps = detect_sibling_prefix_overlap(all_headings_for_overlap)
     if prefix_overlaps:
         issues.append("H2_SIBLING_PREFIX_OVERLAP")
+        uniqueness_score = min(uniqueness_score, 0.5)
+
+    if detect_register_mismatch(all_headings_for_overlap):
+        issues.append("H2_REGISTER_MISMATCH")
         uniqueness_score = min(uniqueness_score, 0.5)
 
     breakdown["uniqueness"] = uniqueness_score

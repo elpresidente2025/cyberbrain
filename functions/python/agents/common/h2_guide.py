@@ -196,7 +196,10 @@ def sanitize_h2_text(
     max_length: int = H2_MAX_LENGTH,
 ) -> str:
     """H2 길이/공백/잘림 정책을 공통 정규화한다."""
-    candidate = re.sub(r'\s+', ' ', str(text or '').strip().strip('"\'')) 
+    raw = str(text or '').strip()
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ('"', "'"):
+        raw = raw[1:-1].strip()
+    candidate = re.sub(r'\s+', ' ', raw)
     candidate = candidate.strip(H2_TRUNCATION_RSTRIP_CHARS)
     if not candidate:
         raise ValueError("h2 텍스트가 비어 있습니다.")
