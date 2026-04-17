@@ -166,6 +166,86 @@ class EditorAgent(Agent):
                         post_content = post_content.replace(broken, kw_clean)
             constrained['content'] = post_content
 
+            # 3.7. post-humanize "저는" 연속 문두 기계적 감축
+            # humanize LLM 이 지시를 무시하고 "저는"을 과다 유지하는 경우가 많으므로,
+            # 연속 2문장이 "저는"으로 시작하면 두 번째 문장의 "저는 "을 제거한다.
+            # 한국어는 주어 생략이 자연스러워 직전 문장에 "저는"이 있으면 다음 문장의
+            # "저는"은 거의 항상 생략 가능하다.
+            # HTML <p> 내부 + <p> 경계 모두 처리.
+            post_content = constrained['content']
+            _fp_strip_count = 0
+
+            def _strip_consecutive_fp(text: str) -> tuple[str, int]:
+                """text 내에서 연속 '저는' 문두를 제거. (변경 텍스트, 제거 횟수) 반환."""
+                # 문장 분리: 마침표/물음표/느낌표 뒤 공백
+                parts = re.split(r'(?<=[.?!])\s+', text)
+                if len(parts) < 2:
+                    return text, 0
+                result_parts = [parts[0]]
+                count = 0
+                for i in range(1, len(parts)):
+                    prev = result_parts[-1]
+                    cur = parts[i]
+                    # 직전 문장이 "저는"으로 시작하고, 현재 문장도 "저는"으로 시작하면
+                    if re.match(r'저는\s', prev) and re.match(r'저는\s', cur):
+                        cur = cur[len('저는 '):]  # "저는 " 제거
+                        # 제거 후 첫 글자 — 한글이면 그대로 (주어 생략)
+                        count += 1
+                    result_parts.append(cur)
+                return ' '.join(result_parts), count
+
+            # <p> 태그 내부 텍스트에 대해 각각 적용
+            def _process_p_tag(m: re.Match) -> str:
+                nonlocal _fp_strip_count
+                full = m.group(0)
+                # <p ...> 와 </p> 사이 내용 추출
+                inner_match = re.match(r'(<p[^>]*>)(.*?)(</p>)', full, re.DOTALL)
+                if not inner_match:
+                    return full
+                open_tag, inner, close_tag = inner_match.groups()
+                new_inner, cnt = _strip_consecutive_fp(inner)
+                _fp_strip_count += cnt
+                return f"{open_tag}{new_inner}{close_tag}"
+
+            post_content = re.sub(
+                r'<p[^>]*>.*?</p>',
+                _process_p_tag,
+                post_content,
+                flags=re.DOTALL,
+            )
+
+            # <p> 경계를 넘는 연속 "저는" 도 처리:
+            # 이전 </p> 마지막 문장이 "저는"으로 시작했고, 다음 <p> 첫 문장도
+            # "저는"으로 시작하면 다음 <p>의 "저는 "을 제거.
+            _p_blocks = re.findall(r'<p[^>]*>(.*?)</p>', post_content, re.DOTALL)
+            if len(_p_blocks) >= 2:
+                _prev_ends_with_fp = False
+                for idx, block in enumerate(_p_blocks):
+                    # 이 블록의 마지막 문장이 "저는"으로 시작하는지
+                    block_sents = [s.strip() for s in re.split(r'(?<=[.?!])\s+', block.strip()) if s.strip()]
+                    block_starts_with_fp = bool(block_sents and re.match(r'저는\s', block_sents[0]))
+
+                    if _prev_ends_with_fp and block_starts_with_fp:
+                        # 이 블록 첫 문장의 "저는 " 제거
+                        old_block = block
+                        new_block = re.sub(r'^(\s*)저는\s', r'\1', block, count=1)
+                        if new_block != old_block:
+                            post_content = post_content.replace(
+                                f'>{old_block}</p>', f'>{new_block}</p>', 1
+                            )
+                            _fp_strip_count += 1
+
+                    # 이 블록의 마지막 문장이 "저는"으로 시작하는지 기록
+                    _prev_ends_with_fp = bool(
+                        block_sents and re.match(r'저는\s', block_sents[-1])
+                    )
+
+            if _fp_strip_count:
+                constrained['content'] = post_content
+                constrained['editSummary'].append(
+                    f"'저는' 연속 문두 {_fp_strip_count}건 기계적 생략"
+                )
+
             # 4. post-humanize 필수 키워드 최소 등장 검증 (경고만, 자동 치환 안 함)
             # humanize 가 지시어로 과치환해 고유명사 빈도가 떨어지는 케이스를 플래그.
             MIN_BODY_OCCURRENCES = 3
@@ -852,20 +932,23 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
                         f"지시어 역전 — '이를 위해' 가 부정 상태를 받음. 직전 문장: \"{_truncate_sentence_for_flag(prev_s)}\" / 해당 문장: \"{_truncate_sentence_for_flag(next_s)}\""
                     )
 
-            # "저는" 문두 과다 반복 감지
-            # LLM 이 거의 모든 문장을 "저는"으로 시작하면 AI 티가 극심해짐.
-            # 전체 문장 중 40% 이상이 "저는"으로 시작하면 플래그.
-            _first_person_re = re.compile(r'^\s*저는\s')
-            fp_sentences = [s for s in sentences if _first_person_re.match(s)]
-            fp_ratio = len(fp_sentences) / len(sentences) if sentences else 0
-            if fp_ratio >= 0.4 and len(fp_sentences) >= 4:
-                # 과다 문장 중 앞쪽 5개를 인용해 humanize 에 위치 힌트 제공
-                examples = fp_sentences[:5]
+        # 1.55. "저는" 문두 과다 반복 감지 (Kiwi 불필요 — regex 문장 분리)
+        # Kiwi split_sentences 가 None 이어도 독립 동작해야 하므로 별도 블록.
+        _fp_plain = re.sub(r'<[^>]+>', ' ', updated_content)
+        _fp_plain = re.sub(r'\s+', ' ', _fp_plain).strip()
+        # regex 기반 문장 분리: 마침표/물음표/느낌표 + 공백/끝 경계
+        _fp_sents = [s.strip() for s in re.split(r'(?<=[.?!])\s+', _fp_plain) if len(s.strip()) > 5]
+        if _fp_sents:
+            _first_person_re = re.compile(r'^저는\s')
+            _fp_matched = [s for s in _fp_sents if _first_person_re.match(s)]
+            _fp_ratio = len(_fp_matched) / len(_fp_sents)
+            if _fp_ratio >= 0.4 and len(_fp_matched) >= 4:
+                examples = _fp_matched[:5]
                 example_lines = " / ".join(
                     f"\"{_truncate_sentence_for_flag(s, 60)}\"" for s in examples
                 )
                 summary.append(
-                    f"'저는' 문두 과다 반복 — 전체 {len(sentences)}문장 중 {len(fp_sentences)}문장({fp_ratio:.0%})이 '저는'으로 시작. "
+                    f"'저는' 문두 과다 반복 — 전체 {len(_fp_sents)}문장 중 {len(_fp_matched)}문장({_fp_ratio:.0%})이 '저는'으로 시작. "
                     f"예시: {example_lines}"
                 )
 

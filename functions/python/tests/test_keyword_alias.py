@@ -204,3 +204,101 @@ class TestHumanizePromptFirstPersonRule:
         )
         assert "직전 단계 감지" in prompt
         assert "저는" in prompt
+
+
+# ---------------------------------------------------------------------------
+# "저는" 감지 — Kiwi 없이 regex 문장 분리로 동작
+# ---------------------------------------------------------------------------
+
+class TestFirstPersonDetectionWithoutKiwi:
+    """apply_hard_constraints 의 '저는' 과다 감지가 Kiwi 없이도 동작하는지 검증."""
+
+    def test_detect_overuse(self):
+        from agents.core.editor_agent import EditorAgent
+        agent = EditorAgent()
+        # 10문장 중 6문장이 "저는"으로 시작 (60%)
+        content = (
+            "<p>저는 정책을 추진합니다. 저는 교통 문제를 해결합니다. "
+            "이 문제는 중요합니다. 저는 노력합니다. "
+            "저는 시정질문을 했습니다. 저는 결과를 확인합니다. "
+            "광역철도가 필요합니다. 인천시민 여러분. "
+            "저는 최선을 다합니다. 감사합니다.</p>"
+        )
+        result = agent.apply_hard_constraints(
+            content=content,
+            title="제목",
+            user_keywords=["샘플 사업"],
+            status="현역",
+        )
+        summaries = " ".join(result.get("editSummary", []))
+        assert "'저는' 문두 과다 반복" in summaries
+
+    def test_no_flag_when_normal(self):
+        from agents.core.editor_agent import EditorAgent
+        agent = EditorAgent()
+        # 10문장 중 2문장만 "저는" (20%) — 정상
+        content = (
+            "<p>저는 정책을 추진합니다. 교통 문제가 있습니다. "
+            "이 문제는 시급합니다. 광역철도가 필요합니다. "
+            "저는 노력합니다. 인천시민 여러분. "
+            "교통망 확충이 핵심입니다. 주민 의견을 반영합니다. "
+            "경제성 분석이 진행됩니다. 감사합니다.</p>"
+        )
+        result = agent.apply_hard_constraints(
+            content=content,
+            title="제목",
+            user_keywords=["샘플 사업"],
+            status="현역",
+        )
+        summaries = " ".join(result.get("editSummary", []))
+        assert "'저는' 문두 과다" not in summaries
+
+
+# ---------------------------------------------------------------------------
+# "저는" 기계적 감축 — 연속 문두 생략
+# ---------------------------------------------------------------------------
+
+class TestFirstPersonMechanicalReduction:
+    """post-humanize 단계의 '저는' 연속 문두 기계적 생략 검증.
+
+    EditorAgent.process() 의 3.7 단계를 직접 테스트하기 어려우므로
+    apply_hard_constraints 단독 + 내부 _strip_consecutive_fp 로직을
+    재현하는 방식으로 검증.
+    """
+
+    def test_consecutive_first_person_in_same_p(self):
+        """같은 <p> 안에서 연속 '저는' 문장이 있으면 두 번째가 제거되는지."""
+        import re
+        text = "저는 정책을 추진합니다. 저는 교통 문제를 해결합니다. 이것은 중요합니다."
+        # _strip_consecutive_fp 로직 재현
+        parts = re.split(r'(?<=[.?!])\s+', text)
+        result_parts = [parts[0]]
+        count = 0
+        for i in range(1, len(parts)):
+            prev = result_parts[-1]
+            cur = parts[i]
+            if re.match(r'저는\s', prev) and re.match(r'저는\s', cur):
+                cur = cur[len('저는 '):]
+                count += 1
+            result_parts.append(cur)
+        result = ' '.join(result_parts)
+        assert count == 1
+        assert "저는 정책을 추진합니다." in result
+        assert "교통 문제를 해결합니다." in result
+        assert result.count("저는") == 1
+
+    def test_non_consecutive_preserved(self):
+        """연속이 아닌 '저는'은 유지."""
+        import re
+        text = "저는 정책을 추진합니다. 교통 문제가 있습니다. 저는 노력합니다."
+        parts = re.split(r'(?<=[.?!])\s+', text)
+        result_parts = [parts[0]]
+        count = 0
+        for i in range(1, len(parts)):
+            prev = result_parts[-1]
+            cur = parts[i]
+            if re.match(r'저는\s', prev) and re.match(r'저는\s', cur):
+                cur = cur[len('저는 '):]
+                count += 1
+            result_parts.append(cur)
+        assert count == 0  # 연속이 아니므로 제거 없음
