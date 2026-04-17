@@ -1,5 +1,4 @@
 // frontend/src/pages/AboutPage.jsx
-// Minimal Landing Page
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -21,16 +20,18 @@ import {
 } from '@mui/material';
 import {
   ExpandMore,
+  Gavel,
+  Fingerprint,
+  AccountTree,
   EditNote,
   TrendingUp,
-  Speed,
   Share,
-  Psychology,
-  AutoAwesome
+  FactCheck,
+  Security
 } from '@mui/icons-material';
 import {
   ResponsiveContainer,
-  AreaChart,
+  LineChart,
   Line,
   XAxis,
   YAxis,
@@ -46,9 +47,10 @@ const AboutPage = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [showAllFAQs, setShowAllFAQs] = useState(false);
   const [expandedFAQ, setExpandedFAQ] = useState(false);
-  const [selectedFeature, setSelectedFeature] = useState(null); // 모달 상태 추가
+  const [selectedFeature, setSelectedFeature] = useState(null);
 
-  const monthlyViewData = [
+  // ── 성과 데이터 ───────────────────────────────────────────────
+  const rawViewData = [
     { month: '25.03', total: 238, isAfterLaunch: false },
     { month: '25.04', total: 317, isAfterLaunch: false },
     { month: '25.05', total: 435, isAfterLaunch: false },
@@ -63,26 +65,31 @@ const AboutPage = () => {
     { month: '26.02', total: 1862, isAfterLaunch: true }
   ];
 
-  const preLaunchData = monthlyViewData.filter((item) => !item.isAfterLaunch);
-  const postLaunchData = monthlyViewData.filter((item) => item.isAfterLaunch);
+  const chartData = rawViewData.map((item) => ({
+    month: item.month,
+    before: !item.isAfterLaunch ? item.total : undefined,
+    after: item.isAfterLaunch ? item.total : undefined
+  }));
 
+  const preLaunchData = rawViewData.filter((d) => !d.isAfterLaunch);
+  const postLaunchData = rawViewData.filter((d) => d.isAfterLaunch);
   const preLaunchAverage = Math.round(
-    preLaunchData.reduce((sum, item) => sum + item.total, 0) / preLaunchData.length
+    preLaunchData.reduce((sum, d) => sum + d.total, 0) / preLaunchData.length
   );
   const postLaunchAverage = Math.round(
-    postLaunchData.reduce((sum, item) => sum + item.total, 0) / postLaunchData.length
+    postLaunchData.reduce((sum, d) => sum + d.total, 0) / postLaunchData.length
   );
   const growthMultiple = (postLaunchAverage / preLaunchAverage).toFixed(2);
   const postLaunchPeak = postLaunchData.reduce(
-    (peak, item) => (item.total > peak.total ? item : peak),
+    (peak, d) => (d.total > peak.total ? d : peak),
     postLaunchData[0]
   );
 
+  // ── FAQ ────────────────────────────────────────────────────────
   const handleFAQChange = (panel) => (event, isExpanded) => {
     setExpandedFAQ(isExpanded ? panel : false);
   };
 
-  // 카드 키보드 핸들러
   const handleCardKeyDown = (event, value) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
@@ -90,159 +97,262 @@ const AboutPage = () => {
     }
   };
 
-  // 핵심 가치 6개
-  const coreValues = [
+  // ── 섹션 A: 정치인 전용 차별점 3개 ────────────────────────────
+  const differentiators = [
+    {
+      icon: <Gavel aria-hidden="true" />,
+      ariaLabel: '선거법 자동 검수 기능',
+      title: '선거법 3단계 자동 검수',
+      description: '예비후보·본후보·현역별 준법 검사',
+      modalTitle: '예비후보·본후보·현역, 단계별로 다른 선거법. 쓰는 단어 하나까지 AI가 걸러냅니다.',
+      details: `공직선거법은 선거 단계마다 허용 표현이 다릅니다.
+예비후보 등록 전에 "당선되면"이라고 쓰면 사전선거운동.
+본후보 등록 후에 "약속드립니다"의 범위도 달라집니다.
+
+${BRANDING.serviceName}은 100개 이상의 위반 표현 패턴을 단계별로 구분하여 자동 검수합니다.
+제목, 본문, SNS 변환본까지 전부 검사합니다.
+
+의원님은 내용에만 집중하십시오.
+법률 리스크는 AI가 먼저 잡아냅니다.`
+    },
+    {
+      icon: <Fingerprint aria-hidden="true" />,
+      ariaLabel: '문체 지문 학습 기능',
+      title: '문체 지문 학습',
+      description: '의원님의 글쓰기 패턴을 6차원 분석',
+      modalTitle: '의원님이 쓴 글 몇 편이면 충분합니다. 문장의 결까지 AI가 따라 씁니다.',
+      details: `평균 문장 길이, 격식의 정도, 자주 쓰는 전환 표현,
+선호하는 종결 어미, 강조할 때의 수사법, 인사와 마무리 습관.
+
+6개 차원의 문체 통계를 추출하고,
+AI가 이를 해석하여 생성 제약조건으로 주입합니다.
+
+쓸수록 정밀해집니다.
+보좌진도 직접 쓴 글과 구분하기 어려워집니다.`
+    },
+    {
+      icon: <AccountTree aria-hidden="true" />,
+      ariaLabel: '장르별 구조 자동 선택 기능',
+      title: '장르별 글 구조 자동 선택',
+      description: '의정보고·정책제안·시사논평, 각각 다른 구조',
+      modalTitle: '의정보고서와 축사는 다른 글입니다. AI가 주제를 인식하고 최적의 구조를 고릅니다.',
+      details: `의정보고, 정책제안, 지역현안, 시사논평, 일상소통, 현장활동, 협치.
+9개 장르 템플릿, 각 장르마다 4가지 이상의 서술 구조.
+
+주제만 입력하면 AI가 장르를 자동 분류하고,
+해당 장르에서 가장 효과적인 논리 전개와 수사 전략을 선택합니다.
+
+같은 AI에서 나온 글이라도
+의정보고서는 보고서답게, 논평은 논평답게 나옵니다.`
+    }
+  ];
+
+  // ── 섹션 B: 기본기 3개 ────────────────────────────────────────
+  const basics = [
     {
       icon: <EditNote aria-hidden="true" />,
       ariaLabel: '원고 생성 기능',
       title: '월 90회 원고 생성',
-      description: '충분한 분량',
-      modalTitle: '🔥 한 달 90개. 경쟁자는 뒤에서 구경만 합니다.',
-      details: `하루 3개. 일주일이면 21개. 한 달이면 90개.
+      description: '하루 3편, 쉬지 않는 콘텐츠',
+      modalTitle: '한 달 90편. 매일 유권자와 만납니다.',
+      details: `하루 3편. 일주일이면 21편. 한 달이면 90편.
 
 침묵하는 동안, 상대 후보는 매일 유권자와 대화하고 있습니다.
-이제 '오늘 뭘 올리지?' 고민은 끝났습니다.
-매일, 쉬지 않고, 지치지 않고. 비서관은 24시간 대기 중입니다.`
+"오늘 뭘 올리지?" 고민은 끝났습니다.
+
+매일, 쉬지 않고. ${BRANDING.serviceShortName}은 24시간 대기 중입니다.`
     },
     {
       icon: <TrendingUp aria-hidden="true" />,
       ariaLabel: '검색 최적화 기능',
-      title: '검색 최적화',
-      description: '네이버 상위노출',
-      modalTitle: '🎯 네이버 1페이지. 현수막보다 강력합니다.',
-      details: `'우리 동네 의정활동'을 검색할 때,
-가장 먼저 뜨는 이름은 누구일까요?
+      title: '네이버 검색 최적화',
+      description: '유권자가 먼저 찾아오는 구조',
+      modalTitle: '검색 1페이지. 유권자가 먼저 찾아옵니다.',
+      details: `"우리 동네 의정활동"을 검색할 때,
+가장 먼저 뜨는 이름은 누구입니까.
 
-네이버 알고리즘이 좋아하는 키워드 배치, 소제목 구조, 본문 길이.
-알아서 맞춰 드립니다. 검색 결과 1페이지,
-그건 돈 주고도 못 사는 노출입니다.`
-    },
-    {
-      icon: <Speed aria-hidden="true" />,
-      ariaLabel: '빠른 생성 기능',
-      title: '2~3분 빠른 생성',
-      description: '바쁜 의원님께 딱',
-      modalTitle: '⚡ 3시간 → 3분. 보좌진도 놀랍니다.',
-      details: `긴급 성명서. 축사. 해명 자료.
-정치에서 '타이밍'은 생명입니다.
+네이버 검색 알고리즘이 선호하는 키워드 배치,
+소제목 구조, 본문 길이를 자동으로 적용합니다.
 
-보좌관이 밤새 쓰던 초안, 이제 커피 한 잔 마시는 사이에 완성됩니다.
-골든타임을 놓치지 않는 빠른 대응. 그게 경쟁력입니다.`
+SEO 점수 기준을 통과해야 최종 원고가 완성됩니다.`
     },
     {
       icon: <Share aria-hidden="true" />,
       ariaLabel: 'SNS 변환 기능',
-      title: '블로그+SNS 자동 변환',
-      description: '한 번에 다채널',
-      modalTitle: '📱 한 번 쓰고, 네 번 씁니다.',
+      title: '블로그 → SNS 4채널 변환',
+      description: '인스타·페이스북·X·스레드',
+      modalTitle: '한 편의 원고로 네 개의 채널을.',
       details: `블로그 원고 하나면 충분합니다.
-버튼 하나로 인스타그램, 페이스북, X(트위터), 스레드까지.
+인스타그램, 페이스북, X(트위터), 스레드까지 자동 변환.
 
-각 플랫폼 문법에 맞게 자동 변환.
-해시태그, 글자 수, 어투까지 알아서 맞춥니다.
-'승인' 버튼만 누르면 끝.`
-    },
-    {
-      icon: <Psychology aria-hidden="true" />,
-      ariaLabel: 'AI 학습 기능',
-      title: '점점 나다워지는 AI',
-      description: '프로필 학습으로 진화',
-      modalTitle: `🧠 쓸수록 닮아갑니다. 나만의 ${BRANDING.serviceShortName}.`,
-      details: `처음엔 조금 어색할 수 있습니다.
-하지만 걱정 마세요.
+각 플랫폼의 글자 수 제한, 해시태그 규칙, 어투 차이를
+AI가 이미 학습하고 있습니다.
 
-과거 글, 자주 쓰는 표현, 말투 습관.
-AI가 학습합니다. 점점 닮아갑니다.
-나중엔 보좌진도 구분 못 합니다.
-'이거 직접 쓰신 거 아니에요?'`
-    },
-    {
-      icon: <AutoAwesome aria-hidden="true" />,
-      ariaLabel: '고품질 글쓰기 기능',
-      title: '읽히는 글, 살아있는 글',
-      description: '끝까지 읽게 만드는 힘',
-      modalTitle: '✨ AI 티 안 나는 글. 사람 냄새 나는 글.',
-      details: `정보 나열? 그건 ChatGPT도 합니다.
-
-전자두뇌비서관은 다릅니다.
-서론의 훅(Hook), 본론의 논리 전개, 결론의 여운.
-베테랑 정치 칼럼니스트의 작법을 학습했습니다.
-읽는 사람이 끝까지 읽게 만드는 힘.
-그게 진짜 글쓰기입니다.`
+승인 버튼만 누르면 됩니다.`
     }
   ];
 
-  // FAQ 데이터
+  // ── FAQ ────────────────────────────────────────────────────────
   const allFAQs = [
-    // Top 3
     {
       id: 'faq-0',
       question: 'AI도 많은데 굳이 이걸 써야 하나요?',
-      answer: '일반 AI와 달리 정치 콘텐츠에 특화되어 있으며, 네이버 검색 최적화가 적용됩니다.'
+      answer: '일반 AI와 달리 정치 콘텐츠에 특화되어 있습니다. 선거법 3단계 자동 검수, 의원님 문체 학습, 장르별 구조 선택, 네이버 검색 최적화까지 정치인에게 필요한 기능만 모았습니다.'
     },
     {
       id: 'faq-1',
-      question: '더불어민주당 당원만 사용 가능한가요?',
-      answer: '네, 당원 인증이 필요합니다. 당적증명서와 당비납부 영수증을 제출해주세요.'
+      question: '지지 정당이 다른 사용자도 쓸 수 있나요?',
+      answer: '현재는 더불어민주당 당원을 대상으로 먼저 서비스를 시작하고 있습니다. 타 정당 지원은 순차적으로 검토하고 있습니다. 당원 인증(당적증명서, 당비납부 영수증)이 필요합니다.'
     },
-    // More 4
+    {
+      id: 'faq-2',
+      question: 'AI로 쓴 글을 선거 기간에 올려도 되나요?',
+      answer: '생성된 원고는 초안이며, 최종 검수와 게시는 의원님 또는 보좌진의 판단입니다. 선거법 민감 표현은 AI가 1차 필터링하지만, 법적 책임은 게시자에게 있으므로 반드시 최종 확인 후 게시하시기 바랍니다.'
+    },
+    {
+      id: 'faq-3',
+      question: '월 90회면 충분한가요?',
+      answer: '하루 3편 꼴로, 블로그와 SNS 포함하면 주 5~6일 꾸준히 포스팅 가능한 분량입니다.'
+    },
     {
       id: 'faq-4',
-      question: '월 90회면 충분한가요?',
-      answer: '하루 3개 꼴로, 블로그+SNS 포함하면 주 5~6일 꾸준히 포스팅 가능한 분량입니다.'
-    },
-    {
-      id: 'faq-6',
       question: '검색 최적화는 어떻게 되나요?',
-      answer: '네이버 검색 알고리즘에 최적화된 키워드와 구조로 자동 작성됩니다.'
+      answer: '네이버 검색 알고리즘에 최적화된 키워드 배치, 소제목 구조, 본문 길이로 자동 작성됩니다. SEO 점수 기준을 통과해야 최종 원고가 완성됩니다.'
     },
     {
-      id: 'faq-7',
-      question: '어떤 내용으로 원고를 만들 수 있나요?',
-      answer: '지역 현안, 정책 설명, 활동 보고 등 정치 콘텐츠 전반을 생성할 수 있습니다.'
-    },
-    {
-      id: 'faq-8',
-      question: '당원 인증은 얼마나 걸리나요?',
-      answer: '서류 제출 후 영업일 기준 1~2일 내 승인됩니다. 승인 즉시 이용 가능합니다.'
+      id: 'faq-5',
+      question: '내 데이터가 다른 사용자에게 공유되나요?',
+      answer: '아닙니다. 문체 프로필, 생성 원고, 프로필 정보 모두 사용자별로 완전히 격리되어 저장됩니다. 다른 의원님의 AI와 섞이지 않습니다.'
     }
   ];
 
   const topFAQs = allFAQs.slice(0, 3);
-  const moreFAQs = allFAQs.slice(3, 10);
+  const moreFAQs = allFAQs.slice(3);
   const displayedFAQs = showAllFAQs ? allFAQs : topFAQs;
 
-  return (
-    <Box sx={{
-      minHeight: '100vh',
-      bgcolor: 'var(--color-background)',
-      position: 'relative'
-    }}>
-      {/* 로그인 버튼 */}
-      <motion.div
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.5, delay: 0.1 }}
+  // ── 공통 카드 렌더 ────────────────────────────────────────────
+  const renderFeatureCard = (value, size = 'large') => {
+    const isLarge = size === 'large';
+    return (
+      <Card
+        elevation={0}
+        onClick={() => setSelectedFeature(value)}
+        onKeyDown={(e) => handleCardKeyDown(e, value)}
+        tabIndex={0}
+        role="button"
+        aria-label={`${value.title} - ${value.description}. 클릭하여 자세히 보기`}
+        sx={{
+          textAlign: 'center',
+          p: { xs: 1, sm: 1.5, md: isLarge ? 4 : 3 },
+          height: '100%',
+          borderRadius: 'var(--radius-lg)',
+          bgcolor: 'var(--color-surface)',
+          border: isLarge ? '2px solid var(--color-border)' : '1px solid var(--color-border)',
+          boxShadow: 'none',
+          transition: 'all var(--transition-normal)',
+          cursor: 'pointer',
+          '&:hover, &:focus': {
+            borderColor: 'var(--color-primary)',
+            transform: 'translateY(-4px)',
+            boxShadow: 'var(--shadow-lg)'
+          },
+          '&:focus-visible': {
+            outline: '2px solid var(--color-primary)',
+            outlineOffset: '2px'
+          }
+        }}
       >
-        <Box sx={{ position: 'fixed', right: 24, top: 24, zIndex: 10 }}>
-          <Button
-            onClick={() => navigate('/login')}
-            sx={{
-              color: 'var(--color-primary)',
-              fontSize: '1rem',
-              fontWeight: 600,
-              textTransform: 'none',
-              px: 3,
-              py: 1,
-              '&:hover': {
-                bgcolor: 'var(--color-primary-lighter)'
+        <CardContent>
+          <Box sx={{ mb: 2, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            <Box sx={{
+              width: { xs: 50, sm: 60, md: isLarge ? 80 : 64 },
+              height: { xs: 50, sm: 60, md: isLarge ? 80 : 64 },
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              '& .MuiSvgIcon-root': {
+                color: 'var(--color-primary)',
+                fontSize: { xs: 40, sm: 50, md: isLarge ? 64 : 48 }
               }
+            }}>
+              {value.icon}
+            </Box>
+          </Box>
+          <Typography
+            variant="h4"
+            sx={{
+              fontWeight: 700,
+              mb: 1.5,
+              color: 'var(--color-text-primary)',
+              fontSize: isLarge
+                ? { xs: '1.1rem', sm: '1.4rem', md: '1.8rem', lg: '2rem' }
+                : { xs: '1rem', sm: '1.2rem', md: '1.5rem', lg: '1.6rem' },
+              lineHeight: 1.3,
+              wordBreak: 'keep-all'
             }}
           >
-            로그인
-          </Button>
-        </Box>
-      </motion.div>
+            {value.title}
+          </Typography>
+          <Typography
+            variant="body1"
+            sx={{
+              color: 'var(--color-text-secondary)',
+              fontSize: isLarge
+                ? { xs: '0.85rem', sm: '0.95rem', md: '1.05rem', lg: '1.15rem' }
+                : { xs: '0.8rem', sm: '0.9rem', md: '1rem' },
+              fontWeight: 400,
+              lineHeight: 1.5,
+              wordBreak: 'keep-all'
+            }}
+          >
+            {value.description}
+          </Typography>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  return (
+    <Box sx={{ minHeight: '100vh', bgcolor: 'var(--color-background)', position: 'relative' }}>
+
+      {/* 상단 헤더 바 */}
+      <Box sx={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 10,
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        px: { xs: 2, md: 4 },
+        py: 2,
+        bgcolor: 'rgba(255,255,255,0.85)',
+        backdropFilter: 'blur(8px)',
+        borderBottom: '1px solid var(--color-border)'
+      }}>
+        <Typography sx={{
+          fontWeight: 700,
+          fontSize: { xs: '1rem', md: '1.2rem' },
+          color: 'var(--color-text-primary)'
+        }}>
+          {BRANDING.serviceName}
+        </Typography>
+        <Button
+          onClick={() => navigate('/login')}
+          sx={{
+            color: 'var(--color-primary)',
+            fontSize: '1rem',
+            fontWeight: 600,
+            textTransform: 'none',
+            px: 3,
+            py: 1,
+            '&:hover': { bgcolor: 'var(--color-primary-lighter)' }
+          }}
+        >
+          로그인
+        </Button>
+      </Box>
 
       {/* Hero Section */}
       <motion.div
@@ -259,9 +369,22 @@ AI가 학습합니다. 점점 닮아갑니다.
             justifyContent: 'center',
             alignItems: 'center',
             textAlign: 'center',
-            py: 8
+            py: 8,
+            pt: 12
           }}
         >
+          <Typography
+            sx={{
+              fontSize: { xs: '0.95rem', md: '1.15rem' },
+              fontWeight: 600,
+              color: 'var(--color-primary)',
+              mb: 3,
+              letterSpacing: '0.05em'
+            }}
+          >
+            정치인 전용 블로그·SNS 원고 AI
+          </Typography>
+
           <Typography
             variant="h1"
             sx={{
@@ -274,13 +397,13 @@ AI가 학습합니다. 점점 닮아갑니다.
               wordBreak: 'keep-all'
             }}
           >
-            "의원님 덕분에<br />살기 좋은 동네가 됐어요!"
+            "의원님 덕분에<br />살기 좋은 동네가 됐어요."
           </Typography>
 
           <Typography
             variant="h5"
             sx={{
-              mb: 8,
+              mb: 3,
               color: 'var(--color-text-secondary)',
               fontWeight: 400,
               fontSize: { xs: '1.5rem', md: '2rem' },
@@ -289,6 +412,18 @@ AI가 학습합니다. 점점 닮아갑니다.
             }}
           >
             홍보하지 않으면<br />이런 말도 못 듣습니다.
+          </Typography>
+
+          <Typography
+            sx={{
+              mb: 8,
+              color: 'var(--color-text-secondary)',
+              fontSize: { xs: '1rem', md: '1.2rem' },
+              lineHeight: 1.6,
+              wordBreak: 'keep-all'
+            }}
+          >
+            블로그 한 편으로 인스타·페이스북·X·스레드까지. 월 90회 생성.
           </Typography>
 
           <Box sx={{ display: 'flex', gap: 3, justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -311,16 +446,14 @@ AI가 학습합니다. 점점 닮아갑니다.
                   bgcolor: 'var(--color-primary-hover)',
                   boxShadow: 'var(--shadow-glow-primary)'
                 },
-                '&:active': {
-                  transform: 'scale(0.98)'
-                },
+                '&:active': { transform: 'scale(0.98)' },
                 '&:focus-visible': {
                   outline: '2px solid var(--color-text-inverse)',
                   outlineOffset: '2px'
                 }
               }}
             >
-              네이버 현수막? 지금 시작
+              서비스 시작하기
             </Button>
 
             <Button
@@ -345,42 +478,33 @@ AI가 학습합니다. 점점 닮아갑니다.
                   bgcolor: 'var(--color-primary-lighter)',
                   boxShadow: 'var(--shadow-md)'
                 },
-                '&:active': {
-                  transform: 'scale(0.98)'
-                },
+                '&:active': { transform: 'scale(0.98)' },
                 '&:focus-visible': {
                   outline: '2px solid var(--color-primary)',
                   outlineOffset: '2px'
                 }
               }}
             >
-              📖 자세히 보기
+              자세히 보기
             </Button>
           </Box>
         </Container>
       </motion.div>
 
-      {/* 도입 성과 그래프 섹션 */}
+      {/* 성과 그래프 섹션 */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, delay: 0.15 }}
       >
-        <Container
-          maxWidth="lg"
-          sx={{
-            py: { xs: 10, md: 14 }
-          }}
-        >
-          <Box
-            sx={{
-              p: { xs: 3, sm: 4, md: 6 },
-              borderRadius: 'var(--radius-lg)',
-              border: '1px solid var(--color-border)',
-              bgcolor: 'var(--color-surface)',
-              boxShadow: 'var(--shadow-lg)'
-            }}
-          >
+        <Container maxWidth="lg" sx={{ py: { xs: 10, md: 14 } }}>
+          <Box sx={{
+            p: { xs: 3, sm: 4, md: 6 },
+            borderRadius: 'var(--radius-lg)',
+            border: '1px solid var(--color-border)',
+            bgcolor: 'var(--color-surface)',
+            boxShadow: 'var(--shadow-lg)'
+          }}>
             <Box sx={{ mb: { xs: 4, md: 5 }, textAlign: 'center' }}>
               <Typography
                 variant="h2"
@@ -393,44 +517,38 @@ AI가 학습합니다. 점점 닮아갑니다.
                   wordBreak: 'keep-all'
                 }}
               >
-                의정 성과, 이제는 읽히게 만듭니다
+                도입 사례: 블로그 조회수 추이
               </Typography>
-              <Typography
-                sx={{
-                  color: 'var(--color-text-secondary)',
-                  fontSize: { xs: '1rem', md: '1.125rem' },
-                  lineHeight: 1.7,
-                  wordBreak: 'keep-all'
-                }}
-              >
-                {BRANDING.serviceName} 도입 후 월 평균 조회수 289회 → 1,451회 (5.03배)
+              <Typography sx={{
+                color: 'var(--color-text-secondary)',
+                fontSize: { xs: '1rem', md: '1.125rem' },
+                lineHeight: 1.7,
+                wordBreak: 'keep-all'
+              }}>
+                {BRANDING.serviceName}을 도입한 후보자 1인의 12개월 네이버 블로그 조회수 리포트입니다.
               </Typography>
-              <Typography
-                sx={{
-                  mt: 0.75,
-                  color: 'var(--color-text-secondary)',
-                  fontSize: { xs: '0.9rem', md: '0.95rem' },
-                  lineHeight: 1.6,
-                  wordBreak: 'keep-all'
-                }}
-              >
-                도입 이후 기간(2025.12~2026.02) 기준
+              <Typography sx={{
+                mt: 0.75,
+                color: 'var(--color-text-secondary)',
+                fontSize: { xs: '0.9rem', md: '0.95rem' },
+                lineHeight: 1.6,
+                wordBreak: 'keep-all'
+              }}>
+                주제·지역·직위에 따라 결과는 달라질 수 있습니다.
               </Typography>
             </Box>
 
             <Grid container spacing={3}>
               <Grid item xs={12} md={8}>
-                <Box
-                  sx={{
-                    height: { xs: 280, md: 360 },
-                    p: { xs: 1.5, md: 2 },
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--color-border)',
-                    bgcolor: 'var(--color-background)'
-                  }}
-                >
+                <Box sx={{
+                  height: { xs: 280, md: 360 },
+                  p: { xs: 1.5, md: 2 },
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--color-border)',
+                  bgcolor: 'var(--color-background)'
+                }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={monthlyViewData} margin={{ top: 24, right: 12, left: 0, bottom: 8 }}>
+                    <LineChart data={chartData} margin={{ top: 24, right: 12, left: 0, bottom: 8 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                       <XAxis
                         dataKey="month"
@@ -468,13 +586,23 @@ AI가 학습합니다. 점점 닮아갑니다.
                       />
                       <Line
                         type="monotone"
-                        dataKey="total"
+                        dataKey="before"
+                        stroke="var(--color-text-secondary)"
+                        strokeWidth={2}
+                        dot={{ r: 3, fill: 'var(--color-text-secondary)' }}
+                        activeDot={{ r: 5, fill: 'var(--color-text-secondary)' }}
+                        connectNulls={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="after"
                         stroke="var(--color-primary)"
                         strokeWidth={3}
                         dot={{ r: 4, fill: 'var(--color-primary)' }}
                         activeDot={{ r: 6, fill: 'var(--color-primary)' }}
+                        connectNulls={false}
                       />
-                    </AreaChart>
+                    </LineChart>
                   </ResponsiveContainer>
                 </Box>
               </Grid>
@@ -482,16 +610,13 @@ AI가 학습합니다. 점점 닮아갑니다.
               <Grid item xs={12} md={4}>
                 <Grid container spacing={2}>
                   <Grid item xs={6} md={12}>
-                    <Card
-                      elevation={0}
-                      sx={{
-                        p: 2.5,
-                        borderRadius: 'var(--radius-md)',
-                        border: '1px dashed var(--color-border)',
-                        bgcolor: 'var(--color-background)',
-                        minHeight: 132
-                      }}
-                    >
+                    <Card elevation={0} sx={{
+                      p: 2.5,
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px dashed var(--color-border)',
+                      bgcolor: 'var(--color-background)',
+                      minHeight: 132
+                    }}>
                       <Typography sx={{ color: 'var(--color-text-secondary)', mb: 1, fontSize: '0.95rem' }}>
                         도입 전 월 평균
                       </Typography>
@@ -504,29 +629,24 @@ AI가 학습합니다. 점점 닮아갑니다.
                     </Card>
                   </Grid>
                   <Grid item xs={6} md={12}>
-                    <Card
-                      elevation={0}
-                      sx={{
-                        p: 2.5,
-                        borderRadius: 'var(--radius-md)',
-                        border: '2px solid var(--color-primary)',
-                        bgcolor: 'var(--color-surface)',
-                        background: 'linear-gradient(135deg, var(--color-primary-lighter) 0%, var(--color-surface) 72%)',
-                        boxShadow: 'var(--shadow-glow-primary)',
-                        minHeight: 132
-                      }}
-                    >
+                    <Card elevation={0} sx={{
+                      p: 2.5,
+                      borderRadius: 'var(--radius-md)',
+                      border: '2px solid var(--color-primary)',
+                      bgcolor: 'var(--color-surface)',
+                      background: 'linear-gradient(135deg, var(--color-primary-lighter) 0%, var(--color-surface) 72%)',
+                      boxShadow: 'var(--shadow-glow-primary)',
+                      minHeight: 132
+                    }}>
                       <Typography sx={{ color: 'var(--color-primary)', mb: 1, fontSize: '0.95rem', fontWeight: 700 }}>
                         도입 후 월 평균
                       </Typography>
-                      <Typography
-                        sx={{
-                          color: 'var(--color-primary)',
-                          fontSize: { xs: '2.15rem', md: '2.55rem' },
-                          fontWeight: 800,
-                          lineHeight: 1
-                        }}
-                      >
+                      <Typography sx={{
+                        color: 'var(--color-primary)',
+                        fontSize: { xs: '2.15rem', md: '2.55rem' },
+                        fontWeight: 800,
+                        lineHeight: 1
+                      }}>
                         {postLaunchAverage.toLocaleString()}회
                       </Typography>
                       <Typography sx={{ color: 'var(--color-text-secondary)', mt: 0.75, fontSize: '0.85rem' }}>
@@ -535,37 +655,26 @@ AI가 학습합니다. 점점 닮아갑니다.
                     </Card>
                   </Grid>
                   <Grid item xs={12}>
-                    <Card
-                      elevation={0}
-                      sx={{
-                        p: 2.5,
-                        borderRadius: 'var(--radius-md)',
-                        border: '1px solid var(--color-primary)',
-                        bgcolor: 'var(--color-primary-lighter)'
-                      }}
-                    >
+                    <Card elevation={0} sx={{
+                      p: 2.5,
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--color-primary)',
+                      bgcolor: 'var(--color-primary-lighter)'
+                    }}>
                       <Typography sx={{ color: 'var(--color-text-secondary)', mb: 1, fontSize: '0.95rem' }}>
-                        도입 후 3개월 성과
+                        도입 후 3개월 성과 (사례 기준)
                       </Typography>
-                      <Typography
-                        sx={{
-                          color: 'var(--color-primary)',
-                          fontSize: { xs: '1.9rem', md: '2.2rem' },
-                          fontWeight: 800,
-                          lineHeight: 1.2
-                        }}
-                      >
+                      <Typography sx={{
+                        color: 'var(--color-primary)',
+                        fontSize: { xs: '1.9rem', md: '2.2rem' },
+                        fontWeight: 800,
+                        lineHeight: 1.2
+                      }}>
                         월 평균 {growthMultiple}배
                       </Typography>
                       <Typography sx={{ color: 'var(--color-text-secondary)', mt: 1, fontSize: '0.95rem' }}>
                         최고 {postLaunchPeak.total.toLocaleString()}회{' '}
-                        <Typography
-                          component="span"
-                          sx={{
-                            fontSize: '0.82em',
-                            color: 'var(--color-text-secondary)'
-                          }}
-                        >
+                        <Typography component="span" sx={{ fontSize: '0.82em', color: 'var(--color-text-secondary)' }}>
                           ({postLaunchPeak.month})
                         </Typography>
                       </Typography>
@@ -575,117 +684,154 @@ AI가 학습합니다. 점점 닮아갑니다.
               </Grid>
             </Grid>
 
-            <Typography
-              sx={{
-                mt: 3,
-                color: 'var(--color-text-secondary)',
-                fontSize: '0.9rem',
-                textAlign: 'right'
-              }}
-            >
-              데이터 기준: 제9회 동시지방선거 이재성 부산광역시장 예비후보 네이버 블로그 조회수 월간 리포트 (2025.03~2026.02)
+            <Typography sx={{
+              mt: 3,
+              color: 'var(--color-text-secondary)',
+              fontSize: '0.9rem',
+              textAlign: 'right'
+            }}>
+              데이터 기준: 실 사용자 네이버 블로그 조회수 월간 리포트 (2025.03~2026.02)
             </Typography>
           </Box>
         </Container>
       </motion.div>
 
-      {/* 핵심 가치 6개 */}
+      {/* 섹션 A: 정치인 글쓰기는 다릅니다 */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, delay: 0.2 }}
       >
-        <Container
-          maxWidth="lg"
-          sx={{
-            minHeight: '100vh',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            py: 8
-          }}
-        >
+        <Container maxWidth="lg" sx={{ py: { xs: 10, md: 14 } }}>
+          <Typography
+            variant="h2"
+            sx={{
+              fontWeight: 700,
+              mb: 2,
+              textAlign: 'center',
+              color: 'var(--color-text-primary)',
+              fontSize: { xs: '2rem', md: '2.8rem' },
+              letterSpacing: '-0.02em',
+              wordBreak: 'keep-all'
+            }}
+          >
+            정치인 글쓰기는 다릅니다
+          </Typography>
+          <Typography sx={{
+            mb: 8,
+            textAlign: 'center',
+            color: 'var(--color-text-secondary)',
+            fontSize: { xs: '1rem', md: '1.125rem' },
+            lineHeight: 1.7,
+            wordBreak: 'keep-all'
+          }}>
+            일반 AI에는 없는, 정치 콘텐츠 전용 기능.
+          </Typography>
           <Grid container spacing={4}>
-            {coreValues.map((value, index) => (
-              <Grid item xs={6} md={4} key={index}>
-                <Card
-                  elevation={0}
-                  onClick={() => setSelectedFeature(value)}
-                  onKeyDown={(e) => handleCardKeyDown(e, value)}
-                  tabIndex={0}
-                  role="button"
-                  aria-label={`${value.title} - ${value.description}. 클릭하여 자세히 보기`}
-                  sx={{
-                    textAlign: 'center',
-                    p: { xs: 1, sm: 1.5, md: 3 },
-                    height: '100%',
-                    borderRadius: 'var(--radius-lg)',
-                    bgcolor: 'var(--color-surface)',
-                    border: '1px solid var(--color-border)',
-                    boxShadow: 'none',
-                    transition: 'all var(--transition-normal)',
-                    cursor: 'pointer',
-                    '&:hover, &:focus': {
-                      borderColor: 'var(--color-primary)',
-                      transform: 'translateY(-4px)',
-                      boxShadow: 'var(--shadow-lg)'
-                    },
-                    '&:focus-visible': {
-                      outline: '2px solid var(--color-primary)',
-                      outlineOffset: '2px'
-                    }
-                  }}
-                >
-                  <CardContent>
-                    <Box sx={{
-                      mb: 2,
-                      display: 'flex',
-                      justifyContent: 'center',
-                      alignItems: 'center'
-                    }}>
-                      <Box sx={{
-                        width: { xs: 50, sm: 60, md: 80 },
-                        height: { xs: 50, sm: 60, md: 80 },
-                        display: 'flex',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        '& .MuiSvgIcon-root': {
-                          color: 'var(--color-primary)',
-                          fontSize: { xs: 40, sm: 50, md: 64 }
-                        }
-                      }}>
-                        {value.icon}
-                      </Box>
-                    </Box>
-                    <Typography
-                      variant="h4"
-                      sx={{
-                        fontWeight: 700,
-                        mb: 1.5,
-                        color: 'var(--color-text-primary)',
-                        fontSize: { xs: '1rem', sm: '1.3rem', md: '1.8rem', lg: '2rem' },
-                        lineHeight: 1.3,
-                        wordBreak: 'keep-all'
-                      }}
-                    >
-                      {value.title}
-                    </Typography>
-                    <Typography
-                      variant="body1"
-                      sx={{
-                        color: 'var(--color-text-secondary)',
-                        fontSize: { xs: '0.8rem', sm: '0.9rem', md: '1rem', lg: '1.1rem' },
-                        fontWeight: 400,
-                        lineHeight: 1.5,
-                        wordBreak: 'keep-all'
-                      }}
-                    >
-                      {value.description}
-                    </Typography>
-                  </CardContent>
-                </Card>
+            {differentiators.map((value, index) => (
+              <Grid item xs={12} md={4} key={index}>
+                {renderFeatureCard(value, 'large')}
               </Grid>
             ))}
+          </Grid>
+        </Container>
+      </motion.div>
+
+      {/* 섹션 B: 기본기도 탄탄합니다 */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.25 }}
+      >
+        <Container maxWidth="lg" sx={{ py: { xs: 8, md: 12 } }}>
+          <Typography
+            variant="h2"
+            sx={{
+              fontWeight: 700,
+              mb: 2,
+              textAlign: 'center',
+              color: 'var(--color-text-primary)',
+              fontSize: { xs: '2rem', md: '2.8rem' },
+              letterSpacing: '-0.02em',
+              wordBreak: 'keep-all'
+            }}
+          >
+            기본기도 탄탄합니다
+          </Typography>
+          <Typography sx={{
+            mb: 8,
+            textAlign: 'center',
+            color: 'var(--color-text-secondary)',
+            fontSize: { xs: '1rem', md: '1.125rem' },
+            lineHeight: 1.7,
+            wordBreak: 'keep-all'
+          }}>
+            매일의 콘텐츠 운영을 지탱하는 실무 기능.
+          </Typography>
+          <Grid container spacing={3}>
+            {basics.map((value, index) => (
+              <Grid item xs={6} md={4} key={index}>
+                {renderFeatureCard(value, 'small')}
+              </Grid>
+            ))}
+          </Grid>
+        </Container>
+      </motion.div>
+
+      {/* 섹션 C: 안심 설계 */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.3 }}
+      >
+        <Container maxWidth="md" sx={{ py: { xs: 8, md: 12 } }}>
+          <Grid container spacing={4}>
+            <Grid item xs={12} md={6}>
+              <Box sx={{
+                p: { xs: 3, md: 4 },
+                borderRadius: 'var(--radius-lg)',
+                border: '1px solid var(--color-border)',
+                bgcolor: 'var(--color-surface)',
+                height: '100%',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 2.5
+              }}>
+                <FactCheck sx={{ color: 'var(--color-primary)', fontSize: 36, flexShrink: 0, mt: 0.5 }} />
+                <Box>
+                  <Typography sx={{ fontWeight: 700, fontSize: '1.15rem', color: 'var(--color-text-primary)', mb: 1 }}>
+                    10단계 품질 검수
+                  </Typography>
+                  <Typography sx={{ color: 'var(--color-text-secondary)', fontSize: '0.95rem', lineHeight: 1.7 }}>
+                    구조 생성, 키워드 주입, 문체 적용, 선거법 검수, SEO 검증까지.
+                    문제가 발견되면 AI가 스스로 수정합니다.
+                  </Typography>
+                </Box>
+              </Box>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Box sx={{
+                p: { xs: 3, md: 4 },
+                borderRadius: 'var(--radius-lg)',
+                border: '1px solid var(--color-border)',
+                bgcolor: 'var(--color-surface)',
+                height: '100%',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 2.5
+              }}>
+                <Security sx={{ color: 'var(--color-primary)', fontSize: 36, flexShrink: 0, mt: 0.5 }} />
+                <Box>
+                  <Typography sx={{ fontWeight: 700, fontSize: '1.15rem', color: 'var(--color-text-primary)', mb: 1 }}>
+                    데이터 완전 격리
+                  </Typography>
+                  <Typography sx={{ color: 'var(--color-text-secondary)', fontSize: '0.95rem', lineHeight: 1.7 }}>
+                    문체 프로필, 생성 원고, 프로필 정보 모두 사용자별 별도 저장.
+                    다른 의원님의 AI와 절대 섞이지 않습니다.
+                  </Typography>
+                </Box>
+              </Box>
+            </Grid>
           </Grid>
         </Container>
       </motion.div>
@@ -698,22 +844,12 @@ AI가 학습합니다. 점점 닮아갑니다.
         fullWidth
         aria-labelledby="feature-dialog-title"
         aria-describedby="feature-dialog-description"
-        sx={{
-          '& .MuiDialog-paper': {
-            borderRadius: 'var(--radius-lg)',
-            p: 2
-          }
-        }}
+        sx={{ '& .MuiDialog-paper': { borderRadius: 'var(--radius-lg)', p: 2 } }}
       >
         {selectedFeature && (
           <>
             <Box sx={{ p: 3, textAlign: 'center' }}>
-              <Box sx={{
-                mb: 3,
-                display: 'flex',
-                justifyContent: 'center'
-              }}>
-                {/* 아이콘 재사용 (크기 키움) */}
+              <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center' }}>
                 {React.cloneElement(selectedFeature.icon, {
                   sx: { fontSize: 80, color: 'var(--color-primary)' }
                 })}
@@ -771,7 +907,7 @@ AI가 학습합니다. 점점 닮아갑니다.
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.3 }}
+        transition={{ duration: 0.6, delay: 0.35 }}
       >
         <Container maxWidth="md" sx={{ py: 20 }}>
           <Typography
@@ -803,18 +939,10 @@ AI가 학습합니다. 점점 닮아갑니다.
                 boxShadow: 'none',
                 transition: 'all var(--transition-normal)',
                 '&:before': { display: 'none' },
-                '&:first-of-type': {
-                  borderRadius: 'var(--radius-md)'
-                },
-                '&:last-of-type': {
-                  borderRadius: 'var(--radius-md)'
-                },
-                '&.Mui-expanded': {
-                  margin: '0 0 16px 0'
-                },
-                '&:hover': {
-                  borderColor: 'var(--color-primary)'
-                }
+                '&:first-of-type': { borderRadius: 'var(--radius-md)' },
+                '&:last-of-type': { borderRadius: 'var(--radius-md)' },
+                '&.Mui-expanded': { margin: '0 0 16px 0' },
+                '&:hover': { borderColor: 'var(--color-primary)' }
               }}
             >
               <AccordionSummary
@@ -837,38 +965,40 @@ AI가 학습합니다. 점점 닮아갑니다.
             </Accordion>
           ))}
 
-          <Box sx={{ textAlign: 'center', mt: 8 }}>
-            <Button
-              variant="outlined"
-              size="large"
-              onClick={() => setShowAllFAQs(!showAllFAQs)}
-              sx={{
-                color: 'var(--color-primary)',
-                borderColor: 'var(--color-primary)',
-                borderWidth: 2,
-                fontSize: '1.125rem',
-                fontWeight: 600,
-                px: 6,
-                py: 2,
-                borderRadius: 'var(--radius-md)',
-                textTransform: 'none',
-                transition: 'all var(--transition-normal)',
-                '&:hover': {
-                  borderWidth: 2,
+          {moreFAQs.length > 0 && (
+            <Box sx={{ textAlign: 'center', mt: 8 }}>
+              <Button
+                variant="outlined"
+                size="large"
+                onClick={() => setShowAllFAQs(!showAllFAQs)}
+                sx={{
+                  color: 'var(--color-primary)',
                   borderColor: 'var(--color-primary)',
-                  bgcolor: 'var(--color-primary-lighter)'
-                },
-                '&:focus-visible': {
-                  outline: '2px solid var(--color-primary)',
-                  outlineOffset: '2px'
-                }
-              }}
-              aria-expanded={showAllFAQs}
-              aria-controls="faq-list"
-            >
-              {showAllFAQs ? '질문 접기' : '더 많은 질문 보기 (4개)'}
-            </Button>
-          </Box>
+                  borderWidth: 2,
+                  fontSize: '1.125rem',
+                  fontWeight: 600,
+                  px: 6,
+                  py: 2,
+                  borderRadius: 'var(--radius-md)',
+                  textTransform: 'none',
+                  transition: 'all var(--transition-normal)',
+                  '&:hover': {
+                    borderWidth: 2,
+                    borderColor: 'var(--color-primary)',
+                    bgcolor: 'var(--color-primary-lighter)'
+                  },
+                  '&:focus-visible': {
+                    outline: '2px solid var(--color-primary)',
+                    outlineOffset: '2px'
+                  }
+                }}
+                aria-expanded={showAllFAQs}
+                aria-controls="faq-list"
+              >
+                {showAllFAQs ? '질문 접기' : `더 많은 질문 보기 (${moreFAQs.length}개)`}
+              </Button>
+            </Box>
+          )}
         </Container>
       </motion.div>
 
@@ -906,13 +1036,11 @@ AI가 학습합니다. 점점 닮아갑니다.
                 >
                   월 50,000원
                 </Typography>
-                <Typography
-                  sx={{
-                    color: 'var(--color-text-secondary)',
-                    fontSize: '1.25rem',
-                    fontWeight: 400
-                  }}
-                >
+                <Typography sx={{
+                  color: 'var(--color-text-secondary)',
+                  fontSize: '1.25rem',
+                  fontWeight: 400
+                }}>
                   (VAT 별도)
                 </Typography>
               </Box>
@@ -935,16 +1063,14 @@ AI가 학습합니다. 점점 닮아갑니다.
                     bgcolor: 'var(--color-primary-hover)',
                     boxShadow: 'var(--shadow-glow-primary)'
                   },
-                  '&:active': {
-                    transform: 'scale(0.98)'
-                  },
+                  '&:active': { transform: 'scale(0.98)' },
                   '&:focus-visible': {
                     outline: '2px solid var(--color-text-inverse)',
                     outlineOffset: '2px'
                   }
                 }}
               >
-                내 선거구 비어있나? 지금 확인
+                서비스 신청하기
               </Button>
             </CardContent>
           </Card>
