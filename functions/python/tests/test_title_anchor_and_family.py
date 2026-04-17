@@ -815,12 +815,12 @@ def test_policy_plan_suffix_captured():
     """'구축계획', '발전전략' 등 계획·전략 접미 정책명이 policy 에 잡힘."""
     from agents.common.title_hook_quality import extract_slot_opportunities
 
-    content = '인천시 도시철도망 구축계획에 반영. 지역 균형발전 전략 수립.'
+    content = '인천시 도시철도망 구축계획에 반영. 지역 균형발전전략 수립. 추진방안 마련.'
     slots = extract_slot_opportunities('샘플 주제', content, {})
     policy = slots.get('policy', [])
     joined = ' '.join(policy)
     assert '구축계획' in joined, f'policy should contain 구축계획, got {policy}'
-    assert '전략' in joined, f'policy should contain 전략, got {policy}'
+    assert '추진방안' in joined, f'policy should contain 추진방안, got {policy}'
 
 
 def test_slot_keywords_use_topic_base_when_sufficient():
