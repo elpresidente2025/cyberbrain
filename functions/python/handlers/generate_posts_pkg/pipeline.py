@@ -9212,8 +9212,9 @@ def _run_editor_repair_once(
     style_fingerprint: Optional[Dict[str, Any]] = None,
     generation_profile: Optional[Dict[str, Any]] = None,
     style_polish_mode: str = "",
+    keyword_aliases: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """기준 미충족 시 EditorAgent로 1회 교정 시도."""
+    """기준 미충��� 시 EditorAgent로 1회 교정 시도."""
     base_content = str(content or "")
     base_title = str(title or "")
     keyword_feedback = _build_editor_keyword_feedback(
@@ -9263,6 +9264,7 @@ def _run_editor_repair_once(
             "styleFingerprint": resolved_style_fingerprint if allow_style_polish else {},
             "generationProfile": resolved_generation_profile if allow_style_polish else {},
             "stylePolishMode": resolved_style_polish_mode if allow_style_polish else "",
+            "keywordAliases": keyword_aliases if isinstance(keyword_aliases, dict) else {},
         }
         result = _run_async_sync(agent.run(editor_input))
         if not isinstance(result, dict):
@@ -9561,6 +9563,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     if not isinstance(raw_generation_profile, dict):
         raw_generation_profile = profile_bundle.get("generationProfile")
     generation_profile = _safe_dict(raw_generation_profile)
+    keyword_aliases = _safe_dict(profile_bundle.get("keywordAliases"))
     style_polish_mode = str(data.get("stylePolishMode") or "light").strip().lower()
     if style_polish_mode not in {"light", "medium"}:
         style_polish_mode = "light"
@@ -9791,6 +9794,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         body_min_overrides=body_min_overrides,
         user_keyword_expected_overrides=user_keyword_expected_overrides,
         user_keyword_max_overrides=user_keyword_max_overrides,
+        keyword_aliases=keyword_aliases,
     )
     keyword_validation = build_keyword_validation(initial_keyword_result)
     keyword_counts = _extract_keyword_counts(initial_keyword_result)
@@ -10302,6 +10306,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             style_fingerprint=style_fingerprint,
             generation_profile=generation_profile,
             style_polish_mode=style_polish_mode,
+            keyword_aliases=keyword_aliases,
         )
         editor_auto_repair["error"] = editor_fix.get("error")
         summary = editor_fix.get("editSummary")
@@ -10501,6 +10506,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             style_fingerprint=style_fingerprint,
             generation_profile=generation_profile,
             style_polish_mode=style_polish_mode,
+            keyword_aliases=keyword_aliases,
         )
         editor_second_pass["error"] = second_editor_fix.get("error")
         second_summary = second_editor_fix.get("editSummary")
@@ -11101,6 +11107,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 style_fingerprint=style_fingerprint,
                 generation_profile=generation_profile,
                 style_polish_mode=style_polish_mode,
+                keyword_aliases=keyword_aliases,
             )
             integrity_editor_repair["error"] = integrity_fix.get("error")
             summary_items = integrity_fix.get("editSummary")
@@ -11389,6 +11396,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         body_min_overrides=body_min_overrides,
         user_keyword_expected_overrides=user_keyword_expected_overrides,
         user_keyword_max_overrides=user_keyword_max_overrides,
+        keyword_aliases=keyword_aliases,
     )
     keyword_validation = build_keyword_validation(final_keyword_result)
     keyword_counts = _extract_keyword_counts(final_keyword_result)
@@ -12202,3 +12210,134 @@ def handle_generate_posts(req: https_fn.CallableRequest) -> Dict[str, Any]:
         if progress:
             progress.error(str(exc))
         raise https_fn.HttpsError("internal", f"원고 생성에 실패했습니다: {exc}") from exc
+
+
+class _FakeCallableAuth:
+    __slots__ = ("uid", "token")
+
+    def __init__(self, uid: str, token: Dict[str, Any]):
+        self.uid = uid
+        self.token = token
+
+
+class _FakeCallableRequest:
+    __slots__ = ("data", "auth", "raw_request")
+
+    def __init__(self, data: Dict[str, Any], auth: Optional[_FakeCallableAuth], raw_request: Any):
+        self.data = data
+        self.auth = auth
+        self.raw_request = raw_request
+
+
+def _error_body(status: str, message: str) -> str:
+    return json.dumps({"error": {"status": status, "message": message}}, ensure_ascii=False)
+
+
+def handle_generate_posts_request(req: https_fn.Request) -> https_fn.Response:
+    """on_request 래퍼 — heartbeat 스트리밍으로 idle TCP reset 방지.
+
+    on_call 프로토콜(요청 body: {"data": {...}}, 응답 body: {"result": {...}} or {"error": {...}})을
+    그대로 유지하되, 백그라운드 스레드에서 파이프라인을 돌리면서 상위 HTTP 본문에는 ~25초 간격으로
+    공백 1바이트를 흘려 보낸다. JSON 파서는 선두 공백을 무시하므로 최종 응답 파싱은 영향이 없다.
+
+    Why: 파이프라인 runtime이 ~120s를 넘길 때 일부 NAT/ISP가 idle TCP를 RST로 끊어서
+    ERR_CONNECTION_RESET이 클라이언트에 뜨는 문제(서버는 정상 완료) 방지용.
+    """
+    import queue
+    import threading
+    from firebase_admin import auth as fb_auth
+
+    if req.method == "OPTIONS":
+        return https_fn.Response("", status=204)
+
+    if req.method != "POST":
+        return https_fn.Response(
+            _error_body("INVALID_ARGUMENT", "POST 요청만 허용됩니다."),
+            status=405,
+            mimetype="application/json",
+        )
+
+    auth_header = req.headers.get("Authorization") or req.headers.get("authorization") or ""
+    if not auth_header.startswith("Bearer "):
+        return https_fn.Response(
+            _error_body("UNAUTHENTICATED", "로그인이 필요합니다."),
+            status=401,
+            mimetype="application/json",
+        )
+
+    id_token = auth_header.split("Bearer ", 1)[1].strip()
+    try:
+        decoded = fb_auth.verify_id_token(id_token)
+    except Exception as exc:
+        logger.warning("[generatePosts] ID 토큰 검증 실패: %s", exc)
+        return https_fn.Response(
+            _error_body("UNAUTHENTICATED", "인증 토큰 검증 실패"),
+            status=401,
+            mimetype="application/json",
+        )
+
+    uid = str(decoded.get("uid") or decoded.get("user_id") or "").strip()
+    if not uid:
+        return https_fn.Response(
+            _error_body("UNAUTHENTICATED", "사용자 식별 불가"),
+            status=401,
+            mimetype="application/json",
+        )
+
+    body = req.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        body = {}
+    inner_data = body.get("data", body)
+    if not isinstance(inner_data, dict):
+        inner_data = {}
+
+    fake_req = _FakeCallableRequest(
+        data=inner_data,
+        auth=_FakeCallableAuth(uid=uid, token=decoded),
+        raw_request=req,
+    )
+
+    result_queue: "queue.Queue[tuple[str, Any]]" = queue.Queue(maxsize=1)
+
+    def _worker() -> None:
+        try:
+            result = handle_generate_posts(fake_req)
+            result_queue.put(("ok", result))
+        except https_fn.HttpsError as exc:
+            code = getattr(exc, "code", None)
+            code_name = getattr(code, "name", None) or str(code) or "INTERNAL"
+            message = str(getattr(exc, "message", None) or exc)
+            result_queue.put(("err", {"status": code_name.upper(), "message": message}))
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[generatePosts stream] worker 미처리 예외")
+            result_queue.put(("err", {"status": "INTERNAL", "message": f"원고 생성에 실패했습니다: {exc}"}))
+
+    worker_thread = threading.Thread(target=_worker, name="generatePosts-worker", daemon=True)
+    worker_thread.start()
+
+    HEARTBEAT_INTERVAL_SEC = 25
+
+    def _stream():
+        yield " "  # 초기 flush로 헤더/상태 커밋
+        while True:
+            try:
+                kind, payload = result_queue.get(timeout=HEARTBEAT_INTERVAL_SEC)
+            except queue.Empty:
+                yield " "
+                continue
+            if kind == "ok":
+                yield json.dumps({"result": payload}, ensure_ascii=False)
+            else:
+                yield json.dumps({"error": payload}, ensure_ascii=False)
+            return
+
+    return https_fn.Response(
+        _stream(),
+        status=200,
+        mimetype="application/json",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Content-Type-Options": "nosniff",
+            "X-Accel-Buffering": "no",
+        },
+    )

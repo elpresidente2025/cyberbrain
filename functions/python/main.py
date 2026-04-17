@@ -109,6 +109,24 @@ def generatePosts(req: https_fn.CallableRequest) -> dict:
     return handle_generate_posts(req)
 
 
+@https_fn.on_request(
+    cors=options.CorsOptions(cors_origins="*", cors_methods=["POST", "OPTIONS"]),
+    region="asia-northeast3",
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=1200,
+    secrets=["GEMINI_API_KEY", "LANGCHAIN_API_KEY"]
+)
+def generatePostsStream(req: https_fn.Request) -> https_fn.Response:
+    """원고 생성 (on_request + heartbeat 스트리밍).
+
+    Why: NAT·ISP가 idle TCP를 ~120s에서 RST로 끊어 ERR_CONNECTION_RESET을 유발하는 문제 우회.
+    파이프라인이 도는 동안 25초 간격으로 공백 1바이트를 HTTP body로 흘려 연결을 active 상태로 유지.
+    응답 포맷은 on_call 호환({"result"}/{"error"})이라 프론트 파싱 로직은 그대로.
+    """
+    from handlers.generate_posts import handle_generate_posts_request
+    return handle_generate_posts_request(req)
+
+
 # ============================================================
 # Posts CRUD / Usage / Indexing Endpoints
 # ============================================================

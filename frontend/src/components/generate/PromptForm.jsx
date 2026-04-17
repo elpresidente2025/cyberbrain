@@ -254,61 +254,71 @@ export default function PromptForm({
                   }
                   FormHelperTextProps={{ sx: { color: index === 0 && errors?.instructions0 ? 'error.main' : 'text.secondary' } }}
                 />
-                {index !== 0 && index === instructionsList.length - 1 && instructionsList.length < 10 && (
-                  <Tooltip title="뉴스/데이터 입력창 추가">
-                    <IconButton
-                      size="small"
-                      onClick={addInstructionField}
-                      disabled={disabled}
-                      aria-label="뉴스/데이터 입력창 추가"
-                      sx={{
-                        mt: 1.25,
-                        ...iconButtonSizeSx,
-                        backgroundColor: '#006261',
-                        color: 'white',
-                        border: '1px solid',
-                        borderColor: '#006261',
-                        '&:hover': {
-                          backgroundColor: '#003A87',
-                          borderColor: '#003A87'
-                        },
-                        '&:disabled': {
-                          backgroundColor: 'grey.50',
-                          borderColor: 'grey.200',
-                          color: 'grey.400'
-                        }
-                      }}
-                    >
-                      <Add fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                )}
                 {index !== 0 && (
-                  <IconButton
-                    size="small"
-                    onClick={() => removeInstructionField(index)}
-                    disabled={disabled || instructionsList.length <= 2}
-                    aria-label="참고자료 입력창 삭제"
-                    sx={{
-                      mt: 1.25,
-                      ...iconButtonSizeSx,
-                      backgroundColor: '#55207d',
-                      color: 'white',
-                      border: '1px solid',
-                      borderColor: '#55207d',
-                      '&:hover': {
-                        backgroundColor: theme.palette.ui?.header || '#152484',
-                        borderColor: theme.palette.ui?.header || '#152484'
-                      },
-                      '&:disabled': {
-                        backgroundColor: 'grey.50',
-                        borderColor: 'grey.200',
-                        color: 'grey.400'
-                      }
-                    }}
-                  >
-                    <Remove fontSize="small" />
-                  </IconButton>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mt: 1.25 }}>
+                    {instructionsList.length > 2 && (
+                      <IconButton
+                        size="small"
+                        onClick={() => removeInstructionField(index)}
+                        disabled={disabled}
+                        aria-label="참고자료 입력창 삭제"
+                        sx={{
+                          ...iconButtonSizeSx,
+                          width: { xs: 22, sm: 18 },
+                          height: { xs: 22, sm: 18 },
+                          minWidth: { xs: 22, sm: 18 },
+                          minHeight: { xs: 22, sm: 18 },
+                          backgroundColor: '#55207d',
+                          color: 'white',
+                          border: '1px solid',
+                          borderColor: '#55207d',
+                          '&:hover': {
+                            backgroundColor: theme.palette.ui?.header || '#152484',
+                            borderColor: theme.palette.ui?.header || '#152484'
+                          },
+                          '&:disabled': {
+                            backgroundColor: 'grey.50',
+                            borderColor: 'grey.200',
+                            color: 'grey.400'
+                          }
+                        }}
+                      >
+                        <Remove sx={{ fontSize: 14 }} />
+                      </IconButton>
+                    )}
+                    {index === instructionsList.length - 1 && instructionsList.length < 10 && (
+                      <Tooltip title="뉴스/데이터 입력창 추가">
+                        <IconButton
+                          size="small"
+                          onClick={addInstructionField}
+                          disabled={disabled}
+                          aria-label="뉴스/데이터 입력창 추가"
+                          sx={{
+                            ...iconButtonSizeSx,
+                            width: { xs: 22, sm: 18 },
+                            height: { xs: 22, sm: 18 },
+                            minWidth: { xs: 22, sm: 18 },
+                            minHeight: { xs: 22, sm: 18 },
+                            backgroundColor: '#006261',
+                            color: 'white',
+                            border: '1px solid',
+                            borderColor: '#006261',
+                            '&:hover': {
+                              backgroundColor: '#003A87',
+                              borderColor: '#003A87'
+                            },
+                            '&:disabled': {
+                              backgroundColor: 'grey.50',
+                              borderColor: 'grey.200',
+                              color: 'grey.400'
+                            }
+                          }}
+                        >
+                          <Add sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                  </Box>
                 )}
               </Box>
               {/* URL 감지 경고 */}

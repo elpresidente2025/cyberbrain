@@ -162,6 +162,7 @@ def load_user_profile(
     style_fingerprint = None
     stored_style_guide = ""
     generation_profile: Dict[str, Any] | None = None
+    keyword_aliases: Dict[str, Any] | None = None
     bio_content = ""
     bio_entries: list[Any] = []
 
@@ -185,6 +186,8 @@ def load_user_profile(
             stored_style_guide = str(bio_data.get("styleGuide") or "").strip()
             gp_raw = bio_data.get("generationProfile")
             generation_profile = _safe_dict(gp_raw) if isinstance(gp_raw, dict) else None
+            ka_raw = bio_data.get("keywordAliases")
+            keyword_aliases = _safe_dict(ka_raw) if isinstance(ka_raw, dict) else None
     except Exception as exc:
         logger.warning("[ProfileLoader] bios/%s lookup failed: %s", uid, exc)
 
@@ -229,6 +232,7 @@ def load_user_profile(
         "styleGuide": style_guide,
         "styleFingerprint": style_fingerprint,
         "generationProfile": generation_profile,
+        "keywordAliases": keyword_aliases,
         "isAdmin": is_admin,
         "isTester": is_tester,
         "slogan": str(user_profile.get("slogan") or ""),

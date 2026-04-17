@@ -61,6 +61,9 @@ class EditorAgent(Agent):
         validation_result = context.get('validationResult', {})
         keyword_result = context.get('keywordResult', {})
         user_keywords = context.get('keywords', [])
+        keyword_aliases = context.get('keywordAliases') or {}
+        if not isinstance(keyword_aliases, dict):
+            keyword_aliases = {}
         status = context.get('status', 'active')
         target_word_count = context.get('targetWordCount', 2000)
         polish_mode = bool(context.get('polishMode') is True)
@@ -134,6 +137,7 @@ class EditorAgent(Agent):
                 speaker_name=speaker_name,
                 style_instruction=style_instruction,
                 user_keywords=user_keywords,
+                keyword_aliases=keyword_aliases,
                 edit_summary=constrained.get('editSummary', []),
             )
             constrained['content'] = humanized.get('content', constrained['content'])
@@ -462,6 +466,7 @@ class EditorAgent(Agent):
         speaker_name: str = "",
         style_instruction: str = "",
         user_keywords: Optional[List[str]] = None,
+        keyword_aliases: Optional[Dict[str, Any]] = None,
         edit_summary: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """oh-my-humanizer 스타일 2차 LLM 패스.
@@ -478,6 +483,7 @@ class EditorAgent(Agent):
             speaker_name,
             style_instruction=style_instruction,
             user_keywords=user_keywords,
+            keyword_aliases=keyword_aliases,
             edit_summary=edit_summary,
         )
         try:
@@ -560,6 +566,7 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
         speaker_name: str = "",
         style_instruction: str = "",
         user_keywords: Optional[List[str]] = None,
+        keyword_aliases: Optional[Dict[str, Any]] = None,
         edit_summary: Optional[List[str]] = None,
     ) -> str:
         speaker_note = (
@@ -589,6 +596,32 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
                     "  예: '계양 테크노밸리'를 '계양의 테크노밸리'로 풀어쓰지 않습니다.\n"
                     "- 필수 키워드는 본문 전체에서 최소 3회 이상, 각 섹션의 첫 문장에는 반드시 고유명사 원형으로 등장해야 합니다.\n"
                     "- 지시어('이곳', '이 사업', '우리 지역')로 과도하게 바꾸면 무엇을 가리키는지 흐려집니다. 섹션이 바뀌면 지시어 대신 고유명사를 다시 씁니다."
+                )
+
+        # 키워드 변형어 (동어 반복 회피용) — 사용자 텍스트에서 추출된 별칭
+        alias_note = ""
+        if keyword_aliases and isinstance(keyword_aliases, dict):
+            kw_set = set(str(k).strip() for k in (user_keywords or []) if str(k).strip())
+            alias_lines = []
+            for canonical, aliases in keyword_aliases.items():
+                canonical = str(canonical).strip()
+                if not canonical:
+                    continue
+                if kw_set and canonical not in kw_set:
+                    continue
+                if not isinstance(aliases, list) or not aliases:
+                    continue
+                clean = [str(a).strip() for a in aliases if str(a).strip()]
+                if clean:
+                    alias_lines.append(f'- "{canonical}" → {", ".join(f"{a!r}" for a in clean)}')
+            if alias_lines:
+                alias_note = (
+                    "[키워드 변형어 — 동어 반복 회피용]\n"
+                    + "\n".join(alias_lines) + "\n"
+                    "- 위 변형어는 사용자 본인이 실제로 쓰는 축약어·별칭입니다. 본문에서 2~3회 사용 가능합니다.\n"
+                    "- 원형과 변형어의 합산 횟수가 상한을 넘지 않도록 배분하세요.\n"
+                    "- 변형어도 고유명사 보호 대상입니다. 사이에 '의'를 넣거나 분해하지 마세요.\n"
+                    "- '이곳', '이 사업' 같은 지시어 대신 변형어를 우선 사용하세요."
                 )
 
         # 직전 단계에서 감지된 비문 — humanize 가 반드시 수정
@@ -627,6 +660,8 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
 {style_note}
 
 {proper_noun_note}
+
+{alias_note}
 
 {prior_flags_note}
 

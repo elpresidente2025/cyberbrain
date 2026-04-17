@@ -374,6 +374,16 @@ async def _async_reindex(uid: str) -> None:
     await manager.rag.ainsert(document)
     upload_graph_to_gcs(_RAG_BUCKET, uid)
 
+    # 키워드 별칭 추출 (색인 직후, Firestore에 캐싱)
+    try:
+        from rag_manager import extract_keyword_aliases
+        aliases = await extract_keyword_aliases(document)
+        if aliases:
+            bio_ref.set({"keywordAliases": aliases}, merge=True)
+            logger.info("[AliasExtract] %d개 별칭 저장 — uid=%s", len(aliases), uid)
+    except Exception as exc:
+        logger.warning("[AliasExtract] 별칭 추출 실패(무시) — uid=%s: %s", uid, exc)
+
     bio_ref.set(
         {
             "pendingFacebookEntryCount": 0,

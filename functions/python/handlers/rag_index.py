@@ -72,9 +72,22 @@ def handle_index_bio(req: https_fn.Request) -> https_fn.Response:
         async def _index():
             manager = LightRAGManager(bucket_name=_RAG_BUCKET, uid=uid)
             doc = await manager.index_entries(entries)
-            return len(doc)
+            return doc
 
-        char_count = _run_async(_index())
+        doc_text = _run_async(_index())
+        char_count = len(doc_text or "")
+
+        # 키워드 별칭 추출
+        try:
+            from rag_manager import extract_keyword_aliases
+            aliases = _run_async(extract_keyword_aliases(doc_text or ""))
+            if aliases:
+                bio_ref = db.collection("bios").document(uid)
+                bio_ref.set({"keywordAliases": aliases}, merge=True)
+                logger.info("[AliasExtract] %d개 별칭 저장 — uid=%s", len(aliases), uid)
+        except Exception as alias_exc:
+            logger.warning("[AliasExtract] 별칭 추출 실패(무시) — uid=%s: %s", uid, alias_exc)
+
         logger.info("[RAGIndex] bio 색인 완료 — uid=%s chars=%d", uid, char_count)
         return _json_response({"success": True, "uid": uid, "chars": char_count})
 
@@ -176,6 +189,16 @@ def handle_index_facebook_entries(req: https_fn.Request) -> https_fn.Response:
             upload_graph_to_gcs(_RAG_BUCKET, uid)
 
         _run_async(_index())
+
+        # 키워드 별칭 추출
+        try:
+            from rag_manager import extract_keyword_aliases
+            aliases = _run_async(extract_keyword_aliases(document))
+            if aliases:
+                bio_ref.set({"keywordAliases": aliases}, merge=True)
+                logger.info("[AliasExtract] %d개 별칭 저장 — uid=%s", len(aliases), uid)
+        except Exception as exc:
+            logger.warning("[AliasExtract] 별칭 추출 실패(무시) — uid=%s: %s", uid, exc)
 
         bio_ref.set(
             {

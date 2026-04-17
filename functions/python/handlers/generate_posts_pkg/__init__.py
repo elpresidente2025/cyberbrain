@@ -27,6 +27,7 @@ from .pipeline import (
     _should_carry_recent_titles_from_prior_session,
     handle_generate_posts,
     handle_generate_posts_call,
+    handle_generate_posts_request,
 )
 
 __all__ = [
@@ -58,4 +59,5 @@ __all__ = [
     "_should_carry_recent_titles_from_prior_session",
     "handle_generate_posts",
     "handle_generate_posts_call",
+    "handle_generate_posts_request",
 ]

@@ -85,8 +85,9 @@ export const callFunctionWithNaverAuth = async (functionName, data = {}, options
 };
 
 // Cloud Run 직접 호출 (Cloud Functions 게이트웨이 60초 타임아웃 우회)
-// on_call 함수를 Cloud Run URL로 직접 호출하여 최대 540초까지 대기 가능
-const CLOUD_RUN_BASE = 'https://generateposts-ebgiucgqsa-du.a.run.app';
+// generatePostsStream: on_request + heartbeat 스트리밍 버전. NAT가 idle TCP를 ~120s에서 RST로
+// 끊어 ERR_CONNECTION_RESET을 유발하는 문제 회피용. 응답 포맷은 on_call 호환이라 파싱 로직은 그대로.
+const CLOUD_RUN_BASE = 'https://generatepostsstream-ebgiucgqsa-du.a.run.app';
 
 export const callCallableViaCloudRun = async (cloudRunUrl, data = {}, options = {}) => {
   const timeoutMs = options.timeoutMs || 540000;

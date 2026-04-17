@@ -597,6 +597,7 @@ def validate_keyword_insertion(
     body_min_overrides: Optional[Mapping[str, int]] = None,
     user_keyword_expected_overrides: Optional[Mapping[str, int]] = None,
     user_keyword_max_overrides: Optional[Mapping[str, int]] = None,
+    keyword_aliases: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     _ = target_word_count
     user_keywords = [item for item in (user_keywords or []) if item]
@@ -609,6 +610,13 @@ def validate_keyword_insertion(
 
     results: Dict[str, Dict[str, Any]] = {}
     all_valid = True
+    resolved_aliases: Dict[str, List[str]] = {}
+    if isinstance(keyword_aliases, Mapping):
+        for kw in user_keywords:
+            raw = keyword_aliases.get(kw)
+            if isinstance(raw, list):
+                resolved_aliases[kw] = [str(a).strip() for a in raw if str(a).strip()]
+
     user_exact_counts = _count_user_keyword_exact_non_overlap(content, user_keywords)
     user_title_exact_counts = _count_user_keyword_exact_non_overlap(title_text or "", user_keywords)
     user_body_exact_counts = _count_user_keyword_exact_non_overlap_in_body(content, user_keywords)
@@ -620,8 +628,11 @@ def validate_keyword_insertion(
         title_count = int(user_title_exact_counts.get(keyword) or 0)
         h2_count = _count_keyword_occurrences_in_h2(content, keyword)
         body_count = int(user_body_exact_counts.get(keyword) or 0)
-        total_exact_count = content_exact_count + title_count
-        total_raw_count = raw_count + title_count
+        alias_count = 0
+        for alias in resolved_aliases.get(keyword, []):
+            alias_count += content.count(alias) + (title_text or "").count(alias)
+        total_exact_count = content_exact_count + title_count + alias_count
+        total_raw_count = raw_count + title_count + alias_count
         effective_expected = int(user_min_count)
         if isinstance(user_keyword_expected_overrides, Mapping):
             override_expected = user_keyword_expected_overrides.get(keyword)
