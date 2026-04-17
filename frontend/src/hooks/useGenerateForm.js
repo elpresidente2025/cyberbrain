@@ -119,15 +119,19 @@ export const useGenerateForm = (user = null) => {
       return { isValid: false, error: '주제를 입력해주세요.', field: 'topic' };
     }
     // 카테고리는 AI가 자동 분류하므로 검증하지 않음
-    // ✅ 수정: 첫 번째 참고자료(입장문) 필수 체크
-    const firstInstruction = Array.isArray(formData.instructions)
-      ? formData.instructions[0]
-      : formData.instructions;
+    // 내 입장문(index 0) 또는 뉴스/데이터(index >= 1) 중 하나는 채워져야 한다.
+    const instructionList = Array.isArray(formData.instructions)
+      ? formData.instructions
+      : [formData.instructions];
+    const hasStance = !!(instructionList[0] && String(instructionList[0]).trim());
+    const hasNewsData = instructionList
+      .slice(1)
+      .some((entry) => entry && String(entry).trim());
 
-    if (!firstInstruction || firstInstruction.trim() === '') {
+    if (!hasStance && !hasNewsData) {
       return {
         isValid: false,
-        error: '첫 번째 참고자료(내 입장문/페이스북 글)를 입력해주세요.',
+        error: '내 입장문 또는 뉴스/데이터 중 하나는 입력해주세요.',
         field: 'instructions0'
       };
     }
@@ -139,12 +143,15 @@ export const useGenerateForm = (user = null) => {
    * useMemo를 사용하여 formData가 변경될 때만 재계산합니다.
    */
   const canGenerate = useMemo(() => {
-    // ✅ 수정: 'prompt' 대신 'topic' 필드를 기준으로 판단합니다.
-    // ✅ 수정: 주제와 첫 번째 참고자료가 있어야 생성 가능 (카테고리는 AI가 자동 분류)
-    const firstInstruction = Array.isArray(formData.instructions)
-      ? formData.instructions[0]
-      : formData.instructions;
-    return !!formData.topic?.trim() && !!firstInstruction?.trim();
+    // 주제 + (내 입장문 OR 뉴스/데이터 중 하나) 가 있어야 생성 가능.
+    const instructionList = Array.isArray(formData.instructions)
+      ? formData.instructions
+      : [formData.instructions];
+    const hasStance = !!(instructionList[0] && String(instructionList[0]).trim());
+    const hasNewsData = instructionList
+      .slice(1)
+      .some((entry) => entry && String(entry).trim());
+    return !!formData.topic?.trim() && (hasStance || hasNewsData);
   }, [formData.topic, formData.instructions]);
 
   // 훅이 외부로 제공하는 상태와 함수들

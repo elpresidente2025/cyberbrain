@@ -204,37 +204,12 @@ export default function PromptForm({
         {/* ✅ 6. 참고자료 및 배경정보 입력창 - 다중 입력 지원 */}
         <Grid item xs={12}>
           <Box sx={{ mb: 1.25 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                참고자료 입력
-              </Typography>
-              <Tooltip title="참고자료 입력창 추가">
-                <IconButton
-                  size="small"
-                  onClick={addInstructionField}
-                  disabled={disabled || instructionsList.length >= 10}
-                  aria-label="참고자료 입력창 추가"
-                  sx={{
-                    ...iconButtonSizeSx,
-                    backgroundColor: '#006261',
-                    color: 'white',
-                    border: '1px solid',
-                    borderColor: '#006261',
-                    '&:hover': {
-                      backgroundColor: '#003A87',
-                      borderColor: '#003A87'
-                    },
-                    '&:disabled': {
-                      backgroundColor: 'grey.50',
-                      borderColor: 'grey.200',
-                      color: 'grey.400'
-                    }
-                  }}
-                >
-                  <Add fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Box>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+              참고자료 입력
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+              둘 중 하나 필수
+            </Typography>
 
             {/* ✅ 역할 구분 안내 text + 합산 글자수 */}
             {(() => {
@@ -257,7 +232,7 @@ export default function PromptForm({
                 <TextField
                   fullWidth
                   size={formSize}
-                  label={index === 0 ? '① 내 입장문 / 페이스북 글 (필수)' : `② 뉴스/데이터 ${index}`}
+                  label={index === 0 ? '① 내 입장문 / 페이스북 글' : `② 뉴스/데이터 ${index}`}
                   placeholder={index === 0
                     ? "내가 이 주제에 대해 가진 입장, 의견, 페이스북에 올린 글 등을 입력하세요. 이 내용이 원고의 핵심 논조가 됩니다."
                     : "기사 본문을 복사하여 붙여넣으세요. (URL 붙여넣기 X, 크롤링 기능 없음)"
@@ -266,7 +241,6 @@ export default function PromptForm({
                   onChange={handleInstructionChange(index)}
                   onBlur={handleInstructionBlur(index)}
                   disabled={disabled}
-                  required={index === 0}
                   multiline
                   rows={index === 0 ? 4 : 3}
                   error={index === 0 && Boolean(errors?.instructions0)}
@@ -280,23 +254,23 @@ export default function PromptForm({
                   }
                   FormHelperTextProps={{ sx: { color: index === 0 && errors?.instructions0 ? 'error.main' : 'text.secondary' } }}
                 />
-                {instructionsList.length > 1 && index !== 0 && (
-                  <Tooltip title="이 참고자료 삭제">
+                {index !== 0 && index === instructionsList.length - 1 && instructionsList.length < 10 && (
+                  <Tooltip title="뉴스/데이터 입력창 추가">
                     <IconButton
                       size="small"
-                      onClick={() => removeInstructionField(index)}
+                      onClick={addInstructionField}
                       disabled={disabled}
-                      aria-label="참고자료 입력창 삭제"
+                      aria-label="뉴스/데이터 입력창 추가"
                       sx={{
                         mt: 1.25,
                         ...iconButtonSizeSx,
-                        backgroundColor: '#55207d',
+                        backgroundColor: '#006261',
                         color: 'white',
                         border: '1px solid',
-                        borderColor: '#55207d',
+                        borderColor: '#006261',
                         '&:hover': {
-                          backgroundColor: theme.palette.ui?.header || '#152484',
-                          borderColor: theme.palette.ui?.header || '#152484'
+                          backgroundColor: '#003A87',
+                          borderColor: '#003A87'
                         },
                         '&:disabled': {
                           backgroundColor: 'grey.50',
@@ -305,9 +279,36 @@ export default function PromptForm({
                         }
                       }}
                     >
-                      <Remove fontSize="small" />
+                      <Add fontSize="small" />
                     </IconButton>
                   </Tooltip>
+                )}
+                {index !== 0 && (
+                  <IconButton
+                    size="small"
+                    onClick={() => removeInstructionField(index)}
+                    disabled={disabled || instructionsList.length <= 2}
+                    aria-label="참고자료 입력창 삭제"
+                    sx={{
+                      mt: 1.25,
+                      ...iconButtonSizeSx,
+                      backgroundColor: '#55207d',
+                      color: 'white',
+                      border: '1px solid',
+                      borderColor: '#55207d',
+                      '&:hover': {
+                        backgroundColor: theme.palette.ui?.header || '#152484',
+                        borderColor: theme.palette.ui?.header || '#152484'
+                      },
+                      '&:disabled': {
+                        backgroundColor: 'grey.50',
+                        borderColor: 'grey.200',
+                        color: 'grey.400'
+                      }
+                    }}
+                  >
+                    <Remove fontSize="small" />
+                  </IconButton>
                 )}
               </Box>
               {/* URL 감지 경고 */}

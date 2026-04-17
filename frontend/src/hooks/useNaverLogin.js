@@ -124,12 +124,8 @@ export const useNaverLogin = () => {
         // 기존 회원 - Firebase Auth 완료 후 대시보드로 이동
         console.log('🟢 기존 사용자 - 대시보드로 이동. user 데이터:', user);
         console.log('🟢 네이버 API 데이터:', naver);
-        console.log('🟢 이메일 확인:', {
-          userEmail: user.email,
-          naverEmail: naver?.email,
-          finalEmail: user.email || naver?.email
-        });
-        const currentUserData = normalizeAuthUser({
+
+        const baseUserData = {
           uid: user.uid,
           naverUserId: user.naverUserId,
           displayName: user.displayName,
@@ -139,42 +135,31 @@ export const useNaverLogin = () => {
           profileComplete: user.profileComplete,
           role: user.role,
           bio: user.bio || '' // naverLoginHTTP에서 반환한 bio 포함
-        });
-        console.log('🟢 localStorage에 저장할 데이터:', currentUserData);
+        };
 
-        localStorage.setItem('currentUser', JSON.stringify(currentUserData));
-
-        // useAuth에 즉시 알림
-        window.dispatchEvent(new CustomEvent('userProfileUpdated', {
-          detail: currentUserData
-        }));
-        
-        // 백그라운드에서 프로필 정보 조회 (메인 흐름과 차단 방지)
-        setTimeout(async () => {
-          try {
-            // const { callFunctionWithNaverAuth } = await import('../services/firebaseService'); // 정적 import로 변경
-            const profileResponse = await Promise.race([
-              callFunctionWithNaverAuth('getUserProfile'),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('functions call timeout')), 10000))
-            ]);
-            if (profileResponse?.profile) {
-              const updatedUserData = normalizeAuthUser({
-                ...currentUserData,
-                ...profileResponse.profile
-              });
-              localStorage.setItem('currentUser', JSON.stringify(updatedUserData));
-              console.log('✅ 네이버 사용자 프로필 정보 업데이트 완료:', updatedUserData);
-              
-              // CustomEvent로 프로필 업데이트 알림
-              window.dispatchEvent(new CustomEvent('userProfileUpdated', {
-                detail: updatedUserData
-              }));
-            }
-          } catch (profileError) {
-            console.warn('프로필 정보 조회 실패 (무시):', profileError.message);
+        // 네비게이트 전에 프로필을 병합해 둔다 — 이게 없으면 Dashboard → OnboardingGuard 가
+        // status/position/region 이 빠진 user 로 isOnboardingComplete 를 판정해 /onboarding 으로 튕기고,
+        // OnboardingPage 의 stayOnOnboardingRef 가 잠기면서 로그인마다 온보딩에 갇힌다.
+        let fullUserData = normalizeAuthUser(baseUserData);
+        try {
+          const profileResponse = await Promise.race([
+            callFunctionWithNaverAuth('getUserProfile'),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('functions call timeout')), 10000))
+          ]);
+          const profile = profileResponse?.profile || profileResponse?.data?.profile;
+          if (profile) {
+            fullUserData = normalizeAuthUser({ ...baseUserData, ...profile });
+            console.log('✅ 네이버 사용자 프로필 병합 완료:', fullUserData);
           }
-        }, 100);
-        
+        } catch (profileError) {
+          console.warn('프로필 정보 조회 실패 — base 데이터로 계속:', profileError.message);
+        }
+
+        localStorage.setItem('currentUser', JSON.stringify(fullUserData));
+        window.dispatchEvent(new CustomEvent('userProfileUpdated', {
+          detail: fullUserData
+        }));
+
         navigate('/dashboard', { replace: true });
       }
     } catch (e) {
