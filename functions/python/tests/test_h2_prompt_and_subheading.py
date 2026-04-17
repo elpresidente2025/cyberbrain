@@ -692,6 +692,31 @@ def test_score_h2_does_not_flag_archetype_mismatch_when_archetype_present() -> N
     }
 
 
+def test_should_replace_prefers_passed_over_higher_score() -> None:
+    """passed=True 는 score 가 낮아도 passed=False 를 이긴다."""
+    from agents.core.subheading_agent import _should_replace
+
+    hard_fail_high = {"passed": False, "score": 0.85, "issues": ["ARCHETYPE_MISMATCH"]}
+    passing_low = {"passed": True, "score": 0.75, "issues": []}
+
+    assert _should_replace(passing_low, hard_fail_high) is True
+    assert _should_replace(hard_fail_high, passing_low) is False
+
+
+def test_should_replace_uses_score_when_passed_equal() -> None:
+    """둘 다 passed=True 거나 둘 다 passed=False 면 score 비교로 되돌아간다."""
+    from agents.core.subheading_agent import _should_replace
+
+    both_pass_higher = {"passed": True, "score": 0.82}
+    both_pass_lower = {"passed": True, "score": 0.78}
+    assert _should_replace(both_pass_higher, both_pass_lower) is True
+    assert _should_replace(both_pass_lower, both_pass_higher) is False
+
+    both_fail_higher = {"passed": False, "score": 0.70}
+    both_fail_lower = {"passed": False, "score": 0.60}
+    assert _should_replace(both_fail_higher, both_fail_lower) is True
+
+
 def test_repair_entity_consistency_never_replaces_speaker_name() -> None:
     """Bug 1: preferred_names 가 오염돼도 speaker(본인 full_name)는 H2 에서 치환되지 않는다."""
     from agents.common.h2_repair import repair_entity_consistency

@@ -137,6 +137,21 @@ _UNSAFE_KEYWORD_SUFFIXES = (
 )
 
 
+def _should_replace(new_score: Dict[str, Any], current_score: Dict[str, Any]) -> bool:
+    """H2 교체 판정. passed 가 score 보다 우선한다.
+
+    순수 score 비교는 hard-fail heading (passed=False, score 0.82) 이
+    archetype-valid repair (passed=True, score 0.78) 를 거부하는 역설을 만든다.
+    """
+    new_passed = bool(new_score.get("passed", False))
+    cur_passed = bool(current_score.get("passed", False))
+    if new_passed and not cur_passed:
+        return True
+    if cur_passed and not new_passed:
+        return False
+    return new_score.get("score", 0.0) > current_score.get("score", 0.0)
+
+
 def _keyword_is_template_safe(keyword: str, plan: Dict[str, Any]) -> bool:
     """deterministic fallback 템플릿에 넣어도 안전한 키워드인지 판정.
 
@@ -666,7 +681,7 @@ class SubheadingAgent(Agent):
                         trace[idx]["llm_repair"] = cleaned
                         trace[idx]["llm_repair_score"] = new_score.get("score", 0.0)
                         trace[idx]["llm_repair_issues"] = list(new_score.get("issues", []))
-                        if new_score.get("score", 0.0) > current_scores[idx].get("score", 0.0):
+                        if _should_replace(new_score, current_scores[idx]):
                             working[idx] = cleaned
                             current_scores[idx] = new_score
 
