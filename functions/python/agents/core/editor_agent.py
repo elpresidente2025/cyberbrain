@@ -616,6 +616,7 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
                     "[직전 단계 감지 — 다음 문장들은 반드시 수정하세요]\n"
                     f"{lines}\n"
                     "- 위 인용된 문장을 본문에서 찾아 해당 문장만 골라 고치세요. 문장 전체가 자연스러워질 때까지 바꾸되, 의미·수치·고유명사는 유지합니다.\n"
+                    "- 각 flag 가 \"'X' 로 복원\" 형식의 후보 고유명사를 명시한 경우, 해당 문장의 지시어(이곳/이는/이를/이러한)를 그 고유명사 원형으로 치환하세요. 후보가 문맥상 어색하면 다른 사용자 필수 키워드로 대체하되, 지시어 상태로 방치하지 마세요.\n"
                     "- 아래 [1단계-감지] 의 각 규칙별 BAD/GOOD 예시를 이 문장들에 그대로 적용하세요.\n"
                     "- 위 문장을 손대지 않으면 이 윤문은 실패한 것으로 간주합니다."
                 )
@@ -780,11 +781,13 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
         # 1.6. H2 섹션 첫 문장 지시어 고립 스캔
         # "이 사업/이곳/이 정책/이러한 노력" 류가 섹션 시작 위치에 오면 referent 가
         # 앞 섹션까지 거슬러 가야 해석됨 → humanize 에 경고.
+        # humanize 가 무엇으로 복원할지 모호해 손대지 않던 문제를 피하려, 해당 섹션
+        # H2 텍스트에서 사용자 키워드 후보를 뽑아 flag 에 명시한다.
         try:
             import re as _re
-            # <h2>...</h2> 뒤에 이어지는 첫 <p>...</p> 추출
-            section_blocks = _re.findall(
-                r'<h2[^>]*>.*?</h2>\s*(<p[^>]*>.*?</p>)',
+            # <h2>...</h2> + 그 뒤 첫 <p>...</p> 를 쌍으로 포착 (H2 내용 → 후보 선정에 사용)
+            section_pairs = _re.findall(
+                r'<h2[^>]*>(.*?)</h2>\s*(<p[^>]*>.*?</p>)',
                 updated_content,
                 flags=_re.DOTALL | _re.IGNORECASE,
             )
@@ -797,14 +800,39 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
             _ORPHAN_STANDALONE_RE = _re.compile(
                 r'^\s*(?:이는|이로써|이로|이를|이러한)\s'
             )
-            for block in section_blocks:
-                # <p> 안쪽 텍스트만 추출 후 선두만 본다 (첫 문장 앞부분이면 족함)
-                inner = _re.sub(r'<[^>]+>', ' ', block)
+
+            def _pick_section_proper_noun(h2_text: str) -> str:
+                """섹션 H2 에 등장하는 user_keyword 중 첫 매칭을 반환. 없으면 primary.
+
+                우선순위:
+                  1. H2 에 그대로 들어있는 user_keyword 중 첫 매칭 (가장 문맥 근거 있음)
+                  2. user_keywords[0] (primary)
+                  3. 빈 문자열 (user_keywords 가 없을 때)
+                """
+                keywords = [str(k).strip() for k in (user_keywords or []) if str(k).strip()]
+                if not keywords:
+                    return ""
+                for kw in keywords:
+                    if kw in h2_text:
+                        return kw
+                return keywords[0]
+
+            for h2_inner, p_block in section_pairs:
+                h2_text = _re.sub(r'<[^>]+>', ' ', h2_inner)
+                h2_text = _re.sub(r'\s+', ' ', h2_text).strip()
+                inner = _re.sub(r'<[^>]+>', ' ', p_block)
                 inner = _re.sub(r'\s+', ' ', inner).strip()
                 if _ORPHAN_WITH_NOUN_RE.match(inner) or _ORPHAN_STANDALONE_RE.match(inner):
-                    summary.append(
-                        f"섹션 첫 문장 지시어 고립 — 고유명사 원형 복원: \"{inner[:120] + ('…' if len(inner) > 120 else '')}\""
-                    )
+                    quoted = inner[:120] + ('…' if len(inner) > 120 else '')
+                    candidate = _pick_section_proper_noun(h2_text)
+                    if candidate:
+                        summary.append(
+                            f"섹션 첫 문장 지시어 고립 — '{candidate}' 로 복원: \"{quoted}\""
+                        )
+                    else:
+                        summary.append(
+                            f"섹션 첫 문장 지시어 고립 — 고유명사 원형 복원: \"{quoted}\""
+                        )
         except Exception:
             # 지시어 스캔은 보조 — 실패해도 파이프라인 중단하지 않음.
             pass

@@ -273,6 +273,18 @@ class TestDetectPurposePointerInversion:
         nxt = "이를 위해 경쟁력 회복에 총력을 기울이겠습니다."
         assert korean_morph.detect_purpose_pointer_inversion(prev, nxt) is True
 
+    def test_criticism_continuing(self) -> None:
+        """'지적이 이어져 왔습니다' — 비판·지적을 끌어안은 상태 closer."""
+        prev = "경기 샘플구에 비해 발전 속도가 더디다는 지적이 이어져 왔습니다."
+        nxt = "이를 위해 2단계 지정을 신속히 완료하겠습니다."
+        assert korean_morph.detect_purpose_pointer_inversion(prev, nxt) is True
+
+    def test_criticism_many(self) -> None:
+        """'지적이 많았습니다' — 과거형 closer."""
+        prev = "기업 유치 경쟁에서 불리하다는 지적이 많았습니다."
+        nxt = "이를 위해 취득세 감면 조례를 개정했습니다."
+        assert korean_morph.detect_purpose_pointer_inversion(prev, nxt) is True
+
     def test_empty(self) -> None:
         assert korean_morph.detect_purpose_pointer_inversion("", "이를 위해 …") is False
         assert korean_morph.detect_purpose_pointer_inversion("현실입니다.", "") is False
