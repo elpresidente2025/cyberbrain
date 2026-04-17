@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from ..base_agent import Agent
 from ..common.fact_guard import validate_with_llm, build_fact_allowlist
 from ..common.framing_rules import OVERRIDE_KEYWORDS, HIGH_RISK_KEYWORDS, POLITICAL_FRAMES
-from ..common.election_rules import get_election_stage, validate_election_content, sanitize_election_content
+from ..common.election_rules import get_election_stage, validate_election_content, sanitize_election_content, resolve_election_context
 from ..common.editorial import TITLE_SPEC
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,25 @@ class ComplianceAgent(Agent):
         status = context.get('status') or user_profile.get('status', 'active')
         author_name = context.get('authorName') or user_profile.get('name', '')
 
-        print(f"🔍 [ComplianceAgent] 검수 시작 - 상태: {status}, 저자: {author_name}")
+        # 0. 동적 선거 컨텍스트 — WriterAgent가 이미 계산했으면 재사용
+        election_ctx = context.get('_electionContext')
+        if not election_ctx:
+            election_ctx = resolve_election_context(status, user_profile)
+
+        # 선거일 당일/종료 후/D>90 → 즉시 차단
+        if election_ctx.get('blocked'):
+            logger.warning(f"🚫 [ComplianceAgent] 생성 차단: {election_ctx['block_reason']}")
+            return {
+                'compliancePassed': False,
+                'issues': [{
+                    'type': 'ELECTION_DAY_BLOCK',
+                    'severity': 'critical',
+                    'message': election_ctx['block_reason'],
+                    'location': 'system',
+                }],
+            }
+
+        print(f"🔍 [ComplianceAgent] 검수 시작 - 상태: {status}, stage: {election_ctx['stage_name']}, 저자: {author_name}")
 
         # 1. Fact Check
         source_texts = []
@@ -77,11 +95,12 @@ class ComplianceAgent(Agent):
         if not isinstance(risk_report, dict):
              risk_report = {'riskLevel': 'UNKNOWN', 'reason': 'System returned invalid format'}
 
-        # 4. Election Law Validation (정규식 기반 - 새로 구현)
-        election_issues = self.validate_election_laws(neutralized_content, status)
+        # 4. Election Law Validation (동적 스테이지 기반)
+        election_stage_name = election_ctx['stage_name']
+        election_issues = self.validate_election_laws(neutralized_content, status, stage_name=election_stage_name)
 
         # 5. Title Compliance
-        title_issues = self.verify_title_compliance(title, status)
+        title_issues = self.verify_title_compliance(title, status, stage_name=election_stage_name)
 
         # 6. 🆕 저자명 사용 횟수 검증
         author_name_issues = self.validate_author_name_usage(neutralized_content, author_name)
@@ -227,14 +246,13 @@ class ComplianceAgent(Agent):
             logger.warning(f"[{self.name}] Risk monitor failed: {e}")
             return {'riskLevel': 'UNKNOWN', 'reason': str(e)}
 
-    def validate_election_laws(self, content: str, status: str) -> List[Dict[str, Any]]:
+    def validate_election_laws(self, content: str, status: str, *, stage_name: str | None = None) -> List[Dict[str, Any]]:
         """
         선거법 위반 표현 검출 (정규식 기반)
         """
         issues = []
 
-        # 새로운 validate_election_content 함수 사용
-        validation_result = validate_election_content(content, status)
+        validation_result = validate_election_content(content, status, stage_name=stage_name)
 
         if not validation_result['passed']:
             for violation in validation_result['violations']:
@@ -259,14 +277,14 @@ class ComplianceAgent(Agent):
 
         return issues
 
-    def verify_title_compliance(self, title: str, status: str) -> List[Dict[str, Any]]:
+    def verify_title_compliance(self, title: str, status: str, *, stage_name: str | None = None) -> List[Dict[str, Any]]:
         """
         제목 준법 검사
         """
         issues = []
 
         # 제목에서도 선거법 검증
-        validation_result = validate_election_content(title, status)
+        validation_result = validate_election_content(title, status, stage_name=stage_name)
         if not validation_result['passed']:
             for violation in validation_result['violations']:
                 issues.append({

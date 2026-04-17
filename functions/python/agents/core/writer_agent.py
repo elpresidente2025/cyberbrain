@@ -12,7 +12,7 @@ from ..templates.current_affairs import build_critical_writing_prompt, build_dia
 from ..templates.local_issues import build_local_issues_prompt
 
 from ..common.theminjoo import get_party_stance
-from ..common.election_rules import get_election_stage
+from ..common.election_rules import get_election_stage, resolve_election_context
 from ..common.style_analyzer import extract_style_from_text
 from ..common.stance_filters import (
     looks_like_hashtag_bullet_line,
@@ -62,6 +62,49 @@ STANCE_BRANDING_CERTAINTY_PATTERN = re.compile(
 STANCE_BRANDING_RECOGNITION_PATTERN = re.compile(
     r"(?:조금씩|점점|확실히|분명히).*(?:알려지고|주목받고|인지도가)"
 )
+
+
+def _build_dynamic_tone_matrix(author_name: str) -> str:
+    """JS prompts.js의 Dynamic Tone Matrix (Type A/B/C/D) 이식.
+
+    상대방의 '행위'에 따라 4가지 톤 중 하나를 선택하도록 LLM에 지시하는 프롬프트 섹션.
+    """
+    return f"""<dynamic-tone-matrix priority="high">
+  <title>Dynamic Tone Matrix — 동적 대응 매뉴얼</title>
+  <rule>상대방이 누구냐보다, **"무엇을 했느냐(행위)"**에 따라 아래 A~D 4가지 톤 중 하나를 반드시 선택하여 적용하십시오.</rule>
+
+  <type id="A" name="사필귀정">
+    <trigger>상대방의 헌정 파괴, 중범죄, 사법 리스크 (사형 구형, 계엄, 탄핵 등)</trigger>
+    <stance>"범죄(원인)는 비판하되, 처벌(결과)은 환영한다"</stance>
+    <tone>냉철, 엄중, 정의로움</tone>
+    <keywords>사필귀정, 엄중한 심판, 법치주의 실현, 당연한 결과</keywords>
+    <forbidden>"사형 구형 소식에 마음이 무겁다", "안타깝다", "헌정이 흔들린다" — 범죄자를 옹호하는 뉘앙스 절대 금지</forbidden>
+    <required-logic>헌정 질서를 파괴한 것은 그들의 범죄(원인)이며, 이번 구형은 이를 바로잡는 정의(결과)다.</required-logic>
+  </type>
+
+  <type id="B" name="절제된 인정">
+    <trigger>상대방의 소신 발언, 내부 비판, 원칙 준수 (쓴소리, 용기 있는 행동)</trigger>
+    <stance>"1~2문장만 인정 후, 즉시 자기PR로 복귀"</stance>
+    <tone>절제된 인정</tone>
+    <keywords>높이 평가한다, 주목할 만하다</keywords>
+    <limit>칭찬은 1~2문장으로 끝내고 반드시 {author_name} 자신의 PR로 복귀</limit>
+    <forbidden>"~의 정신을 이어받아", "~에게 배워야", "~의 뜻을 받들어", "깊은 울림", "용기에 박수", "배울 점"</forbidden>
+  </type>
+
+  <type id="C" name="정책 견제">
+    <trigger>일반적인 정쟁, 정책 차이, 단순 행보</trigger>
+    <stance>"정중하지만 날선 비판과 대안 제시"</stance>
+    <tone>논리적 비판, 견제</tone>
+    <keywords>유감입니다, 재고해야 합니다, 의문입니다, 건강한 경쟁</keywords>
+  </type>
+
+  <type id="D" name="인류애">
+    <trigger>재난, 사고, 사망, 국가적 비극</trigger>
+    <stance>"정쟁 중단, 무조건적 위로"</stance>
+    <tone>애도, 슬픔, 위로</tone>
+    <keywords>참담한 심정, 깊은 애도, 명복을 빕니다</keywords>
+  </type>
+</dynamic-tone-matrix>"""
 
 
 def _normalize_stance_text(value: Any) -> str:
@@ -316,10 +359,25 @@ class WriterAgent:
         except Exception as e:
             logger.warning(f"⚠️ Party stance lookup failed: {e}")
             
+        # 5.6 Election Compliance — 동적 스테이지 결정 + 프롬프트 사전 주입
+        status = context.get('status') or user_profile.get('status', 'active')
+        election_ctx = resolve_election_context(status, user_profile)
+        context['_electionContext'] = election_ctx  # ComplianceAgent 등 후속 노드에서 재사용
+        logger.info(
+            f"📋 [WriterAgent] Election context: stage={election_ctx['stage_name']}, "
+            f"phase={election_ctx['phase']}, D-{election_ctx.get('days_until_election', '?')}, "
+            f"campaign_unlocked={election_ctx['campaign_unlocked']}, blocked={election_ctx['blocked']}"
+        )
+
         # 6. Assemble Prompt Sections
         prompt_sections = []
         must_include_for_sandwich = ''
         material_uniqueness_section = ''
+
+        # 6.0 Election compliance instruction (프롬프트 최상단 주입)
+        election_instruction = election_ctx.get('prompt_instruction', '')
+        if election_instruction:
+            prompt_sections.append(election_instruction)
         
         # 6.1 Context Analyzer
         use_context_analyzer = True
@@ -422,6 +480,10 @@ class WriterAgent:
              sandwich_xml = build_sandwich_reminder_section(must_include_for_sandwich)
              if sandwich_xml: prompt_sections.append(sandwich_xml)
              
+        # Dynamic Tone Matrix
+        tone_matrix = _build_dynamic_tone_matrix(author_name)
+        prompt_sections.append(tone_matrix)
+
         # Identity Lock
         opponent_name = str(context.get('_opponentName') or '').strip()
         opponent_guard = ""

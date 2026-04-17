@@ -335,13 +335,15 @@ def get_all_forbidden_patterns(status: str) -> List[str]:
     return patterns
 
 
-def validate_election_content(content: str, status: str) -> Dict[str, Any]:
+def validate_election_content(content: str, status: str, *, stage_name: str | None = None) -> Dict[str, Any]:
     """
     콘텐츠에서 선거법 위반 표현 검출
 
     Args:
         content: 검사할 콘텐츠
         status: 사용자 상태
+        stage_name: 미리 결정된 스테이지 이름 ('STAGE_1'/'STAGE_2'/'STAGE_3').
+                    지정하면 status 대신 이 스테이지의 규칙을 적용한다.
 
     Returns:
         {
@@ -350,7 +352,11 @@ def validate_election_content(content: str, status: str) -> Dict[str, Any]:
             'total_violations': int
         }
     """
-    stage = get_election_stage(status)
+    if stage_name and stage_name in ELECTION_EXPRESSION_RULES:
+        stage = ELECTION_EXPRESSION_RULES[stage_name].copy()
+        stage['name'] = stage_name
+    else:
+        stage = get_election_stage(status)
     forbidden = stage.get('forbidden', {})
 
     violations = []
@@ -511,10 +517,36 @@ def get_violation_summary(content: str, status: str) -> str:
 # ============================================================================
 
 _KST = ZoneInfo("Asia/Seoul")
-_LOCAL_ELECTION_BASE = _date(2026, 6, 3)  # 제9회 전국동시지방선거
-_NATIONAL_ELECTION_BASE = _date(2028, 4, 12)  # 제23대 국회의원선거
-_ELECTION_CYCLE_YEARS = 4
 _ELECTION_WINDOW_DAYS = 90
+
+# ============================================================================
+# 선거 레지스트리 — 선거 유형별 기준일/주기/대상 직책
+# ============================================================================
+
+ELECTION_REGISTRY: Dict[str, Dict[str, Any]] = {
+    'national_assembly': {
+        'base_date': _date(2028, 4, 12),  # 제23대 국회의원선거
+        'cycle_years': 4,
+        'campaign_period_days': 14,
+        'positions': ['국회의원'],
+    },
+    'local_government': {
+        'base_date': _date(2026, 6, 3),  # 제9회 전국동시지방선거
+        'cycle_years': 4,
+        'campaign_period_days': 14,
+        'positions': [
+            '광역의원', '기초의원', '시장', '구청장', '군수',
+            '도지사', '광역단체장', '기초단체장',
+        ],
+    },
+    # 확장 예시:
+    # 'presidential': {
+    #     'base_date': _date(2027, 3, 3),
+    #     'cycle_years': 5,
+    #     'campaign_period_days': 23,
+    #     'positions': ['대통령'],
+    # },
+}
 
 
 def _today_kst() -> _date:
@@ -561,23 +593,48 @@ def _normalize_candidate_status(user_profile: Dict[str, Any] | None) -> str:
     return ""
 
 
+def _match_election_type(position: str) -> Optional[Dict[str, Any]]:
+    """직책 문자열로 ELECTION_REGISTRY에서 매칭되는 선거 유형을 찾는다."""
+    if not position:
+        return None
+    for entry in ELECTION_REGISTRY.values():
+        for pos in entry['positions']:
+            if pos in position or position in pos:
+                return entry
+    return None
+
+
 def _get_next_election_date(user_profile: Dict[str, Any] | None) -> _date:
-    """프론트 ElectionDDay와 같은 기준일/주기로 다음 선거일을 계산한다."""
+    """프론트 ElectionDDay와 같은 기준일/주기로 다음 선거일을 계산한다.
+
+    ELECTION_REGISTRY에서 position 매칭하여 선거 유형을 결정한다.
+    매칭 실패 시 가장 가까운 선거일을 반환한다 (보수적 폴백).
+    """
     profile = user_profile if isinstance(user_profile, dict) else {}
     target = profile.get("targetElection") if isinstance(profile.get("targetElection"), dict) else {}
     position = str(target.get("position") or profile.get("position") or "").strip()
-    normalized_position = position.lower()
-    is_national_assembly = "국회" in position or normalized_position == "국회의원" or "국회의원" in position
 
-    election_date = _NATIONAL_ELECTION_BASE if is_national_assembly else _LOCAL_ELECTION_BASE
+    matched = _match_election_type(position)
     today = _today_kst()
-    while election_date < today:
-        election_date = _date(
-            election_date.year + _ELECTION_CYCLE_YEARS,
-            election_date.month,
-            election_date.day,
-        )
-    return election_date
+
+    if matched:
+        return _advance_to_next(matched['base_date'], matched['cycle_years'], today)
+
+    # 매칭 실패 — 모든 레지스트리에서 가장 가까운 미래 선거일 반환
+    nearest = None
+    for entry in ELECTION_REGISTRY.values():
+        candidate = _advance_to_next(entry['base_date'], entry['cycle_years'], today)
+        if nearest is None or candidate < nearest:
+            nearest = candidate
+    return nearest or _advance_to_next(ELECTION_REGISTRY['local_government']['base_date'], 4, today)
+
+
+def _advance_to_next(base: _date, cycle_years: int, today: _date) -> _date:
+    """base_date를 cycle_years 간격으로 today 이후까지 전진시킨다."""
+    d = base
+    while d < today:
+        d = _date(d.year + cycle_years, d.month, d.day)
+    return d
 
 
 def check_election_eligibility(user_profile: Dict[str, Any] | None) -> Dict[str, Any]:
@@ -626,4 +683,207 @@ def check_election_eligibility(user_profile: Dict[str, Any] | None) -> Dict[str,
         "reason": "허용",
         "message": "",
         "days_until_election": days_until_election,
+    }
+
+
+# ============================================================================
+# 통합 선거 컨텍스트 — status + D-day + position 을 종합하여 동적 단계 결정
+# ============================================================================
+
+def _get_phase(days: int, campaign_period_days: int = 14) -> str:
+    """D-day로부터 선거 단계(Phase)를 결정한다."""
+    if days < 0:
+        return 'POST_ELECTION'
+    if days == 0:
+        return 'ELECTION_DAY'
+    if days <= campaign_period_days:
+        return 'CAMPAIGN_PERIOD'
+    if days <= 30:
+        return 'PRE_CAMPAIGN_WARNING'
+    return 'NORMAL_PERIOD'
+
+
+# Phase별 추천 콘텐츠 유형 (election-compliance.js getRecommendedContentTypes 이식)
+_RECOMMENDED_CONTENT_TYPES: Dict[str, List[Dict[str, str]]] = {
+    'NORMAL_PERIOD': [
+        {'type': 'policy', 'title': '정책 연구 발표', 'description': '지역 현안에 대한 정책 제안'},
+        {'type': 'achievement', 'title': '의정활동 보고', 'description': '지난 활동 성과 공유'},
+        {'type': 'introduction', 'title': '개인 소개', 'description': '정치 철학과 가치관 공유'},
+    ],
+    'PRE_CAMPAIGN_WARNING': [
+        {'type': 'policy', 'title': '정책 토론 참여', 'description': '정책 중심의 건전한 토론'},
+        {'type': 'local_issue', 'title': '지역 현안 의견', 'description': '지역 문제에 대한 의견 표명'},
+        {'type': 'achievement', 'title': '의정활동 설명', 'description': '객관적 활동 내용 설명'},
+    ],
+    'CAMPAIGN_PERIOD': [
+        {'type': 'campaign', 'title': '공식 선거운동', 'description': '모든 형태의 선거운동 가능'},
+        {'type': 'debate', 'title': '공개 토론 참여', 'description': '후보자 간 정책 토론'},
+        {'type': 'meet_voters', 'title': '유권자 만남', 'description': '지역 주민과의 소통'},
+    ],
+    'ELECTION_DAY': [
+        {'type': 'thanks', 'title': '감사 인사', 'description': '일반적인 감사 표현만 가능'},
+    ],
+}
+
+# Phase별 경고 메시지
+_PHASE_WARNINGS: Dict[str, Dict[str, str]] = {
+    'PRE_CAMPAIGN_WARNING': {
+        'title': '사전 선거운동 주의',
+        'message': '현재 사전 선거운동 금지 기간입니다. 생성되는 내용이 선거법에 위반되지 않도록 주의해주세요.',
+    },
+    'CAMPAIGN_PERIOD': {
+        'title': '선거운동 기간',
+        'message': '공식 선거운동 기간입니다. 선거법에 따른 제한 사항을 준수해주세요.',
+    },
+    'ELECTION_DAY': {
+        'title': '선거일 - 선거운동 금지',
+        'message': '투표일에는 모든 형태의 선거운동이 금지됩니다.',
+    },
+}
+
+
+def resolve_election_context(
+    status: str,
+    user_profile: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """status + D-day + position을 종합하여 동적으로 선거법 단계를 결정한다.
+
+    Returns:
+        {
+            'stage_name': str,          # 'STAGE_1' | 'STAGE_2' | 'STAGE_3'
+            'stage': dict,              # ELECTION_EXPRESSION_RULES[stage_name]
+            'prompt_instruction': str,  # 프롬프트 주입용 XML
+            'days_until_election': int | None,
+            'election_date': str | None,      # 'YYYY-MM-DD'
+            'phase': str,               # 'NORMAL_PERIOD' | 'PRE_CAMPAIGN_WARNING' | ...
+            'phase_warning': dict | None,
+            'campaign_unlocked': bool,  # True면 공약 표현 일부/전부 해금
+            'blocked': bool,            # True면 생성 자체를 차단해야 함
+            'block_reason': str,        # blocked=True일 때 사유
+            'recommended_content_types': list,
+        }
+    """
+    profile = user_profile if isinstance(user_profile, dict) else {}
+    normalized_status = _normalize_candidate_status(profile) or status or ''
+
+    # 준비 / 현역(active) → 항상 STAGE_1, D-day 무관
+    if normalized_status in ('준비', '현역', 'active', ''):
+        stage_name = 'STAGE_1'
+        stage = ELECTION_EXPRESSION_RULES[stage_name]
+
+        # D-day 계산은 정보 제공용
+        election_date = _get_next_election_date(profile)
+        today = _today_kst()
+        days = (election_date - today).days if election_date else None
+        matched = _match_election_type(
+            str((profile.get("targetElection") or {}).get("position") or profile.get("position") or "")
+        )
+        campaign_days = matched['campaign_period_days'] if matched else 14
+        phase = _get_phase(days, campaign_days) if days is not None else 'NORMAL_PERIOD'
+
+        return {
+            'stage_name': stage_name,
+            'stage': stage,
+            'prompt_instruction': stage.get('promptInstruction', ''),
+            'days_until_election': days,
+            'election_date': election_date.strftime('%Y-%m-%d') if election_date else None,
+            'phase': phase,
+            'phase_warning': _PHASE_WARNINGS.get(phase),
+            'campaign_unlocked': False,
+            'blocked': False,
+            'block_reason': '',
+            'recommended_content_types': _RECOMMENDED_CONTENT_TYPES.get(phase, []),
+        }
+
+    # 예비 / 후보 → D-day 기반 동적 판단
+    if normalized_status in ('예비', '후보'):
+        election_date = _get_next_election_date(profile)
+        today = _today_kst()
+        days = (election_date - today).days
+
+        # 선거 종료 후
+        if days < 0:
+            return _blocked_context(
+                normalized_status, days, election_date,
+                'POST_ELECTION', '선거가 종료되었습니다.',
+            )
+
+        # 선거일 당일 — 모든 선거운동 금지
+        if days == 0:
+            return _blocked_context(
+                normalized_status, days, election_date,
+                'ELECTION_DAY', '선거일 당일에는 콘텐츠 생성이 금지됩니다.',
+            )
+
+        # D > 90 — eligibility guard (기존 동작 유지)
+        if days > _ELECTION_WINDOW_DAYS:
+            return _blocked_context(
+                normalized_status, days, election_date,
+                _get_phase(days),
+                f'선거일 {_ELECTION_WINDOW_DAYS}일 이내에 이용 가능합니다. '
+                f'(현재 D-{days}, 선거일: {election_date.strftime("%Y-%m-%d")})',
+            )
+
+        # D-90 ~ D-1 → 단계 해금
+        matched = _match_election_type(
+            str((profile.get("targetElection") or {}).get("position") or profile.get("position") or "")
+        )
+        campaign_days = matched['campaign_period_days'] if matched else 14
+        phase = _get_phase(days, campaign_days)
+
+        if normalized_status == '예비':
+            stage_name = 'STAGE_2'
+        else:  # 후보
+            stage_name = 'STAGE_3'
+
+        stage = ELECTION_EXPRESSION_RULES[stage_name]
+        return {
+            'stage_name': stage_name,
+            'stage': stage,
+            'prompt_instruction': stage.get('promptInstruction', ''),
+            'days_until_election': days,
+            'election_date': election_date.strftime('%Y-%m-%d'),
+            'phase': phase,
+            'phase_warning': _PHASE_WARNINGS.get(phase),
+            'campaign_unlocked': True,
+            'blocked': False,
+            'block_reason': '',
+            'recommended_content_types': _RECOMMENDED_CONTENT_TYPES.get(phase, []),
+        }
+
+    # 알 수 없는 상태 → 보수적으로 STAGE_1
+    stage_name = 'STAGE_1'
+    stage = ELECTION_EXPRESSION_RULES[stage_name]
+    return {
+        'stage_name': stage_name,
+        'stage': stage,
+        'prompt_instruction': stage.get('promptInstruction', ''),
+        'days_until_election': None,
+        'election_date': None,
+        'phase': 'NORMAL_PERIOD',
+        'phase_warning': None,
+        'campaign_unlocked': False,
+        'blocked': False,
+        'block_reason': '',
+        'recommended_content_types': _RECOMMENDED_CONTENT_TYPES.get('NORMAL_PERIOD', []),
+    }
+
+
+def _blocked_context(
+    status: str, days: int, election_date: _date,
+    phase: str, reason: str,
+) -> Dict[str, Any]:
+    """생성 차단 컨텍스트를 반환하는 헬퍼."""
+    return {
+        'stage_name': 'STAGE_1',
+        'stage': ELECTION_EXPRESSION_RULES['STAGE_1'],
+        'prompt_instruction': '',
+        'days_until_election': days,
+        'election_date': election_date.strftime('%Y-%m-%d') if election_date else None,
+        'phase': phase,
+        'phase_warning': _PHASE_WARNINGS.get(phase),
+        'campaign_unlocked': False,
+        'blocked': True,
+        'block_reason': reason,
+        'recommended_content_types': _RECOMMENDED_CONTENT_TYPES.get(phase, []),
     }

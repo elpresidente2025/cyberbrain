@@ -7,7 +7,8 @@ const { requireAdmin } = require('../common/rbac');
 const { log } = require('../common/log');
 const { admin, db } = require('../utils/firebaseAdmin');
 const { callGenerativeModel } = require('../services/gemini');
-const { testPrompt, getPolicySafe } = require('../prompts/prompts');
+// [REMOVED] testPrompt, getPolicySafe — prompts.js 삭제 (Python 마이그레이션 완료)
+// checkGeminiStatus, getPolicyTemplate, testPolicy는 이미 동작하지 않던 코드였음 (undefined 호출)
 
 // 헬스체크
 exports.healthCheck = wrap(async () => {
@@ -36,7 +37,7 @@ exports.checkGeminiStatus = wrap(async () => {
   log('SYSTEM', 'checkGeminiStatus 호출');
 
   try {
-    const t = testPrompt();
+    const t = '안녕하세요. 시스템 상태 확인 테스트입니다.';
     const responseText = await callGenerativeModel(t);
 
     await db.collection('system').doc('status').set({
@@ -76,9 +77,9 @@ exports.getPolicyTemplate = wrap(async (req) => {
   const { category, subCategory } = req.data || {};
   log('POLICY', 'getPolicyTemplate 호출', { category, subCategory });
 
-  const template = getPolicySafe(category, subCategory);
-  log('POLICY', '성공');
-  return ok({ template, category, subCategory });
+  // getPolicySafe 제거됨 — Python 마이그레이션으로 더 이상 사용하지 않음
+  log('POLICY', 'getPolicyTemplate deprecated');
+  return ok({ template: null, category, subCategory, deprecated: true });
 });
 
 // policy test
@@ -91,12 +92,8 @@ exports.testPolicy = wrap(async (req) => {
     throw new (require('firebase-functions/v2/https').HttpsError)('invalid-argument', '정책 ID와 테스트 입력이 필요합니다.');
   }
 
-  const policyPrompt = getPolicySafe(policyId);
-  if (!policyPrompt) {
-    throw new (require('firebase-functions/v2/https').HttpsError)('not-found', '해당 정책을 찾을 수 없습니다.');
-  }
-
-  const fullPrompt = `${policyPrompt}\n\n테스트 입력: ${testInput}`;
+  // getPolicySafe 제거됨 — Python 마이그레이션으로 더 이상 사용하지 않음
+  const fullPrompt = `정책 테스트 (${policyId}): ${testInput}`;
   const responseText = await callGenerativeModel(fullPrompt);
 
   log('DEBUG', '정책 테스트 완료', { policyId });

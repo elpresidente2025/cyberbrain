@@ -408,6 +408,9 @@ class GraphOrchestrator:
             "check_run_id": state.get("check_run_id"),
             "background": state.get("background"),
             "instructions": state.get("instructions"),
+
+            # 선거법 동적 스테이지용 — status를 top-level로 노출
+            "status": state["user_profile"].get("status", "active"),
         }
         
         # Helper to merge issues flattened if some agents expect it
