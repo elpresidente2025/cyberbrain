@@ -1138,14 +1138,15 @@ def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[st
                 kw2_words = secondary_kw.split()
                 kw1_words = primary_kw.split()
                 unique_words = [w for w in kw2_words if w not in kw1_words]
-                unique_hint = f'"{", ".join(unique_words)}"를 제목 뒤쪽에 녹여넣기' if unique_words else '공통 어절로 자동 충족'
+                unique_hint = f'"{", ".join(unique_words)}"를 제목에 반드시 포함' if unique_words else '공통 어절로 자동 충족'
                 title_keyword_rule = f"""
 <keyword_placement type="similar">
   <description>두 검색어("{primary_kw}", "{secondary_kw}")가 공통 어절을 공유</description>
   <rule type="must">제목은 반드시 "{primary_kw}"로 시작</rule>
-  <rule type="must">"{secondary_kw}"는 어절 단위로 해체하여 자연스럽게 배치 ({unique_hint})</rule>
-  <example>"서면 영광도서, &lt;보고있나, 부산&gt; 출판기념회에 초대합니다"</example>
-  <example>"부산 대형병원, 암센터 확충으로 고령 환자도 안심"</example>
+  <rule type="must">"{secondary_kw}"는 어절 단위로 해체하여 고유 어절({unique_hint})을 제목에 배치. 누락 시 scorer 가 0점 실격 처리한다.</rule>
+  <example kw1="서면 영광도서" kw2="부산 영광도서">"서면 영광도서, &lt;보고있나, 부산&gt; 출판기념회에 초대합니다"</example>
+  <example kw1="귤현동 탄약고" kw2="귤현역 탄약고">"귤현동 귤현역 탄약고 이전, 4년 숙원 해결하겠습니다"</example>
+  <example kw1="부산 대형병원" kw2="부산 암센터">"부산 대형병원, 암센터 확충으로 고령 환자도 안심"</example>
 </keyword_placement>
 """
             else:
@@ -1153,10 +1154,9 @@ def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[st
 <keyword_placement type="independent">
   <description>두 검색어("{primary_kw}", "{secondary_kw}")가 독립적</description>
   <rule type="must">제목은 반드시 "{primary_kw}"로 시작</rule>
-  <rule type="must">"{secondary_kw}"는 제목 뒤쪽에 자연스럽게 배치</rule>
-  <example>"계양산 러브버그 방역, 계양구청에 적극 구제 촉구"</example>
-  <example>"성수역 3번 출구, 확장 공사 전현희 덕이라는 코레일 노조"</example>
-  <example>"부산 디즈니랜드 유치, 서부산 발전의 열쇠?"</example>
+  <rule type="must">"{secondary_kw}"는 제목 뒤쪽에 자연스럽게 배치. 누락 시 scorer 가 0점 실격 처리한다.</rule>
+  <example kw1="계양산 러브버그 방역" kw2="계양구청">"계양산 러브버그 방역, 계양구청에 적극 구제 촉구"</example>
+  <example kw1="성수역 3번 출구" kw2="코레일 노조">"성수역 3번 출구, 확장 공사 전현희 덕이라는 코레일 노조"</example>
 </keyword_placement>
 """
 

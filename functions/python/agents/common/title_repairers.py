@@ -604,7 +604,6 @@ def _validate_user_keyword_title_requirements(title: str, user_keywords: List[st
         if unique_words and not any(word in cleaned_title for word in unique_words):
             return {
                 'passed': False,
-                'severity': 'soft',
                 'missingType': 'secondary_unique',
                 'primaryKw': primary_kw,
                 'secondaryKw': secondary_kw,

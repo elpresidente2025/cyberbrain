@@ -970,27 +970,65 @@ def calculate_title_quality_score(
         front_keyword = next((k['keyword'] for k in keyword_infos if k['inFront10']), '')
         any_keyword = next((k['keyword'] for k in keyword_infos if k['index'] >= 0), '')
         required_pair = [str(kw or '').strip() for kw in user_keywords[:2] if str(kw or '').strip()]
-        if (
-            len(required_pair) >= 2
-            and not are_keywords_similar(required_pair[0], required_pair[1])
-        ):
-            missing_keywords = [kw for kw in required_pair if title.find(kw) < 0]
-            if missing_keywords:
-                return {
-                    'score': 0,
-                    'breakdown': {
-                        'keywordCoverage': {
-                            'score': 0,
-                            'max': 100,
-                            'status': '실패',
-                            'reason': f'독립 검색어 2개 중 누락: {", ".join(missing_keywords)}',
-                            'required': required_pair,
-                            'missing': missing_keywords,
-                        }
-                    },
-                    'passed': False,
-                    'suggestions': [f'제목에 두 검색어를 모두 포함하세요: {", ".join(required_pair)}'],
-                }
+        if len(required_pair) >= 2:
+            _kw1, _kw2 = required_pair[0], required_pair[1]
+            _similar = are_keywords_similar(_kw1, _kw2)
+            if not _similar:
+                # 독립 키워드: 둘 다 전체 형태로 제목에 있어야 함
+                missing_keywords = [kw for kw in required_pair if title.find(kw) < 0]
+                if missing_keywords:
+                    return {
+                        'score': 0,
+                        'breakdown': {
+                            'keywordCoverage': {
+                                'score': 0,
+                                'max': 100,
+                                'status': '실패',
+                                'reason': f'독립 검색어 2개 중 누락: {", ".join(missing_keywords)}',
+                                'required': required_pair,
+                                'missing': missing_keywords,
+                            }
+                        },
+                        'passed': False,
+                        'suggestions': [f'제목에 두 검색어를 모두 포함하세요: {", ".join(required_pair)}'],
+                    }
+            else:
+                # 유사 키워드: 1순위 전체 + 2순위 고유 어절이 제목에 있어야 함
+                if _kw1 not in title:
+                    return {
+                        'score': 0,
+                        'breakdown': {
+                            'keywordCoverage': {
+                                'score': 0,
+                                'max': 100,
+                                'status': '실패',
+                                'reason': f'1순위 검색어 "{_kw1}" 누락',
+                                'required': required_pair,
+                                'missing': [_kw1],
+                            }
+                        },
+                        'passed': False,
+                        'suggestions': [f'1순위 검색어 "{_kw1}"를 제목에 포함하세요.'],
+                    }
+                _kw2_words = [w for w in _kw2.split() if len(w) >= 2]
+                _kw1_words = set(_kw1.split())
+                _unique_words = [w for w in _kw2_words if w not in _kw1_words]
+                if _unique_words and not any(w in title for w in _unique_words):
+                    return {
+                        'score': 0,
+                        'breakdown': {
+                            'keywordCoverage': {
+                                'score': 0,
+                                'max': 100,
+                                'status': '실패',
+                                'reason': f'유사 검색어 "{_kw2}"의 고유 어절({", ".join(_unique_words)}) 누락',
+                                'required': required_pair,
+                                'missing': _unique_words,
+                            }
+                        },
+                        'passed': False,
+                        'suggestions': [f'2순위 검색어 "{_kw2}"의 고유 어절({", ".join(_unique_words)})을 제목에 포함하세요.'],
+                    }
         
         # 키워드 뒤 구분자 검증: 쉼표, 물음표, 조사 등으로 분리되어야 함
         # 단, 유사 키워드가 중첩되는 경우(예: "부산 디즈니랜드 유치" / "부산 디즈니랜드")
