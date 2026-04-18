@@ -767,3 +767,87 @@ def repair_rhetorical_question_title(
         family, _DEFAULT_RHETORICAL_REPAIR_TARGET
     )
     return _repair_rhetorical_ending(title, target)
+
+
+# ---------------------------------------------------------------------------
+# Body-anchor 삽입 repair
+# ---------------------------------------------------------------------------
+
+_BODY_ANCHOR_BUCKETS = ('policy', 'institution', 'numeric', 'year')
+
+
+def repair_title_for_body_anchor(
+    title: str,
+    params: Dict[str, Any],
+) -> Optional[str]:
+    """body-exclusive 앵커가 누락된 제목에 preferred 앵커 토큰을 삽입한다.
+
+    LLM 이 프롬프트의 body_exclusive 지시를 무시했을 때 규칙 기반으로 보완.
+    삽입 후 길이 제약 위반이면 None 반환 — 호출 측이 원본 유지.
+    """
+    try:
+        from .title_scoring import _assess_body_anchor_coverage
+        from .title_hook_quality import (
+            extract_slot_opportunities,
+            _is_body_exclusive,
+        )
+    except Exception:
+        return None
+
+    normalized = str(title or '').strip()
+    if not normalized:
+        return None
+
+    # 1. body anchor coverage 확인 — 이미 통과하면 불필요
+    coverage = _assess_body_anchor_coverage(normalized, params)
+    if coverage.get('passed', True) or coverage.get('skipped'):
+        return None
+
+    # 2. body-exclusive 토큰 추출
+    topic = str(params.get('topic') or '')
+    stance_text = str(params.get('stanceText') or '')
+    content_preview = str(params.get('contentPreview') or '')
+
+    try:
+        slots = extract_slot_opportunities(topic, content_preview, params) or {}
+    except Exception:
+        return None
+
+    exclusive_candidates: List[str] = []
+    for bucket in _BODY_ANCHOR_BUCKETS:
+        for tok in (slots.get(bucket) or []):
+            tok_str = str(tok or '').strip()
+            if tok_str and _is_body_exclusive(tok_str, topic, stance_text):
+                exclusive_candidates.append(tok_str)
+
+    if not exclusive_candidates:
+        return None
+
+    # 3. 가장 짧은 후보 선택 (제목 길이 제약에 유리)
+    anchor = min(exclusive_candidates, key=len)
+
+    # 4. 삽입 전략: 쉼표 앞(첫째 절 끝)에 공백+토큰 추가
+    #    "귤현동 탄약고, 문세종이 ..." → "귤현동 탄약고 국방부, 문세종이 ..."
+    if ',' in normalized:
+        comma_idx = normalized.index(',')
+        before = normalized[:comma_idx].rstrip()
+        after = normalized[comma_idx:]  # 쉼표 포함
+        repaired = f"{before} {anchor}{after}"
+    else:
+        # 쉼표 없으면 첫 공백 구간 뒤 삽입 시도
+        parts = normalized.split(' ', 2)
+        if len(parts) >= 3:
+            repaired = f"{parts[0]} {parts[1]} {anchor} {parts[2]}"
+        else:
+            repaired = f"{normalized} {anchor}"
+
+    # 5. 길이 검증
+    if len(repaired) > TITLE_LENGTH_HARD_MAX or len(repaired) < TITLE_LENGTH_HARD_MIN:
+        return None
+
+    # 6. repair 후 gate 통과 확인
+    re_coverage = _assess_body_anchor_coverage(repaired, params)
+    if not re_coverage.get('passed', False):
+        return None
+
+    return repaired

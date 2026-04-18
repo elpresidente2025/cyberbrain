@@ -258,6 +258,86 @@ class TestFirstPersonDetectionWithoutKiwi:
 # "저는" 기계적 감축 — 연속 문두 생략
 # ---------------------------------------------------------------------------
 
+class TestTechnoValleyTVAbbreviation:
+    """'테크노밸리' → 'TV' 약어 분산 검증."""
+
+    @staticmethod
+    def _apply_tv_reduction(html: str, user_keywords: list, title: str = "") -> tuple[str, int]:
+        """step 3.8 로직 재현."""
+        import re
+        TV_KEYWORD = "테크노밸리"
+        TV_ABBR = "TV"
+        TV_MAX_SEO = 6
+
+        plain = re.sub(r'<[^>]+>', ' ', html)
+        plain = re.sub(r'\s+', ' ', plain).strip()
+        body_count = len(re.findall(re.escape(TV_KEYWORD), plain))
+
+        kw_match = [kw for kw in user_keywords if TV_KEYWORD in str(kw)]
+        in_title = TV_KEYWORD in title
+
+        target_count = 0
+        if kw_match and body_count > TV_MAX_SEO:
+            target_count = body_count - TV_MAX_SEO
+        elif in_title and body_count >= 4:
+            target_count = body_count // 2
+
+        replaced = 0
+        if target_count > 0:
+            matches = list(re.finditer(re.escape(TV_KEYWORD), html))
+            for m in reversed(matches):
+                if replaced >= target_count:
+                    break
+                before = html[:m.start()]
+                if re.search(r'<h2[^>]*>[^<]*$', before):
+                    continue
+                html = html[:m.start()] + TV_ABBR + html[m.end():]
+                replaced += 1
+        return html, replaced
+
+    def test_keyword_excess_triggers_tv(self):
+        """키워드 SEO 초과 시 초과분 TV 치환."""
+        # 8회 등장 → MAX 6 → 2건 TV
+        sents = ["계양 테크노밸리 발전합니다."] * 8
+        html = "<p>" + " ".join(sents) + "</p>"
+        result, count = self._apply_tv_reduction(html, ["계양 테크노밸리"])
+        assert count == 2
+        assert result.count("TV") == 2
+        assert result.count("테크노밸리") == 6
+
+    def test_title_triggers_half_tv(self):
+        """제목에 포함 시 본문 절반 TV."""
+        # 키워드 아님, 제목에 포함, 본문 6회 → 3건 TV
+        sents = ["계양 테크노밸리 좋습니다."] * 6
+        html = "<p>" + " ".join(sents) + "</p>"
+        result, count = self._apply_tv_reduction(
+            html, ["광역철도"], title="계양 테크노밸리 광역철도 시대"
+        )
+        assert count == 3
+        assert result.count("TV") == 3
+        assert result.count("테크노밸리") == 3
+
+    def test_no_trigger_when_under_threshold(self):
+        """기준 이하면 미발동."""
+        sents = ["계양 테크노밸리 좋습니다."] * 3
+        html = "<p>" + " ".join(sents) + "</p>"
+        result, count = self._apply_tv_reduction(html, ["계양 테크노밸리"])
+        assert count == 0
+
+    def test_h2_protected(self):
+        """H2 안의 테크노밸리는 치환 안 함."""
+        html = (
+            "<h2>계양 테크노밸리 발전</h2>"
+            "<p>계양 테크노밸리 좋습니다. 계양 테크노밸리 발전합니다. "
+            "계양 테크노밸리 화이팅. 계양 테크노밸리 최고입니다. "
+            "계양 테크노밸리 성장합니다. 계양 테크노밸리 기대됩니다. "
+            "계양 테크노밸리 응원합니다. 계양 테크노밸리 좋습니다.</p>"
+        )
+        result, count = self._apply_tv_reduction(html, ["계양 테크노밸리"])
+        # 9회 총 (h2 1 + p 8) → SEO 초과 3건 TV, h2는 보호
+        assert "<h2>계양 테크노밸리 발전</h2>" in result
+
+
 class TestFirstPersonRatioWarning:
     """post-humanize '저는' 비율 경고(기계적 삭제 없음) 검증."""
 

@@ -54,6 +54,7 @@ from .title_repairers import (
     _repair_title_for_role_keyword_policy,
     _resolve_competitor_intent_title_keyword,
     repair_rhetorical_question_title,
+    repair_title_for_body_anchor,
 )
 from .title_scoring import (
     _assess_initial_title_length_discipline,
@@ -744,6 +745,49 @@ def _build_previous_attempt_hook_feedback(
     )
 
 
+def _build_previous_attempt_body_anchor_feedback(
+    last_attempt: Dict[str, Any],
+) -> str:
+    """직전 제목이 body anchor coverage 게이트에서 실격(score=0)됐을 때
+    사용 가능한 구체 토큰 목록을 명시한 피드백을 반환한다.
+
+    기존 suggestion 은 "policy/institution/numeric/year 버킷에서 골라 넣으세요"
+    라는 추상 안내만 주므로 LLM 이 무시하기 쉽다. 이 함수는 실제 토큰을 나열해
+    재시도 시 LLM 이 구체적으로 어떤 단어를 넣어야 하는지 알 수 있게 한다.
+    """
+    if not isinstance(last_attempt, dict):
+        return ''
+    breakdown = last_attempt.get('breakdown')
+    if not isinstance(breakdown, dict):
+        return ''
+    anchor_info = breakdown.get('bodyAnchorCoverage')
+    if not isinstance(anchor_info, dict):
+        return ''
+    if '실격' not in str(anchor_info.get('status') or ''):
+        return ''
+    available = anchor_info.get('available')
+    if not isinstance(available, dict) or not available:
+        return ''
+
+    token_list: List[str] = []
+    for _bucket, tokens in available.items():
+        for tok in (tokens if isinstance(tokens, list) else []):
+            tok_str = str(tok or '').strip()
+            if tok_str and tok_str not in token_list:
+                token_list.append(tok_str)
+
+    if not token_list:
+        return ''
+
+    tokens_display = ', '.join(f'"{t}"' for t in token_list[:8])
+    return (
+        f'<item priority="critical">직전 제목이 본문 앵커 부재로 실격(score=0)됐습니다. '
+        f'다음 토큰 중 최소 1개를 제목 문장에 반드시 직접 포함하세요: {tokens_display}. '
+        f'이 토큰은 본문에서 추출된 구체 재료이며, 하나도 없으면 다시 실격됩니다. '
+        f'추상어("숙원 사업", "책임", "현안")로 대체하지 말고 위 토큰 원문을 그대로 쓰세요.</item>'
+    )
+
+
 def _build_title_candidate_prompt(
     base_prompt: str,
     attempt: int,
@@ -859,6 +903,9 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
             hook_feedback = _build_previous_attempt_hook_feedback(previous_title, params)
             if hook_feedback:
                 suggestion_items += f"\n    {hook_feedback}"
+            anchor_feedback = _build_previous_attempt_body_anchor_feedback(last_attempt)
+            if anchor_feedback:
+                suggestion_items += f"\n    {anchor_feedback}"
             if not suggestion_items:
                 suggestion_items = "\n    <item>이전 문제를 보완해 새 제목을 생성하세요.</item>"
             feedback_prompt = f"""
@@ -1016,6 +1063,24 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
                         )
                         score_result = repaired_score_result
                         initial_generated_title = role_repaired_title
+            # body-anchor repair: score=0(앵커 실격)이면 규칙 기반 삽입 시도
+            if allow_auto_repair and int(score_result.get('score', 0)) == 0:
+                anchor_repaired = repair_title_for_body_anchor(
+                    initial_generated_title, params,
+                )
+                if anchor_repaired and anchor_repaired != initial_generated_title:
+                    anchor_repaired_score = calculate_title_quality_score(
+                        anchor_repaired, params, {'autoFitLength': False},
+                    )
+                    if int(anchor_repaired_score.get('score', 0)) > 0:
+                        logger.info(
+                            "[TitleGen] body-anchor repair 적용(후보 %s): \"%s\" -> \"%s\"",
+                            idx,
+                            initial_generated_title,
+                            anchor_repaired,
+                        )
+                        score_result = anchor_repaired_score
+                        initial_generated_title = anchor_repaired
             repaired_title = str(score_result.get('repairedTitle') or '').strip()
             candidate_title = initial_generated_title
             if repaired_title and repaired_title != candidate_title:

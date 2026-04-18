@@ -198,6 +198,51 @@ class EditorAgent(Agent):
                     f"'저는' 문두 과다 — {len(_fp_matched)}/{len(_fp_all_sents)}문장({_fp_ratio:.0%}), 목표 20% 이하"
                 )
 
+            # 3.8. "테크노밸리" → "TV" 약어 분산
+            # 트리거 1: 사용자 키워드에 "테크노밸리" 포함 & SEO 허용치 초과 → 초과분 TV
+            # 트리거 2: 제목에 "테크노밸리" 포함 → 본문 5:5 비율로 TV 교체
+            _tv_content = constrained['content']
+            _tv_title = constrained.get('title', '')
+            _TV_KEYWORD = "테크노밸리"
+            _TV_ABBR = "TV"
+            _TV_MAX_SEO = 6  # SEO 허용 최대 등장 횟수
+
+            # 본문 plain text 에서 "테크노밸리" 횟수 측정 (제목 제외)
+            _tv_plain = re.sub(r'<[^>]+>', ' ', _tv_content)
+            _tv_plain = re.sub(r'\s+', ' ', _tv_plain).strip()
+            _tv_body_count = len(re.findall(re.escape(_TV_KEYWORD), _tv_plain))
+
+            # 키워드에 "테크노밸리" 가 포함된 키워드 찾기
+            _tv_kw_match = [kw for kw in (user_keywords or []) if _TV_KEYWORD in str(kw)]
+            _tv_in_title = _TV_KEYWORD in _tv_title
+
+            _tv_target_count = 0  # TV 로 바꿀 횟수
+            if _tv_kw_match and _tv_body_count > _TV_MAX_SEO:
+                # 트리거 1: SEO 초과분 전부 TV
+                _tv_target_count = _tv_body_count - _TV_MAX_SEO
+            elif _tv_in_title and _tv_body_count >= 4:
+                # 트리거 2: 제목에 있으면 본문 절반을 TV
+                _tv_target_count = _tv_body_count // 2
+
+            if _tv_target_count > 0:
+                # 뒤에서부터 치환 (앞쪽 = SEO 가치 높음 → 보존)
+                _tv_replaced = 0
+                _tv_matches = list(re.finditer(re.escape(_TV_KEYWORD), _tv_content))
+                for m in reversed(_tv_matches):
+                    if _tv_replaced >= _tv_target_count:
+                        break
+                    # H2 태그 안의 "테크노밸리" 는 건드리지 않음
+                    before = _tv_content[:m.start()]
+                    if re.search(r'<h2[^>]*>[^<]*$', before):
+                        continue
+                    _tv_content = _tv_content[:m.start()] + _TV_ABBR + _tv_content[m.end():]
+                    _tv_replaced += 1
+                if _tv_replaced > 0:
+                    constrained['content'] = _tv_content
+                    constrained['editSummary'].append(
+                        f"'테크노밸리' → 'TV' {_tv_replaced}건 약어 분산 (본문 {_tv_body_count}회 중)"
+                    )
+
             # 4. post-humanize 필수 키워드 최소 등장 검증 (경고만, 자동 치환 안 함)
             # humanize 가 지시어로 과치환해 고유명사 빈도가 떨어지는 케이스를 플래그.
             MIN_BODY_OCCURRENCES = 3
