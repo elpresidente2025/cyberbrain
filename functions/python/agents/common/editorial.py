@@ -771,3 +771,209 @@ def get_active_strategies(topic: str, instructions: str = '', user_profile: dict
         'strategies': active_strategies,
         'promptInjection': '\n\n'.join(injections)
     }
+
+
+# ============================================================================
+# 모범 문장 예시 (Writing Examples) — editorial.js WRITING_EXAMPLES 이식
+# ============================================================================
+
+WRITING_EXAMPLES = {
+    '도입부': [
+        {'text': '올 겨울 들어 가장 춥다는 날 도착한 편지.', 'type': '계절'},
+        {'text': '가을 하늘이 청명했던 토요일, 기후정의행진에 함께했습니다.', 'type': '계절+행사'},
+        {'text': '이제 금요일 밤이 되면, 자연스럽게 두터운 외투와 핫팩을 챙기게 됩니다.', 'type': '시간+행동'},
+        {'text': '한낮 35도, 한증막 같은 정류장. 앉아 있기도 힘듭니다.', 'type': '감각'},
+        {'text': '꿈을 꿨습니다. 낮에도 꼴찌인데, 꿈에서도 꼴찌를 했습니다.', 'type': '자조적'},
+        {'text': '눈이 내릴 것처럼 차가운 공기 속에서, 거리의 숨결은 유난히 따뜻합니다.', 'type': '계절+대비'},
+        {'text': '문장을 따라가다 마음이 글자보다 먼저 멈춰 섭니다.', 'type': '감성'},
+    ],
+    '공감묘사': [
+        {'text': '새벽 KTX에 아픈 몸을 싣고 서울로 향하는 환자들.', 'category': '의료'},
+        {'text': '수술을 받기 위해 여러 병원을 전전해야 하는 환자와 가족들은 매일 피눈물을 흘립니다.', 'category': '의료'},
+        {'text': '출산 가능한 병원 근처에 급하게 월세를 구하거나 친정·시댁에 몸을 의탁해야 하는 산모들.', 'category': '의료'},
+        {'text': '아이의 작은 손을 꼭 잡고 불안과 싸우셨을 시간.', 'category': '의료'},
+        {'text': '취업했다고 좋아했는데, 근로계약서도 안 써주고 4대보험도 안 들어준다고 합니다.', 'category': '청년'},
+        {'text': '수급 끊길까 봐 알바를 못 하고 있는 청년이 있습니다.', 'category': '청년'},
+        {'text': '1시간 30분 잡고 출발해도 지각입니다.', 'category': '교통'},
+        {'text': '버스 놓치면 한 시간을 기다려야 합니다.', 'category': '교통'},
+        {'text': '가장 가까운 투표소가 직선거리로 5km였습니다.', 'category': '인프라'},
+        {'text': '감기몸살이 심해서 약 하나 사 먹으려면 버스가 없어 꼼짝없이 앓아누워야 합니다.', 'category': '의료+교통'},
+    ],
+    '전환': [
+        {'text': '더 이상 방치할 수 없습니다.', 'pattern': '한계선언'},
+        {'text': '더 이상 미룰 수 없습니다.', 'pattern': '한계선언'},
+        {'text': '더 이상 유예해서는 안 됩니다.', 'pattern': '행동촉구'},
+        {'text': '더 이상 미룰 수 없는 과제입니다.', 'pattern': '긴급성'},
+        {'text': '이제는 바꿔야 할 때입니다.', 'pattern': '시점강조'},
+        {'text': '이제는 정부가 응답할 차례입니다.', 'pattern': '책임전환'},
+        {'text': '그 희생에만 기댄 현장은 더 이상 지속될 수 없습니다.', 'pattern': '한계선언'},
+        {'text': '정의는 이겼고, 이제는 국민이 이깁니다.', 'pattern': '승리전환'},
+    ],
+    '약속다짐': [
+        {'text': '어르신 한 분 한 분이 존중받고, 편안한 노후를 누릴 수 있는 사회를 위해 방향을 분명히 제시합니다.', 'category': '복지'},
+        {'text': '노동자 한 분 한 분의 땀과 노력이 온전히 인정받는 사회를 위해 끝까지 살펴보겠습니다.', 'category': '노동'},
+        {'text': '3년 전 못다 이룬 과제, 이번에는 끝까지 챙기겠습니다.', 'category': '스토리'},
+        {'text': '국민의 목소리에 귀 기울이고, 국민의 뜻을 하늘처럼 받들겠습니다.', 'category': '감성'},
+        {'text': '현실에서 체감할 수 있는 변화를 어떻게 만들지 계속 점검해 보겠습니다.', 'category': '체감'},
+        {'text': '땀과 수고가 정당하게 인정받는 나라를 만들기 위한 방향을 분명히 제시합니다.', 'category': '노동'},
+        {'text': '더욱 촘촘한 사회안전망을 어떻게 보완할지 살펴보겠습니다.', 'category': '복지'},
+        {'text': '국민과 국가를 위한 헌신이 자긍심과 영예로 온전히 돌아오는 나라를 목표로 방향을 제시합니다.', 'category': '보훈'},
+        {'text': '더 크게 외치고, 더 단호하게 나설 필요가 있습니다.', 'category': '행동'},
+        {'text': '분노가 아닌 기쁨이, 긴장이 아닌 여유가 가득한 평범한 주말을 하루라도 빨리 국민 여러분께 돌려드릴 수 있도록 길을 찾아보겠습니다.', 'category': '대구법'},
+        {'text': '잊지 않겠습니다. 놓치지 않겠습니다.', 'category': '짧은리듬'},
+        {'text': '이제 정부가 힘이 될 수 있도록 살펴보겠습니다.', 'category': '역할전환'},
+    ],
+    '마무리': [
+        {'text': '형태도 빛깔도 다른 각양각색의 빛들이 한데 모여 어두운 국회 앞을 밝혔습니다.', 'type': '시각적'},
+        {'text': '반갑게 인사하고, 함께 씩씩하게 걷고, 뜨끈한 새알 미역국을 나누고.', 'type': '구체장면'},
+        {'text': '토요일마다 거리로 나오는 걸음이 일상이 되었습니다.', 'type': '반복리듬'},
+        {'text': '글 배워 책 읽고, 학교 가서 공부하고 싶던 내 마음은 꾹꾹 식히고, 매 끼니 밥상은 식지 않게 차려냈습니다.', 'type': '서사'},
+    ],
+}
+
+# 카테고리 → 관련 공감묘사 카테고리 매핑
+_CATEGORY_EMPATHY_MAP = {
+    'local-issues': ['의료', '교통', '인프라'],
+    'analytical_writing': ['의료', '교통', '인프라'],
+    'policy-proposal': ['복지', '노동', '청년'],
+    'logical_writing': ['복지', '노동', '청년'],
+    'current-affairs': ['의료', '청년', '교통'],
+    'critical_writing': ['의료', '청년', '교통'],
+    'daily-communication': [],
+    'emotional_writing': [],
+    'activity-report': [],
+    'direct_writing': [],
+}
+
+
+def get_writing_examples(category: str = '') -> str:
+    """카테고리에 맞는 모범 문장 예시를 프롬프트용 문자열로 반환한다."""
+    relevant_categories = _CATEGORY_EMPATHY_MAP.get(category, [])
+
+    # 공감묘사 필터링
+    filtered_empathy = []
+    if relevant_categories:
+        filtered_empathy = [
+            e for e in WRITING_EXAMPLES['공감묘사']
+            if any(c in (e.get('category') or '') for c in relevant_categories)
+        ][:3]
+    if not filtered_empathy:
+        filtered_empathy = WRITING_EXAMPLES['공감묘사'][:3]
+
+    selected = {
+        '도입부': WRITING_EXAMPLES['도입부'][:2],
+        '공감묘사': filtered_empathy,
+        '전환': WRITING_EXAMPLES['전환'][:2],
+        '약속다짐': WRITING_EXAMPLES['약속다짐'][:3],
+        '마무리': WRITING_EXAMPLES['마무리'][:2],
+    }
+
+    lines = [
+        '[모범 문장 참고 - 구조와 톤을 참고하되 내용은 새롭게]',
+        '',
+        '■ 도입부 예시 (구체적 배경으로 시작):',
+    ]
+    for e in selected['도입부']:
+        lines.append(f'• "{e["text"]}"')
+    lines.append('')
+    lines.append('■ 공감 묘사 예시 (추상어 대신 구체적 장면):')
+    for e in selected['공감묘사']:
+        lines.append(f'• "{e["text"]}"')
+    lines.append('')
+    lines.append('■ 전환 예시 (문제→해결로 넘어갈 때):')
+    for e in selected['전환']:
+        lines.append(f'• "{e["text"]}"')
+    lines.append('')
+    lines.append('■ 의지/다짐 예시 (구체적 결과가 담긴 방향 제시):')
+    for e in selected['약속다짐']:
+        lines.append(f'• "{e["text"]}"')
+    lines.append('')
+    lines.append('■ 마무리 예시 (인상적 끝맺음):')
+    for e in selected['마무리']:
+        lines.append(f'• "{e["text"]}"')
+    lines.append('')
+    lines.append('위 예시처럼 "의료 격차가 심각합니다" 대신 "새벽 KTX에 아픈 몸을 싣고..."처럼 구체적 장면을 묘사하세요.')
+
+    return '\n'.join(lines)
+
+
+# ============================================================================
+# 재시도별 수사학 전략 선택 — editorial.js selectStrategyForAttempt 이식
+# ============================================================================
+
+def select_strategy_for_attempt(
+    attempt_number: int,
+    topic: str,
+    instructions: str = '',
+    user_profile: dict | None = None,
+    preferences: dict | None = None,
+) -> dict:
+    """시도 번호(attempt_number)에 따라 다른 수사학 전략을 선택한다.
+
+    Args:
+        attempt_number: 현재 시도 번호 (0, 1, 2, ...)
+        topic: 글의 주제
+        instructions: 추가 지시사항
+        user_profile: 사용자 프로필
+        preferences: 사용자 전략 선호도 {strategy_id: count}
+
+    Returns:
+        {'strategyId': str, 'strategyName': str, 'promptInjection': str}
+    """
+    user_profile = user_profile or {}
+    preferences = preferences or {}
+    text = f"{topic} {instructions}".lower()
+
+    # 1. 매칭 가능한 전략 수집
+    matched = []
+    for _key, strategy in RHETORIC_STRATEGIES.items():
+        is_matched = False
+
+        if 'profile_condition' in strategy:
+            if strategy['profile_condition'](user_profile):
+                is_matched = True
+        elif 'keywords' in strategy and any(kw in text for kw in strategy['keywords']):
+            is_matched = True
+
+        if is_matched:
+            matched.append({
+                'id': strategy['id'],
+                'name': strategy['name'],
+                'instruction': strategy['instruction'],
+                'weight': preferences.get(strategy['id'], 0) + 1,
+            })
+
+    # 2. 매칭 없으면 프로필 조건 제외 전체 전략 풀 사용
+    if not matched:
+        for _key, strategy in RHETORIC_STRATEGIES.items():
+            if 'profile_condition' not in strategy:
+                matched.append({
+                    'id': strategy['id'],
+                    'name': strategy['name'],
+                    'instruction': strategy['instruction'],
+                    'weight': preferences.get(strategy['id'], 0) + 1,
+                })
+
+    # 3. 가중치 정렬 후 순환 선택
+    matched.sort(key=lambda s: s['weight'], reverse=True)
+
+    if not matched:
+        return {
+            'strategyId': 'default',
+            'strategyName': '기본 전략',
+            'promptInjection': (
+                '[수사학 전략: 기본]\n'
+                '- 유권자의 감정에 호소하는 진정성 있는 어조를 유지하라.\n'
+                '- 구체적인 수치와 사례를 활용하여 신뢰성을 확보하라.\n'
+                '- 희망적이고 건설적인 비전으로 마무리하라.'
+            ),
+        }
+
+    selected_index = attempt_number % len(matched)
+    selected = matched[selected_index]
+
+    return {
+        'strategyId': selected['id'],
+        'strategyName': selected['name'],
+        'promptInjection': selected['instruction'],
+    }
