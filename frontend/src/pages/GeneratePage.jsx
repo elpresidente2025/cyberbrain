@@ -277,8 +277,17 @@ const GeneratePage = () => {
   // --- 헨들러 함수 (사용자 이벤트 처리) ---
 
 
+  const [electionViolations, setElectionViolations] = React.useState(null);
+
   const handleFormChange = useCallback((updates) => {
-    updateForm(updates);
+    // 선거법 위반 상태는 폼 데이터가 아니므로 분리 저장
+    if (Object.prototype.hasOwnProperty.call(updates, '_electionViolations')) {
+      setElectionViolations(updates._electionViolations);
+      const { _electionViolations, ...rest } = updates;
+      if (Object.keys(rest).length > 0) updateForm(rest);
+    } else {
+      updateForm(updates);
+    }
     setFormErrors((prev) => {
       let next = prev;
       if (Object.prototype.hasOwnProperty.call(updates, 'topic') && prev.topic) {
@@ -308,6 +317,13 @@ const GeneratePage = () => {
         setTimeout(resolve, 100);
       });
     });
+
+    // 0. 선거법 금지 표현 사전 차단
+    if (electionViolations && electionViolations.length > 0) {
+      const matched = electionViolations.map((v) => `"${v.matched}"`).join(', ');
+      showNotification(`선거법상 사용할 수 없는 표현이 포함되어 있습니다: ${matched}`, 'error');
+      return;
+    }
 
     // 1. 폼 데이터 유효성 검사
     const validation = validateForm();

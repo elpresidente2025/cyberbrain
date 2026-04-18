@@ -16,6 +16,7 @@ import {
 import { Add, Remove, Search } from '@mui/icons-material';
 import KeywordExplorerDialog from './KeywordExplorerDialog';
 import { useSystemConfig } from '../../hooks/useSystemConfig';
+import { checkElectionExpressions } from '../../utils/electionExpressionCheck';
 
 export default function PromptForm({
   formData,
@@ -36,6 +37,9 @@ export default function PromptForm({
 
   // 키워드 경고 메시지 상태
   const [keywordWarning, setKeywordWarning] = useState(null);
+
+  // 선거법 금지 표현 위반 목록
+  const [electionViolations, setElectionViolations] = useState([]);
 
   const normalizeInstructions = (instructions) => {
     if (Array.isArray(instructions)) {
@@ -90,6 +94,13 @@ export default function PromptForm({
 
     // 부모 컴포넌트에 배열로 전달
     onChange({ instructions: newList });
+
+    // 입장문(index 0) 타이핑 중 선거법 금지 표현 실시간 검사
+    if (index === 0) {
+      const violations = checkElectionExpressions(value, user?.status);
+      setElectionViolations(violations);
+      onChange({ _electionViolations: violations.length > 0 ? violations : null });
+    }
   };
 
   // 🔧 수정: 참고자료 onBlur 핸들러 - 포커스를 잃을 때 확실히 업데이트
@@ -100,6 +111,17 @@ export default function PromptForm({
       newList[index] = value;
       setInstructionsList(newList);
       onChange({ instructions: newList });
+    }
+    // 입장문(index 0) blur 시 선거법 금지 표현 사전 검사
+    if (index === 0 && value) {
+      const violations = checkElectionExpressions(value, user?.status);
+      setElectionViolations(violations);
+      // 부모에게 위반 여부 전달 (생성 버튼 비활성화용)
+      if (violations.length > 0) {
+        onChange({ _electionViolations: violations });
+      } else {
+        onChange({ _electionViolations: null });
+      }
     }
   };
 
@@ -243,7 +265,7 @@ export default function PromptForm({
                   disabled={disabled}
                   multiline
                   rows={index === 0 ? 4 : 3}
-                  error={index === 0 && Boolean(errors?.instructions0)}
+                  error={index === 0 && (Boolean(errors?.instructions0) || electionViolations.length > 0)}
                   inputProps={{ name: index === 0 ? 'instructions_0' : `instructions_${index}` }}
                   // 글자수 제한 해제 (백엔드에서 4000자로 잘림)
                   helperText={index === 0 && errors?.instructions0
@@ -321,6 +343,22 @@ export default function PromptForm({
                   </Box>
                 )}
               </Box>
+              {/* 선거법 금��� 표현 경고 (입장문 전용) */}
+              {index === 0 && electionViolations.length > 0 && (
+                <Alert severity="error" sx={{ mt: 1 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                    현재 선거 단계에서 사용할 수 없는 표현이 포함되어 있습니다.
+                  </Typography>
+                  {electionViolations.map((v, i) => (
+                    <Typography key={i} variant="body2" sx={{ ml: 1 }}>
+                      &bull; <strong>"{v.matched}"</strong> ({v.label}) &rarr; {v.suggestion}
+                    </Typography>
+                  ))}
+                  <Typography variant="body2" sx={{ mt: 0.5, color: 'text.secondary' }}>
+                    위 표현을 수정한 후 원고를 생성할 수 있습��다.
+                  </Typography>
+                </Alert>
+              )}
               {/* URL 감지 경고 */}
               {index !== 0 && instruction?.match(/https?:\/\//) && (
                 <Alert severity="warning" sx={{ mt: 1 }}>
