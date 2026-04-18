@@ -672,7 +672,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
 
         name = user_profile.get('name', '사용자')
         party_name = user_profile.get('partyName', '')
-        current_title = user_profile.get('customTitle') or user_profile.get('position', '')
+        current_title = user_profile.get('customTitle') or self._format_position_with_region(user_profile)
         basic_bio = " ".join(filter(None, [party_name, current_title, name]))
 
         career = user_profile.get('careerSummary') or user_profile.get('bio', '')
@@ -690,6 +690,30 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
 
         # 슬로건/후원 안내는 생성 단계에서 제외하고, 최종 출력 직전에만 부착한다.
         return (compact_bio or name), name
+
+    @staticmethod
+    def _format_position_with_region(user_profile: Dict) -> str:
+        """position + regionMetro/regionLocal을 조합해 공식 직함을 생성한다.
+
+        예: position="광역의원", regionMetro="인천광역시" → "인천광역시의원"
+        """
+        position = (user_profile.get('position') or '').strip()
+        region_metro = (user_profile.get('regionMetro') or '').strip()
+        region_local = (user_profile.get('regionLocal') or '').strip()
+
+        if position == '광역의원' and region_metro:
+            return f"{region_metro}의원"
+        if position == '기초의원':
+            if region_local:
+                return f"{region_local}의원"
+            if region_metro:
+                return f"{region_metro}의원"
+        if position == '광역자치단체장' and region_metro:
+            return f"{region_metro}장"
+        if position == '기초자치단체장' and region_local:
+            return f"{region_local}장"
+
+        return position
 
     def is_current_lawmaker(self, user_profile: Dict) -> bool:
         # position은 _canonical_position으로 국회의원/광역의원/기초의원/...으로
