@@ -559,7 +559,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             },
         }
 
-    def _build_structure_json_prompt(self, *, prompt: str, length_spec: Dict[str, int], extra_rules: str = "") -> str:
+    def _build_structure_json_prompt(self, *, prompt: str, length_spec: Dict[str, int], extra_rules: str = "", is_expansion: bool = False) -> str:
         body_sections = max(1, int(length_spec.get('body_sections') or 1))
         total_sections = max(3, int(length_spec.get('total_sections') or (body_sections + 2)))
         section_paragraphs = _coerce_int_option(
@@ -585,8 +585,12 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule>body 각 항목은 heading 1개 + paragraphs 배열로 작성.</rule>\n"
             "    <rule>conclusion은 heading 1개 + paragraphs 배열로 작성하고 paragraphs는 최소 2개 이상 작성.</rule>\n"
             "    <rule>각 paragraphs 원소는 완결 문장 2~3개로 구성하고 최소 120자 이상 작성.</rule>\n"
-            "    <rule>각 body/conclusion 항목은 paragraphs를 먼저 완성한 뒤 heading을 마지막에 작성.</rule>\n"
-            "    <rule>heading은 바로 아래 paragraphs 첫 2문장이 실제로 말한 핵심을 선언형 또는 명사형으로 요약할 것. 본문 없이 heading을 먼저 확정하지 말 것.</rule>\n"
+            + (
+                "    <rule>heading과 각 섹션 첫 문장은 locked_outline에서 확정됨. heading을 변경하지 말고, paragraphs 첫 원소는 해당 lead_sentence로 시작할 것.</rule>\n"
+                if is_expansion else
+                "    <rule>각 body/conclusion 항목은 paragraphs를 먼저 완성한 뒤 heading을 마지막에 작성.</rule>\n"
+                "    <rule>heading은 바로 아래 paragraphs 첫 2문장이 실제로 말한 핵심을 선언형 또는 명사형으로 요약할 것. 본문 없이 heading을 먼저 확정하지 말 것.</rule>\n"
+            ) +
             "    <rule>heading을 확정하기 전에 조사나 단어가 중복되거나 의미가 덜 끝난 부분이 없는지 다시 읽고 고칠 것. 예: '도약을을', '민주당 민주당' 금지.</rule>\n"
             "    <rule>소제목에 '[인물명]의 [형용사형 어구]' 구조를 쓰지 말 것. 예: '[인물명]의 경제 대전환'처럼 이름 뒤 소유격만 앞세우지 말고, '경제 대전환 로드맵', '경제 대전환, [인물명]의 전략'처럼 의미가 완결되게 다시 쓸 것.</rule>\n"
             "    <rule>소제목이 '명사1과 명사2, 명사3 구도'처럼 서술어 없는 명사 나열로 끝나면 질문형('~은?', '~는?') 또는 서술형('~이다', '~해야')으로 바꿀 것.</rule>\n"
@@ -648,15 +652,10 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         )
 
         modified_prompt = base_prompt + "\n\n" + lock_block
-        lead_rule = (
-            "    <rule priority=\"absolute\">locked_outline이 존재하면: "
-            "각 body 섹션 paragraphs의 첫 원소는 반드시 해당 섹션의 lead_sentence 텍스트로 시작할 것. "
-            "heading도 locked_outline의 heading을 그대로 사용할 것. 임의로 바꾸지 말 것.</rule>\n"
-        )
         return self._build_structure_json_prompt(
             prompt=modified_prompt,
             length_spec=length_spec,
-            extra_rules=lead_rule,
+            is_expansion=True,
         )
 
     async def call_llm_json(self, prompt: str, *, length_spec: Dict[str, int]) -> Dict[str, Any]:
