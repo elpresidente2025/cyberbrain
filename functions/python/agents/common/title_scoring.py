@@ -189,6 +189,17 @@ def _assess_body_anchor_coverage(title: str, params: Dict[str, Any]) -> Dict[str
         if has_body_exclusive_available:
             break
 
+    # body-exclusive 후보가 전혀 없으면 gate 건너뜀 — 모든 앵커 후보가
+    # 사용자 입력(topic/stanceText) 에도 이미 있는 상황이라 "본문 고유 재료"
+    # 가 아니다. 이때 score=0 실격은 부당하며, 앵커 포함 여부는
+    # bodyAnchorStrength soft scoring 에서 점수에 반영된다.
+    if not has_body_exclusive_available:
+        return {
+            'passed': True,
+            'skipped': True,
+            'reason': 'body-exclusive 앵커 후보가 없어 게이트 건너뜀',
+        }
+
     hit_buckets: List[str] = []
     hit_tokens: List[str] = []
     for bucket in _BODY_ANCHOR_BUCKETS:

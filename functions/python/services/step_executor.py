@@ -89,7 +89,10 @@ class StepExecutor:
                 # Lazy import로 Cold Start 최적화
                 module = importlib.import_module(module_path)
                 AgentClass = getattr(module, class_name)
-                agent = AgentClass(options=self.options)
+                agent_options = dict(self.options)
+                if agent_name == "TitleAgent":
+                    agent_options.setdefault('allowDegradedPass', True)
+                agent = AgentClass(options=agent_options)
 
                 # 에이전트 실행
                 result = await agent.run(context)

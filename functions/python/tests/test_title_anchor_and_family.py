@@ -79,7 +79,11 @@ def test_topic_keyword_exact_match_still_works():
 # ---------------------------------------------------------------------------
 
 def test_body_anchor_stem_matching_passes():
-    """policy 토큰 '테크노밸리 사업' 이 stem 으로 제목에 매칭 성공."""
+    """policy 토큰 '테크노밸리 사업' 이 stem 으로 제목에 매칭 성공.
+
+    body-exclusive 후보가 최소 1개 존재해야 gate 가 작동하므로,
+    institution 에 topic/stanceText 에 없는 고유 토큰을 추가한다.
+    """
     from agents.common import title_hook_quality as thq
 
     original = thq.extract_slot_opportunities
@@ -87,8 +91,8 @@ def test_body_anchor_stem_matching_passes():
     def fake_extract(topic, content_preview, params):
         return {
             "region": [],
-            "institution": [],
-            "policy": ["테크노밸리 사업"],
+            "institution": ["샘플구청"],
+            "policy": ["샘플밸리 사업"],
             "numeric": [],
             "year": [],
         }
@@ -96,11 +100,11 @@ def test_body_anchor_stem_matching_passes():
     thq.extract_slot_opportunities = fake_extract  # type: ignore
     try:
         params = {
-            "topic": "계양 테크노밸리 2단계",
-            "contentPreview": "...",
+            "topic": "샘플 샘플밸리 2단계",
+            "contentPreview": "샘플구청 주관 샘플밸리 사업 추진",
         }
         result = _assess_body_anchor_coverage(
-            "계양 테크노밸리, 2단계 지정 왜 늦어지나?", params
+            "샘플 샘플밸리, 2단계 지정 왜 늦어지나?", params
         )
         assert result.get("passed") is True, f"결과: {result}"
         assert "policy" in (result.get("hitBuckets") or [])
