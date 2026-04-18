@@ -65,14 +65,14 @@ const PromptForm = ({
 
   return (
     <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-      <Typography variant="h6" gutterBottom sx={{ color: 'black' }}>
+      <Typography variant="h6" gutterBottom sx={{ color: 'text.primary' }}>
         📝 AI 원고 생성
       </Typography>
 
       {/* 사용자 정보 표시 */}
       {user && (
         <Alert severity="info" sx={{ mb: 2 }}>
-          <Typography variant="body2" sx={{ color: 'black' }}>
+          <Typography variant="body2" sx={{ color: 'text.primary' }}>
             <strong>{user.name || '이름 없음'}</strong>
             {user.position && ` (${user.position})`}
             {regionInfo && ` | ${regionInfo}`}
@@ -116,7 +116,7 @@ const PromptForm = ({
           {/* 키워드 미리보기 */}
           {keywords.trim() && (
             <Box>
-              <Typography variant="body2" gutterBottom sx={{ color: 'black' }}>
+              <Typography variant="body2" gutterBottom sx={{ color: 'text.primary' }}>
                 키워드 미리보기:
               </Typography>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>

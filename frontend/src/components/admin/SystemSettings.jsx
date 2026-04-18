@@ -121,17 +121,17 @@ export default function SystemSettings() {
       >
         {/* 헤더 */}
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-          <Settings sx={{ fontSize: 28, color: '#006261', mr: 1.5 }} aria-hidden="true" />
+          <Settings sx={{ fontSize: 28, color: 'primary.main', mr: 1.5 }} aria-hidden="true" />
           <Box>
             <Typography
               id="system-settings-title"
               variant="h6"
               component="h2"
-              sx={{ fontWeight: 600, color: '#000000' }}
+              sx={{ fontWeight: 600, color: 'text.primary' }}
             >
               시스템 설정
             </Typography>
-            <Typography variant="body2" sx={{ color: 'rgba(0, 0, 0, 0.6)' }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
               전체 사용자에게 적용되는 시스템 기능을 관리합니다
             </Typography>
           </Box>
@@ -170,7 +170,7 @@ export default function SystemSettings() {
             }}
           >
             <Box sx={{ display: 'flex', alignItems: 'flex-start', flex: 1 }}>
-              <Psychology sx={{ fontSize: 24, color: '#006261', mr: 2, mt: 0.5 }} aria-hidden="true" />
+              <Psychology sx={{ fontSize: 24, color: 'primary.main', mr: 2, mt: 0.5 }} aria-hidden="true" />
               <Box>
                 <Typography
                   variant="subtitle1"
@@ -184,7 +184,7 @@ export default function SystemSettings() {
                 <Typography
                   variant="body2"
                   id="ai-keyword-description"
-                  sx={{ color: 'rgba(0, 0, 0, 0.6)' }}
+                  sx={{ color: 'text.secondary' }}
                 >
                   사용자가 원고 작성 시 AI 기반 검색어 추천 기능을 사용할 수 있습니다.
                   <br />
@@ -250,7 +250,7 @@ export default function SystemSettings() {
               aria-live="polite"
             >
               <CircularProgress size={20} sx={{ mr: 1 }} aria-hidden="true" />
-              <Typography variant="body2" sx={{ color: 'rgba(0, 0, 0, 0.6)' }}>
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                 설정을 업데이트하는 중...
               </Typography>
             </Box>

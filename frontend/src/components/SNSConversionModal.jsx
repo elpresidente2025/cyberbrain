@@ -79,7 +79,7 @@ const PLATFORMS = {
   x: {
     name: 'X',
     iconSrc: '/icons/icon-X.png',
-    color: '#000000',
+    color: 'var(--color-text-primary)',
     maxLengthPerPost: 250,
     recommendedLength: 250,
     isThread: true
@@ -87,7 +87,7 @@ const PLATFORMS = {
   threads: {
     name: 'Threads',
     iconSrc: '/icons/icon-threads.png',
-    color: '#000000',
+    color: 'var(--color-text-primary)',
     maxLengthPerPost: 250,
     recommendedLength: 250,
     isThread: true

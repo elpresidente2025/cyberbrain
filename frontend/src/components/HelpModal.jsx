@@ -43,7 +43,7 @@ const HelpModal = ({ open, onClose, title, children }) => {
         <IconButton
           onClick={onClose}
           size="small"
-          sx={{ color: '#666' }}
+          sx={{ color: 'text.secondary' }}
         >
           <Close />
         </IconButton>

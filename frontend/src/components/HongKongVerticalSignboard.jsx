@@ -48,7 +48,7 @@ const HongKongVerticalSignboard = ({
       <Typography
         variant="h6"
         sx={{
-          color: '#1a1a2e',
+          color: 'text.primary',
           textAlign: 'center',
           fontFamily: '"Noto Sans KR", monospace',
           fontWeight: 700,

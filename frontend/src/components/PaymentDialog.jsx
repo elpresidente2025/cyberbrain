@@ -88,12 +88,13 @@ const PaymentDialog = ({ open, onClose, selectedPlan }) => {
             </Alert>
 
             <Box
-              style={{
-                padding: '24px',
-                backgroundColor: '#ffffff',
+              sx={{
+                p: 3,
+                bgcolor: 'background.paper',
                 borderRadius: '2px',
-                marginBottom: '24px',
-                border: '1px solid #e0e0e0'
+                mb: 3,
+                border: '1px solid',
+                borderColor: 'divider'
               }}
             >
               <Typography
@@ -110,10 +111,10 @@ const PaymentDialog = ({ open, onClose, selectedPlan }) => {
               <Typography
                 variant="h4"
                 component="div"
-                style={{
+                sx={{
                   fontWeight: 'bold',
-                  marginBottom: '16px',
-                  color: '#000000'
+                  mb: 2,
+                  color: 'text.primary'
                 }}
               >
                 {selectedPlan.price.toLocaleString()}원/월
@@ -122,9 +123,9 @@ const PaymentDialog = ({ open, onClose, selectedPlan }) => {
               <Typography
                 variant="body2"
                 component="div"
-                style={{
-                  marginBottom: '16px',
-                  color: '#616161'
+                sx={{
+                  mb: 2,
+                  color: 'text.secondary'
                 }}
               >
                 VAT 포함 가격입니다
@@ -135,10 +136,10 @@ const PaymentDialog = ({ open, onClose, selectedPlan }) => {
                   <Typography
                     variant="subtitle2"
                     component="div"
-                    style={{
+                    sx={{
                       fontWeight: 'bold',
-                      marginBottom: '8px',
-                      color: '#000000'
+                      mb: 1,
+                      color: 'text.primary'
                     }}
                   >
                     포함 서비스:
@@ -148,10 +149,10 @@ const PaymentDialog = ({ open, onClose, selectedPlan }) => {
                       key={index}
                       variant="body2"
                       component="div"
-                      style={{
-                        marginLeft: '8px',
-                        marginBottom: '4px',
-                        color: '#424242'
+                      sx={{
+                        ml: 1,
+                        mb: 0.5,
+                        color: 'text.secondary'
                       }}
                     >
                       • {feature}
@@ -160,10 +161,10 @@ const PaymentDialog = ({ open, onClose, selectedPlan }) => {
                 </Box>
               )}
 
-              <Typography variant="body2" component="div" style={{ color: '#616161' }}>
+              <Typography variant="body2" component="div" sx={{ color: 'text.secondary' }}>
                 구매자: {user?.displayName || user?.name || '사용자'}
               </Typography>
-              <Typography variant="body2" component="div" style={{ color: '#616161' }}>
+              <Typography variant="body2" component="div" sx={{ color: 'text.secondary' }}>
                 이메일: {user?.email || '(이메일 없음)'}
               </Typography>
             </Box>

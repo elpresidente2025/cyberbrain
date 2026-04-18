@@ -227,11 +227,11 @@ const PublishingProgress = () => {
         }}>
         <CardContent>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <Publish sx={{ color: '#152484' }} />
+            <Publish sx={{ color: 'primary.main' }} />
             <Typography variant="h6">발행 목표</Typography>
           </Box>
-          <LinearProgress sx={{ color: '#152484' }} />
-          <Typography variant="caption" sx={{ mt: 2, display: 'block', color: '#152484', fontFamily: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif' }}>
+          <LinearProgress color="primary" />
+          <Typography variant="caption" sx={{ mt: 2, display: 'block', color: 'text.secondary', fontFamily: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif' }}>
             로딩 중...
           </Typography>
         </CardContent>
@@ -292,7 +292,7 @@ const PublishingProgress = () => {
       }}>
       <CardContent>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-          <Publish sx={{ color: '#152484', mr: 1 }} />
+          <Publish sx={{ color: 'primary.main', mr: 1 }} />
           <Typography variant="h6">발행 목표</Typography>
         </Box>
 
@@ -395,10 +395,10 @@ const PublishingProgress = () => {
             {isCompleted ? (
               <EmojiEvents sx={{ color: '#006261' }} />
             ) : (
-              <TrendingUp sx={{ color: '#152484' }} />
+              <TrendingUp sx={{ color: 'primary.main' }} />
             )}
 
-            <Typography variant="body2" sx={{ color: isCompleted ? '#006261' : '#152484' }}>
+            <Typography variant="body2" sx={{ color: isCompleted ? 'success.main' : 'primary.main' }}>
               {isCompleted
                 ? `목표 달성! ${published}/${target}회 완료`
                 : `${remaining}회 더 작성하면 목표 달성!`}
@@ -418,10 +418,10 @@ const PublishingProgress = () => {
                   variant="contained"
                   size="small"
                   sx={{
-                    bgcolor: '#152484',
+                    bgcolor: 'primary.main',
                     color: '#ffffff',
                     '&:hover': {
-                      bgcolor: '#0d1850',
+                      bgcolor: 'primary.dark',
                     }
                   }}
                   onClick={() => window.location.href = '/billing'}

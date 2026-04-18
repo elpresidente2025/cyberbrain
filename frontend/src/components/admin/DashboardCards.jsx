@@ -224,7 +224,7 @@ function DashboardCards() {
                   component="h3"
                   id="doc-generation-title"
                   gutterBottom
-                  sx={{ color: 'black' }}
+                  sx={{ color: 'text.primary' }}
                 >
                   오늘 문서 생성
                 </Typography>
@@ -246,7 +246,7 @@ function DashboardCards() {
               </Box>
               <Typography
                 variant="h3"
-                sx={{ mb: 1, color: 'black' }}
+                sx={{ mb: 1, color: 'text.primary' }}
                 aria-describedby="doc-generation-title"
               >
                 {totalToday}
@@ -300,8 +300,8 @@ function DashboardCards() {
             <CardContent sx={{ p: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <People sx={{ color: 'black' }} aria-hidden="true" />
-                  <Typography variant="h6" component="h3" sx={{ color: 'black' }}>
+                  <People sx={{ color: 'text.primary' }} aria-hidden="true" />
+                  <Typography variant="h6" component="h3" sx={{ color: 'text.primary' }}>
                     활성 사용자
                   </Typography>
                 </Box>
@@ -311,7 +311,7 @@ function DashboardCards() {
                   </span>
                 </Tooltip>
               </Box>
-              <Typography variant="h3" sx={{ mb: 1, color: 'black' }}>
+              <Typography variant="h3" sx={{ mb: 1, color: 'text.primary' }}>
                 {stats.activeUsers}
                 <Typography component="span" sx={{ fontSize: '0.5em', ml: 0.5 }}>명</Typography>
               </Typography>
@@ -331,7 +331,7 @@ function DashboardCards() {
                   sx={{ color: stats.last30mErrors > 0 ? '#d22730' : 'black' }}
                   aria-hidden="true"
                 />
-                <Typography variant="h6" component="h3" sx={{ color: 'black' }}>
+                <Typography variant="h6" component="h3" sx={{ color: 'text.primary' }}>
                   최근 30분 에러
                 </Typography>
               </Box>
@@ -355,8 +355,8 @@ function DashboardCards() {
           <HongKongNeonCard>
             <CardContent sx={{ p: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                <Api sx={{ color: 'black' }} aria-hidden="true" />
-                <Typography variant="h6" component="h3" sx={{ color: 'black' }}>
+                <Api sx={{ color: 'text.primary' }} aria-hidden="true" />
+                <Typography variant="h6" component="h3" sx={{ color: 'text.primary' }}>
                   Gemini API
                 </Typography>
               </Box>
