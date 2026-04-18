@@ -156,10 +156,12 @@ class EditorAgent(Agent):
             ):
                 constrained['editSummary'].append("사용자 문체 일부 반영")
 
-            # 3.5. post-humanize 고유명사 속격 "의" 재삽입 기계적 치환
-            # humanize LLM이 "계양의 테크노밸리"를 다시 집어넣을 수 있으므로
-            # apply_hard_constraints 에서 한 번, humanize 이후 한 번 더 돌린다.
+            # 3.5. post-humanize 고유명사 속격 "의" 강제 치환
+            # LLM이 "계양 테크노밸리" → "계양의 테크노밸리" / "계양의 TV" 로
+            # 풀어쓰는 현상을 기계적으로 확정 복원한다.
+            # HTML 태그가 끼어있을 수 있으므로 regex 로 처리.
             post_content = constrained['content']
+            _genitive_fix_count = 0
             for kw in (user_keywords or []):
                 kw_clean = str(kw).strip()
                 if not kw_clean:
@@ -168,9 +170,19 @@ class EditorAgent(Agent):
                 if len(parts) < 2:
                     continue
                 for i in range(len(parts) - 1):
-                    broken = parts[i] + "의 " + " ".join(parts[i + 1:])
-                    if broken in post_content:
-                        post_content = post_content.replace(broken, kw_clean)
+                    left = re.escape(parts[i])
+                    right = re.escape(" ".join(parts[i + 1:]))
+                    # "X의 Y", "X의Y", "X의 <tag>Y" 등 다양한 패턴
+                    pattern = left + r'의\s*(?:<[^>]*>\s*)*' + right
+                    replacement = parts[i] + " " + " ".join(parts[i + 1:])
+                    new_content = re.sub(pattern, replacement, post_content)
+                    if new_content != post_content:
+                        _genitive_fix_count += post_content.count(parts[i] + "의") - new_content.count(parts[i] + "의")
+                        post_content = new_content
+            if _genitive_fix_count > 0:
+                constrained['editSummary'].append(
+                    f"고유명사 속격 '의' 분해 {_genitive_fix_count}건 강제 복원"
+                )
             constrained['content'] = post_content
 
             # 3.7. post-humanize "저는" 문두 비율 경고 (기계적 삭제 없음)
@@ -906,9 +918,9 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
                         f"치환 후 중복 조사 {len(dup_tokens)}건 감지 — 수동 확인 필요"
                     )
 
-        # 1.2. 고유명사 속격 "의" 삽입 기계적 치환
+        # 1.2. 고유명사 속격 "의" 삽입 강제 치환
         # LLM이 "계양 테크노밸리" → "계양의 테크노밸리"로 풀어쓰는 것을
-        # 프롬프트로 막지 못하므로 post-processing으로 확정 치환한다.
+        # regex 로 강제 복원. HTML 태그가 끼어있어도 잡는다.
         for kw in (user_keywords or []):
             kw = str(kw).strip()
             if not kw:
@@ -917,10 +929,14 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
             if len(parts) < 2:
                 continue
             for i in range(len(parts) - 1):
-                broken = parts[i] + "의 " + " ".join(parts[i + 1:])
-                if broken in updated_content:
-                    updated_content = updated_content.replace(broken, kw)
-                    summary.append(f"고유명사 '{kw}' 속격 분해 기계적 복원")
+                left = re.escape(parts[i])
+                right = re.escape(" ".join(parts[i + 1:]))
+                pattern = left + r'의\s*(?:<[^>]*>\s*)*' + right
+                replacement = parts[i] + " " + " ".join(parts[i + 1:])
+                new_content = re.sub(pattern, replacement, updated_content)
+                if new_content != updated_content:
+                    updated_content = new_content
+                    summary.append(f"고유명사 '{kw}' 속격 분해 강제 복원")
 
         # 1.5. 문장 레벨 비문 스캔 (치환 여부와 무관하게 항상 수행)
         # 자동 교정은 하지 않음 — humanize 가 정확히 어느 문장인지 찾을 수 있도록
