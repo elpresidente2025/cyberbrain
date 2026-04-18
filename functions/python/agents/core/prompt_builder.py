@@ -503,6 +503,23 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
   </section_lane_rules>
 """.strip()
 
+    if uses_aeo_answer_first(writing_method):
+        expansion_guide = f"""<expansion_guide name="섹션별 두괄식 4단계 (AEO)" priority="high">
+    각 본론 섹션의 첫 문장에서 해당 섹션의 핵심 주장·해법·결론을 바로 선언하십시오.
+    <step name="Answer" sentences="1~2">이 섹션이 전달할 핵심 주장·해법·결론을 첫 문장에서 직접 밝힌다</step>
+    <step name="Evidence" sentences="2">주장을 뒷받침하는 데이터·사례·과거 성과를 제시</step>
+    <step name="Context" sentences="1">배경·현황·시민 체감 상황을 간결히 보충</step>
+    <step name="Effect+Trust" sentences="1">변화될 {user_region}의 미래 청사진을 명확히 제시</step>
+  </expansion_guide>"""
+    else:
+        expansion_guide = f"""<expansion_guide name="섹션별 작성 4단계">
+    각 본론 섹션을 아래 흐름으로 밀도 있게 전개하십시오.
+    <step name="Why" sentences="1~2">시민들이 겪는 실제 불편함과 현장의 고충을 구체적으로 진단</step>
+    <step name="How+Expertise" sentences="2">실현 가능한 해결책 제시 및 본인의 Bio(경력)는 한 번만 근거로 연결하고, 동일한 경력 리스트 재나열 없이 전문성의 의미만 이어 설명</step>
+    <step name="Authority" sentences="1">과거 성과나 네트워크를 바탕으로 실행 능력을 증명</step>
+    <step name="Effect+Trust" sentences="1~2">변화될 {user_region}의 미래 청사진을 명확히 제시</step>
+  </expansion_guide>"""
+
     structure_enforcement = f"""
 <structure_guide mode="strict">
   <strategy>E-A-T (전문성-권위-신뢰) 전략으로 작성</strategy>
@@ -514,13 +531,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     <caution>총 분량 상한을 넘기지 않도록 중복 문장과 장황한 수식어를 제거하고, 근거 중심으로 간결하게 작성하십시오.</caution>
   </volume>
 
-  <expansion_guide name="섹션별 작성 4단계">
-    각 본론 섹션을 아래 흐름으로 밀도 있게 전개하십시오.
-    <step name="Why" sentences="1~2">시민들이 겪는 실제 불편함과 현장의 고충을 구체적으로 진단</step>
-    <step name="How+Expertise" sentences="2">실현 가능한 해결책 제시 및 본인의 Bio(경력)는 한 번만 근거로 연결하고, 동일한 경력 리스트 재나열 없이 전문성의 의미만 이어 설명</step>
-    <step name="Authority" sentences="1">과거 성과나 네트워크를 바탕으로 실행 능력을 증명</step>
-    <step name="Effect+Trust" sentences="1~2">변화될 {user_region}의 미래 청사진을 명확히 제시</step>
-  </expansion_guide>
+  {expansion_guide}
 
   {section_lane_rules}
 
