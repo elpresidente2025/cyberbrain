@@ -436,19 +436,30 @@ const GeneratePage = () => {
     }
     setFormErrors({ topic: '', instructions0: '' });
 
-    // 2. 유효하면 API 호출
+    // 2. 알림 권한 요청 (아직 결정 안 된 경우에만)
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    // 3. 유효하면 API 호출
     const payload = {
       ...formData
     };
 
     const result = await generate(payload);
 
-    // 3. API 결과 처리
+    // 4. API 결과 처리 + 브라우저 알림
     if (result.success) {
       const successMessage = result.message + '\n\n💡 생성된 원고를 꼭 검수하시고, 필요에 따라 직위나 내용을 직접 편집해주세요.';
       showNotification(successMessage, 'success');
+      if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+        new Notification('원고 생성 완료', { body: 'AI 원고가 성공적으로 생성되었습니다. 확인해 주세요.' });
+      }
     } else {
       showNotification(result.error, 'error');
+      if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+        new Notification('원고 생성 실패', { body: '오류가 발생했습니다. 다시 시도해 주세요.' });
+      }
     }
   };
 
@@ -461,8 +472,14 @@ const GeneratePage = () => {
     if (result.success) {
       const successMessage = result.message + '\n\n생성된 원고를 꼭 검수하시고, 필요에 따라 직접 편집해주세요.';
       showNotification(successMessage, 'success');
+      if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+        new Notification('원고 생성 완료', { body: 'AI 원고가 성공적으로 생성되었습니다. 확인해 주세요.' });
+      }
     } else {
       showNotification(result.error, 'error');
+      if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+        new Notification('원고 생성 실패', { body: '오류가 발생했습니다. 다시 시도해 주세요.' });
+      }
     }
   };
 
