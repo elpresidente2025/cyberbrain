@@ -167,55 +167,80 @@ class EditorAgent(Agent):
             constrained['content'] = post_content
 
             # 3.7. post-humanize "저는" 문두 문맥 기반 감축
-            # 한국어는 pro-drop 언어로, 1인칭 주어를 70~80% 생략하는 것이 자연스럽다.
-            # 단, 무조건 삭제하면 대조/전환 맥락에서 주어가 모호해진다.
-            # 원칙:
-            #   삭제 안전 — 직전 문장도 "저는"이거나, 주어가 생략된 상태 (동일 주어 연속)
-            #   삭제 금지 — 직전 문장이 다른 주어로 시작 (대조/전환)
-            #   삭제 금지 — 글 전체에서 첫 등장 / 마지막 등장
+            # 한국어 pro-drop 규칙 기반: 1인칭 주어 70~80% 생략이 자연스럽다.
+            # 삭제 안전 조건:
+            #   (a) 동일 주어 연속 — 직전 문장도 "저는"이거나 주어 생략 상태
+            #   (b) 의지/다짐 서술어 — -겠습니다 등으로 화자임이 자명
+            #   (c) 연속 2문장 금지 — 직전이 "저는"이면 현재 무조건 삭제
+            # 삭제 금지 조건:
+            #   (a) 대조/전환 — 직전 문장이 다른 주어
+            #   (b) 첫 등장 — 글 전체에서 "저는" 최초 1회
+            # 목표: "저는" 문두 비율 ≤ 20%
             post_content = constrained['content']
             _fp_strip_count = 0
 
             _fp_re = re.compile(r'저는\s')
-            # 다른 주어 패턴: "X는", "X들은", "X이/가" 등으로 시작하는 문장
             _other_subj_re = re.compile(
-                r'^(?!저는\s)(\S+(?:는|은|이|가|에서는|에서|들은|들이|들은|께서는|께서))\s'
+                r'^(?!저는\s)(\S+(?:는|은|이|가|에서는|에서|들은|들이|께서는|께서))\s'
+            )
+            # 의지/다짐 서술어: 화자임이 자명한 어미
+            _volition_re = re.compile(
+                r'(?:겠습니다|하겠습니다|다짐합니다|약속합니다|드리겠습니다|매진하겠습니다'
+                r'|집중하겠습니다|노력하겠습니다|힘쓰겠습니다|앞장서겠습니다)[.!]?\s*$'
             )
             _fp_plain = re.sub(r'<[^>]+>', ' ', post_content)
             _fp_plain = re.sub(r'\s+', ' ', _fp_plain).strip()
             _fp_all_sents = [s.strip() for s in re.split(r'(?<=[.?!])\s+', _fp_plain) if len(s.strip()) > 5]
             _fp_matched_sents = [s for s in _fp_all_sents if _fp_re.match(s)]
-            _fp_ratio = len(_fp_matched_sents) / len(_fp_all_sents) if _fp_all_sents else 0
+            _fp_total = len(_fp_all_sents)
+            _fp_ratio = len(_fp_matched_sents) / _fp_total if _fp_total else 0
 
-            if _fp_ratio >= 0.30 and len(_fp_matched_sents) >= 4:
-                # 전체 문장 목록에서 각 "저는" 문장의 원래 인덱스 확인
+            if _fp_ratio >= 0.25 and len(_fp_matched_sents) >= 3:
                 fp_positions = [i for i, s in enumerate(_fp_all_sents) if _fp_re.match(s)]
+                _fp_target_max = max(int(_fp_total * 0.20), 1)
 
                 targets_to_remove: list[str] = []
+                # 삭제 우선순위를 매겨서 목표 비율까지만 삭제
+                candidates: list[tuple[int, int, str]] = []  # (priority, global_idx, sentence)
+
                 for pos_idx, global_idx in enumerate(fp_positions):
-                    # 첫 등장, 마지막 등장 보호
-                    if pos_idx == 0 or pos_idx == len(fp_positions) - 1:
+                    # 첫 등장 보호 (삭제 금지)
+                    if pos_idx == 0:
                         continue
 
-                    # 직전 문장 확인
-                    if global_idx > 0:
-                        prev_sent = _fp_all_sents[global_idx - 1]
-                        prev_is_fp = bool(_fp_re.match(prev_sent))
-                        prev_has_other_subj = bool(_other_subj_re.match(prev_sent))
+                    sent = _fp_all_sents[global_idx]
+                    prev_sent = _fp_all_sents[global_idx - 1] if global_idx > 0 else ""
+                    prev_is_fp = bool(_fp_re.match(prev_sent))
+                    prev_has_other_subj = bool(_other_subj_re.match(prev_sent))
 
-                        if prev_has_other_subj:
-                            # 대조/전환 맥락 → "저는" 보호 (삭제 금지)
-                            continue
-                        if not prev_is_fp and not prev_has_other_subj:
-                            # 직전 문장에 주어가 없음(생략 상태) → 같은 화자 맥락
-                            # 삭제 가능하지만, 연속 삭제 방지를 위해 짝수번째만
-                            if pos_idx % 2 == 0:
-                                continue
+                    # 대조/전환 맥락 → 보호 (삭제 금지)
+                    if prev_has_other_subj:
+                        continue
 
-                    # 동일 주어 연속이거나 주어 생략 상태 → 삭제 안전
-                    targets_to_remove.append(_fp_all_sents[global_idx])
+                    # 우선순위 결정 (낮을수록 먼저 삭제)
+                    if prev_is_fp:
+                        # 연속 "저는" 2문장 → 최우선 삭제
+                        priority = 0
+                    elif _volition_re.search(sent):
+                        # 의지/다짐 서술어 → 화자 자명, 삭제 안전
+                        priority = 1
+                    elif not prev_has_other_subj and not prev_is_fp:
+                        # 직전 문장 주어 생략 상태 → 같은 화자 맥락
+                        priority = 2
+                    else:
+                        priority = 3
 
-                # HTML 원문에서 해당 문장의 "저는 "을 제거
+                    candidates.append((priority, global_idx, sent))
+
+                # 우선순위 정렬 후 목표까지 삭제
+                candidates.sort(key=lambda x: x[0])
+                remaining = len(_fp_matched_sents)
+                for priority, global_idx, sent in candidates:
+                    if remaining <= _fp_target_max:
+                        break
+                    targets_to_remove.append(sent)
+                    remaining -= 1
+
                 for target in targets_to_remove:
                     if target in post_content:
                         replaced = target.replace("저는 ", "", 1)
@@ -224,8 +249,13 @@ class EditorAgent(Agent):
 
             if _fp_strip_count:
                 constrained['content'] = post_content
+                _fp_new_ratio = sum(1 for s in [
+                    s.strip() for s in re.split(r'(?<=[.?!])\s+',
+                    re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', post_content)).strip())
+                    if len(s.strip()) > 5
+                ] if _fp_re.match(s)) / _fp_total if _fp_total else 0
                 constrained['editSummary'].append(
-                    f"'저는' 문두 과다 {_fp_strip_count}건 문맥 기반 생략 (비율 {_fp_ratio:.0%} → 감축)"
+                    f"'저는' 문두 과다 {_fp_strip_count}건 문맥 기반 생략 ({_fp_ratio:.0%} → {_fp_new_ratio:.0%})"
                 )
 
             # 4. post-humanize 필수 키워드 최소 등장 검증 (경고만, 자동 치환 안 함)
