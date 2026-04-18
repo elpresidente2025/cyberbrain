@@ -1831,3 +1831,28 @@ def test_cliche_density_passes_low_density() -> None:
 
     # NNG 중 상투어 비율이 0.6 미만
     assert _has_concrete_content("광역철도 사업 추진 일정 공개", "", "") is True
+
+
+# ---------------------------------------------------------------------------
+# 영문 약어 잘림 감지 (has_incomplete_h2_ending)
+# ---------------------------------------------------------------------------
+
+def test_incomplete_ending_ascii_abbreviation() -> None:
+    """슬래시 포함 영문 약어(B/C)로 끝나면 잘림으로 감지."""
+    from agents.common.h2_guide import has_incomplete_h2_ending
+
+    assert has_incomplete_h2_ending("광역철도, 2026년 상반기 B/C") is True
+
+
+def test_incomplete_ending_ascii_abbreviation_with_korean_suffix() -> None:
+    """영문 약어 뒤에 한국어가 붙으면 정상."""
+    from agents.common.h2_guide import has_incomplete_h2_ending
+
+    assert has_incomplete_h2_ending("광역철도, 2026년 B/C 분석 완료") is False
+
+
+def test_incomplete_ending_trailing_slash() -> None:
+    """슬래시로 끝나면 잘림."""
+    from agents.common.h2_guide import has_incomplete_h2_ending
+
+    assert has_incomplete_h2_ending("계양 테크노밸리 S-BRT/") is True

@@ -147,6 +147,13 @@ def has_incomplete_h2_ending(text: str) -> bool:
     if len(last_token) <= 1:
         return True
 
+    # 영문 약어 잘림 감지: "B/C", "S-", "ABC/" 등 슬래시·하이픈으로 끝나는 토큰
+    if last_token[-1] in ('/', '-'):
+        return True
+    # 슬래시 포함 약어가 마지막 토큰인 경우 ("B/C" 단독 — "B/C 분석"이 완결형)
+    if re.fullmatch(r'[A-Za-z0-9]+(?:[/\-][A-Za-z0-9]+)*', last_token):
+        return True
+
     if _H2_TRAILING_INCOMPLETE_ENDING_RE.search(last_token):
         return True
 
