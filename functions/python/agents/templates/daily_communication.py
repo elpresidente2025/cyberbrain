@@ -125,7 +125,7 @@ def build_daily_communication_prompt(options: dict) -> str:
     위 어휘 테마에 맞는 단어와 표현을 창의적으로 사용하여 글 전체의 분위기를 형성하라.
   </component>
   <component id="structure" name="구조 전략 (Standard 5-Step Structure)">
-    <rule priority="critical">AEO 최적화와 안정감을 위해 [서론 - 본론1 - 본론2 - 본론3 - 결론]의 5단 구조를 반드시 준수하라.</rule>
+    <rule priority="critical">서사 흐름과 안정감을 위해 [서론 - 본론1 - 본론2 - 본론3 - 결론]의 5단 구조를 반드시 준수하라.</rule>
     <rule>입력된 핵심 소재가 적더라도(1~2개), 이를 세분화하거나 관련 내용을 보강하여 반드시 3개의 본론을 채워라.</rule>
     <section order="1" name="서론">인사, 문제 제기, 공감 형성</section>
     <section order="2" name="본론 1" subheading="h2 소제목 필수">첫 번째 핵심 주장 / 현황 분석</section>

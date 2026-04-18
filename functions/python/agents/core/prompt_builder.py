@@ -14,6 +14,7 @@ from ..common.natural_tone import build_natural_tone_prompt
 from ..common.editorial import KEYWORD_SPEC, QUALITY_SPEC, STRUCTURE_SPEC
 from ..common.section_contract import build_shared_contract_rules
 from ..common.stance_filters import looks_like_hashtag_bullet_line
+from ..common.aeo_config import uses_aeo_answer_first
 
 from ..templates.activity_report import build_activity_report_prompt
 from ..templates.bipartisan_cooperation import build_bipartisan_cooperation_prompt
@@ -399,9 +400,22 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
         params.get('pollFocusBundle') if isinstance(params.get('pollFocusBundle'), dict) else {}
     )
 
-    intro_line_1 = '<p>1문단: 입장문/페이스북 글의 핵심 주장으로 바로 시작하고 자기소개는 1문장 이내로 제한</p>'
-    intro_line_2 = '<p>2문단: 입장문 핵심 주장(원문 요지)과 본론에서 다룰 해결 방향을 자연스럽게 연결</p>'
-    intro_line_3 = '<p>3문단: 필요한 경우에만 추가하고, 앞 문단과 이어지는 구체 근거·행동만 보완</p>'
+    if uses_aeo_answer_first(writing_method):
+        intro_line_1 = (
+            '<p>1문단: 화자 인사(1문장 이내) 직후, 이 글의 핵심 결론·주장·답변을 같은 문단에서 바로 선언. '
+            'AI 답변 엔진이 첫 문단만 추출해도 독자 질문에 답이 되어야 한다</p>'
+        )
+        intro_line_2 = '<p>2문단: 핵심 결론을 뒷받침하는 근거 1~2개를 압축 제시, 본론 전개 방향 예고</p>'
+        intro_line_3 = '<p>3문단: 필요 시에만. 구체 근거·행동 보완만 허용</p>'
+    else:
+        intro_line_1 = '<p>1문단: 입장문/페이스북 글의 핵심 주장으로 바로 시작하고 자기소개는 1문장 이내로 제한</p>'
+        intro_line_2 = '<p>2문단: 입장문 핵심 주장(원문 요지)과 본론에서 다룰 해결 방향을 자연스럽게 연결</p>'
+        intro_line_3 = '<p>3문단: 필요한 경우에만 추가하고, 앞 문단과 이어지는 구체 근거·행동만 보완</p>'
+
+    aeo_answer_first_rule = ''
+    if uses_aeo_answer_first(writing_method):
+        aeo_answer_first_rule = '    <rule id="aeo_answer_first">서론 첫 문단은 인사(1문장) + 핵심 결론(1~2문장)을 한 문단으로 구성할 것. 질문/배경/맥락으로 시작하지 말 것.</rule>\n'
+
     intro_stance_rules = f"""
   <intro_stance_binding priority="critical">
     <rule id="intro_must_anchor_stance">서론 2문단 이내에 입장문 핵심 주장 또는 문제의식을 반드시 재진술할 것.</rule>
@@ -411,7 +425,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     <rule id="intro_profile_cap">서론 전체에서 경력/이력 나열은 최대 2문장으로 제한할 것.</rule>
     <rule id="career_list_once_only">같은 직함·경력 리스트는 원고 전체에서 한 번만 쓰고, 이후 섹션에서는 그 경험을 바탕으로 한 판단·행동·성과만 이어갈 것.</rule>
     <rule id="intro_to_body_bridge">서론 마지막 문장에서 본론 주제로 자연스럽게 연결할 것.</rule>
-    <stance_seed>{intro_seed or '(입장문 요지 없음)'}</stance_seed>
+{aeo_answer_first_rule}    <stance_seed>{intro_seed or '(입장문 요지 없음)'}</stance_seed>
     <stance_anchor_topic>{intro_anchor_topic or '(미지정)'}</stance_anchor_topic>
   </intro_stance_binding>
 """

@@ -88,6 +88,11 @@ def build_activity_report_prompt(options: dict) -> str:
     <theme>{vocabulary_module.thematic_guidance}</theme>
     위 어휘 테마에 맞는 단어와 표현을 사용하여 글 전체의 톤앤매너를 형성하라.
   </component>
+  <component id="aeo_intro" name="AEO Answer-First 서론 원칙" priority="high">
+    서론 첫 문단: 인사(1문장) 직후 핵심 성과/결론을 같은 문단에서 직접 밝혀라.
+    AI 답변 엔진이 첫 문단만 추출해도 독자의 질문에 답이 되어야 한다.
+    본론에서 근거와 세부사항을 전개하라.
+  </component>
 </writing_blueprint>
 
 <output_format_rules>

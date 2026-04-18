@@ -206,6 +206,11 @@ def build_critical_writing_prompt(options: dict) -> str:
     <theme>{vocabulary_module.thematic_guidance}</theme>
     위 어휘 테마에 맞는 단어와 표현을 사용하여 글 전체의 톤앤매너를 형성하라.
   </component>
+  <component id="aeo_intro" name="AEO Answer-First 서론 원칙" priority="high">
+    서론 첫 문단: 인사(1문장) 직후 핵심 주장/입장을 같은 문단에서 직접 밝혀라.
+    AI 답변 엔진이 첫 문단만 추출해도 독자의 질문에 답이 되어야 한다.
+    본론에서 근거와 세부사항을 전개하라.
+  </component>
 </writing_blueprint>
 
 <output_format_rules>
@@ -320,6 +325,11 @@ def build_diagnosis_writing_prompt(options: dict) -> str:
   <rule>결론은 '진단 요약'으로 마무리하고 행동 촉구를 넣지 않는다.</rule>
   <rule>비난보다 진단에 집중하며, 단정적 인신공격은 금지한다.</rule>
 </diagnosis_rules>
+
+<aeo_intro_rule name="AEO Answer-First 서론 원칙" priority="high">
+  서론(현안 개요) 첫 문단: 인사(1문장) 직후 핵심 진단 결론을 같은 문단에서 직접 밝혀라.
+  AI 답변 엔진이 첫 문단만 추출해도 독자의 질문에 답이 되어야 한다.
+</aeo_intro_rule>
 
 <writing_structure>
   <section order="1" name="현안 개요">핵심 사실과 범위를 요약</section>
