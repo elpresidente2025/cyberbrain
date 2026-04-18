@@ -28,7 +28,9 @@ CATEGORY_TO_WRITING_METHOD = {
     'policy-proposal': 'logical_writing',
     'current-affairs': 'critical_writing',
     'local-issues': 'analytical_writing',
-    'educational-content': 'logical_writing'
+    'educational-content': 'logical_writing',
+    'bipartisan-cooperation': 'bipartisan_writing',
+    'offline-engagement': 'offline_writing',
 }
 
 # 하위 카테고리 → 작법(writingMethod) 매핑

@@ -12,7 +12,9 @@ WRITING_METHODS = {
     'critical_writing': '비판적 논평, 가짜뉴스 반박, 시사 논평 등 날카로운 비판이 필요한 글',
     'diagnostic_writing': '현안 진단, 문제 분석, 원인 규명 등 심층 분석이 필요한 글',
     'analytical_writing': '지역 현안 분석, 해결책 제시, 민원 처리 보고 등 분석적인 글',
-    'direct_writing': '의정활동 보고, 국정감사 활동, 법안 발의 등 직접적인 활동 보고'
+    'direct_writing': '의정활동 보고, 국정감사 활동, 법안 발의 등 직접적인 활동 보고',
+    'bipartisan_writing': '초당적 협력, 여야 합의, 소신 발언 인정 등 진영을 넘어선 정치',
+    'offline_writing': '행사 주최/초대, 참석 후기, 일정 공지, 출판기념회 등 오프라인 활동'
 }
 
 KEYWORD_PATTERNS = {
@@ -32,6 +34,12 @@ KEYWORD_PATTERNS = {
     ],
     'direct_writing': [
         r'국정감사|국감|의정활동|법안|조례|위원회|회의|본회의'
+    ],
+    'bipartisan_writing': [
+        r'초당적|여야\s*협력|여야\s*합의|소신\s*발언|당을\s*넘어|진영.*넘어|정파.*넘어'
+    ],
+    'offline_writing': [
+        r'출판기념회|행사\s*안내|행사\s*초대|참석\s*후기|방문\s*후기|토크\s*콘서트|타운홀|일정\s*공지|행사\s*개최'
     ]
 }
 
@@ -69,6 +77,8 @@ async def classify_with_llm(topic: str) -> Dict[str, Any]:
 - 현안 진단, 문제 분석 → diagnostic_writing
 - 지역 현안, 민원, 해결책 → analytical_writing
 - 의정활동, 국감, 법안 → direct_writing
+- 초당적 협력, 여야 합의, 소신 발언 → bipartisan_writing
+- 행사 주최/초대, 참석 후기, 일정 공지 → offline_writing
 
 반드시 아래 JSON 형식으로만 응답하세요:
 {{"writingMethod": "선택한_작법", "confidence": 0.0~1.0}}"""

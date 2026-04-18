@@ -8,8 +8,10 @@ import time
 from ..templates.daily_communication import build_daily_communication_prompt
 from ..templates.policy_proposal import build_policy_proposal_prompt
 from ..templates.activity_report import build_activity_report_prompt
+from ..templates.bipartisan_cooperation import build_bipartisan_cooperation_prompt
 from ..templates.current_affairs import build_critical_writing_prompt, build_diagnosis_writing_prompt
 from ..templates.local_issues import build_local_issues_prompt
+from ..templates.offline_engagement import build_offline_engagement_prompt
 
 from ..common.theminjoo import get_party_stance
 from ..common.election_rules import get_election_stage, resolve_election_context
@@ -42,7 +44,9 @@ TEMPLATE_BUILDERS = {
     'direct_writing': build_activity_report_prompt,
     'critical_writing': build_critical_writing_prompt,
     'diagnostic_writing': build_diagnosis_writing_prompt,
-    'analytical_writing': build_local_issues_prompt
+    'analytical_writing': build_local_issues_prompt,
+    'bipartisan_writing': build_bipartisan_cooperation_prompt,
+    'offline_writing': build_offline_engagement_prompt,
 }
 
 STANCE_META_SOURCE_CUE_PATTERN = re.compile(

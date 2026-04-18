@@ -47,6 +47,12 @@ CATEGORY_ALIASES = {
     "local-issues": "local-issues",
     "지역현안": "local-issues",
     "지역 현안": "local-issues",
+    "bipartisan-cooperation": "bipartisan-cooperation",
+    "초당적협력": "bipartisan-cooperation",
+    "초당적 협력": "bipartisan-cooperation",
+    "offline-engagement": "offline-engagement",
+    "오프라인접점": "offline-engagement",
+    "오프라인 접점": "offline-engagement",
 }
 
 WRITING_METHOD_TO_CATEGORY = {
@@ -56,6 +62,8 @@ WRITING_METHOD_TO_CATEGORY = {
     "critical_writing": "current-affairs",
     "diagnostic_writing": "current-affairs",
     "analytical_writing": "local-issues",
+    "bipartisan_writing": "bipartisan-cooperation",
+    "offline_writing": "offline-engagement",
 }
 
 CATEGORY_PATTERNS = {
@@ -137,6 +145,32 @@ CATEGORY_PATTERNS = {
         r"상권",
         r"공원",
         r"현장\s*점검",
+    ),
+    "bipartisan-cooperation": (
+        r"초당적",
+        r"여야\s*협력",
+        r"여야\s*합의",
+        r"초당\s*협력",
+        r"소신\s*발언",
+        r"당을\s*넘어",
+        r"진영\s*넘어",
+        r"정파.*넘어",
+        r"야당.*인정",
+        r"협력\s*제안",
+    ),
+    "offline-engagement": (
+        r"출판기념회",
+        r"행사\s*안내",
+        r"행사\s*초대",
+        r"참석\s*후기",
+        r"방문\s*후기",
+        r"간담회\s*후기",
+        r"토크\s*콘서트",
+        r"타운홀",
+        r"오프라인",
+        r"일정\s*공지",
+        r"행사\s*개최",
+        r"행사\s*참석",
     ),
 }
 
@@ -360,6 +394,8 @@ async def classify_with_llm(topic: str) -> Dict[str, Any]:
 - educational-content: 정책·법령·조례 설명, 신청 절차 안내, 시민 가이드
 - current-affairs: 논평, 반박, 현안 진단, 입장 표명
 - local-issues: 지역 현안, 민원, 교통, 주차, 안전, 생활 불편 분석
+- bipartisan-cooperation: 초당적 협력, 여야 합의, 소신 발언 인정, 진영을 넘어선 정치
+- offline-engagement: 행사 주최/초대, 참석 후기, 일정 공지, 출판기념회, 토크콘서트
 
 [주제]
 {normalized_topic}

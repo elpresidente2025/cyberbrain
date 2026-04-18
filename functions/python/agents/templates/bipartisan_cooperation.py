@@ -112,7 +112,7 @@ def build_bipartisan_cooperation_prompt(options: dict = None) -> str:
     defaults = {
         'topic': '',
         'targetCount': 1800,
-        'authorBio': '이재성',
+        'authorBio': '',
         'instructions': '',
         'newsContext': '',
         'templateId': 'principled_stance',

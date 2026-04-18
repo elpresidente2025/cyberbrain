@@ -67,6 +67,16 @@ export const CATEGORIES = [
     ],
   },
   {
+    value: 'offline-engagement',
+    label: '오프라인 접점',
+    description: '행사 주최/초대, 참석 후기, 일정 공지 등 오프라인 활동 관련 콘텐츠를 작성합니다.',
+    subCategories: [
+      { value: 'hosted_event', label: '행사 주최/초대', writingMethod: 'offline_writing', needsAudienceStance: false },
+      { value: 'attendance_note', label: '행사 참석/방문 후기', writingMethod: 'offline_writing', needsAudienceStance: false },
+      { value: 'brief_notice', label: '단순 일정 공지', writingMethod: 'offline_writing', needsAudienceStance: false },
+    ],
+  },
+  {
     value: 'bipartisan-cooperation',
     label: '초당적 협력',
     description: '야당 인사의 소신 발언 인정, 초당적 협력 제안 등 진영을 넘어선 정치를 다룹니다. (특수 용도)',
