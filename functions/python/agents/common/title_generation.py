@@ -1064,6 +1064,16 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
                         score_result = repaired_score_result
                         initial_generated_title = role_repaired_title
             # body-anchor repair: score=0(앵커 실격)이면 규칙 기반 삽입 시도
+            if int(score_result.get('score', 0)) == 0:
+                _anchor_bd = (score_result.get('breakdown') or {}).get('bodyAnchorCoverage')
+                logger.info(
+                    "[TitleGen] score=0 감지(후보 %s): allow_auto_repair=%s "
+                    "bodyAnchorCoverage=%s title=%r",
+                    idx,
+                    allow_auto_repair,
+                    {k: v for k, v in (_anchor_bd or {}).items() if k != 'available'} if _anchor_bd else None,
+                    initial_generated_title,
+                )
             if allow_auto_repair and int(score_result.get('score', 0)) == 0:
                 anchor_repaired = repair_title_for_body_anchor(
                     initial_generated_title, params,

@@ -1,7 +1,10 @@
 """?? ??? role-keyword ?? ??."""
 
+import logging
 import re
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from .role_keyword_policy import (
     build_role_keyword_intent_anchor_text,
@@ -801,6 +804,7 @@ def repair_title_for_body_anchor(
     # 1. body anchor coverage 확인 — 이미 통과하면 불필요
     coverage = _assess_body_anchor_coverage(normalized, params)
     if coverage.get('passed', True) or coverage.get('skipped'):
+        logger.debug("[body-anchor-repair] 이미 통과 — skip. title=%r", normalized)
         return None
 
     # 2. body-exclusive 토큰 추출
@@ -813,18 +817,34 @@ def repair_title_for_body_anchor(
     except Exception:
         return None
 
+    # 모든 앵커 후보 (body-exclusive 여부 무관) 도 함께 수집
+    all_candidates: List[str] = []
     exclusive_candidates: List[str] = []
     for bucket in _BODY_ANCHOR_BUCKETS:
         for tok in (slots.get(bucket) or []):
             tok_str = str(tok or '').strip()
-            if tok_str and _is_body_exclusive(tok_str, topic, stance_text):
+            if not tok_str:
+                continue
+            all_candidates.append(tok_str)
+            if _is_body_exclusive(tok_str, topic, stance_text):
                 exclusive_candidates.append(tok_str)
 
-    if not exclusive_candidates:
+    logger.info(
+        "[body-anchor-repair] title=%r all_candidates=%s exclusive=%s",
+        normalized,
+        all_candidates[:10],
+        exclusive_candidates[:10],
+    )
+
+    # body-exclusive 가 없으면 전체 후보에서 선택 (gate 는 body-exclusive 만
+    # 요구하지만, 전체 후보 중 하나라도 제목에 있으면 gate 를 통과할 수 있다)
+    candidates_to_try = exclusive_candidates or all_candidates
+    if not candidates_to_try:
+        logger.info("[body-anchor-repair] 삽입 후보 없음 — skip")
         return None
 
     # 3. 가장 짧은 후보 선택 (제목 길이 제약에 유리)
-    anchor = min(exclusive_candidates, key=len)
+    anchor = min(candidates_to_try, key=len)
 
     # 4. 삽입 전략: 쉼표 앞(첫째 절 끝)에 공백+토큰 추가
     #    "귤현동 탄약고, 문세종이 ..." → "귤현동 탄약고 국방부, 문세종이 ..."
@@ -843,11 +863,20 @@ def repair_title_for_body_anchor(
 
     # 5. 길이 검증
     if len(repaired) > TITLE_LENGTH_HARD_MAX or len(repaired) < TITLE_LENGTH_HARD_MIN:
+        logger.info(
+            "[body-anchor-repair] 길이 초과/미달 — skip. repaired=%r len=%s",
+            repaired, len(repaired),
+        )
         return None
 
     # 6. repair 후 gate 통과 확인
     re_coverage = _assess_body_anchor_coverage(repaired, params)
     if not re_coverage.get('passed', False):
+        logger.info(
+            "[body-anchor-repair] 삽입 후에도 gate 미통과 — skip. repaired=%r re_coverage=%s",
+            repaired, re_coverage,
+        )
         return None
 
+    logger.info("[body-anchor-repair] 성공: %r -> %r (anchor=%r)", normalized, repaired, anchor)
     return repaired
