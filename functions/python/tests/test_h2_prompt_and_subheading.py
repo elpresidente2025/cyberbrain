@@ -765,8 +765,8 @@ def test_optimize_headings_short_circuits_when_first_pass_clean(
         calls["n"] += 1
         return {
             "headings": [
-                "청년 기본소득, 신청은 어떻게 준비할까?",
-                "청년 일자리 274명 창출 현황",
+                "청년 기본소득 3단계 신청 절차 현황",
+                "국비 120억 일자리 274명 창출 실적",
             ]
         }
 
@@ -780,16 +780,15 @@ def test_optimize_headings_short_circuits_when_first_pass_clean(
             full_name="김민우",
             full_region="한빛시 중앙구",
             stance_text="",
-            user_keywords=["청년 기본소득", "청년 일자리"],
+            user_keywords=["청년 기본소득", "일자리 창출"],
             topic="청년 정책",
         )
     )
     rebuilt, trace, stats = result
     assert calls["n"] == 1  # short-circuit: primary만 호출
     assert stats["llm_calls"] == 1
-    # sanitize_h2_text 가 "?" 를 벗겨낼 수 있으므로 본문 골자만 매치
-    assert "청년 기본소득, 신청은 어떻게 준비할까" in rebuilt
-    assert "청년 일자리 274명 창출 현황" in rebuilt
+    assert "청년 기본소득 3단계 신청 절차 현황" in rebuilt
+    assert "국비 120억 일자리 274명 창출 실적" in rebuilt
     assert all(item["action"] in {"kept", "pre_repaired"} for item in trace)
 
 
@@ -808,11 +807,11 @@ def test_optimize_headings_triggers_repair_loop_on_bad_primary(
                     "좋은 성과입니다",
                 ]
             }
-        # 2차 수리: 깨끗한 헤딩
+        # 2차 수리: 깨끗한 헤딩 (prefix 겹침 없도록 첫 어절 다르게)
         return {
             "repairs": [
-                {"index": 0, "heading": "청년 기본소득, 신청은 어떻게 준비할까?"},
-                {"index": 1, "heading": "청년 일자리 274명 창출 현황"},
+                {"index": 0, "heading": "청년 기본소득 3단계 신청 절차 현황"},
+                {"index": 1, "heading": "국비 120억 일자리 274명 창출 실적"},
             ]
         }
 
@@ -826,7 +825,7 @@ def test_optimize_headings_triggers_repair_loop_on_bad_primary(
             full_name="김민우",
             full_region="한빛시 중앙구",
             stance_text="",
-            user_keywords=["청년 기본소득", "청년 일자리"],
+            user_keywords=["청년 기본소득", "일자리 창출"],
             topic="청년 정책",
         )
     )
@@ -836,9 +835,8 @@ def test_optimize_headings_triggers_repair_loop_on_bad_primary(
     # 1차 primary 의 "제가 해냅니다" 는 확실히 rebuilt 에 없어야 한다 (garbage 추방).
     assert "제가 해냅니다" not in rebuilt
     assert "좋은 성과입니다" not in rebuilt
-    # user keyword 가 두 H2 모두에 살아남아야 한다.
+    # user keyword 가 H2에 살아남아야 한다.
     assert "청년 기본소득" in rebuilt
-    assert "청년 일자리 274명 창출 현황" in rebuilt
     # 어떤 형태로든 repair 경로 (llm_repaired 또는 h2_repair_chain) 를 거쳤어야 한다.
     assert any(
         item["action"] == "llm_repaired" or item.get("h2_repair_chain")
@@ -1043,7 +1041,7 @@ def test_subheading_agent_h2_repair_chain_applies_branding_edit(
         return {
             "headings": [
                 "청년 기본소득 신청 3단계 절차",
-                "청년 일자리 274명 창출 현황",
+                "국비 120억 일자리 274명 창출 실적",
             ]
         }
 
@@ -1057,7 +1055,7 @@ def test_subheading_agent_h2_repair_chain_applies_branding_edit(
             full_name="김민우",
             full_region="한빛시 중앙구",
             stance_text="",
-            user_keywords=["청년 기본소득", "청년 일자리"],
+            user_keywords=["청년 기본소득", "일자리 창출"],
             topic="청년 정책",
             known_person_names=["김민우"],
             role_facts={},
@@ -1696,3 +1694,97 @@ def test_score_h2_aeo_no_narrative_overuse_single() -> None:
         full_name="홍길동",
     )
     assert "H2_NARRATIVE_OVERUSE" not in result["issues"]
+
+
+# ── 사례형 regex 엄격화 ──
+
+
+def test_evidence_regex_no_bare_result() -> None:
+    """'결과' 단독(숫자 없음)은 사례형이 아니어야 한다."""
+    from agents.common.h2_guide import detect_h2_archetype
+
+    assert detect_h2_archetype("주민 설문 결과를 정책에 반영") != "사례형"
+
+
+def test_evidence_regex_with_number() -> None:
+    """숫자 동반 '분석'/'결과'는 여전히 사례형."""
+    from agents.common.h2_guide import detect_h2_archetype
+
+    # "사례", "현장" 같은 강한 키워드는 무조건 사례형
+    assert detect_h2_archetype("민원 처리 14일 단축 사례") == "사례형"
+    assert detect_h2_archetype("청년 일자리 274명 창출 현장") == "사례형"
+
+
+def test_evidence_regex_bare_analysis_not_case() -> None:
+    """'분석' 단독(숫자 없음)은 사례형이 아니어야 한다."""
+    from agents.common.h2_guide import detect_h2_archetype
+
+    assert detect_h2_archetype("정책 분석의 새로운 방향") != "사례형"
+
+
+# ── 쉼표형 counting ──
+
+
+def test_comma_form_excess_detected() -> None:
+    """쉼표 분리형 3개 이상이면 H2_COMMA_FORM_EXCESS."""
+    from agents.common.h2_scoring import score_h2_aeo
+
+    result = score_h2_aeo(
+        "계양 테크노밸리, 제가 해내겠습니다",
+        siblings=[
+            "계양 광역철도, 주민 설문 결과를 반영",
+            "B/C 분석 추진, 구체적인 계획은?",
+        ],
+        full_name="홍길동",
+    )
+    assert "H2_COMMA_FORM_EXCESS" in result["issues"]
+
+
+def test_comma_form_ok_within_limit() -> None:
+    """쉼표 분리형 2개 이하면 H2_COMMA_FORM_EXCESS 미발생."""
+    from agents.common.h2_scoring import score_h2_aeo
+
+    result = score_h2_aeo(
+        "계양 테크노밸리, 제가 해내겠습니다",
+        siblings=["광역철도 도입의 핵심 과제는 무엇인가"],
+        full_name="홍길동",
+    )
+    assert "H2_COMMA_FORM_EXCESS" not in result["issues"]
+
+
+# ── Prefix overlap hard-fail ──
+
+
+def test_prefix_overlap_is_hard_fail() -> None:
+    """PREFIX_OVERLAP이 H2_HARD_FAIL_ISSUES에 포함되어 있어야 한다."""
+    from agents.common.h2_scoring import H2_HARD_FAIL_ISSUES
+
+    assert "H2_SIBLING_PREFIX_OVERLAP" in H2_HARD_FAIL_ISSUES
+
+
+# ── H2-title echo ──
+
+
+def test_title_echo_detected() -> None:
+    """H2가 제목과 Jaccard 0.7 이상이면 H2_TITLE_ECHO."""
+    from agents.common.h2_scoring import score_h2_aeo
+
+    # H2가 제목의 거의 그대로 복사 — 높은 Jaccard
+    result = score_h2_aeo(
+        "테크노밸리 광역철도 상반기 분석 추진",
+        article_title="테크노밸리 광역철도, 2026년 상반기 분석 추진",
+        full_name="홍길동",
+    )
+    assert "H2_TITLE_ECHO" in result["issues"]
+
+
+def test_title_echo_not_triggered_different() -> None:
+    """H2가 제목과 충분히 다르면 H2_TITLE_ECHO 미발생."""
+    from agents.common.h2_scoring import score_h2_aeo
+
+    result = score_h2_aeo(
+        "광역철도 도입, 주민 설문 결과를 정책에 반영",
+        article_title="계양 테크노밸리 광역철도, 2026년 상반기 B/C 분석 추진",
+        full_name="홍길동",
+    )
+    assert "H2_TITLE_ECHO" not in result["issues"]

@@ -88,6 +88,9 @@ H2_HARD_FAIL_ISSUES = frozenset(
         # 단순 토픽 설명에 그친 경우. 예: "정책 방향 제시", "지난 4년간 조성".
         # suggested_type 과 어긋나기(= TYPE_MISMATCH) 보다 한 단계 더 나쁜 상태.
         "ARCHETYPE_MISMATCH",
+        # 세트 내 2개 이상의 H2 가 동일 첫 어절로 시작 — 복붙 느낌.
+        # AEO advisory 에서 hard-fail 로 격상: repair 를 강제한다.
+        "H2_SIBLING_PREFIX_OVERLAP",
     }
 )
 
@@ -617,6 +620,14 @@ def detect_sibling_suffix_overlap(headings: List[str]) -> List[tuple]:
     return overlaps
 
 
+_COMMA_SPLIT_RE = re.compile(r"[가-힣]+\s*,\s*[가-힣]")
+
+
+def _is_comma_split_form(heading: str) -> bool:
+    """쉼표로 두 구를 끊어 잇는 H2 형태인지 ("X, Y인가요" 등)."""
+    return bool(_COMMA_SPLIT_RE.search(str(heading or "")))
+
+
 def detect_sibling_prefix_overlap(headings: List[str]) -> List[tuple]:
     """인접 H2 간 첫 어절 중복을 탐지한다.
 
@@ -710,6 +721,7 @@ def score_h2_aeo(
     section_index: int = 0,
     section_count: int = 0,
     user_keywords: Optional[List[str]] = None,
+    article_title: str = "",
 ) -> Dict[str, object]:
     """단일 H2 에 AEO 관점의 soft score + 어드바이저리 이슈를 반환한다.
 
@@ -797,6 +809,27 @@ def score_h2_aeo(
         if narrative_count > 1:
             issues.append("H2_NARRATIVE_OVERUSE")
             uniqueness_score = min(uniqueness_score, 0.5)
+
+    # 쉼표 분리형 빈도 제한: 세트 내 최대 2개
+    if _is_comma_split_form(text):
+        comma_count = sum(
+            1 for h in all_headings_for_overlap
+            if _is_comma_split_form(h)
+        )
+        if comma_count > 2:
+            issues.append("H2_COMMA_FORM_EXCESS")
+            uniqueness_score = min(uniqueness_score, 0.5)
+
+    # H2-title 유사도 체크: 제목 복사 H2 차단
+    title_clean = str(article_title or "").strip()
+    if title_clean:
+        h_toks = set(re.findall(r"[가-힣A-Za-z0-9]{2,}", text))
+        t_toks = set(re.findall(r"[가-힣A-Za-z0-9]{2,}", title_clean))
+        if h_toks and t_toks:
+            jaccard = len(h_toks & t_toks) / len(h_toks | t_toks)
+            if jaccard >= 0.7:
+                issues.append("H2_TITLE_ECHO")
+                uniqueness_score = min(uniqueness_score, 0.3)
 
     breakdown["uniqueness"] = uniqueness_score
 

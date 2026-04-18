@@ -442,6 +442,10 @@ class SubheadingAgent(Agent):
         if not matches:
             return content, [], {"matches": 0}
 
+        # H2-title 유사도 체크용: content 에서 글 제목 추출
+        _title_m = re.search(r"<(?:h1|title)>(.*?)</(?:h1|title)>", content)
+        article_title = _title_m.group(1).strip() if _title_m else ""
+
         print(
             f"✨ [SubheadingAgent] 소제목 {len(matches)}개 최적화 시작 (Category: {category})"
         )
@@ -581,6 +585,7 @@ class SubheadingAgent(Agent):
             body_first_sentences=body_first_sentences,
             target_keyword_canonical=target_keyword_canonical,
             score_key="first",
+            article_title=article_title,
         )
 
         # ---------- Phase 4a: per-heading deterministic pre-repair (cheap: josa/length/질문형)
@@ -607,6 +612,7 @@ class SubheadingAgent(Agent):
                     descriptor_pool=descriptor_pool,
                     body_first_sentences=body_first_sentences,
                     target_keyword_canonical=target_keyword_canonical,
+                    article_title=article_title,
                 )
                 current_scores[i] = new_score
                 trace[i]["pre_repair"] = repaired
@@ -632,6 +638,7 @@ class SubheadingAgent(Agent):
             descriptor_pool=descriptor_pool,
             body_first_sentences=body_first_sentences,
             target_keyword_canonical=target_keyword_canonical,
+            article_title=article_title,
         )
 
         # ---------- Phase 5: LLM repair (≤1 call, batched)
@@ -677,6 +684,7 @@ class SubheadingAgent(Agent):
                             descriptor_pool=descriptor_pool,
                             body_first_sentences=body_first_sentences,
                             target_keyword_canonical=target_keyword_canonical,
+                            article_title=article_title,
                         )
                         trace[idx]["llm_repair"] = cleaned
                         trace[idx]["llm_repair_score"] = new_score.get("score", 0.0)
@@ -716,6 +724,7 @@ class SubheadingAgent(Agent):
                 descriptor_pool=descriptor_pool,
                 body_first_sentences=body_first_sentences,
                 target_keyword_canonical=target_keyword_canonical,
+                article_title=article_title,
             )
             trace[i]["deterministic_fallback"] = fallback
             trace[i]["deterministic_fallback_score"] = fallback_score.get("score", 0.0)
@@ -1155,6 +1164,7 @@ class SubheadingAgent(Agent):
         descriptor_pool: Sequence[str],
         body_first_sentences: Sequence[str],
         target_keyword_canonical: str,
+        article_title: str = "",
     ) -> H2Score:
         """단일 heading 의 score_h2 결과에 AEO advisory + emotion hard-fail 을 병합.
 
@@ -1183,6 +1193,7 @@ class SubheadingAgent(Agent):
             target_keyword_canonical=target_keyword_canonical,
             section_index=index,
             section_count=len(list(siblings or [])),
+            article_title=article_title,
         )
         merged_issues = list(score.get("issues") or [])
         for issue in aeo.get("issues") or []:
@@ -1219,6 +1230,7 @@ class SubheadingAgent(Agent):
         body_first_sentences: Sequence[str],
         target_keyword_canonical: str,
         score_key: str,
+        article_title: str = "",
     ) -> None:
         """전체 score 리스트에 AEO 결과를 병합하고 trace 에 기록한다."""
         for i, sc in enumerate(scores):
@@ -1231,6 +1243,7 @@ class SubheadingAgent(Agent):
                 descriptor_pool=descriptor_pool,
                 body_first_sentences=body_first_sentences,
                 target_keyword_canonical=target_keyword_canonical,
+                article_title=article_title,
             )
             trace[i][f"{score_key}_score"] = sc.get("score", 0.0)
             trace[i][f"{score_key}_aeo_score"] = sc.get("aeo_score", 0.0)
@@ -1313,6 +1326,7 @@ class SubheadingAgent(Agent):
         descriptor_pool: Sequence[str],
         body_first_sentences: Sequence[str],
         target_keyword_canonical: str,
+        article_title: str = "",
     ) -> List[Dict[str, Any]]:
         """결정론 h2_repair 모듈 체인을 한 번에 적용.
 
@@ -1411,6 +1425,7 @@ class SubheadingAgent(Agent):
                 descriptor_pool=descriptor_pool,
                 body_first_sentences=body_first_sentences,
                 target_keyword_canonical=target_keyword_canonical,
+                article_title=article_title,
             )
             trace[i]["h2_repair_chain_score"] = new_score.get("score", 0.0)
             trace[i]["h2_repair_chain_issues"] = list(new_score.get("issues", []))
