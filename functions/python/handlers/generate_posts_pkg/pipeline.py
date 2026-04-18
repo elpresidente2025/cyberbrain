@@ -10316,7 +10316,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 heuristic_issues.append(tagged)
         final_heuristic["issues"] = heuristic_issues
 
-    editor_should_run = bool(legal_issues or pre_editor_extra_issues) or editor_polish_enabled
+    editor_should_run = True  # EditorAgent 상시 호출 (humanize + TV 약어 + AI 수사 탐지)
     editor_purpose = "repair" if (legal_issues or pre_editor_extra_issues) else "polish"
     editor_auto_repair = {
         "attempted": False,
