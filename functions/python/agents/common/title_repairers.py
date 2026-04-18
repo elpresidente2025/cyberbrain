@@ -843,40 +843,47 @@ def repair_title_for_body_anchor(
         logger.info("[body-anchor-repair] 삽입 후보 없음 — skip")
         return None
 
-    # 3. 가장 짧은 후보 선택 (제목 길이 제약에 유리)
-    anchor = min(candidates_to_try, key=len)
+    # 3. 후보를 길이 오름차순 정렬 — 짧은 토큰이 길이 제약에 유리
+    sorted_candidates = sorted(set(candidates_to_try), key=len)
 
-    # 4. 삽입 전략: 쉼표 앞(첫째 절 끝)에 공백+토큰 추가
-    #    "귤현동 탄약고, 문세종이 ..." → "귤현동 탄약고 국방부, 문세종이 ..."
-    if ',' in normalized:
-        comma_idx = normalized.index(',')
-        before = normalized[:comma_idx].rstrip()
-        after = normalized[comma_idx:]  # 쉼표 포함
-        repaired = f"{before} {anchor}{after}"
-    else:
-        # 쉼표 없으면 첫 공백 구간 뒤 삽입 시도
-        parts = normalized.split(' ', 2)
-        if len(parts) >= 3:
-            repaired = f"{parts[0]} {parts[1]} {anchor} {parts[2]}"
+    # 4. 각 후보에 대해 여러 삽입 전략을 시도
+    for anchor in sorted_candidates[:5]:
+        insertion_attempts: List[str] = []
+
+        if ',' in normalized:
+            comma_idx = normalized.index(',')
+            before = normalized[:comma_idx].rstrip()
+            after = normalized[comma_idx:]  # 쉼표 포함
+            # 전략 A: 쉼표 앞에 삽입
+            insertion_attempts.append(f"{before} {anchor}{after}")
+            # 전략 B: 쉼표 뒤(두 번째 절)에 삽입
+            after_comma = after[1:].lstrip()  # 쉼표 제거 후 strip
+            if after_comma:
+                insertion_attempts.append(f"{before}, {anchor} {after_comma}")
         else:
-            repaired = f"{normalized} {anchor}"
+            parts = normalized.split(' ', 2)
+            if len(parts) >= 3:
+                insertion_attempts.append(f"{parts[0]} {parts[1]} {anchor} {parts[2]}")
+                insertion_attempts.append(f"{parts[0]} {anchor} {parts[1]} {parts[2]}")
+            else:
+                insertion_attempts.append(f"{normalized} {anchor}")
 
-    # 5. 길이 검증
-    if len(repaired) > TITLE_LENGTH_HARD_MAX or len(repaired) < TITLE_LENGTH_HARD_MIN:
-        logger.info(
-            "[body-anchor-repair] 길이 초과/미달 — skip. repaired=%r len=%s",
-            repaired, len(repaired),
-        )
-        return None
+        for repaired in insertion_attempts:
+            # 길이 검증
+            if len(repaired) > TITLE_LENGTH_HARD_MAX or len(repaired) < TITLE_LENGTH_HARD_MIN:
+                continue
 
-    # 6. repair 후 gate 통과 확인
-    re_coverage = _assess_body_anchor_coverage(repaired, params)
-    if not re_coverage.get('passed', False):
-        logger.info(
-            "[body-anchor-repair] 삽입 후에도 gate 미통과 — skip. repaired=%r re_coverage=%s",
-            repaired, re_coverage,
-        )
-        return None
+            # repair 후 gate 통과 확인
+            re_coverage = _assess_body_anchor_coverage(repaired, params)
+            if re_coverage.get('passed', False):
+                logger.info(
+                    "[body-anchor-repair] 성공: %r -> %r (anchor=%r)",
+                    normalized, repaired, anchor,
+                )
+                return repaired
 
-    logger.info("[body-anchor-repair] 성공: %r -> %r (anchor=%r)", normalized, repaired, anchor)
-    return repaired
+    logger.info(
+        "[body-anchor-repair] 모든 후보·전략 시도 실패 — skip. title=%r candidates=%s",
+        normalized, [c[:20] for c in sorted_candidates[:5]],
+    )
+    return None

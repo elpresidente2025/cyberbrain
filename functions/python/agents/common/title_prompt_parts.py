@@ -965,6 +965,14 @@ def build_title_skeleton_protocol(
             bucket_label_to_brackets.setdefault(bucket, []).append(bracket)
 
     if isinstance(slot_opportunities, dict):
+        # body_exclusive 메타 — topic/stanceText 에 없고 본문에서만 나온 토큰
+        body_exclusive_raw = slot_opportunities.get('_bodyExclusive')
+        body_exclusive_sets: Dict[str, set] = {}
+        if isinstance(body_exclusive_raw, dict):
+            for bk, vals in body_exclusive_raw.items():
+                if isinstance(bk, str) and isinstance(vals, list):
+                    body_exclusive_sets[bk] = {v for v in vals if isinstance(v, str)}
+
         bucket_order = ('region', 'policy', 'institution', 'numeric', 'year')
         for bucket in bucket_order:
             items = slot_opportunities.get(bucket) if slot_opportunities else None
@@ -976,9 +984,16 @@ def build_title_skeleton_protocol(
             bracket_names = bucket_label_to_brackets.get(bucket, [])
             # 같은 bucket 에 대응하는 대괄호 슬롯을 pipe 로 묶는다.
             slot_name = '|'.join(bracket_names[:6]) if bracket_names else bucket
-            joined = ' | '.join(cleaned[:5])
+            exclusive_set = body_exclusive_sets.get(bucket, set())
+            # body-exclusive 토큰에 ★ 마크를 붙여 LLM 이 우선 인용하도록 유도
+            marked = [
+                f'{tok}(★본문고유)' if tok in exclusive_set else tok
+                for tok in cleaned[:5]
+            ]
+            joined = ' | '.join(marked)
+            exclusive_attr = ' has_body_exclusive="true"' if exclusive_set else ''
             slot_hint_lines.append(
-                f'    <slot name="{slot_name}" bucket="{bucket}">{joined}</slot>'
+                f'    <slot name="{slot_name}" bucket="{bucket}"{exclusive_attr}>{joined}</slot>'
             )
 
     slot_hint_xml = '\n'.join(slot_hint_lines) or '    <slot name="(없음)">입력 정보에서 추출</slot>'
@@ -1023,6 +1038,7 @@ def build_title_skeleton_protocol(
 {slot_hint_xml}
     </available_slots>
     <rule>슬롯에 들어갈 구체 명사·수치는 본문(content_preview) 또는 입장문(stance_summary)에 실제 등장하는 토큰만 사용하라. 허구 수치 금지.</rule>
+    <rule priority="critical">available_slots 에 ★본문고유 또는 body_exclusive="true" 로 표시된 토큰이 있으면, 그 중 최소 1개를 제목에 반드시 포함하라. 이 토큰은 topic/입장문에는 없고 본문에서만 발견된 구체 재료이며, 누락 시 scorer 가 0점 실격 처리한다.</rule>
     <rule>skeleton의 종결 어미(~나, ~까, ~까요?, ~겠습니다, ~었어요, 등)와 구두점(?, →, "...", 쉼표)을 임의로 바꾸지 말 것. 구조의 핵심이다.</rule>
     <rule>SEO 키워드가 skeleton 앞쪽 슬롯에 이미 포함돼 있으면 그대로 두고, 없으면 제목 맨 앞(0-10자)에 배치 후 쉼표/조사로 분리하라.</rule>
 {collision_rule_xml}  </phase_2>
@@ -1046,6 +1062,7 @@ def build_title_skeleton_protocol(
       </item>
       <item id="no_topic_copy">topic 원문을 그대로/거의 그대로 복사하지 않았는가?</item>
       <item id="slot_leak">"[인물명]", "[지역]" 같은 슬롯 이름이 그대로 출력되지 않았는가?</item>
+      <item id="body_anchor">available_slots 에 body_exclusive="true" 토큰이 있다면, 그 중 최소 1개를 제목 문장에 직접 포함했는가? body_exclusive 토큰은 topic/입장문에는 없고 본문에서만 발견된 구체 재료(정책명·기관명·수치·연도)다. 이를 인용하지 않으면 scorer 의 bodyAnchorCoverage 게이트에서 0점 실격 처리된다.</item>
     </checklist>
     <fallback>checklist 중 하나라도 실패하면 phase_1로 돌아가 다른 skeleton을 선택하라. 동일 skeleton을 변형하는 것은 금지.</fallback>
   </phase_3>
