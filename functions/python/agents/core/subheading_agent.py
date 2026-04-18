@@ -1461,6 +1461,25 @@ class SubheadingAgent(Agent):
         if top_claims:
             stance_line = "**[입장문 핵심 주장]**: " + " / ".join(top_claims)
 
+        # issue별 구체 교정 힌트 생성
+        issue_hints: List[str] = []
+        all_issues: set = set()
+        for idx in failing_indices:
+            all_issues.update(issues_map.get(idx, []))
+        if "H2_GENERIC_CONTENT" in all_issues:
+            issue_hints.append(
+                "- **H2_GENERIC_CONTENT**: 소제목이 '혁신/미래/포용/도약/비전/발전' 같은 추상어만으로 구성되어 있습니다. "
+                "반드시 본문의 구체적 사업명·지명·숫자·고유명사를 포함하세요. "
+                "BAD: '혁신과 변화로 미래를 열겠습니다' → GOOD: '귤현동 탄약고 이전, 2027년까지 완료 목표'"
+            )
+        if "ARCHETYPE_MISMATCH" in all_issues:
+            issue_hints.append(
+                "- **ARCHETYPE_MISMATCH**: 소제목이 7 아키타입(질문형/목표형/주장형/이유형/대조형/사례형/서술형) 중 어디에도 해당하지 않습니다. "
+                "본문 내용에 맞는 아키타입을 선택하세요."
+            )
+        issue_hint_block = "\n".join(issue_hints)
+        issue_hint_section = f"\n# Issue-Specific Guidance\n{issue_hint_block}\n" if issue_hints else ""
+
         prompt = f"""
 # Role Definition
 당신은 대한민국 최고의 소제목 교정 에디터입니다.
@@ -1472,7 +1491,7 @@ class SubheadingAgent(Agent):
 
 # [CRITICAL] H2 Rulebook (SSOT)
 {build_h2_rules(h2_style)}
-{tone_section}
+{tone_section}{issue_hint_section}
 # Failed Sections
 {failed_xml}
 
