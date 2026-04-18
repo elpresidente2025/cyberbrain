@@ -86,14 +86,19 @@ const AboutPage = () => {
     { month: '25.11', total: 180, isAfterLaunch: false },
     { month: '25.12', total: 991, isAfterLaunch: true },
     { month: '26.01', total: 1500, isAfterLaunch: true },
-    { month: '26.02', total: 1862, isAfterLaunch: true }
+    { month: '26.02', total: 1862, isAfterLaunch: true },
+    { month: '26.03', total: 2061, isAfterLaunch: true }
   ];
 
-  const chartData = rawViewData.map((item) => ({
-    month: item.month,
-    before: !item.isAfterLaunch ? item.total : undefined,
-    after: item.isAfterLaunch ? item.total : undefined
-  }));
+  // 11월(before 마지막)을 after에도 브릿지 포인트로 넣어 선을 연결
+  const chartData = rawViewData.map((item, idx, arr) => {
+    const isLastBefore = !item.isAfterLaunch && idx + 1 < arr.length && arr[idx + 1].isAfterLaunch;
+    return {
+      month: item.month,
+      before: !item.isAfterLaunch ? item.total : undefined,
+      after: item.isAfterLaunch || isLastBefore ? item.total : undefined
+    };
+  });
 
   const preLaunchData = rawViewData.filter((d) => !d.isAfterLaunch);
   const postLaunchData = rawViewData.filter((d) => d.isAfterLaunch);
@@ -506,7 +511,7 @@ AI가 이미 학습하고 있습니다.
                       lineHeight: 1.7,
                       wordBreak: 'keep-all'
                     }}>
-                      {BRANDING.serviceName}을 도입한 후보자 1인의 12개월 네이버 블로그 조회수 리포트입니다.
+                      {BRANDING.serviceName}을 도입한 후보자 1인의 13개월 네이버 블로그 조회수 리포트입니다.
                     </Typography>
                     <Typography sx={{
                       mt: 0.75,
@@ -632,7 +637,7 @@ AI가 이미 학습하고 있습니다.
                               {postLaunchAverage.toLocaleString()}회
                             </Typography>
                             <Typography sx={{ color: 'var(--color-text-secondary)', mt: 0.75, fontSize: '0.85rem' }}>
-                              도입 후 3개월 평균
+                              도입 후 4개월 평균
                             </Typography>
                           </Card>
                         </Grid>
@@ -644,7 +649,7 @@ AI가 이미 학습하고 있습니다.
                             bgcolor: 'var(--color-primary-lighter)'
                           }}>
                             <Typography sx={{ color: 'var(--color-text-secondary)', mb: 1, fontSize: '0.95rem' }}>
-                              도입 후 3개월 성과 (사례 기준)
+                              도입 후 4개월 성과 (사례 기준)
                             </Typography>
                             <Typography sx={{
                               color: 'var(--color-primary)',
@@ -673,7 +678,7 @@ AI가 이미 학습하고 있습니다.
                     fontSize: '0.9rem',
                     textAlign: 'right'
                   }}>
-                    데이터 기준: 실 사용자 네이버 블로그 조회수 월간 리포트 (2025.03~2026.02)
+                    데이터 기준: 실 사용자 네이버 블로그 조회수 월간 리포트 (2025.03~2026.03)
                   </Typography>
                 </Box>
               </Container>
