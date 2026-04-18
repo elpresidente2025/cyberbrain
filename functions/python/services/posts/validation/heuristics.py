@@ -148,6 +148,7 @@ async def run_heuristic_validation(
     use_llm = options.get("useLLM", True)
     user_keywords = list(options.get("userKeywords") or [])
     fact_allowlist = options.get("factAllowlist")
+    source_texts = options.get("sourceTexts")
     model_name = options.get("modelName", "gemini-2.5-flash")
 
     issues: list[str] = []
@@ -174,11 +175,12 @@ async def run_heuristic_validation(
             status,
             title,
             model_name=model_name,
+            source_texts=source_texts,
         )
         if not election_result.get("passed", True):
             issues.append(_format_election_law_issue_text(election_result, label="선거법 위반"))
     else:
-        election_result = detect_election_law_violation(content, status, title)
+        election_result = detect_election_law_violation(content, status, title, source_texts=source_texts)
         if not election_result.get("passed", True):
             issues.append(_format_election_law_issue_text(election_result))
 
