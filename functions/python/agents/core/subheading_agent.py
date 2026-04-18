@@ -174,7 +174,7 @@ def _keyword_is_template_safe(keyword: str, plan: Dict[str, Any]) -> bool:
 class SubheadingAgent(Agent):
     def __init__(self, name: str = "SubheadingAgent", options: Optional[Dict[str, Any]] = None):
         super().__init__(name, options)
-        self.model_name = (options or {}).get("modelName", "gemini-2.0-flash")
+        self.model_name = (options or {}).get("modelName", "gemini-2.5-flash")
 
     def get_style_config(self, category: str) -> Dict[str, Any]:
         """h2_guide.get_category_tone 결과를 style_config 로 반환."""

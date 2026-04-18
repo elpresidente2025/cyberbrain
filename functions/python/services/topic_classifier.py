@@ -406,7 +406,7 @@ JSON만 출력하세요.
     try:
         response_text = await generate_content_async(
             prompt,
-            model_name="gemini-2.0-flash",
+            model_name="gemini-2.5-flash",
             temperature=0.1,
             max_output_tokens=80,
             response_mime_type="application/json",

@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional, Tuple
 
+from ..common.aeo_config import uses_aeo_answer_first
 from ..common.classifier import classify_topic
 from ..common.constants import refine_writing_method, resolve_writing_method
 from ..common.editorial import STRUCTURE_SPEC
@@ -281,6 +282,8 @@ class SectionRepairMixin:
         validation: Dict[str, Any] = {}
         last_error = None
         best_candidate: Dict[str, Any] = {}
+        is_aeo = uses_aeo_answer_first(writing_method)
+        aeo_outline: Optional[Dict[str, Any]] = None
         structural_recoverable_codes = {
             'H2_SHORT',
             'H2_LONG',
@@ -482,18 +485,59 @@ class SectionRepairMixin:
                 )
 
             try:
-                json_prompt = self._build_structure_json_prompt(
-                    prompt=current_prompt,
-                    length_spec=length_spec,
-                )
-                response_schema = self._build_structure_json_schema(length_spec)
-                payload = await self.call_llm_json_contract(
-                    json_prompt,
-                    response_schema=response_schema,
-                    required_keys=("title", "intro", "body", "conclusion"),
-                    stage="structure",
-                    max_output_tokens=8192,
-                )
+                # === AEO 2단계: 아웃라인 생성 (첫 시도에서만) ===
+                if is_aeo and aeo_outline is None:
+                    try:
+                        outline_prompt = self._build_structure_json_prompt(
+                            prompt=prompt,
+                            length_spec=length_spec,
+                        )
+                        outline_schema = self._build_outline_json_schema(length_spec)
+                        aeo_outline = await self.call_llm_json_contract(
+                            outline_prompt,
+                            response_schema=outline_schema,
+                            required_keys=("title", "intro_lead", "body", "conclusion_heading"),
+                            stage="outline",
+                            max_output_tokens=2048,
+                        )
+                        print(
+                            f"📋 [StructureAgent] 아웃라인 생성 완료: "
+                            f"title='{aeo_outline.get('title', '')[:30]}', "
+                            f"body_sections={len(aeo_outline.get('body', []))}"
+                        )
+                    except Exception as outline_err:
+                        print(f"⚠️ [StructureAgent] 아웃라인 생성 실패, 단일 호출로 폴백: {outline_err}")
+                        is_aeo = False
+
+                # === LLM 본문 생성 ===
+                if is_aeo and aeo_outline is not None:
+                    json_prompt = self._build_expansion_json_prompt(
+                        outline=aeo_outline,
+                        base_prompt=current_prompt,
+                        length_spec=length_spec,
+                    )
+                    response_schema = self._build_structure_json_schema(length_spec)
+                    payload = await self.call_llm_json_contract(
+                        json_prompt,
+                        response_schema=response_schema,
+                        required_keys=("title", "intro", "body", "conclusion"),
+                        stage="expansion",
+                        max_output_tokens=8192,
+                    )
+                else:
+                    json_prompt = self._build_structure_json_prompt(
+                        prompt=current_prompt,
+                        length_spec=length_spec,
+                    )
+                    response_schema = self._build_structure_json_schema(length_spec)
+                    payload = await self.call_llm_json_contract(
+                        json_prompt,
+                        response_schema=response_schema,
+                        required_keys=("title", "intro", "body", "conclusion"),
+                        stage="structure",
+                        max_output_tokens=8192,
+                    )
+
                 raw_content, title = self._build_html_from_structure_json(
                     payload,
                     length_spec=length_spec,

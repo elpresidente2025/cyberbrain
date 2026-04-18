@@ -141,8 +141,9 @@ export function useGenerateAPI() {
       // 📌 보안 개선: localStorage 값 검증 및 잘못된 모델명 수정
       let modelName = localStorage.getItem('gemini_model');
 
-      // 더 이상 사용할 수 없는 모델명 자동 수정
-      if (!modelName || modelName.includes('1.5')) {
+      // 허용된 모델만 통과, 나머지는 기본값으로 교체
+      const ALLOWED_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+      if (!modelName || !ALLOWED_MODELS.includes(modelName)) {
         console.warn('⚠️ 잘못된 모델명 감지:', modelName, '→ 기본값으로 수정');
         modelName = CONFIG.DEFAULT_AI_MODEL;
         localStorage.setItem('gemini_model', modelName);

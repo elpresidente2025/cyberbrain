@@ -99,7 +99,7 @@ async def extract_style_from_text(text: str) -> Optional[Dict[str, Any]]:
     try:
         response_text = await generate_content_async(
             prompt,
-            model_name='gemini-2.0-flash',
+            model_name='gemini-2.5-flash',
             response_mime_type='application/json'
         )
         json_str = response_text.strip()

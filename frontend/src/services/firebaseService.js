@@ -223,7 +223,9 @@ export const clearSystemCache = async () => {
 };
 
 export const convertToSNS = async (postId, targetPlatform = null) => {
-  const modelName = localStorage.getItem('gemini_model') || 'gemini-2.5-flash-lite';
+  const ALLOWED_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+  const storedModel = localStorage.getItem('gemini_model');
+  const modelName = (storedModel && ALLOWED_MODELS.includes(storedModel)) ? storedModel : 'gemini-2.5-flash-lite';
   return await callFunctionWithNaverAuth('py_convertToSNS', { postId, modelName, targetPlatform });
 };
 

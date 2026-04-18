@@ -34,7 +34,7 @@ async def analyze_style_from_bio(bio_text: str) -> Dict[str, Any]:
 
         response = await generate_content_async(
             prompt, 
-            model_name="gemini-2.0-flash",
+            model_name="gemini-2.5-flash",
             temperature=0.2,
             response_mime_type="application/json"
         )

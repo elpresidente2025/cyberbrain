@@ -523,6 +523,42 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             },
         }
 
+    def _build_outline_json_schema(self, length_spec: Dict[str, int]) -> Dict[str, Any]:
+        """AEO 2단계 생성의 1단계: 아웃라인(제목+소제목+첫 문장)만 요청하는 스키마."""
+        body_sections = max(1, int(length_spec.get('body_sections') or 1))
+        return {
+            "type": "object",
+            "required": ["title", "intro_lead", "body", "conclusion_heading"],
+            "properties": {
+                "title": {"type": "string", "minLength": 12, "maxLength": 80},
+                "intro_lead": {
+                    "type": "string",
+                    "description": "서론 첫 문단: 인사(1문장) + 핵심 결론(1~2문장). AI 답변 엔진이 이 문단만 추출해도 답이 되어야 한다.",
+                    "minLength": 40,
+                    "maxLength": 300,
+                },
+                "body": {
+                    "type": "array",
+                    "minItems": body_sections,
+                    "maxItems": body_sections,
+                    "items": {
+                        "type": "object",
+                        "required": ["heading", "lead_sentence"],
+                        "properties": {
+                            "heading": {"type": "string"},
+                            "lead_sentence": {
+                                "type": "string",
+                                "description": "이 섹션의 핵심 주장·해법·결론을 첫 문장으로 직접 선언.",
+                                "minLength": 20,
+                                "maxLength": 200,
+                            },
+                        },
+                    },
+                },
+                "conclusion_heading": {"type": "string"},
+            },
+        }
+
     def _build_structure_json_prompt(self, *, prompt: str, length_spec: Dict[str, int]) -> str:
         body_sections = max(1, int(length_spec.get('body_sections') or 1))
         total_sections = max(3, int(length_spec.get('total_sections') or (body_sections + 2)))
@@ -574,6 +610,46 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "}\n"
             "  ]]></json_shape>\n"
             "</json_output_contract>"
+        )
+
+    def _build_expansion_json_prompt(
+        self,
+        *,
+        outline: Dict[str, Any],
+        base_prompt: str,
+        length_spec: Dict[str, int],
+    ) -> str:
+        """AEO 2단계 생성의 2단계: 아웃라인을 고정한 채 본문 확장을 요청하는 프롬프트."""
+        body_lines = []
+        for i, section in enumerate(outline.get('body', []), 1):
+            body_lines.append(
+                f'  <body_section order="{i}">\n'
+                f'    <heading>{section["heading"]}</heading>\n'
+                f'    <lead_sentence>{section["lead_sentence"]}</lead_sentence>\n'
+                f'  </body_section>'
+            )
+        body_block = "\n".join(body_lines)
+
+        lock_block = (
+            '<locked_outline priority="absolute">\n'
+            f'  <title>{outline["title"]}</title>\n'
+            f'  <intro_lead>{outline["intro_lead"]}</intro_lead>\n'
+            f'{body_block}\n'
+            f'  <conclusion_heading>{outline["conclusion_heading"]}</conclusion_heading>\n'
+            '</locked_outline>\n\n'
+            '<expansion_instructions priority="critical">\n'
+            '  위 locked_outline의 title, heading, lead_sentence, conclusion_heading은 그대로 사용하고 절대 수정하지 마십시오.\n'
+            '  서론(intro) 첫 문단은 intro_lead 텍스트를 그대로 첫 문단으로 사용하십시오.\n'
+            '  각 본론(body) 섹션의 heading을 소제목으로, lead_sentence를 첫 문단 첫 문장으로 사용하십시오.\n'
+            '  각 섹션을 나머지 문단으로 확장하되, lead_sentence의 주장을 근거·맥락·효과로 뒷받침하십시오.\n'
+            '  결론(conclusion)은 conclusion_heading을 소제목으로 사용하십시오.\n'
+            '</expansion_instructions>\n\n'
+        )
+
+        modified_prompt = lock_block + base_prompt
+        return self._build_structure_json_prompt(
+            prompt=modified_prompt,
+            length_spec=length_spec,
         )
 
     async def call_llm_json(self, prompt: str, *, length_spec: Dict[str, int]) -> Dict[str, Any]:
