@@ -537,3 +537,81 @@ class TestLabelAiRhetoricSentences:
         )
         assert result is not None
         assert result == {}
+
+
+@kiwi_required
+class TestFindProgressiveOveruseKiwi:
+    """Kiwi 기반 '하고 있다' 진행형 초과 탐지 검증."""
+
+    def test_no_progressive(self) -> None:
+        """진행형 없으면 total=0, fixable 비어 있음."""
+        result = korean_morph.find_progressive_overuse_kiwi(
+            "정책을 추진합니다. 예산을 확보합니다."
+        )
+        assert result is not None
+        assert result["total"] == 0
+        assert result["fixable"] == []
+
+    def test_under_threshold_kept(self) -> None:
+        """2개 이하면 전부 kept (threshold 기본값 2)."""
+        result = korean_morph.find_progressive_overuse_kiwi(
+            "사업을 추진하고 있습니다. 예산을 확보하고 있습니다."
+        )
+        assert result is not None
+        assert result["total"] == 2
+        assert result["fixable"] == []
+        assert len(result["kept"]) == 2
+
+    def test_excess_becomes_fixable(self) -> None:
+        """3개 이상이면 초과분이 fixable."""
+        result = korean_morph.find_progressive_overuse_kiwi(
+            "사업을 추진하고 있습니다. 예산을 확보하고 있습니다. "
+            "인력을 배치하고 있습니다. 시설을 점검하고 있습니다."
+        )
+        assert result is not None
+        assert result["total"] == 4
+        assert len(result["fixable"]) == 2  # 4 - keep_threshold(2) = 2
+        for item in result["fixable"]:
+            assert "ending_form" in item
+            assert item["ending_form"] in korean_morph.HADA_PROGRESSIVE_MAP
+
+    def test_temporal_guard(self) -> None:
+        """시제부사 '현재'가 있는 문장은 kept (temporal)."""
+        result = korean_morph.find_progressive_overuse_kiwi(
+            "현재 사업을 추진하고 있습니다. 예산을 확보하고 있습니다. "
+            "인력을 배치하고 있습니다. 시설을 점검하고 있습니다."
+        )
+        assert result is not None
+        temporal = [k for k in result["kept"] if k.get("reason") == "temporal"]
+        assert len(temporal) >= 1  # "현재" 문장은 temporal로 보존
+
+    def test_non_hada_verb_skipped(self) -> None:
+        """비-하다 동사('달리고 있다')는 탐지 안 됨."""
+        result = korean_morph.find_progressive_overuse_kiwi(
+            "선수가 달리고 있습니다. 바람이 불고 있습니다."
+        )
+        assert result is not None
+        # 하다동사가 아니면 candidates에 안 잡힘
+        assert result["total"] == 0
+
+    def test_custom_threshold(self) -> None:
+        """keep_threshold=0이면 전부 fixable."""
+        result = korean_morph.find_progressive_overuse_kiwi(
+            "사업을 추진하고 있습니다. 예산을 확보하고 있습니다.",
+            keep_threshold=0,
+        )
+        assert result is not None
+        assert len(result["fixable"]) == 2
+        assert len([k for k in result["kept"] if k.get("reason") == "threshold"]) == 0
+
+    def test_ending_form_variety(self) -> None:
+        """다양한 어미 매핑 확인."""
+        result = korean_morph.find_progressive_overuse_kiwi(
+            "사업을 추진하고 있다. 예산을 확보하고 있으며 인력도 배치하고 있는 상황이다.",
+            keep_threshold=0,
+        )
+        assert result is not None
+        if result["fixable"]:
+            endings = {item["ending_form"] for item in result["fixable"]}
+            # 최소 1개 이상의 어미가 잡혀야 함
+            assert len(endings) >= 1

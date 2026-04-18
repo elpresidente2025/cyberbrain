@@ -149,6 +149,15 @@ class EditorAgent(Agent):
                 print(f"[EditorAgent] Step 2.5b ai_rhetoric_labels={_rl_summary or 'clean'}")
 
             # 3. Humanize pass (oh-my-humanizer 스타일 2차 LLM)
+            # stylometry aiAlternatives 추출 (AI 수사 힌트 연동용)
+            _ai_alts: Dict[str, str] = {}
+            _sf_alts = style_fingerprint.get("aiAlternatives") if isinstance(style_fingerprint, dict) else None
+            if isinstance(_sf_alts, dict):
+                for _ak, _av in _sf_alts.items():
+                    _src = str(_ak or "").replace("instead_of_", "").replace("_", " ").strip()
+                    _dst = str(_av or "").strip()
+                    if _src and _dst:
+                        _ai_alts[_src] = _dst
             print(f"[EditorAgent] Step 3 humanize 시작, user_keywords={user_keywords}")
             humanized = await self._humanize_pass(
                 content=constrained['content'],
@@ -160,6 +169,7 @@ class EditorAgent(Agent):
                 edit_summary=constrained.get('editSummary', []),
                 fp_labels=fp_labels,
                 ai_rhetoric_labels=ai_rhetoric_labels,
+                ai_alternatives=_ai_alts or None,
             )
             _humanize_changed = humanized.get('content', '') != constrained['content']
             constrained['content'] = humanized.get('content', constrained['content'])
@@ -203,6 +213,41 @@ class EditorAgent(Agent):
                     f"고유명사 속격 '의' 분해 {_genitive_fix_count}건 강제 복원"
                 )
             constrained['content'] = post_content
+
+            # 3.6. Deterministic progressive overuse fix (Layer 2)
+            # "하고 있습니다" 초과분을 Kiwi 기반으로 기계적 치환
+            _step36_plain = re.sub(r'<[^>]+>', ' ', constrained['content'])
+            _step36_plain = re.sub(r'\s+', ' ', _step36_plain).strip()
+            _prog_info = korean_morph.find_progressive_overuse_kiwi(_step36_plain)
+            if _prog_info is not None and _prog_info.get("fixable"):
+                _prog_fixed = 0
+                _prog_content = constrained['content']
+                _hada_map = korean_morph.HADA_PROGRESSIVE_MAP
+                # 뒤에서부터 치환 (앞부분 문맥 보존)
+                for item in reversed(_prog_info["fixable"]):
+                    ending = item["ending_form"]
+                    replacement = _hada_map.get(ending)
+                    if not replacement:
+                        continue
+                    # HTML 태그를 허용하는 패턴 (속격 복원과 동일 전략)
+                    pattern = r'하고\s*(?:<[^>]*>\s*)*있' + re.escape(ending)
+                    new_content = re.sub(pattern, replacement, _prog_content, count=1)
+                    if new_content != _prog_content:
+                        _prog_content = new_content
+                        _prog_fixed += 1
+                if _prog_fixed > 0:
+                    constrained['content'] = _prog_content
+                    constrained['editSummary'].append(
+                        f"진행형 '하고 있다' {_prog_fixed}건 → 현재형 강제 변환"
+                        f" (전체 {_prog_info['total']}건 중 {_prog_info['total'] - len(_prog_info['fixable'])}건 유지)"
+                    )
+                print(
+                    f"[EditorAgent] Step 3.6 progressive: total={_prog_info['total']}, "
+                    f"fixable={len(_prog_info['fixable'])}, fixed={_prog_fixed}"
+                )
+            else:
+                _prog_total = _prog_info["total"] if _prog_info else 0
+                print(f"[EditorAgent] Step 3.6 progressive: total={_prog_total}, fixable=0")
 
             # 3.7. post-humanize "저는" 문두 비율 경고 (기계적 삭제 없음)
             # 실제 교정은 humanize 프롬프트가 담당. 여기서는 비율만 측정해 editSummary 에 기록.
@@ -631,6 +676,7 @@ class EditorAgent(Agent):
         edit_summary: Optional[List[str]] = None,
         fp_labels: Optional[List[Dict[str, str]]] = None,
         ai_rhetoric_labels: Optional[Dict[str, list]] = None,
+        ai_alternatives: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """oh-my-humanizer 스타일 2차 LLM 패스.
 
@@ -650,12 +696,13 @@ class EditorAgent(Agent):
             edit_summary=edit_summary,
             fp_labels=fp_labels,
             ai_rhetoric_labels=ai_rhetoric_labels,
+            ai_alternatives=ai_alternatives,
         )
         try:
             result = await generate_json_async(
                 prompt,
                 model_name=self.model_name,
-                temperature=0.4,
+                temperature=0.2,
                 max_output_tokens=8192,
                 retries=1,
                 required_keys=("content",),
@@ -735,6 +782,7 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
         edit_summary: Optional[List[str]] = None,
         fp_labels: Optional[List[Dict[str, str]]] = None,
         ai_rhetoric_labels: Optional[Dict[str, list]] = None,
+        ai_alternatives: Optional[Dict[str, str]] = None,
     ) -> str:
         speaker_note = (
             f'화자는 "{speaker_name}"입니다. 화자 정체성을 바꾸지 마세요.'
@@ -841,35 +889,52 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
 
         # AI 수사 패턴 힌트 생성
         _AI_RHETORIC_INSTRUCTIONS = {
-            "unsourced_evidence": ("출처 없는 근거 호출", "실제 수치가 없으면 해당 수식구를 삭제하고 직접 서술로 재구성"),
-            "demonstrative_overuse": ("지시 관형사 남용", "절반 이상을 구체 명사(정책명·사업명·지역명)로 교체"),
+            "unsourced_evidence": ("출처 없는 근거 호출", "실제 수치가 없으면 해당 수식��를 삭제하고 직접 서술로 재���성"),
+            "demonstrative_overuse": ("지시 관형사 남용", "절반 이상을 구체 명사(정책���·사업명·지역명)로 교체"),
             "abstract_inclusive": ("추상 포용 수사 반복", "하나만 남기고 나머지는 구체 대상으로 전환"),
             "suffix_jeok_overuse": ("~적 접미사 남용", "한 문장에 '~적' 3개 이상 — 하나를 풀어쓰거나 구체어로 전환"),
-            "ai_adjective_overuse": ("AI 고빈도 관형사", "절반 이상을 구체 서술이나 다른 수식어로 교체"),
-            "progressive_overuse": ("~하고 있다 진행형 남용", "과거형·현재형·명사형으로 다양화"),
+            "ai_adjective_overuse": ("AI 고빈도 관형사", "절반 이상��� 구체 서술이�� 다른 수식어로 교체"),
+            "progressive_overuse": ("~하고 있다 진행형 남용", "과거형·���재형·명사형으로 다양화"),
             "vague_source": ("모호 출처 표현", "구체적 인명·기관·날짜 없으면 수식구 삭제"),
-            "hyperbole": ("과장 수사", "일상적 대상에 '전환점/패러다임' 등 과장 — 축소하거나 삭제"),
-            "negative_parallel": ("부정 병렬 과다", "'뿐만 아니라' 류가 2회+ — 하나만 남기고 직접 연결"),
+            "hyperbole": ("과장 수사", "일상적 대상에 '전환점/패러다임' 등 ���장 — 축소하거나 삭제"),
+            "negative_parallel": ("���정 병렬 과다", "'뿐만 아니라' 류가 2회+ — 하나만 남기고 직접 연결"),
             "verbose_particle": ("장황 조사", "'에 있어서' 류를 '에서/으로/은' 등 간결 조사로 교체"),
             "translationese": ("번역체", "'것은 사실이다/에 의해' 등을 자연스러운 한국어로 전환"),
             "superficial_chain": ("~하며 피상 체인", "3회+ 연결 체인을 끊어 문장 분리"),
-            "cliche_prospect": ("과제와 전망 클리셰", "'밝은 전망/새로운 도약' 류를 구체 계획·일정으로 교체"),
+            "cliche_prospect": ("과제��� 전망 클리셰", "'밝은 ���망/새로운 도약' 류를 구체 계획·일정으로 교체"),
         }
         ai_rhetoric_hint = ""
         if ai_rhetoric_labels:
+            # ai_alternatives 연동: 탐지된 패턴에 사용자별 대체어 매핑
+            _alts = ai_alternatives or {}
             hints = []
             for key, (label, instruction) in _AI_RHETORIC_INSTRUCTIONS.items():
                 items = ai_rhetoric_labels.get(key, [])
                 if items:
-                    hints.append(f"\u25b8 {label} ({len(items)}건) — {instruction}:")
+                    # 탐지 문장에서 aiAlternatives 매칭 검색
+                    alt_note = ""
+                    if _alts and key in ("ai_adjective_overuse", "suffix_jeok_overuse", "hyperbole", "cliche_prospect"):
+                        matched_alts = []
+                        for item in items:
+                            txt = item.get("text", "")
+                            for src, dst in _alts.items():
+                                if src in txt and f'"{src}"→"{dst}"' not in matched_alts:
+                                    matched_alts.append(f'"{src}"→"{dst}"')
+                        if matched_alts:
+                            alt_note = f" (사용자 선호 대체: {', '.join(matched_alts[:3])})"
+                    hints.append(f"\u25b8 {label} ({len(items)}건) — {instruction}{alt_note}:")
                     for item in items[:5]:
                         txt = item.get("text", "")
-                        hints.append(f'  \u00b7 "{txt[:60]}{"…" if len(txt) > 60 else ""}"')
+                        hints.append(f'  \u00b7 "{txt[:60]}{"���" if len(txt) > 60 else ""}"')
             if hints:
                 ai_rhetoric_hint = (
-                    "[AI 수사 패턴 — 형태소 분석 결과]\n"
+                    "[AI 수사 패턴 �� 형태소 분석 결과 (필수 교정)]\n"
                     + "\n".join(hints)
-                    + "\n위 문장들을 본문에서 찾아 각 지시에 따라 교정하세요."
+                    + "\n\n[필수 교정 규칙]\n"
+                    + "위 항목은 형태소 분석기가 기계적으로 확정한 패턴입니다.\n"
+                    + "'문맥상 자연스러움'을 이유로 유지하는 것을 금지합니다.\n"
+                    + "모든 플래그 문장을 교정하세요. 교정하지 않은 항목이 있으면 이 윤문은 실패입니다.\n"
+                    + "changes 배열에 각 항목의 원문→수정문을 반드시 기록하세요."
                 )
 
         return f"""당신은 AI가 생성한 한국어 정치 원고를 더 사람답고 자연스럽게 다듬는 편집자입니다.

@@ -1046,3 +1046,119 @@ def label_ai_rhetoric_sentences(
         result["verbose_particle"] = buf_verbose
 
     return result
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Deterministic rhetoric fix helpers
+# ──────────────────────────────────────────────────────────────────────
+
+_TEMPORAL_ADVERBS = frozenset({
+    "현재", "지금", "올해", "이번", "최근", "당장",
+})
+
+# "하고 있{ending}" → 축약형 매핑
+HADA_PROGRESSIVE_MAP: Dict[str, str] = {
+    "습니다": "합니다",
+    "다": "한다",
+    "으며": "하며",
+    "며": "하며",
+    "는": "하는",
+}
+
+
+def find_progressive_overuse_kiwi(
+    plain_text: str,
+    *,
+    keep_threshold: int = 2,
+) -> Optional[Dict[str, Any]]:
+    """'하고 있다' 진행형의 Kiwi 기반 분류.
+
+    하다동사(VV form이 '하'로 끝남)의 '~하고 있{어미}' 패턴만 대상.
+    시제부사가 있는 문장은 실제 진행 중일 수 있어 보존.
+    전체에서 *keep_threshold* 개까지 유지, 초과분을 fixable로 반환.
+
+    Returns
+    -------
+    None  — Kiwi 불가
+    dict  — {
+        "total": int,          # 전체 하다-진행형 수
+        "fixable": [           # 기계적 치환 대상 (뒤쪽부터)
+            {"sentence": str, "ending_form": str},
+        ],
+        "kept": [              # 유지 대상
+            {"sentence": str, "reason": str},
+        ],
+    }
+    """
+    sents = split_sentences(plain_text)
+    if sents is None:
+        return None
+    if not sents:
+        return {"total": 0, "fixable": [], "kept": []}
+
+    candidates: List[Dict[str, str]] = []  # {"sentence", "ending_form"}
+    temporal_kept: List[Dict[str, str]] = []
+
+    for sent in sents:
+        tokens = tokenize(sent)
+        if tokens is None:
+            return None
+
+        # 시제부사 존재 여부
+        has_temporal = any(
+            t.form in _TEMPORAL_ADVERBS for t in tokens
+            if t.tag in ("MAG", "NNG", "MM")
+        )
+
+        # VV(하) → EC(고) → VX(있) → EF/EC 시퀀스 탐색
+        found = False
+        for i, t in enumerate(tokens):
+            if found:
+                break
+            if t.tag == "VV" and t.form.endswith("하"):
+                # 다음 토큰이 EC("고")인지
+                if i + 1 < len(tokens):
+                    t1 = tokens[i + 1]
+                    if t1.tag == "EC" and t1.form == "고":
+                        # 그 다음이 VX("있")인지
+                        if i + 2 < len(tokens):
+                            t2 = tokens[i + 2]
+                            if t2.tag == "VX" and t2.form == "있":
+                                # 그 다음 어미 수집
+                                ending_form = ""
+                                if i + 3 < len(tokens):
+                                    t3 = tokens[i + 3]
+                                    if t3.tag in ("EF", "EC", "ETM"):
+                                        ending_form = t3.form
+                                # HADA_PROGRESSIVE_MAP에 매핑 가능한지
+                                if ending_form and ending_form in HADA_PROGRESSIVE_MAP:
+                                    if has_temporal:
+                                        temporal_kept.append({
+                                            "sentence": sent,
+                                            "reason": "temporal",
+                                        })
+                                    else:
+                                        candidates.append({
+                                            "sentence": sent,
+                                            "ending_form": ending_form,
+                                        })
+                                    found = True
+
+    total = len(candidates) + len(temporal_kept)
+
+    # keep_threshold 적용: 앞에서부터 유지, 뒤에서부터 fixable
+    threshold_kept: List[Dict[str, str]] = []
+    fixable: List[Dict[str, str]] = []
+    for idx, c in enumerate(candidates):
+        if idx < keep_threshold:
+            threshold_kept.append({"sentence": c["sentence"], "reason": "threshold"})
+        else:
+            fixable.append(c)
+
+    kept = temporal_kept + threshold_kept
+
+    return {
+        "total": total,
+        "fixable": fixable,
+        "kept": kept,
+    }
