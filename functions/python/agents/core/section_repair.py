@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional, Tuple
 
 from ..common.aeo_config import uses_aeo_answer_first
-from ..common.classifier import classify_topic
+from services.topic_classifier import classify_topic
 from ..common.constants import refine_writing_method, resolve_writing_method
 from ..common.editorial import STRUCTURE_SPEC
 from ..common.theminjoo import get_party_stance
