@@ -429,6 +429,43 @@ def _is_role_keyword_token(token: str) -> bool:
         return False
     return any(role_token == normalized for role_token in _ROLE_KEYWORD_TOKENS)
 
+def _merge_keywords_by_shared_suffix(
+    title: str,
+    primary_kw: str,
+    secondary_kw: str,
+    missing_words: List[str],
+) -> Optional[str]:
+    """1·2순위 키워드가 공통 접미 어절을 공유하면 접두사 나열로 합친다.
+
+    예: primary="귤현동 탄약고", secondary="귤현역 탄약고", missing=["귤현역"]
+    → 제목 내 "귤현동 탄약고"를 "귤현동 귤현역 탄약고"로 교체.
+
+    공통 접미사가 없으면 None 반환 (호출부에서 괄호 fallback).
+    """
+    if not primary_kw or not secondary_kw:
+        return None
+    p_words = primary_kw.split()
+    s_words = secondary_kw.split()
+    if len(p_words) < 2 or len(s_words) < 2:
+        return None
+
+    # 뒤에서부터 공통 접미 어절 탐색
+    common_tail: List[str] = []
+    for pw, sw in zip(reversed(p_words), reversed(s_words)):
+        if pw == sw:
+            common_tail.insert(0, pw)
+        else:
+            break
+    if not common_tail:
+        return None
+
+    # 1순위 접두 + 2순위 고유 어절 + 공통 접미
+    p_prefix = p_words[: len(p_words) - len(common_tail)]
+    merged = ' '.join(p_prefix + missing_words + common_tail)
+    repaired = title.replace(primary_kw, merged, 1)
+    return repaired
+
+
 def _repair_title_for_missing_keywords(
     title: str,
     keyword_gate: Dict[str, Any],
@@ -469,9 +506,15 @@ def _repair_title_for_missing_keywords(
                 if TITLE_LENGTH_HARD_MIN <= len(normalized_candidate) <= TITLE_LENGTH_HARD_MAX:
                     return normalized_candidate
 
-        # 고유 어절만 삽입: "부산 영광도서" → "부산 영광도서(서면)"
-        suffix = '·'.join(missing_words)
-        repaired = title.replace(primary_kw, f"{primary_kw}({suffix})", 1)
+        # 공통 접미사 공유 시 접두사 나열: "귤현동 탄약고" + "귤현역"
+        # → "귤현동 귤현역 탄약고" (괄호 삽입보다 자연스러움)
+        repaired = _merge_keywords_by_shared_suffix(
+            title, primary_kw, secondary_kw, missing_words,
+        )
+        if repaired is None:
+            # 공통 접미사 없으면 기존 괄호 삽입 fallback
+            suffix = '·'.join(missing_words)
+            repaired = title.replace(primary_kw, f"{primary_kw}({suffix})", 1)
     elif missing_type == 'secondary_full':
         secondary_kw = str(keyword_gate.get('secondaryKw') or '')
         if not secondary_kw:
