@@ -174,6 +174,11 @@ def has_incomplete_h2_ending(text: str) -> bool:
     if _has_incomplete_wae_question(candidate):
         return True
 
+    # 쉼표 뒤 꼬리가 토큰 1~2개뿐이고 용언/어미 없으면 잘림
+    # "인천e음, 인천" → True / "탄약고 문제, 인천 청년 정치인의 해법" → False
+    if _has_truncated_comma_tail(candidate):
+        return True
+
     return False
 
 
@@ -231,6 +236,47 @@ def _has_incomplete_wae_question(heading: str) -> bool:
     # VCP(이다) + ETN/ETM 결합 ("인가" → VCP+EC) — kiwi 가 이미 EC 로 잡으므로
     # 위 체크에서 걸림. 추가 체크: 용언이 하나라도 있으면 통과
     if korean_morph.has_main_predicate(tokens):
+        return False
+
+    return True
+
+
+_COMMA_TAIL_SKIP_TAGS = frozenset({"SF", "SP", "SS", "SW", "SO", "SE", "SL", "SH", "SN"})
+_COMMA_TAIL_PREDICATE_TAGS = frozenset({
+    "VV", "VA", "VX", "VCP", "VCN",  # 용언
+    "XSV", "XSA",                      # 파생 접미사
+    "EF", "EC", "ETM",                 # 어미
+})
+
+
+def _has_truncated_comma_tail(heading: str) -> bool:
+    """쉼표 뒤 꼬리가 내용 토큰 1~2개뿐이고 용언/어미 없으면 잘림 감지.
+
+    "코로나 이후 인천e음, 인천"           → True  (꼬리 "인천" = 1 토큰)
+    "광역철도 경제성 분석, 2026년"         → True  (꼬리 "2026년" = 2 토큰)
+    "귤현동 탄약고 이전, 왜 지금인가"       → False (용언 있음)
+    "귤현역 탄약고 문제, 인천 청년 정치인의 해법" → False (토큰 3개 이상)
+    """
+    stripped = str(heading or "").strip()
+    # 마지막 쉼표 위치
+    comma_pos = max(stripped.rfind(","), stripped.rfind("，"))
+    if comma_pos < 0:
+        return False
+
+    tail = stripped[comma_pos + 1:].strip()
+    if not tail:
+        return True  # 쉼표 뒤 아무것도 없으면 잘림
+
+    tokens = korean_morph.tokenize(tail)
+    if tokens is None:
+        return False  # kiwi 불가 시 보수적으로 통과
+
+    content_tokens = [t for t in tokens if t.tag not in _COMMA_TAIL_SKIP_TAGS]
+    if len(content_tokens) > 2:
+        return False
+
+    # 용언/어미가 하나라도 있으면 완결 구조
+    if any(t.tag in _COMMA_TAIL_PREDICATE_TAGS for t in tokens):
         return False
 
     return True

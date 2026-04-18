@@ -1917,3 +1917,34 @@ def test_complete_wae_question_passes() -> None:
 
     assert has_incomplete_h2_ending("귤현동 탄약고 이전, 왜 지금인가") is False
     assert has_incomplete_h2_ending("왜 지금인가?") is False
+
+
+@_kiwi_required
+def test_truncated_comma_tail_single_nnp() -> None:
+    """쉼표 뒤 NNP 1개 → 잘림."""
+    from agents.common.h2_guide import has_incomplete_h2_ending
+
+    assert has_incomplete_h2_ending("코로나 이후 인천e음, 인천") is True
+
+
+@_kiwi_required
+def test_truncated_comma_tail_year() -> None:
+    """쉼표 뒤 연도만 → 잘림."""
+    from agents.common.h2_guide import has_incomplete_h2_ending
+
+    assert has_incomplete_h2_ending("광역철도 경제성 분석, 2026년") is True
+
+
+@_kiwi_required
+def test_comma_tail_with_predicate_passes() -> None:
+    """쉼표 뒤에 용언 종결 있으면 통과."""
+    from agents.common.h2_guide import has_incomplete_h2_ending
+
+    assert has_incomplete_h2_ending("귤현동 탄약고 이전, 왜 지금인가") is False
+
+
+def test_comma_tail_long_passes() -> None:
+    """쉼표 뒤 토큰 3개 이상이면 통과."""
+    from agents.common.h2_guide import has_incomplete_h2_ending
+
+    assert has_incomplete_h2_ending("귤현역 탄약고 문제, 인천 청년 정치인의 해법") is False
