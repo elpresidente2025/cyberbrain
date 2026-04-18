@@ -225,18 +225,34 @@ class EditorAgent(Agent):
                 _tv_target_count = _tv_body_count // 2
 
             if _tv_target_count > 0:
-                # 뒤에서부터 치환 (앞쪽 = SEO 가치 높음 → 보존)
-                _tv_replaced = 0
+                # H2 제외 후 치환 가능한 위치 수집
                 _tv_matches = list(re.finditer(re.escape(_TV_KEYWORD), _tv_content))
-                for m in reversed(_tv_matches):
-                    if _tv_replaced >= _tv_target_count:
-                        break
-                    # H2 태그 안의 "테크노밸리" 는 건드리지 않음
+                _tv_eligible = []
+                for m in _tv_matches:
                     before = _tv_content[:m.start()]
                     if re.search(r'<h2[^>]*>[^<]*$', before):
                         continue
-                    _tv_content = _tv_content[:m.start()] + _TV_ABBR + _tv_content[m.end():]
-                    _tv_replaced += 1
+                    _tv_eligible.append(m)
+
+                # 균등 분산: eligible 중 등간격으로 target_count 개 선택
+                _tv_replaced = 0
+                n = len(_tv_eligible)
+                if n > 0 and _tv_target_count > 0:
+                    if _tv_target_count >= n:
+                        to_replace = set(range(n))
+                    else:
+                        # 간격을 두고 분산 선택 (0번째는 보존, 1번째부터 시작)
+                        step = n / (_tv_target_count + 1)
+                        to_replace = set()
+                        for k in range(1, _tv_target_count + 1):
+                            idx = min(int(k * step), n - 1)
+                            to_replace.add(idx)
+
+                    # 뒤에서부터 치환 (offset 보존)
+                    for idx in sorted(to_replace, reverse=True):
+                        m = _tv_eligible[idx]
+                        _tv_content = _tv_content[:m.start()] + _TV_ABBR + _tv_content[m.end():]
+                        _tv_replaced += 1
                 if _tv_replaced > 0:
                     constrained['content'] = _tv_content
                     constrained['editSummary'].append(
