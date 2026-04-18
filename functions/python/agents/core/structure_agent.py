@@ -548,7 +548,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                             "heading": {"type": "string"},
                             "lead_sentence": {
                                 "type": "string",
-                                "description": "이 섹션의 핵심 주장·해법·결론을 첫 문장으로 직접 선언.",
+                                "description": "이 섹션의 핵심 주장·해법·결론을 첫 문장으로 직접 선언. 문제 진단·배경 설명·현황 묘사로 시작하지 말 것.",
                                 "minLength": 20,
                                 "maxLength": 200,
                             },
