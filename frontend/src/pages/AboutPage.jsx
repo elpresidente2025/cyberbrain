@@ -90,13 +90,13 @@ const AboutPage = () => {
     { month: '26.03', total: 2061, isAfterLaunch: true }
   ];
 
-  // 11월(before 마지막)을 after에도 브릿지 포인트로 넣어 선을 연결
+  // 12월(after 첫 지점)을 before에도 브릿지 포인트로 넣어 회색 선이 11→12월까지 연결
   const chartData = rawViewData.map((item, idx, arr) => {
-    const isLastBefore = !item.isAfterLaunch && idx + 1 < arr.length && arr[idx + 1].isAfterLaunch;
+    const isFirstAfter = item.isAfterLaunch && idx > 0 && !arr[idx - 1].isAfterLaunch;
     return {
       month: item.month,
-      before: !item.isAfterLaunch ? item.total : undefined,
-      after: item.isAfterLaunch || isLastBefore ? item.total : undefined
+      before: !item.isAfterLaunch || isFirstAfter ? item.total : undefined,
+      after: item.isAfterLaunch ? item.total : undefined
     };
   });
 
