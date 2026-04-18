@@ -111,28 +111,9 @@ def ensure_keyword_first_slot(content: Any, keyword: Any) -> Dict[str, Any]:
         if target_keyword in heading:
             return {"content": base, "edited": False}
 
-    replacement = build_keyword_intent_h2(target_keyword)
-    if not replacement:
-        return {"content": base, "edited": False}
-
-    person_name, _role = extract_keyword_person_role(target_keyword)
-    target_index = 0
-    if person_name:
-        for idx, match in enumerate(h2_matches):
-            heading = _plain_heading(match.group(1))
-            if person_name in heading:
-                target_index = idx
-                break
-
-    target_match = h2_matches[target_index]
-    updated = base[: target_match.start(1)] + replacement + base[target_match.end(1) :]
-    return {
-        "content": updated,
-        "edited": updated != base,
-        "keyword": target_keyword,
-        "headingBefore": str(target_match.group(1) or "").strip(),
-        "headingAfter": replacement,
-    }
+    # 키워드가 어떤 H2에도 없더라도 템플릿으로 통째 교체하지 않는다.
+    # LLM repair 에서 키워드 삽입을 시도하고, 실패하면 원본 유지.
+    return {"content": base, "edited": False}
 
 
 def ensure_user_keyword_first_slot(

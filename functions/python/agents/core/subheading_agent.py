@@ -6,8 +6,7 @@
     3. _score_headings        — h2_scoring rubric 게이트
     4. _deterministic_prerepair — 조사/길이/질문형 잘림 등 cheap 수리
     5. _repair_failed_headings (LLM #2, 실패 섹션만)
-    6. _deterministic_fallback_heading — type별 템플릿
-    7. 원본 H2 유지 (마지막 방어선)
+    6. 원본 H2 유지 (마지막 방어선)
 
 LLM 호출 예산: 최대 2회 (primary + repair 1회). 전부 pass 시 LLM #2는 short-circuit.
 """
@@ -693,7 +692,7 @@ class SubheadingAgent(Agent):
                             working[idx] = cleaned
                             current_scores[idx] = new_score
 
-        # ---------- Phase 6: deterministic fallback + original preservation
+        # ---------- Phase 6: original preservation (deterministic fallback 비활성)
         final_headings: List[str] = []
         for i, heading in enumerate(working):
             if current_scores[i].get("passed"):
@@ -708,34 +707,8 @@ class SubheadingAgent(Agent):
                 final_headings.append(heading or originals[i])
                 continue
 
-            fallback = self._deterministic_fallback_heading(plans[i])
-            fallback_score = score_h2(
-                fallback,
-                plans[i],
-                style=h2_style,
-                preferred_types=preferred_types,
-            )
-            self._enrich_score_one(
-                fallback_score,
-                heading=fallback,
-                index=i,
-                siblings=working,
-                full_name=full_name,
-                descriptor_pool=descriptor_pool,
-                body_first_sentences=body_first_sentences,
-                target_keyword_canonical=target_keyword_canonical,
-                article_title=article_title,
-            )
-            trace[i]["deterministic_fallback"] = fallback
-            trace[i]["deterministic_fallback_score"] = fallback_score.get("score", 0.0)
-            trace[i]["deterministic_fallback_issues"] = list(fallback_score.get("issues", []))
-
-            if fallback_score.get("passed"):
-                trace[i]["action"] = "deterministic_fallback"
-                final_headings.append(fallback)
-            else:
-                trace[i]["action"] = "fallback_original"
-                final_headings.append(originals[i])
+            trace[i]["action"] = "fallback_original"
+            final_headings.append(originals[i])
 
         # ---------- Phase 6.5: fullName 앵커 cap 강제 (스탬핑 방지)
         anchor_cap_value = compute_anchor_cap(len(final_headings))
@@ -874,7 +847,6 @@ class SubheadingAgent(Agent):
                     "kept",
                     "pre_repaired",
                     "llm_repaired",
-                    "deterministic_fallback",
                     "fallback_original",
                 )
             },
