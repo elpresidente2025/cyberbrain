@@ -166,96 +166,17 @@ class EditorAgent(Agent):
                         post_content = post_content.replace(broken, kw_clean)
             constrained['content'] = post_content
 
-            # 3.7. post-humanize "저는" 문두 문맥 기반 감축
-            # 한국어 pro-drop 규칙 기반: 1인칭 주어 70~80% 생략이 자연스럽다.
-            # 삭제 안전 조건:
-            #   (a) 동일 주어 연속 — 직전 문장도 "저는"이거나 주어 생략 상태
-            #   (b) 의지/다짐 서술어 — -겠습니다 등으로 화자임이 자명
-            #   (c) 연속 2문장 금지 — 직전이 "저는"이면 현재 무조건 삭제
-            # 삭제 금지 조건:
-            #   (a) 대조/전환 — 직전 문장이 다른 주어
-            #   (b) 첫 등장 — 글 전체에서 "저는" 최초 1회
-            # 목표: "저는" 문두 비율 ≤ 20%
-            post_content = constrained['content']
-            _fp_strip_count = 0
-
+            # 3.7. post-humanize "저는" 문두 비율 경고 (기계적 삭제 없음)
+            # 실제 교정은 humanize 프롬프트가 담당. 여기서는 비율만 측정해 editSummary 에 기록.
             _fp_re = re.compile(r'저는\s')
-            _other_subj_re = re.compile(
-                r'^(?!저는\s)(\S+(?:는|은|이|가|에서는|에서|들은|들이|께서는|께서))\s'
-            )
-            # 의지/다짐 서술어: 화자임이 자명한 어미
-            _volition_re = re.compile(
-                r'(?:겠습니다|하겠습니다|다짐합니다|약속합니다|드리겠습니다|매진하겠습니다'
-                r'|집중하겠습니다|노력하겠습니다|힘쓰겠습니다|앞장서겠습니다)[.!]?\s*$'
-            )
-            _fp_plain = re.sub(r'<[^>]+>', ' ', post_content)
+            _fp_plain = re.sub(r'<[^>]+>', ' ', constrained['content'])
             _fp_plain = re.sub(r'\s+', ' ', _fp_plain).strip()
             _fp_all_sents = [s.strip() for s in re.split(r'(?<=[.?!])\s+', _fp_plain) if len(s.strip()) > 5]
-            _fp_matched_sents = [s for s in _fp_all_sents if _fp_re.match(s)]
-            _fp_total = len(_fp_all_sents)
-            _fp_ratio = len(_fp_matched_sents) / _fp_total if _fp_total else 0
-
-            if _fp_ratio >= 0.25 and len(_fp_matched_sents) >= 3:
-                fp_positions = [i for i, s in enumerate(_fp_all_sents) if _fp_re.match(s)]
-                _fp_target_max = max(int(_fp_total * 0.20), 1)
-
-                targets_to_remove: list[str] = []
-                # 삭제 우선순위를 매겨서 목표 비율까지만 삭제
-                candidates: list[tuple[int, int, str]] = []  # (priority, global_idx, sentence)
-
-                for pos_idx, global_idx in enumerate(fp_positions):
-                    # 첫 등장 보호 (삭제 금지)
-                    if pos_idx == 0:
-                        continue
-
-                    sent = _fp_all_sents[global_idx]
-                    prev_sent = _fp_all_sents[global_idx - 1] if global_idx > 0 else ""
-                    prev_is_fp = bool(_fp_re.match(prev_sent))
-                    prev_has_other_subj = bool(_other_subj_re.match(prev_sent))
-
-                    # 대조/전환 맥락 → 보호 (삭제 금지)
-                    if prev_has_other_subj:
-                        continue
-
-                    # 우선순위 결정 (낮을수록 먼저 삭제)
-                    if prev_is_fp:
-                        # 연속 "저는" 2문장 → 최우선 삭제
-                        priority = 0
-                    elif _volition_re.search(sent):
-                        # 의지/다짐 서술어 → 화자 자명, 삭제 안전
-                        priority = 1
-                    elif not prev_has_other_subj and not prev_is_fp:
-                        # 직전 문장 주어 생략 상태 → 같은 화자 맥락
-                        priority = 2
-                    else:
-                        priority = 3
-
-                    candidates.append((priority, global_idx, sent))
-
-                # 우선순위 정렬 후 목표까지 삭제
-                candidates.sort(key=lambda x: x[0])
-                remaining = len(_fp_matched_sents)
-                for priority, global_idx, sent in candidates:
-                    if remaining <= _fp_target_max:
-                        break
-                    targets_to_remove.append(sent)
-                    remaining -= 1
-
-                for target in targets_to_remove:
-                    if target in post_content:
-                        replaced = target.replace("저는 ", "", 1)
-                        post_content = post_content.replace(target, replaced, 1)
-                        _fp_strip_count += 1
-
-            if _fp_strip_count:
-                constrained['content'] = post_content
-                _fp_new_ratio = sum(1 for s in [
-                    s.strip() for s in re.split(r'(?<=[.?!])\s+',
-                    re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', post_content)).strip())
-                    if len(s.strip()) > 5
-                ] if _fp_re.match(s)) / _fp_total if _fp_total else 0
+            _fp_matched = [s for s in _fp_all_sents if _fp_re.match(s)]
+            _fp_ratio = len(_fp_matched) / len(_fp_all_sents) if _fp_all_sents else 0
+            if _fp_ratio > 0.20 and len(_fp_matched) >= 3:
                 constrained['editSummary'].append(
-                    f"'저는' 문두 과다 {_fp_strip_count}건 문맥 기반 생략 ({_fp_ratio:.0%} → {_fp_new_ratio:.0%})"
+                    f"'저는' 문두 과다 — {len(_fp_matched)}/{len(_fp_all_sents)}문장({_fp_ratio:.0%}), 목표 20% 이하"
                 )
 
             # 4. post-humanize 필수 키워드 최소 등장 검증 (경고만, 자동 치환 안 함)
@@ -775,27 +696,36 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
 
 {prior_flags_note}
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[전제 조건] "저는" 문두 비율 제한 — 모든 단계에 우선
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+한국어는 pro-drop 언어입니다. 1인칭 주어�� 70~80% 생략이 자연스럽고, 매 문장 "저는"으로 시작하면 AI가 쓴 글처럼 보입니다.
+
+먼저 원문에서 "저는"으로 시작하는 문장 수를 세세요. 그 다음, 아래 기준에 따라 교정하세요.
+
+"저는" 유지 조건 (삭제 금지):
+  · 대조/전환 — 직전 문장 주어가 다른 사람/기관일 때: "주민들은 불편을 호소했습니다. 저는 이를 해결하겠습니다."
+  · 첫 등장 — 글에서 화자가 처음 주어로 나설 때
+  · 강조/책임 — 의지를 특별히 부각: "저는 이 약속을 반드시 지키겠습니다."
+  · 모호성 해소 — 생략하면 주어가 불분명해질 때
+
+"저는" 생략 조건 (삭제 권장):
+  · 동일 주어 연속 — 직전 문장도 "저는"이거나 주어 생략 상태
+  · 의지/다짐 — 서술어(-겠습니다)로 화자임이 자명
+  · 나열/병렬 — 같은 화자의 행동 연속 열거
+
+생략 외 분산 전략:
+  (a) "저는"을 문중으로 이동 — "이번 개정이 기업 환경을 바꿀 것이라 저는 봅니다."
+  (b) 주어를 사실·정책으로 전환 — "취득세 감면 조례는 지난 9월 시행에 들어갔습니다."
+
+★ 수치 기준: 출력에서 "저는"으로 시작하는 문장 ≤ 전체의 20%. 연속 2문장 "���는" 금지. ★
+이 기준을 충족하지 못하면 아래 3단계 결과물이 아무리 좋아도 실패입니다.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 아래 원고를 3단계로 처리하세요.
 
 [1단계 - 감지]
 다음과 같은 AI 티 표현과 비문을 찾으세요.
-
-★ 최우선 — "저는" 문두 과다 반복 ★
-한국어는 pro-drop 언어로, 1인칭 주어를 70~80% 생략하는 것이 자연스럽습니다. 매 문장 "저는"으로 시작하면 외국인 또는 AI가 쓴 글처럼 보입니다. 이 규칙은 다른 모든 규칙보다 우선합니다.
-  ■ "저는"을 반드시 유지해야 하는 경우 (삭제 금지):
-    · 대조/전환: 직전 문장이 다른 주어(정부는, 주민들은, ~이/~가)였을 때 — "주민들은 불편을 호소했습니다. **저는** 이를 반드시 해결하겠습니다."
-    · 첫 등장: 글에서 화자가 처음 주어로 나설 때
-    · 강조/책임: 화자의 의지·책임을 특별히 부각할 때 — "**저는** 이 약속을 반드시 지키겠습니다."
-    · 모호성 해소: 생략하면 주어가 누군지 불분명해질 때
-  ■ "저는"을 생략해야 하는 경우 (삭제 권장):
-    · 동일 주어 연속: 직전 문장도 "저는"으로 시작했거나 주어가 생략된 상태 — "저는 정책을 추진합니다. (저는 삭제) 교통 문제도 해결하겠습니다."
-    · 의지/다짐: 서술어(-겠습니다, -하겠습니다)로 화자임이 자명 — "(저는 삭제) 끝까지 노력하겠습니다."
-    · 나열/병렬: 같은 화자의 행동 연속 열거
-  ■ 삭제 외 분산 전략:
-    (a) "저는"을 문중으로 이동 — "이번 개정이 기업 환경을 바꿀 것이라 저는 봅니다."
-    (b) 주어를 구체 사실·정책으로 전환 — "취득세 감면 조례는 지난 9월 시행에 들어갔습니다."
-  ★ 수치 목표: "저는"으로 시작하는 문장 ≤ 전체 문장의 20%. 연속 2문장이 "저는"으로 시작하면 안 됩니다. ★
-
 - 과도한 대칭 구조와 추상적 수식
 - 뜻은 약한데 그럴듯해 보이는 표현
 - 결론과 다짐 문장이 지나치게 형식적인 경우
@@ -844,12 +774,12 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
 - 고유명사 보호 목록에 있는 이름은 어절 사이에 "의"를 넣지 말고 붙여 씁니다.
 - 사용자 문체 지시가 있으면 전체 재작성 없이 일부 문장에만 반영합니다.
 - 5단 구조와 HTML 형식은 유지합니다.
-- ★ "저는" 체크: 교정 결과에서 "저는"으로 시작하는 문장을 세세요. 전체 문장의 20%를 넘으면 초과분을 생략·이동·전환 전략으로 줄이세요. 연속 2문장이 "저는"으로 시작하면 반드시 하나를 바꾸세요. ★
+- "저는" 비율이 [전제 조건]의 수치 기준을 초과하면 생략·이동·전환 전략으로 줄이세요.
 
 [3단계 - 검증]
 - 수정 후에도 원문 의미가 바뀌지 않았는지 다시 확인하세요.
 - 과장되거나 캐릭터화된 말투는 피하세요.
-- ★ "저는" 최종 검증: "저는"으로 시작하는 문장 수 / 전체 문장 수를 계산하세요. 20%를 초과하면 2단계로 돌아가 추가 교정하세요. 연속 "저는" 문두가 있으면 반드시 해소하세요. ★
+- "저는"으로 시작하는 문장 수를 세서 [전제 조건] 기준(≤20%, 연속 금지)을 충족하는지 확인하세요. 미충족 시 2단계로 돌아가세요.
 
 [원문 제목]
 {title}

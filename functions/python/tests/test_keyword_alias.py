@@ -190,7 +190,7 @@ class TestHumanizePromptFirstPersonRule:
             content="<p>본문</p>",
             title="제목",
         )
-        assert '"저는" 문두 과다 반복' in prompt
+        assert '"저는" 문두 비율 제한' in prompt
 
     def test_first_person_flag_passed_to_humanize(self):
         """edit_summary 에 '저는' 플래그가 있으면 prior_flags_note 에 포함."""
@@ -258,134 +258,36 @@ class TestFirstPersonDetectionWithoutKiwi:
 # "저는" 기계적 감축 — 연속 문두 생략
 # ---------------------------------------------------------------------------
 
-class TestFirstPersonMechanicalReduction:
-    """post-humanize 단계의 '저는' pro-drop 규칙 기반 감축 검증.
-
-    process() 의 3.7 단계 로직을 재현하여 검증:
-    - 비율 25%+ & 3건+ 시 감축 발동, 목표 20% 이하
-    - 삭제 우선순위: 연속 "저는" > 의지/다짐 서술어 > 주어 생략 맥락
-    - 대조/전환(다른 주어 직후) → 보호
-    - 첫 등장 → 보호
-    """
+class TestFirstPersonRatioWarning:
+    """post-humanize '저는' 비율 경고(기계적 삭제 없음) 검증."""
 
     @staticmethod
-    def _apply_context_reduction(html: str) -> tuple[str, int]:
-        """editor_agent.py step 3.7 pro-drop 규칙 기반 로직 재현."""
-        import re as _re
-        fp_re = _re.compile(r'저는\s')
-        other_subj_re = _re.compile(
-            r'^(?!저는\s)(\S+(?:는|은|이|가|에서는|에서|들은|들이|께서는|께서))\s'
-        )
-        volition_re = _re.compile(
-            r'(?:겠습니다|하겠습니다|다짐합니다|약속합니다|드리겠습니다|매진하겠습니다'
-            r'|집중하겠습니다|노력하겠습니다|힘쓰겠습니다|앞장서겠습니다)[.!]?\s*$'
-        )
-        plain = _re.sub(r'<[^>]+>', ' ', html)
-        plain = _re.sub(r'\s+', ' ', plain).strip()
-        all_sents = [s.strip() for s in _re.split(r'(?<=[.?!])\s+', plain) if len(s.strip()) > 5]
+    def _measure_ratio(html: str) -> tuple[float, int, int]:
+        """editSummary 에 기록될 비율 측정 로직 재현."""
+        import re
+        fp_re = re.compile(r'저는\s')
+        plain = re.sub(r'<[^>]+>', ' ', html)
+        plain = re.sub(r'\s+', ' ', plain).strip()
+        all_sents = [s.strip() for s in re.split(r'(?<=[.?!])\s+', plain) if len(s.strip()) > 5]
         matched = [s for s in all_sents if fp_re.match(s)]
-        total = len(all_sents)
-        ratio = len(matched) / total if total else 0
-        strip_count = 0
+        ratio = len(matched) / len(all_sents) if all_sents else 0
+        return ratio, len(matched), len(all_sents)
 
-        if ratio >= 0.25 and len(matched) >= 3:
-            fp_positions = [i for i, s in enumerate(all_sents) if fp_re.match(s)]
-            target_max = max(int(total * 0.20), 1)
-
-            candidates: list[tuple[int, int, str]] = []
-            for pos_idx, global_idx in enumerate(fp_positions):
-                if pos_idx == 0:
-                    continue
-                sent = all_sents[global_idx]
-                prev = all_sents[global_idx - 1] if global_idx > 0 else ""
-                prev_is_fp = bool(fp_re.match(prev))
-                prev_has_other_subj = bool(other_subj_re.match(prev))
-                if prev_has_other_subj:
-                    continue
-                if prev_is_fp:
-                    priority = 0
-                elif volition_re.search(sent):
-                    priority = 1
-                elif not prev_has_other_subj and not prev_is_fp:
-                    priority = 2
-                else:
-                    priority = 3
-                candidates.append((priority, global_idx, sent))
-
-            candidates.sort(key=lambda x: x[0])
-            remaining = len(matched)
-            targets = []
-            for priority, global_idx, sent in candidates:
-                if remaining <= target_max:
-                    break
-                targets.append(sent)
-                remaining -= 1
-
-            for target in targets:
-                if target in html:
-                    replaced = target.replace("저는 ", "", 1)
-                    html = html.replace(target, replaced, 1)
-                    strip_count += 1
-        return html, strip_count
-
-    def test_contrast_protected(self):
-        """직전 문장이 다른 주어(대조/전환)이면 '저는' 보호."""
-        html = (
-            "<p>저는 정책을 추진합니다. 저는 교통을 해결합니다. "
-            "정부는 예산을 편성했습니다. 저는 이를 환영합니다. "
-            "저는 노력합니다. 주민들은 불편을 호소했습니다. "
-            "저는 해결하겠습니다. 저는 현장을 방문합니다. "
-            "저는 약속합니다. 감사합니다.</p>"
-        )
-        result, count = self._apply_context_reduction(html)
-        assert "저는 이를 환영합니다" in result
-        assert "저는 해결하겠습니다" in result
-        assert count >= 1
-
-    def test_same_subject_removed(self):
-        """직전 문장도 '저는'이면 동일 주어 연속 → 삭제."""
-        html = (
-            "<p>저는 하나입니다. 저는 둘입니다. 저는 셋입니다. "
-            "일반 문장입니다. 저는 넷입니다. 저는 다섯입니다. "
-            "일반 문장이다. 저는 여섯입니다. 일반이다. 일반이다.</p>"
-        )
-        result, count = self._apply_context_reduction(html)
-        assert count >= 1
-        assert "저는 하나입니다" in result
-
-    def test_volition_removed(self):
-        """의지/다짐 서술어(-겠습니다)면 화자 자명 → 삭제."""
+    def test_high_ratio_detected(self):
+        """50% 비율 → 경고 발생 조건 충족."""
         html = (
             "<p>저는 의원입니다. 저는 노력하겠습니다. "
             "저는 앞장서겠습니다. 저는 매진하겠습니다. "
-            "저는 약속드리겠습니다. 저는 힘쓰겠습니다. "
-            "저는 집중하겠습니다. 저는 해결하겠습니다. "
-            "일반 문장입니다. 감사합니다.</p>"
-        )
-        result, count = self._apply_context_reduction(html)
-        assert count >= 4
-        assert "저는 의원입니다" in result
-
-    def test_target_ratio_reached(self):
-        """목표 비율(20%) 도달 시 추가 삭제 중단."""
-        html = (
-            "<p>저는 의원입니다. 저는 교통을 봅니다. "
-            "저는 노력하겠습니다. 저는 현장에 갑니다. "
             "저는 약속합니다. 일반 문장입니다. "
             "일반 문장이다. 일반 문장이야. "
             "일반 끝입니다. 감사합니다.</p>"
         )
-        result, count = self._apply_context_reduction(html)
-        assert count == 3
-        import re as _re
-        plain = _re.sub(r'<[^>]+>', ' ', result)
-        plain = _re.sub(r'\s+', ' ', plain).strip()
-        sents = [s.strip() for s in _re.split(r'(?<=[.?!])\s+', plain) if len(s.strip()) > 5]
-        remaining_fp = sum(1 for s in sents if _re.match(r'저는\s', s))
-        assert remaining_fp <= 2
+        ratio, matched, total = self._measure_ratio(html)
+        assert ratio > 0.20
+        assert matched >= 3
 
-    def test_low_ratio_untouched(self):
-        """비율 20% (2/10) 이면 감축 미발동."""
+    def test_low_ratio_no_warning(self):
+        """20% 이하 → 경고 없음."""
         html = (
             "<p>저는 정책을 추진합니다. 교통 문제가 있습니다. "
             "이 문제는 시급합니다. 광역철도가 필요합니다. "
@@ -393,9 +295,23 @@ class TestFirstPersonMechanicalReduction:
             "교통망 확충이 핵심입니다. 주민 의견을 반영합니다. "
             "경제성 분석이 진행됩니다. 감사합니다.</p>"
         )
-        result, count = self._apply_context_reduction(html)
-        assert count == 0
-        assert result == html
+        ratio, matched, total = self._measure_ratio(html)
+        assert ratio <= 0.20
+
+    def test_no_mechanical_modification(self):
+        """기계적 삭제 없음 — 원문 그대로 유지 확인."""
+        html = (
+            "<p>저는 의원입니다. 저는 노력하겠습니다. "
+            "저는 앞장서겠습니다. 저는 매진하겠습니다. "
+            "저는 약속합니다. 일반 문장입니다. "
+            "일반 문장이다. 일반 문장이야. "
+            "일반 끝입니다. 감사합니다.</p>"
+        )
+        # 비율 측정만 하고 html 은 변경하지 않음
+        ratio, matched, total = self._measure_ratio(html)
+        assert "저는 의원입니다" in html
+        assert "저는 노력하겠습니다" in html
+        assert "저는 약속합니다" in html
 
 # ---------------------------------------------------------------------------
 # 프롬프트 누출 감지 — personalization hints 가 본문에 복사되면 제거
