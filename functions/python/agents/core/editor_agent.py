@@ -166,84 +166,51 @@ class EditorAgent(Agent):
                         post_content = post_content.replace(broken, kw_clean)
             constrained['content'] = post_content
 
-            # 3.7. post-humanize "저는" 연속 문두 기계적 감축
+            # 3.7. post-humanize "저는" 문두 비율 기반 기계적 감축
             # humanize LLM 이 지시를 무시하고 "저는"을 과다 유지하는 경우가 많으므로,
-            # 연속 2문장이 "저는"으로 시작하면 두 번째 문장의 "저는 "을 제거한다.
-            # 한국어는 주어 생략이 자연스러워 직전 문장에 "저는"이 있으면 다음 문장의
-            # "저는"은 거의 항상 생략 가능하다.
-            # HTML <p> 내부 + <p> 경계 모두 처리.
+            # 전체 문장 중 "저는" 비율이 35% 이상이면 짝수번째 "저는"을 생략하여
+            # 비율을 대략 절반으로 낮춘다.
+            # 한국어는 주어 생략이 자연스러워, 앞에 "저는"이 한 번이라도 등장했으면
+            # 이후 "저는"은 대부분 생략 가능하다.
             post_content = constrained['content']
             _fp_strip_count = 0
 
-            def _strip_consecutive_fp(text: str) -> tuple[str, int]:
-                """text 내에서 연속 '저는' 문두를 제거. (변경 텍스트, 제거 횟수) 반환."""
-                # 문장 분리: 마침표/물음표/느낌표 뒤 공백
-                parts = re.split(r'(?<=[.?!])\s+', text)
-                if len(parts) < 2:
-                    return text, 0
-                result_parts = [parts[0]]
-                count = 0
-                for i in range(1, len(parts)):
-                    prev = result_parts[-1]
-                    cur = parts[i]
-                    # 직전 문장이 "저는"으로 시작하고, 현재 문장도 "저는"으로 시작하면
-                    if re.match(r'저는\s', prev) and re.match(r'저는\s', cur):
-                        cur = cur[len('저는 '):]  # "저는 " 제거
-                        # 제거 후 첫 글자 — 한글이면 그대로 (주어 생략)
-                        count += 1
-                    result_parts.append(cur)
-                return ' '.join(result_parts), count
+            # 모든 <p> 블록에서 문장을 추출하고 "저는" 위치를 기록
+            _fp_re = re.compile(r'저는\s')
+            _fp_plain = re.sub(r'<[^>]+>', ' ', post_content)
+            _fp_plain = re.sub(r'\s+', ' ', _fp_plain).strip()
+            _fp_all_sents = [s.strip() for s in re.split(r'(?<=[.?!])\s+', _fp_plain) if len(s.strip()) > 5]
+            _fp_matched_sents = [s for s in _fp_all_sents if _fp_re.match(s)]
+            _fp_ratio = len(_fp_matched_sents) / len(_fp_all_sents) if _fp_all_sents else 0
 
-            # <p> 태그 내부 텍스트에 대해 각각 적용
-            def _process_p_tag(m: re.Match) -> str:
-                nonlocal _fp_strip_count
-                full = m.group(0)
-                # <p ...> 와 </p> 사이 내용 추출
-                inner_match = re.match(r'(<p[^>]*>)(.*?)(</p>)', full, re.DOTALL)
-                if not inner_match:
-                    return full
-                open_tag, inner, close_tag = inner_match.groups()
-                new_inner, cnt = _strip_consecutive_fp(inner)
-                _fp_strip_count += cnt
-                return f"{open_tag}{new_inner}{close_tag}"
+            if _fp_ratio >= 0.35 and len(_fp_matched_sents) >= 4:
+                # 짝수번째(0-indexed: 1, 3, 5, ...) "저는"을 삭제 대상으로 선정
+                # 첫 번째 "저는"(인사말)과 마지막 "저는"(결론 다짐)은 보호
+                targets_to_remove: list[str] = []
+                for idx, sent in enumerate(_fp_matched_sents):
+                    if idx == 0:
+                        continue  # 첫 등장 보호
+                    if idx == len(_fp_matched_sents) - 1:
+                        continue  # 마지막 등장 보호
+                    if idx % 2 == 1:  # 짝수번째(1-indexed 기준 2, 4, 6...)
+                        targets_to_remove.append(sent)
 
-            post_content = re.sub(
-                r'<p[^>]*>.*?</p>',
-                _process_p_tag,
-                post_content,
-                flags=re.DOTALL,
-            )
-
-            # <p> 경계를 넘는 연속 "저는" 도 처리:
-            # 이전 </p> 마지막 문장이 "저는"으로 시작했고, 다음 <p> 첫 문장도
-            # "저는"으로 시작하면 다음 <p>의 "저는 "을 제거.
-            _p_blocks = re.findall(r'<p[^>]*>(.*?)</p>', post_content, re.DOTALL)
-            if len(_p_blocks) >= 2:
-                _prev_ends_with_fp = False
-                for idx, block in enumerate(_p_blocks):
-                    # 이 블록의 마지막 문장이 "저는"으로 시작하는지
-                    block_sents = [s.strip() for s in re.split(r'(?<=[.?!])\s+', block.strip()) if s.strip()]
-                    block_starts_with_fp = bool(block_sents and re.match(r'저는\s', block_sents[0]))
-
-                    if _prev_ends_with_fp and block_starts_with_fp:
-                        # 이 블록 첫 문장의 "저는 " 제거
-                        old_block = block
-                        new_block = re.sub(r'^(\s*)저는\s', r'\1', block, count=1)
-                        if new_block != old_block:
-                            post_content = post_content.replace(
-                                f'>{old_block}</p>', f'>{new_block}</p>', 1
-                            )
+                # HTML 원문에서 해당 문장의 "저는 "을 제거
+                for target in targets_to_remove:
+                    # 문장의 앞 40자를 앵커로 사용 (전체 매칭은 HTML 태그 때문에 실패 가능)
+                    anchor = target[:40]
+                    if anchor in post_content:
+                        # "저는 " 를 제거한 버전
+                        replaced = target.replace("저는 ", "", 1)
+                        # HTML 내에서 원문 → 교정 치환
+                        if target in post_content:
+                            post_content = post_content.replace(target, replaced, 1)
                             _fp_strip_count += 1
-
-                    # 이 블록의 마지막 문장이 "저는"으로 시작하는지 기록
-                    _prev_ends_with_fp = bool(
-                        block_sents and re.match(r'저는\s', block_sents[-1])
-                    )
 
             if _fp_strip_count:
                 constrained['content'] = post_content
                 constrained['editSummary'].append(
-                    f"'저는' 연속 문두 {_fp_strip_count}건 기계적 생략"
+                    f"'저는' 문두 과다 {_fp_strip_count}건 기계적 생략 (비율 {_fp_ratio:.0%} → 감축)"
                 )
 
             # 4. post-humanize 필수 키워드 최소 등장 검증 (경고만, 자동 치환 안 함)

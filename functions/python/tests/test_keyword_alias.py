@@ -259,49 +259,79 @@ class TestFirstPersonDetectionWithoutKiwi:
 # ---------------------------------------------------------------------------
 
 class TestFirstPersonMechanicalReduction:
-    """post-humanize 단계의 '저는' 연속 문두 기계적 생략 검증.
+    """post-humanize 단계의 '저는' 비율 기반 기계적 생략 검증.
 
-    EditorAgent.process() 의 3.7 단계를 직접 테스트하기 어려우므로
-    apply_hard_constraints 단독 + 내부 _strip_consecutive_fp 로직을
-    재현하는 방식으로 검증.
+    process() 의 3.7 단계 로직을 재현하여 검증:
+    - 전체 문장 중 "저는" 비율이 35% 이상 & 4건 이상이면 짝수번째 삭제
+    - 첫 번째와 마지막 "저는"은 보호
     """
 
-    def test_consecutive_first_person_in_same_p(self):
-        """같은 <p> 안에서 연속 '저는' 문장이 있으면 두 번째가 제거되는지."""
+    @staticmethod
+    def _apply_ratio_reduction(html: str) -> tuple[str, int]:
+        """editor_agent.py step 3.7 로직 재현."""
         import re
-        text = "저는 정책을 추진합니다. 저는 교통 문제를 해결합니다. 이것은 중요합니다."
-        # _strip_consecutive_fp 로직 재현
-        parts = re.split(r'(?<=[.?!])\s+', text)
-        result_parts = [parts[0]]
-        count = 0
-        for i in range(1, len(parts)):
-            prev = result_parts[-1]
-            cur = parts[i]
-            if re.match(r'저는\s', prev) and re.match(r'저는\s', cur):
-                cur = cur[len('저는 '):]
-                count += 1
-            result_parts.append(cur)
-        result = ' '.join(result_parts)
-        assert count == 1
-        assert "저는 정책을 추진합니다." in result
-        assert "교통 문제를 해결합니다." in result
-        assert result.count("저는") == 1
+        fp_re = re.compile(r'저는\s')
+        plain = re.sub(r'<[^>]+>', ' ', html)
+        plain = re.sub(r'\s+', ' ', plain).strip()
+        all_sents = [s.strip() for s in re.split(r'(?<=[.?!])\s+', plain) if len(s.strip()) > 5]
+        matched = [s for s in all_sents if fp_re.match(s)]
+        ratio = len(matched) / len(all_sents) if all_sents else 0
+        strip_count = 0
 
-    def test_non_consecutive_preserved(self):
-        """연속이 아닌 '저는'은 유지."""
-        import re
-        text = "저는 정책을 추진합니다. 교통 문제가 있습니다. 저는 노력합니다."
-        parts = re.split(r'(?<=[.?!])\s+', text)
-        result_parts = [parts[0]]
-        count = 0
-        for i in range(1, len(parts)):
-            prev = result_parts[-1]
-            cur = parts[i]
-            if re.match(r'저는\s', prev) and re.match(r'저는\s', cur):
-                cur = cur[len('저는 '):]
-                count += 1
-            result_parts.append(cur)
-        assert count == 0  # 연속이 아니므로 제거 없음
+        if ratio >= 0.35 and len(matched) >= 4:
+            for idx, sent in enumerate(matched):
+                if idx == 0 or idx == len(matched) - 1:
+                    continue
+                if idx % 2 == 1:
+                    if sent in html:
+                        replaced = sent.replace("저는 ", "", 1)
+                        html = html.replace(sent, replaced, 1)
+                        strip_count += 1
+        return html, strip_count
+
+    def test_high_ratio_reduces(self):
+        """비율 50% (5/10) 일 때 짝수번째 "저는" 제거."""
+        html = (
+            "<p>저는 정책을 추진합니다. 교통 문제가 있습니다. "
+            "저는 교통을 해결합니다. 이 문제는 중요합니다. "
+            "저는 노력합니다. 광역철도가 필요합니다. "
+            "저는 결과를 확인합니다. 인천시민 여러분. "
+            "저는 최선을 다합니다. 감사합니다.</p>"
+        )
+        result, count = self._apply_ratio_reduction(html)
+        assert count >= 1
+        # 첫 "저는"은 보호
+        assert "저는 정책을 추진합니다" in result
+        # 마지막 "저는"도 보호
+        assert "저는 최선을 다합니다" in result
+
+    def test_low_ratio_untouched(self):
+        """비율 20% (2/10) 이면 아무것도 제거하지 않음."""
+        html = (
+            "<p>저는 정책을 추진합니다. 교통 문제가 있습니다. "
+            "이 문제는 시급합니다. 광역철도가 필요합니다. "
+            "저는 노력합니다. 인천시민 여러분. "
+            "교통망 확충이 핵심입니다. 주민 의견을 반영합니다. "
+            "경제성 분석이 진행됩니다. 감사합니다.</p>"
+        )
+        result, count = self._apply_ratio_reduction(html)
+        assert count == 0
+        assert result == html
+
+    def test_first_and_last_protected(self):
+        """짝수번째여도 첫/마지막은 보호."""
+        # 6/10 = 60%, matched 6개: idx 0~5
+        # 보호: idx 0 (첫), idx 5 (마지막)
+        # 삭제 대상: idx 1, 3 (홀수)
+        html = (
+            "<p>저는 하나입니다. 저는 둘입니다. 저는 셋입니다. "
+            "일반 문장입니다. 저는 넷입니다. 저는 다섯입니다. "
+            "일반 문장이다. 저는 여섯입니다. 일반이다. 일반이다.</p>"
+        )
+        result, count = self._apply_ratio_reduction(html)
+        assert count == 2  # idx 1, 3
+        assert "저는 하나입니다" in result  # idx 0 보호
+        assert "저는 여섯입니다" in result  # idx 5 (마지막) 보호
 
 
 # ---------------------------------------------------------------------------
