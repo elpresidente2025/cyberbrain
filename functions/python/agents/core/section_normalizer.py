@@ -505,8 +505,6 @@ class SectionNormalizerMixin:
             raise ValueError("구조 JSON 계약 위반: conclusion 객체가 누락되었습니다.")
 
         html_parts: List[str] = []
-        seen_heading_keys: set[str] = set()
-        seen_heading_families: set[str] = set()
         body_contracts, conclusion_contract = get_section_contract_sequence(
             poll_focus_bundle,
             body_sections=body_sections,
@@ -522,27 +520,7 @@ class SectionNormalizerMixin:
         contract_opponent = normalize_context_text(
             primary_pair.get('opponent') if isinstance(primary_pair, dict) else ''
         )
-        alignment_ignore_tokens = [
-            token
-            for token in (
-                contract_speaker,
-                contract_opponent,
-            )
-            if token
-        ]
 
-        def _register_heading_or_raise(heading_text: str) -> None:
-            heading_key = self._heading_identity_key(heading_text)
-            if heading_key and heading_key in seen_heading_keys:
-                raise ValueError(f"구조 JSON 계약 위반: 소제목 중복('{heading_text}')")
-            if heading_key:
-                seen_heading_keys.add(heading_key)
-
-            family_key = self._heading_semantic_family_key(heading_text)
-            if family_key and family_key in seen_heading_families:
-                raise ValueError(f"구조 JSON 계약 위반: 소제목 의미 중복('{heading_text}')")
-            if family_key:
-                seen_heading_families.add(family_key)
 
         def _remove_role_sentences_from_paragraphs(
             source_paragraphs: List[str],
@@ -724,16 +702,8 @@ class SectionNormalizerMixin:
                     after_count=len(section_paragraph_list),
                 )
                 continue
-            heading = self._repair_low_alignment_heading(
-                heading=heading,
-                paragraphs=section_paragraph_list,
-                contract=contract,
-                section_label=f"본론 {index + 1}",
-                ignore_tokens=alignment_ignore_tokens,
-                minimum_score=0.34,
-            )
-            _register_heading_or_raise(heading)
-            html_parts.append(f"<h2>{heading}</h2>")
+            # H2는 SubheadingAgent가 본문 완성 후 생성 — 여기선 빈 마커만 출력
+            html_parts.append("<h2></h2>")
             for paragraph in section_paragraph_list:
                 html_parts.append(f"<p>{paragraph}</p>")
 
@@ -769,17 +739,8 @@ class SectionNormalizerMixin:
             )
             content = "\n".join(html_parts).strip()
             return content, title
-        conclusion_heading = self._repair_low_alignment_heading(
-            heading=conclusion_heading,
-            paragraphs=conclusion_paragraphs,
-            contract=conclusion_contract,
-            section_label='결론',
-            use_all_paragraphs=True,
-            ignore_tokens=alignment_ignore_tokens,
-            minimum_score=0.24,
-        )
-        _register_heading_or_raise(conclusion_heading)
-        html_parts.append(f"<h2>{conclusion_heading}</h2>")
+        # H2는 SubheadingAgent가 본문 완성 후 생성 — 여기선 빈 마커만 출력
+        html_parts.append("<h2></h2>")
         for paragraph in conclusion_paragraphs:
             html_parts.append(f"<p>{paragraph}</p>")
 

@@ -660,6 +660,7 @@ class SubheadingAgent(Agent):
                     full_region=full_region,
                     stance_brief=stance_brief,
                     category=category,
+                    user_role=user_role,
                 )
                 llm_repair_called = True
             except Exception as error:
@@ -696,7 +697,7 @@ class SubheadingAgent(Agent):
                             working[idx] = cleaned
                             current_scores[idx] = new_score
 
-        # ---------- Phase 6: original preservation (deterministic fallback 비활성)
+        # ---------- Phase 6: best-effort (StructureAgent H2가 빈 마커이므로 original fallback 없음)
         final_headings: List[str] = []
         for i, heading in enumerate(working):
             if current_scores[i].get("passed"):
@@ -708,11 +709,12 @@ class SubheadingAgent(Agent):
                         trace[i]["action"] = "pre_repaired"
                     else:
                         trace[i]["action"] = "kept"
-                final_headings.append(heading or originals[i])
+                final_headings.append(heading)
                 continue
 
-            trace[i]["action"] = "fallback_original"
-            final_headings.append(originals[i])
+            # scoring 미통과여도 Gen/Repair 최선 결과 사용
+            trace[i]["action"] = "best_effort"
+            final_headings.append(heading)
 
         # ---------- Phase 6.5: fullName 앵커 cap 강제 (스탬핑 방지)
         anchor_cap_value = compute_anchor_cap(len(final_headings))
@@ -1428,6 +1430,7 @@ class SubheadingAgent(Agent):
         full_region: str,
         stance_brief: StanceBrief,
         category: str,
+        user_role: str = "",
     ) -> Dict[int, str]:
         if not failing_indices:
             return {}
@@ -1449,6 +1452,9 @@ class SubheadingAgent(Agent):
   <issues>{issues_text}</issues>
   <suggested_type>{plan.get("suggested_type") or "(없음)"}</suggested_type>
   <must_include_keyword>{plan.get("must_include_keyword") or "(없음)"}</must_include_keyword>
+  <query_intent>{plan.get("query_intent") or "info"}</query_intent>
+  <answer_type>{plan.get("answer_type") or "question-form"}</answer_type>
+  <assigned_entity_surface>{plan.get("assigned_entity_surface") or "(없음)"}</assigned_entity_surface>
   <numerics>{numerics}</numerics>
   <key_claim>{plan.get("key_claim") or "(없음)"}</key_claim>
   <context>{ctx_slice}</context>
@@ -1487,7 +1493,14 @@ class SubheadingAgent(Agent):
 
 # Context
 - **Entity**: {entity_hints}
+- **본인 직책 (고정·SSOT)**: {user_role or "(없음)"}
 {stance_line}
+
+# Entity Surface 정책
+- 각 failed_section 의 `assigned_entity_surface` 가 해당 H2 에서 사용할 인물 표면형입니다.
+- 본명({full_name or "(없음)"})은 H2 세트 전체에서 1~2회만 등장 (키워드 스탬핑 방지).
+- `query_intent` 가 `cmp` 면 비교/대결 구조, `tx` 면 절차/방법, `nav` 면 인물·이력 중심, `info` 면 정보 정리형으로 작성.
+- `answer_type` 이 `question-form` 이면 의문형, `declarative-list` 면 숫자/항목 정리, `declarative-fact` 면 단정형 주장.
 
 # [CRITICAL] H2 Rulebook (SSOT)
 {build_h2_rules(h2_style)}

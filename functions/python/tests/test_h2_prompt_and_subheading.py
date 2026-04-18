@@ -875,9 +875,9 @@ def test_optimize_headings_deterministic_fallback_when_repair_raises(
     # H2 개수 parity — 원본 매치 수 유지
     assert rebuilt.count("<h2>") == 2
     assert stats["matches"] == 2
-    # repair 실패 시 원본 유지
+    # repair 실패 시 Gen 최선 결과 사용 (original fallback 없음)
     actions = {item["action"] for item in trace}
-    assert "fallback_original" in actions
+    assert "best_effort" in actions
 
 
 def test_optimize_headings_preserves_original_on_total_primary_failure(
