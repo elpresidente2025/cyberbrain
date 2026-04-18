@@ -559,7 +559,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             },
         }
 
-    def _build_structure_json_prompt(self, *, prompt: str, length_spec: Dict[str, int]) -> str:
+    def _build_structure_json_prompt(self, *, prompt: str, length_spec: Dict[str, int], extra_rules: str = "") -> str:
         body_sections = max(1, int(length_spec.get('body_sections') or 1))
         total_sections = max(3, int(length_spec.get('total_sections') or (body_sections + 2)))
         section_paragraphs = _coerce_int_option(
@@ -598,6 +598,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule>JSON 문자열 안에 큰따옴표(\")를 직접 쓰지 말 것. 인용이 필요하면 작은따옴표(') 또는 괄호를 사용.</rule>\n"
             "    <rule>각 문자열 값은 한 줄로 작성하고 줄바꿈 문자를 넣지 말 것.</rule>\n"
             "    <rule>역슬래시(\\)를 임의로 출력하지 말 것.</rule>\n"
+            f"{extra_rules}"
             "  </rules>\n"
             "  <json_shape><![CDATA[\n"
             "{\n"
@@ -646,10 +647,16 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             '</expansion_instructions>\n\n'
         )
 
-        modified_prompt = lock_block + base_prompt
+        modified_prompt = base_prompt + "\n\n" + lock_block
+        lead_rule = (
+            "    <rule priority=\"absolute\">locked_outline이 존재하면: "
+            "각 body 섹션 paragraphs의 첫 원소는 반드시 해당 섹션의 lead_sentence 텍스트로 시작할 것. "
+            "heading도 locked_outline의 heading을 그대로 사용할 것. 임의로 바꾸지 말 것.</rule>\n"
+        )
         return self._build_structure_json_prompt(
             prompt=modified_prompt,
             length_spec=length_spec,
+            extra_rules=lead_rule,
         )
 
     async def call_llm_json(self, prompt: str, *, length_spec: Dict[str, int]) -> Dict[str, Any]:
