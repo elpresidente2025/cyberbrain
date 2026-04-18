@@ -1856,3 +1856,64 @@ def test_incomplete_ending_trailing_slash() -> None:
     from agents.common.h2_guide import has_incomplete_h2_ending
 
     assert has_incomplete_h2_ending("계양 테크노밸리 S-BRT/") is True
+
+
+# ── 개체 명사 종결 / "왜" 미완결 질문 ────────────────────────────────
+
+def _kiwi_can_run() -> bool:
+    import os
+    for key in ("USERPROFILE", "HOME", "TEMP", "TMP"):
+        value = os.environ.get(key, "")
+        if not value:
+            continue
+        try:
+            value.encode("ascii")
+        except UnicodeEncodeError:
+            return False
+    try:
+        from agents.common import korean_morph
+        return korean_morph.get_kiwi() is not None
+    except Exception:
+        return False
+
+
+_KIWI_OK = _kiwi_can_run()
+_kiwi_required = pytest.mark.skipif(
+    not _KIWI_OK,
+    reason="kiwipiepy 초기화 불가 환경",
+)
+
+
+@_kiwi_required
+def test_entity_noun_ending_blocked() -> None:
+    """동작 명사가 아닌 개체 명사(주민, 청년)로 끝나면 미완결."""
+    from agents.common.h2_guide import has_incomplete_h2_ending
+
+    assert has_incomplete_h2_ending("계양 테크노밸리 주민") is True
+    assert has_incomplete_h2_ending("주변 개발, 인천광역시 청년") is True
+
+
+@_kiwi_required
+def test_action_noun_ending_passes() -> None:
+    """동작 명사(이전, 분석)로 끝나면 완결."""
+    from agents.common.h2_guide import has_incomplete_h2_ending
+
+    assert has_incomplete_h2_ending("귤현동 탄약고 이전") is False
+    assert has_incomplete_h2_ending("광역철도, 2026년 경제성 분석") is False
+
+
+@_kiwi_required
+def test_incomplete_wae_question() -> None:
+    """'왜' 의문사 + 서술어 없음 → 미완결."""
+    from agents.common.h2_guide import has_incomplete_h2_ending
+
+    assert has_incomplete_h2_ending("왜 재정사업") is True
+
+
+@_kiwi_required
+def test_complete_wae_question_passes() -> None:
+    """'왜' + 종결어미 있으면 완결."""
+    from agents.common.h2_guide import has_incomplete_h2_ending
+
+    assert has_incomplete_h2_ending("귤현동 탄약고 이전, 왜 지금인가") is False
+    assert has_incomplete_h2_ending("왜 지금인가?") is False

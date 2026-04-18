@@ -171,6 +171,23 @@ def is_question_form(text: str) -> Optional[bool]:
     return False
 
 
+def can_take_hada(noun_form: str) -> Optional[bool]:
+    """명사가 '하다' 파생이 가능한 동작 명사인지 kiwi 로 판별.
+
+    "이전하다" → XSV 토큰 존재 → True  (동작 명사)
+    "주민하다" → XSV 토큰 없음  → False (개체 명사)
+    kiwi 불가 시 None.
+    """
+    kiwi = get_kiwi()
+    if kiwi is None:
+        return None
+    try:
+        test_tokens = list(kiwi.tokenize(f"{noun_form}하다"))
+        return any(t.tag == "XSV" for t in test_tokens)
+    except Exception:  # pragma: no cover
+        return None
+
+
 def is_incomplete_ending(text: str) -> Optional[bool]:
     """H2 가 한국어로 미완결인지.
 
@@ -220,6 +237,20 @@ def is_incomplete_ending(text: str) -> Optional[bool]:
         ):
             return False
         return True
+
+    # 개체 명사 종결 — 동사/형용사/어미 없이 NNG 로 끝나는데
+    # 그 NNG 가 '하다' 결합이 안 되는 개체 명사면 미완결.
+    # "주민", "청년" → 미완결 / "이전", "분석" → 동작 명사 → 완결
+    if last.tag == "NNG":
+        has_verb = any(
+            t.tag in _MAIN_PREDICATE_TAGS
+            or t.tag in ("XSV", "XSA", "EF", "EC", "ETM")
+            for t in tokens
+        )
+        if not has_verb:
+            hada = can_take_hada(last.form)
+            if hada is False:
+                return True
 
     return False
 

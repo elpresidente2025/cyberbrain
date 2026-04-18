@@ -169,6 +169,11 @@ def has_incomplete_h2_ending(text: str) -> bool:
     if _has_dangling_time_continuation_adverb(candidate):
         return True
 
+    # "왜" 의문사가 있지만 의문형 종결이 없는 미완결 질문
+    # "왜 재정사업" → True / "왜 지금인가" → False (종결어미 있음)
+    if _has_incomplete_wae_question(candidate):
+        return True
+
     return False
 
 
@@ -191,6 +196,41 @@ def _has_dangling_time_continuation_adverb(heading: str) -> bool:
         return True
 
     if _HEADING_PREDICATE_MARKER_RE.search(tail):
+        return False
+
+    return True
+
+
+def _has_incomplete_wae_question(heading: str) -> bool:
+    """'왜' 의문사로 시작하지만 의문형 종결이 없는 미완결 질문 감지.
+
+    "왜 재정사업" → True  (서술어/종결어미 없음)
+    "왜 지금인가" → False (종결어미 '인가' 존재)
+    "귤현동 탄약고 이전, 왜 지금인가" → False
+    """
+    stripped = re.sub(r"\s+", " ", str(heading or "")).strip()
+    if "왜" not in stripped:
+        return False
+    if stripped.endswith("?"):
+        return False
+
+    tokens = korean_morph.tokenize(stripped)
+    if tokens is None:
+        return False  # kiwi 불가 시 보수적으로 통과
+
+    has_wae = any(t.form == "왜" and t.tag == "MAG" for t in tokens)
+    if not has_wae:
+        return False
+
+    # 종결어미(EF) 또는 의문 역할 EC 가 있으면 완결
+    for t in tokens:
+        if t.tag == "EF":
+            return False
+        if t.tag == "EC" and t.form in ("나", "니", "지", "까"):
+            return False
+    # VCP(이다) + ETN/ETM 결합 ("인가" → VCP+EC) — kiwi 가 이미 EC 로 잡으므로
+    # 위 체크에서 걸림. 추가 체크: 용언이 하나라도 있으면 통과
+    if korean_morph.has_main_predicate(tokens):
         return False
 
     return True
