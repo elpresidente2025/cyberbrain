@@ -670,3 +670,105 @@ def tokens_share_stem(token_a: str, token_b: str) -> Optional[bool]:
     if not nouns_a or not nouns_b:
         return False
     return bool(set(nouns_a) & set(nouns_b))
+
+
+# ──────────────────────────────────────────────────────────────────────
+# "저는" pro-drop 라벨링 (humanize 프롬프트 힌트 생성)
+# ──────────────────────────────────────────────────────────────────────
+
+
+def label_first_person_sentences(
+    plain_text: str,
+) -> Optional[List[Dict[str, str]]]:
+    """각 문장에 대해 "저는" 삭제/유지 라벨을 생성한다.
+
+    Kiwi 형태소 분석으로 문장별 주어·서술어를 파악해 언어학적 판단을 내린다.
+
+    반환:
+      [{"text": "저는 ...", "label": "삭제 권장", "reason": "..."}, ...]
+      "저는"으로 시작하지 않는 문장은 포함하지 않는다.
+      None — Kiwi 불가 (호출부 regex fallback).
+    """
+    sents = split_sentences(plain_text)
+    if sents is None:
+        return None
+    if not sents:
+        return []
+
+    results: List[Dict[str, str]] = []
+    first_person_seen = False
+
+    for i, sent in enumerate(sents):
+        tokens = tokenize(sent)
+        if tokens is None:
+            return None
+
+        # "저는" 으로 시작하는 문장인지 확인 (NP "저" + JX "는")
+        is_fp = False
+        if len(tokens) >= 2:
+            if (tokens[0].form == "저" and tokens[0].tag == "NP"
+                    and tokens[1].form in ("는", "는") and tokens[1].tag == "JX"):
+                is_fp = True
+
+        if not is_fp:
+            continue
+
+        # 직전 문장 분석
+        prev_is_fp = False
+        prev_has_other_subj = False
+        if i > 0:
+            prev_tokens = tokenize(sents[i - 1])
+            if prev_tokens:
+                # 직전 문장이 "저는"으로 시작?
+                if (len(prev_tokens) >= 2
+                        and prev_tokens[0].form == "저" and prev_tokens[0].tag == "NP"
+                        and prev_tokens[1].form in ("는", "는") and prev_tokens[1].tag == "JX"):
+                    prev_is_fp = True
+                else:
+                    # 직전 문장에 다른 주격/보조사 주어가 있는지
+                    for j, tok in enumerate(prev_tokens[:6]):  # 문두 6토큰만
+                        if tok.tag.startswith("NN") and j + 1 < len(prev_tokens):
+                            nxt = prev_tokens[j + 1]
+                            if nxt.tag in ("JKS", "JX") and nxt.form in ("이", "가", "는", "은", "에서", "께서"):
+                                prev_has_other_subj = True
+                                break
+
+        # 현재 문장 서술어 분석: 의지/다짐 어미인지
+        has_volition = False
+        for tok in reversed(tokens):
+            if tok.tag in ("SF", "SP", "SS", "SE", "SW"):
+                continue
+            # EF(종결어미) 에 "겠" 선어말어미가 앞에 있으면 의지/다짐
+            if tok.tag == "EF":
+                # "겠" 은 EP(선어말어미) 태그
+                ef_idx = tokens.index(tok)
+                if ef_idx > 0 and tokens[ef_idx - 1].tag == "EP" and tokens[ef_idx - 1].form == "겠":
+                    has_volition = True
+            break
+
+        # 라벨 결정
+        if not first_person_seen:
+            label = "유지"
+            reason = "첫 등장"
+            first_person_seen = True
+        elif prev_has_other_subj:
+            label = "유지"
+            reason = "대조/전환"
+        elif prev_is_fp:
+            label = "삭제 권장"
+            reason = "동일 주어 연속"
+        elif has_volition:
+            label = "삭제 권장"
+            reason = "의지/다짐 서술어"
+        else:
+            # 직전 문장에 주어가 없는(생략 상태) 경우 → 같은 화자 맥락
+            label = "삭제 권장"
+            reason = "주어 생략 맥락"
+
+        results.append({
+            "text": sent.strip(),
+            "label": label,
+            "reason": reason,
+        })
+
+    return results

@@ -130,6 +130,12 @@ class EditorAgent(Agent):
                 previous_summary=edit_summary
             )
 
+            # 2.5. Kiwi 기반 "저는" pro-drop 라벨링 (humanize 힌트)
+            from ..common import korean_morph
+            _fp_plain_for_label = re.sub(r'<[^>]+>', ' ', constrained['content'])
+            _fp_plain_for_label = re.sub(r'\s+', ' ', _fp_plain_for_label).strip()
+            fp_labels = korean_morph.label_first_person_sentences(_fp_plain_for_label)
+
             # 3. Humanize pass (oh-my-humanizer 스타일 2차 LLM)
             humanized = await self._humanize_pass(
                 content=constrained['content'],
@@ -139,6 +145,7 @@ class EditorAgent(Agent):
                 user_keywords=user_keywords,
                 keyword_aliases=keyword_aliases,
                 edit_summary=constrained.get('editSummary', []),
+                fp_labels=fp_labels,
             )
             constrained['content'] = humanized.get('content', constrained['content'])
             constrained['editSummary'] = constrained['editSummary'] + humanized.get('changes', [])
@@ -498,6 +505,7 @@ class EditorAgent(Agent):
         user_keywords: Optional[List[str]] = None,
         keyword_aliases: Optional[Dict[str, Any]] = None,
         edit_summary: Optional[List[str]] = None,
+        fp_labels: Optional[List[Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
         """oh-my-humanizer 스타일 2차 LLM 패스.
 
@@ -515,6 +523,7 @@ class EditorAgent(Agent):
             user_keywords=user_keywords,
             keyword_aliases=keyword_aliases,
             edit_summary=edit_summary,
+            fp_labels=fp_labels,
         )
         try:
             result = await generate_json_async(
@@ -598,6 +607,7 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
         user_keywords: Optional[List[str]] = None,
         keyword_aliases: Optional[Dict[str, Any]] = None,
         edit_summary: Optional[List[str]] = None,
+        fp_labels: Optional[List[Dict[str, str]]] = None,
     ) -> str:
         speaker_note = (
             f'화자는 "{speaker_name}"입니다. 화자 정체성을 바꾸지 마세요.'
@@ -685,6 +695,23 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
                     "- 위 문장을 손대지 않으면 이 윤문은 실패한 것으로 간주합니다."
                 )
 
+        # "저는" pro-drop 라벨 힌트 생성
+        fp_hint_note = ""
+        if fp_labels:
+            delete_count = sum(1 for l in fp_labels if l["label"] == "삭제 권장")
+            keep_count = sum(1 for l in fp_labels if l["label"] == "유지")
+            if delete_count > 0:
+                lines = []
+                for l in fp_labels:
+                    marker = "→ 삭제/분산" if l["label"] == "삭제 권장" else "→ 유지"
+                    lines.append(f'  {marker} ({l["reason"]}): "{l["text"][:60]}{"…" if len(l["text"]) > 60 else ""}"')
+                fp_hint_note = (
+                    f'["저는" 문장별 교정 지시 — 형태소 분석 결과]\n'
+                    f'총 {len(fp_labels)}개 "저는" 문장 중 {delete_count}개 삭제/분산 권장, {keep_count}개 유지.\n'
+                    + "\n".join(lines)
+                    + "\n위 지시에 따라 '삭제/분산' 표시된 문장에서 '저는'을 생략하거나, 문중으로 이동하거나, 주어를 구체 사실로 전환하세요."
+                )
+
         return f"""당신은 AI가 생성한 한국어 정치 원고를 더 사람답고 자연스럽게 다듬는 편집자입니다.
 {speaker_note}
 
@@ -695,6 +722,8 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
 {alias_note}
 
 {prior_flags_note}
+
+{fp_hint_note}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [전제 조건] "저는" 문두 비율 제한 — 모든 단계에 우선
