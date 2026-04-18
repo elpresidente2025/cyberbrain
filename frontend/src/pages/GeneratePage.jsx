@@ -245,6 +245,10 @@ const GeneratePage = () => {
   const { notification, showNotification, hideNotification } = useNotification();
   const [formErrors, setFormErrors] = React.useState({ topic: '', instructions0: '' });
 
+  // --- 추모/애도 확인 다이얼로그 ---
+  const [memorialConfirmOpen, setMemorialConfirmOpen] = React.useState(false);
+  const [pendingPayload, setPendingPayload] = React.useState(null);
+
   // --- 👁️ 미리보기 상태 관리 ---
   const [selectedDraft, setSelectedDraft] = React.useState(null); // 사용자가 선택한 초안
 
@@ -325,6 +329,16 @@ const GeneratePage = () => {
       return;
     }
 
+    // 0.5. 추모/애도 메시지 감지 — 확인 다이얼로그로 분기
+    const memorialPattern = /추모|애도|추도|조문|영결|분향|희생자|유가족|명복|안식|세월호|이태원|참사/;
+    const textToCheck = `${formData.topic || ''} ${formData.stanceText || ''} ${(formData.instructions || []).join(' ')}`;
+    if (memorialPattern.test(textToCheck)) {
+      const payload = { ...formData };
+      setPendingPayload(payload);
+      setMemorialConfirmOpen(true);
+      return;
+    }
+
     // 1. 폼 데이터 유효성 검사
     const validation = validateForm();
     if (!validation.isValid) {
@@ -368,6 +382,26 @@ const GeneratePage = () => {
     } else {
       showNotification(result.error, 'error');
     }
+  };
+
+  /** 추모/애도 확인 다이얼로그 — 사용자가 "변환하기"를 선택한 경우 */
+  const handleMemorialConfirm = async () => {
+    setMemorialConfirmOpen(false);
+    if (!pendingPayload) return;
+    const result = await generate(pendingPayload);
+    setPendingPayload(null);
+    if (result.success) {
+      const successMessage = result.message + '\n\n생성된 원고를 꼭 검수하시고, 필요에 따라 직접 편집해주세요.';
+      showNotification(successMessage, 'success');
+    } else {
+      showNotification(result.error, 'error');
+    }
+  };
+
+  /** 추모/애도 확인 다이얼로그 — 사용자가 "취소"를 선택한 경우 */
+  const handleMemorialCancel = () => {
+    setMemorialConfirmOpen(false);
+    setPendingPayload(null);
   };
 
   /** 초기화 버튼 클릭 시 실행되는 함수 */
@@ -622,6 +656,35 @@ const GeneratePage = () => {
         severity={notification.severity}
         autoHideDuration={6000}
       />
+
+      {/* 추모/애도 확인 다이얼로그 */}
+      <Dialog
+        open={memorialConfirmOpen}
+        onClose={handleMemorialCancel}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 'bold' }}>
+          잠깐, 한 번 더 생각해 주세요
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ lineHeight: 1.8 }}>
+            때로는 서투르더라도 마음을 담은 진솔한 메시지가 더 필요한 순간이 있습니다.
+            지금 입력하신 글을 그대로 블로그와 SNS에 올리셔도 좋습니다.
+          </Typography>
+          <Typography sx={{ mt: 2, fontWeight: 'bold' }}>
+            정말 AI로 변환하시겠습니까?
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={handleMemorialCancel} variant="contained" color="primary">
+            아니요, 직접 쓰겠습니다
+          </Button>
+          <Button onClick={handleMemorialConfirm} color="inherit">
+            변환하기
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* SNS 변환 모달 */}
       <SNSConversionModal
