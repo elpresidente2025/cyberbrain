@@ -135,11 +135,21 @@ class EditorAgent(Agent):
             _fp_plain_for_label = re.sub(r'<[^>]+>', ' ', constrained['content'])
             _fp_plain_for_label = re.sub(r'\s+', ' ', _fp_plain_for_label).strip()
             fp_labels = korean_morph.label_first_person_sentences(_fp_plain_for_label)
+            logger.info(
+                "[EditorAgent] Step 2.5 fp_labels=%s",
+                f"{len(fp_labels)}건" if isinstance(fp_labels, list) else repr(fp_labels),
+            )
 
             # 2.5b. Kiwi 기반 AI 수사 반복 라벨링 (humanize 힌트)
             ai_rhetoric_labels = korean_morph.label_ai_rhetoric_sentences(_fp_plain_for_label)
+            if ai_rhetoric_labels is None:
+                logger.warning("[EditorAgent] Step 2.5b ai_rhetoric_labels=None (Kiwi 불가)")
+            else:
+                _rl_summary = {k: len(v) for k, v in ai_rhetoric_labels.items()} if ai_rhetoric_labels else {}
+                logger.info("[EditorAgent] Step 2.5b ai_rhetoric_labels=%s", _rl_summary or "clean")
 
             # 3. Humanize pass (oh-my-humanizer 스타일 2차 LLM)
+            logger.info("[EditorAgent] Step 3 humanize 시작, user_keywords=%s", user_keywords)
             humanized = await self._humanize_pass(
                 content=constrained['content'],
                 title=constrained['title'],
@@ -151,8 +161,14 @@ class EditorAgent(Agent):
                 fp_labels=fp_labels,
                 ai_rhetoric_labels=ai_rhetoric_labels,
             )
+            _humanize_changed = humanized.get('content', '') != constrained['content']
             constrained['content'] = humanized.get('content', constrained['content'])
             constrained['editSummary'] = constrained['editSummary'] + humanized.get('changes', [])
+            logger.info(
+                "[EditorAgent] Step 3 humanize 완료, changed=%s, changes=%s",
+                _humanize_changed,
+                humanized.get('changes', []),
+            )
             if (
                 style_instruction
                 and constrained['content'] != content
@@ -197,13 +213,19 @@ class EditorAgent(Agent):
             _fp_all_sents = [s.strip() for s in re.split(r'(?<=[.?!])\s+', _fp_plain) if len(s.strip()) > 5]
             _fp_matched = [s for s in _fp_all_sents if _fp_re.match(s)]
             _fp_ratio = len(_fp_matched) / len(_fp_all_sents) if _fp_all_sents else 0
+            logger.info(
+                "[EditorAgent] Step 3.7 '저는' 비율=%d/%d(%.0f%%)",
+                len(_fp_matched), len(_fp_all_sents), _fp_ratio * 100,
+            )
             if _fp_ratio > 0.20 and len(_fp_matched) >= 3:
                 constrained['editSummary'].append(
                     f"'저는' 문두 과다 — {len(_fp_matched)}/{len(_fp_all_sents)}문장({_fp_ratio:.0%}), 목표 20% 이하"
                 )
 
-            # 3.7b. post-humanize AI 수사 반복 잔존 경고
+            # 3.7b. post-humanize AI 수사 반복 잔�� 경고
             _post_ai_labels = korean_morph.label_ai_rhetoric_sentences(_fp_plain)
+            _post_rl_summary = {k: len(v) for k, v in _post_ai_labels.items()} if _post_ai_labels else {}
+            logger.info("[EditorAgent] Step 3.7b post-humanize ai_rhetoric=%s", _post_rl_summary or "(clean/None)")
             if _post_ai_labels:
                 _ai_rhet_instr = {
                     "unsourced_evidence": "출처 없는 근거",
@@ -247,6 +269,10 @@ class EditorAgent(Agent):
             _tv_kw_match = [kw for kw in (user_keywords or []) if _TV_KEYWORD in str(kw)]
             _tv_in_title = _TV_KEYWORD in _tv_title
 
+            logger.info(
+                "[EditorAgent] Step 3.8 TV: body_count=%d, kw_match=%s, in_title=%s",
+                _tv_body_count, _tv_kw_match, _tv_in_title,
+            )
             _tv_target_count = 0  # TV 로 바꿀 횟수
             if _tv_kw_match and _tv_body_count > _TV_MAX_SEO:
                 # 트리거 1: SEO 초과분 전부 TV
@@ -289,6 +315,10 @@ class EditorAgent(Agent):
                     constrained['editSummary'].append(
                         f"'테크노밸리' → 'TV' {_tv_replaced}건 약어 분산 (본문 {_tv_body_count}회 중)"
                     )
+            logger.info(
+                "[EditorAgent] Step 3.8 TV 결과: target=%d, replaced=%d",
+                _tv_target_count, _tv_replaced if _tv_target_count > 0 else 0,
+            )
 
             # 4. post-humanize 필수 키워드 최소 등장 검증 (경고만, 자동 치환 안 함)
             # humanize 가 지시어로 과치환해 고유명사 빈도가 떨어지는 케이스를 플래그.
