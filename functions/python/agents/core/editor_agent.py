@@ -166,51 +166,66 @@ class EditorAgent(Agent):
                         post_content = post_content.replace(broken, kw_clean)
             constrained['content'] = post_content
 
-            # 3.7. post-humanize "저는" 문두 비율 기반 기계적 감축
-            # humanize LLM 이 지시를 무시하고 "저는"을 과다 유지하는 경우가 많으므로,
-            # 전체 문장 중 "저는" 비율이 35% 이상이면 짝수번째 "저는"을 생략하여
-            # 비율을 대략 절반으로 낮춘다.
-            # 한국어는 주어 생략이 자연스러워, 앞에 "저는"이 한 번이라도 등장했으면
-            # 이후 "저는"은 대부분 생략 가능하다.
+            # 3.7. post-humanize "저는" 문두 문맥 기반 감축
+            # 한국어는 pro-drop 언어로, 1인칭 주어를 70~80% 생략하는 것이 자연스럽다.
+            # 단, 무조건 삭제하면 대조/전환 맥락에서 주어가 모호해진다.
+            # 원칙:
+            #   삭제 안전 — 직전 문장도 "저는"이거나, 주어가 생략된 상태 (동일 주어 연속)
+            #   삭제 금지 — 직전 문장이 다른 주어로 시작 (대조/전환)
+            #   삭제 금지 — 글 전체에서 첫 등장 / 마지막 등장
             post_content = constrained['content']
             _fp_strip_count = 0
 
-            # 모든 <p> 블록에서 문장을 추출하고 "저는" 위치를 기록
             _fp_re = re.compile(r'저는\s')
+            # 다른 주어 패턴: "X는", "X들은", "X이/가" 등으로 시작하는 문장
+            _other_subj_re = re.compile(
+                r'^(?!저는\s)(\S+(?:는|은|이|가|에서는|에서|들은|들이|들은|께서는|께서))\s'
+            )
             _fp_plain = re.sub(r'<[^>]+>', ' ', post_content)
             _fp_plain = re.sub(r'\s+', ' ', _fp_plain).strip()
             _fp_all_sents = [s.strip() for s in re.split(r'(?<=[.?!])\s+', _fp_plain) if len(s.strip()) > 5]
             _fp_matched_sents = [s for s in _fp_all_sents if _fp_re.match(s)]
             _fp_ratio = len(_fp_matched_sents) / len(_fp_all_sents) if _fp_all_sents else 0
 
-            if _fp_ratio >= 0.35 and len(_fp_matched_sents) >= 4:
-                # 짝수번째(0-indexed: 1, 3, 5, ...) "저는"을 삭제 대상으로 선정
-                # 첫 번째 "저는"(인사말)과 마지막 "저는"(결론 다짐)은 보호
+            if _fp_ratio >= 0.30 and len(_fp_matched_sents) >= 4:
+                # 전체 문장 목록에서 각 "저는" 문장의 원래 인덱스 확인
+                fp_positions = [i for i, s in enumerate(_fp_all_sents) if _fp_re.match(s)]
+
                 targets_to_remove: list[str] = []
-                for idx, sent in enumerate(_fp_matched_sents):
-                    if idx == 0:
-                        continue  # 첫 등장 보호
-                    if idx == len(_fp_matched_sents) - 1:
-                        continue  # 마지막 등장 보호
-                    if idx % 2 == 1:  # 짝수번째(1-indexed 기준 2, 4, 6...)
-                        targets_to_remove.append(sent)
+                for pos_idx, global_idx in enumerate(fp_positions):
+                    # 첫 등장, 마지막 등장 보호
+                    if pos_idx == 0 or pos_idx == len(fp_positions) - 1:
+                        continue
+
+                    # 직전 문장 확인
+                    if global_idx > 0:
+                        prev_sent = _fp_all_sents[global_idx - 1]
+                        prev_is_fp = bool(_fp_re.match(prev_sent))
+                        prev_has_other_subj = bool(_other_subj_re.match(prev_sent))
+
+                        if prev_has_other_subj:
+                            # 대조/전환 맥락 → "저는" 보호 (삭제 금지)
+                            continue
+                        if not prev_is_fp and not prev_has_other_subj:
+                            # 직전 문장에 주어가 없음(생략 상태) → 같은 화자 맥락
+                            # 삭제 가능하지만, 연속 삭제 방지를 위해 짝수번째만
+                            if pos_idx % 2 == 0:
+                                continue
+
+                    # 동일 주어 연속이거나 주어 생략 상태 → 삭제 안전
+                    targets_to_remove.append(_fp_all_sents[global_idx])
 
                 # HTML 원문에서 해당 문장의 "저는 "을 제거
                 for target in targets_to_remove:
-                    # 문장의 앞 40자를 앵커로 사용 (전체 매칭은 HTML 태그 때문에 실패 가능)
-                    anchor = target[:40]
-                    if anchor in post_content:
-                        # "저는 " 를 제거한 버전
+                    if target in post_content:
                         replaced = target.replace("저는 ", "", 1)
-                        # HTML 내에서 원문 → 교정 치환
-                        if target in post_content:
-                            post_content = post_content.replace(target, replaced, 1)
-                            _fp_strip_count += 1
+                        post_content = post_content.replace(target, replaced, 1)
+                        _fp_strip_count += 1
 
             if _fp_strip_count:
                 constrained['content'] = post_content
                 constrained['editSummary'].append(
-                    f"'저는' 문두 과다 {_fp_strip_count}건 기계적 생략 (비율 {_fp_ratio:.0%} → 감축)"
+                    f"'저는' 문두 과다 {_fp_strip_count}건 문맥 기반 생략 (비율 {_fp_ratio:.0%} → 감축)"
                 )
 
             # 4. post-humanize 필수 키워드 최소 등장 검증 (경고만, 자동 치환 안 함)
@@ -769,11 +784,20 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
   예: BAD "'일자리 창출' 공약 이행 실태와 '매립지 종료' 공약이 사실상 달성되지 못한 점"
        GOOD "'일자리 창출'과 '매립지 종료' 공약이 사실상 달성되지 못한 점"
        또는 "'일자리 창출' 공약 이행 실태와 '매립지 종료' 공약의 미이행"
-- "저는" 문두 과다 반복: 전체 문장의 절반 가까이가 "저는"으로 시작하면 AI 생성 텍스트임이 한눈에 드러납니다. 다음 전략으로 분산하세요.
-  (a) "저는"을 아예 삭제하고 주어 없이 시작 — "이번 조례 개정이 기업 환경을 바꿀 것이라 봅니다."
-  (b) "저는"을 문중으로 이동 — "이번 개정이 기업 환경을 바꿀 것이라 저는 봅니다."
-  (c) 주어를 구체 행동·사실·정책으로 전환 — "취득세 감면 조례는 지난 9월 시행에 들어갔습니다."
-  목표: "저는"으로 시작하는 문장이 전체의 20% 이하가 되도록 줄이세요. 연속 2문장이 "저는"으로 시작하지 않게 하세요.
+- "저는" 문두 과다 반복: 한국어는 pro-drop 언어로, 1인칭 주어를 70~80% 생략하는 것이 자연스럽습니다. 매 문장 "저는"으로 시작하면 외국인 또는 AI가 쓴 글처럼 보입니다.
+  ■ "저는"을 반드시 유지해야 하는 경우 (삭제 금지):
+    · 대조/전환: 직전 문장이 다른 주어(정부는, 주민들은, ~이/~가)였을 때 — "주민들은 불편을 호소했습니다. **저는** 이를 반드시 해결하겠습니다."
+    · 첫 등장: 글에서 화자가 처음 주어로 나설 때
+    · 강조/책임: 화자의 의지·책임을 특별히 부각할 때 — "**저는** 이 약속을 반드시 지키겠습니다."
+    · 모호성 해소: 생략하면 주어가 누군지 불분명해질 때
+  ■ "저는"을 생략해야 하는 경우 (삭제 권장):
+    · 동일 주어 연속: 직전 문장도 "저는"으로 시작했거나 주어가 생략된 상태 — "저는 정책을 추진합니다. (저는 삭제) 교통 문제도 해결하겠습니다."
+    · 의지/다짐: 서술어(-겠습니다, -하겠습니다)로 화자임이 자명 — "(저는 삭제) 끝까지 노력하겠습니다."
+    · 나열/병렬: 같은 화자의 행동 연속 열거
+  ■ 삭제 외 분산 전략:
+    (a) "저는"을 문중으로 이동 — "이번 개정이 기업 환경을 바꿀 것이라 저는 봅니다."
+    (b) 주어를 구체 사실·정책으로 전환 — "취득세 감면 조례는 지난 9월 시행에 들어갔습니다."
+  목표: "저는"으로 시작하는 문장이 전체의 20% 이하. 연속 2문장이 "저는"으로 시작하지 않게 하세요.
 - 어조 혼입: 한 문단 안에서 선언체("하겠습니다/기대합니다")와 당위체/평문("~것이 중요합니다 / ~할 필요가 있습니다")이 섞이지 않게 합니다. 화자의 목소리가 주된 어조라면 끝까지 그 어조로 닫고, 객관 평문이 필요하면 별도 문단으로 분리하세요.
   예: BAD "저는 ~에 최선을 다하겠습니다. 이 과제에 매진하는 것이 중요합니다."
        GOOD "저는 ~에 최선을 다하겠습니다. 이 과제에 끝까지 매진하겠습니다."
