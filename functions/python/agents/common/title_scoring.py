@@ -105,6 +105,22 @@ def _detect_ending_class_regex_fallback(title: str) -> str:
         return 'rhetorical_question'
     if re.search(r'(합니다|됩니다|입니다|습니다)\s*[.!]*\s*$', s):
         return 'declarative'
+    # 반말 평서형 (한다/연다/된다/푼다/먹는다) — 수사적 반문 자동 수리 결과물.
+    # "ㄴ다": ㄴ받침 음절 + 다 (한다/연다/된다/푼다)
+    # "는다": 는 + 다 (먹는다/잡는다)
+    if re.search(r'(?:는다|[가-힣]다)\s*[.!]*\s*$', s):
+        # "~다" 로 끝나는 모든 것이 declarative 는 아니므로,
+        # 직전 음절이 ㄴ받침이거나 "는" 인 경우만 declarative 로 분류.
+        tail_match = re.search(r'([가-힣])(다)\s*[.!]*\s*$', s)
+        if tail_match:
+            prev_char = tail_match.group(1)
+            if prev_char == '는':
+                return 'declarative'
+            prev_code = ord(prev_char)
+            if 0xAC00 <= prev_code <= 0xD7A3:
+                jong = (prev_code - 0xAC00) % 28
+                if jong == 4:  # ㄴ 종성
+                    return 'declarative'
     last_token = s.split()[-1] if s.split() else ''
     if re.fullmatch(r'[가-힣]{2,}', last_token) and not re.search(r'(다|요|까|나|지)$', last_token):
         return 'noun_end'

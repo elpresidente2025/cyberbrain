@@ -53,6 +53,7 @@ from .title_repairers import (
     _repair_title_for_missing_keywords,
     _repair_title_for_role_keyword_policy,
     _resolve_competitor_intent_title_keyword,
+    repair_rhetorical_question_title,
 )
 from .title_scoring import (
     _assess_initial_title_length_discipline,
@@ -929,6 +930,22 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
 
                 if not initial_generated_title:
                     break
+
+                # 수사적 반문 종결 자동 수리 — 채점 전에 어미를 변환하여
+                # ending constraint 위반을 예방한다. LLM 재호출 없이 규칙 기반.
+                _selected_family = resolve_title_family(params)
+                _rhetorical_repaired = repair_rhetorical_question_title(
+                    initial_generated_title, _selected_family,
+                )
+                if _rhetorical_repaired and _rhetorical_repaired != initial_generated_title:
+                    logger.info(
+                        "[TitleGen] 수사적 반문 수리(후보 %s): \"%s\" -> \"%s\" (family=%s)",
+                        idx,
+                        initial_generated_title,
+                        _rhetorical_repaired,
+                        _selected_family,
+                    )
+                    initial_generated_title = _rhetorical_repaired
 
                 initial_length_meta = _assess_initial_title_length_discipline(initial_generated_title)
                 length_feedback = _build_initial_length_discipline_feedback(initial_length_meta)

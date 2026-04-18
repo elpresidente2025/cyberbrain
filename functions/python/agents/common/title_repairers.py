@@ -580,3 +580,147 @@ def _validate_user_keyword_title_requirements(title: str, user_keywords: List[st
         }
 
     return {'passed': True}
+
+
+# ---------------------------------------------------------------------------
+# 수사적 반문 종결 → 아키타입 적합 종결 자동 수리
+# ---------------------------------------------------------------------------
+# "~ㄹ까?" / "~을까?" 패턴을 아키타입의 allowed ending 에 맞게 변환.
+# 자모 분해/합성으로 ㄹ→ㄴ 교체(declarative) 또는 겠습니다 붙이기(commitment).
+
+_JONGSEONG_LIST = [
+    '', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ', 'ㄻ', 'ㄼ',
+    'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ',
+    'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ',
+]
+_JONGSEONG_TO_IDX = {j: i for i, j in enumerate(_JONGSEONG_LIST) if j}
+
+_IDX_RIEUL = _JONGSEONG_TO_IDX['ㄹ']   # 8
+_IDX_NIEUN = _JONGSEONG_TO_IDX['ㄴ']   # 4
+
+
+def _decompose_syllable(ch: str):
+    """한글 음절 → (초성idx, 중성idx, 종성idx). 비한글이면 None."""
+    code = ord(ch)
+    if not (0xAC00 <= code <= 0xD7A3):
+        return None
+    offset = code - 0xAC00
+    cho = offset // (21 * 28)
+    jung = (offset % (21 * 28)) // 28
+    jong = offset % 28
+    return (cho, jung, jong)
+
+
+def _compose_syllable(cho: int, jung: int, jong: int) -> str:
+    """초·중·종성 인덱스 → 한글 음절."""
+    return chr(0xAC00 + cho * 21 * 28 + jung * 28 + jong)
+
+
+def _replace_jongseong(ch: str, new_jong_idx: int) -> str:
+    """음절의 종성만 교체."""
+    parts = _decompose_syllable(ch)
+    if parts is None:
+        return ch
+    cho, jung, _ = parts
+    return _compose_syllable(cho, jung, new_jong_idx)
+
+
+def _remove_jongseong(ch: str) -> str:
+    """음절에서 종성을 제거."""
+    return _replace_jongseong(ch, 0)
+
+
+# "~ㄹ까?" 또는 "~을까?" 꼬리를 잡는 패턴.
+_RHETORICAL_TAIL_RE = re.compile(
+    r'([가-힣])(을)?까\s*[?？]*\s*$'
+)
+
+
+def _repair_rhetorical_ending(title: str, target_class: str) -> Optional[str]:
+    """수사적 반문 종결을 target_class 에 맞게 변환한다.
+
+    target_class:
+      - 'declarative'  : ㄹ까 → ㄴ다  (한다/연다/된다)
+      - 'commitment'   : ㄹ까 → 겠습니다  (하겠습니다/열겠습니다)
+      - 'noun_end'     : 반문 꼬리 절단 후 직전 명사구로 종결
+
+    반환: 변환 성공 시 수리된 제목 문자열, 실패 시 None.
+    """
+    stripped = str(title or '').strip()
+    if not stripped:
+        return None
+
+    m = _RHETORICAL_TAIL_RE.search(stripped)
+    if not m:
+        return None
+
+    full_match_start = m.start()
+    anchor_char = m.group(1)  # ㄹ받침 글자 또는 을까 직전 글자
+    has_eul = m.group(2) is not None  # "을" 이 있는지
+    prefix = stripped[:full_match_start]
+
+    parts = _decompose_syllable(anchor_char)
+    if parts is None:
+        return None
+
+    if has_eul:
+        # "먹을까" → anchor_char='먹', stem=prefix+anchor_char
+        stem_text = prefix + anchor_char
+        if target_class == 'declarative':
+            return stem_text + '는다'
+        if target_class == 'commitment':
+            return stem_text + '겠습니다'
+        if target_class == 'noun_end':
+            return stem_text.rstrip()
+        return None
+
+    # "ㄹ까" 패턴 — anchor_char 에 ㄹ 받침이 있어야 함
+    cho, jung, jong = parts
+    if jong != _IDX_RIEUL:
+        return None
+
+    if target_class == 'declarative':
+        # ㄹ → ㄴ 교체 + '다' 붙이기: 할→한, 열→연, 될→된
+        converted = _compose_syllable(cho, jung, _IDX_NIEUN)
+        return prefix + converted + '다'
+
+    if target_class == 'commitment':
+        # 두 가지 경우:
+        # (a) 하다/되다/보다 등 모음 어간 + ㄹ(미래) → ㄹ 제거 후 겠습니다
+        # (b) 열다/풀다 등 ㄹ어간 → ㄹ 유지 후 겠습니다
+        # 구분: ㄹ 제거 시 나오는 음절이 흔한 모음 어간이면 (a), 아니면 (b)
+        vowel_stem = _remove_jongseong(anchor_char)  # 할→하, 열→여
+        common_vowel_stems = ('하', '되', '보', '가', '오', '서', '나', '바')
+        if vowel_stem in common_vowel_stems:
+            return prefix + vowel_stem + '겠습니다'
+        return prefix + anchor_char + '겠습니다'
+
+    if target_class == 'noun_end':
+        trimmed = prefix.rstrip()
+        if trimmed:
+            return trimmed
+        return None
+
+    return None
+
+
+# 아키타입 → 수사적 반문 수리 시 사용할 target ending class
+_FAMILY_RHETORICAL_REPAIR_TARGET: Dict[str, str] = {
+    'SLOGAN_COMMITMENT': 'commitment',
+    'QUESTION_ANSWER': 'noun_end',  # real_question 으로의 변환은 비현실적
+}
+_DEFAULT_RHETORICAL_REPAIR_TARGET = 'declarative'
+
+
+def repair_rhetorical_question_title(
+    title: str,
+    family: str,
+) -> Optional[str]:
+    """수사적 반문 제목을 아키타입에 맞는 종결형으로 자동 수리.
+
+    반환: 수리된 제목 문자열, 또는 수리 불필요/불가능 시 None.
+    """
+    target = _FAMILY_RHETORICAL_REPAIR_TARGET.get(
+        family, _DEFAULT_RHETORICAL_REPAIR_TARGET
+    )
+    return _repair_rhetorical_ending(title, target)
