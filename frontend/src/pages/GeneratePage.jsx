@@ -20,7 +20,10 @@ import {
   Typography,
   Backdrop,         // 🆕 추가
   CircularProgress, // 🆕 추가
-  LinearProgress    // 결정형 진행 표시
+  LinearProgress,   // 결정형 진행 표시
+  Stepper,
+  Step,
+  StepLabel
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import ShareIcon from '@mui/icons-material/Share';
@@ -128,10 +131,9 @@ const LoadingOverlayWithRotatingText = React.memo(({ loading, progress }) => {
     displayMessage = DEFAULT_MESSAGES[messageIndex % DEFAULT_MESSAGES.length];
   }
 
-  // 단계 번호 (1-based 표시)
-  const stepNumber = (progress?.step ?? 0) + 1;
-  const totalSteps = 4;
+  const activeStep = progress?.step ?? 0;
   const progressValue = progress?.progress ?? 0;
+  const STEP_LABELS = ['구조설계', '본문', 'SEO'];
 
   return (
     <Backdrop
@@ -146,18 +148,44 @@ const LoadingOverlayWithRotatingText = React.memo(({ loading, progress }) => {
       }}
       open={loading}
     >
-      {/* 결정형 진행 표시 영역 */}
-      <Box sx={{ width: '80%', maxWidth: 400 }}>
-        {/* 단계 + 퍼센트 헤더 */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-          <Typography variant="body2" color="rgba(255, 255, 255, 0.9)">
-            {stepNumber}/{totalSteps} 단계
-          </Typography>
-          <Typography variant="body2" color="rgba(255, 255, 255, 0.9)">
-            {Math.round(progressValue)}%
-          </Typography>
-        </Box>
-        {/* 결정형 프로그레스 바 */}
+      {/* 단계형 Stepper */}
+      <Stepper
+        activeStep={activeStep}
+        alternativeLabel
+        sx={{
+          width: '80%',
+          maxWidth: 400,
+          '& .MuiStepLabel-label': {
+            color: 'rgba(255, 255, 255, 0.5)',
+            fontSize: '0.75rem',
+            '&.Mui-active': { color: '#fff' },
+            '&.Mui-completed': { color: 'rgba(255, 255, 255, 0.8)' }
+          },
+          '& .MuiStepIcon-root': {
+            color: 'rgba(255, 255, 255, 0.3)',
+            '&.Mui-active': { color: '#fff' },
+            '&.Mui-completed': { color: 'rgba(255, 255, 255, 0.8)' }
+          },
+          '& .MuiStepConnector-line': {
+            borderColor: 'rgba(255, 255, 255, 0.3)'
+          },
+          '& .MuiStepConnector-root.Mui-completed .MuiStepConnector-line': {
+            borderColor: 'rgba(255, 255, 255, 0.8)'
+          },
+          '& .MuiStepConnector-root.Mui-active .MuiStepConnector-line': {
+            borderColor: 'rgba(255, 255, 255, 0.8)'
+          }
+        }}
+      >
+        {STEP_LABELS.map((label) => (
+          <Step key={label}>
+            <StepLabel>{label}</StepLabel>
+          </Step>
+        ))}
+      </Stepper>
+
+      {/* 결정형 프로그레스 바 + 퍼센트 */}
+      <Box sx={{ width: '80%', maxWidth: 400, mt: 1 }}>
         <LinearProgress
           variant="determinate"
           value={progressValue}
@@ -177,20 +205,10 @@ const LoadingOverlayWithRotatingText = React.memo(({ loading, progress }) => {
             }
           }}
         />
+        <Typography variant="body2" align="right" color="rgba(255, 255, 255, 0.7)" sx={{ mt: 0.5 }}>
+          {Math.round(progressValue)}%
+        </Typography>
       </Box>
-
-      {/* 현재 단계명 */}
-      <Typography
-        variant="h6"
-        align="center"
-        aria-live="polite"
-        sx={{
-          fontWeight: 500,
-          mt: 1
-        }}
-      >
-        {currentStepMessage || '준비 중...'}
-      </Typography>
 
       {/* 순환 서브 메시지 */}
       <Typography
