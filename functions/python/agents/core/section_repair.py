@@ -488,7 +488,7 @@ class SectionRepairMixin:
                 # === AEO 2단계: 아웃라인 생성 (첫 시도에서만) ===
                 if is_aeo and aeo_outline is None:
                     try:
-                        outline_prompt = self._build_structure_json_prompt(
+                        outline_prompt = self._build_outline_json_prompt(
                             prompt=prompt,
                             length_spec=length_spec,
                         )

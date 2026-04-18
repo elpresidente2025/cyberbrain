@@ -523,6 +523,36 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             },
         }
 
+    def _build_outline_json_prompt(self, *, prompt: str, length_spec: Dict[str, int]) -> str:
+        """AEO 1단계: 아웃라인만 요청하는 전용 프롬프트. full-structure 프롬프트와 분리."""
+        body_sections = max(1, int(length_spec.get('body_sections') or 1))
+        return (
+            f"{prompt}\n\n"
+            "<json_output_contract priority=\"critical\">\n"
+            "  <override>기존 XML output_format 지시는 무시하고, 최종 응답은 아웃라인 JSON 객체 1개만 출력하십시오.</override>\n"
+            "  <task>본문을 작성하지 마십시오. 아래 json_shape에 맞춰 제목·서론 리드·본론 소제목·본론 첫 문장·결론 소제목만 출력하십시오.</task>\n"
+            f"  <structure>본론 섹션 {body_sections}개.</structure>\n"
+            "  <rules>\n"
+            "    <rule>코드블록(```) 금지, 설명문 금지, JSON 외 텍스트 금지.</rule>\n"
+            "    <rule>intro_lead: 인사(1문장) + 핵심 결론(1~2문장). AI 답변 엔진이 이 문단만 추출해도 답이 되어야 한다.</rule>\n"
+            "    <rule>각 body 항목의 lead_sentence: 해당 섹션의 핵심 주장·해법·결론을 한 문장으로 직접 선언할 것. "
+            "'~하겠습니다', '~추진합니다', '~확보합니다'처럼 행동을 선언하는 문장이어야 한다. "
+            "'~에 직면해 있습니다', '~과제입니다', '~증거입니다'처럼 상황 진단·평가로 시작하지 말 것.</rule>\n"
+            "    <rule>소제목은 10~25자, \"위한/향한/만드는/통한/대한\" 수식어 금지.</rule>\n"
+            "  </rules>\n"
+            "  <json_shape><![CDATA[\n"
+            "{\n"
+            "  \"title\": \"기사 제목\",\n"
+            "  \"intro_lead\": \"인사 + 핵심 결론 1~2문장\",\n"
+            "  \"body\": [\n"
+            "    {\"heading\": \"소제목\", \"lead_sentence\": \"이 섹션의 핵심 행동 선언 한 문장\"}\n"
+            "  ],\n"
+            "  \"conclusion_heading\": \"결론 소제목\"\n"
+            "}\n"
+            "  ]]></json_shape>\n"
+            "</json_output_contract>"
+        )
+
     def _build_outline_json_schema(self, length_spec: Dict[str, int]) -> Dict[str, Any]:
         """AEO 2단계 생성의 1단계: 아웃라인(제목+소제목+첫 문장)만 요청하는 스키마."""
         body_sections = max(1, int(length_spec.get('body_sections') or 1))
