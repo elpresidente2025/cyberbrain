@@ -45,7 +45,7 @@ const DraftGrid = React.lazy(() => import('../components/generate/DraftGrid'));
 const PreviewPane = React.lazy(() => import('../components/generate/PreviewPane'));
 
 // 🔄 로딩 오버레이 컴포넌트 (텍스트 순환 애니메이션)
-// 🔄 로딩 오버레이 컴포넌트 (텍스트 순환 애니메이션)
+// TODO: 단계 전환 시 읽을거리(검색어 노하우, 원고 작성 팁 등) 정보 카드 추가 — 200자 내외, 단계마다 교체
 // 단계별 순환 메시지 정의
 const STEP_MESSAGES = {
   // 1. 구조 설계 (가장 오래 걸림)
