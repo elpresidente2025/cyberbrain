@@ -1790,3 +1790,44 @@ def test_generic_content_not_triggered_for_concrete_h2() -> None:
         full_region="샘플시 샘플구",
     )
     assert "H2_GENERIC_CONTENT" not in result["issues"]
+
+
+# ---------------------------------------------------------------------------
+# 상투어 밀도 체크 (NNP 1개 + 상투어 다수 → 실패)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    korean_morph.get_kiwi() is None,
+    reason="kiwi unavailable — NNG 밀도 판정 불가",
+)
+def test_cliche_density_blocks_single_nnp_with_cliches() -> None:
+    """NNP 1개 + 상투어 다수 → H2_GENERIC_CONTENT."""
+    from agents.common.h2_scoring import _has_concrete_content
+
+    # "광역철도"(NNP 1개) + "미래"/"도약"(상투어 2/2)
+    assert _has_concrete_content("광역철도, 미래를 향한 새로운 도약", "", "") is False
+
+
+@pytest.mark.skipif(
+    korean_morph.get_kiwi() is None,
+    reason="kiwi unavailable — NNG 밀도 판정 불가",
+)
+def test_cliche_density_passes_with_enough_concrete() -> None:
+    """구체 토큰 충분 → 상투어가 있어도 통과."""
+    from agents.common.h2_scoring import _has_concrete_content
+
+    # "귤현동"(NNP) + "탄약고"(NNP) + "이전"(NNG, 상투어 아님)
+    assert _has_concrete_content("귤현동 탄약고 이전, 왜 지금인가", "", "") is True
+
+
+@pytest.mark.skipif(
+    korean_morph.get_kiwi() is None,
+    reason="kiwi unavailable — NNG 밀도 판정 불가",
+)
+def test_cliche_density_passes_low_density() -> None:
+    """상투어 밀도 낮으면 NNP 1개라도 통과."""
+    from agents.common.h2_scoring import _has_concrete_content
+
+    # NNG 중 상투어 비율이 0.6 미만
+    assert _has_concrete_content("광역철도 사업 추진 일정 공개", "", "") is True

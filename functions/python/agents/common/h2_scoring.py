@@ -704,10 +704,26 @@ def _has_numeric_answer_marker(heading: str) -> bool:
     return False
 
 
+# 상투어 사전 — NNG 밀도 체크에 사용. 개별 단어 존재로 감점하지 않고
+# NNG 중 상투어 비율(밀도)이 높을 때만 H2_GENERIC_CONTENT 를 발화한다.
+_H2_CLICHE_NNG = frozenset({
+    # 관찰된 H2에서 추출
+    "미래", "혁신", "포용", "도약", "비전", "헌신", "거점",
+    "발전", "성공", "활성화", "연결", "시대", "길",
+    # patina ko-content (과도한 중요성 / 과제와 전망)
+    "전환점", "이정표", "지평", "패러다임", "토대", "전망", "과제",
+    # patina ko-language (AI 특유 어휘)
+    "촉진", "극대화", "도모",
+    # patina ko-filler (막연한 긍정)
+    "여정",
+})
+
+
 def _has_concrete_content(heading: str, full_name: str, full_region: str) -> bool:
     """H2에 인물명·지역명을 제외한 구체적 토큰(고유명사·숫자)이 있는지 판정.
 
     kiwi 사용 가능 시 NNP/SN 태그 기반, 불가 시 regex fallback.
+    상투어 밀도 체크: NNG 중 상투어 비율이 높고 구체 토큰이 부족하면 실패.
     """
     text = str(heading or "").strip()
     if not text:
@@ -726,7 +742,19 @@ def _has_concrete_content(heading: str, full_name: str, full_region: str) -> boo
             t for t in tokens
             if t.tag in ("NNP", "SN", "NR") and t.form not in exclude
         ]
-        return len(concrete) > 0
+        if len(concrete) == 0:
+            return False
+
+        # 상투어 밀도 체크: NNG 중 상투어 비율이 60% 이상이고
+        # 구체 토큰이 1개 이하이면 실패
+        nng_tokens = [t for t in tokens if t.tag == "NNG" and t.form not in exclude]
+        if nng_tokens:
+            cliche_count = sum(1 for t in nng_tokens if t.form in _H2_CLICHE_NNG)
+            density = cliche_count / len(nng_tokens)
+            if density >= 0.6 and len(concrete) <= 1:
+                return False
+
+        return True
 
     # regex fallback: 숫자 존재 여부로 간이 판정
     digits = re.findall(r"\d+", text)
