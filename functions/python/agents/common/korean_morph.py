@@ -11,7 +11,7 @@
 - agents/common/h2_guide.py (has_incomplete_h2_ending)
 - agents/common/h2_scoring.py (_has_question_form, 명사구 hard-fail)
 - agents/core/structure_normalizer.py (_split_sentences Kiwi 우선 전환)
-- agents/core/editor_agent.py (apply_hard_constraints 치환 후 문법 검증 + 문장 레벨 비문 스캔)
+- agents/core/editor_agent.py (apply_hard_constraints 치환 후 문법 검증 + 문장 레벨 비문 스캔 + AI 수사 라벨링)
 - agents/common/title_hook_quality.py (_is_body_exclusive — tokens_share_stem/extract_nouns)
 - (확장 가능) stylometry/features/ 등
 """
@@ -21,7 +21,7 @@ from __future__ import annotations
 import os
 import re
 import threading
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 _KIWI_LOCK = threading.Lock()
 _KIWI_INSTANCE = None
@@ -772,3 +772,246 @@ def label_first_person_sentences(
         })
 
     return results
+
+
+# ──────────────────────────────────────────────────────────────────────
+# AI 수사 패턴 라벨링 (humanize 프롬프트 힌트 생성)
+# ──────────────────────────────────────────────────────────────────────
+
+# --- A 그룹: Kiwi 품사 태그 정밀 탐지 ---
+
+_EVIDENCE_NOUNS = frozenset({
+    "지표", "데이터", "수치", "통계", "분석", "자료", "연구",
+})
+
+_DEMONSTRATIVE_MM_FORMS = frozenset({
+    "이러한", "그러한", "이와", "이같은", "이런", "그런",
+})
+
+_ABSTRACT_MM = frozenset({"모든", "다양한", "각종", "전체"})
+_ABSTRACT_NNG = frozenset({
+    "계층", "분야", "시민", "주민", "세대", "구성원",
+})
+
+_AI_ADJ_MM_FORMS = frozenset({
+    "혁신적인", "체계적인", "효과적인", "적극적인", "지속적인",
+    "종합적인", "선도적인", "심층적인", "유기적인", "활발한", "주목할",
+})
+
+_VAGUE_SOURCE_NOUNS = frozenset({
+    "전문가", "관계자", "학계", "일각",
+})
+
+_HYPERBOLE_NOUNS = frozenset({
+    "전환점", "이정표", "지평", "패러다임", "토대",
+})
+
+# --- B 그룹: 표면 매칭 ---
+
+_NEGATIVE_PARALLEL_PHRASES = (
+    "뿐만 아니라", "에 그치지 않고", "비단", "을 넘어",
+)
+
+_VERBOSE_PARTICLE_PHRASES = (
+    "에 있어서", "에 있어", "함에 있어", "의 관점에서", "라는 점에서",
+)
+
+_TRANSLATIONESE_PHRASES = (
+    "것은 사실이다", "것이 가능하다", "에 의해", "경향이 있다",
+    "것으로 보인다",
+)
+
+_CLICHE_PROSPECT_PHRASES = (
+    "여전히 많은 과제", "밝은 전망", "4차 산업혁명", "새로운 도약",
+)
+
+
+def label_ai_rhetoric_sentences(
+    plain_text: str,
+) -> Optional[Dict[str, List[Dict[str, str]]]]:
+    """본문 전체에서 AI 수사 패턴을 문장별로 라벨링한다.
+
+    Kiwi 형태소 분석(A1~A8) + 표면 매칭(B1~B5) 으로 13개 패턴을 탐지.
+    탐지된 것만 dict 에 포함 → humanize 프롬프트에 해당 항목만 주입.
+
+    반환:
+      {패턴키: [{"text": 문장, "reason": 설명}, ...], ...}
+      ���지 안 된 카테고리는 키 자체를 생략.
+      빈 dict — 아무것도 탐지 안 됨.
+      None    — Kiwi 불가.
+    """
+    sents = split_sentences(plain_text)
+    if sents is None:
+        return None
+    if not sents:
+        return {}
+
+    # --- 문장별 수집 버퍼 (임계치 적용 전) ---
+    buf_unsourced: List[Dict[str, str]] = []
+    buf_demonstrative: List[Dict[str, str]] = []
+    buf_abstract: List[Dict[str, str]] = []
+    buf_suffix_jeok: List[Dict[str, str]] = []
+    buf_ai_adj: List[Dict[str, str]] = []
+    buf_progressive: List[Dict[str, str]] = []
+    buf_vague_source: List[Dict[str, str]] = []
+    buf_hyperbole: List[Dict[str, str]] = []
+    buf_neg_parallel: List[Dict[str, str]] = []
+    buf_verbose: List[Dict[str, str]] = []
+    buf_translationese: List[Dict[str, str]] = []
+    buf_chain: List[Dict[str, str]] = []
+    buf_cliche: List[Dict[str, str]] = []
+
+    for sent in sents:
+        tokens = tokenize(sent)
+        if tokens is None:
+            return None  # Kiwi 실패 → 전체 None
+
+        # 사전 계산
+        has_sn = any(t.tag == "SN" for t in tokens)
+        has_nnp = any(t.tag == "NNP" for t in tokens)
+
+        # ── A1: 출처 없는 근거 호출 ──
+        has_evidence = any(
+            t.tag == "NNG" and t.form in _EVIDENCE_NOUNS for t in tokens
+        )
+        if has_evidence and not has_sn:
+            buf_unsourced.append({
+                "text": sent, "reason": "출처/수치 없는 근거 호출",
+            })
+
+        # ── A2: 지시 관형사 ──
+        for t in tokens:
+            if t.tag == "MM" and t.form in _DEMONSTRATIVE_MM_FORMS:
+                buf_demonstrative.append({
+                    "text": sent,
+                    "reason": f'지시 관형사 "{t.form}"',
+                })
+                break  # 한 문장 1회만
+
+        # ── A3: 추상 포용 수사 ──
+        for i, t in enumerate(tokens):
+            if t.tag == "MM" and t.form in _ABSTRACT_MM:
+                if i + 1 < len(tokens):
+                    nxt = tokens[i + 1]
+                    if nxt.tag == "NNG" and nxt.form in _ABSTRACT_NNG:
+                        buf_abstract.append({
+                            "text": sent,
+                            "reason": f'추상 포용 "{t.form} {nxt.form}"',
+                        })
+                        break
+
+        # ── A4: ~적 접미사 남용 (문장당 3개+) ──
+        jeok_count = sum(1 for t in tokens if t.tag == "XSN" and t.form == "적")
+        if jeok_count >= 3:
+            buf_suffix_jeok.append({
+                "text": sent,
+                "reason": f'"~적" 접미사 {jeok_count}회',
+            })
+
+        # ── A5: AI 고빈도 관형사 ──
+        for t in tokens:
+            if t.tag == "MM" and t.form in _AI_ADJ_MM_FORMS:
+                buf_ai_adj.append({
+                    "text": sent,
+                    "reason": f'AI 고빈도 "{t.form}"',
+                })
+                break
+
+        # ── A6: 진행형 남용 (~하고 있다) ──
+        for i, t in enumerate(tokens):
+            if t.tag == "EC" and t.form == "고":
+                if i + 1 < len(tokens) and tokens[i + 1].tag == "VX" and tokens[i + 1].form == "있":
+                    buf_progressive.append({
+                        "text": sent, "reason": '"~하고 있다" 진행형',
+                    })
+                    break
+
+        # ── A7: 모호 출처 표현 ──
+        has_vague = any(
+            t.tag == "NNG" and t.form in _VAGUE_SOURCE_NOUNS for t in tokens
+        )
+        if has_vague and not has_nnp:
+            buf_vague_source.append({
+                "text": sent, "reason": "모호 출처 (구체 고유명사 없음)",
+            })
+
+        # ── A8: 과장 수사 ──
+        for t in tokens:
+            if t.tag == "NNG" and t.form in _HYPERBOLE_NOUNS:
+                buf_hyperbole.append({
+                    "text": sent,
+                    "reason": f'과장 수사 "{t.form}"',
+                })
+                break
+
+        # ── B1~B5: 표면 매칭 ──
+        for phrase in _NEGATIVE_PARALLEL_PHRASES:
+            if phrase in sent:
+                buf_neg_parallel.append({
+                    "text": sent, "reason": f'부정 병렬 "{phrase}"',
+                })
+                break
+
+        for phrase in _VERBOSE_PARTICLE_PHRASES:
+            if phrase in sent:
+                buf_verbose.append({
+                    "text": sent, "reason": f'장황 조사 "{phrase}"',
+                })
+                break
+
+        for phrase in _TRANSLATIONESE_PHRASES:
+            if phrase in sent:
+                buf_translationese.append({
+                    "text": sent, "reason": f'번역체 "{phrase}"',
+                })
+                break
+
+        # B4: ~하며 피상 체인 (한 문장 3회+)
+        chain_count = sent.count("하며") + sent.count("하고")
+        if chain_count >= 3:
+            buf_chain.append({
+                "text": sent,
+                "reason": f'"~하며/~하고" 체인 {chain_count}회',
+            })
+
+        for phrase in _CLICHE_PROSPECT_PHRASES:
+            if phrase in sent:
+                buf_cliche.append({
+                    "text": sent, "reason": f'클리셰 "{phrase}"',
+                })
+                break
+
+    # --- 임계치 적용 → 결과 dict 구성 ---
+    result: Dict[str, List[Dict[str, str]]] = {}
+
+    # 1건부터 포함
+    if buf_unsourced:
+        result["unsourced_evidence"] = buf_unsourced
+    if buf_suffix_jeok:
+        result["suffix_jeok_overuse"] = buf_suffix_jeok
+    if buf_vague_source:
+        result["vague_source"] = buf_vague_source
+    if buf_translationese:
+        result["translationese"] = buf_translationese
+    if buf_chain:
+        result["superficial_chain"] = buf_chain
+    if buf_cliche:
+        result["cliche_prospect"] = buf_cliche
+
+    # 전체 카운트 임계치
+    if len(buf_demonstrative) >= 3:
+        result["demonstrative_overuse"] = buf_demonstrative
+    if len(buf_abstract) >= 2:
+        result["abstract_inclusive"] = buf_abstract
+    if len(buf_ai_adj) >= 3:
+        result["ai_adjective_overuse"] = buf_ai_adj
+    if len(buf_progressive) >= 4:
+        result["progressive_overuse"] = buf_progressive
+    if len(buf_hyperbole) >= 2:
+        result["hyperbole"] = buf_hyperbole
+    if len(buf_neg_parallel) >= 2:
+        result["negative_parallel"] = buf_neg_parallel
+    if len(buf_verbose) >= 2:
+        result["verbose_particle"] = buf_verbose
+
+    return result

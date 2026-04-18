@@ -457,3 +457,83 @@ class TestTokensShareStemFallback:
         monkeypatch.setattr(korean_morph, "get_kiwi", lambda: None)
         result = korean_morph.tokens_share_stem("테크노밸리 사업", "테크노밸리")
         assert result is None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# AI 수사 패턴 라벨링 (label_ai_rhetoric_sentences)
+# ──────────────────────────────────────────────────────────────────────
+
+
+@kiwi_required
+class TestLabelAiRhetoricSentences:
+    """Kiwi 기반 AI 수사 패턴 탐지 검증."""
+
+    # A1: 출처 없는 근거 호출
+    def test_unsourced_evidence_flagged(self) -> None:
+        result = korean_morph.label_ai_rhetoric_sentences(
+            "객관적 지표에 따르면 경제가 성장합니다. 올해 성장률은 3.2%입니다."
+        )
+        assert result is not None
+        assert len(result.get("unsourced_evidence", [])) == 1
+
+    def test_unsourced_with_number_ok(self) -> None:
+        result = korean_morph.label_ai_rhetoric_sentences(
+            "2024년 통계에 따르면 인구가 5만 명 증가했습니다."
+        )
+        assert result is not None
+        assert len(result.get("unsourced_evidence", [])) == 0
+
+    # A2: 지시 관형사
+    def test_demonstrative_overuse(self) -> None:
+        result = korean_morph.label_ai_rhetoric_sentences(
+            "이러한 정책입니다. 이러한 경험입니다. 이러한 협력입니다. 좋은 결과입니다."
+        )
+        assert result is not None
+        assert len(result.get("demonstrative_overuse", [])) == 3
+
+    def test_demonstrative_under_threshold(self) -> None:
+        result = korean_morph.label_ai_rhetoric_sentences(
+            "이러한 정책입니다. 좋은 결과입니다."
+        )
+        assert result is not None
+        assert "demonstrative_overuse" not in result
+
+    # A3: 추상 포용 수사
+    def test_abstract_inclusive(self) -> None:
+        result = korean_morph.label_ai_rhetoric_sentences(
+            "모든 계층이 만족합니다. 다양한 계층을 포용합니다."
+        )
+        assert result is not None
+        assert len(result.get("abstract_inclusive", [])) == 2
+
+    # A4: ~적 접미사 남용
+    def test_suffix_jeok(self) -> None:
+        result = korean_morph.label_ai_rhetoric_sentences(
+            "혁신적이고 체계적이며 효과적인 정책입니다."
+        )
+        assert result is not None
+        assert len(result.get("suffix_jeok_overuse", [])) == 1
+
+    # B1: 부정 병렬 과다
+    def test_negative_parallel(self) -> None:
+        result = korean_morph.label_ai_rhetoric_sentences(
+            "경제뿐만 아니라 문화도 중요합니다. 이에 그치지 않고 환경도 챙깁니다."
+        )
+        assert result is not None
+        assert len(result.get("negative_parallel", [])) == 2
+
+    # B3: 번역체
+    def test_translationese(self) -> None:
+        result = korean_morph.label_ai_rhetoric_sentences(
+            "이 기술이 유망하다는 것은 사실이다."
+        )
+        assert result is not None
+        assert len(result.get("translationese", [])) == 1
+
+    # 깨끗한 텍스트 → 빈 dict
+    def test_clean_text_empty(self) -> None:
+        result = korean_morph.label_ai_rhetoric_sentences(
+            "샘플동 탄약고 이전 문제를 해결하겠습니다."
+        )
+        assert result is not None
+        assert result == {}

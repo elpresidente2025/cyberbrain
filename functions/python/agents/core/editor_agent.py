@@ -136,6 +136,9 @@ class EditorAgent(Agent):
             _fp_plain_for_label = re.sub(r'\s+', ' ', _fp_plain_for_label).strip()
             fp_labels = korean_morph.label_first_person_sentences(_fp_plain_for_label)
 
+            # 2.5b. Kiwi 기반 AI 수사 반복 라벨링 (humanize 힌트)
+            ai_rhetoric_labels = korean_morph.label_ai_rhetoric_sentences(_fp_plain_for_label)
+
             # 3. Humanize pass (oh-my-humanizer 스타일 2차 LLM)
             humanized = await self._humanize_pass(
                 content=constrained['content'],
@@ -146,6 +149,7 @@ class EditorAgent(Agent):
                 keyword_aliases=keyword_aliases,
                 edit_summary=constrained.get('editSummary', []),
                 fp_labels=fp_labels,
+                ai_rhetoric_labels=ai_rhetoric_labels,
             )
             constrained['content'] = humanized.get('content', constrained['content'])
             constrained['editSummary'] = constrained['editSummary'] + humanized.get('changes', [])
@@ -197,6 +201,33 @@ class EditorAgent(Agent):
                 constrained['editSummary'].append(
                     f"'저는' 문두 과다 — {len(_fp_matched)}/{len(_fp_all_sents)}문장({_fp_ratio:.0%}), 목표 20% 이하"
                 )
+
+            # 3.7b. post-humanize AI 수사 반복 잔존 경고
+            _post_ai_labels = korean_morph.label_ai_rhetoric_sentences(_fp_plain)
+            if _post_ai_labels:
+                _ai_rhet_instr = {
+                    "unsourced_evidence": "출처 없는 근거",
+                    "demonstrative_overuse": "지시 관형사",
+                    "abstract_inclusive": "추상 포용 수사",
+                    "suffix_jeok_overuse": "~적 접미사",
+                    "ai_adjective_overuse": "AI 고빈도 수식",
+                    "progressive_overuse": "진행형",
+                    "vague_source": "모호 출처",
+                    "hyperbole": "과장 수사",
+                    "negative_parallel": "부정 병렬",
+                    "verbose_particle": "장황 조사",
+                    "translationese": "번역체",
+                    "superficial_chain": "~하며 체인",
+                    "cliche_prospect": "클리셰 전망",
+                }
+                _ai_warnings = []
+                for _ai_key, _ai_items in _post_ai_labels.items():
+                    if _ai_items:
+                        _ai_warnings.append(f"'{_ai_rhet_instr.get(_ai_key, _ai_key)}' {len(_ai_items)}건")
+                if _ai_warnings:
+                    constrained['editSummary'].append(
+                        f"AI 수사 잔존 — {', '.join(_ai_warnings)}"
+                    )
 
             # 3.8. "테크노밸리" → "TV" 약어 분산
             # 트리거 1: 사용자 키워드에 "테크노밸리" 포함 & SEO 허용치 초과 → 초과분 TV
@@ -579,6 +610,7 @@ class EditorAgent(Agent):
         keyword_aliases: Optional[Dict[str, Any]] = None,
         edit_summary: Optional[List[str]] = None,
         fp_labels: Optional[List[Dict[str, str]]] = None,
+        ai_rhetoric_labels: Optional[Dict[str, list]] = None,
     ) -> Dict[str, Any]:
         """oh-my-humanizer 스타일 2차 LLM 패스.
 
@@ -597,6 +629,7 @@ class EditorAgent(Agent):
             keyword_aliases=keyword_aliases,
             edit_summary=edit_summary,
             fp_labels=fp_labels,
+            ai_rhetoric_labels=ai_rhetoric_labels,
         )
         try:
             result = await generate_json_async(
@@ -681,6 +714,7 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
         keyword_aliases: Optional[Dict[str, Any]] = None,
         edit_summary: Optional[List[str]] = None,
         fp_labels: Optional[List[Dict[str, str]]] = None,
+        ai_rhetoric_labels: Optional[Dict[str, list]] = None,
     ) -> str:
         speaker_note = (
             f'화자는 "{speaker_name}"입니다. 화자 정체성을 바꾸지 마세요.'
@@ -785,6 +819,39 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
                     + "\n위 지시에 따라 '삭제/분산' 표시된 문장에서 '저는'을 생략하거나, 문중으로 이동하거나, 주어를 구체 사실로 전환하세요."
                 )
 
+        # AI 수사 패턴 힌트 생성
+        _AI_RHETORIC_INSTRUCTIONS = {
+            "unsourced_evidence": ("출처 없는 근거 호출", "실제 수치가 없으면 해당 수식구를 삭제하고 직접 서술로 재구성"),
+            "demonstrative_overuse": ("지시 관형사 남용", "절반 이상을 구체 명사(정책명·사업명·지역명)로 교체"),
+            "abstract_inclusive": ("추상 포용 수사 반복", "하나만 남기고 나머지는 구체 대상으로 전환"),
+            "suffix_jeok_overuse": ("~적 접미사 남용", "한 문장에 '~적' 3개 이상 — 하나를 풀어쓰거나 구체어로 전환"),
+            "ai_adjective_overuse": ("AI 고빈도 관형사", "절반 이상을 구체 서술이나 다른 수식어로 교체"),
+            "progressive_overuse": ("~하고 있다 진행형 남용", "과거형·현재형·명사형으로 다양화"),
+            "vague_source": ("모호 출처 표현", "구체적 인명·기관·날짜 없으면 수식구 삭제"),
+            "hyperbole": ("과장 수사", "일상적 대상에 '전환점/패러다임' 등 과장 — 축소하거나 삭제"),
+            "negative_parallel": ("부정 병렬 과다", "'뿐만 아니라' 류가 2회+ — 하나만 남기고 직접 연결"),
+            "verbose_particle": ("장황 조사", "'에 있어서' 류를 '에서/으로/은' 등 간결 조사로 교체"),
+            "translationese": ("번역체", "'것은 사실이다/에 의해' 등을 자연스러운 한국어로 전환"),
+            "superficial_chain": ("~하며 피상 체인", "3회+ 연결 체인을 끊어 문장 분리"),
+            "cliche_prospect": ("과제와 전망 클리셰", "'밝은 전망/새로운 도약' 류를 구체 계획·일정으로 교체"),
+        }
+        ai_rhetoric_hint = ""
+        if ai_rhetoric_labels:
+            hints = []
+            for key, (label, instruction) in _AI_RHETORIC_INSTRUCTIONS.items():
+                items = ai_rhetoric_labels.get(key, [])
+                if items:
+                    hints.append(f"\u25b8 {label} ({len(items)}건) — {instruction}:")
+                    for item in items[:5]:
+                        txt = item.get("text", "")
+                        hints.append(f'  \u00b7 "{txt[:60]}{"…" if len(txt) > 60 else ""}"')
+            if hints:
+                ai_rhetoric_hint = (
+                    "[AI 수사 패턴 — 형태소 분석 결과]\n"
+                    + "\n".join(hints)
+                    + "\n위 문장들을 본문에서 찾아 각 지시에 따라 교정하세요."
+                )
+
         return f"""당신은 AI가 생성한 한국어 정치 원고를 더 사람답고 자연스럽게 다듬는 편집자입니다.
 {speaker_note}
 
@@ -797,6 +864,8 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
 {prior_flags_note}
 
 {fp_hint_note}
+
+{ai_rhetoric_hint}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [전제 조건] "저는" 문두 비율 제한 — 모든 단계에 우선
@@ -829,7 +898,16 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
 [1단계 - 감지]
 다음과 같은 AI 티 표현과 비문을 찾으세요.
 - 과도한 대칭 구조와 추상적 수식
-- 뜻은 약한데 그럴듯해 보이는 표현
+- 출처 없는 근거 호출: "객관적 지표에 따르면", "데이터를 바탕으로", "전문가들은" 등 실제 수치·인명·기관·날짜가 뒤따르지 않는 빈 수사. 삭제하고 직접 서술로 재구성.
+  예: BAD "객관적 지표에 따르면, 보행 환경 개선은 상권 활성화에 긍정적인 영향을 미칩니다."
+       GOOD "보행 환경이 개선된 상권은 유동인구가 늘어 매출 회복이 빠릅니다."
+- 지시 관형사·연결어 남용: "이러한", "그러한", "이를 통해", "이러한 맥락에서" 가 본문 전체 3회 이상이면 절반을 구체 명사로 교체.
+- 추상 포용 수사 반복: "모든 계층", "다양한 계층을 포용" 이 2회+ → 하나만 남기고 구체 대상 전환.
+- ~적 접미사 남용: "혁신적", "체계적", "효과적" 이 한 문장에 3개+ → 하나를 풀어쓰거나 구체어 전환.
+- AI 고빈도 수식어: "혁신적인", "체계적인", "지속적인", "종합적인" 등이 본문 전체 3회+ → 절반을 구체 서술로 교체.
+- 번역체: "것은 사실이다", "에 의해", "경향이 있다" → 자연스러운 한국어로 전환.
+- 과장 수사: "전환점", "패러다임", "새로운 지평" 이 일상적 대상에 쓰이면 축소.
+- 과제와 전망 클리셰: "밝은 전망이 기대된다", "새로운 도약" → 구체 계획·일정으로 교체.
 - 결론과 다짐 문장이 지나치게 형식적인 경우
 - 연결어가 기계적으로 반복되는 경우
 - 주술 불일치: 문장이 "저는"으로 시작했는데 중간에 다른 주어("~이/~가")를 끼워 넣고 그 다른 주어의 서술어("~할 것입니다")로 닫히는 경우. "저는"이 갈 곳 없이 떠 있다.
