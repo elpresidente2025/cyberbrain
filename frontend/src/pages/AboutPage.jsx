@@ -166,7 +166,7 @@ AI가 이를 해석하여 생성 제약조건으로 주입합니다.
       ariaLabel: '장르별 구조 자동 선택 기능',
       title: '장르별 글 구조 자동 선택',
       description: '의정보고·정책제안·시사논평, 각각 다른 구조',
-      modalTitle: '의정보고서와 축사는 다른 글입니다. AI가 주제를 인식하고 최적의 구조를 고릅니다.',
+      modalTitle: '의정보고서와 축사는 다른 글입니다.\nAI가 주제를 인식하고 최적의 구조를 고릅니다.',
       details: `의정보고, 정책제안, 지역현안, 시사논평, 일상소통, 현장활동, 협치.
 9개 장르 템플릿, 각 장르마다 4가지 이상의 서술 구조.
 
@@ -433,7 +433,7 @@ AI가 이미 학습하고 있습니다.
                       }
                     }}
                   >
-                    서비스 시작하기
+                    서비스 시작
                   </Button>
 
                   <Button
@@ -573,10 +573,10 @@ AI가 이미 학습하고 있습니다.
                             <Line
                               type="monotone"
                               dataKey="before"
-                              stroke="var(--color-text-secondary)"
+                              stroke="var(--color-text-tertiary)"
                               strokeWidth={2}
-                              dot={{ r: 3, fill: 'var(--color-text-secondary)' }}
-                              activeDot={{ r: 5, fill: 'var(--color-text-secondary)' }}
+                              dot={{ r: 3, fill: 'var(--color-text-tertiary)' }}
+                              activeDot={{ r: 5, fill: 'var(--color-text-tertiary)' }}
                               connectNulls={false}
                             />
                             <Line
@@ -970,8 +970,8 @@ AI가 이미 학습하고 있습니다.
                           10단계 품질 검수
                         </Typography>
                         <Typography sx={{ color: 'var(--color-text-secondary)', fontSize: '0.95rem', lineHeight: 1.7 }}>
-                          구조 생성, 키워드 주입, 문체 적용, 선거법 검수, SEO 검증까지.
-                          문제가 발견되면 AI가 스스로 수정합니다.
+                          의원님 문체로 쓰고, 법률 위험 표현을 걸러내고,
+                          네이버 검색에 잘 잡히는지까지. 문제가 있으면 AI가 직접 고칩니다.
                         </Typography>
                       </Box>
                     </Box>
@@ -1038,7 +1038,8 @@ AI가 이미 학습하고 있습니다.
                       fontWeight: 700,
                       mb: 3,
                       color: 'var(--color-text-primary)',
-                      wordBreak: 'keep-all'
+                      wordBreak: 'keep-all',
+                      whiteSpace: 'pre-line'
                     }}
                   >
                     {selectedFeature.modalTitle}
@@ -1221,23 +1222,40 @@ AI가 이미 학습하고 있습니다.
                       component="div"
                       sx={{
                         fontWeight: 700,
-                        color: 'var(--color-primary)',
-                        fontSize: 'clamp(2.2rem, 10vw, 6rem)',
+                        color: 'var(--color-text-tertiary)',
+                        fontSize: 'clamp(1.6rem, 7vw, 3.5rem)',
                         letterSpacing: '-0.03em',
                         lineHeight: 1,
-                        mb: 2,
+                        mb: 1,
                         whiteSpace: 'nowrap',
+                        textDecoration: 'line-through',
                         ...numericStyle
                       }}
                     >
                       월 50,000원
                     </Typography>
                     <Typography sx={{
-                      color: 'var(--color-text-secondary)',
-                      fontSize: '1.25rem',
-                      fontWeight: 400
+                      color: 'var(--color-text-tertiary)',
+                      fontSize: '1rem',
+                      fontWeight: 400,
+                      textDecoration: 'line-through',
+                      mb: 3
                     }}>
                       (VAT 별도)
+                    </Typography>
+                    <Typography
+                      variant="h2"
+                      component="div"
+                      sx={{
+                        fontWeight: 800,
+                        color: 'var(--color-primary)',
+                        fontSize: 'clamp(1.8rem, 8vw, 3.5rem)',
+                        letterSpacing: '-0.02em',
+                        lineHeight: 1.2,
+                        wordBreak: 'keep-all'
+                      }}
+                    >
+                      무료 체험 기간
                     </Typography>
                   </Box>
                   <Button
@@ -1267,7 +1285,7 @@ AI가 이미 학습하고 있습니다.
                       }
                     }}
                   >
-                    서비스 신청하기
+                    서비스 신청
                   </Button>
                 </CardContent>
               </Card>
