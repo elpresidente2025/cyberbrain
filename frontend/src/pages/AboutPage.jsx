@@ -1,6 +1,6 @@
 // frontend/src/pages/AboutPage.jsx
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -45,6 +45,18 @@ const AboutPage = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
+  // AboutPage는 항상 라이트 모드로 표시
+  useEffect(() => {
+    const wasDarkMode = document.body.classList.contains('dark-mode');
+    document.body.classList.remove('dark-mode');
+    return () => {
+      if (wasDarkMode) {
+        document.body.classList.add('dark-mode');
+      }
+    };
+  }, []);
+
   const [showAllFAQs, setShowAllFAQs] = useState(false);
   const [expandedFAQ, setExpandedFAQ] = useState(false);
   const [selectedFeature, setSelectedFeature] = useState(null);
