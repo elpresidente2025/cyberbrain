@@ -19,7 +19,8 @@ import {
   Button,
   Typography,
   Backdrop,         // 🆕 추가
-  CircularProgress  // 🆕 추가
+  CircularProgress, // 🆕 추가
+  LinearProgress    // 결정형 진행 표시
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import ShareIcon from '@mui/icons-material/Share';
@@ -127,6 +128,11 @@ const LoadingOverlayWithRotatingText = React.memo(({ loading, progress }) => {
     displayMessage = DEFAULT_MESSAGES[messageIndex % DEFAULT_MESSAGES.length];
   }
 
+  // 단계 번호 (1-based 표시)
+  const stepNumber = (progress?.step ?? 0) + 1;
+  const totalSteps = 4;
+  const progressValue = progress?.progress ?? 0;
+
   return (
     <Backdrop
       sx={{
@@ -140,22 +146,66 @@ const LoadingOverlayWithRotatingText = React.memo(({ loading, progress }) => {
       }}
       open={loading}
     >
-      <CircularProgress color="inherit" size={60} thickness={4} />
+      {/* 결정형 진행 표시 영역 */}
+      <Box sx={{ width: '80%', maxWidth: 400 }}>
+        {/* 단계 + 퍼센트 헤더 */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+          <Typography variant="body2" color="rgba(255, 255, 255, 0.9)">
+            {stepNumber}/{totalSteps} 단계
+          </Typography>
+          <Typography variant="body2" color="rgba(255, 255, 255, 0.9)">
+            {Math.round(progressValue)}%
+          </Typography>
+        </Box>
+        {/* 결정형 프로그레스 바 */}
+        <LinearProgress
+          variant="determinate"
+          value={progressValue}
+          role="progressbar"
+          aria-valuenow={Math.round(progressValue)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`원고 생성 진행률 ${Math.round(progressValue)}%`}
+          sx={{
+            height: 6,
+            borderRadius: 3,
+            backgroundColor: 'rgba(255, 255, 255, 0.15)',
+            '& .MuiLinearProgress-bar': {
+              borderRadius: 3,
+              backgroundColor: '#fff',
+              transition: 'transform 0.6s ease'
+            }
+          }}
+        />
+      </Box>
+
+      {/* 현재 단계명 */}
       <Typography
         variant="h6"
         align="center"
+        aria-live="polite"
         sx={{
           fontWeight: 500,
-          whiteSpace: 'pre-line',
-          minHeight: '3em',  // 레이아웃 안정화
-          display: 'flex',
-          alignItems: 'center'
+          mt: 1
+        }}
+      >
+        {currentStepMessage || '준비 중...'}
+      </Typography>
+
+      {/* 순환 서브 메시지 */}
+      <Typography
+        variant="body2"
+        align="center"
+        sx={{
+          color: 'rgba(255, 255, 255, 0.7)',
+          minHeight: '1.5em'
         }}
       >
         {displayMessage}
       </Typography>
-      <Typography variant="body2" color="rgba(255, 255, 255, 0.7)">
-        (보통 2~5분 소요, 상황에 따라 더 걸릴 수 있습니다)
+
+      <Typography variant="caption" color="rgba(255, 255, 255, 0.5)" sx={{ mt: 1 }}>
+        보통 2~5분 소요, 상황에 따라 더 걸릴 수 있습니다
       </Typography>
     </Backdrop>
   );
