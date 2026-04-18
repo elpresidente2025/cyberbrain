@@ -26,6 +26,7 @@ from agents.common.h2_planning import (
     pick_must_include_keyword,
     pick_suggested_type,
 )
+from agents.common import korean_morph
 from agents.common.h2_scoring import H2_MIN_PASSING_SCORE, score_h2
 from agents.common.title_prompt_parts import (
     _build_few_shot_slot_values,
@@ -1016,7 +1017,7 @@ def test_subheading_agent_h2_repair_chain_applies_branding_edit(
     def _fake_branding(content):
         replaced = content.replace(
             "<h2>청년 기본소득 신청 3단계 절차</h2>",
-            "<h2>청년 기본소득 신청 핵심 정리</h2>",
+            "<h2>청년 기본소득 274명 지원 실적</h2>",
         )
         return {
             "content": replaced,
@@ -1063,8 +1064,8 @@ def test_subheading_agent_h2_repair_chain_applies_branding_edit(
         )
     )
 
-    assert "청년 기본소득 신청 핵심 정리" in rebuilt
-    assert trace[0].get("h2_repair_chain") == "청년 기본소득 신청 핵심 정리"
+    assert "청년 기본소득 274명 지원 실적" in rebuilt
+    assert trace[0].get("h2_repair_chain") == "청년 기본소득 274명 지원 실적"
     chain_steps = [item["step"] for item in stats["h2_repair_chain"]]
     assert "branding_phrases" in chain_steps
 
@@ -1747,3 +1748,45 @@ def test_title_echo_not_triggered_different() -> None:
         full_name="홍길동",
     )
     assert "H2_TITLE_ECHO" not in result["issues"]
+
+
+# ── 구체성 체크 (H2_GENERIC_CONTENT) ──
+
+
+def test_generic_content_is_hard_fail() -> None:
+    """H2_GENERIC_CONTENT가 hard-fail 목록에 포함되어 있어야 한다."""
+    from agents.common.h2_scoring import H2_HARD_FAIL_ISSUES
+
+    assert "H2_GENERIC_CONTENT" in H2_HARD_FAIL_ISSUES
+
+
+@pytest.mark.skipif(
+    korean_morph.get_kiwi() is None,
+    reason="kiwi unavailable — NNP 기반 구체성 판정 불가",
+)
+def test_generic_content_detected_for_cliche_h2() -> None:
+    """인물명·지역명 제외 시 고유명사/숫자 없는 상투적 H2 → H2_GENERIC_CONTENT."""
+    from agents.common.h2_scoring import score_h2_aeo
+
+    result = score_h2_aeo(
+        "샘플시 샘플구, 혁신과 포용으로 나아가는 길",
+        full_name="홍길동",
+        full_region="샘플시 샘플구",
+    )
+    assert "H2_GENERIC_CONTENT" in result["issues"]
+
+
+@pytest.mark.skipif(
+    korean_morph.get_kiwi() is None,
+    reason="kiwi unavailable — NNP 기반 구체성 판정 불가",
+)
+def test_generic_content_not_triggered_for_concrete_h2() -> None:
+    """구체적 고유명사·숫자가 포함된 H2 → H2_GENERIC_CONTENT 미발생."""
+    from agents.common.h2_scoring import score_h2_aeo
+
+    result = score_h2_aeo(
+        "귤현동 탄약고 이전, 군사시설 문제 해결 방안",
+        full_name="홍길동",
+        full_region="샘플시 샘플구",
+    )
+    assert "H2_GENERIC_CONTENT" not in result["issues"]

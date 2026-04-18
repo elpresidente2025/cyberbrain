@@ -91,6 +91,8 @@ H2_HARD_FAIL_ISSUES = frozenset(
         # 세트 내 2개 이상의 H2 가 동일 첫 어절로 시작 — 복붙 느낌.
         # AEO advisory 에서 hard-fail 로 격상: repair 를 강제한다.
         "H2_SIBLING_PREFIX_OVERLAP",
+        # 인물명·지역명을 제외하면 구체적 고유명사/숫자가 전무한 상투적 H2.
+        "H2_GENERIC_CONTENT",
     }
 )
 
@@ -702,6 +704,38 @@ def _has_numeric_answer_marker(heading: str) -> bool:
     return False
 
 
+def _has_concrete_content(heading: str, full_name: str, full_region: str) -> bool:
+    """H2에 인물명·지역명을 제외한 구체적 토큰(고유명사·숫자)이 있는지 판정.
+
+    kiwi 사용 가능 시 NNP/SN 태그 기반, 불가 시 regex fallback.
+    """
+    text = str(heading or "").strip()
+    if not text:
+        return False
+
+    # full_name, full_region에서 제외할 토큰 수집
+    exclude = set()
+    for src in (full_name, full_region):
+        for tok in re.findall(r"[가-힣A-Za-z0-9]{2,}", str(src or "")):
+            exclude.add(tok)
+
+    kiwi = korean_morph.get_kiwi()
+    if kiwi is not None:
+        tokens = kiwi.tokenize(text)
+        concrete = [
+            t for t in tokens
+            if t.tag in ("NNP", "SN", "NR") and t.form not in exclude
+        ]
+        return len(concrete) > 0
+
+    # regex fallback: 숫자 존재 여부로 간이 판정
+    digits = re.findall(r"\d+", text)
+    if digits:
+        return True
+    # 한글 토큰에서 name/region 제외 후 2음절 이상 고유명사 추정 불가 → False
+    return False
+
+
 def _body_first_sentence_tokens(body_first_sentence: str) -> set:
     cleaned = str(body_first_sentence or "").strip()
     if not cleaned:
@@ -722,6 +756,7 @@ def score_h2_aeo(
     section_count: int = 0,
     user_keywords: Optional[List[str]] = None,
     article_title: str = "",
+    full_region: str = "",
 ) -> Dict[str, object]:
     """단일 H2 에 AEO 관점의 soft score + 어드바이저리 이슈를 반환한다.
 
@@ -830,6 +865,11 @@ def score_h2_aeo(
             if jaccard >= 0.7:
                 issues.append("H2_TITLE_ECHO")
                 uniqueness_score = min(uniqueness_score, 0.3)
+
+    # 구체성 체크: 인물명·지역명을 제외한 고유명사/숫자가 0개면 상투적 H2
+    if not _has_concrete_content(text, name_clean, str(full_region or "")):
+        issues.append("H2_GENERIC_CONTENT")
+        uniqueness_score = min(uniqueness_score, 0.3)
 
     breakdown["uniqueness"] = uniqueness_score
 
