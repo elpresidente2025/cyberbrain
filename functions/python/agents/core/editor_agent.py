@@ -158,6 +158,14 @@ class EditorAgent(Agent):
                     _dst = str(_av or "").strip()
                     if _src and _dst:
                         _ai_alts[_src] = _dst
+            # userNativeWords 화이트리스트: 사용자가 직접 쓴 patina 대상어는 교정 제외
+            _user_native: set = set()
+            if isinstance(style_fingerprint, dict):
+                _unw = style_fingerprint.get("userNativeWords")
+                if isinstance(_unw, list):
+                    _user_native = {str(w).strip() for w in _unw if w}
+            if _user_native:
+                print(f"[EditorAgent] userNativeWords whitelist={sorted(_user_native)}")
             print(f"[EditorAgent] Step 3 humanize 시작, user_keywords={user_keywords}")
             humanized = await self._humanize_pass(
                 content=constrained['content'],
@@ -170,6 +178,7 @@ class EditorAgent(Agent):
                 fp_labels=fp_labels,
                 ai_rhetoric_labels=ai_rhetoric_labels,
                 ai_alternatives=_ai_alts or None,
+                user_native_words=_user_native or None,
             )
             _humanize_changed = humanized.get('content', '') != constrained['content']
             constrained['content'] = humanized.get('content', constrained['content'])
@@ -677,6 +686,7 @@ class EditorAgent(Agent):
         fp_labels: Optional[List[Dict[str, str]]] = None,
         ai_rhetoric_labels: Optional[Dict[str, list]] = None,
         ai_alternatives: Optional[Dict[str, str]] = None,
+        user_native_words: Optional[set] = None,
     ) -> Dict[str, Any]:
         """oh-my-humanizer 스타일 2차 LLM 패스.
 
@@ -697,6 +707,7 @@ class EditorAgent(Agent):
             fp_labels=fp_labels,
             ai_rhetoric_labels=ai_rhetoric_labels,
             ai_alternatives=ai_alternatives,
+            user_native_words=user_native_words,
         )
         try:
             result = await generate_json_async(
@@ -783,6 +794,7 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
         fp_labels: Optional[List[Dict[str, str]]] = None,
         ai_rhetoric_labels: Optional[Dict[str, list]] = None,
         ai_alternatives: Optional[Dict[str, str]] = None,
+        user_native_words: Optional[set] = None,
     ) -> str:
         speaker_note = (
             f'화자는 "{speaker_name}"입니다. 화자 정체성을 바꾸지 마세요.'
@@ -907,9 +919,17 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
         if ai_rhetoric_labels:
             # ai_alternatives 연동: 탐지된 패턴에 사용자별 대체어 매핑
             _alts = ai_alternatives or {}
+            _native = user_native_words or set()
             hints = []
             for key, (label, instruction) in _AI_RHETORIC_INSTRUCTIONS.items():
                 items = ai_rhetoric_labels.get(key, [])
+                if _native and items:
+                    # userNativeWords 화이트리스트: 사용자가 직접 쓴 단어가
+                    # 포함된 탐지 항목은 교정 대상에서 제외
+                    items = [
+                        item for item in items
+                        if not any(nw in item.get("text", "") for nw in _native)
+                    ]
                 if items:
                     # 탐지 문장에서 aiAlternatives 매칭 검색
                     alt_note = ""

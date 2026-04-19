@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .schemas import DEFAULT_AI_ALTERNATIVES
+from .schemas import DEFAULT_AI_ALTERNATIVES, PATINA_TARGET_WORDS
 
 
 # ── 헬퍼 ─────────────────────────────────────────────────────
@@ -32,12 +32,28 @@ def _ensure_enum(value: Any, allowed: tuple[str, ...], default: str) -> str:
     return v if v in allowed else default
 
 
-# ── 메인 검증 ────────────────────────────��───────────────────
+def _extract_user_native_words(source_text: str) -> list[str]:
+    """사용자 원문에서 PATINA_TARGET_WORDS에 해당하는 단어를 추출.
+
+    사용자가 직접 쓴 단어이므로 AI 수사 교정 대상에서 제외(화이트리스트).
+    Kiwi 없이 단순 문자열 매칭 — 비용 0.
+    """
+    if not source_text:
+        return []
+    found = []
+    for word in PATINA_TARGET_WORDS:
+        if word in source_text:
+            found.append(word)
+    return sorted(found)
+
+
+# ── 메인 검증 ─────────────────────────────────────────────────
 
 def validate_style_fingerprint(
     fingerprint: dict[str, Any],
     source_length: int,
     text_stats: dict[str, Any] | None = None,
+    source_text: str = "",
 ) -> dict[str, Any]:
     """LLM 해석 + 통계값을 합쳐 정규화된 fingerprint를 반환한다.
 
@@ -122,6 +138,7 @@ def validate_style_fingerprint(
             key: str((fp.get("aiAlternatives") or {}).get(key) or default).strip()
             for key, default in DEFAULT_AI_ALTERNATIVES.items()
         },
+        "userNativeWords": _extract_user_native_words(source_text),
         "analysisMetadata": {
             "confidence": _clamp((fp.get("analysisMetadata") or {}).get("confidence", 0.7), 0, 1),
             "dominantStyle": str((fp.get("analysisMetadata") or {}).get("dominantStyle") or "표준적인 정치 문체").strip(),

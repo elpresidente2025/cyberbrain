@@ -195,7 +195,16 @@ def _build_extract_prompt(
     "instead_of_평범한_이웃": "이 사람이 실제로 쓸 대체 표현",
     "instead_of_함께_힘을_모아": "이 사람이 실제로 쓸 대체 표현",
     "instead_of_더_나은_내일": "이 사람이 실제로 쓸 대체 표현",
-    "instead_of_밝은_미래": "이 사람이 실제로 쓸 대체 표현"
+    "instead_of_밝은_미래": "이 사람이 실제로 쓸 대체 표현",
+    "instead_of_획기적인": "이 사람이 실제로 쓸 대체 표현",
+    "instead_of_혁신적인": "이 사람이 실제로 쓸 대체 표현",
+    "instead_of_체계적인": "이 사람이 실제로 쓸 대체 표현",
+    "instead_of_종합적인": "이 사람이 실제로 쓸 대체 표현",
+    "instead_of_지속적인": "이 사람이 실제로 쓸 대체 표현",
+    "instead_of_극대화": "이 사람이 실제로 쓸 대체 표현",
+    "instead_of_도모": "이 사람이 실제로 쓸 대체 표현",
+    "instead_of_기여": "이 사람이 실제로 쓸 대체 표현",
+    "instead_of_도약": "이 사람이 실제로 쓸 대체 표현"
   }},
 
   "analysisMetadata": {{
@@ -209,7 +218,7 @@ def _build_extract_prompt(
 1. 텍스트에서 실제로 발견되는 패턴만 추출하세요. 추측하지 마세요.
 2. 배열이 비어있어도 괜찮습니다. 억지로 채우지 마세요.
 3. 수치는 텍스트 분석을 기반으로 정확하게 계산하세요.
-4. aiAlternatives는 AI 상투어를 이 사람의 실제 어휘로 대체할 표현입니다.
+4. aiAlternatives는 AI 상투어를 이 사람의 실제 어휘로 대체할 표현입니다. 텍스트에서 이 사람이 실제로 사용한 형용사·동사·명사를 찾아 매핑하세요. 텍스트에 근거가 없으면 빈 문자열로 두세요.
 5. JSON만 반환하세요. 다른 설명은 하지 마세요."""
 
 
@@ -248,7 +257,7 @@ async def extract_style_fingerprint(
         max_output_tokens=4096,
     )
 
-    validated = validate_style_fingerprint(raw, len(text), text_stats)
+    validated = validate_style_fingerprint(raw, len(text), text_stats, source_text=text)
 
     # 결정론적 피처를 fingerprint에 첨부
     if raw_features is not None:
