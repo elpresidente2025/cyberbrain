@@ -671,10 +671,8 @@ const GeneratePage = () => {
             id="preview-dialog-title"
             sx={{
               background: 'var(--gradient-primary-dark)',
-              color: '#fff',
-              '& .MuiTypography-root': {
-                color: '#fff',
-              }
+              color: '#fff !important',
+              '& *': { color: '#fff !important' },
             }}
           >
             원고 미리보기
