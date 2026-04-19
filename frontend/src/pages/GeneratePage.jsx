@@ -456,10 +456,7 @@ const GeneratePage = () => {
         new Notification('원고 생성 완료', { body: 'AI 원고가 성공적으로 생성되었습니다. 확인해 주세요.' });
       }
     } else {
-      showNotification(result.error, 'error');
-      if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
-        new Notification('원고 생성 실패', { body: '오류가 발생했습니다. 다시 시도해 주세요.' });
-      }
+      showNotification('죄송합니다. 원고 생성 중 문제가 발생했습니다. 입력하신 내용은 그대로 보존되어 있으니, 다시 시도해 주세요.', 'error');
     }
   };
 
@@ -476,10 +473,7 @@ const GeneratePage = () => {
         new Notification('원고 생성 완료', { body: 'AI 원고가 성공적으로 생성되었습니다. 확인해 주세요.' });
       }
     } else {
-      showNotification(result.error, 'error');
-      if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
-        new Notification('원고 생성 실패', { body: '오류가 발생했습니다. 다시 시도해 주세요.' });
-      }
+      showNotification('죄송합니다. 원고 생성 중 문제가 발생했습니다. 입력하신 내용은 그대로 보존되어 있으니, 다시 시도해 주세요.', 'error');
     }
   };
 
