@@ -258,6 +258,49 @@ class EditorAgent(Agent):
                 _prog_total = _prog_info["total"] if _prog_info else 0
                 print(f"[EditorAgent] Step 3.6 progressive: total={_prog_total}, fixable=0")
 
+            # 3.6c. Kiwi 기반 저-한자어 잘림 복원
+            # humanize LLM이 "저해하는/저하되는" 등을 "저"로 잘라내는 환각을 기계적 복원
+            _step36c_plain = re.sub(r'<[^>]+>', ' ', constrained['content'])
+            _step36c_plain = re.sub(r'\s+', ' ', _step36c_plain).strip()
+            _jeo_truncations = korean_morph.find_truncated_jeo_hanja_kiwi(
+                _fp_plain_for_label, _step36c_plain
+            )
+            if _jeo_truncations:
+                _jeo_fixed = 0
+                _jeo_content = constrained['content']
+                for t in _jeo_truncations:
+                    word = t["original_word"]
+                    bw = re.escape(t["before_word"]) if t.get("before_word") else ""
+                    aw = re.escape(t["after_word"]) if t.get("after_word") else ""
+                    # HTML 태그를 허용하는 context 매칭 패턴
+                    _html_gap = r'(\s*(?:<[^>]*>\s*)*)'
+                    if bw and aw:
+                        pat = re.compile(bw + _html_gap + r'저' + _html_gap + aw)
+                    elif aw:
+                        pat = re.compile(r'(?<![가-힣])저' + _html_gap + aw)
+                    else:
+                        continue
+                    m = pat.search(_jeo_content)
+                    if m:
+                        if bw and aw:
+                            repl = t["before_word"] + m.group(1) + word + m.group(2) + t["after_word"]
+                        else:
+                            repl = word + m.group(1) + t["after_word"]
+                        _jeo_content = _jeo_content[:m.start()] + repl + _jeo_content[m.end():]
+                        _jeo_fixed += 1
+                if _jeo_fixed > 0:
+                    constrained['content'] = _jeo_content
+                    constrained['editSummary'].append(
+                        f"저-한자어 잘림 {_jeo_fixed}건 복원 ({', '.join(t['original_word'] for t in _jeo_truncations)})"
+                    )
+                print(
+                    f"[EditorAgent] Step 3.6c jeo_hanja: detected={len(_jeo_truncations)}, "
+                    f"fixed={_jeo_fixed}"
+                )
+            else:
+                _jeo_label = "clean" if _jeo_truncations is not None else "Kiwi불가"
+                print(f"[EditorAgent] Step 3.6c jeo_hanja: {_jeo_label}")
+
             # 3.7. post-humanize "저는" 문두 비율 경고 (기계적 삭제 없음)
             # 실제 교정은 humanize 프롬프트가 담당. 여기서는 비율만 측정해 editSummary 에 기록.
             _fp_re = re.compile(r'저는\s')

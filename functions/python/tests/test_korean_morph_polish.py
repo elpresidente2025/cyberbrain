@@ -615,3 +615,65 @@ class TestFindProgressiveOveruseKiwi:
             endings = {item["ending_form"] for item in result["fixable"]}
             # 최소 1개 이상의 어미가 잡혀야 함
             assert len(endings) >= 1
+
+
+# ──────────────────────────────────────────────────────────────────────
+# find_truncated_jeo_hanja_kiwi — 저-한자어 잘림 탐지
+# ──────────────────────────────────────────────────────────────────────
+
+
+@kiwi_required
+class TestFindTruncatedJeoHanja:
+    """Kiwi 기반 저-한��어(저해/저하 등) 잘림 탐지 테스트."""
+
+    def test_detect_truncated_jeohae(self) -> None:
+        """'저해하는' → '저' 잘림 탐지."""
+        pre = "귤현역 인근 개발을 저해하는 핵심 요인이었습니다."
+        post = "귤현역 인근 개발을 저 핵심 요인이었습니다."
+        result = korean_morph.find_truncated_jeo_hanja_kiwi(pre, post)
+        assert result is not None
+        assert len(result) >= 1
+        assert result[0]["original_word"] == "저해하는"
+
+    def test_detect_truncated_jeoha(self) -> None:
+        """'저하되는' → '저' 잘림 탐지."""
+        pre = "수질이 저하되는 문제를 해결해야 합니다."
+        post = "수질이 저 문제를 해결해야 합니다."
+        result = korean_morph.find_truncated_jeo_hanja_kiwi(pre, post)
+        assert result is not None
+        assert len(result) >= 1
+        assert result[0]["original_word"] == "저하되는"
+
+    def test_no_false_positive_pronoun(self) -> None:
+        """정상적인 1인칭 '저는'을 잘림으로 오탐하지 않아야 한다."""
+        pre = "저는 이 문제를 해결하겠습니다. 저해 요인을 제거하겠습니다."
+        post = "저는 이 문제를 해결하겠습니다. 저해 요인을 제거하겠습니다."
+        result = korean_morph.find_truncated_jeo_hanja_kiwi(pre, post)
+        assert result is not None
+        assert len(result) == 0  # 잘린 것 없음
+
+    def test_no_truncation_returns_empty(self) -> None:
+        """저-한자어가 그대로 보존되면 빈 리스트."""
+        pre = "경제를 저해하는 요소를 분석했습니다."
+        post = "경제를 저해하는 요소를 분석했습니다."
+        result = korean_morph.find_truncated_jeo_hanja_kiwi(pre, post)
+        assert result is not None
+        assert len(result) == 0
+
+    def test_no_jeo_hanja_in_pre(self) -> None:
+        """pre에 저-한자어가 없으면 빈 리스트."""
+        pre = "시민들의 삶의 질을 높이겠습니다."
+        post = "시민들의 삶의 질을 높이겠습니다."
+        result = korean_morph.find_truncated_jeo_hanja_kiwi(pre, post)
+        assert result is not None
+        assert len(result) == 0
+
+    def test_context_words_populated(self) -> None:
+        """탐지 결과에 before_word/after_word가 채워져야 한다."""
+        pre = "발전을 저해하는 핵심 요인입니다."
+        post = "발전을 저 핵심 요인입니다."
+        result = korean_morph.find_truncated_jeo_hanja_kiwi(pre, post)
+        assert result is not None
+        if result:
+            assert result[0].get("before_word")
+            assert result[0].get("after_word")

@@ -1162,3 +1162,124 @@ def find_progressive_overuse_kiwi(
         "fixable": fixable,
         "kept": kept,
     }
+
+
+# ── 저-한자어 잘림 탐지/복원 (Kiwi 기반) ─────────────────────
+
+_JEO_HANJA_STEMS = ("저해", "저하", "저지", "저감", "저축", "저장", "저항", "저변", "저력", "저조")
+_JEO_HANJA_WORD_RE = re.compile(
+    r"(?:" + "|".join(re.escape(s) for s in _JEO_HANJA_STEMS) + r")[가-힣]*"
+)
+
+
+def find_truncated_jeo_hanja_kiwi(
+    pre_plain: str,
+    post_plain: str,
+) -> Optional[List[Dict[str, Any]]]:
+    """pre→post에서 저-한자어(저해/저하 등)가 '저'로 잘렸는지 Kiwi 기반 탐지.
+
+    알고리즘:
+      1. pre에서 저-한자어 수집 (regex)
+      2. post에서 해당 단어 소실 확인
+      3. Kiwi로 post 문장 분석 → 문법상 비정상 '저' 토큰 탐지
+      4. pre 문장과 매칭하여 원본 단어 특정
+
+    Returns:
+      [{"original_word": "저해하는", "post_sentence": "...", "before_word": "을", "after_word": "핵심"}, ...]
+      빈 리스트 → 잘림 없음.
+      None → Kiwi 불가.
+    """
+    pre_words = list(set(_JEO_HANJA_WORD_RE.findall(pre_plain)))
+    if not pre_words:
+        return []
+
+    missing = [w for w in pre_words if w not in post_plain]
+    if not missing:
+        return []
+
+    post_sents = split_sentences(post_plain)
+    if post_sents is None:
+        return None
+
+    pre_sents = split_sentences(pre_plain)
+    if pre_sents is None:
+        return None
+
+    results: List[Dict[str, Any]] = []
+
+    for post_sent in post_sents:
+        toks = tokenize(post_sent)
+        if not toks:
+            continue
+
+        for i, tok in enumerate(toks):
+            if tok.form != "저":
+                continue
+
+            # ── 정상적인 1인칭 대명사 위치 → skip ──
+            # "저는/저도/저의/저에게/저를/저가" 등 조사 결합
+            if (tok.tag == "NP"
+                    and i + 1 < len(toks)
+                    and toks[i + 1].tag.startswith("J")
+                    and toks[i + 1].form in ("는", "도", "의", "에게", "를", "가", "에게서")):
+                continue
+            # 관형사 "저 사람/저 건물" 등
+            if tok.tag == "MM":
+                continue
+
+            # ── 비정상 위치 판별 ──
+            suspicious = False
+
+            # (a) 격조사·보조사 바로 뒤의 "저" — 대명사 불가
+            if i > 0 and toks[i - 1].tag.startswith("J"):
+                suspicious = True
+
+            # (b) "저" 바로 뒤에 체언(명사) — 조사 없이 직접 연결은 비문
+            if (not suspicious
+                    and i + 1 < len(toks)
+                    and toks[i + 1].tag.startswith("NN")):
+                suspicious = True
+
+            # (c) Kiwi가 비정상 태그 부여 (XR, XSV 등)
+            if not suspicious and tok.tag not in ("NP", "IC", "VV"):
+                suspicious = True
+
+            if not suspicious:
+                continue
+
+            # ── pre 문장 매칭으로 원본 단어 특정 ──
+            best_pre = _find_best_sentence_match(post_sent, pre_sents)
+            if not best_pre:
+                continue
+
+            for w in missing:
+                if w not in best_pre:
+                    continue
+                # 주변 context 추출 (HTML 치환용)
+                before_w = ""
+                after_w = ""
+                if i > 0:
+                    before_w = toks[i - 1].form
+                if i + 1 < len(toks) and toks[i + 1].tag not in ("SF", "SP"):
+                    after_w = toks[i + 1].form
+                results.append({
+                    "original_word": w,
+                    "post_sentence": post_sent,
+                    "before_word": before_w,
+                    "after_word": after_w,
+                })
+                break
+
+    return results
+
+
+def _find_best_sentence_match(target: str, candidates: List[str]) -> Optional[str]:
+    """word overlap이 가장 큰 후보 문장 반환 (최소 2단어 필요)."""
+    tw = set(target.split())
+    best, best_score = None, 1
+    for c in candidates:
+        score = len(tw & set(c.split()))
+        if score > best_score:
+            best_score = score
+            best = c
+    return best
