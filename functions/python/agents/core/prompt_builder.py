@@ -32,6 +32,7 @@ from .prompt_guards import (
 )
 from .structure_utils import _xml_cdata, _xml_text, normalize_context_text, split_into_context_items
 from .style_guide_builder import build_style_role_priority_summary
+from ..common.writing_principles import build_writing_principles_xml
 
 logger = logging.getLogger(__name__)
 
@@ -633,6 +634,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
         context_injection_xml = f"<context_injection>\n{context_injection.strip()}\n</context_injection>"
 
     natural_tone_guide = build_natural_tone_prompt({'severity': 'standard'})
+    writing_principles = build_writing_principles_xml()
 
     return f"""
 <structure_agent_prompt version="xml-v1">
@@ -645,6 +647,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
   {bio_warning}
   {structure_enforcement}
   {style_generation_guard}
+  {writing_principles}
   {natural_tone_guide}
 </structure_agent_prompt>
 """.strip()
