@@ -1044,11 +1044,12 @@ def _normalize_focus_person_name(value: Any) -> str:
         candidate = str(parts.get("name") or text.split(" ", 1)[0]).strip()
     else:
         candidate = text
-    normalized = re.sub(r"[^가-힣]", "", candidate)
-    if re.fullmatch(r"[가-힣]{2,4}", normalized):
-        return normalized
-    if had_whitespace and 2 <= len(normalized) <= 8:
-        return normalized
+    if not re.fullmatch(r"[가-힣]+", candidate):
+        return ""
+    if re.fullmatch(r"[가-힣]{2,4}", candidate):
+        return candidate
+    if had_whitespace and 2 <= len(candidate) <= 8:
+        return candidate
     return ""
 
 
