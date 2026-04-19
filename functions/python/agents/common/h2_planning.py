@@ -390,9 +390,13 @@ def pick_must_include_keyword(
     """섹션에 강제로 포함해야 할 핵심 키워드를 결정론적으로 고른다.
 
     우선순위:
-    1. 섹션 본문에 실제로 등장하는 user_keywords 중 첫 항목
-    2. 섹션에 등장하는 entity_hints 중 첫 항목
-    3. 본문의 가장 빈번한 2글자 이상 토큰(스톱워드 제외)
+    1. 섹션 본문 첫 2문장에 등장하는 user_keywords → 섹션 주제일 가능성 높음
+    2. 섹션 본문에 2회 이상 등장하는 user_keywords → 주제적 비중이 있음
+    3. 섹션에 등장하는 entity_hints 중 첫 항목
+    4. 본문의 가장 빈번한 2글자 이상 토큰(스톱워드 제외)
+
+    Why: 본문 끝에 1회만 언급된 키워드가 must_include 로 선정되면
+    LLM 이 본문 주제를 무시하고 해당 키워드로 H2 를 만들어 불일치 발생.
     """
     haystack = strip_html(section_text)
     if not haystack:
@@ -402,9 +406,20 @@ def pick_must_include_keyword(
             return str(entity_hints[0]).strip()
         return ""
 
+    # 첫 2문장 추출 (~주제문)
+    head_sentences = _split_sentences(haystack)[:2]
+    head_text = " ".join(head_sentences)
+
+    # 1단계: 첫 2문장에 등장하는 user_keyword → 주제어
     for kw in user_keywords or ():
         candidate = str(kw or "").strip()
-        if candidate and candidate in haystack:
+        if candidate and candidate in head_text:
+            return candidate
+
+    # 2단계: 전체 본문에 2회 이상 등장하는 user_keyword → 주제적 비중 있음
+    for kw in user_keywords or ():
+        candidate = str(kw or "").strip()
+        if candidate and haystack.count(candidate) >= 2:
             return candidate
 
     for hint in entity_hints or ():

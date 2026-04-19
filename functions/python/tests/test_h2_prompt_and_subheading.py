@@ -268,6 +268,52 @@ def test_pick_must_include_keyword_falls_back_to_entity_hint() -> None:
     assert keyword == "한빛시"
 
 
+def test_pick_must_include_keyword_skips_peripheral_mention() -> None:
+    """본문 끝에 1회만 언급된 keyword는 주제가 아니므로 건너뛴다."""
+    text = (
+        "보행 도로 설치는 오랜 시간 투자심사를 통과하지 못한 현안입니다. "
+        "경제성을 높일 방안을 다각도로 강구하겠습니다. "
+        "탄약고 이전과 연계하여 시너지를 창출할 수 있습니다."
+    )
+    keyword = pick_must_include_keyword(
+        text,
+        user_keywords=["탄약고"],
+        entity_hints=[],
+    )
+    # "탄약고"는 첫 2문장에 없고 전체에서 1회만 → 건너뜀 → 빈도 기반 fallback
+    assert keyword != "탄약고"
+
+
+def test_pick_must_include_keyword_keeps_prominent_keyword() -> None:
+    """첫 문장에 등장하는 keyword는 정상 채택."""
+    text = (
+        "탄약고 이전은 주민 안전의 핵심 과제입니다. "
+        "대체 부지 마련과 국방부 협의를 통해 해결하겠습니다. "
+        "탄약고 주변 개발 잠재력을 극대화하겠습니다."
+    )
+    keyword = pick_must_include_keyword(
+        text,
+        user_keywords=["탄약고"],
+        entity_hints=[],
+    )
+    assert keyword == "탄약고"
+
+
+def test_pick_must_include_keyword_accepts_two_occurrences() -> None:
+    """첫 2문장에 없어도 전체에서 2회 이상이면 채택."""
+    text = (
+        "경제성 분석이 시급한 상황입니다. "
+        "주민 의견을 반영한 노선안을 도출하겠습니다. "
+        "탄약고 이전 문제와 탄약고 주변 개발을 함께 추진합니다."
+    )
+    keyword = pick_must_include_keyword(
+        text,
+        user_keywords=["탄약고"],
+        entity_hints=[],
+    )
+    assert keyword == "탄약고"
+
+
 def test_pick_suggested_type_assertive_declarative() -> None:
     text = "특검은 정치 보복이 아니며 진실 규명의 수단이 되어야 한다."
     suggested = pick_suggested_type(

@@ -1099,7 +1099,7 @@ class SubheadingAgent(Agent):
 {build_h2_rules(h2_style)}
 {tone_section}
 # Section Plan Table
-각 section 은 suggested_type / must_include_keyword / query_intent / answer_type / assigned_entity_surface / numerics / key_claim / context 로 구성되어 있습니다. must_include_keyword는 반드시 해당 소제목 앞 1/3 안에 등장시켜야 합니다.
+각 section 은 suggested_type / must_include_keyword / query_intent / answer_type / assigned_entity_surface / numerics / key_claim / context 로 구성되어 있습니다. must_include_keyword는 해당 소제목 앞 1/3 안에 등장시키되, **context 본문의 실제 주제와 must_include_keyword가 맞지 않으면 본문 주제를 우선하세요.** 소제목은 본문을 정답으로 가정한 질문·주장이어야 합니다.
 {sections_xml}
 
 # [AEO/SEO] Entity Surface 정책 (필수 준수)
