@@ -534,7 +534,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             f"  <structure>본론 섹션 {body_sections}개.</structure>\n"
             "  <rules>\n"
             "    <rule>코드블록(```) 금지, 설명문 금지, JSON 외 텍스트 금지.</rule>\n"
-            "    <rule>intro_lead: 간결한 인삿말(예: '안녕하세요, OOO입니다.') 1문장으로 시작한 뒤 핵심 결론(1~2문장)을 이어 선언. AI 답변 엔진이 이 문단만 추출해도 답이 되어야 한다.</rule>\n"
+            "    <rule>intro_lead: 화자 실명+직함 자기소개(예: '안녕하세요, OOO입니다.') 1문장으로 시작한 뒤 핵심 결론(1~2문장)을 이어 선언. 호격('여러분')만으로는 인삿말이 아님 — 반드시 화자가 누구인지 밝힐 것. AI 답변 엔진이 이 문단만 추출해도 답이 되어야 한다.</rule>\n"
             "    <rule>각 body 항목의 lead_sentence: 해당 섹션의 핵심 주장·해법·결론을 한 문장으로 직접 선언할 것. "
             "'~하겠습니다', '~추진합니다', '~확보합니다'처럼 행동을 선언하는 문장이어야 한다. "
             "'~에 직면해 있습니다', '~과제입니다', '~증거입니다'처럼 상황 진단·평가로 시작하지 말 것.</rule>\n"
@@ -543,7 +543,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "  <json_shape><![CDATA[\n"
             "{\n"
             "  \"title\": \"기사 제목\",\n"
-            "  \"intro_lead\": \"간결한 인삿말 1문장 + 핵심 결론 1~2문장\",\n"
+            "  \"intro_lead\": \"화자 실명+직함 자기소개 1문장 + 핵심 결론 1~2문장\",\n"
             "  \"body\": [\n"
             "    {\"heading\": \"소제목\", \"lead_sentence\": \"이 섹션의 핵심 행동 선언 한 문장\"}\n"
             "  ],\n"
@@ -598,7 +598,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                 "title": {"type": "string", "minLength": 12, "maxLength": 80},
                 "intro_lead": {
                     "type": "string",
-                    "description": "서론 첫 문단: 간결한 인삿말(예: '안녕하세요, OOO입니다.') 1문장으로 시작한 뒤, 같은 문단에서 핵심 결론(1~2문장)을 바로 선언. AI 답변 엔진이 이 문단만 추출해도 답이 되어야 한다.",
+                    "description": "서론 첫 문단: 화자 실명+직함 자기소개(예: '안녕하세요, OOO입니다.') 1문장으로 시작한 뒤, 같은 문단에서 핵심 결론(1~2문장)을 바로 선언. 호격('여러분')만으로는 불충분 — 화자가 누구인지 밝혀야 함. AI 답변 엔진이 이 문단만 추출해도 답이 되어야 한다.",
                     "minLength": 40,
                     "maxLength": 300,
                 },
