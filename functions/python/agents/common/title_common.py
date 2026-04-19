@@ -1072,7 +1072,6 @@ def collect_title_focus_names(params: Optional[Dict[str, Any]], *, limit: int = 
     primary_pair = bundle.get("primaryPair") if isinstance(bundle.get("primaryPair"), dict) else {}
     priority_items = bundle.get("titleNamePriority") if isinstance(bundle.get("titleNamePriority"), list) else []
     focus_names = bundle.get("focusNames") if isinstance(bundle.get("focusNames"), list) else []
-    user_keywords = params_dict.get("userKeywords") if isinstance(params_dict.get("userKeywords"), list) else []
 
     raw_names: List[str] = []
     raw_names.extend(_normalize_focus_person_name(item) for item in priority_items)
@@ -1080,7 +1079,8 @@ def collect_title_focus_names(params: Optional[Dict[str, Any]], *, limit: int = 
     raw_names.append(_normalize_focus_person_name(primary_pair.get("opponent")))
     raw_names.append(_normalize_focus_person_name(params_dict.get("fullName")))
     raw_names.extend(_normalize_focus_person_name(item) for item in focus_names)
-    raw_names.extend(_normalize_focus_person_name(item) for item in user_keywords)
+    # userKeywords 는 주제/정책 키워드이므로 인물명 반복 체크에서 제외.
+    # "인천e음" → "인천음" 같은 오탐을 방지한다.
     return _dedupe_preserve_order(raw_names, limit=limit)
 
 
