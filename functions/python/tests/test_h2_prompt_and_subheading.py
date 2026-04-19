@@ -33,7 +33,7 @@ from agents.common.title_prompt_parts import (
     build_user_provided_few_shot_instruction,
 )
 from agents.core.prompt_builder import build_structure_prompt
-from agents.core.subheading_agent import SubheadingAgent
+from agents.core.subheading_agent import SubheadingAgent, _is_field_copy
 
 
 def _run_async(coro):
@@ -1994,3 +1994,24 @@ def test_comma_tail_long_passes() -> None:
     from agents.common.h2_guide import has_incomplete_h2_ending
 
     assert has_incomplete_h2_ending("귤현역 탄약고 문제, 인천 청년 정치인의 해법") is False
+
+
+# ---------------------------------------------------------------------------
+# _is_field_copy — repair LLM 필드값 복사 거부
+# ---------------------------------------------------------------------------
+def test_is_field_copy_detects_entity_surface() -> None:
+    """repair 결과가 assigned_entity_surface 그대로이면 True."""
+    plan = {"assigned_entity_surface": "인천광역시 청년 정치인", "must_include_keyword": "탄약고", "key_claim": ""}
+    assert _is_field_copy("인천광역시 청년 정치인", plan) is True
+
+
+def test_is_field_copy_passes_normal_heading() -> None:
+    """정상 H2는 False."""
+    plan = {"assigned_entity_surface": "인천광역시 청년 정치인", "must_include_keyword": "탄약고", "key_claim": ""}
+    assert _is_field_copy("귤현동 탄약고 이전, 2027년까지 완료", plan) is False
+
+
+def test_is_field_copy_detects_keyword_copy() -> None:
+    """repair 결과가 must_include_keyword 그대로이면 True."""
+    plan = {"assigned_entity_surface": "", "must_include_keyword": "계양 테크노밸리", "key_claim": ""}
+    assert _is_field_copy("계양 테크노밸리", plan) is True

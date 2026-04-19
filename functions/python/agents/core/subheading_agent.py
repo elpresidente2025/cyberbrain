@@ -24,6 +24,7 @@ from ..common.h2_guide import (
     H2_BEST_RANGE,
     H2_MAX_LENGTH,
     H2_MIN_LENGTH,
+    H2_OPTIMAL_MIN,
     build_category_tone_block,
     build_h2_rules,
     get_category_tone,
@@ -134,6 +135,20 @@ _UNSAFE_KEYWORD_SUFFIXES = (
     "에도", "으로도", "으로", "부터", "까지", "에서", "에게",
     "도", "시", "를", "을", "은", "는", "이", "가", "에", "의", "과", "와", "만",
 )
+
+
+def _is_field_copy(heading: str, plan: Dict[str, Any]) -> bool:
+    """repair 결과가 plan XML 필드값을 그대로 복사한 것인지 판정.
+
+    repair LLM이 H2를 생성하지 않고 assigned_entity_surface 등
+    입력 필드를 그대로 반환하는 실패 모드를 차단한다.
+    """
+    h = heading.strip()
+    for key in ("assigned_entity_surface", "must_include_keyword", "key_claim"):
+        val = str(plan.get(key) or "").strip()
+        if val and h == val:
+            return True
+    return False
 
 
 def _should_replace(new_score: Dict[str, Any], current_score: Dict[str, Any]) -> bool:
@@ -670,6 +685,10 @@ class SubheadingAgent(Agent):
             for idx, new_heading in repaired_map.items():
                 if 0 <= idx < len(working):
                     cleaned = self._safe_sanitize(new_heading)
+                    # repair LLM이 XML 필드값을 그대로 복사하는 실패 모드 차단
+                    if cleaned and _is_field_copy(cleaned, plans[idx]):
+                        print(f"⚠️ [SubheadingAgent] repair[{idx}] 필드값 복사 거부: {cleaned!r}")
+                        cleaned = ""
                     if cleaned:
                         cleaned = self._deterministic_prerepair(cleaned, plans[idx], style=h2_style)
                         new_score = score_h2(
@@ -1435,7 +1454,6 @@ class SubheadingAgent(Agent):
         if not failing_indices:
             return {}
 
-        h2_style = normalize_h2_style(style_config.get("style"))
         entity_hints = ", ".join(filter(None, [full_name, full_region])) or "(없음)"
         tone_block = build_category_tone_block(category or "default")
         tone_section = f"\n{tone_block}\n" if tone_block else ""
@@ -1468,48 +1486,64 @@ class SubheadingAgent(Agent):
             stance_line = "**[입장문 핵심 주장]**: " + " / ".join(top_claims)
 
         # issue별 구체 교정 힌트 생성
-        issue_hints: List[str] = []
+        _ISSUE_HINTS = {
+            "H2_GENERIC_CONTENT": (
+                "소제목이 추상어만으로 구성됨. 본문의 구체적 사업명·지명·숫자·고유명사를 포함하세요. "
+                "BAD: '혁신과 변화로 미래를 열겠습니다' → GOOD: '귤현동 탄약고 이전, 2027년까지 완료 목표'"
+            ),
+            "ARCHETYPE_MISMATCH": (
+                "소제목이 7 아키타입(질문형/목표형/주장형/이유형/대조형/사례형/서술형) 중 어디에도 해당하지 않음. "
+                "본문 내용에 맞는 아키타입을 선택하세요."
+            ),
+            "BODY_ALIGNMENT_LOW": (
+                "소제목이 본문 내용과 무관함. context 본문을 읽고, 본문이 정답인 질문·주장을 만드세요."
+            ),
+            "KEYWORD_MISSING": (
+                "must_include_keyword가 소제목에 없음. 본문 주제와 맞을 때만 keyword를 포함하세요."
+            ),
+            "H2_QUESTION_FORM_REQUIRED": (
+                "질문형 아키타입인데 의문형이 아님. '~인가', '~할까', '~은?' 등 의문 종결로 바꾸세요."
+            ),
+            "TYPE_MISMATCH": (
+                "suggested_type과 실제 아키타입이 다름. suggested_type에 맞게 수정하세요."
+            ),
+            "INCOMPLETE_ENDING": (
+                "소제목이 조사/미완결 어미로 끝남. 완결된 어절로 마무리하세요."
+            ),
+        }
         all_issues: set = set()
         for idx in failing_indices:
             all_issues.update(issues_map.get(idx, []))
-        if "H2_GENERIC_CONTENT" in all_issues:
-            issue_hints.append(
-                "- **H2_GENERIC_CONTENT**: 소제목이 '혁신/미래/포용/도약/비전/발전' 같은 추상어만으로 구성되어 있습니다. "
-                "반드시 본문의 구체적 사업명·지명·숫자·고유명사를 포함하세요. "
-                "BAD: '혁신과 변화로 미래를 열겠습니다' → GOOD: '귤현동 탄약고 이전, 2027년까지 완료 목표'"
-            )
-        if "ARCHETYPE_MISMATCH" in all_issues:
-            issue_hints.append(
-                "- **ARCHETYPE_MISMATCH**: 소제목이 7 아키타입(질문형/목표형/주장형/이유형/대조형/사례형/서술형) 중 어디에도 해당하지 않습니다. "
-                "본문 내용에 맞는 아키타입을 선택하세요."
-            )
+        issue_hints = [
+            f"- **{k}**: {v}" for k, v in _ISSUE_HINTS.items() if k in all_issues
+        ]
         issue_hint_block = "\n".join(issue_hints)
         issue_hint_section = f"\n# Issue-Specific Guidance\n{issue_hint_block}\n" if issue_hints else ""
 
         prompt = f"""
 # Role Definition
-당신은 대한민국 최고의 소제목 교정 에디터입니다.
-아래 소제목들이 규칙 위반으로 반려되었습니다. 각 항목의 issues 배열을 모두 해소하는 **새 소제목**을 작성하세요.
+당신은 소제목 교정 에디터입니다.
+아래 소제목들이 규칙 위반으로 반려되었습니다. 각 항목의 issues 를 해소하는 **새 소제목**을 작성하세요.
+
+# 핵심 원칙
+1. **소제목은 본문(context)을 정답으로 가정한 질문·주장**이어야 합니다.
+2. context 본문을 읽고, 본문 내용에서 H2를 역산하세요.
+3. {H2_OPTIMAL_MIN}~{H2_MAX_LENGTH}자 이내로 작성하세요.
+
+# 금지
+- `assigned_entity_surface` 값을 그대로 소제목으로 쓰지 마세요. 인물 표면형은 소제목의 **일부**로만 사용하세요.
+- 추상어만으로 구성된 소제목 (혁신/미래/포용/도약/비전/발전)
+- 감정 호소형 수사 ("함께 ~ 가자", "약속드립니다")
 
 # Context
 - **Entity**: {entity_hints}
-- **본인 직책 (고정·SSOT)**: {user_role or "(없음)"}
+- **본인 직책**: {user_role or "(없음)"}
 {stance_line}
-
-# Entity Surface 정책
-- 각 failed_section 의 `assigned_entity_surface` 가 해당 H2 에서 사용할 인물 표면형입니다.
-- 본명({full_name or "(없음)"})은 H2 세트 전체에서 1~2회만 등장 (키워드 스탬핑 방지).
-- `query_intent` 가 `cmp` 면 비교/대결 구조, `tx` 면 절차/방법, `nav` 면 인물·이력 중심, `info` 면 정보 정리형으로 작성.
-- `answer_type` 이 `question-form` 이면 의문형, `declarative-list` 면 숫자/항목 정리, `declarative-fact` 면 단정형 주장.
-
-# [CRITICAL] H2 Rulebook (SSOT)
-{build_h2_rules(h2_style)}
 {tone_section}{issue_hint_section}
 # Failed Sections
 {failed_xml}
 
 # Output Format (JSON Only)
-반드시 아래 JSON 포맷으로, 원래 section index 를 유지해 출력하세요.
 {{
   "repairs": [
     {{"index": 0, "heading": "교정된 소제목"}},
