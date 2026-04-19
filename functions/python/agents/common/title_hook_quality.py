@@ -285,11 +285,12 @@ def extract_slot_opportunities(
 
     # 지역 — params 의 사용자 프로필에서 우선 읽고, 없으면 본문 패턴 추출.
     # 🔑 필드명은 Firestore canonical(handlers/profile.py) 그대로:
-    #   regionMetro(광역) / regionLocal(기초) / electoralDistrict(선거구).
+    #   regionMetro(광역) / regionLocal(기초).
+    #   electoralDistrict(선거구)는 내부 메타데이터이므로 제목 재료에서 제외.
     # 과거 이름이던 regionDistrict/regionTown 은 DB 에 존재하지 않는 유령
     # 필드라 읽지 않는다.
     region_hints: List[str] = []
-    for key in ('regionLocal', 'electoralDistrict', 'regionMetro'):
+    for key in ('regionLocal', 'regionMetro'):
         val = str(params_dict.get(key) or '').strip()
         if val:
             region_hints.append(val)
