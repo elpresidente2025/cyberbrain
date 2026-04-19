@@ -114,11 +114,8 @@ export const useGenerateForm = (user = null) => {
    * @returns {{isValid: boolean, error: string|null}}
    */
   const validateForm = useCallback(() => {
-    // ✅ 수정: 'prompt' 대신 'topic' 필드가 비어있는지 확인합니다.
-    if (!formData.topic || formData.topic.trim() === '') {
-      return { isValid: false, error: '주제를 입력해주세요.', field: 'topic' };
-    }
     // 카테고리는 AI가 자동 분류하므로 검증하지 않음
+    // 주제(topic)는 선택 — 비워두면 백엔드가 참고자료에서 자동 추론
     // 내 입장문(index 0) 또는 뉴스/데이터(index >= 1) 중 하나는 채워져야 한다.
     const instructionList = Array.isArray(formData.instructions)
       ? formData.instructions
@@ -136,14 +133,14 @@ export const useGenerateForm = (user = null) => {
       };
     }
     return { isValid: true, error: null, field: null };
-  }, [formData.topic, formData.instructions]);
+  }, [formData.instructions]);
 
   /**
    * '생성하기' 버튼의 활성화 여부를 결정하는 변수.
    * useMemo를 사용하여 formData가 변경될 때만 재계산합니다.
    */
   const canGenerate = useMemo(() => {
-    // 주제 + (내 입장문 OR 뉴스/데이터 중 하나) 가 있어야 생성 가능.
+    // 내 입장문 OR 뉴스/데이터 중 하나가 있으면 생성 가능 (주제는 선택)
     const instructionList = Array.isArray(formData.instructions)
       ? formData.instructions
       : [formData.instructions];
@@ -151,8 +148,8 @@ export const useGenerateForm = (user = null) => {
     const hasNewsData = instructionList
       .slice(1)
       .some((entry) => entry && String(entry).trim());
-    return !!formData.topic?.trim() && (hasStance || hasNewsData);
-  }, [formData.topic, formData.instructions]);
+    return hasStance || hasNewsData;
+  }, [formData.instructions]);
 
   // 훅이 외부로 제공하는 상태와 함수들
   return {

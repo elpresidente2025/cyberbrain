@@ -197,31 +197,6 @@ export default function PromptForm({
       <Grid container spacing={isMobile ? 2 : 3}>
         {/* 카테고리 선택 UI 제거 - AI가 주제를 분석하여 자동 결정 */}
 
-        {/* ✅ 5. 주제 입력칸을 `topic`에 연결하여 버튼 활성화 문제를 해결합니다. */}
-        <Grid item xs={12}>
-          {(() => {
-            const topicError = Boolean(errors?.topic);
-            return (
-              <TextField
-                fullWidth
-                size={formSize}
-                label="주제"
-                placeholder="어떤 내용의 원고를 작성하고 싶으신가요?"
-                value={formData.topic || ''}
-                onChange={handleInputChange('topic')}
-                onBlur={handleInputBlur('topic')}
-                disabled={disabled}
-                multiline
-                rows={2}
-                error={topicError}
-                inputProps={{ maxLength: 500, name: 'topic' }}
-                helperText={topicError ? errors.topic : `${formData.topic?.length || 0}/500자`}
-                FormHelperTextProps={{ sx: { color: topicError ? 'error.main' : 'text.secondary' } }}
-              />
-            );
-          })()}
-        </Grid>
-
         {/* ✅ 6. 참고자료 및 배경정보 입력창 - 다중 입력 지원 */}
         <Grid item xs={12}>
           <Box sx={{ mb: 1.25 }}>
@@ -373,6 +348,23 @@ export default function PromptForm({
               최대 10개까지 참고자료를 입력할 수 있습니다.
             </Typography>
           )}
+        </Grid>
+
+        {/* 주제 (선택) — 참고자료 아래에 배치, 비워두면 백엔드가 자동 추론 */}
+        <Grid item xs={12}>
+          <TextField
+            fullWidth
+            size={formSize}
+            label="주제 (선택)"
+            placeholder="비워두면 참고자료에서 자동으로 파악합니다"
+            value={formData.topic || ''}
+            onChange={handleInputChange('topic')}
+            onBlur={handleInputBlur('topic')}
+            disabled={disabled}
+            inputProps={{ maxLength: 500, name: 'topic' }}
+            helperText={`${formData.topic?.length || 0}/500자`}
+            FormHelperTextProps={{ sx: { color: 'text.secondary' } }}
+          />
         </Grid>
 
         {/* 노출 희망 검색어 */}

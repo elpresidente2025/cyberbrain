@@ -450,7 +450,10 @@ const GeneratePage = () => {
 
     // 4. API 결과 처리 + 브라우저 알림
     if (result.success) {
-      const successMessage = result.message + '\n\n💡 생성된 원고를 꼭 검수하시고, 필요에 따라 직위나 내용을 직접 편집해주세요.';
+      let successMessage = result.message + '\n\n생성된 원고를 꼭 검수하시고, 필요에 따라 직위나 내용을 직접 편집해주세요.';
+      if (result.topicInferred) {
+        successMessage += '\n\n참고자료를 바탕으로 주제를 자동 파악했습니다. 원하시던 방향이 아니라면 주제 필드를 채워서 다시 생성해 보세요.';
+      }
       showNotification(successMessage, 'success');
       if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
         new Notification('원고 생성 완료', { body: 'AI 원고가 성공적으로 생성되었습니다. 확인해 주세요.' });
@@ -467,7 +470,10 @@ const GeneratePage = () => {
     const result = await generate(pendingPayload);
     setPendingPayload(null);
     if (result.success) {
-      const successMessage = result.message + '\n\n생성된 원고를 꼭 검수하시고, 필요에 따라 직접 편집해주세요.';
+      let successMessage = result.message + '\n\n생성된 원고를 꼭 검수하시고, 필요에 따라 직접 편집해주세요.';
+      if (result.topicInferred) {
+        successMessage += '\n\n참고자료를 바탕으로 주제를 자동 파악했습니다. 원하시던 방향이 아니라면 주제 필드를 채워서 다시 생성해 보세요.';
+      }
       showNotification(successMessage, 'success');
       if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
         new Notification('원고 생성 완료', { body: 'AI 원고가 성공적으로 생성되었습니다. 확인해 주세요.' });

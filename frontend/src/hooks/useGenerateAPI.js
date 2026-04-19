@@ -361,7 +361,8 @@ export function useGenerateAPI() {
 
       return {
         success: true,
-        message: message
+        message: message,
+        topicInferred: responseData.metadata?.classification?.topicInferred || false,
       };
 
     } catch (err) {
