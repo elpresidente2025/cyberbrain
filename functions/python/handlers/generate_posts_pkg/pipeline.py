@@ -24,7 +24,7 @@ from firebase_admin import firestore
 from firebase_functions import https_fn
 
 from agents.common.election_rules import check_election_eligibility
-from agents.common.editorial import STRUCTURE_SPEC
+from agents.common.editorial import KEYWORD_SPEC, QUALITY_SPEC, STRUCTURE_SPEC
 from agents.common.h2_repair import (
     build_subheading_role_surface as _h2_repair_build_subheading_role_surface,
 )
@@ -8299,6 +8299,50 @@ def _recover_short_content_once(
     }
 
 
+def _rescore_seo(content: str, title: str, user_keywords: list) -> bool:
+    """최종 본문 기준으로 SEO 통과 여부를 재판정한다.
+
+    SEOAgent와 동일한 기준(키워드 밀도 + 구조 + 반복)을 적용하되,
+    Orchestrator 호출 없이 인라인으로 실행한다.
+    """
+    plain = re.sub(r'<[^>]+>', ' ', content or '')
+
+    # 1) 키워드 밀도
+    kw_count = len(user_keywords) if user_keywords else 0
+    if kw_count >= 2:
+        kw_min = int(KEYWORD_SPEC['perKeywordMin'])
+        kw_max = int(KEYWORD_SPEC['perKeywordMax'])
+    elif kw_count == 1:
+        kw_min = int(KEYWORD_SPEC['singleKeywordMin'])
+        kw_max = int(KEYWORD_SPEC['singleKeywordMax'])
+    else:
+        kw_min, kw_max = 0, 999
+
+    kw_ok = True
+    for kw in (user_keywords or []):
+        cnt = plain.count(kw)
+        if cnt < kw_min or cnt > kw_max:
+            kw_ok = False
+            break
+
+    # 2) 구조 (H2 ≥ 2)
+    h2_count = len(re.findall(r'<h2', content or '', re.IGNORECASE))
+    struct_ok = h2_count >= 2
+
+    # 3) 반복 문장
+    sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', re.sub(r'\s+', ' ', plain).strip()) if len(s.strip()) > 20]
+    seen: set[str] = set()
+    has_repeat = False
+    for s in sentences:
+        norm = re.sub(r'\s+', '', s).lower()
+        if norm in seen:
+            has_repeat = True
+            break
+        seen.add(norm)
+
+    return kw_ok and struct_ok and not has_repeat
+
+
 def _repair_keyword_gate_once(
     *,
     content: str,
@@ -12151,6 +12195,12 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         ),
         bool(editor_auto_repair.get("applied")),
     )
+
+    # ── 최종 본문 기준 SEO 재채점 ──
+    # Orchestrator 단계의 seoPassed는 후처리 전 상태 기준이므로,
+    # 최종 generated_content로 키워드·구조·반복을 재검증한다.
+    _seo_final = _rescore_seo(generated_content, generated_title, user_keywords)
+    seo_passed = _seo_final
 
     return {
         "success": True,
