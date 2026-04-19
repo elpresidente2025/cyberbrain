@@ -40,6 +40,19 @@ BLACKLIST_PATTERNS = {
         '도움이 되었으면 합니다', '참고가 되셨으면 합니다',
         '함께 나아가겠습니다', '함께 만들어가겠습니다',
     ],
+    # AI 고빈도 수식어 — 생성 단계(structure agent)에서부터 억제
+    'ai_rhetoric_adjective': [
+        '혁신적인', '혁신적으로', '체계적인', '체계적으로',
+        '종합적인', '종합적으로', '지속적인', '지속적으로',
+        '획기적인', '획기적으로',
+    ],
+    'ai_rhetoric_verb': [
+        '극대화', '도모', '촉진', '선도', '구현', '창출',
+    ],
+    'ai_vague_positive': [
+        '긍정적인 영향', '밝은 미래', '밝은 전망',
+        '새로운 도약', '새로운 시대', '새로운 패러다임',
+    ],
 }
 
 def build_natural_tone_prompt(options={}):
@@ -53,6 +66,12 @@ def build_natural_tone_prompt(options={}):
     euphemisms = "~것 같습니다, ~로 보입니다"
     musts = "~할 필요가 있습니다"
     
+    # AI 수사 억제 — severity 무관, 항상 포함
+    ai_rhetoric_block = """
+    <category name="AI 고빈도 관형사" severity="critical" action="구체 서술로 대체, 원고 전체 최대 1회">혁신적인/혁신적으로, 체계적인/체계적으로, 종합적인/종합적으로, 지속적인/지속적으로, 획기적인/획기적으로</category>
+    <category name="AI 특유 동사" severity="critical" action="일상 동사로 대체">극대화(→늘리다/높이다), 도모(→추진하다/꾀하다), 촉진(→앞당기다), 창출(→만들다)</category>
+    <category name="막연한 긍정" severity="critical" action="구체 수치·일정·사업명으로 대체">긍정적인 영향, 밝은 미래/전망, 새로운 도약/시대/패러다임</category>"""
+
     strict_extras = ""
     if is_strict:
         strict_extras = """
@@ -68,7 +87,7 @@ def build_natural_tone_prompt(options={}):
     <category name="결론 클리셰" action="접속어 없이 핵심만 제시">{cliches} 등</category>
     <category name="과도한 접속어" action="조사와 어순으로 자연스럽게 연결">{conjunctions}</category>
     <category name="완곡 표현" action="단정형 사용: ~입니다, ~합니다">{euphemisms}</category>
-    <category name="당위 남발" action="구체적 약속: ~하겠습니다, 추진합니다">{musts}</category>{strict_extras}
+    <category name="당위 남발" action="구체적 약속: ~하겠습니다, 추진합니다">{musts}</category>{ai_rhetoric_block}{strict_extras}
     <category name="동사/구문 반복" severity="critical" action="동의어 교체 필수">
       같은 동사를 원고 전체에서 3회 이상 사용 금지 (최대 2회)
       <example>
