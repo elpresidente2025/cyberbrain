@@ -491,6 +491,7 @@ class SectionRepairMixin:
                         outline_prompt = self._build_outline_json_prompt(
                             prompt=prompt,
                             length_spec=length_spec,
+                            writing_method=writing_method,
                         )
                         outline_schema = self._build_outline_json_schema(length_spec)
                         aeo_outline = await self.call_llm_json_contract(
@@ -506,7 +507,7 @@ class SectionRepairMixin:
                             f"body_sections={len(aeo_outline.get('body', []))}"
                         )
                         # --- 두괄식 검증 게이트 ---
-                        lead_failures = self._validate_outline_lead_sentences(aeo_outline)
+                        lead_failures = self._validate_outline_lead_sentences(aeo_outline, writing_method=writing_method)
                         if lead_failures:
                             print(
                                 f"⚠️ [StructureAgent] 아웃라인 lead_sentence 검증 실패 "
@@ -531,7 +532,7 @@ class SectionRepairMixin:
                                 stage="outline-retry",
                                 max_output_tokens=2048,
                             )
-                            retry_failures = self._validate_outline_lead_sentences(aeo_outline)
+                            retry_failures = self._validate_outline_lead_sentences(aeo_outline, writing_method=writing_method)
                             if retry_failures:
                                 print(
                                     f"⚠️ [StructureAgent] 아웃라인 재시도 후에도 검증 실패 "
@@ -551,6 +552,7 @@ class SectionRepairMixin:
                         outline=aeo_outline,
                         base_prompt=current_prompt,
                         length_spec=length_spec,
+                        writing_method=writing_method,
                     )
                     response_schema = self._build_structure_json_schema(length_spec)
                     payload = await self.call_llm_json_contract(

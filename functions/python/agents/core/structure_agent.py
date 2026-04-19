@@ -523,15 +523,39 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             },
         }
 
-    def _build_outline_json_prompt(self, *, prompt: str, length_spec: Dict[str, int]) -> str:
+    def _build_outline_json_prompt(
+        self, *, prompt: str, length_spec: Dict[str, int], writing_method: str = '',
+    ) -> str:
         """AEO 1단계: 아웃라인만 요청하는 전용 프롬프트. full-structure 프롬프트와 분리."""
+        from ..common.aeo_config import uses_dialectical_structure, build_dialectical_roles
+
         body_sections = max(1, int(length_spec.get('body_sections') or 1))
+
+        # 변증법 매크로 구조 블록 (논증·설득형 writing method만)
+        argument_structure_block = ''
+        if uses_dialectical_structure(writing_method) and body_sections >= 3:
+            roles = build_dialectical_roles(body_sections)
+            role_lines = []
+            for r in roles:
+                role_lines.append(
+                    f'    <section order="{r["order"]}" role="{r["role"]}">{r["guide"]}</section>'
+                )
+            argument_structure_block = (
+                '  <argument_structure priority="high">\n'
+                '    <overview>본론 섹션을 다음 논증 흐름(변증법 구조)으로 배치하십시오. '
+                '서론에서 결론을 선언했으므로, 본론은 그 결론을 근거로 뒷받침한 뒤 '
+                '반론을 선제 배치·극복하고, 상위 원칙으로 격상하는 흐름입니다.</overview>\n'
+                + '\n'.join(role_lines) + '\n'
+                '  </argument_structure>\n'
+            )
+
         return (
             f"{prompt}\n\n"
             "<json_output_contract priority=\"critical\">\n"
             "  <override>기존 XML output_format 지시는 무시하고, 최종 응답은 아웃라인 JSON 객체 1개만 출력하십시오.</override>\n"
             "  <task>본문을 작성하지 마십시오. 아래 json_shape에 맞춰 제목·서론 리드·본론 소제목·본론 첫 문장·결론 소제목만 출력하십시오.</task>\n"
             f"  <structure>본론 섹션 {body_sections}개.</structure>\n"
+            + argument_structure_block +
             "  <rules>\n"
             "    <rule>코드블록(```) 금지, 설명문 금지, JSON 외 텍스트 금지.</rule>\n"
             "    <rule>intro_lead: 화자 실명+직함 자기소개(예: '안녕하세요, OOO입니다.') 1문장으로 시작한 뒤 핵심 결론(1~2문장)을 이어 선언. 호격('여러분')만으로는 인삿말이 아님 — 반드시 화자가 누구인지 밝힐 것. AI 답변 엔진이 이 문단만 추출해도 답이 되어야 한다.</rule>\n"
@@ -573,15 +597,33 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         r')\.?\s*$'
     )
 
-    def _validate_outline_lead_sentences(self, outline: Dict[str, Any]) -> List[str]:
+    # 반론+재반론 섹션의 lead_sentence에서 전환 접속사가 있으면 진단형 허용
+    _REBUTTAL_TRANSITION_RE = re.compile(
+        r'(?:그러나|하지만|다만|물론|물론이지만|반면|그럼에도)'
+    )
+
+    def _validate_outline_lead_sentences(
+        self, outline: Dict[str, Any], *, writing_method: str = '',
+    ) -> List[str]:
         """아웃라인 lead_sentence가 행동 선언인지 검증. 실패 사유 리스트 반환 (빈 리스트 = 통과)."""
+        from ..common.aeo_config import uses_dialectical_structure
+
+        body = outline.get('body', [])
+        body_count = len(body)
+        is_dialectical = uses_dialectical_structure(writing_method) and body_count >= 3
+        # 변증법 구조에서 반론+재반론 섹션 인덱스 (끝에서 둘째, 1-based)
+        rebuttal_idx = body_count - 1 if is_dialectical else -1
+
         failures = []
-        for i, section in enumerate(outline.get('body', []), 1):
+        for i, section in enumerate(body, 1):
             lead = section.get('lead_sentence', '').strip()
             if not lead:
                 failures.append(f"body[{i}]: lead_sentence 비어있음")
                 continue
             if self._LEAD_DIAGNOSTIC_RE.search(lead):
+                # 반론 섹션에서 전환 접속사가 포함되면 진단형 허용
+                if i == rebuttal_idx and self._REBUTTAL_TRANSITION_RE.search(lead):
+                    continue
                 failures.append(
                     f"body[{i}] heading='{section.get('heading', '')}': "
                     f"진단형 어미 — '...{lead[-20:]}'"
@@ -723,17 +765,38 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         outline: Dict[str, Any],
         base_prompt: str,
         length_spec: Dict[str, int],
+        writing_method: str = '',
     ) -> str:
-        """AEO 2단계 생성의 2단계: 아웃라인을 고정한 채 본문 확장을 요청하는 프롬프트."""
+        """AEO 2단계 생성의 2단계: 아웃라인을 고정�� 채 본문 확장을 요청하는 프��프트."""
+        from ..common.aeo_config import uses_dialectical_structure, build_dialectical_roles
+
+        body_count = len(outline.get('body', []))
+        is_dialectical = uses_dialectical_structure(writing_method) and body_count >= 3
+        roles = build_dialectical_roles(body_count) if is_dialectical else []
+        role_map = {r['order']: r for r in roles}
+
         body_lines = []
         for i, section in enumerate(outline.get('body', []), 1):
+            role_hint = ''
+            if i in role_map:
+                r = role_map[i]
+                role_hint = f'    <expansion_role>{r["role"]}: {r["guide"]}</expansion_role>\n'
             body_lines.append(
                 f'  <body_section order="{i}">\n'
                 f'    <heading>{section["heading"]}</heading>\n'
                 f'    <lead_sentence>{section["lead_sentence"]}</lead_sentence>\n'
+                + role_hint +
                 f'  </body_section>'
             )
         body_block = "\n".join(body_lines)
+
+        # 결론 반복 강화 (변증법 구조일 때)
+        conclusion_guide = ''
+        if is_dialectical:
+            conclusion_guide = (
+                '  결론은 서론에서 선언한 핵심 결론을 다른 표현으로 반복하되, '
+                '상위 원칙을 경유하여 격상된 형태로 마감하십시오.\n'
+            )
 
         lock_block = (
             '<locked_outline priority="absolute">\n'
@@ -744,9 +807,11 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             '</locked_outline>\n\n'
             '<expansion_instructions priority="critical">\n'
             '  위 locked_outline의 title, heading, lead_sentence, conclusion_heading은 그대로 사용하고 절대 수정하지 마십시오.\n'
-            '  서론(intro) 첫 문단은 intro_lead 텍스트를 그대로 첫 문단으로 사용하십시오.\n'
-            '  각 본론(body) 섹션의 heading을 소제목으로, lead_sentence를 첫 문단 첫 문장으로 사용하십시오.\n'
-            '  각 섹션을 나머지 문단으로 확장하되, lead_sentence의 주장을 근거·맥락·효과로 뒷받침하십시오.\n'
+            '  서론(intro) 첫 문단은 intro_lead 텍스트를 그대로 첫 문단으로 사용하십시���.\n'
+            '  각 본론(body) 섹션��� heading을 소제목으로, lead_sentence를 첫 문단 첫 문장으로 사용하십시��.\n'
+            '  각 섹션을 나머지 문단으로 확장하되, lead_sentence의 주장�� 근거·맥락·효과로 뒷받침하십시오.\n'
+            '  expansion_role이 지정된 섹션은 해당 역할에 맞게 확장하십시오.\n'
+            + conclusion_guide +
             '  결론(conclusion)은 conclusion_heading을 소제목으로 사용하십시오.\n'
             '</expansion_instructions>\n\n'
         )
