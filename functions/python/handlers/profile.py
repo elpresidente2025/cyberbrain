@@ -411,6 +411,11 @@ def _get_user_profile_core(req: https_fn.CallableRequest) -> Dict[str, Any]:
         if isinstance(bio_entries, list):
             profile["bioEntries"] = bio_entries
 
+        # 슬로건 후보 감지 결과 전달
+        detected_slogan = bio_data.get("detectedSlogan")
+        if isinstance(detected_slogan, dict) and detected_slogan.get("text"):
+            profile["detectedSlogan"] = str(detected_slogan["text"])
+
     logger.info("getUserProfile success uid=%s", uid)
     return {
         "success": True,
@@ -516,6 +521,10 @@ def _update_profile_core(req: https_fn.CallableRequest) -> Dict[str, Any]:
             bio_payload["content"] = bio
         if bio_entries is not None:
             bio_payload["entries"] = bio_entries
+
+        # 슬로건이 업데이트되면 detectedSlogan 플래그 삭제
+        if "slogan" in sanitized:
+            bio_payload["detectedSlogan"] = firestore.DELETE_FIELD
 
         bio_ref.set(bio_payload, merge=True)
         is_active = True

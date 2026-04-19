@@ -158,7 +158,7 @@ def _build_extract_prompt(
     "transitions": ["전환 표현 2-5개"],
     "conclusions": ["마무리 표현 1-3개"],
     "emphatics": ["강조 표현 2-5개"],
-    "signatures": ["이 사람만의 독특한 표현 1-5개"]
+    "signatures": ["복수 텍스트에서 반복 관찰되는 구조적 패턴 1-5개 (은유 체계, 문장 구조 습관, 구성 방식 등). 1회만 등장한 인상적 표현은 시그니처가 아님. 매 글 고정 반복되는 브랜딩 슬로건도 제외"]
   }},
 
   "sentencePatterns": {{

@@ -38,7 +38,7 @@ import { useGenerateForm } from '../hooks/useGenerateForm';
 import { NotificationSnackbar, useNotification, PageHeader } from '../components/ui';
 import { useGenerateAPI } from '../hooks/useGenerateAPI';
 import { useBonus } from '../hooks/useBonus';
-import { getSNSUsage } from '../services/firebaseService';
+import { getSNSUsage, callFunctionWithNaverAuth } from '../services/firebaseService';
 // 폼에서 사용할 카테고리/세부 카테고리 목록 데이터를 가져옵니다.
 import { CATEGORIES } from '../constants/formConstants';
 import { spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
@@ -325,6 +325,10 @@ const GeneratePage = () => {
   const [snsPost, setSnsPost] = React.useState(null);
   const [snsUsage, setSnsUsage] = React.useState(null);
 
+  // --- 슬로건 감지 다이얼로그 ---
+  const [sloganDialogOpen, setSloganDialogOpen] = React.useState(false);
+  const [sloganUpdating, setSloganUpdating] = React.useState(false);
+
   // 💧 UX 개선: 메인 카테고리가 변경되면 세부 카테고리 선택값을 자동으로 초기화합니다.
   useEffect(() => {
     if (formData.category) {
@@ -458,6 +462,10 @@ const GeneratePage = () => {
       if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
         new Notification('원고 생성 완료', { body: 'AI 원고가 성공적으로 생성되었습니다. 확인해 주세요.' });
       }
+      // 슬로건 감지 팝업: 생성 성공 직후 체크
+      if (user?.detectedSlogan) {
+        setSloganDialogOpen(true);
+      }
     } else {
       showNotification('죄송합니다. 원고 생성 중 문제가 발생했습니다. 입력하신 내용은 그대로 보존되어 있으니, 다시 시도해 주세요.', 'error');
     }
@@ -478,6 +486,9 @@ const GeneratePage = () => {
       if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
         new Notification('원고 생성 완료', { body: 'AI 원고가 성공적으로 생성되었습니다. 확인해 주세요.' });
       }
+      if (user?.detectedSlogan) {
+        setSloganDialogOpen(true);
+      }
     } else {
       showNotification('죄송합니다. 원고 생성 중 문제가 발생했습니다. 입력하신 내용은 그대로 보존되어 있으니, 다시 시도해 주세요.', 'error');
     }
@@ -487,6 +498,31 @@ const GeneratePage = () => {
   const handleMemorialCancel = () => {
     setMemorialConfirmOpen(false);
     setPendingPayload(null);
+  };
+
+  /** 슬로건 감지 — 사용자가 "업데이트"를 선택한 경우 */
+  const handleSloganConfirm = async () => {
+    setSloganUpdating(true);
+    try {
+      await callFunctionWithNaverAuth('updateProfile', {
+        slogan: user.detectedSlogan,
+        sloganEnabled: true,
+      });
+      // 로컬 user 객체에서 detectedSlogan 제거 (다시 팝업 안 뜨게)
+      if (refreshUserProfile) await refreshUserProfile();
+      showNotification('슬로건이 업데이트되었습니다.', 'success');
+    } catch (err) {
+      console.error('슬로건 업데이트 실패:', err);
+      showNotification('슬로건 업데이트에 실패했습니다.', 'error');
+    } finally {
+      setSloganUpdating(false);
+      setSloganDialogOpen(false);
+    }
+  };
+
+  /** 슬로건 감지 — 사용자가 "아니오"를 선택한 경우 */
+  const handleSloganDismiss = () => {
+    setSloganDialogOpen(false);
   };
 
   /** 초기화 버튼 클릭 시 실행되는 함수 */
@@ -765,6 +801,47 @@ const GeneratePage = () => {
           </Button>
           <Button onClick={handleMemorialConfirm} color="inherit">
             변환하기
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 슬로건 감지 다이얼로그 */}
+      <Dialog
+        open={sloganDialogOpen}
+        onClose={handleSloganDismiss}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 'bold' }}>
+          슬로건이 변경된 것 같습니다
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ lineHeight: 1.8, mb: 2 }}>
+            최근 입장문에서 아래 문구가 반복 사용되고 있습니다.
+            프로필 슬로건을 업데이트할까요?
+          </Typography>
+          <Box sx={{
+            p: 2,
+            borderRadius: 'var(--radius-md)',
+            bgcolor: 'var(--color-surface-alt, rgba(0,0,0,0.04))',
+            border: '1px solid var(--color-border-light, rgba(0,0,0,0.08))',
+          }}>
+            <Typography sx={{ fontWeight: 600, fontStyle: 'italic' }}>
+              "{user?.detectedSlogan}"
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={handleSloganDismiss} color="inherit">
+            아니오
+          </Button>
+          <Button
+            onClick={handleSloganConfirm}
+            variant="contained"
+            color="primary"
+            disabled={sloganUpdating}
+          >
+            {sloganUpdating ? '업데이트 중...' : '슬로건 업데이트'}
           </Button>
         </DialogActions>
       </Dialog>

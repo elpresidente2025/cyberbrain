@@ -7,6 +7,7 @@ fingerprint(Gemini 해석)와 rawFeatures(결정론적 통계)를 종합하여
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from .models import GenerationProfile, RawFeatureProfile
@@ -14,13 +15,71 @@ from .models import GenerationProfile, RawFeatureProfile
 logger = logging.getLogger(__name__)
 
 
+# ── 시그니처 빈도 검증 ─────────────────────────────────────────
+
+_ENTRY_SEPARATOR_RE = re.compile(r"\n-{3,}\n|\n={4,}\n|\[Facebook 입장문\]")
+
+
+def _count_entries_containing(phrase: str, source_text: str) -> int:
+    """source_text 를 엔트리 단위로 분할 후, phrase 가 등장하는 엔트리 수를 반환."""
+    if not phrase or not source_text:
+        return 0
+    entries = _ENTRY_SEPARATOR_RE.split(source_text)
+    return sum(1 for entry in entries if phrase in entry)
+
+
+def _filter_signatures_by_frequency(
+    candidates: list[str],
+    source_text: str,
+    *,
+    min_entries: int = 2,
+) -> list[str]:
+    """복수 엔트리에서 반복 등장하는 시그니처만 통과시킨다."""
+    if not source_text:
+        return candidates  # 코퍼스가 없으면 필터링 불가, 그대로 반환
+    kept: list[str] = []
+    for phrase in candidates:
+        count = _count_entries_containing(phrase, source_text)
+        if count >= min_entries:
+            kept.append(phrase)
+        else:
+            logger.debug(
+                "[Stylometry] 시그니처 탈락 (빈도 %d < %d): %s",
+                count, min_entries, phrase,
+            )
+    return kept
+
+
+def _remove_slogan_from_signatures(
+    signatures: list[str],
+    slogan: str,
+) -> list[str]:
+    """사용자 프로필 슬로건과 일치하는 시그니처를 삭제한다.
+
+    슬로건은 브랜딩 영역이지 문체 영역이 아니다.
+    슬로건이 바뀔 수 있으므로 단순 배제가 아니라 삭제해야 한다.
+    """
+    if not slogan:
+        return signatures
+    slogan_clean = slogan.strip()
+    return [
+        s for s in signatures
+        if slogan_clean not in s and s not in slogan_clean
+    ]
+
+
 def build_generation_profile(
     fingerprint: dict[str, Any],
     raw_features: RawFeatureProfile | None = None,
+    *,
+    source_text: str = "",
+    slogan: str = "",
 ) -> GenerationProfile:
     """fingerprint + rawFeatures → GenerationProfile.
 
     fingerprint가 None이거나 비어 있으면 기본값 반환.
+    source_text: 빈도 검증용 코퍼스 원문.
+    slogan: 사용자 프로필 슬로건 (일치 시 시그니처에서 삭제).
     """
     if not fingerprint:
         return GenerationProfile()
@@ -90,6 +149,12 @@ def build_generation_profile(
         if isinstance(items, list):
             signatures.extend(items)
     signatures = signatures[:10]
+
+    # 빈도 검증: 복수 엔트리에서 반복 등장하는 시그니처만 통과
+    signatures = _filter_signatures_by_frequency(signatures, source_text)
+
+    # 슬로건 제거: 프로필 슬로건과 일치하는 시그니처 삭제
+    signatures = _remove_slogan_from_signatures(signatures, slogan)
 
     # ── 스타일 요약 ────────────────────────────────────────────
     style_summary = meta.get("dominantStyle", "")

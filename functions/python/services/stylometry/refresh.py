@@ -6,6 +6,8 @@ JS ``style-refresh.js`` 의 Python 포팅.
 from __future__ import annotations
 
 import logging
+import re
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
@@ -18,6 +20,64 @@ from .models import RawFeatureProfile
 from .schemas import MAX_DIARY_ENTRIES, MIN_CORPUS_LENGTH
 
 logger = logging.getLogger(__name__)
+
+
+# ── 말미 반복 문구(슬로건 후보) 감지 ───────────────────────────
+
+_ENTRY_SEPARATOR_RE = re.compile(r"\n-{3,}\n|\n={4,}\n|\[Facebook 입장문\]")
+
+# 말미에서 추출할 최대 줄 수
+_TAIL_LINES = 3
+
+
+def _extract_tail(entry_text: str) -> list[str]:
+    """엔트리 텍스트의 마지막 비어있지 않은 줄들을 추출한다."""
+    lines = [
+        line.strip() for line in entry_text.strip().splitlines()
+        if line.strip()
+    ]
+    return lines[-_TAIL_LINES:] if lines else []
+
+
+def detect_slogan_candidate(
+    source_text: str,
+    *,
+    min_entries: int = 2,
+) -> str | None:
+    """코퍼스에서 2개 이상의 입장문 말미에 verbatim 반복되는 문구를 찾는다.
+
+    발견되면 해당 문구를 반환, 없으면 None.
+    """
+    if not source_text:
+        return None
+
+    entries = _ENTRY_SEPARATOR_RE.split(source_text)
+    entries = [e.strip() for e in entries if e.strip()]
+
+    if len(entries) < min_entries:
+        return None
+
+    # 각 엔트리 말미 줄들을 수집
+    tail_counter: Counter[str] = Counter()
+    for entry in entries:
+        tail_lines = _extract_tail(entry)
+        # 같은 엔트리 내 중복은 1회로 카운트 (set)
+        for line in set(tail_lines):
+            tail_counter[line] += 1
+
+    # min_entries 이상 반복되는 말미 문구 중 가장 빈도 높은 것
+    candidates = [
+        (phrase, count)
+        for phrase, count in tail_counter.items()
+        if count >= min_entries
+    ]
+
+    if not candidates:
+        return None
+
+    # 빈도 높은 순, 동률이면 긴 문구 우선 (짧은 인사말보다 슬로건이 길 가능성)
+    candidates.sort(key=lambda x: (-x[1], -len(x[0])))
+    return candidates[0][0]
 
 
 # ── 헬퍼 ─────────────────────────────────────────────────────
@@ -163,6 +223,7 @@ async def refresh_user_style_fingerprint(
     source: str = "bio-only",
     corpus_stats: dict[str, Any] | None = None,
     user_meta: dict[str, str] | None = None,
+    slogan: str = "",
     db: Any | None = None,
 ) -> dict[str, Any]:
     """코퍼스로 stylometry 재계산 → Firestore 갱신.
@@ -196,7 +257,24 @@ async def refresh_user_style_fingerprint(
         # rawFeatures → GenerationProfile 빌드
         raw_feat_dict = fingerprint.get("rawFeatures") or {}
         raw_feat = RawFeatureProfile.from_dict(raw_feat_dict) if raw_feat_dict else None
-        gen_profile = build_generation_profile(fingerprint, raw_feat)
+        gen_profile = build_generation_profile(
+            fingerprint, raw_feat,
+            source_text=corpus_text,
+            slogan=slogan,
+        )
+
+        # ── 말미 반복 문구 감지 (슬로건 후보) ──────────────────
+        detected = detect_slogan_candidate(corpus_text)
+        detected_slogan_field: dict[str, Any] | Any = firestore.DELETE_FIELD
+        if detected and detected.strip() != slogan.strip():
+            # 현재 프로필 슬로건과 다른 새 슬로건 후보 발견
+            detected_slogan_field = {
+                "text": detected,
+                "detectedAt": firestore.SERVER_TIMESTAMP,
+            }
+            logger.info(
+                "[StyleRefresh] uid=%s 슬로건 후보 감지: %s", uid, detected,
+            )
 
         bio_ref = db.collection("bios").document(uid)
         now = firestore.SERVER_TIMESTAMP
@@ -214,6 +292,7 @@ async def refresh_user_style_fingerprint(
                 "pendingStyleEntryCount": 0,
                 "styleRefreshRequestedAt": firestore.DELETE_FIELD,
                 "styleRefreshError": firestore.DELETE_FIELD,
+                "detectedSlogan": detected_slogan_field,
                 "lastAnalyzed": now,
             },
             merge=True,
@@ -312,6 +391,7 @@ async def process_bio_style_update(
                 "userName": str(new_data.get("userName") or new_data.get("name") or "").strip(),
                 "region": str(new_data.get("region") or "").strip(),
             },
+            slogan=str(new_data.get("slogan") or "").strip(),
             db=db,
         )
 
