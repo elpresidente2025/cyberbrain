@@ -505,6 +505,42 @@ class SectionRepairMixin:
                             f"title='{aeo_outline.get('title', '')[:30]}', "
                             f"body_sections={len(aeo_outline.get('body', []))}"
                         )
+                        # --- 두괄식 검증 게이트 ---
+                        lead_failures = self._validate_outline_lead_sentences(aeo_outline)
+                        if lead_failures:
+                            print(
+                                f"⚠️ [StructureAgent] 아웃라인 lead_sentence 검증 실패 "
+                                f"({len(lead_failures)}건): {lead_failures}"
+                            )
+                            # 실패 사유를 피드백으로 넣어 1회 재시도
+                            feedback_lines = "\n".join(f"  - {f}" for f in lead_failures)
+                            retry_outline_prompt = (
+                                outline_prompt
+                                + "\n\n<feedback priority='critical'>\n"
+                                  "이전 아웃라인의 다음 lead_sentence가 행동 선언이 아닌 상황 진단형으로 판정되어 반려됨:\n"
+                                + feedback_lines
+                                + "\n모든 lead_sentence를 '~하겠습니다', '~추진합니다', '~확보합니다' 등 "
+                                  "행동을 선언하는 어미로 다시 작성하십시오. "
+                                  "'~상황입니다', '~과제입니다', '~핵심입니다', '~필요합니다' 등 "
+                                  "진단·평가 어미는 절대 사용 금지.\n</feedback>"
+                            )
+                            aeo_outline = await self.call_llm_json_contract(
+                                retry_outline_prompt,
+                                response_schema=outline_schema,
+                                required_keys=("title", "intro_lead", "body", "conclusion_heading"),
+                                stage="outline-retry",
+                                max_output_tokens=2048,
+                            )
+                            retry_failures = self._validate_outline_lead_sentences(aeo_outline)
+                            if retry_failures:
+                                print(
+                                    f"⚠️ [StructureAgent] 아웃라인 재시도 후에도 검증 실패 "
+                                    f"({len(retry_failures)}건), 단일 호출로 폴백: {retry_failures}"
+                                )
+                                is_aeo = False
+                            else:
+                                print("📋 [StructureAgent] 아웃라인 재생성 후 검증 통과")
+                        # --- 검증 게이트 끝 ---
                     except Exception as outline_err:
                         print(f"⚠️ [StructureAgent] 아웃라인 생성 실패, 단일 호출로 폴백: {outline_err}")
                         is_aeo = False

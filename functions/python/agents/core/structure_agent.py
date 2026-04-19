@@ -553,6 +553,41 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "</json_output_contract>"
         )
 
+    # 상황 진단·평가형 어미 — lead_sentence가 이 패턴으로 끝나면 두괄식(행동 선언) 위반
+    _LEAD_DIAGNOSTIC_RE = re.compile(
+        r'(?:'
+        r'상황입니다|상황이다'
+        r'|과제입니다|과제이다|과제다'
+        r'|핵심입니다|핵심이다|핵심이죠'
+        r'|증거입니다|증거이다'
+        r'|요인입니다|요인이다'
+        r'|문제입니다|문제이다'
+        r'|실정입니다|실정이다'
+        r'|현실입니다|현실이다'
+        r'|직면해 있습니다|직면하고 있습니다'
+        r'|처해 있습니다|처하고 있습니다'
+        r'|놓여 있습니다|놓이고 있습니다'
+        r'|대두되고 있습니다|대두됩니다'
+        r'|필요합니다|필요하다'
+        r'|시급합니다|시급하다'
+        r')\.?\s*$'
+    )
+
+    def _validate_outline_lead_sentences(self, outline: Dict[str, Any]) -> List[str]:
+        """아웃라인 lead_sentence가 행동 선언인지 검증. 실패 사유 리스트 반환 (빈 리스트 = 통과)."""
+        failures = []
+        for i, section in enumerate(outline.get('body', []), 1):
+            lead = section.get('lead_sentence', '').strip()
+            if not lead:
+                failures.append(f"body[{i}]: lead_sentence 비어있음")
+                continue
+            if self._LEAD_DIAGNOSTIC_RE.search(lead):
+                failures.append(
+                    f"body[{i}] heading='{section.get('heading', '')}': "
+                    f"진단형 어미 — '...{lead[-20:]}'"
+                )
+        return failures
+
     def _build_outline_json_schema(self, length_spec: Dict[str, int]) -> Dict[str, Any]:
         """AEO 2단계 생성의 1단계: 아웃라인(제목+소제목+첫 문장)만 요청하는 스키마."""
         body_sections = max(1, int(length_spec.get('body_sections') or 1))
