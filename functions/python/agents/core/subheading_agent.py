@@ -812,20 +812,33 @@ class SubheadingAgent(Agent):
                 f"edits={len(kw_diversity_result.get('actions') or [])}"
             )
 
-        # ---------- Phase 6.8: question-form "?" 보충 (모든 H2 대상)
+        # ---------- Phase 6.8: question-form 의문형 보충 (모든 H2 대상)
         #   _deterministic_prerepair 는 passed=True 인 H2를 건너뛰므로,
         #   scoring 통과한 question-form H2("확정될까", "가능할까" 등)에도
-        #   "?" 가 보충되도록 최종 단계에서 일괄 적용한다.
+        #   보충되도록 최종 단계에서 일괄 적용한다.
+        #   (a) 미완결 관형절("것인" → "것인가?") 완성
+        #   (b) 단순 "?" 보충
         for i, heading in enumerate(final_headings):
             if (
                 plans[i].get("answer_type") == "question-form"
                 and h2_style != "assertive"
                 and heading
                 and not heading.endswith("?")
-                and self._QUESTION_ENDING_RE.search(heading)
-                and len(heading) + 1 <= H2_MAX_LENGTH
             ):
-                final_headings[i] = heading + "?"
+                # (a) 미완결 관형절 완성
+                completed = False
+                for suffix, completion in self._QUESTION_COMPLETION_MAP.items():
+                    if heading.endswith(suffix) and len(heading) + len(completion) <= H2_MAX_LENGTH:
+                        final_headings[i] = heading + completion
+                        completed = True
+                        break
+                # (b) 단순 "?" 보충
+                if (
+                    not completed
+                    and self._QUESTION_ENDING_RE.search(heading)
+                    and len(heading) + 1 <= H2_MAX_LENGTH
+                ):
+                    final_headings[i] = heading + "?"
 
         for i, final in enumerate(final_headings):
             trace[i]["final"] = final
@@ -1276,25 +1289,45 @@ class SubheadingAgent(Agent):
     # topic particle(은/는/을/를) + 의문형 EF(나요/까요/가요/까/나)
     _QUESTION_ENDING_RE = re.compile(r"(?:[가-힣](?:은|는|을|를)|나요|까요|가요|까|나)$")
 
+    # 미완결 의문형 관형절 → 완성 매핑 (예: "것인" → "것인가?")
+    # _QUESTION_ENDING_RE 보다 먼저 체크 — 2글자 이상 보충이 필요한 케이스.
+    _QUESTION_COMPLETION_MAP: Dict[str, str] = {
+        "것인": "가?",    # 관형형 "것인" → "것인가?"
+        "것일": "까?",    # 관형형 "것일" → "것일까?"
+    }
+
     def _deterministic_prerepair(self, heading: str, _plan: SectionPlan, *, style: str) -> str:
         text = self._safe_sanitize(heading)
         if not text:
             return ""
 
-        # 0. question-form plan 인데 물음표 없는 질문형 종결이면 "?" 보충
-        #    topic particle(은/는/을/를) 및 의문형 EF(나요/까요/까/나) 대상.
+        # 0. question-form plan 인데 물음표 없는 질문형 종결이면 보충
+        #    (a) 미완결 관형절("것인" → "것인가?") — 2글자 이상 보충
+        #    (b) topic particle(은/는/을/를) + 의문형 EF(나요/까요/까/나) — "?" 1글자
         #    kiwi is_incomplete_ending 은 "?" 종결 시 즉시 완결 판정하므로,
-        #    "재추진 방안은" → "재추진 방안은?" 으로 보충하면 while loop 미진입.
+        #    보충하면 while loop 미진입.
         added_question_mark = False
         if (
             _plan.get("answer_type") == "question-form"
             and style != "assertive"
             and not text.endswith("?")
-            and self._QUESTION_ENDING_RE.search(text)
-            and len(text) + 1 <= H2_MAX_LENGTH
         ):
-            text = text + "?"
-            added_question_mark = True
+            # (a) 미완결 관형절 완성
+            completed = False
+            for suffix, completion in self._QUESTION_COMPLETION_MAP.items():
+                if text.endswith(suffix) and len(text) + len(completion) <= H2_MAX_LENGTH:
+                    text = text + completion
+                    added_question_mark = True
+                    completed = True
+                    break
+            # (b) 단순 "?" 보충
+            if (
+                not completed
+                and self._QUESTION_ENDING_RE.search(text)
+                and len(text) + 1 <= H2_MAX_LENGTH
+            ):
+                text = text + "?"
+                added_question_mark = True
 
         # 1. 길이 초과 → 마지막 어절 경계에서 절단
         if len(text) > H2_MAX_LENGTH:

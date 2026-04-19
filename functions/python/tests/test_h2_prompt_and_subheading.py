@@ -2066,3 +2066,33 @@ def test_prerepair_comma_tail_no_cascade() -> None:
     )
     # "재추진" 이 살아 있어야 한다 (cascade 가 없으면 제거 안 됨)
     assert "재추진" in result, f"cascade truncation occurred: {result!r}"
+
+
+def test_prerepair_incomplete_interrogative_completion() -> None:
+    """미완결 관형절 '것인' → '것인가?' 완성."""
+    agent = SubheadingAgent.__new__(SubheadingAgent)
+    plan = {"answer_type": "question-form"}
+    result = agent._deterministic_prerepair(
+        "시민 약속을 어떻게 지킬 것인", plan, style="aeo",
+    )
+    assert result.endswith("것인가?"), f"expected '것인가?' ending: {result!r}"
+
+
+def test_prerepair_incomplete_interrogative_것일() -> None:
+    """미완결 관형절 '것일' → '것일까?' 완성."""
+    agent = SubheadingAgent.__new__(SubheadingAgent)
+    plan = {"answer_type": "question-form"}
+    result = agent._deterministic_prerepair(
+        "정책 방향은 어떤 것일", plan, style="aeo",
+    )
+    assert result.endswith("것일까?"), f"expected '것일까?' ending: {result!r}"
+
+
+def test_prerepair_completion_respects_max_length() -> None:
+    """완성 후 H2_MAX_LENGTH 초과 시 보충하지 않는다."""
+    agent = SubheadingAgent.__new__(SubheadingAgent)
+    plan = {"answer_type": "question-form"}
+    # 24자 + "가?" = 26자 > H2_MAX_LENGTH(25) → 보충 안 됨
+    long_h2 = "가나다라마바사아자차카타파하하하하하하하하하 것인"  # 24 chars
+    result = agent._deterministic_prerepair(long_h2, plan, style="aeo")
+    assert not result.endswith("것인가?"), f"should not complete over max: {result!r}"
