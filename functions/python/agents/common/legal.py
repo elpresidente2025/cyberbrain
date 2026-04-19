@@ -220,8 +220,7 @@ class ViolationDetector:
         indirect_patterns = [
             r'~?(라는|라고)\s*소문',
             r'~?(라는|라고)\s*말이?\s*(있|나)',
-            r'~?(라고|라는)\s*알려져',
-            r'들었습니다|들은\s*바'
+            r'~?(라고|라는)\s*알려져'
         ]
         for pattern in indirect_patterns:
             matches = re.findall(pattern, text)

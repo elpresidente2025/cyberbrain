@@ -36,11 +36,6 @@ _INDIRECT_DEFAMATION_PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
         re.compile(r"(?:라고|라는)\s*알려져"),
         '"~라고 알려져" 같은 전달형 표현을 직접 사실 서술 또는 본인 경험 서술로 바꾸세요.',
     ),
-    (
-        "heard_about",
-        re.compile(r"들었습니다|들은\s*바"),
-        '"들었습니다/들은 바" 같은 간접전언을 삭제하고 출처가 분명한 사실만 남기세요.',
-    ),
 )
 
 
