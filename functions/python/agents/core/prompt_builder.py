@@ -11,7 +11,7 @@ from ..common.seo import build_seo_instruction
 from ..common.h2_guide import build_h2_rules
 from ..common.election_rules import get_prompt_instruction
 from ..common.natural_tone import build_natural_tone_prompt
-from ..common.editorial import KEYWORD_SPEC, QUALITY_SPEC, STRUCTURE_SPEC
+from ..common.editorial import QUALITY_SPEC, STRUCTURE_SPEC
 from ..common.section_contract import build_shared_contract_rules
 from ..common.stance_filters import looks_like_hashtag_bullet_line
 from ..common.aeo_config import uses_aeo_answer_first
@@ -554,7 +554,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     <rule id="defer_output_addons" severity="critical">슬로건/후원 안내(계좌·예금주·연락처·영수증 안내)는 본문에 쓰지 말 것. 해당 정보는 최종 출력 직전에 시스템이 자동 부착.</rule>
     <rule id="no_slogan_repeat" severity="critical">입장문의 맺음말/슬로건을 각 섹션 끝마다 반복 금지. 모든 호소와 다짐은 맨 마지막 결론부에만.</rule>
     <rule id="sentence_completion">문장은 올바른 종결 어미(~입니다, ~합니다, ~시오)로 끝내야 함. 고의적 오타/잘린 문장 금지.</rule>
-    <rule id="keyword_per_section">각 섹션마다 키워드 {KEYWORD_SPEC['perSectionMin']}개 이상 포함</rule>
+    <rule id="keyword_per_section">키워드는 내용과 관련된 섹션에만 자연스럽게 배치. 무관한 섹션에 억지로 삽입하여 문법을 깨뜨리지 말 것. 총 횟수만 충족하면 됨.</rule>
     <rule id="separate_pledges">각 본론 섹션은 서로 다른 주제/공약을 다룰 것</rule>
     <rule id="verb_diversity" severity="critical">같은 동사(예: "던지면서")를 원고 전체에서 {int(QUALITY_SPEC['verbRepeatMax']) + 1}회 이상 사용 금지. 동의어 교체: 제시하며, 약속하며, 열며, 보여드리며 등.</rule>
     <rule id="slogan_once">캐치프레이즈("청년이 돌아오는 부산")나 비유("아시아의 싱가포르")는 결론부 {QUALITY_SPEC['sloganMax']}회만. 다른 섹션에서는 변형 사용.</rule>
