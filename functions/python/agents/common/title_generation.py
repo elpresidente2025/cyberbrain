@@ -446,6 +446,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
   <rule id="name_particle_required">인물명 뒤에는 반드시 조사(이/가/의/은/는 등) 또는 구분자(쉼표)를 붙일 것. "석정규 엽니다" (X) → "석정규가 엽니다" (O), "석정규, 광역철도 시대 열다" (O).</rule>
   <rule id="no_ellipsis">말줄임표("...") 절대 금지</rule>
   <rule id="no_first_person_title">메인 제목에는 1인칭(저는/제가/저의/제 정책/나의/내가) 금지. 화자 이름·정책명·수치 중심의 기사형 제목으로 작성.</rule>
+  <rule id="author_never_negative_subject" priority="critical">&lt;author&gt;({full_name})는 이 글의 화자다. 제목에서 화자를 부정 행위의 주어로 쓰지 마라. "저버린/망친/실패한/외면한/방치한/포기한/무시한" 등 부정적 관형절의 주어가 화자 이름이면 독자는 화자가 잘못한 것으로 오독한다. 본문에서 비판 대상이 따로 있다면(예: 상대 정치인, 전임자) 그 대상을 명시하거나, 화자 중심의 긍정·개선 서술로 전환하라.</rule>
   {f'<rule id="name_repeat_limit">{title_constraint_text}</rule>' if title_constraint_text else ''}
   {name_dedup_rule}
   <rule id="keyword_position">{keyword_position_rule}</rule>
