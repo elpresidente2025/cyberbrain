@@ -49,7 +49,9 @@ _H2_CONSECUTIVE_DUPLICATE_TOKEN_RE = re.compile(
 )
 _H2_TRAILING_INCOMPLETE_ENDING_RE = re.compile(
     r"(?:"
-    r"으로|에서|에게|까지|부터|처럼|보다|과|와|의|은|는|이|가|을|를|에|도|만|로|"
+    # 주격 조사 "가"는 제외 — "필요한가", "지금인가" 같은 의문형 종결과 구분 불가.
+    # 주격 "가" 단독 종결은 _has_dangling_subject_particle 이 별도 처리한다.
+    r"으로|에서|에게|까지|부터|처럼|보다|과|와|의|은|는|이|을|를|에|도|만|로|"
     r"겠(?:다|습)?|하는|있는|없는"
     r")$"
 )

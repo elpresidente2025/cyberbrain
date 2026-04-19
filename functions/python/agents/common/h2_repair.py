@@ -22,6 +22,7 @@ import math
 import re
 from typing import Any, Dict, List, Sequence
 
+from .h2_guide import H2_MIN_LENGTH
 from .h2_planning import canonicalize_entity_surface
 from .person_naming import (
     canonical_role_label,
@@ -162,7 +163,7 @@ _LEADING_PARTICLE_RE = re.compile(
 
 def _is_valid_stripped_heading(text: str) -> bool:
     stripped = str(text or "").strip()
-    if len(stripped) < 8 or len(stripped) > 40:
+    if len(stripped) < H2_MIN_LENGTH or len(stripped) > 40:
         return False
     if _LEADING_PARTICLE_RE.match(stripped):
         return False
