@@ -2015,3 +2015,38 @@ def test_is_field_copy_detects_keyword_copy() -> None:
     """repair 결과가 must_include_keyword 그대로이면 True."""
     plan = {"assigned_entity_surface": "", "must_include_keyword": "계양 테크노밸리", "key_claim": ""}
     assert _is_field_copy("계양 테크노밸리", plan) is True
+
+
+# ── _deterministic_prerepair: question-form "?" 보충 + comma tail cascade 방지 ──
+
+
+def test_prerepair_question_form_appends_question_mark() -> None:
+    """question-form plan + topic particle 종결 → "?" 보충, while loop 미진입."""
+    agent = SubheadingAgent.__new__(SubheadingAgent)
+    plan = {"answer_type": "question-form"}
+    result = agent._deterministic_prerepair(
+        "아라뱃길 공연장, 재추진 방안은", plan, style="aeo",
+    )
+    assert result.endswith("?"), f"expected trailing '?', got {result!r}"
+    assert "방안은?" in result
+
+
+def test_prerepair_no_question_mark_for_assertive() -> None:
+    """assertive style 에서는 topic particle 이 있어도 "?" 보충 안 함."""
+    agent = SubheadingAgent.__new__(SubheadingAgent)
+    plan = {"answer_type": "question-form"}
+    result = agent._deterministic_prerepair(
+        "아라뱃길 공연장 재추진 방안은", plan, style="assertive",
+    )
+    assert "?" not in result
+
+
+def test_prerepair_comma_tail_no_cascade() -> None:
+    """while loop 에서 쉼표 꼬리 연쇄 절단이 발생하지 않아야 한다."""
+    agent = SubheadingAgent.__new__(SubheadingAgent)
+    plan = {"answer_type": "declarative-list"}
+    result = agent._deterministic_prerepair(
+        "샘플구 공연장, 민선9기 재추진", plan, style="aeo",
+    )
+    # "재추진" 이 살아 있어야 한다 (cascade 가 없으면 제거 안 됨)
+    assert "재추진" in result, f"cascade truncation occurred: {result!r}"

@@ -127,11 +127,15 @@ def normalize_h2_style(style: str = 'aeo') -> str:
     return 'assertive' if normalized == 'assertive' else 'aeo'
 
 
-def has_incomplete_h2_ending(text: str) -> bool:
+def has_incomplete_h2_ending(text: str, *, skip_comma_tail: bool = False) -> bool:
     """조사/미완결 어미/잘린 한 글자 토큰으로 끝나는 H2를 감지한다.
 
     또한 주어 조사(`가`)만 있고 서술어가 전혀 없는 '문장 끊김'도 미완결로 본다.
     예: "청년의 목소리가 실질적 변화" — 술어 누락으로 hard-fail.
+
+    skip_comma_tail: True 이면 쉼표 꼬리 잘림 체크를 건너뛴다.
+    _deterministic_prerepair 의 while loop 에서 반복 호출 시 쉼표 꼬리가
+    매 iteration 짧아지며 연쇄 절단되는 문제를 방지한다.
     """
     candidate = re.sub(r'\s+', ' ', str(text or '').strip())
     if not candidate:
@@ -176,7 +180,7 @@ def has_incomplete_h2_ending(text: str) -> bool:
 
     # 쉼표 뒤 꼬리가 토큰 1~2개뿐이고 용언/어미 없으면 잘림
     # "인천e음, 인천" → True / "탄약고 문제, 인천 청년 정치인의 해법" → False
-    if _has_truncated_comma_tail(candidate):
+    if not skip_comma_tail and _has_truncated_comma_tail(candidate):
         return True
 
     return False

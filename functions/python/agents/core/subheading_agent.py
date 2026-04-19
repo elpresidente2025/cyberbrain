@@ -1257,10 +1257,27 @@ class SubheadingAgent(Agent):
             return ""
 
     # -------------------------------------------------------- pre-repair cheap
+    # question-form H2 에서 topic particle(은/는/을/를) 종결 시 "?" 보충용
+    _QUESTION_TOPIC_PARTICLE_RE = re.compile(r"[가-힣](?:은|는|을|를)$")
+
     def _deterministic_prerepair(self, heading: str, _plan: SectionPlan, *, style: str) -> str:
         text = self._safe_sanitize(heading)
         if not text:
             return ""
+
+        # 0. question-form plan 인데 topic particle(은/는/을/를)로 끝나면 "?" 보충
+        #    kiwi is_incomplete_ending 은 "?" 종결 시 즉시 완결 판정하므로,
+        #    "재추진 방안은" → "재추진 방안은?" 으로 보충하면 while loop 미진입.
+        added_question_mark = False
+        if (
+            _plan.get("answer_type") == "question-form"
+            and style != "assertive"
+            and not text.endswith("?")
+            and self._QUESTION_TOPIC_PARTICLE_RE.search(text)
+            and len(text) + 1 <= H2_MAX_LENGTH
+        ):
+            text = text + "?"
+            added_question_mark = True
 
         # 1. 길이 초과 → 마지막 어절 경계에서 절단
         if len(text) > H2_MAX_LENGTH:
@@ -1271,7 +1288,9 @@ class SubheadingAgent(Agent):
             text = cut.strip()
 
         # 2. trailing 조사/미완결 어미 제거 (H2_MIN_LENGTH 이하로는 줄이지 않음)
-        while has_incomplete_h2_ending(text):
+        #    skip_comma_tail=True: 반복 호출 시 쉼표 꼬리가 매 iteration 짧아지며
+        #    연쇄 절단되는 문제 방지.
+        while has_incomplete_h2_ending(text, skip_comma_tail=True):
             tokens = text.split(" ")
             if len(tokens) <= 1:
                 break
@@ -1304,6 +1323,9 @@ class SubheadingAgent(Agent):
                 break
 
         text = self._safe_sanitize(text)
+        # step 0 에서 보충한 "?" 가 sanitize rstrip 에 의해 제거되었으면 복원
+        if added_question_mark and not text.endswith("?"):
+            text = text + "?"
         return text
 
     # --------------------------------------------------- h2_repair content chain
