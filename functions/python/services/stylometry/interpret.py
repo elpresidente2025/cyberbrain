@@ -125,6 +125,8 @@ def _format_feature_context(features: RawFeatureProfile | None) -> str:
 - 격식체 비율: {k.formal_ending_ratio:.0%}, 비격식체 비율: {k.informal_ending_ratio:.0%}
 - 종결 어미 다양성: {k.ending_diversity:.2f}, 상위 어미: {', '.join(k.top_endings[:5]) or '정보 없음'}
 - 접속사 밀도: 문장당 {k.conjunction_density:.1f}회
+- 감정 직접 명명 비율: {k.emotion_directness:.0%} (높을수록 감정을 직접 이름 붙임)
+- 구체 디테일 포함 문장: {k.concrete_detail_ratio:.0%} (숫자·날짜·지명·법령명 등)
 - 복잡도: {features.complexity_level} ({features.complexity_score}점)
 """
 
@@ -180,6 +182,7 @@ def _build_extract_prompt(
     "emotionality": 0.0-1.0 사이 숫자 (0:논리적 ~ 1:감성적),
     "directness": 0.0-1.0 사이 숫자 (0:완곡 ~ 1:직설),
     "optimism": 0.0-1.0 사이 숫자 (0:비판적 ~ 1:희망적),
+    "emotionDirectness": 0.0-1.0 사이 숫자 (0:감정을 상황묘사로 간접 전달(show) ~ 1:감정을 직접 명명(tell). 예: "누구 엄마가 안 보이는 날"=0.1, "안타깝게도 환자가 사망했습니다"=0.9),
     "toneDescription": "전체적인 어조를 한 문장으로 설명"
   }},
 

@@ -81,6 +81,8 @@ class KoreanFeatures:
     top_endings: list[str] = field(default_factory=list)
     function_word_ratio: float = 0.0    # 기능어 비율
     conjunction_density: float = 0.0    # 접속사 밀도
+    emotion_directness: float = 0.0     # 감정 직접 명명 비율 (0=간접/show ~ 1=직접/tell)
+    concrete_detail_ratio: float = 0.0  # 구체 디테일(숫자·고유명사·날짜) 포함 문장 비율
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -178,6 +180,10 @@ class GenerationProfile:
     signature_phrases: list[str] = field(default_factory=list)
     ai_alternatives: dict[str, str] = field(default_factory=dict)
     style_summary: str = ""
+    # ── 서술 전략 슬롯 ────────────────────────────────────────
+    emotion_directness: float = 0.5     # 0~1: 0=간접(show, don't tell) ~ 1=직접(tell)
+    sentence_length_variance: float = 0.3  # CV 목표 (높을수록 짧은/긴 문장 낙차 큼)
+    concrete_detail_ratio: float = 0.4  # 0~1: 구체 디테일 포함 문장 목표 비율
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -191,6 +197,9 @@ class GenerationProfile:
             "signaturePhrases": self.signature_phrases,
             "aiAlternatives": self.ai_alternatives,
             "styleSummary": self.style_summary,
+            "emotionDirectness": self.emotion_directness,
+            "sentenceLengthVariance": self.sentence_length_variance,
+            "concreteDetailRatio": self.concrete_detail_ratio,
         }
 
     @classmethod
@@ -207,6 +216,9 @@ class GenerationProfile:
             signature_phrases=d.get("signaturePhrases", []),
             ai_alternatives=d.get("aiAlternatives", {}),
             style_summary=d.get("styleSummary", ""),
+            emotion_directness=d.get("emotionDirectness", 0.5),
+            sentence_length_variance=d.get("sentenceLengthVariance", 0.3),
+            concrete_detail_ratio=d.get("concreteDetailRatio", 0.4),
         )
 
 

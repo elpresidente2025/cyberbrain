@@ -442,6 +442,52 @@ def _compose_style_guide_prompt(
         )
     append_section("감정 표현 방식", emotion_lines)
 
+    # ── 서술 전략 ────────────────────────────────────────────
+    narr_lines: list[str] = []
+    emotion_dir = float(tone.get("emotionDirectness") or 0.5)
+    if emotion_dir < 0.3:
+        narr_lines.append(
+            "- 감정 표현: 간접(show). 감정을 직접 명명('안타깝다', '감사하다')하지 말고 "
+            "상황·행동·장면 묘사로 독자가 스스로 느끼게 하세요."
+        )
+    elif emotion_dir > 0.7:
+        narr_lines.append(
+            "- 감정 표현: 직접(tell). 감정을 명확히 명명해도 괜찮습니다."
+        )
+    else:
+        narr_lines.append(
+            "- 감정 표현: 혼합. 핵심 감정 1~2회만 직접 명명하고, "
+            "나머지는 상황 묘사로 전달하세요."
+        )
+
+    raw_features = style_fingerprint.get("rawFeatures") or {}
+    raw_sent = raw_features.get("sentences") or {}
+    cv = float(raw_sent.get("cv") or 0.3)
+    if cv > 0.5:
+        narr_lines.append(
+            f"- 문장 리듬: 변동폭 큼(CV {cv:.2f}). 짧은 문장(10자 이하)과 "
+            "긴 문장(50자 이상)을 의도적으로 섞으세요."
+        )
+    elif cv < 0.2:
+        narr_lines.append(
+            f"- 문장 리듬: 균일(CV {cv:.2f}). 이 화자는 문장 길이가 고르며, "
+            "극단적으로 짧거나 긴 문장을 쓰지 않습니다."
+        )
+
+    raw_kr = raw_features.get("korean") or {}
+    cdr = float(raw_kr.get("concrete_detail_ratio") or raw_kr.get("concreteDetailRatio") or 0.4)
+    if cdr > 0.6:
+        narr_lines.append(
+            "- 구체 디테일: 높음. 숫자·날짜·법령명·지명 등 사실 근거를 "
+            "적극 사용하는 화자입니다. 추상 서술보다 사실 나열을 선호합니다."
+        )
+    elif cdr < 0.25:
+        narr_lines.append(
+            "- 구체 디테일: 낮음. 숫자나 데이터보다 서사·경험·감각으로 "
+            "글을 이끄는 화자입니다. 수치를 과도하게 넣지 마세요."
+        )
+    append_section("서술 전략", narr_lines)
+
     ai_alternatives = style_fingerprint.get("aiAlternatives") or {}
     alternative_lines: list[str] = []
     for raw_key, raw_value in list(ai_alternatives.items())[:4]:

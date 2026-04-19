@@ -748,6 +748,36 @@ class EditorAgent(Agent):
                 if endings_clean:
                     lines.append(f"- 선호 종결 어미: {', '.join(endings_clean)}")
 
+            # ── 서술 전략 지시 ────────────────────────────────
+            try:
+                emo_dir = float(gen_profile.get("emotionDirectness") or gen_profile.get("emotion_directness") or 0.5)
+            except (TypeError, ValueError):
+                emo_dir = 0.5
+            if emo_dir < 0.3:
+                lines.append(
+                    "- 감정 표현 전략: '안타깝다/감사하다/가슴 아프다' 등 감정 직접 명명을 최소화하세요. "
+                    "상황·행동·장면 묘사로 독자가 감정을 추론하도록 유도합니다(show, don't tell)."
+                )
+            elif emo_dir > 0.7:
+                lines.append(
+                    "- 감정 표현 전략: 이 화자는 감정을 직접 명명하는 스타일입니다. 억누르지 마세요."
+                )
+
+            try:
+                cdr = float(gen_profile.get("concreteDetailRatio") or gen_profile.get("concrete_detail_ratio") or 0.4)
+            except (TypeError, ValueError):
+                cdr = 0.4
+            if cdr < 0.25:
+                lines.append(
+                    "- 구체 디테일: 이 화자는 수치·데이터보다 서사·경험 중심입니다. "
+                    "숫자를 과도하게 삽입하지 마세요."
+                )
+            elif cdr > 0.6:
+                lines.append(
+                    "- 구체 디테일: 이 화자는 사실·수치·날짜를 적극 사용합니다. "
+                    "추상 서술은 구체 근거로 뒷받침하세요."
+                )
+
         return "\n".join(lines)
 
     async def _humanize_pass(

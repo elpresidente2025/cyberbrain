@@ -125,6 +125,7 @@ def validate_style_fingerprint(
             "emotionality": _clamp((fp.get("toneProfile") or {}).get("emotionality", 0.5), 0, 1),
             "directness": _clamp((fp.get("toneProfile") or {}).get("directness", 0.5), 0, 1),
             "optimism": _clamp((fp.get("toneProfile") or {}).get("optimism", 0.5), 0, 1),
+            "emotionDirectness": _clamp((fp.get("toneProfile") or {}).get("emotionDirectness", 0.5), 0, 1),
             "toneDescription": str((fp.get("toneProfile") or {}).get("toneDescription") or "중립적인 어조").strip(),
         },
         "rhetoricalDevices": {

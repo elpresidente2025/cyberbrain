@@ -97,6 +97,28 @@ def build_generation_profile(
     if unique_features and isinstance(unique_features, list):
         style_summary += " / " + ", ".join(unique_features[:3])
 
+    # ── 서술 전략 슬롯 ──────────────────────────────────────────
+    # emotion_directness: 결정론적 피처 우선, Gemini toneProfile로 보정
+    emotion_dir = 0.5  # 기본값
+    if raw_features and raw_features.korean.emotion_directness > 0:
+        emotion_dir = raw_features.korean.emotion_directness
+    # Gemini emotionDirectness가 있으면 가중 평균 (결정론 70% + LLM 30%)
+    gemini_emotion_dir = tone.get("emotionDirectness")
+    if gemini_emotion_dir is not None:
+        try:
+            gemini_val = _clamp(gemini_emotion_dir)
+            emotion_dir = round(emotion_dir * 0.7 + gemini_val * 0.3, 3)
+        except (TypeError, ValueError):
+            pass
+
+    # sentence_length_variance: rawFeatures.sentences.cv 직접 사용
+    sent_len_var = target_cv  # 기본은 target_cv와 동일
+
+    # concrete_detail_ratio: 결정론적 피처에서
+    concrete_ratio = 0.4  # 기본값
+    if raw_features and raw_features.korean.concrete_detail_ratio > 0:
+        concrete_ratio = raw_features.korean.concrete_detail_ratio
+
     return GenerationProfile(
         target_sentence_length=(target_min, target_max),
         target_cv=target_cv,
@@ -108,6 +130,9 @@ def build_generation_profile(
         signature_phrases=signatures,
         ai_alternatives=ai_alts if isinstance(ai_alts, dict) else {},
         style_summary=style_summary.strip(" /"),
+        emotion_directness=emotion_dir,
+        sentence_length_variance=sent_len_var,
+        concrete_detail_ratio=concrete_ratio,
     )
 
 
