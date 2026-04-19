@@ -443,6 +443,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
   <rule id="no_length_repair_dependency">길이가 길다고 느껴지면 뒤를 자르지 말고, 정보 요소를 줄여 더 짧은 새 문장으로 다시 작성. {TITLE_LENGTH_OPTIMAL_MAX+1}-{TITLE_LENGTH_HARD_MAX}자 예외 통과에 기대지 말 것.</rule>
   <rule id="no_slot_placeholder">슬롯 플레이스홀더([행사명], [지역명], [정책명] 등)를 제목에 그대로 출력하지 마세요.</rule>
   <rule id="no_quotes">제목에 작은따옴표(''), 큰따옴표(""), 홑낫표(「」) 금지. 강조가 필요하면 따옴표 없이 그대로 쓸 것.</rule>
+  <rule id="name_particle_required">인물명 뒤에는 반드시 조사(이/가/의/은/는 등) 또는 구분자(쉼표)를 붙일 것. "석정규 엽니다" (X) → "석정규가 엽니다" (O), "석정규, 광역철도 시대 열다" (O).</rule>
   <rule id="no_ellipsis">말줄임표("...") 절대 금지</rule>
   <rule id="no_first_person_title">메인 제목에는 1인칭(저는/제가/저의/제 정책/나의/내가) 금지. 화자 이름·정책명·수치 중심의 기사형 제목으로 작성.</rule>
   {f'<rule id="name_repeat_limit">{title_constraint_text}</rule>' if title_constraint_text else ''}
