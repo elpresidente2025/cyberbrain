@@ -1,6 +1,13 @@
 # functions/python/agents/common/leadership.py
 # 리더십 철학/핵심가치/선호표현 — leadership.js 완전 이식
 # ※ 범용성 원칙의 명시적 예외로 사용자가 승인한 파일
+#
+# 이 파일은 프로젝트의 영혼이다.
+# 모든 사용자가 이 정치 철학을 기본 프레임으로 갖고 글을 쓴다.
+# communicationStyle, frequentPhrases, peopleFirstTone, PRAGMATIC_EXPERIENCE는
+# 커뮤니케이션 방식이므로 프롬프트에 주입하지 않는다 (각자의 fingerprint 영역).
+
+from __future__ import annotations
 
 # ============================================================================
 # 5대 핵심 가치
@@ -256,3 +263,102 @@ PRAGMATIC_EXPERIENCE = {
         'expansion': '성공 모델의 전국 확산',
     },
 }
+
+
+# ============================================================================
+# 프롬프트 빌더 — 정치 철학 주입
+# ============================================================================
+
+def _xml_esc(text: str) -> str:
+    """XML 특수문자 이스케이프."""
+    s = str(text or "")
+    s = s.replace("&", "&amp;")
+    s = s.replace("<", "&lt;")
+    s = s.replace(">", "&gt;")
+    return s
+
+
+def build_leadership_philosophy_xml() -> str:
+    """프로젝트 핵심 정치 철학을 XML 블록으로 반환.
+
+    모든 사용자에게 상시 주입된다.
+    주입 대상: CORE_LEADERSHIP_VALUES, corePrinciples, policyApproach,
+               reconciliation, constructiveCriticism.principles, coreKeywords
+    제외 대상: communicationStyle, frequentPhrases, peopleFirstTone, PRAGMATIC_EXPERIENCE
+    """
+    parts: list[str] = [
+        '<political_philosophy priority="baseline">',
+        '  <premise>'
+        '이 글은 아래 정치 철학을 기본 전제로 삼는다. '
+        '글의 논조·정책 방향·가치 판단이 이 철학과 충돌해서는 안 된다. '
+        '이 전제는 화자의 소속 정당이나 개인 성향과 무관하게 적용된다.'
+        '</premise>',
+    ]
+
+    # ── 5대 핵심 가치 ──
+    parts.append('  <core_values>')
+    for key, val in CORE_LEADERSHIP_VALUES.items():
+        lines = [f'    <value id="{key}">']
+        lines.append(f'      <vision>{_xml_esc(val["vision"])}</vision>')
+        lines.append(f'      <philosophy>{_xml_esc(val["philosophy"])}</philosophy>')
+        principles_str = " / ".join(val["principles"])
+        lines.append(f'      <principles>{_xml_esc(principles_str)}</principles>')
+        lines.append('    </value>')
+        parts.append("\n".join(lines))
+    parts.append('  </core_values>')
+
+    # ── 리더십 원칙 (corePrinciples) ──
+    parts.append('  <leadership_principles>')
+    for key, val in LEADERSHIP_PHILOSOPHY['coreprinciples'].items():
+        parts.append(
+            f'    <principle id="{key}">'
+            f'{_xml_esc(val["principle"])} — {_xml_esc(val["meaning"])}'
+            f'</principle>'
+        )
+    parts.append('  </leadership_principles>')
+
+    # ── 정책 접근법 (policyApproach) ──
+    parts.append('  <policy_approach>')
+    for key, val in LEADERSHIP_PHILOSOPHY['policyApproach'].items():
+        chars = " / ".join(val["characteristics"])
+        parts.append(
+            f'    <approach id="{key}">'
+            f'{_xml_esc(val["style"])}: {_xml_esc(chars)}'
+            f'</approach>'
+        )
+    parts.append('  </policy_approach>')
+
+    # ── 균형 접근 (reconciliation) ──
+    parts.append('  <balanced_approach>')
+    for key, val in BALANCED_APPROACH['reconciliation'].items():
+        parts.append(
+            f'    <balance id="{key}">'
+            f'{_xml_esc(val["approach"])} — {_xml_esc(val["method"])}'
+            f'</balance>'
+        )
+    parts.append('  </balanced_approach>')
+
+    # ── 건설적 비판 원칙 (constructiveCriticism.principles만) ──
+    parts.append('  <constructive_criticism>')
+    for p in BALANCED_APPROACH['constructiveCriticism']['principles']:
+        parts.append(f'    <principle>{_xml_esc(p)}</principle>')
+    parts.append('  </constructive_criticism>')
+
+    # ── 핵심 키워드 (coreKeywords) ──
+    kw = PREFERRED_EXPRESSIONS['coreKeywords']
+    all_keywords = kw['values'] + kw['policies'] + kw['philosophy']
+    parts.append(f'  <core_keywords>{_xml_esc(", ".join(all_keywords))}</core_keywords>')
+
+    # ── 사일런트 정치 가드: 기본 입장 설정 ──
+    parts.append('  <baseline_stance>')
+    parts.append(
+        '    현 정부(국민주권정부)의 정책 방향은 이 철학의 실현으로 간주한다. '
+        '글의 논조가 현 정부의 핵심 정책 기조와 정면 충돌하는 방향으로 '
+        '전개되어서는 안 된다. 비판적 논의가 필요한 경우, '
+        '건설적 비판 원칙(상대 논리 인정 → 현실적 한계 → 대안 제시)을 따르되 '
+        '기본 철학의 가치 체계 안에서 전개할 것.'
+    )
+    parts.append('  </baseline_stance>')
+
+    parts.append('</political_philosophy>')
+    return "\n".join(parts)
