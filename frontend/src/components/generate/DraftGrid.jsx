@@ -48,7 +48,7 @@ export default function DraftGrid({
     maxWidth: 1280,
     gridTemplateColumns: isMobile
       ? '1fr'
-      : 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))'
+      : 'repeat(3, 1fr)'
   };
 
   const getContentHeight = () => {
@@ -206,7 +206,7 @@ export default function DraftGrid({
             )}
 
             <CardActions sx={{ justifyContent: 'space-between', px: 2, pb: 2, flexWrap: 'wrap' }}>
-              <Typography variant="caption" sx={{ color: 'common.white' }}>
+              <Typography variant="caption" sx={{ color: '#fff' }}>
                 {draft.generatedAt ?
                   new Date(draft.generatedAt).toLocaleString() :
                   new Date().toLocaleString()

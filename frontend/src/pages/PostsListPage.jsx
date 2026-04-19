@@ -113,6 +113,7 @@ function isNaverBlogUrl(value = '') {
 function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
   // 오늘 날짜를 기본값으로 설정
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
@@ -140,10 +141,16 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
   const weekDays = ['일', '월', '화', '수', '목', '금', '토'];
 
   return (
-    <>
+    <Box sx={{
+      display: 'flex',
+      flexDirection: { xs: 'column', md: 'row' },
+      gap: 3,
+      alignItems: { md: 'flex-start' },
+    }}>
       <Paper elevation={0} sx={{
         p: { xs: 0.5, sm: 3 },
-        mb: 3,
+        flex: { md: '1 1 0' },
+        minWidth: 0,
         border: '1px solid var(--color-border)',
         borderRadius: 'var(--radius-lg)',
       }}>
@@ -274,48 +281,47 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
         </Grid>
       </Paper>
 
-      {/* 선택된 날짜의 포스트 카드 표시 */}
-      {selectedDate && (() => {
-        const selectedPosts = postsByDate[selectedDate] || [];
-        const [y, m, d] = selectedDate.split('-');
+      {/* 선택된 날짜의 포스트 카드 (PC: 달력 우측, 모바일: 달력 하단) */}
+      <Box sx={{
+        width: { xs: '100%', md: '33%' },
+        flexShrink: 0,
+      }}>
+        {selectedDate ? (() => {
+          const selectedPosts = [...(postsByDate[selectedDate] || [])].sort(
+            (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+          );
+          const [y, m, d] = selectedDate.split('-');
 
-        // 원고가 없는 경우 메시지 표시
-        if (selectedPosts.length === 0) {
-          return (
-            <Box sx={{ mt: 3 }}>
+          if (selectedPosts.length === 0) {
+            return (
               <Alert severity="info" sx={{ justifyContent: 'center' }}>
                 {parseInt(m, 10)}월 {parseInt(d, 10)}일의 원고가 없습니다.
               </Alert>
-            </Box>
-          );
-        }
-        const formattedDate = `${y}.${String(m).padStart(2, '0')}.${String(d).padStart(2, '0')}`;
+            );
+          }
+          const formattedDate = `${y}.${String(m).padStart(2, '0')}.${String(d).padStart(2, '0')}`;
 
-        return (
-          <Box sx={{ mt: 3 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                {formattedDate}
-              </Typography>
-              <Button size="small" onClick={() => setSelectedDate(null)}>
-                닫기
-              </Button>
-            </Box>
-            <Grid container spacing={2} justifyContent="center">
-              {selectedPosts.map(post => {
-                const preview = stripHtml(post.content || '');
-                const wordCount = countWithoutSpace(preview);
-                const status = post.status || 'draft';
-                const statusLabel = status === 'published' ? '발행 완료' : status === 'scheduled' ? '대기 중' : status;
-                const statusColor = status === 'published' ? 'success' : status === 'scheduled' ? 'warning' : 'default';
-                const statusBgColor = status === 'published' ? '#2E7D32' : status === 'scheduled' ? '#F57C00' : undefined;
+          return (
+            <>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                  {formattedDate}
+                </Typography>
+                <Button size="small" onClick={() => setSelectedDate(null)}>
+                  닫기
+                </Button>
+              </Box>
+              <Stack spacing={2}>
+                {selectedPosts.map(post => {
+                  const preview = stripHtml(post.content || '');
+                  const wordCount = countWithoutSpace(preview);
+                  const status = post.status || 'draft';
+                  const statusLabel = status === 'published' ? '발행 완료' : status === 'scheduled' ? '대기 중' : status;
+                  const statusColor = status === 'published' ? 'success' : status === 'scheduled' ? 'warning' : 'default';
+                  const statusBgColor = status === 'published' ? '#2E7D32' : status === 'scheduled' ? '#F57C00' : undefined;
 
-                // 개수에 따른 열 배치: 1개=12(전체), 2개=6(반반), 3개=4(1/3씩)
-                const gridSize = selectedPosts.length === 1 ? 12 : selectedPosts.length === 2 ? 6 : 4;
-
-                return (
-                  <Grid item xs={12} sm={gridSize} key={post.id}>
-                    <Card elevation={0} sx={{
+                  return (
+                    <Card elevation={0} key={post.id} sx={{
                       border: '1px solid var(--color-border)',
                       borderRadius: 'var(--radius-lg)',
                       transition: springTransition,
@@ -348,14 +354,20 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
                         <IconButton size="small" aria-label="원고 삭제" onClick={(e) => { e.stopPropagation(); onDelete(post.id, e); }}><DeleteOutline /></IconButton>
                       </CardActions>
                     </Card>
-                  </Grid>
-                );
-              })}
-            </Grid>
-          </Box>
-        );
-      })()}
-    </>
+                  );
+                })}
+              </Stack>
+            </>
+          );
+        })() : isDesktop && (
+          <Paper elevation={0} sx={{ p: 3, textAlign: 'center', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)' }}>
+            <Typography variant="body2" sx={{ color: 'var(--color-text-tertiary)' }}>
+              날짜를 클릭하면 원고가 표시됩니다.
+            </Typography>
+          </Paper>
+        )}
+      </Box>
+    </Box>
   );
 }
 
@@ -552,7 +564,7 @@ export default function PostsListPage() {
         >
           <Paper elevation={0} sx={{ p: { xs: 0.5, sm: 3 } }}>
             <Typography variant="body2" sx={{ mb: `${spacing.md}px`, color: 'text.secondary', fontStyle: 'italic', textAlign: 'center' }}>
-              날짜를 클릭/터치하면 달력 하단에 원고가 나옵니다.
+              날짜를 클릭/터치하면 원고가 나옵니다.
             </Typography>
 
             {loading ? (

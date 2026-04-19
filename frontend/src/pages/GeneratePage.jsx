@@ -671,9 +671,9 @@ const GeneratePage = () => {
             id="preview-dialog-title"
             sx={{
               background: 'var(--gradient-primary-dark)',
-              color: 'var(--color-text-inverse)',
+              color: '#fff',
               '& .MuiTypography-root': {
-                color: 'var(--color-text-inverse)',
+                color: '#fff',
               }
             }}
           >
@@ -685,7 +685,7 @@ const GeneratePage = () => {
                 position: 'absolute',
                 right: 8,
                 top: 8,
-                color: 'var(--color-text-inverse)',
+                color: '#fff',
               }}
             >
               <CloseIcon />
