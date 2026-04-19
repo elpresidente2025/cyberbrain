@@ -14,11 +14,10 @@ import AdminRoute from './components/AdminRoute.jsx';
 import OnboardingGuard from './components/OnboardingGuard.jsx';
 import './index.css';
 import './design-system/tokens.css';
-import HomePage from './pages/HomePage.jsx';
-import LoginPage from './pages/LoginPage.jsx';
-import RegisterPage from './pages/RegisterPage.jsx';
-import AboutPage from './pages/AboutPage.jsx';
-
+const HomePage = lazy(() => import('./pages/HomePage.jsx'));
+const LoginPage = lazy(() => import('./pages/LoginPage.jsx'));
+const RegisterPage = lazy(() => import('./pages/RegisterPage.jsx'));
+const AboutPage = lazy(() => import('./pages/AboutPage.jsx'));
 const OnboardingPage = lazy(() => import('./pages/onboarding/OnboardingPage.jsx'));
 const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
 const GeneratePage = lazy(() => import('./pages/GeneratePage.jsx'));
@@ -154,9 +153,9 @@ const router = createBrowserRouter([
     element: <App />,
     errorElement: <ErrorPage />,
     children: [
-      { index: true, element: <HomePage /> },
-      { path: 'login', element: <LoginPage /> },
-      { path: 'register', element: <RegisterPage /> },
+      { index: true, element: withSuspense(<HomePage />) },
+      { path: 'login', element: withSuspense(<LoginPage />) },
+      { path: 'register', element: withSuspense(<RegisterPage />) },
       {
         path: 'onboarding',
         element: withSuspense(
@@ -219,7 +218,7 @@ const router = createBrowserRouter([
       },
       {
         path: 'about',
-        element: <AboutPage />,
+        element: withSuspense(<AboutPage />),
       },
       {
         path: 'terms',
