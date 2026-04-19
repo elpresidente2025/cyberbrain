@@ -9833,12 +9833,16 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     stance_count = _extract_stance_count(pipeline_result)
     min_required_chars = _calc_min_required_chars(target_word_count, stance_count)
     status_for_validation = str(data.get("status") or user_profile.get("status") or "")
-    # 사용자 원문 텍스트: 이미 SNS에 게시했던 글이므로 여기에 포함된 수치는
-    # 선거법 수치 출처 검증에서 면제한다.
+    # 사용자 원문 텍스트: stanceText, newsDataText, 프로필 bioEntries 에 포함된
+    # 수치는 사용자 본인이 제공한 것이므로 선거법 수치 출처 검증에서 면제한다.
     _source_texts_for_heuristic = [
         str(data.get("stanceText") or "").strip(),
         str(data.get("newsDataText") or "").strip(),
     ]
+    for _bio_entry in (profile_bundle.get("bioEntries") or []):
+        _bio_text = str((_bio_entry if isinstance(_bio_entry, dict) else {}).get("content") or "").strip()
+        if _bio_text:
+            _source_texts_for_heuristic.append(_bio_text)
     _source_texts_for_heuristic = [t for t in _source_texts_for_heuristic if t]
     title_last_valid = ""
     title_guard_trace: list[Dict[str, Any]] = []
