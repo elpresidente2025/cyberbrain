@@ -311,7 +311,15 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
                   닫기
                 </Button>
               </Box>
-              <Stack spacing={2}>
+              <Box sx={{
+                display: 'grid',
+                gap: 2,
+                gridTemplateColumns: {
+                  xs: '1fr',
+                  sm: selectedPosts.length >= 3 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)',
+                  md: '1fr',
+                },
+              }}>
                 {selectedPosts.map(post => {
                   const preview = stripHtml(post.content || '');
                   const wordCount = countWithoutSpace(preview);
@@ -325,6 +333,12 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
                       border: '1px solid var(--color-border)',
                       borderRadius: 'var(--radius-lg)',
                       transition: springTransition,
+                      // 1개일 때 태블릿: 2열 그리드 전체 span → 50% max로 중앙 정렬
+                      ...(selectedPosts.length === 1 && {
+                        gridColumn: { sm: '1 / -1', md: 'auto' },
+                        maxWidth: { sm: '50%', md: 'none' },
+                        justifySelf: { sm: 'center', md: 'stretch' },
+                      }),
                       '&:hover': {
                         borderColor: 'var(--color-primary)',
                         boxShadow: 'var(--shadow-md)',
@@ -356,7 +370,7 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
                     </Card>
                   );
                 })}
-              </Stack>
+              </Box>
             </>
           );
         })() : isDesktop && (
