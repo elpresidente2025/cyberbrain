@@ -129,7 +129,7 @@ export default function GenerateActions({
           </LoadingButton>
 
 
-          {drafts.length > 0 && (
+          {drafts.length > 0 && canRegenerate && (
             <Button
               variant="outlined"
               size={isMobile ? "medium" : "large"}
