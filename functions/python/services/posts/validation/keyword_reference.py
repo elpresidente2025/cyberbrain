@@ -357,7 +357,7 @@ def _build_keyword_replacement_pool(
 ) -> list[str]:
     normalized_keyword = _normalize_user_keyword(keyword)
     if not normalized_keyword:
-        return ["이 흐름"]
+        return []
     person_name = _extract_person_name_from_keyword(normalized_keyword) or (
         normalized_keyword if _looks_like_compact_person_keyword(normalized_keyword) else ""
     )
@@ -403,7 +403,7 @@ def _build_keyword_replacement_pool(
             continue
         seen.add(normalized_item)
         deduped.append(normalized_item)
-    return deduped or ["이 흐름"]
+    return deduped
 
 
 def _protect_shadowed_keywords(
