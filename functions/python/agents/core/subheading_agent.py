@@ -1257,15 +1257,17 @@ class SubheadingAgent(Agent):
             return ""
 
     # -------------------------------------------------------- pre-repair cheap
-    # question-form H2 에서 topic particle(은/는/을/를) 종결 시 "?" 보충용
-    _QUESTION_TOPIC_PARTICLE_RE = re.compile(r"[가-힣](?:은|는|을|를)$")
+    # question-form H2 에서 물음표 없는 질문형 종결 시 "?" 보충용
+    # topic particle(은/는/을/를) + 의문형 EF(나요/까요/가요/까/나)
+    _QUESTION_ENDING_RE = re.compile(r"(?:[가-힣](?:은|는|을|를)|나요|까요|가요|까|나)$")
 
     def _deterministic_prerepair(self, heading: str, _plan: SectionPlan, *, style: str) -> str:
         text = self._safe_sanitize(heading)
         if not text:
             return ""
 
-        # 0. question-form plan 인데 topic particle(은/는/을/를)로 끝나면 "?" 보충
+        # 0. question-form plan 인데 물음표 없는 질문형 종결이면 "?" 보충
+        #    topic particle(은/는/을/를) 및 의문형 EF(나요/까요/까/나) 대상.
         #    kiwi is_incomplete_ending 은 "?" 종결 시 즉시 완결 판정하므로,
         #    "재추진 방안은" → "재추진 방안은?" 으로 보충하면 while loop 미진입.
         added_question_mark = False
@@ -1273,7 +1275,7 @@ class SubheadingAgent(Agent):
             _plan.get("answer_type") == "question-form"
             and style != "assertive"
             and not text.endswith("?")
-            and self._QUESTION_TOPIC_PARTICLE_RE.search(text)
+            and self._QUESTION_ENDING_RE.search(text)
             and len(text) + 1 <= H2_MAX_LENGTH
         ):
             text = text + "?"

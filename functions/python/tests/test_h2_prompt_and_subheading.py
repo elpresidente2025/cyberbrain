@@ -2041,6 +2041,22 @@ def test_prerepair_no_question_mark_for_assertive() -> None:
     assert "?" not in result
 
 
+@pytest.mark.parametrize("ending,expected_tail", [
+    ("선호하는 노선은 무엇인가요", "무엇인가요?"),
+    ("철도 시대가 열릴까요", "열릴까요?"),
+    ("어떻게 약속했나요", "약속했나요?"),
+    ("경제성 분석 완료될까", "완료될까?"),
+    ("왜 지금 추진하나", "추진하나?"),
+])
+def test_prerepair_question_ef_appends_question_mark(ending: str, expected_tail: str) -> None:
+    """의문형 EF(나요/까요/까/나) 종결 → "?" 보충."""
+    agent = SubheadingAgent.__new__(SubheadingAgent)
+    plan = {"answer_type": "question-form"}
+    result = agent._deterministic_prerepair(ending, plan, style="aeo")
+    assert result.endswith("?"), f"expected trailing '?', got {result!r}"
+    assert expected_tail in result
+
+
 def test_prerepair_comma_tail_no_cascade() -> None:
     """while loop 에서 쉼표 꼬리 연쇄 절단이 발생하지 않아야 한다."""
     agent = SubheadingAgent.__new__(SubheadingAgent)
