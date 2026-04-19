@@ -523,6 +523,67 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             },
         }
 
+    def _build_outline_json_shape(self, writing_method: str, body_sections: int) -> str:
+        """아웃라인 json_shape CDATA 블록. 변증법 대상이면 role 필드를 포함."""
+        from ..common.aeo_config import uses_dialectical_structure
+
+        is_dialectical = uses_dialectical_structure(writing_method) and body_sections >= 3
+
+        if is_dialectical:
+            return (
+                "  <json_shape><![CDATA[\n"
+                "{\n"
+                "  \"title\": \"기사 제목\",\n"
+                "  \"intro_lead\": \"화자 실명+직함 자기소개 1문장 + 핵심 결론 1~2문장\",\n"
+                "  \"body\": [\n"
+                "    {\"heading\": \"소제목1\", \"lead_sentence\": \"근거 제시 행동 선언\", \"role\": \"evidence\"},\n"
+                "    {\"heading\": \"소제목2\", \"lead_sentence\": \"반론 인정 후 재반론 선언\", \"role\": \"counterargument_rebuttal\"},\n"
+                "    {\"heading\": \"소제목3\", \"lead_sentence\": \"상위 원칙 선언\", \"role\": \"higher_principle\"}\n"
+                "  ],\n"
+                "  \"conclusion_heading\": \"결론 소제목\"\n"
+                "}\n"
+                "  ]]></json_shape>\n"
+            )
+        else:
+            return (
+                "  <json_shape><![CDATA[\n"
+                "{\n"
+                "  \"title\": \"기사 제목\",\n"
+                "  \"intro_lead\": \"화자 실명+직함 자기소개 1문장 + 핵심 결론 1~2문장\",\n"
+                "  \"body\": [\n"
+                "    {\"heading\": \"소제목\", \"lead_sentence\": \"이 섹션의 핵심 행동 선언 한 문장\"}\n"
+                "  ],\n"
+                "  \"conclusion_heading\": \"결론 소제목\"\n"
+                "}\n"
+                "  ]]></json_shape>\n"
+            )
+
+    def _validate_outline_roles(
+        self, outline: Dict[str, Any], *, writing_method: str = '',
+    ) -> List[str]:
+        """변증법 구조 아웃라인의 role 시퀀스가 올바른지 검증.
+
+        올바른 시퀀스: evidence* + counterargument_rebuttal + higher_principle
+        실패 사유 리스트 반환 (빈 리스트 = 통과).
+        비변증법 대상이면 항상 빈 리스트.
+        """
+        from ..common.aeo_config import uses_dialectical_structure, build_dialectical_roles
+
+        body = outline.get('body', [])
+        body_count = len(body)
+        if not uses_dialectical_structure(writing_method) or body_count < 3:
+            return []
+
+        expected_roles = build_dialectical_roles(body_count)
+        failures = []
+        for i, (section, expected) in enumerate(zip(body, expected_roles), 1):
+            actual_role = section.get('role', '')
+            if actual_role != expected['role']:
+                failures.append(
+                    f"body[{i}]: role='{actual_role}', 기대값='{expected['role']}'"
+                )
+        return failures
+
     def _build_outline_json_prompt(
         self, *, prompt: str, length_spec: Dict[str, int], writing_method: str = '',
     ) -> str:
@@ -549,6 +610,25 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                 '  </argument_structure>\n'
             )
 
+        # lead_sentence 규칙 — 변증법 대상이면 반론 섹션 예외 + role 순서 규칙 추가
+        is_dialectical = uses_dialectical_structure(writing_method) and body_sections >= 3
+        if is_dialectical:
+            lead_rule = (
+                "    <rule>각 body 항목의 lead_sentence: 해당 섹션의 핵심 주장·해법·결론을 한 문장으로 직접 선언할 것. "
+                "'~하겠습니다', '~추진합니다', '~확보합니다'처럼 행동을 선언하는 문장이어야 한다. "
+                "'~에 직면해 있습니다', '~과제입니다', '~증거입니다'처럼 상황 진단·평가로 시작하지 말 것. "
+                "단, role='counterargument_rebuttal' 섹션은 '그러나/하지만/다만' 등 전환 접속사로 시작하여 "
+                "반론을 인정한 뒤 재반론을 선언하는 형태를 허용한다.</rule>\n"
+                "    <rule>각 body 항목의 role: argument_structure에서 지정한 역할과 일치해야 한다. "
+                "body 순서대로 evidence(1개 이상) → counterargument_rebuttal(1개) → higher_principle(1개) 순서를 반드시 지킬 것.</rule>\n"
+            )
+        else:
+            lead_rule = (
+                "    <rule>각 body 항목의 lead_sentence: 해당 섹션의 핵심 주장·해법·결론을 한 문장으로 직접 선언할 것. "
+                "'~하겠습니다', '~추진합니다', '~확보합니다'처럼 행동을 선언하는 문장이어야 한다. "
+                "'~에 직면해 있습니다', '~과제입니다', '~증거입니다'처럼 상황 진단·평가로 시작하지 말 것.</rule>\n"
+            )
+
         return (
             f"{prompt}\n\n"
             "<json_output_contract priority=\"critical\">\n"
@@ -559,21 +639,10 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "  <rules>\n"
             "    <rule>코드블록(```) 금지, 설명문 금지, JSON 외 텍스트 금지.</rule>\n"
             "    <rule>intro_lead: 화자 실명+직함 자기소개(예: '안녕하세요, OOO입니다.') 1문장으로 시작한 뒤 핵심 결론(1~2문장)을 이어 선언. 호격('여러분')만으로는 인삿말이 아님 — 반드시 화자가 누구인지 밝힐 것. AI 답변 엔진이 이 문단만 추출해도 답이 되어야 한다.</rule>\n"
-            "    <rule>각 body 항목의 lead_sentence: 해당 섹션의 핵심 주장·해법·결론을 한 문장으로 직접 선언할 것. "
-            "'~하겠습니다', '~추진합니다', '~확보합니다'처럼 행동을 선언하는 문장이어야 한다. "
-            "'~에 직면해 있습니다', '~과제입니다', '~증거입니다'처럼 상황 진단·평가로 시작하지 말 것.</rule>\n"
+            + lead_rule +
             "    <rule>소제목은 10~25자, \"위한/향한/만드는/통한/대한\" 수식어 금지.</rule>\n"
             "  </rules>\n"
-            "  <json_shape><![CDATA[\n"
-            "{\n"
-            "  \"title\": \"기사 제목\",\n"
-            "  \"intro_lead\": \"화자 실명+직함 자기소개 1문장 + 핵심 결론 1~2문장\",\n"
-            "  \"body\": [\n"
-            "    {\"heading\": \"소제목\", \"lead_sentence\": \"이 섹션의 핵심 행동 선언 한 문장\"}\n"
-            "  ],\n"
-            "  \"conclusion_heading\": \"결론 소제목\"\n"
-            "}\n"
-            "  ]]></json_shape>\n"
+            + self._build_outline_json_shape(writing_method, body_sections) +
             "</json_output_contract>"
         )
 
@@ -605,14 +674,17 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
     def _validate_outline_lead_sentences(
         self, outline: Dict[str, Any], *, writing_method: str = '',
     ) -> List[str]:
-        """아웃라인 lead_sentence가 행동 선언인지 검증. 실패 사유 리스트 반환 (빈 리스트 = 통과)."""
+        """아웃라인 lead_sentence가 행동 선언인지 검증. 실패 사유 리스트 반환 (빈 리스트 = 통과).
+
+        반론+재반론 역할(counterargument_rebuttal)의 lead_sentence는
+        전환 접속사가 포함되어 있으면 진단형 어미를 허용한다.
+        role 필드가 있으면 role 기반, 없으면 위치 기반으로 판별.
+        """
         from ..common.aeo_config import uses_dialectical_structure
 
         body = outline.get('body', [])
         body_count = len(body)
         is_dialectical = uses_dialectical_structure(writing_method) and body_count >= 3
-        # 변증법 구조에서 반론+재반론 섹션 인덱스 (끝에서 둘째, 1-based)
-        rebuttal_idx = body_count - 1 if is_dialectical else -1
 
         failures = []
         for i, section in enumerate(body, 1):
@@ -621,8 +693,14 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                 failures.append(f"body[{i}]: lead_sentence 비어있음")
                 continue
             if self._LEAD_DIAGNOSTIC_RE.search(lead):
-                # 반론 섹션에서 전환 접속사가 포함되면 진단형 허용
-                if i == rebuttal_idx and self._REBUTTAL_TRANSITION_RE.search(lead):
+                # role 필드가 있으면 role 기반, 없으면 위치 기반 판별
+                role = section.get('role', '')
+                is_rebuttal = (
+                    role == 'counterargument_rebuttal'
+                    if role
+                    else (is_dialectical and i == body_count - 1)
+                )
+                if is_rebuttal and self._REBUTTAL_TRANSITION_RE.search(lead):
                     continue
                 failures.append(
                     f"body[{i}] heading='{section.get('heading', '')}': "
@@ -630,9 +708,43 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                 )
         return failures
 
-    def _build_outline_json_schema(self, length_spec: Dict[str, int]) -> Dict[str, Any]:
-        """AEO 2단계 생성의 1단계: 아웃라인(제목+소제목+첫 문장)만 요청하는 스키마."""
+    def _build_outline_json_schema(
+        self, length_spec: Dict[str, int], *, writing_method: str = '',
+    ) -> Dict[str, Any]:
+        """AEO 2단계 생성의 1단계: 아웃라인(제목+소제목+첫 문장)만 요청하는 스키마.
+
+        변증법 대상 writing_method일 때 body item에 role enum을 추가하여
+        LLM이 각 섹션의 논증 역할을 명시적으로 출력하도록 강제한다.
+        """
+        from ..common.aeo_config import uses_dialectical_structure
+
         body_sections = max(1, int(length_spec.get('body_sections') or 1))
+        is_dialectical = uses_dialectical_structure(writing_method) and body_sections >= 3
+
+        body_item_properties: Dict[str, Any] = {
+            "heading": {"type": "string"},
+            "lead_sentence": {
+                "type": "string",
+                "description": "이 섹션의 핵심 주장·해법·결론을 첫 문장으로 직접 선언. 문제 진단·배경 설명·현황 묘사로 시작하지 말 것.",
+                "minLength": 20,
+                "maxLength": 200,
+            },
+        }
+        body_item_required = ["heading", "lead_sentence"]
+
+        if is_dialectical:
+            body_item_properties["role"] = {
+                "type": "string",
+                "enum": ["evidence", "counterargument_rebuttal", "higher_principle"],
+                "description": (
+                    "이 섹션의 논증 역할. "
+                    "evidence: 결론 뒷받침 근거·수치·사례. "
+                    "counterargument_rebuttal: 예상 반론 인정 후 재반론 극복. "
+                    "higher_principle: 상위 가치·원칙으로 격상."
+                ),
+            }
+            body_item_required.append("role")
+
         return {
             "type": "object",
             "required": ["title", "intro_lead", "body", "conclusion_heading"],
@@ -650,16 +762,8 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                     "maxItems": body_sections,
                     "items": {
                         "type": "object",
-                        "required": ["heading", "lead_sentence"],
-                        "properties": {
-                            "heading": {"type": "string"},
-                            "lead_sentence": {
-                                "type": "string",
-                                "description": "이 섹션의 핵심 주장·해법·결론을 첫 문장으로 직접 선언. 문제 진단·배경 설명·현황 묘사로 시작하지 말 것.",
-                                "minLength": 20,
-                                "maxLength": 200,
-                            },
-                        },
+                        "required": body_item_required,
+                        "properties": body_item_properties,
                     },
                 },
                 "conclusion_heading": {"type": "string"},
@@ -767,19 +871,28 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         length_spec: Dict[str, int],
         writing_method: str = '',
     ) -> str:
-        """AEO 2단계 생성의 2단계: 아웃라인을 고정�� 채 본문 확장을 요청하는 프��프트."""
+        """AEO 2단계 생성의 2단계: 아웃라인을 고정한 채 본문 확장을 요청하는 프롬프트."""
         from ..common.aeo_config import uses_dialectical_structure, build_dialectical_roles
 
         body_count = len(outline.get('body', []))
         is_dialectical = uses_dialectical_structure(writing_method) and body_count >= 3
-        roles = build_dialectical_roles(body_count) if is_dialectical else []
-        role_map = {r['order']: r for r in roles}
+
+        # role 가이드 매핑 (outline에 role 필드가 있으면 그것을 사용, 없으면 위치 기반)
+        role_guides = {}
+        if is_dialectical:
+            positional_roles = build_dialectical_roles(body_count)
+            role_guides = {r['order']: r for r in positional_roles}
 
         body_lines = []
         for i, section in enumerate(outline.get('body', []), 1):
             role_hint = ''
-            if i in role_map:
-                r = role_map[i]
+            # outline에 role 필드가 있으면 그것 기반, 없으면 위치 기반
+            section_role = section.get('role', '')
+            if section_role and i in role_guides:
+                guide = role_guides[i]['guide']
+                role_hint = f'    <expansion_role>{section_role}: {guide}</expansion_role>\n'
+            elif i in role_guides:
+                r = role_guides[i]
                 role_hint = f'    <expansion_role>{r["role"]}: {r["guide"]}</expansion_role>\n'
             body_lines.append(
                 f'  <body_section order="{i}">\n'

@@ -493,7 +493,9 @@ class SectionRepairMixin:
                             length_spec=length_spec,
                             writing_method=writing_method,
                         )
-                        outline_schema = self._build_outline_json_schema(length_spec)
+                        outline_schema = self._build_outline_json_schema(
+                            length_spec, writing_method=writing_method,
+                        )
                         aeo_outline = await self.call_llm_json_contract(
                             outline_prompt,
                             response_schema=outline_schema,
@@ -501,10 +503,12 @@ class SectionRepairMixin:
                             stage="outline",
                             max_output_tokens=2048,
                         )
+                        outline_roles = [s.get('role', '-') for s in aeo_outline.get('body', [])]
                         print(
                             f"📋 [StructureAgent] 아웃라인 생성 완료: "
                             f"title='{aeo_outline.get('title', '')[:30]}', "
-                            f"body_sections={len(aeo_outline.get('body', []))}"
+                            f"body_sections={len(aeo_outline.get('body', []))}, "
+                            f"roles={outline_roles}"
                         )
                         # --- 두괄식 검증 게이트 ---
                         lead_failures = self._validate_outline_lead_sentences(aeo_outline, writing_method=writing_method)
@@ -542,6 +546,25 @@ class SectionRepairMixin:
                             else:
                                 print("📋 [StructureAgent] 아웃라인 재생성 후 검증 통과")
                         # --- 검증 게이트 끝 ---
+
+                        # --- 변증법 역할 시퀀스 검증 ---
+                        if is_aeo and aeo_outline is not None:
+                            role_failures = self._validate_outline_roles(
+                                aeo_outline, writing_method=writing_method,
+                            )
+                            if role_failures:
+                                print(
+                                    f"⚠️ [StructureAgent] 아웃라인 role 시퀀스 검증 실패 "
+                                    f"({len(role_failures)}건): {role_failures}"
+                                )
+                                # role이 스키마 enum이므로 값 자체는 유효 — 순서만 수정
+                                # 아웃라인의 role을 강제로 올바른 시퀀스로 덮어쓰기
+                                from ..common.aeo_config import build_dialectical_roles
+                                body = aeo_outline.get('body', [])
+                                expected = build_dialectical_roles(len(body))
+                                for section, exp in zip(body, expected):
+                                    section['role'] = exp['role']
+                                print("📋 [StructureAgent] role 시퀀스 강제 교정 완료")
                     except Exception as outline_err:
                         print(f"⚠️ [StructureAgent] 아웃라인 생성 실패, 단일 호출로 폴백: {outline_err}")
                         is_aeo = False
