@@ -961,7 +961,19 @@ def _ensure_user(uid: str) -> None:
 def _resolve_request_intent_with_meta(data: Dict[str, Any]) -> tuple[str, str, str, Dict[str, Any]]:
     topic = str(data.get("prompt") or data.get("topic") or "").strip()
     if not topic:
-        raise ApiError("invalid-argument", "주제를 입력해 주세요.")
+        # topic이 비어있으면 stance/news에서 추론 시도
+        stance_text = str(data.get("stanceText") or "").strip()
+        news_text = str(data.get("newsDataText") or "").strip()
+        source_text = news_text or stance_text
+        if not source_text:
+            raise ApiError("invalid-argument", "주제, 입장문, 뉴스 중 하나는 입력해야 합니다.")
+        try:
+            from services.stance_inferrer import infer_stance_from_news
+            inferred = _run_async_sync(infer_stance_from_news(news_text=source_text))
+            topic = (inferred or {}).get("topic") or source_text[:50]
+        except Exception as exc:
+            logger.warning("[_resolve_request_intent_with_meta] stance inference failed: %s", exc)
+            topic = source_text[:50]
 
     requested_category = str(data.get("category") or "").strip()
     requested_sub_category = str(data.get("subCategory") or "").strip()
@@ -1017,7 +1029,12 @@ def _resolve_request_category(data: Dict[str, Any]) -> tuple[str, str, str]:
 def _topic_and_category(data: Dict[str, Any]) -> tuple[str, str]:
     topic = str(data.get("prompt") or data.get("topic") or "").strip()
     if not topic:
-        raise ApiError("invalid-argument", "주제를 입력해주세요.")
+        stance_text = str(data.get("stanceText") or "").strip()
+        news_text = str(data.get("newsDataText") or "").strip()
+        source_text = news_text or stance_text
+        if not source_text:
+            raise ApiError("invalid-argument", "주제, 입장문, 뉴스 중 하나는 입력해야 합니다.")
+        topic = source_text[:50]
     category = str(data.get("category") or "daily-communication").strip() or "daily-communication"
     return topic, category
 
