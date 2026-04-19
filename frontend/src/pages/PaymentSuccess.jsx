@@ -3,25 +3,20 @@ import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   Container,
-  Paper,
   Typography,
   Box,
   Button,
   Alert,
   CircularProgress,
-  List,
-  ListItem,
-  ListItemText,
-  Divider
+  Divider,
 } from '@mui/material';
-import {
-  CheckCircle,
-  Receipt,
-  Home
-} from '@mui/icons-material';
+import { CheckCircle, Home, Receipt } from '@mui/icons-material';
+import { motion } from 'framer-motion';
 import DashboardLayout from '../components/DashboardLayout';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../services/firebase';
+
+const springTransition = 'all 0.35s cubic-bezier(0.16, 1, 0.3, 1)';
 
 const PaymentSuccess = () => {
   const [searchParams] = useSearchParams();
@@ -30,7 +25,6 @@ const PaymentSuccess = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // URL 파라미터에서 결제 정보 추출 (네이버페이)
   const paymentId = searchParams.get('paymentId');
   const orderId = searchParams.get('orderId');
 
@@ -43,12 +37,8 @@ const PaymentSuccess = () => {
       }
 
       try {
-        // Firebase Functions를 통해 네이버페이 결제 승인
         const confirmPaymentFn = httpsCallable(functions, 'confirmNaverPayment');
-        const result = await confirmPaymentFn({
-          paymentId,
-          orderId
-        });
+        const result = await confirmPaymentFn({ paymentId, orderId });
 
         if (result.data.success) {
           setPaymentData(result.data.payment);
@@ -69,10 +59,10 @@ const PaymentSuccess = () => {
   if (loading) {
     return (
       <DashboardLayout>
-        <Container maxWidth="md" sx={{ py: 4 }}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <CircularProgress size={60} sx={{ mb: 3 }} />
-            <Typography variant="h6" color="text.secondary">
+        <Container maxWidth="md" sx={{ py: 'var(--spacing-xl)' }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 8 }}>
+            <CircularProgress size={48} sx={{ mb: 3, color: 'var(--color-primary)' }} />
+            <Typography sx={{ color: 'var(--color-text-secondary)', fontSize: '1.05rem' }}>
               결제를 처리하고 있습니다...
             </Typography>
           </Box>
@@ -84,115 +74,202 @@ const PaymentSuccess = () => {
   if (error) {
     return (
       <DashboardLayout>
-        <Container maxWidth="md" sx={{ py: 4 }}>
-          <Alert severity="error" sx={{ mb: 3 }}>
-            <Typography variant="h6" sx={{ mb: 1 }}>
-              결제 처리 실패
-            </Typography>
-            <Typography>{error}</Typography>
-          </Alert>
-          <Box sx={{ textAlign: 'center' }}>
-            <Button
-              variant="contained"
-              startIcon={<Home />}
-              onClick={() => navigate('/billing')}
-              sx={{ mr: 2 }}
-            >
-              결제 페이지로 돌아가기
-            </Button>
-          </Box>
+        <Container maxWidth="md" sx={{ py: 'var(--spacing-xl)' }}>
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <Alert severity="error" sx={{ mb: 3, borderRadius: 'var(--radius-lg)' }}>
+              <Typography sx={{ fontWeight: 700, mb: 0.5 }}>결제 처리 실패</Typography>
+              <Typography variant="body2">{error}</Typography>
+            </Alert>
+            <Box sx={{ textAlign: 'center' }}>
+              <Button
+                variant="contained"
+                startIcon={<Home />}
+                onClick={() => navigate('/billing')}
+                sx={{
+                  bgcolor: 'var(--color-primary)',
+                  color: 'var(--color-text-inverse)',
+                  fontWeight: 600,
+                  textTransform: 'none',
+                  borderRadius: 'var(--radius-md)',
+                  px: 4,
+                  py: 1.5,
+                  transition: springTransition,
+                  '&:hover': { bgcolor: 'var(--color-primary-hover)', transform: 'scale(1.02)' },
+                  '&:active': { transform: 'scale(0.98)' },
+                }}
+              >
+                결제 페이지로 돌아가기
+              </Button>
+            </Box>
+          </motion.div>
         </Container>
       </DashboardLayout>
     );
   }
 
+  const infoRows = paymentData ? [
+    { label: '주문번호', value: paymentData.orderId },
+    { label: '결제 수단', value: '네이버페이' },
+    { label: '결제 금액', value: `${paymentData.totalAmount?.toLocaleString()}원` },
+    { label: '결제 일시', value: new Date(paymentData.approvedAt).toLocaleString('ko-KR') },
+    { label: '상품명', value: paymentData.orderName },
+  ] : [];
+
   return (
     <DashboardLayout>
-      <Container maxWidth="md" sx={{ py: 4 }}>
+      <Container maxWidth="sm" sx={{ py: 'var(--spacing-xl)' }}>
         {/* 성공 헤더 */}
-        <Paper sx={{ p: 4, mb: 3, textAlign: 'center', bgcolor: 'success.light' }}>
-          <CheckCircle sx={{ fontSize: 80, color: 'success.main', mb: 2 }} />
-          <Typography variant="h4" sx={{ fontWeight: 'bold', mb: 1, color: 'success.dark' }}>
-            결제가 완료되었습니다!
-          </Typography>
-          <Typography variant="body1" color="success.dark">
-            서비스가 즉시 활성화되었습니다. 이용해주셔서 감사합니다.
-          </Typography>
-        </Paper>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <Box sx={{ textAlign: 'center', mb: 4, pt: 4 }}>
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ duration: 0.5, delay: 0.2, type: 'spring', stiffness: 200 }}
+            >
+              <Box sx={{
+                width: 88,
+                height: 88,
+                mx: 'auto',
+                mb: 3,
+                borderRadius: 'var(--radius-xl)',
+                bgcolor: 'var(--color-success-light)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <CheckCircle sx={{ fontSize: 48, color: 'var(--color-success)' }} />
+              </Box>
+            </motion.div>
+            <Typography sx={{
+              fontWeight: 700,
+              fontSize: { xs: '1.5rem', sm: '1.75rem' },
+              color: 'var(--color-text-primary)',
+              letterSpacing: '-0.02em',
+              mb: 1,
+            }}>
+              결제가 완료되었습니다
+            </Typography>
+            <Typography sx={{ color: 'var(--color-text-secondary)', fontSize: '0.95rem' }}>
+              서비스가 즉시 활성화되었습니다
+            </Typography>
+          </Box>
+        </motion.div>
 
         {/* 결제 상세 정보 */}
-        <Paper sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
-            <Receipt sx={{ mr: 1 }} />
-            결제 상세 정보
-          </Typography>
-          
-          {paymentData && (
-            <List>
-              <ListItem divider>
-                <ListItemText 
-                  primary="주문번호" 
-                  secondary={paymentData.orderId}
-                />
-              </ListItem>
-              <ListItem divider>
-                <ListItemText
-                  primary="결제 수단"
-                  secondary="네이버페이"
-                />
-              </ListItem>
-              <ListItem divider>
-                <ListItemText 
-                  primary="결제 금액" 
-                  secondary={`${paymentData.totalAmount?.toLocaleString()}원`}
-                />
-              </ListItem>
-              <ListItem divider>
-                <ListItemText 
-                  primary="결제 일시" 
-                  secondary={new Date(paymentData.approvedAt).toLocaleString('ko-KR')}
-                />
-              </ListItem>
-              <ListItem>
-                <ListItemText 
-                  primary="상품명" 
-                  secondary={paymentData.orderName}
-                />
-              </ListItem>
-            </List>
-          )}
-        </Paper>
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <Box sx={{
+            p: { xs: 3, sm: 4 },
+            mb: 3,
+            borderRadius: 'var(--radius-xl)',
+            bgcolor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            boxShadow: 'var(--shadow-md)',
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2.5 }}>
+              <Receipt sx={{ fontSize: 20, color: 'var(--color-primary)' }} />
+              <Typography sx={{ fontWeight: 700, fontSize: '1rem', color: 'var(--color-text-primary)' }}>
+                결제 상세
+              </Typography>
+            </Box>
+
+            {infoRows.map((row, idx) => (
+              <React.Fragment key={row.label}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1.5 }}>
+                  <Typography sx={{ color: 'var(--color-text-tertiary)', fontSize: '0.9rem' }}>
+                    {row.label}
+                  </Typography>
+                  <Typography sx={{
+                    color: 'var(--color-text-primary)',
+                    fontSize: '0.9rem',
+                    fontWeight: 500,
+                    fontVariantNumeric: 'tabular-nums',
+                    textAlign: 'right',
+                    maxWidth: '60%',
+                    wordBreak: 'break-word',
+                  }}>
+                    {row.value}
+                  </Typography>
+                </Box>
+                {idx < infoRows.length - 1 && <Divider sx={{ borderColor: 'var(--color-border)' }} />}
+              </React.Fragment>
+            ))}
+          </Box>
+        </motion.div>
 
         {/* 안내 사항 */}
-        <Alert severity="info" sx={{ mb: 3 }}>
-          <Typography variant="body2" sx={{ mb: 1 }}>
-            <strong>다음 단계 안내</strong>
-          </Typography>
-          <Typography variant="body2">
-            • 결제 완료와 함께 선택하신 플랜이 즉시 적용되었습니다.<br/>
-            • 결제 영수증은 등록하신 이메일로 발송됩니다.<br/>
-            • 서비스 이용 중 문의사항이 있으시면 고객센터로 연락해주세요.
-          </Typography>
-        </Alert>
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.25, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <Alert severity="info" sx={{ mb: 4, borderRadius: 'var(--radius-lg)' }}>
+            <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.5 }}>다음 단계 안내</Typography>
+            <Typography variant="body2" sx={{ lineHeight: 1.8 }}>
+              선택하신 플랜이 즉시 적용되었습니다.<br />
+              결제 영수증은 등록하신 이메일로 발송됩니다.
+            </Typography>
+          </Alert>
+        </motion.div>
 
-        {/* 액션 버튼들 */}
-        <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
-          <Button
-            variant="contained"
-            startIcon={<Home />}
-            onClick={() => navigate('/dashboard')}
-            size="large"
-          >
-            대시보드로 이동
-          </Button>
-          <Button
-            variant="outlined"
-            onClick={() => navigate('/billing')}
-            size="large"
-          >
-            결제 내역 보기
-          </Button>
-        </Box>
+        {/* 액션 버튼 */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+            <Button
+              variant="contained"
+              startIcon={<Home />}
+              onClick={() => navigate('/dashboard')}
+              size="large"
+              sx={{
+                bgcolor: 'var(--color-primary)',
+                color: 'var(--color-text-inverse)',
+                fontWeight: 700,
+                textTransform: 'none',
+                borderRadius: 'var(--radius-md)',
+                px: 4,
+                py: 1.5,
+                transition: springTransition,
+                '&:hover': { bgcolor: 'var(--color-primary-hover)', transform: 'scale(1.02)', boxShadow: 'var(--shadow-glow-primary)' },
+                '&:active': { transform: 'scale(0.98)' },
+              }}
+            >
+              대시보드로 이동
+            </Button>
+            <Button
+              variant="outlined"
+              onClick={() => navigate('/billing')}
+              size="large"
+              sx={{
+                color: 'var(--color-primary)',
+                borderColor: 'var(--color-border)',
+                fontWeight: 600,
+                textTransform: 'none',
+                borderRadius: 'var(--radius-md)',
+                px: 3,
+                py: 1.5,
+                transition: springTransition,
+                '&:hover': { borderColor: 'var(--color-primary)', bgcolor: 'var(--color-primary-lighter)' },
+              }}
+            >
+              결제 내역 보기
+            </Button>
+          </Box>
+        </motion.div>
       </Container>
     </DashboardLayout>
   );

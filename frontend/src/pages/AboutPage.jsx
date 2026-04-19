@@ -553,7 +553,7 @@ AI가 이미 학습하고 있습니다.
                               formatter={(value) => [`${Number(value).toLocaleString()}회`, '조회수']}
                               labelFormatter={(label) => `${label}`}
                               contentStyle={{
-                                borderRadius: '12px',
+                                borderRadius: 'var(--radius-lg)',
                                 border: '1px solid var(--color-border)',
                                 backgroundColor: 'var(--color-surface)',
                                 color: 'var(--color-text-primary)'

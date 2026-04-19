@@ -9,7 +9,7 @@ import {
   Box,
   IconButton,
   Tooltip,
-  useTheme,
+
   Button,
   Alert
 } from '@mui/material';
@@ -27,7 +27,6 @@ export default function PromptForm({
   user = null,
   errors = {}
 }) {
-  const theme = useTheme();
 
   // 시스템 설정 불러오기
   const { config } = useSystemConfig();
@@ -239,7 +238,7 @@ export default function PromptForm({
               const isOverLimit = totalLength > 4000;
               return (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                  <span style={{ color: isOverLimit ? '#d32f2f' : 'inherit', fontWeight: isOverLimit ? 700 : 400 }}>
+                  <span style={{ color: isOverLimit ? 'var(--color-error)' : 'inherit', fontWeight: isOverLimit ? 700 : 400 }}>
                     합계: {totalLength.toLocaleString()}자
                     {isOverLimit && ' ⚠️ 4,000자 초과 시 앞부분만 분석됩니다'}
                   </span>
@@ -290,13 +289,13 @@ export default function PromptForm({
                           height: { xs: 22, sm: 18 },
                           minWidth: { xs: 22, sm: 18 },
                           minHeight: { xs: 22, sm: 18 },
-                          backgroundColor: '#55207d',
-                          color: 'white',
+                          backgroundColor: 'var(--color-primary)',
+                          color: 'var(--color-text-inverse)',
                           border: '1px solid',
-                          borderColor: '#55207d',
+                          borderColor: 'var(--color-primary)',
                           '&:hover': {
-                            backgroundColor: theme.palette.ui?.header || '#152484',
-                            borderColor: theme.palette.ui?.header || '#152484'
+                            backgroundColor: 'var(--color-primary-hover)',
+                            borderColor: 'var(--color-primary-hover)'
                           },
                           '&:disabled': {
                             backgroundColor: 'grey.50',
@@ -321,13 +320,13 @@ export default function PromptForm({
                             height: { xs: 22, sm: 18 },
                             minWidth: { xs: 22, sm: 18 },
                             minHeight: { xs: 22, sm: 18 },
-                            backgroundColor: '#006261',
-                            color: 'white',
+                            backgroundColor: 'var(--color-primary)',
+                            color: 'var(--color-text-inverse)',
                             border: '1px solid',
-                            borderColor: '#006261',
+                            borderColor: 'var(--color-primary)',
                             '&:hover': {
-                              backgroundColor: '#003A87',
-                              borderColor: '#003A87'
+                              backgroundColor: 'var(--color-primary-hover)',
+                              borderColor: 'var(--color-primary-hover)'
                             },
                             '&:disabled': {
                               backgroundColor: 'grey.50',

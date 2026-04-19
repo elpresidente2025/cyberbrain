@@ -56,7 +56,9 @@ import {
   useNotification,
   StandardDialog
 } from '../components/ui';
-import { colors, spacing, typography, visualWeight, verticalRhythm } from '../theme/tokens';
+import { spacing } from '../theme/tokens';
+
+const springTransition = 'all 0.35s cubic-bezier(0.16, 1, 0.3, 1)';
 
 function formatDate(iso) {
   try {
@@ -139,13 +141,35 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
 
   return (
     <>
-      <Paper elevation={0} sx={{ p: { xs: 0.5, sm: 3 }, mb: 3, border: `1px solid ${theme.palette.divider}` }}>
+      <Paper elevation={0} sx={{
+        p: { xs: 0.5, sm: 3 },
+        mb: 3,
+        border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-lg)',
+      }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-            <Typography variant={isMobile ? 'h6' : 'h5'} fontWeight="bold">
+            <Typography sx={{
+              fontWeight: 700,
+              fontSize: { xs: '1.15rem', sm: '1.35rem' },
+              color: 'var(--color-text-primary)',
+              letterSpacing: '-0.02em',
+              fontVariantNumeric: 'tabular-nums',
+            }}>
               {year}년 {month + 1}월
             </Typography>
-            <Button size="small" onClick={handleToday} sx={{ ml: 1, minWidth: 'auto', px: 1 }}>
+            <Button
+              size="small"
+              onClick={handleToday}
+              sx={{
+                ml: 1,
+                minWidth: 'auto',
+                px: 1.5,
+                fontSize: '0.8rem',
+                color: 'var(--color-primary)',
+                textTransform: 'none',
+              }}
+            >
               오늘
             </Button>
           </Box>
@@ -157,7 +181,12 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
 
         <Grid container sx={{ mb: 1 }}>
           {weekDays.map((day, idx) => (
-            <Grid item xs={12 / 7} key={day} sx={{ textAlign: 'center', fontWeight: 'bold', color: idx === 0 ? 'error.main' : idx === 6 ? 'primary.main' : 'text.secondary', fontSize: { xs: '0.72rem', sm: '0.85rem' } }}>
+            <Grid item xs={12 / 7} key={day} sx={{
+              textAlign: 'center',
+              fontWeight: 700,
+              color: idx === 0 ? 'var(--color-error)' : idx === 6 ? 'var(--color-primary)' : 'var(--color-text-tertiary)',
+              fontSize: { xs: '0.72rem', sm: '0.85rem' },
+            }}>
               {day}
             </Grid>
           ))}
@@ -185,38 +214,39 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
                     setSelectedDate(isSelected ? null : dateKey);
                   }}
                   sx={{
-                    border: `1px solid ${theme.palette.divider}`,
-                    borderRadius: 1,
+                    border: isSelected ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-md)',
                     p: { xs: 0.25, sm: 0.5 },
                     aspectRatio: { xs: '1 / 1', sm: '3 / 2' },
                     minHeight: { xs: 44, sm: 60 },
-                    bgcolor: isToday ? 'primary.main' : isSelected ? 'primary.light' : 'background.paper',
+                    bgcolor: isToday ? 'var(--color-primary)' : isSelected ? 'var(--color-primary-lighter)' : 'var(--color-surface)',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 0.5,
                     cursor: 'pointer',
-                    transition: 'all 0.2s',
+                    transition: springTransition,
                     '&:hover': {
-                      bgcolor: isToday ? 'primary.main' : 'action.hover'
-                    }
+                      bgcolor: isToday ? 'var(--color-primary)' : 'var(--color-primary-lighter)',
+                      borderColor: 'var(--color-primary)',
+                      transform: 'scale(1.03)',
+                    },
+                    '&:active': { transform: 'scale(0.97)' },
                   }}
                 >
                   <Typography
                     variant="caption"
                     sx={{
-                      fontWeight: 'bold',
+                      fontWeight: 700,
                       textAlign: 'center',
                       display: 'block',
                       mb: { xs: 0.25, sm: 0.5 },
                       fontSize: { xs: '0.7rem', sm: '0.75rem' },
-                      color: isToday ? 'primary.contrastText' : 'text.primary'
+                      color: isToday ? 'var(--color-text-inverse)' : 'var(--color-text-primary)',
                     }}
-                    style={isToday ? { color: '#ffffff' } : {}}
                   >
                     {day}
                   </Typography>
 
-                  {/* 포스트 개수 표시용 점 표시 */}
                   {dayPosts.length > 0 && (
                     <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5, mt: 0.5 }}>
                       {dayPosts.slice(0, 3).map((_, idx) => (
@@ -226,12 +256,12 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
                             width: { xs: 5, sm: 6 },
                             height: { xs: 5, sm: 6 },
                             borderRadius: '50%',
-                            bgcolor: isToday ? 'primary.contrastText' : 'primary.main'
+                            bgcolor: isToday ? 'var(--color-text-inverse)' : 'var(--color-primary)',
                           }}
                         />
                       ))}
                       {dayPosts.length > 3 && (
-                        <Typography variant="caption" sx={{ fontSize: '0.65rem', ml: 0.5 }}>
+                        <Typography variant="caption" sx={{ fontSize: '0.65rem', ml: 0.5, color: 'var(--color-text-tertiary)' }}>
                           +{dayPosts.length - 3}
                         </Typography>
                       )}
@@ -285,29 +315,36 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
 
                 return (
                   <Grid item xs={12} sm={gridSize} key={post.id}>
-                    <Card elevation={2}>
+                    <Card elevation={0} sx={{
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 'var(--radius-lg)',
+                      transition: springTransition,
+                      '&:hover': {
+                        borderColor: 'var(--color-primary)',
+                        boxShadow: 'var(--shadow-md)',
+                        transform: 'translateY(-2px)',
+                      },
+                    }}>
                       <CardActionArea onClick={() => onPostClick(post)}>
-                        <CardContent>
+                        <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
                             <Chip size="small" label={statusLabel} color={statusColor} sx={{ color: 'white', backgroundColor: statusBgColor }} />
-                            <Typography variant="caption" color="text.secondary">{formatDate(post.createdAt)}</Typography>
+                            <Typography variant="caption" sx={{ color: 'var(--color-text-tertiary)', fontVariantNumeric: 'tabular-nums' }}>{formatDate(post.createdAt)}</Typography>
                           </Box>
-                          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1, wordBreak: 'break-word' }}>
+                          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1, wordBreak: 'break-word', color: 'var(--color-text-primary)' }}>
                             {post.title || '제목 없음'}
                           </Typography>
-                          <Typography variant="body2" color="text.secondary" sx={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: 60 }}>
+                          <Typography variant="body2" sx={{ color: 'var(--color-text-secondary)', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: 60 }}>
                             {preview || '내용 없음'}
                           </Typography>
-                          <Divider sx={{ my: 1.5 }} />
-                          <Typography variant="caption">글자수: {wordCount}</Typography>
+                          <Divider sx={{ my: 1.5, borderColor: 'var(--color-border)' }} />
+                          <Typography variant="caption" sx={{ color: 'var(--color-text-tertiary)', fontVariantNumeric: 'tabular-nums' }}>글자수: {wordCount}</Typography>
                         </CardContent>
                       </CardActionArea>
-                      <CardActions sx={{ justifyContent: 'space-between', pt: 0, pb: 2, px: 2 }}>
-                        {/* 🆕 안내 문구 추가 */}
-                        <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                      <CardActions sx={{ justifyContent: 'space-between', pt: 0, pb: 2, px: { xs: 2, sm: 3 } }}>
+                        <Typography variant="caption" sx={{ color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
                           클릭 시 원고 전문을 확인하실 수 있습니다.
                         </Typography>
-
                         <IconButton size="small" aria-label="원고 삭제" onClick={(e) => { e.stopPropagation(); onDelete(post.id, e); }}><DeleteOutline /></IconButton>
                       </CardActions>
                     </Card>
@@ -546,7 +583,7 @@ export default function PostsListPage() {
 
         <Dialog open={publishDialogOpen} onClose={closePublishDialog} maxWidth="sm" fullWidth>
           <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: `${spacing.xs}px` }}>
-            <Publish sx={{ color: theme.palette.ui?.header || colors.brand.primary }} />
+            <Publish sx={{ color: 'var(--color-primary)' }} />
             원고 발행 등록
           </DialogTitle>
           <DialogContent>
@@ -576,13 +613,17 @@ export default function PostsListPage() {
               variant="contained"
               disabled={!isNaverBlogUrl(publishUrl)}
               sx={{
-                bgcolor: isNaverBlogUrl(publishUrl)
-                  ? (theme.palette.ui?.header || colors.brand.primary)
-                  : 'action.disabledBackground',
-                '&:hover': isNaverBlogUrl(publishUrl)
-                  ? { bgcolor: theme.palette.ui?.headerHover || colors.brand.primaryHover }
-                  : {},
-                color: isNaverBlogUrl(publishUrl) ? 'white' : 'action.disabled'
+                bgcolor: 'var(--color-primary)',
+                color: 'var(--color-text-inverse)',
+                fontWeight: 600,
+                textTransform: 'none',
+                borderRadius: 'var(--radius-md)',
+                transition: springTransition,
+                '&:hover': { bgcolor: 'var(--color-primary-hover)' },
+                '&.Mui-disabled': {
+                  bgcolor: 'var(--color-border)',
+                  color: 'var(--color-text-tertiary)',
+                },
               }}
             >
               발행 완료

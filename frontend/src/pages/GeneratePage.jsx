@@ -566,12 +566,12 @@ const GeneratePage = () => {
             <Typography variant="h4" sx={{
               fontWeight: 'bold',
               mb: `${spacing.xs}px`,
-              color: theme.palette.mode === 'dark' ? 'white' : 'black',
+              color: 'var(--color-text-primary)',
               display: 'flex',
               alignItems: 'center',
               gap: `${spacing.xs}px`
             }}>
-              <Create sx={{ color: theme.palette.mode === 'dark' ? 'white' : 'black' }} />
+              <Create sx={{ color: 'var(--color-text-primary)' }} />
               새 원고 생성
             </Typography>
           </Box>
@@ -664,10 +664,10 @@ const GeneratePage = () => {
           <DialogTitle
             id="preview-dialog-title"
             sx={{
-              backgroundColor: theme.palette.mode === 'dark' ? '#1e1e1e' : '#2c3e50',
-              color: '#ffffff !important',
+              background: 'var(--gradient-primary-dark)',
+              color: 'var(--color-text-inverse)',
               '& .MuiTypography-root': {
-                color: '#ffffff !important'
+                color: 'var(--color-text-inverse)',
               }
             }}
           >
@@ -679,7 +679,7 @@ const GeneratePage = () => {
                 position: 'absolute',
                 right: 8,
                 top: 8,
-                color: '#ffffff',
+                color: 'var(--color-text-inverse)',
               }}
             >
               <CloseIcon />
@@ -712,7 +712,7 @@ const GeneratePage = () => {
               )}
             </Box>
             <Box sx={{ display: 'flex', gap: `${spacing.xs}px` }}>
-              <Button onClick={() => setSelectedDraft(null)} sx={{ color: (theme) => theme.palette.mode === 'dark' ? '#ffffff' : undefined }}>
+              <Button onClick={() => setSelectedDraft(null)} sx={{ color: 'var(--color-text-secondary)', textTransform: 'none' }}>
                 취소
               </Button>
               <Button
