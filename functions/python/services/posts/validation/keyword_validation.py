@@ -22,7 +22,7 @@ from .keyword_common import (
     find_shadowed_user_keywords,
 )
 from .keyword_context import _is_event_context_text, _is_location_keyword, _is_unsafe_location_context
-from .keyword_injection import _find_similar_sentence_in_content, _inject_keyword_into_section
+from .keyword_injection import _find_similar_sentence_in_content
 from .keyword_reduction import _reduce_excess_user_keyword_mentions
 from .keyword_reference import (
     _append_sentence_to_paragraph,
@@ -240,8 +240,6 @@ def enforce_keyword_requirements(
     insertions: list[Dict[str, Any]] = []
     reductions: list[Dict[str, Any]] = []
     rewrite_requests: list[Dict[str, Any]] = []
-    per_keyword_insertions: Dict[str, int] = {}
-    locked_section_indexes_by_keyword: Dict[str, set[int]] = {}
     current_result = initial_result
     shadowed_map = find_shadowed_user_keywords(user_keywords)
 
@@ -315,167 +313,13 @@ def enforce_keyword_requirements(
                 break
             continue
 
-        insertion_plan: Dict[int, List[Dict[str, Any]]] = {}
-        needs_fix = False
-
-        for keyword in user_keywords:
-            if keyword in skipped_user_keyword_set:
-                continue
-            keyword_info = details.get(keyword) or {}
-            expected = int(keyword_info.get("expected") or _keyword_user_threshold(len(user_keywords))[0])
-            gate_count = int(keyword_info.get("gateCount") or keyword_info.get("count") or keyword_info.get("coverage") or 0)
-            deficit = max(0, expected - gate_count)
-            body_expected = int(keyword_info.get("bodyExpected") or 0)
-            body_count = int(keyword_info.get("bodyCount") or 0)
-            body_deficit = max(0, body_expected - body_count)
-            exact_shortfall = int(keyword_info.get("exactShortfall") or 0)
-            total_deficit = max(deficit, body_deficit, exact_shortfall)
-            if total_deficit <= 0:
-                continue
-
-            needs_fix = True
-            planned_indexes: list[int] = []
-            locked_indexes = set(locked_section_indexes_by_keyword.get(keyword) or set())
-            if body_deficit > 0:
-                body_sections = [
-                    (idx, section)
-                    for idx, section in enumerate(sections)
-                    if str(section.get("type") or "").startswith("body")
-                    and idx not in locked_indexes
-                ]
-                ranked_body = sorted(
-                    body_sections,
-                    key=lambda item: (
-                        count_keyword_occurrences(str(item[1].get("content") or ""), keyword),
-                        item[0],
-                    ),
-                )
-                for section_idx, section in ranked_body:
-                    section_count = count_keyword_occurrences(str(section.get("content") or ""), keyword)
-                    if section_count > 0:
-                        continue
-                    planned_indexes.append(section_idx)
-                    locked_indexes.add(section_idx)
-                    if len(planned_indexes) >= body_deficit:
-                        break
-
-            remaining_deficit = max(0, total_deficit - len(planned_indexes))
-            if remaining_deficit > 0:
-                additional_indexes = _select_keyword_section_indexes(
-                    sections,
-                    keyword,
-                    remaining_deficit,
-                    blocked_indexes=locked_indexes,
-                    allow_existing_mentions=False,
-                )
-                planned_indexes.extend(additional_indexes)
-                locked_indexes.update(additional_indexes)
-
-            unresolved_deficit = max(0, total_deficit - len(planned_indexes))
-            if unresolved_deficit > 0:
-                rewrite_requests.append(
-                    {
-                        "keyword": keyword,
-                        "section": -1,
-                        "sectionType": "any",
-                        "variantIndex": int(per_keyword_insertions.get(keyword, 0)),
-                        "strategy": "section_rewrite_required",
-                        "reason": "no_safe_target_section",
-                        "remainingDeficit": unresolved_deficit,
-                    }
-                )
-
-            for section_idx in planned_indexes:
-                if section_idx < 0 or section_idx >= len(sections):
-                    continue
-                section = sections[section_idx]
-                variant_index = per_keyword_insertions.get(keyword, 0)
-                per_keyword_insertions[keyword] = variant_index + 1
-                locked_section_indexes_by_keyword.setdefault(keyword, set()).add(section_idx)
-                insertion_plan.setdefault(section_idx, []).append(
-                    {
-                        "keyword": keyword,
-                        "section": section_idx,
-                        "sectionType": section.get("type"),
-                        "variantIndex": variant_index,
-                    }
-                )
-
-        if not needs_fix or not insertion_plan:
-            break
-
-        applied_in_iteration = 0
-        for section_idx in sorted(insertion_plan.keys(), reverse=True):
-            if section_idx < 0 or section_idx >= len(sections):
-                continue
-            section = sections[section_idx]
-            start_index = int(section.get("startIndex") or 0)
-            end_index = int(section.get("endIndex") or 0)
-            if end_index < start_index:
-                continue
-
-            payload = insertion_plan[section_idx]
-            section_content = working_content[start_index:end_index]
-            applied_payload: list[Dict[str, Any]] = []
-            for item in payload:
-                updated_section, edited, applied_sentence = _inject_keyword_into_section(
-                    section_content,
-                    str(item.get("keyword") or ""),
-                    str(item.get("sectionType") or ""),
-                    int(item.get("variantIndex") or 0),
-                    allow_reference_fallback=_should_allow_keyword_reference_fallback(
-                        working_content,
-                        str(item.get("keyword") or ""),
-                        user_keywords,
-                        role_keyword_policy=role_keyword_policy,
-                    ),
-                    existing_content=working_content,
-                    role_keyword_policy=role_keyword_policy,
-                    section_index=section_idx,
-                )
-                if not edited:
-                    rewrite_requests.append(
-                        {
-                            "keyword": str(item.get("keyword") or ""),
-                            "section": section_idx,
-                            "sectionType": str(item.get("sectionType") or ""),
-                            "variantIndex": int(item.get("variantIndex") or 0),
-                            "strategy": "section_rewrite_required",
-                            "reason": "no_safe_keyword_variant",
-                        }
-                    )
-                    continue
-                section_content = updated_section
-                item["sentence"] = applied_sentence
-                item["strategy"] = "contextual_section_rewrite"
-                applied_payload.append(item)
-                applied_in_iteration += 1
-            if not applied_payload:
-                continue
-            working_content = working_content[:start_index] + section_content + working_content[end_index:]
-            insertions.extend(applied_payload)
-
-        if applied_in_iteration <= 0:
-            break
-
-        current_result = validate_keyword_insertion(
-            working_content,
-            user_keywords,
-            auto_keywords,
-            target_word_count,
-            title_text=title_text,
-            body_min_overrides=body_min_overrides,
-            user_keyword_expected_overrides=user_keyword_expected_overrides,
-            user_keyword_max_overrides=user_keyword_max_overrides,
+        # ── 기계적 키워드 강제 삽입 비활성화 ──
+        # LLM 기반 삽입(KeywordInjectorAgent)이 부족분을 해결하지 못했으면
+        # 그대로 수용한다. 기계적 prepend는 토픽 무관 삽입으로 비문을 만든다.
+        logger.info(
+            "[enforce_keyword_requirements] deterministic insertion skipped — accepting best-effort result"
         )
-        current_details = (current_result.get("details") or {}).get("keywords") or {}
-        exact_preference_pending = any(
-            int(((current_details.get(keyword) or {}).get("exactShortfall")) or 0) > 0
-            for keyword in user_keywords
-            if keyword not in skipped_user_keyword_set
-        )
-        if current_result.get("valid") and not exact_preference_pending:
-            break
+        break
 
     return _finalize_response({
         "content": working_content,
