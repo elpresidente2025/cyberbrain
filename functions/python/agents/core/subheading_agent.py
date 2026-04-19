@@ -812,6 +812,21 @@ class SubheadingAgent(Agent):
                 f"edits={len(kw_diversity_result.get('actions') or [])}"
             )
 
+        # ---------- Phase 6.8: question-form "?" 보충 (모든 H2 대상)
+        #   _deterministic_prerepair 는 passed=True 인 H2를 건너뛰므로,
+        #   scoring 통과한 question-form H2("확정될까", "가능할까" 등)에도
+        #   "?" 가 보충되도록 최종 단계에서 일괄 적용한다.
+        for i, heading in enumerate(final_headings):
+            if (
+                plans[i].get("answer_type") == "question-form"
+                and h2_style != "assertive"
+                and heading
+                and not heading.endswith("?")
+                and self._QUESTION_ENDING_RE.search(heading)
+                and len(heading) + 1 <= H2_MAX_LENGTH
+            ):
+                final_headings[i] = heading + "?"
+
         for i, final in enumerate(final_headings):
             trace[i]["final"] = final
 
