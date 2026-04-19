@@ -624,7 +624,48 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             },
         }
 
-    def _build_structure_json_prompt(self, *, prompt: str, length_spec: Dict[str, int], extra_rules: str = "", is_expansion: bool = False) -> str:
+    def _build_json_shape_block(self, *, is_expansion: bool = False, outline: Optional[Dict[str, Any]] = None) -> str:
+        """json_shape CDATA 블록 생성. 확장 모드에서는 실제 heading/lead_sentence를 박아넣는다."""
+        if is_expansion and outline:
+            # 동적 json_shape: 아웃라인의 heading·lead_sentence를 템플릿에 직접 삽입
+            title = outline.get('title', '...').replace('"', "'")
+            intro_lead = outline.get('intro_lead', '...').replace('"', "'")
+            conclusion_heading = outline.get('conclusion_heading', '...').replace('"', "'")
+            body_items = []
+            for section in outline.get('body', []):
+                h = section.get('heading', '...').replace('"', "'")
+                ls = section.get('lead_sentence', '...').replace('"', "'")
+                body_items.append(
+                    f'    {{"heading": "{h}", "paragraphs": ["{ls} (이어서 뒷받침 문장)", "...", "..."]}}'
+                )
+            body_json = ",\n".join(body_items) if body_items else '    {"heading": "...", "paragraphs": ["...", "...", "..."]}'
+            return (
+                "  <json_shape><![CDATA[\n"
+                "{\n"
+                f'  "title": "{title}",\n'
+                f'  "intro": {{"paragraphs": ["{intro_lead} (이어서 확장)", "...", "..."]}},\n'
+                '  "body": [\n'
+                f'{body_json}\n'
+                '  ],\n'
+                f'  "conclusion": {{"heading": "{conclusion_heading}", "paragraphs": ["...", "...", "..."]}}\n'
+                '}\n'
+                "  ]]></json_shape>\n"
+            )
+        else:
+            return (
+                "  <json_shape><![CDATA[\n"
+                "{\n"
+                "  \"title\": \"...\",\n"
+                "  \"intro\": {\"paragraphs\": [\"...\", \"...\", \"...\"]},\n"
+                "  \"body\": [\n"
+                "    {\"heading\": \"...\", \"paragraphs\": [\"...\", \"...\", \"...\"]}\n"
+                "  ],\n"
+                "  \"conclusion\": {\"heading\": \"...\", \"paragraphs\": [\"...\", \"...\", \"...\"]}\n"
+                "}\n"
+                "  ]]></json_shape>\n"
+            )
+
+    def _build_structure_json_prompt(self, *, prompt: str, length_spec: Dict[str, int], extra_rules: str = "", is_expansion: bool = False, outline: Optional[Dict[str, Any]] = None) -> str:
         body_sections = max(1, int(length_spec.get('body_sections') or 1))
         total_sections = max(3, int(length_spec.get('total_sections') or (body_sections + 2)))
         section_paragraphs = _coerce_int_option(
@@ -671,16 +712,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule priority='critical'>AI 수사 금지: '혁신적인/혁신적으로', '체계적인', '종합적인', '지속적인', '획기적인' 같은 ~적 관형사를 원고 전체에서 최대 1회만 허용. '극대화'(→늘리다/높이다), '도모'(→추진하다), '촉진'(→앞당기다), '창출'(→만들다)은 사용 금지. '긍정적인 영향', '밝은 미래/전망', '새로운 도약/시대'는 구체 수치·일정·사업명으로 대체.</rule>\n"
             f"{extra_rules}"
             "  </rules>\n"
-            "  <json_shape><![CDATA[\n"
-            "{\n"
-            "  \"title\": \"...\",\n"
-            "  \"intro\": {\"paragraphs\": [\"...\", \"...\", \"...\"]},\n"
-            "  \"body\": [\n"
-            "    {\"heading\": \"...\", \"paragraphs\": [\"...\", \"...\", \"...\"]}\n"
-            "  ],\n"
-            "  \"conclusion\": {\"heading\": \"...\", \"paragraphs\": [\"...\", \"...\", \"...\"]}\n"
-            "}\n"
-            "  ]]></json_shape>\n"
+            + self._build_json_shape_block(is_expansion=is_expansion, outline=outline) +
             "</json_output_contract>"
         )
 
@@ -723,6 +755,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             prompt=modified_prompt,
             length_spec=length_spec,
             is_expansion=True,
+            outline=outline,
         )
 
     async def call_llm_json(self, prompt: str, *, length_spec: Dict[str, int]) -> Dict[str, Any]:
