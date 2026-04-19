@@ -364,6 +364,39 @@ class EditorAgent(Agent):
                     )
             print(f"[EditorAgent] Step 3.8 TV 결과: target={_tv_target_count}, replaced={_tv_replaced if _tv_target_count > 0 else 0}")
 
+            # 3.9. 소스에 없는 허구 수치가 포함된 문장 삭제
+            _source_texts = context.get('sourceTexts') or []
+            if _source_texts:
+                from ..common.fact_guard import build_fact_allowlist, find_unsupported_numeric_tokens
+                _fact_allowlist = build_fact_allowlist(_source_texts)
+                _fact_plain = re.sub(r'<[^>]+>', ' ', constrained['content'])
+                _fact_plain = re.sub(r'\s+', ' ', _fact_plain).strip()
+                _fact_check = find_unsupported_numeric_tokens(_fact_plain, _fact_allowlist)
+                _unsupported = _fact_check.get('unsupported') or []
+                if _unsupported:
+                    # unsupported 수치가 포함된 문장을 HTML에서 삭제
+                    _fact_removed = 0
+                    _fc = constrained['content']
+                    for token in _unsupported:
+                        # token이 포함된 <p>...</p> 또는 문장을 찾아 삭제
+                        escaped = re.escape(token)
+                        # <p> 태그 안 문장 삭제
+                        p_pattern = r'<p>[^<]*' + escaped + r'[^<]*</p>\s*'
+                        new_fc = re.sub(p_pattern, '', _fc)
+                        if new_fc != _fc:
+                            _fact_removed += 1
+                            _fc = new_fc
+                    if _fact_removed > 0:
+                        constrained['content'] = _fc
+                        constrained['editSummary'].append(
+                            f"소스에 없는 허구 수치 {_unsupported} 포함 문장 {_fact_removed}건 삭제"
+                        )
+                    print(f"[EditorAgent] Step 3.9 unsupported_numerics: {_unsupported}, removed={_fact_removed}")
+                else:
+                    print("[EditorAgent] Step 3.9 unsupported_numerics: none")
+            else:
+                print("[EditorAgent] Step 3.9 skipped (no sourceTexts)")
+
             # 4. post-humanize 필수 키워드 최소 등장 검증 (경고만, 자동 치환 안 함)
             # humanize 가 지시어로 과치환해 고유명사 빈도가 떨어지는 케이스를 플래그.
             MIN_BODY_OCCURRENCES = 3

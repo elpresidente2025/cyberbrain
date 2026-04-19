@@ -710,6 +710,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule>역슬래시(\\)를 임의로 출력하지 말 것.</rule>\n"
             "    <rule priority='critical'>문장 문법 자기점검: 각 문장을 출력 전에 다시 읽어라. (1) 단어가 중간에 잘린 곳('발전을 저 핵심' → '발전을 저해하는 핵심'), (2) 목적어('~을/를') 뒤에 서술어 없이 다른 명사구가 이어지는 곳, (3) 조사('에/과/와/의')가 빠져 명사끼리 직접 붙은 곳이 없는지 확인하고 고칠 것.</rule>\n"
             "    <rule priority='critical'>AI 수사 금지: '혁신적인/혁신적으로', '체계적인', '종합적인', '지속적인', '획기적인' 같은 ~적 관형사를 원고 전체에서 최대 1회만 허용. '극대화'(→늘리다/높이다), '도모'(→추진하다), '촉진'(→앞당기다), '창출'(→만들다)은 사용 금지. '긍정적인 영향', '밝은 미래/전망', '새로운 도약/시대'는 구체 수치·일정·사업명으로 대체.</rule>\n"
+            "    <rule priority='critical'>허구 수치 생성 금지: 사용자 입력(입장문·뉴스·참고자료)에 명시되지 않은 수치·통계·퍼센트를 절대 만들지 ���세요. '20% 감소', '30% 증가' 같은 표���을 입력에서 찾을 수 없으면 사용 금지.</rule>\n"
             f"{extra_rules}"
             "  </rules>\n"
             + self._build_json_shape_block(is_expansion=is_expansion, outline=outline) +

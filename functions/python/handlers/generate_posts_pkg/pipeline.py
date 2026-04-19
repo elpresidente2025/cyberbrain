@@ -9216,6 +9216,7 @@ def _run_editor_repair_once(
     generation_profile: Optional[Dict[str, Any]] = None,
     style_polish_mode: str = "",
     keyword_aliases: Optional[Dict[str, Any]] = None,
+    source_texts: Optional[list[str]] = None,
 ) -> Dict[str, Any]:
     """기준 미충��� 시 EditorAgent로 1회 교정 시도."""
     base_content = str(content or "")
@@ -9268,6 +9269,7 @@ def _run_editor_repair_once(
             "generationProfile": resolved_generation_profile if allow_style_polish else {},
             "stylePolishMode": resolved_style_polish_mode if allow_style_polish else "",
             "keywordAliases": keyword_aliases if isinstance(keyword_aliases, dict) else {},
+            "sourceTexts": [s for s in (source_texts or []) if s],
         }
         result = _run_async_sync(agent.run(editor_input))
         if not isinstance(result, dict):
@@ -10355,6 +10357,13 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             generation_profile=generation_profile,
             style_polish_mode=style_polish_mode,
             keyword_aliases=keyword_aliases,
+            source_texts=[
+                data.get("stanceText"),
+                data.get("newsDataText"),
+                pipeline_result.get("newsDataText"),
+                data.get("sourceInput"),
+                pipeline_result.get("sourceInput"),
+            ],
         )
         editor_auto_repair["error"] = editor_fix.get("error")
         summary = editor_fix.get("editSummary")
