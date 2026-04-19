@@ -426,15 +426,24 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
 
         data = _extract_payload(req)
 
+        # reference materials를 먼저 파싱 — topic이 빈 경우 소스 존재 확인에 필요
+        stance_text, news_data_text, instructions_text, declared_user_keywords = _split_reference_materials(data)
+
         topic = str(data.get("topic") or "").strip()
+        topic_inferred = False
+
         if not topic:
-            return _json_response({"error": "topic is required", "code": "INVALID_INPUT"}, 400)
+            # topic 없어도 소스(입장문/뉴스)가 있으면 진행 가능 — 추론은 프로필 로딩 후
+            if not str(stance_text or "").strip() and not str(news_data_text or "").strip():
+                return _json_response(
+                    {"error": "주제, 입장문, 뉴스 중 하나는 입력해야 합니다", "code": "INVALID_INPUT"},
+                    400,
+                )
 
         requested_category = str(data.get("category") or "auto").strip() or "auto"
         requested_sub_category = str(data.get("subCategory") or "").strip()
         category = requested_category
         sub_category = requested_sub_category
-        stance_text, news_data_text, instructions_text, declared_user_keywords = _split_reference_materials(data)
         request_keywords = data.get("keywords") if isinstance(data.get("keywords"), list) else []
         request_user_keywords = data.get("userKeywords") if isinstance(data.get("userKeywords"), list) else request_keywords
 
@@ -499,48 +508,29 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
         if not uid:
             return _json_response({"error": "User ID is required", "code": "UNAUTHENTICATED"}, 401)
 
-        try:
-            from services.topic_classifier import resolve_request_intent
+        # topic이 있으면 기존 순서대로 카테고리 분류 → 프로필 로딩.
+        # topic이 없으면 프로필 로딩 → 추론 → 카테고리 분류 순서로 지연.
+        resolved_intent: Dict[str, Any] = {}
+        if topic:
+            try:
+                from services.topic_classifier import resolve_request_intent
 
-            resolved_intent = _run_async(
-                resolve_request_intent(
-                    topic,
-                    {
-                        "category": category,
-                        "subCategory": sub_category,
-                        "stanceText": stance_text,
-                    },
+                resolved_intent = _run_async(
+                    resolve_request_intent(
+                        topic,
+                        {
+                            "category": category,
+                            "subCategory": sub_category,
+                            "stanceText": stance_text,
+                        },
+                    )
                 )
-            )
-        except Exception as exc:
-            logger.warning("Request classification failed; using fallback category: %s", exc)
-            resolved_intent = {}
+            except Exception as exc:
+                logger.warning("Request classification failed; using fallback category: %s", exc)
+                resolved_intent = {}
 
-        category = str(resolved_intent.get("category") or category or "daily-communication").strip() or "daily-communication"
-        sub_category = str(resolved_intent.get("subCategory") or sub_category or "").strip()
-        classification_meta = {
-            "requestedCategory": requested_category,
-            "requestedSubCategory": requested_sub_category,
-            "resolvedCategory": category,
-            "resolvedSubCategory": sub_category,
-            "writingMethod": str(resolved_intent.get("writingMethod") or ""),
-            "source": str(resolved_intent.get("source") or ""),
-            "confidence": round(float(resolved_intent.get("confidence") or 0.0), 3),
-            "hasStanceSignal": bool(str(stance_text or "").strip()),
-            "stanceLength": len(str(stance_text or "").strip()),
-        }
-        logger.info(
-            "CATEGORY_CLASSIFICATION pipeline_start uid=%s requested=%s/%s resolved=%s/%s writingMethod=%s source=%s confidence=%.3f stance=%s",
-            uid,
-            classification_meta.get("requestedCategory"),
-            classification_meta.get("requestedSubCategory"),
-            classification_meta.get("resolvedCategory"),
-            classification_meta.get("resolvedSubCategory"),
-            classification_meta.get("writingMethod"),
-            classification_meta.get("source"),
-            float(classification_meta.get("confidence") or 0.0),
-            bool(classification_meta.get("hasStanceSignal")),
-        )
+            category = str(resolved_intent.get("category") or category or "daily-communication").strip() or "daily-communication"
+            sub_category = str(resolved_intent.get("subCategory") or sub_category or "").strip()
 
         # Load profile from Firestore and merge with request payload profile.
         profile_bundle = load_user_profile(uid, category=category, topic=topic)
@@ -595,6 +585,119 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
             uid,
             perm_result.get("reason"),
             perm_result.get("remaining", "N/A"),
+        )
+
+        # ------------------------------------------------------------------
+        # topic/stance 추론 (topic이 빈 경우에만 실행)
+        # ------------------------------------------------------------------
+        if not topic or not str(stance_text or "").strip():
+            try:
+                from services.stance_inferrer import (
+                    extract_query_from_news,
+                    infer_stance_from_news,
+                )
+                from rag_manager import LightRAGManager, graph_exists_in_gcs
+
+                rag_bucket_name_infer = "ai-secretary-6e9c8.appspot.com"
+                source_text = str(news_data_text or stance_text or "").strip()
+
+                # Step 1: 뉴스에서 핵심 키워드 추출 (RAG 쿼리용)
+                query_keywords = _run_async(extract_query_from_news(source_text))
+
+                # Step 2: RAG 쿼리 — 과거 입장 이력 조회
+                infer_rag_context = ""
+                if query_keywords and uid and graph_exists_in_gcs(rag_bucket_name_infer, uid):
+                    try:
+                        from lightrag import QueryParam
+
+                        async def _infer_rag_query() -> str:
+                            mgr = LightRAGManager(bucket_name=rag_bucket_name_infer, uid=uid)
+                            await mgr.initialize(mode="read")
+                            if not mgr.rag:
+                                return ""
+                            return str(await mgr.rag.aquery(query_keywords, param=QueryParam(mode="hybrid")) or "")
+
+                        infer_rag_context = _run_async(_infer_rag_query())
+                    except Exception as rag_exc:
+                        logger.warning("[StanceInferrer] RAG 쿼리 실패(무시): %s", rag_exc)
+
+                # Step 3: 뉴스 + RAG 컨텍스트로 topic/stance 합성
+                bio_content = str(profile_bundle.get("bioContent") or "").strip() if isinstance(profile_bundle, dict) else ""
+                inferred = _run_async(infer_stance_from_news(
+                    news_text=source_text,
+                    rag_context=infer_rag_context,
+                    user_profile=user_profile,
+                    bio_content=bio_content,
+                ))
+
+                if not topic and inferred.get("topic"):
+                    topic = str(inferred["topic"]).strip()
+                    topic_inferred = True
+                    logger.info("[StanceInferrer] topic 추론 완료: %s", topic[:50])
+
+                if not str(stance_text or "").strip() and inferred.get("stanceText"):
+                    stance_text = str(inferred["stanceText"]).strip()
+                    instructions_text = stance_text + ("\n\n" + news_data_text if news_data_text else "")
+                    logger.info("[StanceInferrer] stance 추론 완료: %d자", len(stance_text))
+
+            except Exception as infer_exc:
+                logger.warning("[StanceInferrer] 추론 실패(기존 동작으로 fallback): %s", infer_exc)
+                if not topic:
+                    topic = str(news_data_text or stance_text or "")[:50].strip()
+                    topic_inferred = True
+
+        # ------------------------------------------------------------------
+        # 카테고리 분류 (topic이 빈이었던 경우 — 추론된 topic으로 재분류)
+        # ------------------------------------------------------------------
+        if not topic:
+            # 추론도 실패한 경우 최종 fallback
+            topic = str(news_data_text or stance_text or "")[:50].strip() or "일반 주제"
+            topic_inferred = True
+
+        if topic_inferred:
+            try:
+                from services.topic_classifier import resolve_request_intent
+
+                resolved_intent = _run_async(
+                    resolve_request_intent(
+                        topic,
+                        {
+                            "category": category,
+                            "subCategory": sub_category,
+                            "stanceText": stance_text,
+                        },
+                    )
+                )
+            except Exception as exc:
+                logger.warning("Request classification failed (inferred topic); using fallback: %s", exc)
+                resolved_intent = {}
+
+            category = str(resolved_intent.get("category") or category or "daily-communication").strip() or "daily-communication"
+            sub_category = str(resolved_intent.get("subCategory") or sub_category or "").strip()
+
+        # classification_meta 구성 (topic 확정 후)
+        classification_meta = {
+            "requestedCategory": requested_category,
+            "requestedSubCategory": requested_sub_category,
+            "resolvedCategory": category,
+            "resolvedSubCategory": sub_category,
+            "writingMethod": str(resolved_intent.get("writingMethod") or ""),
+            "source": str(resolved_intent.get("source") or ""),
+            "confidence": round(float(resolved_intent.get("confidence") or 0.0), 3),
+            "hasStanceSignal": bool(str(stance_text or "").strip()),
+            "stanceLength": len(str(stance_text or "").strip()),
+            "topicInferred": topic_inferred,
+        }
+        logger.info(
+            "CATEGORY_CLASSIFICATION pipeline_start uid=%s requested=%s/%s resolved=%s/%s topicInferred=%s confidence=%.3f stance=%s",
+            uid,
+            classification_meta.get("requestedCategory"),
+            classification_meta.get("requestedSubCategory"),
+            classification_meta.get("resolvedCategory"),
+            classification_meta.get("resolvedSubCategory"),
+            topic_inferred,
+            float(classification_meta.get("confidence") or 0.0),
+            bool(classification_meta.get("hasStanceSignal")),
         )
 
         rag_bucket_name = "ai-secretary-6e9c8.appspot.com"
@@ -837,15 +940,15 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
         task_name = create_step_task(job_id, step_index=0)
         logger.info("Triggered first step for job %s: %s", job_id, task_name)
 
-        return _json_response(
-            {
-                "success": True,
-                "jobId": job_id,
-                "status": "running",
-                "message": "파이프라인이 시작되었습니다.",
-            },
-            202,
-        )
+        response_data: Dict[str, Any] = {
+            "success": True,
+            "jobId": job_id,
+            "status": "running",
+            "message": "파이프라인이 시작되었습니다.",
+        }
+        if topic_inferred:
+            response_data["topicInferred"] = True
+        return _json_response(response_data, 202)
 
     except Exception as exc:
         import traceback
