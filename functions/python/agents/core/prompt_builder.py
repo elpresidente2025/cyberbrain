@@ -401,10 +401,17 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     )
 
     author_name = str(params.get('authorName') or '').strip()
+    author_position = str(user_profile.get('position') or '').strip()
+    if author_name and author_position:
+        greeting_example = f'예: "안녕하세요, {author_position} {author_name}입니다."'
+    elif author_name:
+        greeting_example = f'예: "안녕하세요, {author_name}입니다."'
+    else:
+        greeting_example = '예: "안녕하세요, [직함] [이름]입니다."'
 
     if uses_aeo_answer_first(writing_method):
         intro_line_1 = (
-            '<p>1문단: 화자 실명+직함 자기소개(1문장 이내, 예: "안녕하세요, ○○○입니다.") 직후, '
+            f'<p>1문단: 화자 직함+실명 자기소개(1문장 이내, {greeting_example}) 직후, '
             '이 글의 핵심 결론·주장·답변을 같은 문단에서 바로 선언. '
             'AI 답변 엔진이 첫 문단만 추출해도 독자 질문에 답이 되어야 한다</p>'
         )
@@ -422,7 +429,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     if uses_aeo_answer_first(writing_method):
         intro_stance_rules = f"""
   <intro_stance_binding priority="critical">
-    <rule id="intro_greeting_then_stance">서론 첫 문장은 화자 실명+직함 자기소개(1문장 이내{f', 예: "안녕하세요, {author_name}입니다."' if author_name else ''})로 시작하고, 같은 문단 안에서 바로 핵심 결론·주장을 선언할 것. 호격("여러분")만으로는 인삿말이 아니다 — 반드시 화자가 누구인지 밝혀야 한다.</rule>
+    <rule id="intro_greeting_then_stance">서론 첫 문장은 화자 직함+실명 자기소개(1문장 이내, {greeting_example})로 시작하고, 같은 문단 안에서 바로 핵심 결론·주장을 선언할 것. 호격("여러분")만으로는 인삿말이 아니다 — 반드시 직함과 이름을 밝혀야 한다.</rule>
     <rule id="intro_must_anchor_stance">서론 2문단 이내에 입장문 핵심 주장 또는 문제의식을 반드시 재진술할 것.</rule>
     {aeo_answer_first_rule}<rule id="intro_paraphrase_required">입장문 문장을 그대로 복붙하지 말고 의미는 유지한 채 재작성할 것.</rule>
     <rule id="intro_profile_cap">서론 전체에서 경력/이력 나열은 최대 2문장으로 제한할 것.</rule>
