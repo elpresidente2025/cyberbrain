@@ -416,7 +416,21 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     if uses_aeo_answer_first(writing_method):
         aeo_answer_first_rule = '    <rule id="aeo_answer_first">서론 첫 문단은 인사(1문장) + 핵심 결론(1~2문장)을 한 문단으로 구성할 것. 질문/배경/맥락으로 시작하지 말 것.</rule>\n'
 
-    intro_stance_rules = f"""
+    if uses_aeo_answer_first(writing_method):
+        intro_stance_rules = f"""
+  <intro_stance_binding priority="critical">
+    <rule id="intro_greeting_then_stance">서론 첫 문장은 간결한 인삿말(1문장 이내)로 시작하고, 같은 문단 안에서 바로 핵심 결론·주장을 선언할 것.</rule>
+    <rule id="intro_must_anchor_stance">서론 2문단 이내에 입장문 핵심 주장 또는 문제의식을 반드시 재진술할 것.</rule>
+    {aeo_answer_first_rule}<rule id="intro_paraphrase_required">입장문 문장을 그대로 복붙하지 말고 의미는 유지한 채 재작성할 것.</rule>
+    <rule id="intro_profile_cap">서론 전체에서 경력/이력 나열은 최대 2문장으로 제한할 것.</rule>
+    <rule id="career_list_once_only">같은 직함·경력 리스트는 원고 전체에서 한 번만 쓰고, 이후 섹션에서는 그 경험을 바탕으로 한 판단·행동·성과만 이어갈 것.</rule>
+    <rule id="intro_to_body_bridge">서론 마지막 문장에서 본론 주제로 자연스럽게 연결할 것.</rule>
+    <stance_seed>{intro_seed or '(입장문 요지 없음)'}</stance_seed>
+    <stance_anchor_topic>{intro_anchor_topic or '(미지정)'}</stance_anchor_topic>
+  </intro_stance_binding>
+"""
+    else:
+        intro_stance_rules = f"""
   <intro_stance_binding priority="critical">
     <rule id="intro_must_anchor_stance">서론 2문단 이내에 입장문 핵심 주장 또는 문제의식을 반드시 재진술할 것.</rule>
     <rule id="intro_first_sentence_from_stance">서론 첫 문장은 stance_seed를 바탕으로 재구성하고, 일반 인삿말로 시작하지 말 것.</rule>
@@ -425,7 +439,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     <rule id="intro_profile_cap">서론 전체에서 경력/이력 나열은 최대 2문장으로 제한할 것.</rule>
     <rule id="career_list_once_only">같은 직함·경력 리스트는 원고 전체에서 한 번만 쓰고, 이후 섹션에서는 그 경험을 바탕으로 한 판단·행동·성과만 이어갈 것.</rule>
     <rule id="intro_to_body_bridge">서론 마지막 문장에서 본론 주제로 자연스럽게 연결할 것.</rule>
-{aeo_answer_first_rule}    <stance_seed>{intro_seed or '(입장문 요지 없음)'}</stance_seed>
+    <stance_seed>{intro_seed or '(입장문 요지 없음)'}</stance_seed>
     <stance_anchor_topic>{intro_anchor_topic or '(미지정)'}</stance_anchor_topic>
   </intro_stance_binding>
 """
