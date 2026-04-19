@@ -474,11 +474,8 @@ class KeywordInjectorAgent(Agent):
                 continue
             user_keywords.append(kw)
 
-        if user_keywords:
-            for i, section in enumerate(section_counts, start=1):
-                section_user_total = sum(section['counts'].get(kw, 0) for kw in user_keywords)
-                if section_user_total == 0:
-                    issues.append(f"섹션 {i}에 검색어 없음")
+        # 섹션별 최소 검색어 요건 제거 — 무관한 섹션에 강제 삽입 시 비문 발생.
+        # 전체 횟수만 충족하면 됨.
 
         if len(user_keywords) >= 2:
             user_total = sum(

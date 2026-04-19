@@ -28,12 +28,12 @@ STRUCTURE_SPEC = {
 }
 
 KEYWORD_SPEC = {
-    'perSectionMin': 1,
-    'perKeywordMin': 3,
+    'perSectionMin': 0,
+    'perKeywordMin': 2,
     'perKeywordMax': 4,
-    'singleKeywordMin': 5,
+    'singleKeywordMin': 3,
     'singleKeywordMax': 6,
-    'totalMin': 7,
+    'totalMin': 5,
     'totalMax': 8,
 }
 
