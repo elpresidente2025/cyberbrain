@@ -570,6 +570,10 @@ class SectionRepairMixin:
                         is_aeo = False
 
                 # === LLM 본문 생성 ===
+                print(
+                    f"📋 [StructureAgent] 본문 생성 경로: "
+                    f"is_aeo={is_aeo}, has_outline={aeo_outline is not None}"
+                )
                 if is_aeo and aeo_outline is not None:
                     json_prompt = self._build_expansion_json_prompt(
                         outline=aeo_outline,

@@ -492,9 +492,20 @@ class SectionNormalizerMixin:
         intro_payload = payload.get('intro')
         if not isinstance(intro_payload, dict):
             raise ValueError("구조 JSON 계약 위반: intro 객체가 누락되었습니다.")
+        raw_intro_paragraphs = intro_payload.get('paragraphs')
+        print(
+            f"📋 [StructureAgent] intro raw paragraphs: "
+            f"count={len(raw_intro_paragraphs) if isinstance(raw_intro_paragraphs, list) else 'N/A'}, "
+            f"preview={str(raw_intro_paragraphs)[:200]}"
+        )
         intro_paragraphs = self._normalize_intro_paragraphs(
-            intro_payload.get('paragraphs'),
+            raw_intro_paragraphs,
             target_count=section_paragraphs,
+        )
+        print(
+            f"📋 [StructureAgent] intro after normalize: "
+            f"count={len(intro_paragraphs)}, "
+            f"preview={str(intro_paragraphs)[:200]}"
         )
 
         body_payload = payload.get('body')
@@ -660,7 +671,15 @@ class SectionNormalizerMixin:
                 f"'{heading_text}' (reason={reason}, before={before_count}, after={after_count})"
             )
 
+        intro_before_clean = len(intro_paragraphs)
         intro_paragraphs = _clean_intro_audience_reaction_paragraphs(intro_paragraphs)
+        if len(intro_paragraphs) < intro_before_clean:
+            print(
+                f"🩹 [StructureAgent] intro audience_reaction 정리: "
+                f"{intro_before_clean} → {len(intro_paragraphs)}개"
+            )
+        if not intro_paragraphs:
+            print("⚠️ [StructureAgent] intro 문단이 0개입니다! HTML에 서론 없이 출력됩니다.")
 
         for paragraph in intro_paragraphs:
             html_parts.append(f"<p>{paragraph}</p>")
