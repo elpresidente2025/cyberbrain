@@ -516,17 +516,12 @@ def _filter_required_title_keywords(
     return filtered
 
 def normalize_title_surface(title: str) -> str:
-    cleaned = str(title or '').translate(
-        str.maketrans(
-            {
-                '“': '"',
-                '”': '"',
-                '„': '"',
-                '‟': '"',
-            }
-        )
+    # 모든 종류의 따옴표 제거 (스마트/일반/낫표)
+    cleaned = re.sub(
+        r'[\u0022\u0027\u2018\u2019\u201c\u201d\u201e\u201f\u300c\u300d\u300e\u300f]',
+        '', str(title or ''),
     )
-    cleaned = cleaned.strip().strip('"\'')
+    cleaned = cleaned.strip()
     if not cleaned:
         return ''
 
