@@ -590,6 +590,36 @@ def calculate_title_quality_score(
             'suggestions': [str(family_fit.get('reason') or '선택된 제목 패밀리에 맞게 다시 작성하세요.')],
         }
 
+    # 화자 이름 + 부정적 관형절: "문세종이 저버린", "홍길동이 망친" 등
+    # 화자가 부정 행위의 주체로 읽히면 치명적 오독이므로 hard-fail.
+    if normalized_author:
+        _NEG_VERB_STEMS = (
+            '저버린', '망친', '실패한', '무시한', '외면한', '방치한', '포기한',
+            '버린', '파괴한', '훼손한', '등한시한', '방기한', '사장시킨',
+            '묵살한', '도외시한', '침묵한', '좌시한', '뒷짐진',
+        )
+        _author_neg_pattern = re.compile(
+            rf'{re.escape(normalized_author)}(?:이|가)\s*(?:{"|".join(re.escape(v) for v in _NEG_VERB_STEMS)})'
+        )
+        _author_neg_match = _author_neg_pattern.search(normalized_title)
+        if _author_neg_match:
+            return {
+                'score': 0,
+                'breakdown': {
+                    'authorNegativeAction': {
+                        'score': 0,
+                        'max': 100,
+                        'status': '실패',
+                        'reason': f'제목에서 화자({author_name})가 부정 행위의 주체로 읽힙니다.',
+                    }
+                },
+                'passed': False,
+                'suggestions': [
+                    f'"{author_name}"은 글쓴이(화자)입니다. 화자를 부정 행위의 주어로 쓰지 마세요. '
+                    '부정 행위의 주체가 다른 인물이라면 그 인물을 명시하거나, 화자 중심의 긍정적 서술로 변경하세요.'
+                ],
+            }
+
     focus_name_validation = assess_title_focus_name_repetition(title, params)
     if not focus_name_validation.get('passed', True):
         repaired_candidate = repair_title_focus_name_repetition(title, params)
