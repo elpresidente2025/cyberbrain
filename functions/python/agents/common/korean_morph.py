@@ -51,6 +51,16 @@ def _environment_is_kiwi_hostile() -> bool:
     return False
 
 
+def _register_user_words(kiwi) -> None:
+    """Kiwi 인스턴스에 프로젝트 커스텀 단어(지역화폐 브랜드명 등)를 등록한다."""
+    try:
+        from .local_currency_names import get_kiwi_user_words
+        for word, tag, score in get_kiwi_user_words():
+            kiwi.add_user_word(word, tag, score)
+    except Exception as err:  # pragma: no cover - defensive
+        print(f"[korean_morph] 사용자 사전 등록 실패 (무시): {err}")
+
+
 def get_kiwi():
     """Kiwi 싱글톤을 lazy 초기화한다. 실패 시 None.
 
@@ -72,6 +82,7 @@ def get_kiwi():
         try:
             from kiwipiepy import Kiwi  # type: ignore
             _KIWI_INSTANCE = Kiwi()
+            _register_user_words(_KIWI_INSTANCE)
             return _KIWI_INSTANCE
         except Exception as err:  # pragma: no cover - defensive
             print(f"[korean_morph] kiwipiepy 초기화 실패 — regex fallback 사용: {err}")
