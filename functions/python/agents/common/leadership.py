@@ -697,6 +697,59 @@ def build_leadership_philosophy_xml() -> str:
     return "\n".join(parts)
 
 
+def _build_higher_principle_brief() -> str:
+    lines: list[str] = []
+    for value_id, data in ARGUMENT_LAYER.items():
+        core = CORE_LEADERSHIP_VALUES.get(value_id, {})
+        chain = (data.get("argument_chains") or [{}])[0]
+        evidence = (data.get("empirical_evidence") or [{}])[0]
+        korean_context = (data.get("korean_context") or [{}])[0]
+        label = core.get("vision", value_id)
+        lines.append(
+            f"{label}: {chain.get('logic', '')} → {chain.get('connection', '')}. "
+            f"근거는 {evidence.get('claim', '')} ({evidence.get('source', '')})이고, "
+            f"한국 맥락은 {korean_context.get('context', '')} → {korean_context.get('implication', '')}."
+        )
+    return "\n".join(lines)
+
+
+def _build_counterargument_rebuttal_brief() -> str:
+    lines: list[str] = []
+    for value_id, data in ARGUMENT_LAYER.items():
+        core = CORE_LEADERSHIP_VALUES.get(value_id, {})
+        rebuttal = (data.get("counter_rebuttals") or [{}])[0]
+        label = core.get("vision", value_id)
+        criticism = str(rebuttal.get("criticism", "")).strip()
+        rebut = str(rebuttal.get("rebuttal", "")).strip()
+        if criticism and rebut:
+            lines.append(f"{label}: '{criticism}'라는 반론에는 '{rebut}'라는 재반론으로 답하십시오.")
+    return "\n".join(lines)
+
+
+def build_argument_role_material_block(role: str) -> str:
+    """역할 섹션 바로 아래에 붙일 자연어 소재 블록."""
+    if role == "higher_principle":
+        summary = _build_higher_principle_brief()
+    elif role == "counterargument_rebuttal":
+        summary = _build_counterargument_rebuttal_brief()
+    else:
+        return ""
+
+    if not summary.strip():
+        return ""
+
+    lines = [f'    <role_material role="{role}" priority="critical">']
+    if role == "higher_principle":
+        lines.append('      <instruction>아래 소재 중 이 글과 가장 맞는 1개를 골라, 가치 선언과 구체 근거와 한국 맥락을 한 섹션 안에서 함께 쓰십시오.</instruction>')
+    else:
+        lines.append('      <instruction>아래 소재 중 이 글과 가장 맞는 반론-재반론 1개를 골라, 반론을 인정한 뒤 사실·사례로 재반론하십시오.</instruction>')
+    for line in summary.splitlines():
+        if line.strip():
+            lines.append(f'      <item>{_xml_esc(line.strip())}</item>')
+    lines.append('    </role_material>')
+    return "\n".join(lines)
+
+
 def build_argument_layer_xml(target_roles: list[str] | None = None) -> str:
     """변증법 구조의 특정 역할에 필요한 논거 소재를 XML로 반환.
 

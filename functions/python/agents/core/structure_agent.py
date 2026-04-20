@@ -896,7 +896,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
     ) -> str:
         """AEO 2단계 생성의 2단계: 아웃라인을 고정한 채 본문 확장을 요청하는 프롬프트."""
         from ..common.aeo_config import uses_dialectical_structure, build_dialectical_roles
-        from ..common.leadership import build_argument_layer_xml
+        from ..common.leadership import build_argument_role_material_block
 
         body_count = len(outline.get('body', []))
         is_dialectical = uses_dialectical_structure(writing_method) and body_count >= 3
@@ -910,42 +910,43 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         body_lines = []
         for i, section in enumerate(outline.get('body', []), 1):
             role_hint = ''
+            role_material = ''
             # outline에 role 필드가 있으면 그것 기반, 없으면 위치 기반
             section_role = section.get('role', '')
-            if section_role and i in role_guides:
-                guide = role_guides[i]['guide']
-                if section_role == 'counterargument_rebuttal':
+            role_guide = role_guides.get(i, {})
+            effective_role = section_role or role_guide.get('role', '')
+            guide = role_guide.get('guide', '')
+            if effective_role and guide:
+                if effective_role == 'counterargument_rebuttal':
                     role_hint = (
-                        f'    <expansion_role priority="critical">{section_role}: {guide} '
-                        f'이 섹션에서 반드시 "~라는 우려/비판이 있다" 형태로 반론을 명시한 뒤, '
-                        f'사실·수치·논리로 재반론하십시오. '
-                        f'&lt;argument_layer for="counterargument_rebuttal"&gt; 블록에서 '
-                        f'이 글 주제와 관련된 criticism-rebuttal 쌍을 참조하십시오. '
+                        f'    <expansion_role priority="critical">{effective_role}: {guide} '
+                        f'이 섹션에서 반드시 "~라는 우려/비판이 있다" 형태로 반론을 먼저 명시한 뒤, '
+                        f'바로 이어서 사실·수치·사례·논리로 재반론하십시오. '
+                        f'아래 role_material의 반론-재반론 소재를 직접 활용하고, '
                         f'이 내용을 결론으로 미루지 마십시오.'
                         f'</expansion_role>\n'
                     )
-                elif section_role == 'higher_principle':
+                    role_material = build_argument_role_material_block(effective_role)
+                elif effective_role == 'higher_principle':
                     role_hint = (
-                        f'    <expansion_role priority="critical">{section_role}: {guide} '
-                        f'이 섹션의 1차 소재는 &lt;argument_layer for="higher_principle"&gt; 블록입니다. '
-                        f'이 글의 주제와 가장 관련 깊은 가치(5개 중 1개)를 선택하여: '
-                        f'(1) argument_chains에서 정책→중간논리→가치 연결 경로를 차용하고, '
-                        f'(2) empirical_evidence 또는 international_precedents에서 1개 이상 구체 근거를 인용하고, '
-                        f'(3) korean_context로 한국 사회 맥락에 착지시키십시오. '
-                        f'&lt;political_philosophy&gt;의 vision·philosophy도 참조하되, '
+                        f'    <expansion_role priority="critical">{effective_role}: {guide} '
+                        f'아래 role_material의 가치·근거·한국 맥락 소재를 직접 활용하여, '
+                        f'(1) 정책→중간논리→상위가치 연결을 분명히 쓰고, '
+                        f'(2) 구체 근거를 최소 1개 포함하고, '
+                        f'(3) 한국 사회 맥락에 착지시키십시오. '
+                        f'&lt;political_philosophy&gt;의 vision·philosophy도 함께 참조하되, '
                         f'추상적 슬로건만으로 마감하지 마십시오.'
                         f'</expansion_role>\n'
                     )
+                    role_material = build_argument_role_material_block(effective_role)
                 else:
-                    role_hint = f'    <expansion_role>{section_role}: {guide}</expansion_role>\n'
-            elif i in role_guides:
-                r = role_guides[i]
-                role_hint = f'    <expansion_role>{r["role"]}: {r["guide"]}</expansion_role>\n'
+                    role_hint = f'    <expansion_role>{effective_role}: {guide}</expansion_role>\n'
             body_lines.append(
                 f'  <body_section order="{i}">\n'
                 f'    <heading>{section["heading"]}</heading>\n'
                 f'    <lead_sentence>{section["lead_sentence"]}</lead_sentence>\n'
                 + role_hint +
+                (f'{role_material}\n' if role_material else '') +
                 f'  </body_section>'
             )
         body_block = "\n".join(body_lines)
@@ -1006,24 +1007,45 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             '</expansion_instructions>\n\n'
         )
 
-        # 변증법 구조의 논거 레이어 선택적 주입
-        detected_roles: set[str] = set()
-        if is_dialectical:
-            for section in outline.get('body', []):
-                r = section.get('role', '')
-                if r in ('higher_principle', 'counterargument_rebuttal'):
-                    detected_roles.add(r)
-        argument_layer_block = build_argument_layer_xml(list(detected_roles))
-
         modified_prompt = base_prompt + "\n\n" + lock_block
-        if argument_layer_block:
-            modified_prompt += "\n" + argument_layer_block + "\n"
-        return self._build_structure_json_prompt(
+        final_prompt = self._build_structure_json_prompt(
             prompt=modified_prompt,
             length_spec=length_spec,
             is_expansion=True,
             outline=outline,
         )
+        self._log_expansion_prompt_observability(final_prompt)
+        return final_prompt
+
+    def _compact_prompt_preview(self, text: str, *, limit: int = 240) -> str:
+        compact = re.sub(r'\s+', ' ', text).strip()
+        if len(compact) <= limit:
+            return compact
+        return compact[: limit - 3] + '...'
+
+    def _log_expansion_prompt_observability(self, prompt: str) -> None:
+        legacy_argument_present = '<argument_layer ' in prompt
+        print(
+            f"🔎 [StructureAgent] expansion prompt 관측: "
+            f"len={len(prompt)}, legacy_argument_layer={legacy_argument_present}"
+        )
+        for role in ('counterargument_rebuttal', 'higher_principle'):
+            marker = f'<role_material role="{role}"'
+            count = prompt.count(marker)
+            if count == 0:
+                print(f"🔎 [StructureAgent] role_material[{role}] missing")
+                continue
+
+            idx = prompt.find(marker)
+            section_matches = list(re.finditer(r'<body_section order="(\d+)">', prompt[:idx]))
+            section_order = section_matches[-1].group(1) if section_matches else '?'
+            end_idx = prompt.find('</role_material>', idx)
+            preview_end = end_idx + len('</role_material>') if end_idx >= 0 else idx + 320
+            preview = self._compact_prompt_preview(prompt[idx:preview_end], limit=280)
+            print(
+                f"🔎 [StructureAgent] role_material[{role}] "
+                f"count={count}, body_section={section_order}, pos={idx}, preview={preview}"
+            )
 
     async def call_llm_json(self, prompt: str, *, length_spec: Dict[str, int]) -> Dict[str, Any]:
         response_schema = self._build_structure_json_schema(length_spec)

@@ -17,7 +17,7 @@ from agents.core.structure_normalizer import (
 )
 
 
-def test_structure_agent_build_structure_json_schema_requires_nonempty_section_paragraphs() -> None:
+def test_structure_agent_build_structure_json_schema_requires_three_paragraphs_per_section() -> None:
     agent = StructureAgent(options={})
 
     schema = agent._build_structure_json_schema(
@@ -27,11 +27,14 @@ def test_structure_agent_build_structure_json_schema_requires_nonempty_section_p
         }
     )
 
-    assert schema["properties"]["intro"]["properties"]["paragraphs"]["minItems"] == 1
+    assert schema["properties"]["intro"]["properties"]["paragraphs"]["minItems"] == 3
+    assert schema["properties"]["intro"]["properties"]["paragraphs"]["maxItems"] == 3
     assert schema["properties"]["body"]["minItems"] == 2
     assert schema["properties"]["body"]["maxItems"] == 2
-    assert schema["properties"]["body"]["items"]["properties"]["paragraphs"]["minItems"] == 1
-    assert schema["properties"]["conclusion"]["properties"]["paragraphs"]["minItems"] == 2
+    assert schema["properties"]["body"]["items"]["properties"]["paragraphs"]["minItems"] == 3
+    assert schema["properties"]["body"]["items"]["properties"]["paragraphs"]["maxItems"] == 3
+    assert schema["properties"]["conclusion"]["properties"]["paragraphs"]["minItems"] == 3
+    assert schema["properties"]["conclusion"]["properties"]["paragraphs"]["maxItems"] == 3
 
 
 def test_structure_agent_repair_low_alignment_heading_ignores_name_only_overlap() -> None:
@@ -52,7 +55,7 @@ def test_structure_agent_repair_low_alignment_heading_ignores_name_only_overlap(
     assert repaired == "사람 곁에서 쌓은 현장 경험"
 
 
-def test_structure_agent_build_html_drops_heading_only_section_after_empty_body() -> None:
+def test_structure_agent_build_html_keeps_conclusion_content_when_empty_body_section_is_dropped() -> None:
     agent = StructureAgent(options={})
     payload = {
         "title": "이재성의 가능성",
@@ -88,7 +91,62 @@ def test_structure_agent_build_html_drops_heading_only_section_after_empty_body(
     )
 
     assert "혁신과 연대로 부산의 새로운 도약" not in content
-    assert "지금 이재성에 주목해야 하는 이유" in content
+    assert "지금 이재성의 경쟁력은 확인됐습니다." in content
+    assert "부산 경제를 다시 세우는 실행력이 중요합니다." in content
+    assert "<h2></h2>" in content
+
+
+# synthetic_fixture
+def test_structure_agent_build_expansion_json_prompt_inlines_role_material_inside_target_body_sections() -> None:
+    agent = StructureAgent(options={})
+    outline = {
+        "title": "{region} 지역화폐를 다시 살릴 시간",
+        "intro_lead": "{region} 민생경제를 살리기 위해 지역화폐 활성화가 필요합니다.",
+        "body": [
+            {
+                "heading": "지역화폐 축소가 남긴 공백",
+                "lead_sentence": "지역화폐 축소 이후 소비 흐름이 약해졌습니다.",
+                "role": "evidence",
+            },
+            {
+                "heading": "소상공인 매출과 지역 순환",
+                "lead_sentence": "지역 안에서 돈이 돌 때 골목상권이 버팁니다.",
+                "role": "evidence",
+            },
+            {
+                "heading": "예상되는 우려와 다시 답해야 할 이유",
+                "lead_sentence": "일부에서는 지역화폐가 재정 부담만 키운다고 말합니다.",
+                "role": "counterargument_rebuttal",
+            },
+            {
+                "heading": "기본생활을 지키는 지역경제 원칙",
+                "lead_sentence": "지역화폐는 소비 지원을 넘어 공동체 안전망과도 연결됩니다.",
+                "role": "higher_principle",
+            },
+        ],
+        "conclusion_heading": "{region} 경제를 다시 움직일 실천",
+    }
+
+    prompt = agent._build_expansion_json_prompt(
+        outline=outline,
+        base_prompt="BASE_PROMPT",
+        length_spec={
+            "body_sections": 4,
+            "paragraphs_per_section": 3,
+        },
+        writing_method="logical_writing",
+    )
+
+    section3 = prompt.split('<body_section order="3">', 1)[1].split('</body_section>', 1)[0]
+    section4 = prompt.split('<body_section order="4">', 1)[1].split('</body_section>', 1)[0]
+
+    assert '<role_material role="counterargument_rebuttal"' in section3
+    assert '<role_material role="higher_principle"' in section4
+    assert section3.index('<expansion_role') < section3.index('<role_material role="counterargument_rebuttal"')
+    assert section4.index('<expansion_role') < section4.index('<role_material role="higher_principle"')
+    assert '<argument_layer for=' not in prompt
+    assert '아래 role_material의 반론-재반론 소재를 직접 활용하고' in prompt
+    assert '아래 role_material의 가치·근거·한국 맥락 소재를 직접 활용하여' in prompt
 
 
 def test_normalize_structure_padding_avoids_deprecated_boilerplate_sentences() -> None:
@@ -149,12 +207,16 @@ def test_normalize_section_length_does_not_pad_underfilled_body_section_with_gen
 def main() -> None:
     tests = [
         (
-            "structure_agent_build_structure_json_schema_requires_nonempty_section_paragraphs",
-            test_structure_agent_build_structure_json_schema_requires_nonempty_section_paragraphs,
+            "structure_agent_build_structure_json_schema_requires_three_paragraphs_per_section",
+            test_structure_agent_build_structure_json_schema_requires_three_paragraphs_per_section,
         ),
         (
-            "structure_agent_build_html_drops_heading_only_section_after_empty_body",
-            test_structure_agent_build_html_drops_heading_only_section_after_empty_body,
+            "structure_agent_build_html_keeps_conclusion_content_when_empty_body_section_is_dropped",
+            test_structure_agent_build_html_keeps_conclusion_content_when_empty_body_section_is_dropped,
+        ),
+        (
+            "structure_agent_build_expansion_json_prompt_inlines_role_material_inside_target_body_sections",
+            test_structure_agent_build_expansion_json_prompt_inlines_role_material_inside_target_body_sections,
         ),
         (
             "structure_agent_repair_low_alignment_heading_ignores_name_only_overlap",
