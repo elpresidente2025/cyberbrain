@@ -844,6 +844,11 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule>body 각 항목은 heading 1개 + paragraphs 배열로 작성.</rule>\n"
             "    <rule>conclusion은 heading 1개 + paragraphs 배열로 작성하고 paragraphs는 최소 2개 이상 작성.</rule>\n"
             "    <rule>각 paragraphs 원소는 완결 문장 2~3개로 구성하고 최소 120자 이상 작성.</rule>\n"
+            "    <rule priority='critical'>모든 섹션(서론·본론·결론)은 반드시 3개 문단으로 구성. "
+            "본론 각 섹션의 3문단은: (1) 주장 선언 (2) 구체 근거·수치·사례 + 인과관계 서술 (3) 의미 부여('그래서 왜 중요한가'에 답하는 마감). "
+            "서론 3문단은: (1) 화자 소개+핵심 결론 (2) 배경·맥락 (3) 본론 예고. "
+            "결론 3문단은: (1) 핵심 결론 재진술 (2) 종합 의의 (3) 전망·다짐. "
+            "사실만 나열하고 끝나는 문단, 2문단 이하로 끝나는 섹션은 불합격.</rule>\n"
             + (
                 "    <rule>heading과 각 섹션 첫 문장은 locked_outline에서 확정됨. heading을 변경하지 말고, paragraphs 첫 원소는 해당 lead_sentence로 시작할 것.</rule>\n"
                 if is_expansion else

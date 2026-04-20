@@ -594,12 +594,20 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     <caution>총 분량 상한을 넘기지 않도록 중복 문장과 장황한 수식어를 제거하고, 근거 중심으로 간결하게 작성하십시오.</caution>
   </volume>
 
+  <paragraph_structure priority="critical">
+    모든 섹션(서론·본론·결론)은 반드시 3개 문단으로 구성하십시오.
+    본론 각 섹션 3문단: (1) 주장 선언 (2) 구체 근거·수치·사례 + 인과관계 서술 (3) 의미 부여 — '그래서 왜 중요한가'에 답하는 마감.
+    서론 3문단: (1) 화자 소개+핵심 결론 (2) 배경·맥락 (3) 본론 예고.
+    결론 3문단: (1) 핵심 결론 재진술 (2) 종합 의의 (3) 전망·다짐.
+    사실만 나열하고 끝나는 문단, 2문단 이하로 끝나는 섹션은 불합격입니다.
+  </paragraph_structure>
+
   {expansion_guide}
 
   {section_lane_rules}
 
   <sections total="{total_section_count}">
-    <intro paragraphs="기본 2, 필요 시 3" chars="{per_section_recommended}" heading="없음">
+    <intro paragraphs="3" chars="{per_section_recommended}" heading="없음">
       {intro_line_1}
       {intro_line_2}
       {intro_line_3}
