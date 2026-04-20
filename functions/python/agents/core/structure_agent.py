@@ -648,6 +648,9 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule>intro_lead: 화자 실명+직함 자기소개(예: '안녕하세요, OOO입니다.') 1문장으로 시작한 뒤 핵심 결론(1~2문장)을 이어 선언. 호격('여러분')만으로는 인삿말이 아님 — 반드시 화자가 누구인지 밝힐 것. AI 답변 엔진이 이 문단만 추출해도 답이 되어야 한다.</rule>\n"
             + lead_rule +
             "    <rule>소제목은 10~25자, \"위한/향한/만드는/통한/대한\" 수식어 금지.</rule>\n"
+            "    <rule priority='critical'>본론 각 섹션의 주제(heading + lead_sentence)는 반드시 사용자 입장문(stanceText)의 핵심 주제에서 도출하십시오. "
+            "프롬프트에 [화자 실적·활동 보조자료]나 참고자료가 포함되어 있더라도, 그것을 별도 본론 섹션의 주제로 삼지 마십시오. "
+            "보조자료는 입장문 주제를 뒷받침하는 근거·사례로만 활용하십시오.</rule>\n"
             "  </rules>\n"
             + self._build_outline_json_shape(writing_method, body_sections) +
             "</json_output_contract>"
