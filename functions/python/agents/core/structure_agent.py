@@ -477,7 +477,8 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                     "properties": {
                         "paragraphs": {
                             "type": "array",
-                            "minItems": 1,
+                            "minItems": 3,
+                            "maxItems": 3,
                             "items": paragraph_schema,
                         }
                     },
@@ -495,7 +496,8 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                             },
                             "paragraphs": {
                                 "type": "array",
-                                "minItems": 1,
+                                "minItems": 3,
+                                "maxItems": 3,
                                 "items": paragraph_schema,
                             },
                         },
@@ -510,7 +512,8 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                         },
                         "paragraphs": {
                             "type": "array",
-                            "minItems": 2,
+                            "minItems": 3,
+                            "maxItems": 3,
                             "items": paragraph_schema,
                         },
                     },
