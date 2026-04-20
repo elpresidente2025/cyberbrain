@@ -50,10 +50,46 @@ COMPETITOR_INTENT_TAIL_FORBIDDEN_TOKENS = (
     "득표율",
 )
 
+# Kiwi 사용 불가 시에만 사용하는 regex fallback.
+# '제 정책'류는 "경제 정책" 오탐 위험이 있어 fallback에서는
+# 조사 결합형(저는/제가/...)만 잡고, '제+명사' 패턴은 Kiwi에 위임.
 TITLE_FIRST_PERSON_PATTERN = re.compile(
-    r"(저는|제가|저의|저만의|나는|내가|나의|(?<![가-힣])제\s*(?:정책|공약|해법|비전|생각|진심|메시지|약속)|(?<![가-힣])내\s*(?:정책|공약|해법|비전|생각|진심|메시지|약속))",
+    r"(저는|제가|저의|저만의|나는|내가|나의)",
     re.IGNORECASE,
 )
+
+# Kiwi 품사 기반 1인칭 ���명사 탐지 — regex fallback보다 우선
+_FIRST_PERSON_NP_FORMS = frozenset({"저", "제", "나", "내"})
+_FIRST_PERSON_SURFACE_TOKENS = frozenset({"저는", "제가", "저의", "저만의", "나는", "내가", "나의"})
+
+
+def _kiwi_find_first_person(text: str) -> Optional[str]:
+    """Kiwi 형태소 분석으로 제목 내 1인칭 대명사를 탐지.
+
+    Returns:
+        매칭된 표면형 문자열 (1인칭 발견 시),
+        "" (Kiwi 정상 작동 + 1인칭 없음),
+        None (Kiwi 사용 불가 — caller가 regex fallback).
+    """
+    from .korean_morph import tokenize
+
+    tokens = tokenize(text)
+    if tokens is None:
+        return None
+    for tok in tokens:
+        # NP = ��명사. "경제"의 "제"는 NNG로 분석되므로 NP만 잡으면 오탐 없음
+        if tok.tag == "NP" and tok.form in _FIRST_PERSON_NP_FORMS:
+            # 표면형 + 뒤따르는 조사까지 포함해서 반환
+            start = tok.start
+            end = tok.start + tok.len
+            # 다음 토큰이 조사(J*)면 함께 묶어서 반환
+            tok_idx = tokens.index(tok)
+            if tok_idx + 1 < len(tokens):
+                next_tok = tokens[tok_idx + 1]
+                if next_tok.tag.startswith("J") and next_tok.start == end:
+                    end = next_tok.start + next_tok.len
+            return text[start:end].strip()
+    return ""
 
 def detect_content_type(content_preview: str, category: str) -> str:
     try:
@@ -492,6 +528,11 @@ def _find_title_first_person_expression(text: Any) -> str:
     normalized_text = re.sub(r"\s+", " ", str(text or "")).strip()
     if not normalized_text:
         return ""
+    # Kiwi 품사 분석 우선 — NP 태그로 정확히 대명사만 잡음
+    kiwi_result = _kiwi_find_first_person(normalized_text)
+    if kiwi_result is not None:
+        return kiwi_result  # "" = 1인칭 없음, 문자열 = 매칭된 표현
+    # Kiwi 사용 불가 시에만 regex fallback
     match = TITLE_FIRST_PERSON_PATTERN.search(normalized_text)
     return str(match.group(0) or "").strip() if match else ""
 
