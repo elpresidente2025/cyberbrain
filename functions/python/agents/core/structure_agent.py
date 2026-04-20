@@ -896,6 +896,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
     ) -> str:
         """AEO 2단계 생성의 2단계: 아웃라인을 고정한 채 본문 확장을 요청하는 프롬프트."""
         from ..common.aeo_config import uses_dialectical_structure, build_dialectical_roles
+        from ..common.leadership import build_argument_layer_xml
 
         body_count = len(outline.get('body', []))
         is_dialectical = uses_dialectical_structure(writing_method) and body_count >= 3
@@ -917,18 +918,22 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                     role_hint = (
                         f'    <expansion_role priority="critical">{section_role}: {guide} '
                         f'이 섹션에서 반드시 "~라는 우려/비판이 있다" 형태로 반론을 명시한 뒤, '
-                        f'사실·수치·논리로 재반론하십시오. 이 내용을 결론으로 미루지 마십시오.'
+                        f'사실·수치·논리로 재반론하십시오. '
+                        f'&lt;argument_layer for="counterargument_rebuttal"&gt; 블록에서 '
+                        f'이 글 주제와 관련된 criticism-rebuttal 쌍을 참조하십시오. '
+                        f'이 내용을 결론으로 미루지 마십시오.'
                         f'</expansion_role>\n'
                     )
                 elif section_role == 'higher_principle':
                     role_hint = (
                         f'    <expansion_role priority="critical">{section_role}: {guide} '
-                        f'이 섹션의 소재는 이 프롬프트에 포함된 &lt;political_philosophy&gt; 블록입니다. '
-                        f'core_values·leadership_principles·balanced_approach 중 이 글의 주제와 '
-                        f'가장 관련 깊은 가치·원칙을 구체적으로 골라, 본론의 정책 논의가 '
-                        f'그 상위 가치를 어떻게 실현하는지 논증하십시오. '
-                        f'막연한 "더 나은 사회" 류의 추상적 마감이 아니라, '
-                        f'특정 철학 원칙과 정책의 연결고리를 보여야 합니다.'
+                        f'이 섹션의 1차 소재는 &lt;argument_layer for="higher_principle"&gt; 블록입니다. '
+                        f'이 글의 주제와 가장 관련 깊은 가치(5개 중 1개)를 선택하여: '
+                        f'(1) argument_chains에서 정책→중간논리→가치 연결 경로를 차용하고, '
+                        f'(2) empirical_evidence 또는 international_precedents에서 1개 이상 구체 근거를 인용하고, '
+                        f'(3) korean_context로 한국 사회 맥락에 착지시키십시오. '
+                        f'&lt;political_philosophy&gt;의 vision·philosophy도 참조하되, '
+                        f'추상적 슬로건만으로 마감하지 마십시오.'
                         f'</expansion_role>\n'
                     )
                 else:
@@ -1001,7 +1006,18 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             '</expansion_instructions>\n\n'
         )
 
+        # 변증법 구조의 논거 레이어 선택적 주입
+        detected_roles: set[str] = set()
+        if is_dialectical:
+            for section in outline.get('body', []):
+                r = section.get('role', '')
+                if r in ('higher_principle', 'counterargument_rebuttal'):
+                    detected_roles.add(r)
+        argument_layer_block = build_argument_layer_xml(list(detected_roles))
+
         modified_prompt = base_prompt + "\n\n" + lock_block
+        if argument_layer_block:
+            modified_prompt += "\n" + argument_layer_block + "\n"
         return self._build_structure_json_prompt(
             prompt=modified_prompt,
             length_spec=length_spec,

@@ -266,6 +266,339 @@ PRAGMATIC_EXPERIENCE = {
 
 
 # ============================================================================
+# 논거 레이어 — 변증법 구조의 higher_principle / counterargument_rebuttal 소재
+# ============================================================================
+# ChatGPT + Gemini 리서치 병합 (2026-04).
+# expansion 단계에서만 선택적으로 주입된다.
+
+ARGUMENT_LAYER = {
+    'basicSociety': {
+        'argument_chains': [
+            {
+                'policy_domain': '보편적 안전망',
+                'logic': '4차 산업혁명 → AI·로봇 일자리 대체 가속 → 다수 소득 급감 → 선별적 복지로 방어 불가',
+                'connection': '생존 필수 조건(소득·주거·의료·돌봄·교육)을 시장 논리 대신 보편적 권리로 보장 = 기본사회',
+            },
+            {
+                'policy_domain': '주거 정책',
+                'logic': '주거 불안 → 노동·교육·건강 전 영역 불안정 전이',
+                'connection': '주거권 보장 = 기본권으로서의 생존권 확립의 제도적 실현',
+            },
+            {
+                'policy_domain': '거버넌스 설계',
+                'logic': '8대 핵심 과제(소득보장·공공의료·돌봄·주거·교육·일과삶균형·이동권·에너지전환) → 기본사회위원회 설치로 총괄',
+                'connection': '비전이 구속력 있는 거버넌스 개편으로 이어짐',
+            },
+        ],
+        'empirical_evidence': [
+            {
+                'claim': '핀란드 Housing First 프로그램으로 노숙률 35% 감소, 유럽 유일 노숙 감소국',
+                'source': 'Y-Foundation, 2019',
+            },
+            {
+                'claim': '한국 OECD 노인빈곤율 1위, 자살률 1위, 출산율 최저 — 각자도생 시스템의 구조적 결과',
+                'source': 'OECD, 2024',
+            },
+        ],
+        'international_precedents': [
+            {
+                'country': '덴마크·스웨덴',
+                'policy': '유연안정성(Flexicurity)',
+                'outcome': '강력한 안전망이 기업의 유연한 노동시장 운영과 거시 경제 혁신을 동시 가능케 함',
+            },
+            {
+                'country': 'EU',
+                'policy': '정의로운 전환(Just Transition)',
+                'outcome': '2050 탄소중립 + 디지털 혁신 투자 → 과실로 불평등 완화',
+            },
+        ],
+        'counter_rebuttals': [
+            {
+                'criticism': '복지 확대는 재정 건전성을 해치는 포퓰리즘이다',
+                'rebuttal': '한국 국가부채 비율은 선진국 대비 현저히 낮은데, 정부 긴축 강박이 오히려 가계부채를 세계 최고 수준으로 폭증시켰다. 기본사회 투자는 소비 진작 + 조세 수익 증대로 돌아오는 거시경제적 투자다.',
+            },
+            {
+                'criticism': '무상 복지가 국민을 나태하게 만든다',
+                'rebuttal': '독일 베를린 기본소득 3년 실험(2021-2024): 수급자 90%가 주당 40시간 정상 근로 유지. 불안 제거 시 교육 투자·창업 시도 등 사회적 도약대 효과 확인.',
+            },
+        ],
+        'korean_context': [
+            {
+                'context': '한국 자영업자 비율 OECD 3위(~24%), 경기 충격 = 대규모 생존 위기',
+                'implication': '자영업자 안전망은 기본사회의 핵심 과제',
+            },
+            {
+                'context': '세계 10위 경제 규모이나 OECD 최악 노인빈곤율·자살률, 최저 출산율',
+                'implication': '압축성장 과정에서 개인 보호를 방기한 각자도생 시스템의 비극적 결과 → 기본사회는 국가 역할 재정의',
+            },
+        ],
+    },
+    'inclusiveNation': {
+        'argument_chains': [
+            {
+                'policy_domain': '억강부약의 재정의',
+                'logic': '억강 = 기득권 카르텔의 의사결정 독점·룰 조작 차단 / 부약 = 약자의 협상력·역량(Empowerment) 강화',
+                'connection': '포용국가는 억강부약의 저울이 평형을 이룰 때 완성',
+            },
+            {
+                'policy_domain': '대동세상의 현대적 구현',
+                'logic': '천하위공(天下爲公) → 유아·노인·병자·홀로된 자를 공동체가 보듬는 대동세상',
+                'connection': '동양 평등주의 이상을 현대 복지국가 언어로 치환한 것이 포용국가',
+            },
+            {
+                'policy_domain': '금융 포용',
+                'logic': '제1금융권 소외 → 불법 사금융 → 경제 공동체 이탈',
+                'connection': '극저신용대출 2.0으로 저신용자를 경제 공동체 안으로 재포용',
+            },
+        ],
+        'empirical_evidence': [
+            {
+                'claim': '경기도 극저신용대출 2.0: 제1금융권 소외 저신용자에게 공공 직접 금융 제공',
+                'source': '경기도, 2025',
+            },
+            {
+                'claim': '5대 돌봄 국가 책임제(영유아·초등·노인·장애인·간호간병) + 지역사회 통합돌봄 고도화',
+                'source': '기본사회 8대 과제, 2025',
+            },
+            {
+                'claim': '플랫폼·특수고용 노동자 고용보험 확대, 상병수당 도입, 영케어러 맞춤형 소득지원',
+                'source': '기본사회 정책 패키지',
+            },
+        ],
+        'international_precedents': [
+            {
+                'country': '미국',
+                'policy': 'Biden 포용적 자본주의(Inclusive Capitalism) + 친노동 입법',
+                'outcome': '거대 자본 독주 제어, 노동자·시민 권리 격상',
+            },
+            {
+                'country': 'EU / ILO',
+                'policy': '유럽 사회적 권리 기둥(European Pillar of Social Rights) + ILO 플랫폼 노동자 보호 기준',
+                'outcome': '약자 협상력 복원이 지속 가능한 경제 체제의 글로벌 스탠더드로 정립',
+            },
+        ],
+        'counter_rebuttals': [
+            {
+                'criticism': '억강부약은 기업 혁신을 적으로 매도하는 반기업적 이분법이다',
+                'rebuttal': '억강부약은 가장 합리적인 친시장 정책이다. 독점 카르텔이 가로막은 다수의 창의성과 기회를 해방시켜 기업인·사업자 모두에게 더 큰 성장 공간을 만든다. 기울어진 운동장을 평평하게 만드는 것이지 성장 동력을 부정하는 것이 아니다.',
+            },
+        ],
+        'korean_context': [
+            {
+                'context': '이재명의 소년공 산재 경험 — 노동권 유린·국가 부재 시절의 상흔',
+                'implication': '억강부약의 실존적 원동력이자, 엘리트 관료주의에서 포착 불가능한 현장밀착형 정책의 사상적 뿌리',
+            },
+            {
+                'context': '코로나 + 내란 복합 위기 → 청년 실업 치솟고 민생 피폐',
+                'implication': '국가가 최후의 보루 역할을 수행해야 한다는 부약(扶弱) 철학의 시대적 긴급성',
+            },
+        ],
+    },
+    'fairEconomy': {
+        'argument_chains': [
+            {
+                'policy_domain': '지대 추구 타파',
+                'logic': '저성장·청년 좌절의 원인은 자원 부족이 아니라 다수 노력이 소수 불로소득으로 치환되는 불공정 구조',
+                'connection': '행정력으로 불법·편법·독점·카르텔을 응징 → 시장 효율성 복원 → 과실을 대중에게 환원',
+            },
+            {
+                'policy_domain': '정보 투명성',
+                'logic': '불투명 정보에 기생 → 부풀려진 수익 → 원가 공개 + 단속으로 지대 차단',
+                'connection': '공공건설 원가 공개가 납세자 주권 회복의 시작',
+            },
+            {
+                'policy_domain': '플랫폼 독점 해체',
+                'logic': '대형 배달앱 독과점 → 수수료 착취 → 소상공인·소비자 비용 전가',
+                'connection': '공공배달앱(배달특급)으로 시장 실패 교정, 데이터 국민 환원',
+            },
+        ],
+        'empirical_evidence': [
+            {
+                'claim': '공공건설 원가 공개(10억 이상): 도민 찬성 90-92%, 아파트 분양가 인하 기대 74%',
+                'source': '케이스탯리서치 여론조사',
+            },
+            {
+                'claim': '표준시장단가 적용(100억 미만 소규모 공사): 평균 4.4% 예산 절감 효과',
+                'source': '경기도 자체 분석',
+            },
+            {
+                'claim': '페이퍼컴퍼니 사전단속 8개월 만에 42개사 적발, 공공입찰 응찰률 22% 감소(좀비 기업 퇴출)',
+                'source': '경기도, 2019',
+            },
+            {
+                'claim': '187개 하천 1,437곳 불법 시설물(평상 등) 강제 철거 — 사유화된 자연을 도민에게 환원',
+                'source': '경기도 계곡 불법시설 정비',
+            },
+            {
+                'claim': '체납관리단 2019년 795억 원 체납 세금 징수',
+                'source': '경기도 체납관리단',
+            },
+        ],
+        'international_precedents': [
+            {
+                'country': '에스토니아·핀란드',
+                'policy': '전자정부: 모든 입찰·지출 내역 시민 공개',
+                'outcome': '정보 비대칭 해소 → 부패 원천 차단',
+            },
+            {
+                'country': '미국(FTC) / EU(DMA)',
+                'policy': '빅테크 게이트키퍼 해체, 시장지배력 남용 제재',
+                'outcome': '시장 규칙 훼손자에 대한 강력한 행정 제재가 글로벌 스탠더드로 정립',
+            },
+        ],
+        'counter_rebuttals': [
+            {
+                'criticism': '원가 공개·표준시장단가가 중소 건설업체의 적정 이윤을 박탈한다',
+                'rebuttal': '불투명 정보에 기생한 부풀려진 수익은 적정 이윤이 아니다. 4.4% 절감은 노동자 임금이 아니라 중간에서 불법적으로 새는 지대(Rent)를 차단한 것이며, 절약분은 복지·지역경제에 재투입된다.',
+            },
+            {
+                'criticism': '공공배달앱은 민간 혁신 영역에 세금 투입하는 관치 경제다',
+                'rebuttal': '플랫폼 사업자의 사실상 독점적 지위를 이용한 소상공인·소비자 비용 전가는 시장 실패다. 공공이 마중물 역할을 하는 정당한 시장 안정화 조치.',
+            },
+        ],
+        'korean_context': [
+            {
+                'context': '부동산·건설 이권은 한국 현대사에서 정치자금과 유착된 가장 고질적 부패 카르텔',
+                'implication': '계곡 평상 철거·원가 공개는 일상 속 기득권 불로소득을 직접 파괴하는 카타르시스 — 거창한 거시담론이 아닌 생활밀착 공정',
+            },
+        ],
+    },
+    'peopleFirst': {
+        'argument_chains': [
+            {
+                'policy_domain': '골든타임 재정 투입',
+                'logic': '거시 충격 → 정부 긴축 → 저소득층·소상공인 직격 → 양극화·생태계 붕괴',
+                'connection': '위기일수록 신속한 추경 + 과감한 재정 = 민생 방어적 투자',
+            },
+            {
+                'policy_domain': '직접 지원 vs 일률 감면',
+                'logic': '80조 조세감면·유류세 인하 = 일률적, 양극화 미제어, 체감도 극저',
+                'connection': '취약계층 타겟 + 지역화폐 지급 → 민생구제 + 골목상권 이중 효과',
+            },
+        ],
+        'empirical_evidence': [
+            {
+                'claim': '성남시 3대 무상복지: 청년배당 연 100만 원(지역화폐), 무상교복(중학교 신입생 전원), 공공산후조리비 50만 원',
+                'source': '성남시, 2016',
+            },
+            {
+                'claim': '경기도 재난기본소득: 도민 전원 1인당 10만 원 지역화폐, 중앙정부보다 선제 집행 → 전국 재난지원금 마중물',
+                'source': '경기도, 2020',
+            },
+            {
+                'claim': '경기도 생활임금 12,152원 확정 — 국가 최저임금 10,030원 대비 121.2%',
+                'source': '경기도, 2025',
+            },
+            {
+                'claim': '성남시 3대 무상복지 재원은 모라토리엄 극복 과정의 예산 구조조정으로 자력 마련한 95억 원 — 빚이 아닌 절약금',
+                'source': '성남시 재정 분석',
+            },
+        ],
+        'international_precedents': [
+            {
+                'country': '미국',
+                'policy': '2008 오바마 부족한 부양책 vs 2020 코로나 Stimulus Checks 직접 투입',
+                'outcome': '2008년 고용없는 성장 늪 vs 2020년 V자 반등 — 골든타임 직접 지원의 거시경제적 실증',
+            },
+        ],
+        'counter_rebuttals': [
+            {
+                'criticism': '무상 포퓰리즘이다 + 박근혜 정부 지방교부세 감액 페널티',
+                'rebuttal': '모라토리엄 극복하며 자력 마련한 95억을 시민에게 돌려주는 것이 어떻게 포퓰리즘인가. "어머니(성남시)가 아들에게 용돈 만 원을 주는데, 동네 깡패(정부)가 오천 원을 빼앗아 가는 격." 헌재 권한쟁의 결과를 기다리며 민생 고통을 방치할 수 없어 예산 절반이라도 우선 집행.',
+            },
+            {
+                'criticism': '직접 현금성 지원은 비효율적 산포다',
+                'rebuttal': '일률적 조세감면(80조)은 양극화를 제어하지 못하고 체감도도 극저. 취약계층 타겟 + 지역화폐 지급이 민생구제와 골목상권 매출 증대의 이중 효과.',
+            },
+        ],
+        'korean_context': [
+            {
+                'context': '지방정부가 중앙 권력과 헌법적 권한을 다투며 민생 어젠다를 주도한 사례',
+                'implication': '전통적 상명하달 행정 구조에서 지방자치가 민생을 위해 독자적 복지 행보를 개척한 한국 정치사의 변곡점',
+            },
+        ],
+    },
+    'basicIncome': {
+        'argument_chains': [
+            {
+                'policy_domain': '거시경제 패러다임',
+                'logic': 'AI·로봇 → 노동 종말 가속 → 다수 소득 급감 → 구매력 상실 → 과잉생산 구조적 침체',
+                'connection': '기본소득은 복지가 아닌 거시 경제 정책 — 소비 역량 지속 강화가 자본주의 생태계 붕괴를 막는 유일한 해법',
+            },
+            {
+                'policy_domain': '지역화폐 결합 모델',
+                'logic': '현금 → 저축 또는 대기업 유출 vs 지역화폐 → 골목상권 강제 순환',
+                'connection': '기본소득 + 지역화폐 = 모세혈관 경제 부양, 낙수효과 대신 분수효과(Trickle-up)',
+            },
+            {
+                'policy_domain': '노동의 재정의',
+                'logic': '생존 기본선 보장 → 노동이 생존 고통에서 자아실현으로 승화',
+                'connection': '외부 위기에 상관없이 기본이 지켜지는 사회 = 진짜 대한민국',
+            },
+        ],
+        'empirical_evidence': [
+            {
+                'claim': '성남시 청년배당: 연 100만 원 지역화폐, "3년 만에 처음 과일을 사 먹었다" 증언, 동네 식당·전통시장 매출 증가',
+                'source': '성남시, 2016',
+            },
+            {
+                'claim': '경기도 청년기본소득 만족도: 1년차 80% → 7년차(2025) 94%',
+                'source': '경기도 청년기본소득 만족도 조사, 2025',
+            },
+            {
+                'claim': '독일 베를린 기본소득 실험(2021-2024): 수급자 90%가 주당 40시간 정상 근로 유지, 노동이탈 전혀 없음, 스트레스↓ 교육투자↑ 창업↑',
+                'source': '독일경제연구소(DIW), 2024',
+            },
+            {
+                'claim': '핀란드 기본소득 실험(2017-2018): 정부·사회제도 신뢰도 유의미 상승, 투표 참여율 증가 — 민주주의 역량 강화',
+                'source': 'Kela, 2020',
+            },
+            {
+                'claim': '신안군 햇빛연금: 재생에너지 이익 공유 월 ~20만 원, 향후 바람연금 포함 월 50-60만 원 → 지방소멸 방어',
+                'source': '신안군, 2024',
+            },
+        ],
+        'international_precedents': [
+            {
+                'country': '독일',
+                'policy': '베를린 기본소득 3년 실험(Mein Grundeinkommen)',
+                'outcome': '노동시간 감소·이탈 제로, 사회적 도약대(Social Launchpad) 효과 입증',
+            },
+            {
+                'country': '핀란드',
+                'policy': '2년간 실업자 대상 무조건적 소득 지급',
+                'outcome': '사회제도 신뢰도↑, 민주주의 참여↑ — 사회적 통합 효과',
+            },
+        ],
+        'counter_rebuttals': [
+            {
+                'criticism': '천문학적 재정 파탄, 전 국민 백수화 도덕적 해이',
+                'rebuttal': '독일·핀란드 실증 데이터가 허구임을 증명 — 90%가 정상 근로 유지. 인간은 불안 제거 시 더 창의적이고 높은 가치를 추구한다.',
+            },
+            {
+                'criticism': '부유층에게까지 나눠주는 비효율, 선별 복지가 합리적',
+                'rebuttal': '선별복지는 세금만 내고 혜택 못 받는 계층의 조세 저항을 필연적으로 유발. 100% 혜택 공유하는 보편적 기본소득만이 증세에 대한 사회적 합의를 이끌어낼 유일한 정치적 기제.',
+            },
+            {
+                'criticism': '재원 조달이 불가능하다',
+                'rebuttal': '단계적 접근: 1년 1-4회씩 서서히 확대, 기존 조세감면 축소 + 예산 구조조정으로 시작 → 국민적 공감대 후 탄소세·국토보유세 등 목적세 신설로 지속가능성 확보.',
+            },
+        ],
+        'korean_context': [
+            {
+                'context': '재벌 대기업 중심 낙수효과(Trickle-down)가 완전히 수명을 다한 한국 경제',
+                'implication': '지역화폐형 기본소득 = 밑바닥 골목상권부터 돈을 돌게 만드는 상향식 분수효과(Trickle-up)의 한국형 실험',
+            },
+            {
+                'context': '이재명 직접 번역 참여: 다니엘 라벤토스 «기본소득이란 무엇인가»',
+                'implication': '빈곤 해소는 시혜가 아니라 시민 자유의 실현을 위한 절대적 조건 — 공화주의적 기본소득론의 한국 도입',
+            },
+        ],
+    },
+}
+
+
+# ============================================================================
 # 프롬프트 빌더 — 정치 철학 주입
 # ============================================================================
 
@@ -362,3 +695,78 @@ def build_leadership_philosophy_xml() -> str:
 
     parts.append('</political_philosophy>')
     return "\n".join(parts)
+
+
+def build_argument_layer_xml(target_roles: list[str] | None = None) -> str:
+    """변증법 구조의 특정 역할에 필요한 논거 소재를 XML로 반환.
+
+    target_roles에 따라 선택적 주입:
+    - 'higher_principle': argument_chains + empirical_evidence + international_precedents + korean_context
+    - 'counterargument_rebuttal': counter_rebuttals
+    빈 리스트이거나 None이면 빈 문자열 반환.
+    """
+    if not target_roles:
+        return ''
+
+    needs_hp = 'higher_principle' in target_roles
+    needs_cr = 'counterargument_rebuttal' in target_roles
+    if not needs_hp and not needs_cr:
+        return ''
+
+    blocks: list[str] = []
+
+    if needs_hp:
+        blocks.append('<argument_layer for="higher_principle" priority="high">')
+        for value_id, data in ARGUMENT_LAYER.items():
+            blocks.append(f'  <value id="{value_id}">')
+            # chains
+            blocks.append('    <chains>')
+            for c in data.get('argument_chains', []):
+                blocks.append(
+                    f'      <chain domain="{_xml_esc(c["policy_domain"])}">'
+                    f'{_xml_esc(c["logic"])} → {_xml_esc(c["connection"])}'
+                    f'</chain>'
+                )
+            blocks.append('    </chains>')
+            # evidence
+            blocks.append('    <evidence>')
+            for e in data.get('empirical_evidence', []):
+                blocks.append(
+                    f'      <fact source="{_xml_esc(e["source"])}">'
+                    f'{_xml_esc(e["claim"])}'
+                    f'</fact>'
+                )
+            blocks.append('    </evidence>')
+            # precedents
+            blocks.append('    <precedents>')
+            for p in data.get('international_precedents', []):
+                blocks.append(
+                    f'      <case country="{_xml_esc(p["country"])}">'
+                    f'{_xml_esc(p["policy"])} → {_xml_esc(p["outcome"])}'
+                    f'</case>'
+                )
+            blocks.append('    </precedents>')
+            # korean context
+            blocks.append('    <korean>')
+            for k in data.get('korean_context', []):
+                blocks.append(
+                    f'      <context>{_xml_esc(k["context"])} → {_xml_esc(k["implication"])}</context>'
+                )
+            blocks.append('    </korean>')
+            blocks.append('  </value>')
+        blocks.append('</argument_layer>')
+
+    if needs_cr:
+        blocks.append('<argument_layer for="counterargument_rebuttal" priority="high">')
+        for value_id, data in ARGUMENT_LAYER.items():
+            blocks.append(f'  <value id="{value_id}">')
+            for r in data.get('counter_rebuttals', []):
+                blocks.append(
+                    f'    <rebuttal criticism="{_xml_esc(r["criticism"])}">'
+                    f'{_xml_esc(r["rebuttal"])}'
+                    f'</rebuttal>'
+                )
+            blocks.append('  </value>')
+        blocks.append('</argument_layer>')
+
+    return '\n'.join(blocks)
