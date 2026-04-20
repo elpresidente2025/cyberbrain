@@ -354,6 +354,21 @@ def py_batchAnalyzeBioStyles(req: https_fn.CallableRequest) -> dict:
 
 
 # ============================================================
+# Admin — Cliche Dictionary
+# ============================================================
+
+@https_fn.on_request(
+    region="asia-northeast3",
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=540,
+)
+def refresh_cliche_dictionary(req: https_fn.Request) -> https_fn.Response:
+    """상투어 대체어 사전 배치 갱신 (Cloud Scheduler 또는 관리자 수동 호출)."""
+    from services.cliche_dictionary.batch_runner import handle_refresh
+    return handle_refresh(req)
+
+
+# ============================================================
 # Firestore Triggers — Stylometry
 # ============================================================
 

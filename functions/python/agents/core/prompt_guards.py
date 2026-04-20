@@ -101,6 +101,7 @@ def _build_style_generation_guard(
     style_guide: str = "",
     user_profile: Optional[Dict[str, Any]] = None,
     generation_profile: Optional[Dict[str, Any]] = None,
+    global_alternatives: Optional[Dict[str, List[str]]] = None,
 ) -> str:
     fingerprint = style_fingerprint if isinstance(style_fingerprint, dict) else {}
     profile = user_profile if isinstance(user_profile, dict) else {}
@@ -237,6 +238,23 @@ def _build_style_generation_guard(
             forbidden_phrases.append(source)
         if source and target:
             preferred_replacements.append(f'"{source}" 대신 "{target}"')
+
+    # 중앙 상투어 대체어 사전 병합 (per-user aiAlternatives 가 우선)
+    if global_alternatives and isinstance(global_alternatives, dict):
+        user_sources = {
+            normalize_context_text(str(k or "").replace("instead_of_", "").replace("_", " "))
+            for k in ai_alternatives
+        }
+        for cliche, alts in global_alternatives.items():
+            cliche_norm = normalize_context_text(cliche)
+            if not cliche_norm or cliche_norm in user_sources:
+                continue
+            if cliche_norm not in forbidden_phrases and len(forbidden_phrases) < max_forbidden_phrases:
+                forbidden_phrases.append(cliche_norm)
+            if alts:
+                top_alt = str(alts[0]).strip()
+                if top_alt:
+                    preferred_replacements.append(f'"{cliche_norm}" 대신 "{top_alt}"')
 
     for bucket in ("signatures", "emphatics"):
         for raw_value in (phrases.get(bucket) or []):

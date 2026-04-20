@@ -37,6 +37,37 @@ from ..common.leadership import build_leadership_philosophy_xml
 
 logger = logging.getLogger(__name__)
 
+# ── 중앙 상투어 대체어 사전 캐시 ──
+_global_alt_cache: Dict[str, list] | None = None
+_global_alt_cache_time: float = 0
+_GLOBAL_ALT_CACHE_TTL: float = 3600  # 1시간
+
+
+def _load_global_alternatives() -> Dict[str, list]:
+    """확정 상투어 대체어 사전을 Firestore 에서 로드 (인스턴스당 1시간 캐시)."""
+    global _global_alt_cache, _global_alt_cache_time
+    import time
+
+    now = time.time()
+    if _global_alt_cache is not None and (now - _global_alt_cache_time) < _GLOBAL_ALT_CACHE_TTL:
+        return _global_alt_cache
+
+    try:
+        from firebase_admin import firestore
+        db = firestore.client()
+        from services.cliche_dictionary.dictionary_manager import load_cliche_dictionary
+        result = load_cliche_dictionary(db)
+    except Exception as e:
+        logger.debug("[prompt_builder] cliche dictionary load skipped: %s", e)
+        if _global_alt_cache is not None:
+            return _global_alt_cache
+        return {}
+
+    _global_alt_cache = result
+    _global_alt_cache_time = now
+    return result
+
+
 TEMPLATE_BUILDERS = {
     'emotional_writing': build_daily_communication_prompt,
     'logical_writing': build_policy_proposal_prompt,
@@ -612,11 +643,15 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
   <output_format>{_xml_text(output_format_rule)}</output_format>
 </structure_guide>
 """
+    # 중앙 상투어 대체어 사전 로드
+    global_alt = _load_global_alternatives()
+
     style_generation_guard = _build_style_generation_guard(
         style_fingerprint=style_fingerprint,
         style_guide=style_guide,
         user_profile=user_profile,
         generation_profile=generation_profile,
+        global_alternatives=global_alt,
     )
 
     # SEO 지침 생성
