@@ -679,7 +679,23 @@ class SectionNormalizerMixin:
                 f"{intro_before_clean} → {len(intro_paragraphs)}개"
             )
         if not intro_paragraphs:
-            print("⚠️ [StructureAgent] intro 문단이 0개입니다! HTML에 서론 없이 출력됩니다.")
+            # intro_lead 복구: expansion JSON에 intro가 비었지만 outline의 intro_lead가 있으면 복원
+            intro_lead_fallback = self._clean_plain_text(
+                intro_payload.get('intro_lead')
+                or intro_payload.get('lead')
+                or ''
+            )
+            if not intro_lead_fallback:
+                # payload 최상위에서 intro_lead 탐색 (outline 데이터가 전달된 경우)
+                intro_lead_fallback = self._clean_plain_text(payload.get('intro_lead') or '')
+            if intro_lead_fallback:
+                intro_paragraphs = [intro_lead_fallback]
+                print(
+                    f"🩹 [StructureAgent] intro 0개 → intro_lead로 복구: "
+                    f"'{intro_lead_fallback[:60]}...'"
+                )
+            else:
+                print("⚠️ [StructureAgent] intro 문단 0개, intro_lead도 없어 서론 복구 불가!")
 
         for paragraph in intro_paragraphs:
             html_parts.append(f"<p>{paragraph}</p>")
