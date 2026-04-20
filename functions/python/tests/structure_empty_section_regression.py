@@ -145,8 +145,16 @@ def test_structure_agent_build_expansion_json_prompt_inlines_role_material_insid
     assert section3.index('<expansion_role') < section3.index('<role_material role="counterargument_rebuttal"')
     assert section4.index('<expansion_role') < section4.index('<role_material role="higher_principle"')
     assert '<argument_layer for=' not in prompt
-    assert '아래 role_material의 반론-재반론 소재를 직접 활용하고' in prompt
-    assert '아래 role_material의 가치·근거·한국 맥락 소재를 직접 활용하여' in prompt
+    # counterargument_rebuttal: 문단별 ���할 명시 + 금지 규칙
+    assert '<paragraph_roles>' in section3
+    assert '반론 수용' in section3
+    assert '재반론' in section3
+    assert '<ban>' in section3
+    # higher_principle: 문단별 역할 명시
+    assert '<paragraph_roles>' in section4
+    assert '가치 선언' in section4
+    assert '실증 근거' in section4
+    assert '한국 맥락 착지' in section4
 
 
 def test_normalize_structure_padding_avoids_deprecated_boilerplate_sentences() -> None:

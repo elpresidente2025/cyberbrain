@@ -1,3 +1,4 @@
+import re
 from typing import Any, Dict, Optional, Tuple
 
 from ..common.aeo_config import uses_aeo_answer_first
@@ -75,6 +76,59 @@ class SectionRepairMixin:
             print(f"🪫 [StructureAgent] 섹션 단위 복구 실패, 축소 블록으로 계속 진행: block={block_index + 1}")
             return self._replace_h2_block(content, block_index, degraded_block), title, 'section-degraded'
         return None
+
+    _PLEDGE_TAIL_RE = re.compile(r'하겠습니다\s*[.!]?\s*$')
+
+    def _strip_counterargument_pledge_tail(
+        self,
+        content: str,
+        outline: Dict[str, Any],
+    ) -> str:
+        """counterargument_rebuttal 섹션 마지막 문단이 '~하겠습니다'로 끝나면 해당 문장을 제거."""
+        body = outline.get('body', [])
+        cr_indices = [
+            i for i, sec in enumerate(body) if sec.get('role') == 'counterargument_rebuttal'
+        ]
+        if not cr_indices:
+            return content
+
+        # HTML에서 body section 위치 식별 (빈 <h2></h2> 마커 기준)
+        h2_positions = [m.start() for m in re.finditer(r'<h2\b', content, re.IGNORECASE)]
+        for cr_idx in cr_indices:
+            if cr_idx >= len(h2_positions):
+                continue
+            section_start = h2_positions[cr_idx]
+            section_end = h2_positions[cr_idx + 1] if cr_idx + 1 < len(h2_positions) else len(content)
+            section_html = content[section_start:section_end]
+
+            p_blocks = re.findall(r'<p\b[^>]*>([\s\S]*?)</p\s*>', section_html, re.IGNORECASE)
+            if not p_blocks:
+                continue
+            last_p_text = re.sub(r'<[^>]*>', '', p_blocks[-1]).strip()
+            if not self._PLEDGE_TAIL_RE.search(last_p_text):
+                continue
+
+            # 마지막 문단에서 "~하겠습니다" 문장들을 제거
+            from ..common.korean_morph import split_sentences as kiwi_split
+            sentences = kiwi_split(last_p_text) or [last_p_text]
+            kept = [s for s in sentences if not self._PLEDGE_TAIL_RE.search(s.strip())]
+            if kept and len(kept) < len(sentences):
+                removed_count = len(sentences) - len(kept)
+                new_p_text = ' '.join(kept).strip()
+                old_p_tag = f'<p>{p_blocks[-1]}</p>'
+                # 원문 태그를 정확히 매치하기 위해 regex 사용
+                new_p_tag = f'<p>{new_p_text}</p>' if new_p_text else ''
+                content = content.replace(old_p_tag, new_p_tag, 1)
+                print(
+                    f"🩹 [StructureAgent] counterargument_rebuttal 역할 이탈 교정: "
+                    f"마지막 문단에서 다짐 문장 {removed_count}개 제거"
+                )
+            elif not kept:
+                print(
+                    f"⚠️ [StructureAgent] counterargument_rebuttal 마지막 문단 전체가 다짐 — 유지"
+                )
+
+        return content
 
     async def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
         topic = context.get('topic', '')
@@ -615,6 +669,13 @@ class SectionRepairMixin:
                 )
                 raw_content = normalize_artifacts(raw_content)
                 raw_content = normalize_html_structure_tags(raw_content)
+
+                # counterargument_rebuttal 역할 이탈 검증:
+                # 마지막 문단이 "~하겠습니다"로 끝나면 정책 다짐 침투
+                if is_aeo and aeo_outline is not None:
+                    raw_content = self._strip_counterargument_pledge_tail(
+                        raw_content, aeo_outline,
+                    )
                 title = normalize_artifacts(title)
 
                 plain_len = len(strip_html(raw_content))

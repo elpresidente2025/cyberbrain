@@ -919,24 +919,25 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             if effective_role and guide:
                 if effective_role == 'counterargument_rebuttal':
                     role_hint = (
-                        f'    <expansion_role priority="critical">{effective_role}: {guide} '
-                        f'이 섹션에서 반드시 "~라는 우려/비판이 있다" 형태로 반론을 먼저 명시한 뒤, '
-                        f'바로 이어서 사실·수치·사례·논리로 재반론하십시오. '
-                        f'아래 role_material의 반론-재반론 소재를 직접 활용하고, '
-                        f'이 내용을 결론으로 미루지 마십시오.'
-                        f'</expansion_role>\n'
+                        f'    <expansion_role priority="critical">{effective_role}: {guide}\n'
+                        f'      <paragraph_roles>\n'
+                        f'        <p1>반론 수용: "~라는 우려/비판이 있다"로 시작하여 반대 논리를 구체적으로 서술하십시오.</p1>\n'
+                        f'        <p2>재반론: 사실·수치·사례·논리로 P1의 반론을 정면 반박하십시오. 아래 role_material의 소재를 직접 활용하십시오.</p2>\n'
+                        f'        <p3>의미 부여: 이 반박이 왜 중요한지, 본론 전체 논지와 어떻게 연결되는지 서술하십시오.</p3>\n'
+                        f'      </paragraph_roles>\n'
+                        f'      <ban>이 섹션에 정책 실행 다짐(~하겠습니다), 새 공약 나열, 구체적 사업 계획을 넣지 마십시오. 그런 내용은 evidence 섹션의 영역입니다.</ban>\n'
+                        f'    </expansion_role>\n'
                     )
                     role_material = build_argument_role_material_block(effective_role)
                 elif effective_role == 'higher_principle':
                     role_hint = (
-                        f'    <expansion_role priority="critical">{effective_role}: {guide} '
-                        f'아래 role_material의 가치·근거·한국 맥락 소재를 직접 활용하여, '
-                        f'(1) 정책→중간논리→상위가치 연결을 분명히 쓰고, '
-                        f'(2) 구체 근거를 최소 1개 포함하고, '
-                        f'(3) 한국 사회 맥락에 착지시키십시오. '
-                        f'&lt;political_philosophy&gt;의 vision·philosophy도 함께 참조하되, '
-                        f'추상적 슬로건만으로 마감하지 마십시오.'
-                        f'</expansion_role>\n'
+                        f'    <expansion_role priority="critical">{effective_role}: {guide}\n'
+                        f'      <paragraph_roles>\n'
+                        f'        <p1>가치 선언: 이 글의 주제와 가장 관련 깊은 상위 가치를 선택하고, 정책→중간논리→가치 연결 경로를 서술하십시오. 아래 role_material의 argument_chains를 활용하십시오.</p1>\n'
+                        f'        <p2>실증 근거: role_material의 empirical_evidence 또는 international_precedents에서 구체 수치·사례를 최소 1개 인용하십시오.</p2>\n'
+                        f'        <p3>한국 맥락 착지: role_material의 korean_context를 활용하여 한국 사회 현실에 연결하십시오. &lt;political_philosophy&gt;의 vision도 참조하되 추상적 슬로건만으로 마감하지 마십시오.</p3>\n'
+                        f'      </paragraph_roles>\n'
+                        f'    </expansion_role>\n'
                     )
                     role_material = build_argument_role_material_block(effective_role)
                 else:

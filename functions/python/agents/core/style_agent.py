@@ -162,7 +162,18 @@ class StyleAgent(Agent):
 
         if final_length < min_length:
             logger.warning(f"⚠️ [StyleAgent] Final length insufficient ({final_length}/{min_length})")
-            
+
+        # StyleAgent가 Gemini 재작성 시 문단을 병합하는 문제 방어:
+        # normalize_section_p_count로 섹션당 3문단 구조를 복원한다.
+        if final_content != content:
+            from .structure_normalizer import normalize_section_p_count
+            before_p = len(re.findall(r'<p\b[^>]*>', final_content, re.IGNORECASE))
+            final_content = normalize_section_p_count(final_content)
+            after_p = len(re.findall(r'<p\b[^>]*>', final_content, re.IGNORECASE))
+            if before_p != after_p:
+                print(f"🩹 [StyleAgent] 문단 구조 복원: {before_p}p → {after_p}p")
+            final_length = len(strip_html(final_content))
+
         return {
             'content': final_content,
             'title': title,
@@ -207,7 +218,7 @@ class StyleAgent(Agent):
 
 ⚠️ **[절대 원칙]**
 1. **내용 요약 금지**: 전체 내용을 그대로 유지하며 서술만 다듬으세요.
-2. **문단 삭제 금지**: 기존의 문단 구조(15개 내외)를 유지하세요.
+2. **문단 구조 완전 보존**: 각 섹션(서론·본론·결론)의 <p> 개수를 **정확히** 유지하세요. 현재 섹션당 3개 문단이면 교정 후에도 반드시 3개여야 합니다. 두 문단을 합치거나, 한 문단을 삭제하는 것은 **금지**입니다.
 3. **분량 보존**: 내용을 크게 줄이지 마세요.
 4. **검색어(키워드) 절대 보존**: 아래 검색어는 SEO를 위해 필수적이므로 **절대 삭제하거나 변형하지 마십시오.**
 {keywords_to_preserve}
