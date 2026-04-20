@@ -515,6 +515,45 @@ def _filter_required_title_keywords(
         filtered.append(keyword)
     return filtered
 
+
+def split_title_user_keywords_by_grounding(
+    user_keywords: List[str],
+    *,
+    content_preview: str = "",
+    fallback_text: str = "",
+    role_keyword_policy: Optional[Dict[str, Any]] = None,
+) -> Dict[str, List[str]]:
+    """제목 단계에서 강제할 검색어와 참고용 검색어를 분리한다.
+
+    제목은 본문(content_preview)을 근거로 만들어야 한다. 사용자가 입력한 검색어라도
+    본문에 직접 등장하지 않으면 제목 필수값으로 강제하지 않고 advisory로 내린다.
+    다만 본문이 비어 있는 예외 경로에서는 topic/stance 기반 fallback_text를 사용해
+    기존 동작을 최대한 유지한다.
+    """
+    filtered = _filter_required_title_keywords(user_keywords, role_keyword_policy)
+    if not filtered:
+        return {"required": [], "advisory": []}
+
+    compact_content = re.sub(r"\s+", "", str(content_preview or "")).strip().lower()
+    compact_fallback = re.sub(r"\s+", "", str(fallback_text or "")).strip().lower()
+    if not compact_content and not compact_fallback:
+        return {"required": filtered, "advisory": []}
+
+    reference_text = compact_content or compact_fallback
+    required: List[str] = []
+    advisory: List[str] = []
+    for item in filtered:
+        keyword = str(item or "").strip()
+        compact_keyword = re.sub(r"\s+", "", keyword).strip().lower()
+        if not compact_keyword:
+            continue
+        if reference_text and compact_keyword in reference_text:
+            required.append(keyword)
+        else:
+            advisory.append(keyword)
+
+    return {"required": required, "advisory": advisory}
+
 def normalize_title_surface(title: str) -> str:
     # 모든 종류의 따옴표 제거 (스마트/일반/낫표)
     cleaned = re.sub(

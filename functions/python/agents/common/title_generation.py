@@ -15,7 +15,7 @@ from .title_common import (
     normalize_title_surface,
     resolve_title_family,
     select_title_family,
-    _filter_required_title_keywords,
+    split_title_user_keywords_by_grounding,
 )
 from .title_keywords import (
     _extract_topic_person_names,
@@ -68,10 +68,15 @@ def _build_event_title_prompt(params: Dict[str, Any]) -> str:
     content_preview = str(params.get('contentPreview') or '')
     prompt_lite = bool(params.get('titlePromptLite'))
     role_keyword_policy = params.get('roleKeywordPolicy') if isinstance(params.get('roleKeywordPolicy'), dict) else {}
-    user_keywords = _filter_required_title_keywords(
-        params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else [],
-        role_keyword_policy,
+    raw_user_keywords = params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else []
+    grounding_split = split_title_user_keywords_by_grounding(
+        raw_user_keywords,
+        content_preview=content_preview,
+        fallback_text=f"{topic} {params.get('stanceText', '')}",
+        role_keyword_policy=role_keyword_policy,
     )
+    user_keywords = grounding_split.get('required') or []
+    advisory_keywords = grounding_split.get('advisory') or []
     context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
     must_preserve = context_analysis.get('mustPreserve') if isinstance(context_analysis.get('mustPreserve'), dict) else {}
 
@@ -124,6 +129,7 @@ def _build_event_title_prompt(params: Dict[str, Any]) -> str:
   <rule>인물명이 있으면 반드시 포함: "{full_name or '(없음)'}".</rule>
   <rule>도서 행사({is_book_event})이고 도서명이 있으면 도서명 단서를 포함: "{book_title or '(없음)'}".</rule>
   <rule>장소 힌트가 있으면 가능한 한 포함: "{event_location or '(없음)'}".</rule>
+  {f'<rule id="advisory_keywords">다음 검색어는 본문에 직접 등장하지 않아 필수가 아닙니다. 자연스럽게 녹일 수 있으면 포함하되, 억지로 넣지 마세요: {", ".join(advisory_keywords[:2])}</rule>' if advisory_keywords else ''}
 </hard_rules>
 
 {number_validation.get('instruction', '')}
@@ -138,10 +144,16 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     full_name = params.get('fullName', '')
     keywords = params.get('keywords', [])
     role_keyword_policy = params.get('roleKeywordPolicy') if isinstance(params.get('roleKeywordPolicy'), dict) else {}
-    user_keywords = _filter_required_title_keywords(
-        params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else [],
-        role_keyword_policy,
+    raw_user_keywords = params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else []
+    # 본문 근거 기반 키워드 분리: 본문에 등장하는 검색어만 필수, 나머지는 참고용
+    grounding_split = split_title_user_keywords_by_grounding(
+        raw_user_keywords,
+        content_preview=content_preview,
+        fallback_text=f"{params.get('topic', '')} {params.get('stanceText', '')}",
+        role_keyword_policy=role_keyword_policy,
     )
+    user_keywords = grounding_split.get('required') or []
+    advisory_keywords = grounding_split.get('advisory') or []
     category = params.get('category', '')
     status = params.get('status', '')
     title_scope = params.get('titleScope', {})
@@ -155,7 +167,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     poll_focus_title_policy = build_poll_focus_title_instruction(params)
     competitor_intent_title_policy = build_competitor_intent_title_instruction(params)
     title_constraint_text = str(params.get('titleConstraintText') or '').strip()
-    
+
     avoid_local_in_title = bool(title_scope and title_scope.get('avoidLocalInTitle'))
     family_meta = select_title_family(params)
     detected_type_id = forced_type if forced_type and forced_type in TITLE_TYPES else resolve_title_family(params)
@@ -171,6 +183,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
         user_keywords,
         keywords,
         role_keyword_policy,
+        advisory_keywords=advisory_keywords,
     )
     # 🔑 Phase 3 — skeleton / few-shot 이 body 앵커에 바인딩되도록 먼저 뽑는다.
     # scorer(title_hook_quality) 와 동일한 함수를 사용해 한 번만 계산하고,
@@ -927,10 +940,16 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
     max_similarity_penalty = max(0, int(options.get('maxSimilarityPenalty', 18)))
     on_progress = options.get('onProgress')
     role_keyword_policy = params.get('roleKeywordPolicy') if isinstance(params.get('roleKeywordPolicy'), dict) else {}
-    user_keywords = _filter_required_title_keywords(
-        params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else [],
-        role_keyword_policy,
+    content = params.get('contentPreview', '')
+    topic = params.get('topic', '')
+    raw_user_keywords = params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else []
+    grounding_split = split_title_user_keywords_by_grounding(
+        raw_user_keywords,
+        content_preview=content,
+        fallback_text=f"{topic} {params.get('stanceText', '')}",
+        role_keyword_policy=role_keyword_policy,
     )
+    user_keywords = grounding_split.get('required') or []
 
     option_recent_titles = options.get('recentTitles') if isinstance(options.get('recentTitles'), list) else []
     param_recent_titles = params.get('recentTitles') if isinstance(params.get('recentTitles'), list) else []

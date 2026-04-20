@@ -18,12 +18,12 @@ from .title_common import (
     _compare_title_repeat_signature,
     _detect_truncated_title_reason,
     _title_similarity,
-    _filter_required_title_keywords,
     _fit_title_length,
     normalize_title_surface,
     repair_title_focus_name_repetition,
     resolve_title_family,
     extract_numbers_from_content,
+    split_title_user_keywords_by_grounding,
 )
 from .title_family_rules import (
     assess_family_fit,
@@ -428,10 +428,14 @@ def calculate_title_quality_score(
     topic = params.get('topic', '')
     content = params.get('contentPreview', '')
     role_keyword_policy = params.get('roleKeywordPolicy') if isinstance(params.get('roleKeywordPolicy'), dict) else {}
-    user_keywords = _filter_required_title_keywords(
-        params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else [],
-        role_keyword_policy,
+    raw_user_keywords = params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else []
+    grounding_split = split_title_user_keywords_by_grounding(
+        raw_user_keywords,
+        content_preview=content,
+        fallback_text=f"{topic} {params.get('stanceText', '')}",
+        role_keyword_policy=role_keyword_policy,
     )
+    user_keywords = grounding_split.get('required') or []
     author_name = params.get('fullName', '')
     repaired_title: Optional[str] = None
     keyword_gate_soft_reason = ''

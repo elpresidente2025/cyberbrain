@@ -1107,7 +1107,25 @@ def _build_role_keyword_title_policy_instruction(role_keyword_policy: Dict[str, 
         return ""
     return "<role_keyword_policy>\n" + "\n".join(lines) + "\n</role_keyword_policy>"
 
-def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[str], role_keyword_policy: Optional[Dict[str, Any]] = None) -> str:
+def _build_advisory_keywords_xml(advisory_keywords: Optional[List[str]]) -> str:
+    """본문에 근거가 없어 필수에서 제외된 사용자 검색어를 참고용으로 안내한다."""
+    cleaned = [str(kw or '').strip() for kw in (advisory_keywords or []) if str(kw or '').strip()]
+    if not cleaned:
+        return ''
+    items = '\n'.join(f'  <keyword>{kw}</keyword>' for kw in cleaned[:3])
+    return f"""<advisory_user_keywords priority="low">
+  <note>아래 검색어는 사용자가 입력했지만 본문(content_preview)에 직접 등장하지 않습니다. 제목에 억지로 넣으면 본문 근거 없는 SEO 제목이 되므로 필수가 아닙니다. 자연스럽게 녹일 수 있을 때만 포함하세요.</note>
+{items}
+</advisory_user_keywords>"""
+
+
+def get_keyword_strategy_instruction(
+    user_keywords: List[str],
+    keywords: List[str],
+    role_keyword_policy: Optional[Dict[str, Any]] = None,
+    *,
+    advisory_keywords: Optional[List[str]] = None,
+) -> str:
     try:
         filtered_user_keywords = _filter_required_title_keywords(user_keywords, role_keyword_policy)
         has_user_keywords = bool(filtered_user_keywords)
@@ -1213,6 +1231,7 @@ def get_keyword_strategy_instruction(user_keywords: List[str], keywords: List[st
   <synonym from="해결" to="개선, 완화, 해소"/>
 </synonym_guide>
 
+{_build_advisory_keywords_xml(advisory_keywords)}
 </seo_keyword_strategy>
 """
     except Exception as e:
