@@ -8936,6 +8936,118 @@ def _repair_failed_possessive_title_surface(title: str) -> str:
     return repaired if repaired and repaired != candidate else ""
 
 
+def _try_inject_missing_required_keywords(
+    *,
+    title: str,
+    content: str,
+    user_keywords: list[str],
+    topic: str,
+    full_name: str,
+    category: str,
+    status: str,
+    context_analysis: Dict[str, Any],
+    role_keyword_policy: Optional[Dict[str, Any]] = None,
+    poll_focus_bundle: Optional[Dict[str, Any]] = None,
+) -> Optional[tuple[str, Dict[str, Any]]]:
+    """패스스루 직전, 필수 키워드가 빠진 제목에 키워드를 삽입해 재채점한다.
+
+    성공하면 (repaired_title, score_dict) 반환, 실패 시 None.
+    """
+    normalized_title = _normalize_title_surface_local(title)
+    if not normalized_title or not user_keywords:
+        return None
+    try:
+        from agents.common.title_common import (
+            split_title_user_keywords_by_grounding,
+            TITLE_LENGTH_HARD_MAX,
+            TITLE_LENGTH_HARD_MIN,
+        )
+
+        grounding = split_title_user_keywords_by_grounding(
+            user_keywords,
+            content_preview=content,
+            role_keyword_policy=role_keyword_policy,
+        )
+        required_keywords = grounding.get("required") or []
+        if not required_keywords:
+            return None
+
+        compact_title = re.sub(r"\s+", "", normalized_title).lower()
+        missing = [
+            kw for kw in required_keywords
+            if re.sub(r"\s+", "", kw).lower() not in compact_title
+        ]
+        if not missing:
+            return None
+
+        # 삽입 전략: 제목 내 fullName 뒤 또는 쉼표 뒤에 키워드를 자연스럽게 삽입
+        candidates: list[str] = []
+        for kw in missing[:2]:
+            # 전략 1: fullName 뒤 쉼표 다음에 삽입
+            if full_name and full_name in normalized_title:
+                idx = normalized_title.find(full_name) + len(full_name)
+                after = normalized_title[idx:].lstrip()
+                if after.startswith(",") or after.startswith("，"):
+                    insert_pos = idx + 1 + (len(normalized_title[idx:]) - len(normalized_title[idx:].lstrip()))
+                    patched = f"{normalized_title[:idx]}, {kw} {normalized_title[idx:].lstrip(', ，')}"
+                else:
+                    patched = f"{normalized_title[:idx]}, {kw} {normalized_title[idx:].lstrip()}"
+                patched = _normalize_title_surface_local(patched) or patched
+                if TITLE_LENGTH_HARD_MIN <= len(patched) <= TITLE_LENGTH_HARD_MAX:
+                    candidates.append(patched)
+
+            # 전략 2: 첫 쉼표/콜론 직후 삽입
+            comma_match = re.search(r"[,，:]\s*", normalized_title)
+            if comma_match:
+                pos = comma_match.end()
+                patched = f"{normalized_title[:pos]}{kw} {normalized_title[pos:]}"
+                patched = _normalize_title_surface_local(patched) or patched
+                if TITLE_LENGTH_HARD_MIN <= len(patched) <= TITLE_LENGTH_HARD_MAX:
+                    candidates.append(patched)
+
+            # 전략 3: 제목 앞에 "kw," 프리픽스
+            patched = f"{kw}, {normalized_title}"
+            patched = _normalize_title_surface_local(patched) or patched
+            if TITLE_LENGTH_HARD_MIN <= len(patched) <= TITLE_LENGTH_HARD_MAX:
+                candidates.append(patched)
+
+        best_result: Optional[tuple[str, Dict[str, Any]]] = None
+        best_score = -1
+        for cand in candidates:
+            cand = repair_duplicate_particles_and_tokens(cand)
+            cand = _normalize_title_surface_local(cand) or cand
+            score = _score_title_compliance(
+                title=cand,
+                topic=topic,
+                content=content,
+                user_keywords=user_keywords,
+                full_name=full_name,
+                category=category,
+                status=status,
+                context_analysis=context_analysis,
+                role_keyword_policy=role_keyword_policy,
+                poll_focus_bundle=poll_focus_bundle,
+            )
+            s = _to_int(score.get("score"), 0)
+            if score.get("passed") and s > best_score:
+                best_score = s
+                best_result = (
+                    _normalize_title_surface_local(str(score.get("title") or cand)) or cand,
+                    score,
+                )
+            elif not best_result and score.get("softAccepted") and s > best_score:
+                best_score = s
+                best_result = (
+                    _normalize_title_surface_local(str(score.get("title") or cand)) or cand,
+                    score,
+                )
+
+        return best_result
+    except Exception as exc:
+        logger.debug("Keyword injection repair failed: %s", exc)
+        return None
+
+
 def _guard_draft_title_nonfatal(
     *,
     phase: str,
@@ -9020,6 +9132,38 @@ def _guard_draft_title_nonfatal(
                 "fallbackUsed": False,
                 "validated": bool(repaired_score.get("passed")),
             }
+        # -- 패스스루 전 필수 키워드 삽입 시도 --
+        keyword_injected_result = _try_inject_missing_required_keywords(
+            title=candidate or previous,
+            content=content,
+            user_keywords=user_keywords,
+            topic=topic,
+            full_name=full_name,
+            category=category,
+            status=status,
+            context_analysis=context_analysis,
+            role_keyword_policy=role_keyword_policy,
+            poll_focus_bundle=poll_focus_bundle,
+        )
+        if keyword_injected_result is not None:
+            injected_title, injected_score = keyword_injected_result
+            logger.info(
+                "Passthrough avoided: keyword injection repair succeeded (phase=%s, title=%s)",
+                phase,
+                injected_title,
+            )
+            return injected_title, {
+                "accepted": True,
+                "source": "candidate_failed_keyword_inject",
+                "score": injected_score.get("score", 0),
+                "reason": reason or "keyword_injection_repair",
+                "repaired": True,
+                "phase": phase,
+                "nonFatal": True,
+                "fallbackUsed": False,
+                "validated": bool(injected_score.get("passed")),
+            }
+
         logger.warning(
             "Draft title guard failure downgraded to passthrough (phase=%s, reason=%s, title=%s)",
             phase,
