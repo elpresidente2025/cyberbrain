@@ -166,7 +166,8 @@ class SectionNormalizerMixin:
                 continue
             merged.append(cleaned)
 
-        while len(merged) > 2:
+        # 3문단 정책: target_count 이하로만 병합. 3→2 강제 병합 금지.
+        while len(merged) > target_count:
             tail = self._clean_plain_text(merged[-1])
             prev = self._clean_plain_text(merged[-2])
             if self._intro_transition_prefix(tail) or self._is_short_intro_fragment(tail):

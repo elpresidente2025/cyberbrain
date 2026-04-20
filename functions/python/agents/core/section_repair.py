@@ -461,7 +461,7 @@ class SectionRepairMixin:
                     )
                 return base_content, raw_validation, raw_source
 
-            if raw_rank >= normalized_rank:
+            if raw_rank > normalized_rank:
                 if raw_validation.get('code') != normalized_validation.get('code'):
                     print(
                         f"🧪 [StructureAgent] 후보 선택(raw 우선): "
@@ -805,6 +805,41 @@ class SectionRepairMixin:
                     best_validation = best_candidate.get('validation') or {}
                     best_code = str(best_validation.get('code') or '').strip()
                     best_len = int(best_candidate.get('plain_len') or 0)
+
+                    # 구조 검증 실패(SECTION_P_COUNT)면 normalizer 최종 시도
+                    if best_code in ('SECTION_P_COUNT', 'P_SHORT'):
+                        print(
+                            f"🩹 [StructureAgent] best-effort 구조 보정 시도: code={best_code}"
+                        )
+                        patched = normalize_structure(
+                            best_content,
+                            length_spec,
+                            user_keywords=user_keywords,
+                            context_analysis=context_analysis,
+                        )
+                        patched_validation = self.validator.validate(
+                            patched,
+                            length_spec,
+                            category=category,
+                            context_analysis=context_analysis,
+                            is_event_announcement=is_event_announcement,
+                            event_date_hint=event_date_hint,
+                            event_location_hint=event_location_hint,
+                            poll_focus_bundle=poll_focus_bundle,
+                        )
+                        patched_code = str(patched_validation.get('code') or '').strip()
+                        if patched_validation.get('passed') or patched_code != best_code:
+                            best_content = patched
+                            best_validation = patched_validation
+                            best_code = patched_code
+                            print(
+                                f"✅ [StructureAgent] best-effort 구조 보정 성공: code={best_code}"
+                            )
+                        else:
+                            print(
+                                f"⚠️ [StructureAgent] best-effort 구조 보정 실패, 원본 유지"
+                            )
+
                     print(
                         f"⚠️ [StructureAgent] 검증 미통과 — best-effort 반환: "
                         f"code={best_code}, len={best_len}, "

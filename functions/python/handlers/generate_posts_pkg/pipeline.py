@@ -11564,6 +11564,16 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             quality_warnings,
             f"분량 권장치 미달 ({word_count}자 < {min_required_chars}자)",
         )
+    # 구조 검증 경고: 섹션당 3문단 미달 체크
+    _struct_h2_blocks = re.split(r'(?=<h2\b)', generated_content or '', flags=re.IGNORECASE)
+    _struct_sections = [_struct_h2_blocks[0]] + _struct_h2_blocks[1:] if _struct_h2_blocks else []
+    for _si, _sblock in enumerate(_struct_sections):
+        _sp_count = len(re.findall(r'<p\b[^>]*>', _sblock, re.IGNORECASE))
+        if _sp_count > 0 and _sp_count < 3:
+            _append_quality_warning(
+                quality_warnings,
+                f"섹션 {_si + 1} 문단 수 부족 ({_sp_count}개 < 3개)",
+            )
     final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(keyword_validation, gate_user_keywords)
     final_over_max_keywords = _collect_over_max_keywords(keyword_validation, user_keywords)
     if final_over_max_keywords:

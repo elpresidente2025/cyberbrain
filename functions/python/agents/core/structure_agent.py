@@ -849,8 +849,8 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule>코드블록(```) 금지, 설명문 금지, JSON 외 텍스트 금지.</rule>\n"
             "    <rule>intro에는 heading 필드를 넣지 말고 paragraphs만 작성.</rule>\n"
             "    <rule>body 각 항목은 heading 1개 + paragraphs 배열로 작성.</rule>\n"
-            "    <rule>conclusion은 heading 1개 + paragraphs 배열로 작성하고 paragraphs는 최소 2개 이상 작성.</rule>\n"
-            "    <rule>각 paragraphs 원소는 완결 문장 2~3개로 구성하고 최소 120자 이상 작성.</rule>\n"
+            "    <rule>conclusion은 heading 1개 + paragraphs 배열로 작성하고 paragraphs는 반드시 3개 작성.</rule>\n"
+            "    <rule>각 paragraphs 원소는 완결 문장 2~3개로 구성하고 110~140자 범위를 맞출 것. 한 섹션 전체는 330~420자.</rule>\n"
             "    <rule priority='critical'>모든 문단의 첫 문장을 접속사('또한/아울러/나아가/한편/더불어')나 "
             "지칭 표현('이러한/이와 같은/이를 통해/이를 위해/그로 인해/그런 점에서/이에')으로 시작하지 말 것. "
             "각 문단은 해당 문단의 핵심 주어·주제어로 시작할 것.</rule>\n"
@@ -937,9 +937,10 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         # 결론 구조 가이드 (모든 모드 공통 + 변증법 추가)
         conclusion_guide = (
             '  <conclusion_structure priority="critical">\n'
-            '    결론은 다음 규칙을 반드시 지키십시오:\n'
+            '    결론은 반드시 3개 문단(각 110~140자, 전체 330~420자)으로 구성하고 다음 규칙을 지키십시오:\n'
             '    (1) 첫 문단은 서론에서 선언한 핵심 결론을 이 글의 핵심 주제어를 포함하여 다른 표현으로 재진술하십시오.\n'
             '    (2) 본론에서 다루지 않은 새로운 주제·정책·제도를 결론에서 처음 언급하지 마십시오.\n'
+            '    (3) 결론이 한두 문장으로 끝나면 불합격입니다. 시사점·행동 촉구·비전 제시로 충분히 확장하십시오.\n'
         )
         if is_dialectical:
             conclusion_guide += (
@@ -959,10 +960,10 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             '  위 locked_outline의 title, heading, lead_sentence, conclusion_heading은 그대로 사용하고 절대 수정하지 마십시오.\n'
             '\n'
             '  <intro_structure priority="critical">\n'
-            '    서론(intro)은 반드시 3개 문단으로 구성하십시오:\n'
-            '    문단1: intro_lead 텍스트를 그대로 사용 (화자 자기소개 + 핵심 결론).\n'
-            '    문단2: 핵심 결론의 배경·맥락을 설명. 왜 이 문제가 지금 중요한지, 어떤 상황이 발생했는지 서술.\n'
-            '    문단3: 본론에서 다룰 내용의 예고(로드맵). 본론 각 섹션의 핵심 논점을 한두 문장으로 안내.\n'
+            '    서론(intro)은 반드시 3개 문단으로 구성하십시오 (각 문단 110~140자, 서론 전체 330~420자):\n'
+            '    문단1: intro_lead 텍스트를 그대로 사용 (화자 자기소개 + 핵심 결론). (110~140자)\n'
+            '    문단2: 핵심 결론의 배경·맥락을 설명. 왜 이 문제가 지금 중요한지, 어떤 상황이 발생했는지 서술. (110~140자)\n'
+            '    문단3: 본론에서 다룰 내용의 예고(로드맵). 본론 각 섹션의 핵심 논점을 한두 문장으로 안내. (110~140자)\n'
             '    ⚠️ 서론 전체가 "~하겠습니다" 행동 선언만으로 채워져서는 안 됩니다. 첫 문단의 결론 선언 이후에는 근거와 맥락을 서술하십시오.\n'
             '  </intro_structure>\n'
             '\n'
@@ -970,10 +971,10 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             '\n'
             '  <body_paragraph_structure priority="critical">\n'
             '    각 본론 섹션은 반드시 다음 3단 구성을 갖추십시오:\n'
-            '    (1) 주장 선언: lead_sentence가 이 역할을 합니다.\n'
-            '    (2) 근거 전개: 구체적 수치·사례·사실관계로 주장을 뒷받침하되, 사실 나열에 그치지 말고 인과관계("~했기 때문에 ~가 발생했다", "그 결과 ~")를 반드시 서술하십시오.\n'
-            '    (3) 의미 부여: 이 근거가 독자에게 왜 중요한지, 어떤 시사점이 있는지로 문단을 마감하십시오. "그래서 뭐?"라는 질문에 답하는 문장이 반드시 있어야 합니다.\n'
-            '    사실만 나열하고 끝나는 문단은 불합격입니다.\n'
+            '    (1) 주장 선언: lead_sentence가 이 역할을 합니다. (2~3문장, 110~140자)\n'
+            '    (2) 근거 전개: 구체적 수치·사례·사실관계로 주장을 뒷받침하되, 사실 나열에 그치지 말고 인과관계("~했기 때문에 ~가 발생했다", "그 결과 ~")를 반드시 서술하십시오. (2~3문장, 110~140자)\n'
+            '    (3) 의미 부여: 이 근거가 독자에게 왜 중요한지, 어떤 시사점이 있는지로 문단을 마감하십시오. "그래서 뭐?"라는 질문에 답하는 문장이 반드시 있어야 합니다. (2~3문장, 110~140자)\n'
+            '    ⚠️ 각 문단은 110~140자, 한 섹션 전체는 330~420자입니다. 사실만 나열하고 끝나거나, 한두 문장으로 끝나는 문단은 불합격입니다.\n'
             '  </body_paragraph_structure>\n'
             '\n'
             '  <paragraph_opening_ban priority="critical">\n'

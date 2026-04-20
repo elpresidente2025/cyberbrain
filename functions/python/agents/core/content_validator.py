@@ -366,7 +366,7 @@ class ContentValidator:
                     'passed': False,
                     'code': 'INTRO_FRAGMENTED',
                     'reason': '서론이 짧은 단문으로 과도하게 분절됨',
-                    'feedback': '서론은 기본 2문단으로 정리하고, 짧은 자기소개/연결문을 여러 문단으로 나누지 말고 앞 문단과 자연스럽게 합쳐 주십시오.',
+                    'feedback': '서론은 3문단으로 구성하되, 각 문단이 2문장 이상·110자 이상이어야 합니다. 짧은 단문을 별도 문단으로 분리하지 말고 앞뒤 문단에 통합하십시오.',
                     'introParagraphCount': len(intro_paragraphs),
                 }
 
