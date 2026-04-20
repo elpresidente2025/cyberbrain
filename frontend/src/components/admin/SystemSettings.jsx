@@ -9,17 +9,23 @@ import {
   CircularProgress,
   Alert,
   Divider,
-  Snackbar
+  Snackbar,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel
 } from '@mui/material';
-import { Settings, Psychology } from '@mui/icons-material';
+import { Settings, Psychology, SmartToy } from '@mui/icons-material';
 import { callFunction } from '../../services/firebaseService';
+import { CONFIG } from '../../config/constants';
 
 export default function SystemSettings() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState(null);
   const [config, setConfig] = useState({
-    aiKeywordRecommendationEnabled: true
+    aiKeywordRecommendationEnabled: true,
+    defaultModel: 'gemini-2.5-flash'
   });
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
 
@@ -85,6 +91,39 @@ export default function SystemSettings() {
       console.error('시스템 설정 업데이트 실패:', err);
 
       // 롤백
+      if (isMountedRef.current) {
+        setConfig(prev => ({ ...prev, [field]: previousValue }));
+        setError(err.message || '설정 업데이트에 실패했습니다.');
+        showNotification('설정 업데이트에 실패했습니다.', 'error');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setUpdating(false);
+      }
+    }
+  }, [config, showNotification]);
+
+  // 셀렉트 변경 핸들러 (모델 선택용)
+  const handleSelectChange = useCallback((field) => async (event) => {
+    const newValue = event.target.value;
+    const previousValue = config[field];
+
+    setConfig(prev => ({ ...prev, [field]: newValue }));
+
+    try {
+      setUpdating(true);
+      setError(null);
+
+      await callFunction('updateSystemConfig', {
+        [field]: newValue
+      });
+
+      if (isMountedRef.current) {
+        showNotification('설정이 업데이트되었습니다.', 'success');
+      }
+    } catch (err) {
+      console.error('시스템 설정 업데이트 실패:', err);
+
       if (isMountedRef.current) {
         setConfig(prev => ({ ...prev, [field]: previousValue }));
         setError(err.message || '설정 업데이트에 실패했습니다.');
@@ -232,6 +271,81 @@ export default function SystemSettings() {
               labelPlacement="start"
               sx={{ m: 0, ml: { xs: 0, sm: 2 } }}
             />
+          </Box>
+
+          {/* AI 모델 선택 */}
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: { xs: 'column', sm: 'row' },
+              alignItems: { xs: 'flex-start', sm: 'center' },
+              justifyContent: 'space-between',
+              gap: 2,
+              p: 2,
+              mt: 2,
+              borderRadius: 1,
+              bgcolor: 'rgba(0, 98, 97, 0.04)',
+              '&:hover': {
+                bgcolor: 'rgba(0, 98, 97, 0.08)'
+              }
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', flex: 1 }}>
+              <SmartToy sx={{ fontSize: 24, color: 'primary.main', mr: 2, mt: 0.5 }} aria-hidden="true" />
+              <Box>
+                <Typography
+                  variant="subtitle1"
+                  component="label"
+                  id="default-model-label"
+                  htmlFor="default-model-select"
+                  sx={{ fontWeight: 600, mb: 0.5, display: 'block' }}
+                >
+                  기본 AI 모델
+                </Typography>
+                <Typography
+                  variant="body2"
+                  id="default-model-description"
+                  sx={{ color: 'text.secondary' }}
+                >
+                  원고 생성에 사용할 기본 AI 모델을 선택합니다.
+                  <br />
+                  (A/B 테스트: 모델을 교체하고 생성 품질을 비교할 수 있습니다)
+                </Typography>
+              </Box>
+            </Box>
+
+            <FormControl size="small" sx={{ minWidth: 220 }}>
+              <InputLabel id="default-model-select-label">모델</InputLabel>
+              <Select
+                id="default-model-select"
+                labelId="default-model-select-label"
+                value={config.defaultModel}
+                label="모델"
+                onChange={handleSelectChange('defaultModel')}
+                disabled={updating}
+                inputProps={{
+                  'aria-labelledby': 'default-model-label',
+                  'aria-describedby': 'default-model-description'
+                }}
+                sx={{
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'rgba(0, 98, 97, 0.3)',
+                  },
+                  '&:hover .MuiOutlinedInput-notchedOutline': {
+                    borderColor: '#006261',
+                  },
+                  '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                    borderColor: '#006261',
+                  },
+                }}
+              >
+                {CONFIG.ALLOWED_MODELS.map((model) => (
+                  <MenuItem key={model.id} value={model.id}>
+                    {model.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           </Box>
 
           {/* 업데이트 로딩 오버레이 */}

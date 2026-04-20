@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { callFunctionWithNaverAuth, callGeneratePostsViaCloudRun } from '../services/firebaseService';
+import { callFunction, callFunctionWithNaverAuth, callGeneratePostsViaCloudRun } from '../services/firebaseService';
 import { useAuth } from './useAuth';
 import { handleHttpError } from '../utils/errorHandler';
 import { sanitizeHtml, stripHtmlTags, getTextLength, isSeoOptimized } from '../utils/contentSanitizer';
@@ -138,16 +138,27 @@ export function useGenerateAPI() {
     try {
       console.log('🔥 generatePosts 호출 시작');
 
-      // 📌 보안 개선: localStorage 값 검증 및 잘못된 모델명 수정
-      let modelName = localStorage.getItem('gemini_model');
-
-      // 허용된 모델만 통과, 나머지는 기본값으로 교체
-      const ALLOWED_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
-      if (!modelName || !ALLOWED_MODELS.includes(modelName)) {
-        console.warn('⚠️ 잘못된 모델명 감지:', modelName, '→ 기본값으로 수정');
-        modelName = CONFIG.DEFAULT_AI_MODEL;
-        localStorage.setItem('gemini_model', modelName);
+      // 📌 모델 선택: 시스템 설정(Firestore) > localStorage > 기본값
+      let modelName;
+      try {
+        const sysConfig = await callFunction('getSystemConfig');
+        if (sysConfig?.config?.defaultModel) {
+          modelName = sysConfig.config.defaultModel;
+          console.log('🤖 시스템 기본 모델:', modelName);
+        }
+      } catch (configErr) {
+        console.warn('⚠️ 시스템 설정 조회 실패, localStorage fallback:', configErr);
       }
+
+      if (!modelName) {
+        modelName = localStorage.getItem('gemini_model');
+      }
+
+      const ALLOWED_MODEL_IDS = CONFIG.ALLOWED_MODELS.map(m => m.id);
+      if (!modelName || !ALLOWED_MODEL_IDS.includes(modelName)) {
+        modelName = CONFIG.DEFAULT_AI_MODEL;
+      }
+      localStorage.setItem('gemini_model', modelName);
 
       // 🔧 진행 상황 추적용 세션 ID (프론트엔드에서 생성하여 백엔드로 전달)
       const progressSessionId = `${user.uid}_${Date.now()}`;

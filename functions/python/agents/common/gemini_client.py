@@ -753,6 +753,19 @@ async def generate_content_async(
     retries: int = DEFAULT_RETRIES,
     options: Optional[Dict[str, Any]] = None,
 ) -> str:
+    # Route to Claude client when model name starts with "claude-"
+    if str(model_name or "").startswith("claude-"):
+        from .claude_client import generate_content_async as _claude_generate
+        return await _claude_generate(
+            prompt,
+            model_name=model_name,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+            response_mime_type=response_mime_type,
+            retries=retries,
+            options=options,
+        )
+
     # request-scoped async client to avoid event-loop binding issues in Cloud Functions
     client = _build_client_instance()
     if not client:
@@ -844,7 +857,7 @@ async def generate_json_async(
                 retries=content_retries if parse_attempt == 1 else max(1, content_retries - 1),
                 options=merged_options,
             )
-        except GeminiClientError as error:
+        except (GeminiClientError, RuntimeError) as error:
             last_error = error
             if parse_attempt >= parse_retries or not _should_retry(error, parse_attempt, parse_retries):
                 raise

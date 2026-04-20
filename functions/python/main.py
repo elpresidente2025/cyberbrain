@@ -23,7 +23,7 @@ os.environ["LANGCHAIN_PROJECT"] = "ai-secretary-trace"
     region="asia-northeast3",
     memory=options.MemoryOption.MB_512,
     timeout_sec=30,
-    secrets=["GEMINI_API_KEY", "LANGCHAIN_API_KEY"]
+    secrets=["GEMINI_API_KEY", "LANGCHAIN_API_KEY", "ANTHROPIC_API_KEY"]
 )
 def pipeline_start(req: https_fn.Request) -> https_fn.Response:
     """파이프라인 시작 - job_id 발급 및 첫 단계 트리거"""
@@ -36,7 +36,7 @@ def pipeline_start(req: https_fn.Request) -> https_fn.Response:
     region="asia-northeast3",
     memory=options.MemoryOption.GB_2,
     timeout_sec=540,
-    secrets=["GEMINI_API_KEY", "LANGCHAIN_API_KEY"]
+    secrets=["GEMINI_API_KEY", "LANGCHAIN_API_KEY", "ANTHROPIC_API_KEY"]
 )
 def pipeline_step(req: https_fn.Request) -> https_fn.Response:
     """개별 에이전트 단계 실행"""
@@ -61,7 +61,7 @@ def pipeline_status(req: https_fn.Request) -> https_fn.Response:
     region="asia-northeast3",
     memory=options.MemoryOption.GB_2,
     timeout_sec=540,
-    secrets=["GEMINI_API_KEY", "LANGCHAIN_API_KEY"]
+    secrets=["GEMINI_API_KEY", "LANGCHAIN_API_KEY", "ANTHROPIC_API_KEY"]
 )
 def pipeline_retry(req: https_fn.Request) -> https_fn.Response:
     """실패한 단계 재시도"""
@@ -101,7 +101,7 @@ def saveSelectedPost(req: https_fn.CallableRequest) -> dict:
     region="asia-northeast3",
     memory=options.MemoryOption.GB_1,
     timeout_sec=1200,
-    secrets=["GEMINI_API_KEY", "LANGCHAIN_API_KEY"]
+    secrets=["GEMINI_API_KEY", "LANGCHAIN_API_KEY", "ANTHROPIC_API_KEY"]
 )
 def generatePosts(req: https_fn.CallableRequest) -> dict:
     """원고 생성 (onCall, JS generatePosts 대체)."""
@@ -114,7 +114,7 @@ def generatePosts(req: https_fn.CallableRequest) -> dict:
     region="asia-northeast3",
     memory=options.MemoryOption.GB_1,
     timeout_sec=1200,
-    secrets=["GEMINI_API_KEY", "LANGCHAIN_API_KEY"]
+    secrets=["GEMINI_API_KEY", "LANGCHAIN_API_KEY", "ANTHROPIC_API_KEY"]
 )
 def generatePostsStream(req: https_fn.Request) -> https_fn.Response:
     """원고 생성 (on_request + heartbeat 스트리밍).
@@ -258,7 +258,7 @@ def save_selected_post(req: https_fn.Request) -> https_fn.Response:
     region="asia-northeast3",
     memory=options.MemoryOption.GB_1,
     timeout_sec=300,
-    secrets=["GEMINI_API_KEY"]
+    secrets=["GEMINI_API_KEY", "ANTHROPIC_API_KEY"]
 )
 def py_convertToSNS(req: https_fn.CallableRequest) -> dict:
     """원고를 SNS 플랫폼용으로 변환 (onCall, 프런트 호환 함수명)"""
@@ -305,7 +305,7 @@ def py_testSNS(req: https_fn.CallableRequest) -> dict:
     region="asia-northeast3",
     memory=options.MemoryOption.GB_1,
     timeout_sec=300,
-    secrets=["GEMINI_API_KEY"]
+    secrets=["GEMINI_API_KEY", "ANTHROPIC_API_KEY"]
 )
 def convert_to_sns(req: https_fn.Request) -> https_fn.Response:
     """원고를 SNS 플랫폼용으로 변환"""
@@ -418,7 +418,7 @@ def py_stylometryOnBioUpdate(event: Event[Change[DocumentSnapshot]]) -> None:
     region="asia-northeast3",
     memory=options.MemoryOption.GB_2,
     timeout_sec=540,
-    secrets=["GEMINI_API_KEY", "LANGCHAIN_API_KEY"]
+    secrets=["GEMINI_API_KEY", "LANGCHAIN_API_KEY", "ANTHROPIC_API_KEY"]
 )
 def generate_post(req: https_fn.Request) -> https_fn.Response:
     """HTTP Cloud Function for generating posts using Multi-Agent Pipeline."""

@@ -19,6 +19,7 @@ exports.getSystemConfig = wrapLite(async (req) => {
   // Timestamp를 ISO 문자열로 변환
   const config = {
     aiKeywordRecommendationEnabled: rawConfig.aiKeywordRecommendationEnabled ?? true,
+    defaultModel: rawConfig.defaultModel || 'gemini-2.5-flash',
     testMode: rawConfig.testMode ?? false,
     testModeSettings: rawConfig.testModeSettings || {
       freeMonthlyLimit: 8
@@ -37,7 +38,14 @@ exports.updateSystemConfig = wrap(async (req) => {
   const { uid } = await auth(req);
   await requireAdmin(uid); // 관리자만 수정 가능
 
-  const { aiKeywordRecommendationEnabled, testMode, testModeSettings } = req.data;
+  const { aiKeywordRecommendationEnabled, defaultModel, testMode, testModeSettings } = req.data;
+
+  const ALLOWED_MODELS = [
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'claude-haiku-4-5-20251001',
+    'claude-sonnet-4-6-20250514',
+  ];
 
   const updates = {
     lastUpdated: new Date(),
@@ -47,6 +55,11 @@ exports.updateSystemConfig = wrap(async (req) => {
   // aiKeywordRecommendationEnabled 업데이트
   if (typeof aiKeywordRecommendationEnabled === 'boolean') {
     updates.aiKeywordRecommendationEnabled = aiKeywordRecommendationEnabled;
+  }
+
+  // defaultModel 업데이트
+  if (typeof defaultModel === 'string' && ALLOWED_MODELS.includes(defaultModel)) {
+    updates.defaultModel = defaultModel;
   }
 
   // testMode 업데이트
