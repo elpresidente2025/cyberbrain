@@ -461,9 +461,8 @@ def normalize_section_p_count(content: str) -> str:
     sections = _split_into_sections(content)
 
     for sec_idx, section in enumerate(sections):
-        is_intro = sec_idx == 0 and not section["has_h2"]
         is_last_h2_section = sec_idx == len(sections) - 1 and section["has_h2"]
-        min_p = 1 if is_intro else 2
+        min_p = 3
         max_p = 4
 
         for _ in range(6):

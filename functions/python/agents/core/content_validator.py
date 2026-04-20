@@ -537,7 +537,7 @@ class ContentValidator:
             heading_match = re.search(r'<h2[^>]*>(.*?)</h2>', section_content, re.IGNORECASE | re.DOTALL)
             section_heading = strip_html(heading_match.group(1)).strip() if heading_match else ''
             section_block_index = section_index - 2 if not is_intro_section else -1
-            min_p = 1 if is_intro_section else 2
+            min_p = 3
             if section_p_count < min_p or section_p_count > 4:
                 return {
                     'passed': False,
@@ -649,7 +649,7 @@ class ContentValidator:
         if p_count != len(p_close_tags):
             return {'passed': False, 'code': 'P_MALFORMED', 'reason': f"p 태그 짝 불일치", 'feedback': '모든 문단은 <p>...</p> 형태로 정확히 닫아 주십시오.'}
 
-        expected_min_p = total_sections * 2
+        expected_min_p = total_sections * 3
         expected_max_p = total_sections * 4
         if p_count < expected_min_p:
              return {'passed': False, 'code': 'P_SHORT', 'reason': f"문단 수 부족", 'feedback': f"최소 {expected_min_p}개 문단이 필요합니다."}
