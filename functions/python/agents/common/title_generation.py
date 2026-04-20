@@ -794,6 +794,79 @@ def _build_previous_attempt_body_anchor_feedback(
     )
 
 
+def _build_body_anchor_rewrite_prompt(
+    last_attempt: Dict[str, Any],
+    previous_title: str,
+    params: Dict[str, Any],
+) -> str:
+    """직전 제목이 body-anchor 실격(score=0)이면 rewrite 프롬프트를 반환.
+
+    skeleton 전체를 다시 돌리는 대신, 기존 제목 구조를 유지하면서
+    body-exclusive 토큰 1개를 삽입하는 단순 태스크로 전환한다.
+    body-anchor 실격이 아니면 빈 문자열을 반환하여 기존 흐름 유지.
+    """
+    if not isinstance(last_attempt, dict):
+        return ''
+    breakdown = last_attempt.get('breakdown')
+    if not isinstance(breakdown, dict):
+        return ''
+    anchor_info = breakdown.get('bodyAnchorCoverage')
+    if not isinstance(anchor_info, dict):
+        return ''
+    if '실격' not in str(anchor_info.get('status') or ''):
+        return ''
+    available = anchor_info.get('available')
+    if not isinstance(available, dict) or not available:
+        return ''
+
+    # body-exclusive 토큰 수집
+    topic_text = str(params.get('topic') or '')
+    stance_text = str(params.get('stanceText') or '')
+    try:
+        from .title_hook_quality import _is_body_exclusive
+    except Exception:
+        return ''
+
+    tokens: List[str] = []
+    for _bucket, bucket_tokens in available.items():
+        for tok in (bucket_tokens if isinstance(bucket_tokens, list) else []):
+            tok_str = str(tok or '').strip()
+            if tok_str and tok_str not in tokens:
+                if _is_body_exclusive(tok_str, topic_text, stance_text):
+                    tokens.append(tok_str)
+    # body-exclusive가 없으면 전체 토큰이라도 사용
+    if not tokens:
+        for _bucket, bucket_tokens in available.items():
+            for tok in (bucket_tokens if isinstance(bucket_tokens, list) else []):
+                tok_str = str(tok or '').strip()
+                if tok_str and tok_str not in tokens:
+                    tokens.append(tok_str)
+    if not tokens:
+        return ''
+
+    tokens_display = ', '.join(f'"{t}"' for t in tokens[:6])
+    full_name = str(params.get('fullName') or '').strip()
+    keyword = str(params.get('topic') or params.get('keywords') or '').strip()
+
+    return f"""<title_rewrite_task priority="critical">
+  <previous_title>{previous_title}</previous_title>
+  <failure_reason>본문 구체 앵커가 제목에 하나도 없어 실격(0점) 처리됨.</failure_reason>
+
+  <mandatory_tokens>{tokens_display}</mandatory_tokens>
+
+  <instruction>
+    위 mandatory_tokens 중 최소 1개를 제목에 반드시 포함하여 제목을 다시 작성하세요.
+    이전 제목의 추상 표현("지키는", "끝까지 뛰겠습니다", "책임", "현안" 등)을 위 토큰으로 교체하세요.
+    키워드 "{keyword}"는 제목 앞쪽(0-10자)에 유지하세요.
+    {f'화자명 "{full_name}"은 1회만 사용하세요.' if full_name else ''}
+    제목 길이는 {TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자로 유지하세요.
+  </instruction>
+
+  <output_format>JSON 객체 1개만 출력: {{"title": "..."}}</output_format>
+</title_rewrite_task>
+"""
+
+
 def _build_title_candidate_prompt(
     base_prompt: str,
     attempt: int,
@@ -898,23 +971,35 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
         else:
             last_attempt = history[-1]
             previous_title = str(last_attempt.get('title') or '').strip()
-            suggestion_items = ''
-            for suggestion in last_attempt.get('suggestions', []):
-                suggestion_text = str(suggestion or '').strip()
-                if suggestion_text:
-                    suggestion_items += f"\n    <item>{suggestion_text}</item>"
-            pattern_feedback = _build_previous_attempt_pattern_feedback(previous_title)
-            if pattern_feedback:
-                suggestion_items += f"\n    {pattern_feedback}"
-            hook_feedback = _build_previous_attempt_hook_feedback(previous_title, params)
-            if hook_feedback:
-                suggestion_items += f"\n    {hook_feedback}"
-            anchor_feedback = _build_previous_attempt_body_anchor_feedback(last_attempt)
-            if anchor_feedback:
-                suggestion_items += f"\n    {anchor_feedback}"
-            if not suggestion_items:
-                suggestion_items = "\n    <item>이전 문제를 보완해 새 제목을 생성하세요.</item>"
-            feedback_prompt = f"""
+
+            # body-anchor 실격이면 skeleton 전체를 다시 돌리지 않고 rewrite 모드
+            anchor_rewrite_prompt = _build_body_anchor_rewrite_prompt(
+                last_attempt, previous_title, params,
+            )
+            if anchor_rewrite_prompt:
+                logger.info(
+                    "[TitleGen] body-anchor 실격 → rewrite 모드 전환 (attempt=%s, prev=%s)",
+                    attempt, previous_title,
+                )
+                prompt = anchor_rewrite_prompt
+            else:
+                suggestion_items = ''
+                for suggestion in last_attempt.get('suggestions', []):
+                    suggestion_text = str(suggestion or '').strip()
+                    if suggestion_text:
+                        suggestion_items += f"\n    <item>{suggestion_text}</item>"
+                pattern_feedback = _build_previous_attempt_pattern_feedback(previous_title)
+                if pattern_feedback:
+                    suggestion_items += f"\n    {pattern_feedback}"
+                hook_feedback = _build_previous_attempt_hook_feedback(previous_title, params)
+                if hook_feedback:
+                    suggestion_items += f"\n    {hook_feedback}"
+                anchor_feedback = _build_previous_attempt_body_anchor_feedback(last_attempt)
+                if anchor_feedback:
+                    suggestion_items += f"\n    {anchor_feedback}"
+                if not suggestion_items:
+                    suggestion_items = "\n    <item>이전 문제를 보완해 새 제목을 생성하세요.</item>"
+                feedback_prompt = f"""
 <previous_attempt_feedback attempt="{attempt - 1}" score="{last_attempt.get('score', 0)}">
   <previous_title>{previous_title}</previous_title>
   <issues>{suggestion_items}
@@ -922,7 +1007,7 @@ async def generate_and_validate_title(generate_fn, params: Dict[str, Any], optio
   <instruction>위 문제를 해결한 새로운 제목을 작성하세요.</instruction>
 </previous_attempt_feedback>
 """
-            prompt = feedback_prompt + _build_previous_attempt_surface_feedback(last_attempt) + build_title_prompt(params)
+                prompt = feedback_prompt + _build_previous_attempt_surface_feedback(last_attempt) + build_title_prompt(params)
 
         disallow_titles = list(recent_titles)
         disallow_titles.extend([
