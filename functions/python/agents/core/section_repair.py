@@ -84,13 +84,15 @@ class SectionRepairMixin:
         content: str,
         outline: Dict[str, Any],
     ) -> str:
-        """counterargument_rebuttal 섹션 마지막 문단이 '~하겠습니다'로 끝나면 해당 문장을 제거."""
+        """counterargument_rebuttal 섹션의 모든 문단에서 '~하겠습니다' 문장을 제거."""
         body = outline.get('body', [])
         cr_indices = [
             i for i, sec in enumerate(body) if sec.get('role') == 'counterargument_rebuttal'
         ]
         if not cr_indices:
             return content
+
+        from ..common.korean_morph import split_sentences as kiwi_split
 
         # HTML에서 body section 위치 식별 (빈 <h2></h2> 마커 기준)
         h2_positions = [m.start() for m in re.finditer(r'<h2\b', content, re.IGNORECASE)]
@@ -104,28 +106,30 @@ class SectionRepairMixin:
             p_blocks = re.findall(r'<p\b[^>]*>([\s\S]*?)</p\s*>', section_html, re.IGNORECASE)
             if not p_blocks:
                 continue
-            last_p_text = re.sub(r'<[^>]*>', '', p_blocks[-1]).strip()
-            if not self._PLEDGE_TAIL_RE.search(last_p_text):
-                continue
 
-            # 마지막 문단에서 "~하겠습니다" 문장들을 제거
-            from ..common.korean_morph import split_sentences as kiwi_split
-            sentences = kiwi_split(last_p_text) or [last_p_text]
-            kept = [s for s in sentences if not self._PLEDGE_TAIL_RE.search(s.strip())]
-            if kept and len(kept) < len(sentences):
-                removed_count = len(sentences) - len(kept)
-                new_p_text = ' '.join(kept).strip()
-                old_p_tag = f'<p>{p_blocks[-1]}</p>'
-                # 원문 태그를 정확히 매치하기 위해 regex 사용
-                new_p_tag = f'<p>{new_p_text}</p>' if new_p_text else ''
-                content = content.replace(old_p_tag, new_p_tag, 1)
+            # 모든 문단을 순회하며 다짐 문장 제거
+            total_removed = 0
+            for p_inner in p_blocks:
+                p_text = re.sub(r'<[^>]*>', '', p_inner).strip()
+                if not self._PLEDGE_TAIL_RE.search(p_text):
+                    continue
+                sentences = kiwi_split(p_text) or [p_text]
+                kept = [s for s in sentences if not self._PLEDGE_TAIL_RE.search(s.strip())]
+                if kept and len(kept) < len(sentences):
+                    removed_count = len(sentences) - len(kept)
+                    total_removed += removed_count
+                    new_p_text = ' '.join(kept).strip()
+                    old_p_tag = f'<p>{p_inner}</p>'
+                    new_p_tag = f'<p>{new_p_text}</p>' if new_p_text else ''
+                    content = content.replace(old_p_tag, new_p_tag, 1)
+                elif not kept:
+                    print(
+                        f"⚠️ [StructureAgent] counterargument_rebuttal 문단 전체가 다짐 — 유지"
+                    )
+            if total_removed:
                 print(
                     f"🩹 [StructureAgent] counterargument_rebuttal 역할 이탈 교정: "
-                    f"마지막 문단에서 다짐 문장 {removed_count}개 제거"
-                )
-            elif not kept:
-                print(
-                    f"⚠️ [StructureAgent] counterargument_rebuttal 마지막 문단 전체가 다짐 — 유지"
+                    f"다짐 문장 {total_removed}개 제거"
                 )
 
         return content

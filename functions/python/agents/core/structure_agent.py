@@ -854,10 +854,12 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule priority='critical'>각 섹션의 첫 문장(= 첫 번째 문단의 첫 문장)을 접속사('또한/아울러/나아가/한편/더불어')나 "
             "지시 대명사('이·그·저' 계열: 이는, 이것은, 이러한, 이와 같은, 이를 통해 등)로 시작하지 말 것. "
             "각 섹션은 해당 섹션의 핵심 주어·주제어로 독립적으로 시작할 것.</rule>\n"
+            "    <rule priority='high'>2·3번째 문단의 첫 문장에서도 '이는/이러한/이것은' 등 지시 대명사 대신 "
+            "구체적 주어(정책명·제도명·지역명 등)를 사용할 것. 구체적 주어는 문장 독립성과 분량 확장에 도움이 된다.</rule>\n"
             "    <rule priority='critical'>모든 섹션(서론·본론·결론)은 반드시 3개 문단으로 구성. "
             "본론 각 섹션의 3문단은: (1) 주장 선언 (2) 구체 근거·수치·사례 + 인과관계 서술 (3) 의미 부여('그래서 왜 중요한가'에 답하는 마감). "
             "서론 3문단은: (1) 화자 소개+핵심 결론 (2) 배경·맥락 (3) 본론 예고. "
-            "결론 3문단은: (1) 핵심 결론 재진술 (2) 종합 의의 (3) 전망·다짐. "
+            "결론 3문단은: (1) 핵심 결론 재확인 (2) 다짐·시사점·행동계획 (3) 지지 호소 + 인삿말. "
             "사실만 나열하고 끝나는 문단, 2문단 이하로 끝나는 섹션은 불합격.</rule>\n"
             + (
                 "    <rule>heading과 각 섹션 첫 문장은 locked_outline에서 확정됨. heading을 변경하지 말고, paragraphs 첫 원소는 해당 lead_sentence로 시작할 것.</rule>\n"
@@ -952,18 +954,35 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             )
         body_block = "\n".join(body_lines)
 
-        # 결론 구조 가이드 (모든 모드 공통 + 변증법 추가)
-        conclusion_guide = (
-            '  <conclusion_structure priority="critical">\n'
-            '    결론은 반드시 3개 문단(각 110~140자, 전체 330~420자)으로 구성하고 다음 규칙을 지키십시오:\n'
-            '    (1) 첫 문단은 서론에서 선언한 핵심 결론을 이 글의 핵심 주제어를 포함하여 다른 표현으로 재진술하십시오.\n'
-            '    (2) 본론에서 다루지 않은 새로운 주제·정책·제도를 결론에서 처음 언급하지 마십시오.\n'
-            '    (3) 결론이 한두 문장으로 끝나면 불합격입니다. 시사점·행동 촉구·비전 제시로 충분히 확장하십시오.\n'
-        )
+        # 결론 구조 가이드 — 아키타입 기반 분기
+        from ..common.aeo_config import get_conclusion_archetype
+        archetype = get_conclusion_archetype(writing_method)
+
+        conclusion_guide = '  <conclusion_structure priority="critical">\n'
+        conclusion_guide += '    결론은 반드시 3개 문단(각 110~140자, 전체 330~420자)으로 구성하고 다음 규칙을 지키십시오:\n'
+
+        if archetype:
+            conclusion_guide += (
+                f'    <archetype name="{archetype["label"]}">\n'
+                f'      <p1>{archetype["p1"]}</p1>\n'
+                f'      <p2>{archetype["p2"]}</p2>\n'
+                f'      <p3>{archetype["p3"]}</p3>\n'
+                f'    </archetype>\n'
+            )
+        else:
+            conclusion_guide += (
+                '    (1) 첫 문단은 서론에서 선언한 핵심 결론을 이 글의 핵심 주제어를 포함하여 다른 표현으로 재진술하십시오.\n'
+                '    (2) 시사점·행동 촉구·비전 제시로 충분히 확장하십시오.\n'
+                '    (3) 독자에게 지지·관심을 호소하고 인삿말로 마감하십시오.\n'
+            )
+
+        conclusion_guide += '    <ban>본론에서 다루지 않은 새로운 주제·정책·제도를 결론에서 처음 언급하지 마십시오.</ban>\n'
+        conclusion_guide += '    <ban>결론이 한두 문장으로 끝나면 불합격입니다.</ban>\n'
+
         if is_dialectical:
             conclusion_guide += (
-                '    (4) 마지막 본론(higher_principle)에서 연결한 <political_philosophy> 가치·원칙을 경유하여 격상된 형태로 마감하십시오.\n'
-                '    (5) 결론에 반론·우려·비판 내용을 넣지 마십시오. 반론+재반론은 counterargument_rebuttal 본론 섹션에서 처리합니다.\n'
+                '    <ban>결론에 반론·우려·비판 내용을 넣지 마십시오. 반론+재반론은 counterargument_rebuttal 본론 섹션에서 처리합니다.</ban>\n'
+                '    마지막 본론(higher_principle)에서 연결한 <political_philosophy> 가치·원칙을 경유하여 격상된 형태로 마감하십시오.\n'
             )
         conclusion_guide += '  </conclusion_structure>\n'
 
@@ -1001,6 +1020,12 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             '    - 지시 대명사("이·그·저" 계열): "이는", "이것은", "이러한", "이와 같은", "이를 통해" 등\n'
             '    각 섹션은 해당 섹션의 핵심 주어·주제어로 독립적으로 시작하십시오.\n'
             '  </paragraph_opening_ban>\n'
+            '  <concrete_subject_rule priority="high">\n'
+            '    2·3번째 문단의 첫 문장에서도 "이는", "이러한", "이것은" 등 지시 대명사 대신\n'
+            '    구체적 주어(정책명·제도명·지역명·인물명 등)를 사용하십시오.\n'
+            '    예: "이는 사회 전체의 안정을 위한 투자입니다" → "지역화폐 정책은 사회 전체의 안정을 위한 투자입니다".\n'
+            '    구체적 주어로 시작하면 문장이 독립적으로 의미를 전달하고, 분량 확장에도 도움이 됩니다.\n'
+            '  </concrete_subject_rule>\n'
             '\n'
             '  expansion_role이 지정된 섹션은 해당 역할에 맞게 확장하십시오.\n'
             + conclusion_guide +

@@ -30,6 +30,45 @@ AEO_DIALECTICAL_METHODS = frozenset({
 })
 
 
+# ── 결론 아키타입: 변증법 AEO 카테고리별 결론 3문단 구조 ──────────
+CONCLUSION_ARCHETYPES = {
+    'pledge': {
+        'label': '다짐형',
+        'p1': '핵심 결론을 이 글의 핵심 주제어를 포함하여 다른 표현으로 재확인하십시오.',
+        'p2': '구체적 실행 다짐·약속을 서술하십시오. 본론에서 제시한 근거를 경유하여 실현 가능성을 보여주십시오.',
+        'p3': '독자(시민·당원)에게 지지·관심을 호소하고 인삿말로 마감하십시오.',
+    },
+    'diagnosis': {
+        'label': '진단형',
+        'p1': '핵심 진단·판단을 이 글의 핵심 주제어를 포함하여 다른 표현으로 재확인하십시오.',
+        'p2': '이 진단이 갖는 시사점·경고, 또는 대안을 제시하십시오.',
+        'p3': '독자(시민·당원)에게 지지·관심을 호소하고 인삿말로 마감하십시오.',
+    },
+    'action': {
+        'label': '행동형',
+        'p1': '핵심 문제의식을 이 글의 핵심 주제어를 포함하여 다른 표현으로 재확인하십시오.',
+        'p2': '향후 행동 계획·후속 조치를 구체적으로 서술하십시오.',
+        'p3': '독자(시민·당원)에게 지지·관심을 호소하고 인삿말로 마감하십시오.',
+    },
+}
+
+# writing_method → 결론 아키타입 매핑
+CONCLUSION_ARCHETYPE_MAP = {
+    'logical_writing': 'pledge',       # policy-proposal
+    'critical_writing': 'diagnosis',   # current-affairs
+    'diagnostic_writing': 'diagnosis', # current-affairs (진단)
+    'analytical_writing': 'action',    # local-issues
+}
+
+
+def get_conclusion_archetype(writing_method: str) -> Dict[str, str] | None:
+    """writing_method에 해당하는 결론 아키타입을 반환. 비대상이면 None."""
+    key = CONCLUSION_ARCHETYPE_MAP.get(writing_method)
+    if key is None:
+        return None
+    return CONCLUSION_ARCHETYPES[key]
+
+
 def uses_aeo_answer_first(writing_method: str) -> bool:
     """writing_method가 AEO answer-first 서론 구조 대상인지 판별."""
     return writing_method in AEO_ANSWER_FIRST_METHODS
