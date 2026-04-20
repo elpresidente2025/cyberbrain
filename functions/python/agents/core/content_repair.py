@@ -9,6 +9,7 @@ from .structure_utils import (
     _xml_cdata,
     parse_response
 )
+from ..common.editorial import STRUCTURE_SPEC
 from ..common.h2_guide import H2_OPTIMAL_MIN, H2_MAX_LENGTH
 
 class ContentRepairAgent:
@@ -178,8 +179,12 @@ class ContentRepairAgent:
         total_sections = int(length_spec.get('total_sections', 5))
         per_section_min = int(length_spec.get('per_section_min', 0))
         per_section_max = int(length_spec.get('per_section_max', 0))
-        min_p = total_sections * 2
-        max_p = total_sections * 4
+        paragraphs_per_section = int(
+            length_spec.get('paragraphs_per_section', STRUCTURE_SPEC['paragraphsPerSection'])
+        )
+        max_section_paragraphs = paragraphs_per_section + 1
+        min_p = total_sections * paragraphs_per_section
+        max_p = total_sections * max_section_paragraphs
 
         failed_meta = failed_meta if isinstance(failed_meta, dict) else {}
         section_index = self._to_int(failed_meta.get('sectionIndex'), 0)
@@ -200,7 +205,8 @@ class ContentRepairAgent:
             )
         elif failed_code == 'SECTION_P_COUNT' and section_index > 0:
             code_specific_rule = (
-                f"{section_index}번 섹션의 <p> 개수만 기준에 맞게 조정하십시오."
+                f"{section_index}번 섹션의 <p> 개수만 기준에 맞게 조정하십시오. "
+                f"각 섹션은 최소 {paragraphs_per_section}개, 최대 {max_section_paragraphs}개의 <p>를 유지해야 합니다."
             )
         elif failed_code == 'INTRO_STANCE_MISSING':
             code_specific_rule = (
@@ -256,17 +262,24 @@ class ContentRepairAgent:
 """.strip()
 
         # 동적 HTML 스켈레톤 생성
-        skeleton_lines = ['<!-- 서론: h2 없음 -->', '<p>서론 1문단 (2~3문장)</p>', '<p>서론 2문단 (2~3문장)</p>']
+        skeleton_lines = [
+            '<!-- 서론: h2 없음 -->',
+            '<p>서론 1문단 (2~3문장)</p>',
+            '<p>서론 2문단 (2~3문장)</p>',
+            '<p>서론 3문단 (2~3문장)</p>',
+        ]
         body_count = max(1, expected_h2 - 1)  # 본론 섹션 수 (결론 제외)
         for i in range(1, body_count + 1):
             skeleton_lines.append(f'<!-- 본론 {i} -->')
             skeleton_lines.append(f'<h2>본론{i} 소제목 ({H2_OPTIMAL_MIN}~{H2_MAX_LENGTH}자, 질문형 권장)</h2>')
             skeleton_lines.append(f'<p>본론{i} 1문단 (2~3문장)</p>')
             skeleton_lines.append(f'<p>본론{i} 2문단 (2~3문장)</p>')
+            skeleton_lines.append(f'<p>본론{i} 3문단 (2~3문장)</p>')
         skeleton_lines.append('<!-- 결론 -->')
         skeleton_lines.append('<h2>결론 소제목</h2>')
         skeleton_lines.append('<p>결론 1문단 (2~3문장)</p>')
-        skeleton_lines.append('<p>결론 2문단 (CTA 포함)</p>')
+        skeleton_lines.append('<p>결론 2문단 (2~3문장)</p>')
+        skeleton_lines.append('<p>결론 3문단 (CTA 포함)</p>')
         skeleton_text = '\n'.join(skeleton_lines)
 
         full_rewrite_prompt = f"""
@@ -297,7 +310,7 @@ class ContentRepairAgent:
     <rule order="8">반복 관련 실패 코드라면 동일 어구 반복을 줄이고, 초과 부분은 새로운 사실/근거/행동 문장으로 치환할 것(의미 보존).</rule>
     <rule order="9">검증 규칙 설명문이나 메타 문장을 본문으로 출력하지 말 것.</rule>
     <rule order="10">h2 개수를 정확히 {expected_h2}개로 맞출 것. 서론에는 h2를 넣지 말 것.</rule>
-    <rule order="11">각 섹션(서론/본론/결론)마다 p 태그를 2~3개씩 배치할 것.</rule>
+    <rule order="11">각 섹션(서론/본론/결론)마다 p 태그를 최소 {paragraphs_per_section}개, 최대 {max_section_paragraphs}개로 유지할 것. 2개 이하 섹션은 허용되지 않습니다.</rule>
     <rule order="12">서론과 결론에 동일 문구를 반복하지 말 것. 결론에서는 새로운 표현으로 재작성.</rule>
   </rules>
   <topic>{_xml_cdata(topic)}</topic>
@@ -376,6 +389,10 @@ class ContentRepairAgent:
         section_contract = section_contract if isinstance(section_contract, dict) else {}
         per_section_min = int(length_spec.get('per_section_min', 0))
         per_section_max = int(length_spec.get('per_section_max', 0))
+        paragraphs_per_section = int(
+            length_spec.get('paragraphs_per_section', STRUCTURE_SPEC['paragraphsPerSection'])
+        )
+        max_section_paragraphs = paragraphs_per_section + 1
         expected_heading = normalize_context_text(section_heading)
         answer_lead = normalize_context_text(section_contract.get('answerLead'))
         body_writer_hint = normalize_context_text(section_contract.get('bodyWriterHint'))
@@ -403,6 +420,7 @@ class ContentRepairAgent:
   <goal>
     <section_heading>{_xml_text(expected_heading)}</section_heading>
     <section_chars>{per_section_min}~{per_section_max}</section_chars>
+    <section_paragraphs>{paragraphs_per_section}~{max_section_paragraphs}</section_paragraphs>
     <rule>전체 원고를 다시 쓰지 말고, 아래 섹션 블록 하나만 다시 작성하십시오.</rule>
   </goal>
   <failure>
@@ -421,9 +439,10 @@ class ContentRepairAgent:
   <rules>
     <rule order="1">&lt;h2&gt; 텍스트는 정확히 "{_xml_text(expected_heading)}"로 유지하십시오.</rule>
     <rule order="2">첫 문장은 answer_lead를 그대로 쓰거나, 같은 사실을 더 간결하게 다시 말하십시오.</rule>
-    <rule order="3">경험 문장 다음에는 사실, 당시 행동, 구체 결과, 현재 해법 연결만 허용합니다.</rule>
-    <rule order="4">자기 역량 인증, 청중 반응 해설, 인지도 자기서술은 금지합니다.</rule>
-{shortfall_focus_rule_line}    <rule order="6">최종 응답은 title/content XML만 출력하고, content 안에는 이 섹션 블록 하나만 넣으십시오.</rule>
+    <rule order="3">이 섹션 블록은 &lt;p&gt;를 최소 {paragraphs_per_section}개, 최대 {max_section_paragraphs}개로 유지하십시오. 2개 이하 문단은 허용되지 않습니다.</rule>
+    <rule order="4">경험 문장 다음에는 사실, 당시 행동, 구체 결과, 현재 해법 연결만 허용합니다.</rule>
+    <rule order="5">자기 역량 인증, 청중 반응 해설, 인지도 자기서술은 금지합니다.</rule>
+{shortfall_focus_rule_line}    <rule order="7">최종 응답은 title/content XML만 출력하고, content 안에는 이 섹션 블록 하나만 넣으십시오.</rule>
   </rules>
   <topic>{_xml_cdata(topic)}</topic>
   <title>{_xml_cdata(title)}</title>
@@ -432,7 +451,7 @@ class ContentRepairAgent:
   <output_contract>
     <format>XML</format>
     <allowed_tags>title, content</allowed_tags>
-    <example>{_xml_cdata(f'<title>{title or "..."}</title>\\n<content><h2>{expected_heading}</h2><p>...</p><p>...</p></content>')}</example>
+    <example>{_xml_cdata(f'<title>{title or "..."}</title>\\n<content><h2>{expected_heading}</h2><p>...</p><p>...</p><p>...</p></content>')}</example>
   </output_contract>
 </section_recovery_prompt>
 """.strip()

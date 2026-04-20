@@ -36,7 +36,11 @@ from agents.core.structure_agent import StructureAgent
 from agents.core.content_validator import ContentValidator
 from agents.core.prompt_guards import _build_style_generation_guard
 from agents.core.writer_agent import _should_keep_must_include_stance
-from agents.core.prompt_builder import build_structure_prompt, build_style_role_priority_summary
+from agents.core.prompt_builder import (
+    build_retry_directive,
+    build_structure_prompt,
+    build_style_role_priority_summary,
+)
 from handlers.generate_posts import (
     ApiError,
     _apply_global_style_ai_alternative_rules_once,
@@ -2427,12 +2431,15 @@ def test_content_validator_rejects_section_role_contract_violation() -> None:
     content = """
 <p>저는 부산 경제를 다시 세우겠습니다.</p>
 <p>최근 여론조사 결과가 나왔습니다.</p>
+<p>부산 산업 전환의 핵심 쟁점과 해법을 차례로 말씀드리겠습니다.</p>
 <h2>이재성이 주진우와의 가상대결에서 앞선 이유</h2>
 <p>이재성·주진우 가상대결에서는 31.7% 대 30.3%로 나타났습니다.</p>
 <p>저는 33세에 CJ인터넷 이사, 엔씨소프트 전무, 자율주행 스타트업 CEO로 활약했습니다. 이러한 실질적인 경험은 산업 전환을 이끌 전문성을 저에게 주었습니다.</p>
+<p>산업 전환의 방향은 현장 경험을 실행 계획으로 연결할 때 분명해집니다.</p>
 <h2>지금 이재성에 주목해야 하는 이유</h2>
 <p>지금 이재성의 경쟁력은 확인됐습니다.</p>
 <p>저는 부산 경제를 살리겠습니다.</p>
+<p>시민이 체감할 해법을 더 구체적으로 보여드리겠습니다.</p>
 """.strip()
 
     validation = validator.validate(
@@ -2467,12 +2474,15 @@ def test_content_validator_rejects_duplicate_career_fact_across_sections() -> No
     content = """
 <p>저는 부산 경제를 다시 세우겠습니다.</p>
 <p>최근 여론조사 결과가 나왔습니다.</p>
+<p>부산 산업 전환의 핵심 쟁점과 해법을 차례로 말씀드리겠습니다.</p>
 <h2>이재성이 주진우와의 가상대결에서 앞선 이유</h2>
 <p>이재성·주진우 가상대결에서는 31.7% 대 30.3%로 나타났습니다.</p>
 <p>저는 33세에 CJ인터넷 이사, 엔씨소프트 전무, 자율주행 스타트업 CEO로 활약했습니다.</p>
+<p>이 경험은 산업 정책을 설계하는 토대가 됐습니다.</p>
 <h2>지금 이재성에 주목해야 하는 이유</h2>
 <p>지금 이재성의 경쟁력은 확인됐습니다.</p>
 <p>저는 33세에 CJ인터넷 이사, 엔씨소프트 전무, 자율주행 스타트업 CEO로 활약했습니다.</p>
+<p>시민이 체감할 변화는 실행력으로 입증하겠습니다.</p>
 """.strip()
 
     validation = validator.validate(
@@ -2503,9 +2513,11 @@ def test_content_validator_rejects_fragmented_intro_paragraphs() -> None:
 <h2>{region} 현안 해결 방향</h2>
 <p>{region} 현안을 더 세밀하게 살피고 주민 불편을 줄이는 실질적 방안을 마련하겠습니다. 생활 현장에서 확인한 문제를 행정과 예산에 연결하겠습니다.</p>
 <p>현장 의견을 꾸준히 수렴하고 우선순위를 분명히 정해 실행력을 높이겠습니다. 주민이 체감하는 개선 결과를 빠르게 보여드리겠습니다.</p>
+<p>주민 설명과 집행 점검을 함께 챙겨 정책의 빈틈을 줄이겠습니다.</p>
 <h2>{region}의 더 나은 내일</h2>
 <p>{region}의 더 나은 내일을 위해 필요한 과제를 끝까지 책임 있게 챙기겠습니다. 주민과의 약속을 실행으로 증명하겠습니다.</p>
 <p>지역의 문제를 끝까지 따라가며 해결책을 만들겠습니다. {region} 주민과 함께 다음 변화를 준비하겠습니다.</p>
+<p>{region} 주민이 체감할 변화까지 연결되도록 마지막 과정도 놓치지 않겠습니다.</p>
 """.strip()
 
     validation = validator.validate(
@@ -2531,13 +2543,16 @@ def test_content_validator_rejects_orphan_intro_transition() -> None:
     validator = ContentValidator()
     content = """
 <p>{user_name}입니다.</p>
-<p>특히, {region} 현안 해결에 더 집중하겠습니다.</p>
+<p>특히, {region} 현안 해결에 더 집중하겠습니다. 생활 불편을 줄이는 해법과 예산 우선순위를 더 분명히 말씀드리겠습니다.</p>
+<p>{region} 주민이 체감할 변화까지 책임 있게 이어가겠습니다. 현장과 실행 점검도 함께 챙기겠습니다.</p>
 <h2>{region} 현안 해결 방향</h2>
 <p>{region} 현안을 더 세밀하게 살피고 주민 불편을 줄이는 실질적 방안을 마련하겠습니다. 생활 현장에서 확인한 문제를 행정과 예산에 연결하겠습니다.</p>
 <p>현장 의견을 꾸준히 수렴하고 우선순위를 분명히 정해 실행력을 높이겠습니다. 주민이 체감하는 개선 결과를 빠르게 보여드리겠습니다.</p>
+<p>주민 설명과 집행 점검을 함께 챙겨 정책의 빈틈을 줄이겠습니다.</p>
 <h2>{region}의 더 나은 내일</h2>
 <p>{region}의 더 나은 내일을 위해 필요한 과제를 끝까지 책임 있게 챙기겠습니다. 주민과의 약속을 실행으로 증명하겠습니다.</p>
 <p>지역의 문제를 끝까지 따라가며 해결책을 만들겠습니다. {region} 주민과 함께 다음 변화를 준비하겠습니다.</p>
+<p>{region} 주민이 체감할 변화까지 연결되도록 마지막 과정도 놓치지 않겠습니다.</p>
 """.strip()
 
     validation = validator.validate(
@@ -2563,13 +2578,16 @@ def test_content_validator_rejects_section_topic_drift_for_activity_report() -> 
     validator = ContentValidator()
     content = """
 <p>{region}에서 주민과 함께한 {user_title} {user_name}입니다. 현장에서 확인한 문제를 정책과 예산에 연결해 왔습니다.</p>
-<p>{issue_topic} 해결을 위해 지금까지의 성과와 앞으로의 과제를 차례로 말씀드리겠습니다.</p>
+<p>{issue_topic} 해결을 위해 지금까지의 성과와 앞으로의 과제를 차례로 말씀드리겠습니다. 무엇을 이미 해냈는지부터 분명히 짚겠습니다.</p>
+<p>이미 만든 성과와 앞으로 풀 과제를 구분해 설명드리겠습니다. 주민이 체감한 변화와 남은 과제도 나눠 말씀드리겠습니다.</p>
 <h2>{issue_topic} 입법 성과</h2>
 <p>{issue_topic} 관련 조례를 발의하고 가결시키며 주민 불편을 줄였습니다. 현장에서 확인한 문제를 제도 개선으로 연결했습니다.</p>
 <p>앞으로도 도시첨단산업단지 2단계 지정을 마무리하고 광역철도망 계획이 가시화될 수 있도록 힘쓰겠습니다.</p>
+<p>조례 집행 점검과 후속 예산 확보도 함께 챙기며 성과를 이어가겠습니다.</p>
 <h2>{region} 미래 비전</h2>
 <p>{region}의 지속 가능한 발전을 위해 필요한 과제를 단계별로 추진하겠습니다. 주민이 체감하는 변화로 연결하겠습니다.</p>
 <p>현장 의견을 반영해 실행 일정을 챙기고 필요한 기반을 마련하겠습니다.</p>
+<p>추진 과정의 우선순위를 명확히 세워 실질적인 변화를 만들겠습니다.</p>
 """.strip()
 
     validation = validator.validate(
@@ -2589,6 +2607,23 @@ def test_content_validator_rejects_section_topic_drift_for_activity_report() -> 
 
     assert validation.get("passed") is False
     assert validation.get("code") == "SECTION_TOPIC_DRIFT"
+
+
+def test_build_retry_directive_raises_paragraph_floor_to_three_to_four() -> None:
+    length_spec = {
+        "total_sections": 5,
+        "body_sections": 3,
+        "min_chars": 2000,
+        "max_chars": 2800,
+        "per_section_recommended": 400,
+        "expected_h2": 4,
+    }
+
+    total_directive = build_retry_directive({"code": "P_SHORT"}, length_spec)
+    section_directive = build_retry_directive({"code": "SECTION_P_COUNT"}, length_spec)
+
+    assert "3~4개씩" in total_directive
+    assert "3~4개" in section_directive
 
 
 def test_structure_agent_attempt_section_level_recovery_replaces_only_target_block() -> None:

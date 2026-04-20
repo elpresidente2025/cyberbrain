@@ -551,6 +551,8 @@ def build_retry_directive(
     max_chars = length_spec['max_chars']
     per_section_recommended = length_spec['per_section_recommended']
     expected_h2 = length_spec['expected_h2']
+    paragraphs_per_section = int(STRUCTURE_SPEC['paragraphsPerSection'])
+    paragraphs_per_section_max = paragraphs_per_section + 1
     section_min_delta = int(STRUCTURE_SPEC['sectionCharTarget']) - int(STRUCTURE_SPEC['sectionCharMin'])
     section_max_delta = int(STRUCTURE_SPEC['sectionCharMax']) - int(STRUCTURE_SPEC['sectionCharTarget'])
 
@@ -576,7 +578,8 @@ def build_retry_directive(
 
     if code in {'P_SHORT', 'P_LONG'}:
         return (
-            f"문단 수를 조정하십시오. 총 {total_sections}개 섹션 기준으로 문단은 2~3개씩 유지하고, "
+            f"문단 수를 조정하십시오. 총 {total_sections}개 섹션 기준으로 각 섹션의 <p>는 "
+            f"{paragraphs_per_section}~{paragraphs_per_section_max}개씩 유지하고, "
             f"군더더기 없는 문장으로 길이 범위({min_chars}~{max_chars}자)를 지키십시오."
         )
 
@@ -649,8 +652,8 @@ def build_retry_directive(
     if code == 'SECTION_P_COUNT':
         return (
             "실패한 섹션의 문단 수만 부분 수정하십시오. "
-            "모든 섹션(서론·본론·결론)은 반드시 3개의 <p>를 가져야 합니다. "
-            "기존 사실/근거 문장은 최대한 보존하면서 문단을 3개로 맞추십시오."
+            f"모든 섹션(서론·본론·결론)은 <p>를 {paragraphs_per_section}~{paragraphs_per_section_max}개로 맞추십시오. "
+            f"특히 2개 이하로 줄어든 섹션은 반드시 {paragraphs_per_section}개 이상으로 복구하십시오."
         )
 
     if code == 'SECTION_ROLE_CONTRACT':
