@@ -890,7 +890,15 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             section_role = section.get('role', '')
             if section_role and i in role_guides:
                 guide = role_guides[i]['guide']
-                role_hint = f'    <expansion_role>{section_role}: {guide}</expansion_role>\n'
+                if section_role == 'counterargument_rebuttal':
+                    role_hint = (
+                        f'    <expansion_role priority="critical">{section_role}: {guide} '
+                        f'이 섹션에서 반드시 "~라는 우려/비판이 있다" 형태로 반론을 명시한 뒤, '
+                        f'사실·수치·논리로 재반론하십시오. 이 내용을 결론으로 미루지 마십시오.'
+                        f'</expansion_role>\n'
+                    )
+                else:
+                    role_hint = f'    <expansion_role>{section_role}: {guide}</expansion_role>\n'
             elif i in role_guides:
                 r = role_guides[i]
                 role_hint = f'    <expansion_role>{r["role"]}: {r["guide"]}</expansion_role>\n'
@@ -909,6 +917,9 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             conclusion_guide = (
                 '  결론은 서론에서 선언한 핵심 결론을 다른 표현으로 반복하되, '
                 '상위 원칙을 경유하여 격상된 형태로 마감하십시오.\n'
+                '  ⚠️ 결론에 반론·우려·비판 내용을 넣지 마십시오. '
+                '반론+재반론은 반드시 counterargument_rebuttal 역할의 본론 섹션에서 처리하고, '
+                '결론에서는 결론만 반복하십시오.\n'
             )
 
         lock_block = (
