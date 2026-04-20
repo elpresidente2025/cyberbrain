@@ -911,16 +911,20 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             )
         body_block = "\n".join(body_lines)
 
-        # 결론 반복 강화 (변증법 구조일 때)
-        conclusion_guide = ''
+        # 결론 구조 가이드 (모든 모드 공통 + 변증법 추가)
+        conclusion_guide = (
+            '  <conclusion_structure priority="critical">\n'
+            '    결론은 다음 규칙을 반드시 지키십시오:\n'
+            '    (1) 첫 문단은 서론에서 선언한 핵심 결론을 이 글의 핵심 주제어를 포함하여 다른 표현으로 재진술하십시오.\n'
+            '    (2) 본론에서 다루지 않은 새로운 주제·정책·제도를 결론에서 처음 언급하지 마십시오.\n'
+            '    (3) "또한", "아울러", "나아가" 등 추가 접속사로 결론 문단을 시작하지 마십시오. 결론은 종합이지 추가 항목이 아닙니다.\n'
+        )
         if is_dialectical:
-            conclusion_guide = (
-                '  결론은 서론에서 선언한 핵심 결론을 다른 표현으로 반복하되, '
-                '상위 원칙을 경유하여 격상된 형태로 마감하십시오.\n'
-                '  ⚠️ 결론에 반론·우려·비판 내용을 넣지 마십시오. '
-                '반론+재반론은 반드시 counterargument_rebuttal 역할의 본론 섹션에서 처리하고, '
-                '결론에서는 결론만 반복하십시오.\n'
+            conclusion_guide += (
+                '    (4) 상위 원칙을 경유하여 격상된 형태로 마감하십시오.\n'
+                '    (5) 결론에 반론·우려·비판 내용을 넣지 마십시오. 반론+재반론은 counterargument_rebuttal 본론 섹션에서 처리합니다.\n'
             )
+        conclusion_guide += '  </conclusion_structure>\n'
 
         lock_block = (
             '<locked_outline priority="absolute">\n'
