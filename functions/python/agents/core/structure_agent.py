@@ -856,7 +856,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule>역슬래시(\\)를 임의로 출력하지 말 것.</rule>\n"
             "    <rule priority='critical'>문장 문법 자기점검: 각 문장을 출력 전에 다시 읽어라. (1) 단어가 중간에 잘린 곳('발전을 저 핵심' → '발전을 저해하는 핵심', '저해/저하/저지/저감' 등 한자어에서 '저'만 남기고 잘리는 오류 특히 주의), (2) 목적어('~을/를') 뒤에 서술어 없이 다른 명사구가 이어지는 곳, (3) 조사('에/과/와/의')가 빠져 명사끼리 직접 붙은 곳이 없는지 확인하고 고칠 것.</rule>\n"
             "    <rule priority='critical'>AI 수사 금지: '혁신적인/혁신적으로', '체계적인', '종합적인', '지속적인', '획기적인' 같은 ~적 관형사를 원고 전체에서 최대 1회만 허용. '극대화'(→늘리다/높이다), '도모'(→추진하다), '촉진'(→앞당기다), '창출'(→만들다)은 사용 금지. '긍정적인 영향', '밝은 미래/전망', '새로운 도약/시대'는 구체 수치·일정·사업명으로 대체.</rule>\n"
-            "    <rule priority='critical'>허구 수치 생성 금지: 사용자 입력(입장문·뉴스·참고자료)에 명시되지 않은 수치·통계·퍼센트를 절대 만들지 ���세요. '20% 감소', '30% 증가' 같은 표���을 입력에서 찾을 수 없으면 사용 금지.</rule>\n"
+            "    <rule priority='critical'>허구 수치 생성 금지: 사용자 입력(입장문·뉴스·참고자료)에 명시되지 않은 수치·통계·퍼센트를 절대 만들지 마세요. '20% 감소', '30% 증가' 같은 표현을 입력에서 찾을 수 없으면 사용 금지.</rule>\n"
             f"{extra_rules}"
             "  </rules>\n"
             + self._build_json_shape_block(is_expansion=is_expansion, outline=outline) +
@@ -931,9 +931,17 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             '</locked_outline>\n\n'
             '<expansion_instructions priority="critical">\n'
             '  위 locked_outline의 title, heading, lead_sentence, conclusion_heading은 그대로 사용하고 절대 수정하지 마십시오.\n'
-            '  서론(intro) 첫 문단은 intro_lead 텍스트를 그대로 첫 문단으로 사용하십시���.\n'
-            '  각 본론(body) 섹션��� heading을 소제목으로, lead_sentence를 첫 문단 첫 문장으로 사용하십시��.\n'
-            '  각 섹션을 나머지 문단으로 확장하되, lead_sentence의 주장�� 근거·맥락·효과로 뒷받침하십시오.\n'
+            '  서론(intro) 첫 문단은 intro_lead 텍스트를 그대로 첫 문단으로 사용하십시오.\n'
+            '  각 본론(body) 섹션은 heading을 소제목으로, lead_sentence를 첫 문단 첫 문장으로 사용하십시오.\n'
+            '\n'
+            '  <body_paragraph_structure priority="critical">\n'
+            '    각 본론 섹션은 반드시 다음 3단 구성을 갖추십시오:\n'
+            '    (1) 주장 선언: lead_sentence가 이 역할을 합니다.\n'
+            '    (2) 근거 전개: 구체적 수치·사례·사실관계로 주장을 뒷받침하되, 사실 나열에 그치지 말고 인과관계("~했기 때문에 ~가 발생했다", "그 결과 ~")를 반드시 서술하십시오.\n'
+            '    (3) 의미 부여: 이 근거가 독자에게 왜 중요한지, 어떤 시사점이 있는지로 문단을 마감하십시오. "그래서 뭐?"라는 질문에 답하는 문장이 반드시 있어야 합니다.\n'
+            '    사실만 나열하고 끝나는 문단은 불합격입니다.\n'
+            '  </body_paragraph_structure>\n'
+            '\n'
             '  expansion_role이 지정된 섹션은 해당 역할에 맞게 확장하십시오.\n'
             + conclusion_guide +
             '  결론(conclusion)은 conclusion_heading을 소제목으로 사용하십시오.\n'
