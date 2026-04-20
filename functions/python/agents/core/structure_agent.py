@@ -850,6 +850,9 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule>body 각 항목은 heading 1개 + paragraphs 배열로 작성.</rule>\n"
             "    <rule>conclusion은 heading 1개 + paragraphs 배열로 작성하고 paragraphs는 최소 2개 이상 작성.</rule>\n"
             "    <rule>각 paragraphs 원소는 완결 문장 2~3개로 구성하고 최소 120자 이상 작성.</rule>\n"
+            "    <rule priority='critical'>모든 문단의 첫 문장을 접속사('또한/아울러/나아가/한편/더불어')나 "
+            "지칭 표현('이러한/이와 같은/이를 통해/이를 위해/그로 인해/그런 점에서/이에')으로 시작하지 말 것. "
+            "각 문단은 해당 문단의 핵심 주어·주제어로 시작할 것.</rule>\n"
             "    <rule priority='critical'>모든 섹션(서론·본론·결론)은 반드시 3개 문단으로 구성. "
             "본론 각 섹션의 3문단은: (1) 주장 선언 (2) 구체 근거·수치·사례 + 인과관계 서술 (3) 의미 부여('그래서 왜 중요한가'에 답하는 마감). "
             "서론 3문단은: (1) 화자 소개+핵심 결론 (2) 배경·맥락 (3) 본론 예고. "
@@ -971,12 +974,12 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             '    사실만 나열하고 끝나는 문단은 불합격입니다.\n'
             '  </body_paragraph_structure>\n'
             '\n'
-            '  <section_opening_ban priority="critical">\n'
-            '    모든 섹션(서론·본론·결론)의 첫 문장을 다음으로 시작하지 마십시오:\n'
+            '  <paragraph_opening_ban priority="critical">\n'
+            '    모든 섹션의 모든 문단 첫 문장을 다음으로 시작하지 마십시오:\n'
             '    - 접속사: "또한", "아울러", "나아가", "한편", "더불어", "뿐만 아니라"\n'
             '    - 지시 대명사·지칭 표현: "이와 같은", "이를 통해", "이를 위해", "이러한", "저러한", "그로 인해", "그런 점에서", "이에"\n'
-            '    각 섹션은 독립적으로 읽혀야 합니다. 앞 섹션을 가리키는 대명사 없이, 해당 섹션의 핵심 주어·주제어로 시작하십시오.\n'
-            '  </section_opening_ban>\n'
+            '    각 문단은 해당 문단의 핵심 주어·주제어로 시작하십시오.\n'
+            '  </paragraph_opening_ban>\n'
             '\n'
             '  expansion_role이 지정된 섹션은 해당 역할에 맞게 확장하십시오.\n'
             + conclusion_guide +
