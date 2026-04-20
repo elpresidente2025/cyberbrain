@@ -164,11 +164,17 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     bio_source_line = ""
     bio_source_rule = "보조 자료: 사용자 프로필(Bio)은 화자 정체성과 어조 참고용이며, 분량이 부족할 때만 활용하세요."
     if news_source_mode == 'profile_fallback' and profile_substitute_context:
-        source_blocks.append(f"[뉴스/데이터 대체자료]\n{profile_substitute_context}")
-        bio_source_line = "- 대체 자료: 사용자 추가정보(공약/법안/성과) 무작위 3개 + Bio 보강"
+        source_blocks.append(
+            "[화자 실적·활동 보조자료]\n"
+            "⚠️ 본론의 주제는 반드시 입장문(위 참고자료 1)에서 가져오십시오. "
+            "아래는 화자의 다른 활동·실적이며, 본론의 별도 섹션 주제로 삼지 말고 "
+            "화자의 역량·신뢰를 보여주는 보조 근거로만 활용하십시오.\n"
+            f"{profile_substitute_context}"
+        )
+        bio_source_line = "- 보조 자료: 사용자 추가정보(공약/법안/성과) 무작위 3개 + Bio 보강"
         bio_source_rule = (
-            "대체자료 활용: 뉴스/데이터가 비어 있으므로 사용자 추가정보(공약/법안/성과)와 "
-            "Bio 보강 맥락에서 팩트를 추출해 사용하세요. 대체자료 3개는 매 요청마다 무작위 선정됩니다."
+            "보조자료 활용: 뉴스/데이터가 비어 있으므로 사용자 추가정보를 화자의 역량·신뢰 보강 소재로 활용하되, "
+            "본론의 주제는 입장문에 집중하세요. 추가정보 항목을 별도 본론 섹션의 주제로 확장하지 마세요."
         )
     elif not news_context_text and profile_support_context:
         source_blocks.append(f"[작성자 BIO 보강 맥락]\n{profile_support_context}")

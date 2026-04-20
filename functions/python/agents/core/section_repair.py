@@ -137,17 +137,11 @@ class SectionRepairMixin:
                     print(
                         "⚠️ [StructureAgent] 프로필 추가정보가 부족하여 Bio 보강 1차 문맥을 대체자료로 사용합니다."
                     )
-            if substitute_text:
-                analyzer_news_context = (
-                    "[화자 실적·활동 보조자료 — 본론 주제는 입장문 기준]\n"
-                    "⚠️ 아래는 화자의 다른 활동·실적입니다. "
-                    "본론의 주제는 입장문(stanceText)에 집중하고, "
-                    "아래 자료는 화자의 역량·신뢰를 보여주는 보조 소재로만 활용하십시오. "
-                    "아래 항목을 별도 본론 섹션의 주제로 삼지 마십시오.\n"
-                    f"{substitute_text}"
-                )
-            else:
-                analyzer_news_context = ""
+            # 프로필 대체자료는 context_analyzer에 넘기지 않는다.
+            # context_analyzer가 mustIncludeFacts로 추출하면 별도 본론 주제로 오염됨.
+            # 대신 prompt_builder의 profileSubstituteContext로만 전달하여
+            # 소스 블록 참조용으로 활용한다.
+            analyzer_news_context = ""
 
         print(f"🚀 [StructureAgent] 시작 - 카테고리: {category or '(자동)'}, 주제: {topic}")
         print(f"📊 [StructureAgent] 입장문: {len(stance_text)}자, 뉴스/데이터: {len(news_data_text)}자")
