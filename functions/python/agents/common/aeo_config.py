@@ -85,7 +85,11 @@ def build_dialectical_roles(body_sections: int) -> List[Dict[str, str]]:
         "role": "higher_principle",
         "guide": (
             "이 논의가 속한 더 큰 가치·원칙·비전으로 격상하십시오. "
-            "개별 정책이 아니라 그 정책이 실현하는 상위 목표를 선언하십시오."
+            "개별 정책이 아니라 그 정책이 실현하는 상위 목표를 선언하십시오. "
+            "반드시 프롬프트의 <political_philosophy> 블록(core_values, leadership_principles, "
+            "balanced_approach)에서 이 주제와 가장 관련 깊은 가치·원칙을 골라 "
+            "구체적으로 인용·연결하십시오. 추상적 미사여구가 아니라 "
+            "해당 철학이 이 정책과 어떻게 맞닿는지를 논증해야 합니다."
         ),
     })
 

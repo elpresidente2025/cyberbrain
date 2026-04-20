@@ -920,6 +920,17 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                         f'사실·수치·논리로 재반론하십시오. 이 내용을 결론으로 미루지 마십시오.'
                         f'</expansion_role>\n'
                     )
+                elif section_role == 'higher_principle':
+                    role_hint = (
+                        f'    <expansion_role priority="critical">{section_role}: {guide} '
+                        f'이 섹션의 소재는 이 프롬프트에 포함된 &lt;political_philosophy&gt; 블록입니다. '
+                        f'core_values·leadership_principles·balanced_approach 중 이 글의 주제와 '
+                        f'가장 관련 깊은 가치·원칙을 구체적으로 골라, 본론의 정책 논의가 '
+                        f'그 상위 가치를 어떻게 실현하는지 논증하십시오. '
+                        f'막연한 "더 나은 사회" 류의 추상적 마감이 아니라, '
+                        f'특정 철학 원칙과 정책의 연결고리를 보여야 합니다.'
+                        f'</expansion_role>\n'
+                    )
                 else:
                     role_hint = f'    <expansion_role>{section_role}: {guide}</expansion_role>\n'
             elif i in role_guides:
@@ -944,7 +955,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         )
         if is_dialectical:
             conclusion_guide += (
-                '    (4) 상위 원칙을 경유하여 격상된 형태로 마감하십시오.\n'
+                '    (4) 마지막 본론(higher_principle)에서 연결한 <political_philosophy> 가치·원칙을 경유하여 격상된 형태로 마감하십시오.\n'
                 '    (5) 결론에 반론·우려·비판 내용을 넣지 마십시오. 반론+재반론은 counterargument_rebuttal 본론 섹션에서 처리합니다.\n'
             )
         conclusion_guide += '  </conclusion_structure>\n'
