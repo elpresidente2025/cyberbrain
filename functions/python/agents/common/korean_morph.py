@@ -83,6 +83,9 @@ _MAIN_PREDICATE_TAGS = frozenset({"VV", "VA", "VX", "VCP", "VCN"})
 _NOUN_TAGS = frozenset({"NNG", "NNP", "NNB"})
 _PARTICLE_TAGS = frozenset({"JKS", "JKO", "JKB", "JKG", "JKC", "JKV", "JKQ", "JX", "JC"})
 _TRAILING_SKIP_TAGS = frozenset({"SF", "SP", "SS", "SW", "SO", "SE"})
+_CONTENT_TOKEN_TAGS = _NOUN_TAGS | frozenset({"SL", "SN"})
+_CONTENT_PREDICATE_TAGS = frozenset({"VV", "VA", "XR"})
+_ADMIN_SUFFIXES = ("시", "군", "구")
 
 # 질문 종결어미 form 화이트리스트 (EF 태그와 결합)
 _QUESTION_EF_FORMS = frozenset(
@@ -675,6 +678,153 @@ def extract_nouns(text: str) -> Optional[List[str]]:
     if tokens is None:
         return None
     return [tok.form for tok in tokens if tok.tag in _NOUN_TAGS]
+
+
+def _compact_surface(text: str) -> str:
+    return re.sub(r"\s+", "", str(text or "")).strip()
+
+
+def _append_unique(items: List[str], seen: set[str], token: str) -> None:
+    cleaned = _compact_surface(token)
+    if not cleaned:
+        return
+    if cleaned in seen:
+        return
+    seen.add(cleaned)
+    items.append(cleaned)
+
+
+def _iter_compound_forms(buffer: Sequence[str], *, max_size: int = 3) -> List[str]:
+    if len(buffer) < 2:
+        return []
+    compounds: List[str] = []
+    upper = min(len(buffer), max_size)
+    for size in range(2, upper + 1):
+        for start in range(0, len(buffer) - size + 1):
+            compounds.append("".join(buffer[start:start + size]))
+    return compounds
+
+
+def _append_surface_variants(items: List[str], seen: set[str], token: str) -> None:
+    _append_unique(items, seen, token)
+    compact = _compact_surface(token)
+    if len(compact) >= 3 and compact.endswith(_ADMIN_SUFFIXES):
+        _append_unique(items, seen, compact[:-1])
+
+
+def extract_content_tokens(
+    text: str,
+    *,
+    include_predicates: bool = True,
+    include_compounds: bool = True,
+    max_compound_size: int = 3,
+) -> Optional[List[str]]:
+    """본문/키워드 비교용 핵심 형태소 토큰을 추출한다.
+
+    반환 규칙:
+      - 명사/고유명사/숫자/영문 토큰은 그대로 포함
+      - 연속 명사구는 결합형("청년정책", "테크노밸리사업")도 함께 포함
+      - VV/VA/XR 은 어간 기준으로 포함(옵션)
+      - 중복은 제거하되 등장 순서는 보존
+    """
+    plain = str(text or "").strip()
+    if not plain:
+        return []
+
+    tokens = tokenize(plain)
+    if tokens is None:
+        return None
+
+    result: List[str] = []
+    seen: set[str] = set()
+    noun_buffer: List[str] = []
+
+    def _flush_noun_buffer() -> None:
+        nonlocal noun_buffer
+        if not noun_buffer:
+            return
+        if include_compounds:
+            for compound in _iter_compound_forms(
+                noun_buffer,
+                max_size=max_compound_size,
+            ):
+                _append_surface_variants(result, seen, compound)
+        noun_buffer = []
+
+    for tok in tokens:
+        if tok.tag in _TRAILING_SKIP_TAGS:
+            _flush_noun_buffer()
+            continue
+        if tok.tag in _CONTENT_TOKEN_TAGS:
+            _append_surface_variants(result, seen, tok.form)
+            noun_buffer.append(tok.form)
+            continue
+        _flush_noun_buffer()
+        if include_predicates and tok.tag in _CONTENT_PREDICATE_TAGS:
+            _append_surface_variants(result, seen, tok.form)
+
+    _flush_noun_buffer()
+    return result
+
+
+def matches_content_keyword(keyword: str, text: str) -> Optional[bool]:
+    """키워드가 텍스트에 형태소 단위로 반영됐는지 판정한다.
+
+    exact compact 매칭이 우선이며, 실패하면 내용어 토큰 교집합으로 보완한다.
+    """
+    keyword_compact = _compact_surface(keyword).lower()
+    text_compact = _compact_surface(text).lower()
+    if not keyword_compact or not text_compact:
+        return False
+    if keyword_compact in text_compact:
+        return True
+
+    if len(keyword_compact) >= 3 and keyword_compact.endswith(_ADMIN_SUFFIXES):
+        admin_stem = keyword_compact[:-1]
+        if len(admin_stem) >= 2 and admin_stem in text_compact:
+            return True
+
+    keyword_tokens = extract_content_tokens(keyword)
+    text_tokens = extract_content_tokens(text)
+    if keyword_tokens is None or text_tokens is None:
+        return None
+    if not keyword_tokens or not text_tokens:
+        return False
+
+    keyword_set = set(keyword_tokens)
+    text_set = set(text_tokens)
+    overlap = keyword_set & text_set
+    if not overlap:
+        return False
+    if len(keyword_set) == 1:
+        return True
+    if len(overlap) >= 2:
+        return True
+    return any(len(token) >= 4 for token in overlap)
+
+
+def count_sentence_keyword_matches(text: str, keyword: str) -> Optional[int]:
+    """문장 단위로 키워드 반영 횟수를 센다.
+
+    표면 exact count 가 아니라 "형태소 기준으로 이 문장이 키워드를 다뤘는가"를
+    세는 용도다. SEO 후검수의 자연 삽입 판정에 사용한다.
+    """
+    plain = str(text or "").strip()
+    if not plain or not str(keyword or "").strip():
+        return 0
+
+    sentences = split_sentences(plain)
+    if sentences is None:
+        return None
+
+    count = 0
+    for sentence in sentences:
+        matched = matches_content_keyword(keyword, sentence)
+        if matched is None:
+            return None
+        if matched:
+            count += 1
+    return count
 
 
 def tokens_share_stem(token_a: str, token_b: str) -> Optional[bool]:

@@ -36,14 +36,28 @@ def _extract_user_native_words(source_text: str) -> list[str]:
     """사용자 원문에서 PATINA_TARGET_WORDS에 해당하는 단어를 추출.
 
     사용자가 직접 쓴 단어이므로 AI 수사 교정 대상에서 제외(화이트리스트).
-    Kiwi 없이 단순 문자열 매칭 — 비용 0.
+    Kiwi 가능 시 형태소 정규화까지 포함해 활용형도 잡는다.
     """
     if not source_text:
         return []
     found = []
+    morph = None
+    try:
+        from agents.common import korean_morph
+        morph = korean_morph
+    except Exception:
+        morph = None
     for word in PATINA_TARGET_WORDS:
         if word in source_text:
             found.append(word)
+            continue
+        if morph is not None:
+            try:
+                matched = morph.matches_content_keyword(word, source_text)
+            except Exception:
+                matched = None
+            if matched:
+                found.append(word)
     return sorted(found)
 
 

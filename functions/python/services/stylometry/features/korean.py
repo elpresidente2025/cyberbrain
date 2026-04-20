@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from collections import Counter
 
+from agents.common import korean_morph
+
 from ..models import KoreanFeatures
 from ..schemas import CONJUNCTIONS, FORMAL_ENDINGS, KOREAN_FUNCTION_WORDS
 
@@ -51,11 +53,36 @@ _INFORMAL_PATTERN = re.compile(
 )
 
 _SENTENCE_SPLIT = re.compile(r'(?<=[.!?。])\s+')
+_TRAILING_SKIP_TAGS = frozenset({"SF", "SP", "SS", "SW", "SO", "SE"})
+_FUNCTION_WORD_TAGS = frozenset({
+    "JKS", "JKO", "JKB", "JKG", "JKC", "JKV", "JKQ", "JX", "JC",
+    "EP", "EF", "EC", "ETM", "ETN",
+    "XSN", "XSV", "XSA",
+})
+
+
+def _split_sentences(text: str) -> list[str]:
+    sentences = korean_morph.split_sentences(text)
+    if sentences is not None:
+        return [sentence.strip() for sentence in sentences if len(sentence.strip()) >= 5]
+    return [
+        sentence.strip()
+        for sentence in _SENTENCE_SPLIT.split(text.strip())
+        if len(sentence.strip()) >= 5
+    ]
+
+
+def _last_content_token(tokens: list) -> object | None:
+    for tok in reversed(tokens):
+        if tok.tag in _TRAILING_SKIP_TAGS:
+            continue
+        return tok
+    return None
 
 
 def extract_korean_features(text: str) -> KoreanFeatures:
     """한국어 특화 통계를 추출한다."""
-    sentences = [s.strip() for s in _SENTENCE_SPLIT.split(text.strip()) if len(s.strip()) >= 5]
+    sentences = _split_sentences(text)
     n = len(sentences)
     if n == 0:
         return KoreanFeatures()
@@ -66,10 +93,15 @@ def extract_korean_features(text: str) -> KoreanFeatures:
     informal_count = 0
 
     for sent in sentences:
-        m = _ENDING_RE.search(sent)
-        if m:
-            ending = m.group(1)
-            endings.append(ending)
+        sentence_tokens = korean_morph.tokenize(sent)
+        if sentence_tokens:
+            last_token = _last_content_token(sentence_tokens)
+            if last_token is not None and last_token.form:
+                endings.append(str(last_token.form))
+        else:
+            m = _ENDING_RE.search(sent)
+            if m:
+                endings.append(m.group(1))
 
         if _FORMAL_PATTERN.search(sent):
             formal_count += 1
@@ -85,19 +117,33 @@ def extract_korean_features(text: str) -> KoreanFeatures:
     top_endings = [e for e, _ in ending_freq.most_common(5)]
 
     # 기능어 비율
-    tokens = re.findall(r"[가-힣]+", text)
-    total_tokens = len(tokens)
-    if total_tokens > 0:
-        func_count = sum(
-            1 for t in tokens
-            if any(t.endswith(fw) for fw in KOREAN_FUNCTION_WORDS)
+    morph_tokens = korean_morph.tokenize(text)
+    if morph_tokens:
+        content_tokens = [tok for tok in morph_tokens if tok.tag not in _TRAILING_SKIP_TAGS]
+        total_tokens = len(content_tokens)
+        if total_tokens > 0:
+            func_count = sum(1 for tok in content_tokens if tok.tag in _FUNCTION_WORD_TAGS)
+            function_word_ratio = func_count / total_tokens
+        else:
+            function_word_ratio = 0.0
+        conj_count = sum(
+            1 for tok in content_tokens
+            if tok.form in CONJUNCTIONS
         )
-        function_word_ratio = func_count / total_tokens
     else:
-        function_word_ratio = 0.0
+        tokens = re.findall(r"[가-힣]+", text)
+        total_tokens = len(tokens)
+        if total_tokens > 0:
+            func_count = sum(
+                1 for t in tokens
+                if any(t.endswith(fw) for fw in KOREAN_FUNCTION_WORDS)
+            )
+            function_word_ratio = func_count / total_tokens
+        else:
+            function_word_ratio = 0.0
+        conj_count = sum(len(re.findall(re.escape(c), text)) for c in CONJUNCTIONS)
 
     # 접속사 밀도
-    conj_count = sum(len(re.findall(re.escape(c), text)) for c in CONJUNCTIONS)
     conjunction_density = conj_count / n if n > 0 else 0.0
 
     # ── 감정 직접 명명 비율 ──────────────────────────────────

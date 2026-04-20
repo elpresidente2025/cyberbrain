@@ -36,8 +36,17 @@ def _topic_keyword_matches_text(keyword: str, text: str) -> bool:
     normalized_text = re.sub(r"\s+", "", str(text or "")).strip().lower()
     if not normalized_text:
         return False
-    if any(variant.lower() in normalized_text for variant in _expand_topic_keyword_variants(keyword)):
+    variants = _expand_topic_keyword_variants(keyword)
+    if any(variant.lower() in normalized_text for variant in variants):
         return True
+    try:
+        from agents.common import korean_morph  # local import
+        for variant in variants:
+            matched = korean_morph.matches_content_keyword(variant, text)
+            if matched:
+                return True
+    except Exception:
+        pass
     try:
         from .title_hook_quality import _slot_token_used_in_title
         if _slot_token_used_in_title(text, keyword):
@@ -300,7 +309,19 @@ def _extract_surface_topic_tokens(text: str, *, limit: int = 4) -> List[str]:
 
     scored_tokens: List[tuple[int, int, str]] = []
     seen: set[str] = set()
-    for raw_token in normalized_text.split():
+    candidate_tokens: List[str] = list(normalized_text.split())
+    try:
+        from agents.common import korean_morph  # local import
+        morph_tokens = korean_morph.extract_content_tokens(
+            normalized_text,
+            include_predicates=False,
+        )
+        if morph_tokens:
+            candidate_tokens = list(morph_tokens) + candidate_tokens
+    except Exception:
+        pass
+
+    for raw_token in candidate_tokens:
         token = _normalize_surface_topic_token(raw_token)
         if not token or token in seen:
             continue
@@ -354,7 +375,7 @@ def extract_topic_keywords(topic: str) -> List[str]:
         return cleaned
 
     def _append_keyword(bucket: List[str], token: str) -> None:
-        cleaned = _strip_particle(token)
+        cleaned = _normalize_surface_topic_token(token) or _strip_particle(token)
         if not cleaned:
             return
         if "양자대결" in cleaned:

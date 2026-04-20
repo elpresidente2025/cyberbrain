@@ -460,6 +460,46 @@ class TestTokensShareStemFallback:
 
 
 # ──────────────────────────────────────────────────────────────────────
+# matches_content_keyword / count_sentence_keyword_matches
+# ──────────────────────────────────────────────────────────────────────
+
+
+@kiwi_required
+class TestMatchesContentKeyword:
+    def test_compound_keyword_matches_spaced_phrase(self) -> None:
+        result = korean_morph.matches_content_keyword(
+            "청년정책",
+            "청년을 위한 정책 설명회입니다.",
+        )
+        assert result is True
+
+    def test_sentence_keyword_match_count(self) -> None:
+        result = korean_morph.count_sentence_keyword_matches(
+            "청년을 위한 정책 설명회입니다. 교통 현안도 점검합니다.",
+            "청년정책",
+        )
+        assert result == 1
+
+
+class TestMatchesContentKeywordFallback:
+    def test_returns_none_when_kiwi_unavailable(self, monkeypatch) -> None:
+        monkeypatch.setattr(korean_morph, "tokenize", lambda _text: None)
+        result = korean_morph.matches_content_keyword(
+            "청년정책",
+            "청년을 위한 정책 설명회입니다.",
+        )
+        assert result is None
+
+    def test_count_returns_none_when_kiwi_unavailable(self, monkeypatch) -> None:
+        monkeypatch.setattr(korean_morph, "split_sentences", lambda _text: None)
+        result = korean_morph.count_sentence_keyword_matches(
+            "청년을 위한 정책 설명회입니다.",
+            "청년정책",
+        )
+        assert result is None
+
+
+# ──────────────────────────────────────────────────────────────────────
 # AI 수사 패턴 라벨링 (label_ai_rhetoric_sentences)
 # ──────────────────────────────────────────────────────────────────────
 

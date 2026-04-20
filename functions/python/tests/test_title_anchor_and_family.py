@@ -497,6 +497,19 @@ def test_topic_keyword_stem_strips_admin_suffix():
     assert _topic_keyword_matches_text("계양구", "계양 테크노밸리 2단계")
 
 
+def test_topic_keyword_kiwi_morph_fallback(monkeypatch):
+    """형태소 기반 fallback 으로 띄어쓰기/조사 변형을 흡수한다."""
+    from agents.common import korean_morph
+    from agents.common.title_keywords import _topic_keyword_matches_text
+
+    monkeypatch.setattr(
+        korean_morph,
+        "matches_content_keyword",
+        lambda keyword, text: keyword == "청년정책" and "청년을 위한 정책" in text,
+    )
+    assert _topic_keyword_matches_text("청년정책", "청년을 위한 정책 설명회")
+
+
 # ---------------------------------------------------------------------------
 # ② allowDegradedPass — soft 점수 미달이어도 하드 게이트 통과한 best_result 반환
 # ---------------------------------------------------------------------------

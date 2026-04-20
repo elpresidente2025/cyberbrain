@@ -8,6 +8,64 @@ from ..common.editorial import KEYWORD_SPEC, QUALITY_SPEC
 
 logger = logging.getLogger(__name__)
 
+
+def _strip_html_text(content: str) -> str:
+    plain_text = re.sub(r'<[^>]*>', ' ', str(content or ''))
+    return re.sub(r'\s+', ' ', plain_text).strip()
+
+
+def _split_plain_sentences(plain_text: str) -> List[str]:
+    text = str(plain_text or '').strip()
+    if not text:
+        return []
+    try:
+        from ..common import korean_morph
+        sentences = korean_morph.split_sentences(text)
+        if sentences is not None:
+            return [sentence.strip() for sentence in sentences if sentence.strip()]
+    except Exception:
+        pass
+    return [
+        sentence.strip()
+        for sentence in re.split(r'(?<=[.!?。])\s+', text)
+        if sentence.strip()
+    ]
+
+
+def _count_keyword_mentions(plain_text: str, keyword: str) -> Dict[str, int]:
+    compact_text = re.sub(r'\s+', '', str(plain_text or ''))
+    compact_keyword = re.sub(r'\s+', '', str(keyword or ''))
+    surface_count = compact_text.count(compact_keyword) if compact_keyword else 0
+    sentence_matches = 0
+
+    try:
+        from ..common import korean_morph
+        reflected = korean_morph.count_sentence_keyword_matches(plain_text, keyword)
+        if reflected is not None:
+            sentence_matches = int(reflected)
+    except Exception:
+        sentence_matches = 0
+
+    return {
+        'surfaceCount': surface_count,
+        'sentenceMatches': sentence_matches,
+        'effectiveCount': max(surface_count, sentence_matches),
+    }
+
+
+def _sentence_token_set(sentence: str) -> set[str]:
+    try:
+        from ..common import korean_morph
+        tokens = korean_morph.extract_content_tokens(sentence)
+        if tokens:
+            return {token for token in tokens if len(token) >= 2}
+    except Exception:
+        pass
+    return {
+        word for word in re.sub(r'[.?!,]', '', sentence).split()
+        if len(word) >= 2
+    }
+
 class SEOAgent(Agent):
     def __init__(self, name: str = 'SEOAgent', options: Optional[Dict[str, Any]] = None):
         super().__init__(name, options)
@@ -85,7 +143,7 @@ class SEOAgent(Agent):
         if not keywords:
             return {'passed': True, 'issues': []}
             
-        plain_text = re.sub(r'<[^>]*>', ' ', content)
+        plain_text = _strip_html_text(content)
         actual_length = len(re.sub(r'\s+', '', plain_text)) # Chars without spaces
 
         kw_count = len(keywords) if keywords else 1
@@ -98,9 +156,12 @@ class SEOAgent(Agent):
         ideal_count = min_allowed
         
         issues = []
+        keyword_stats: Dict[str, Dict[str, int]] = {}
         
         for kw in keywords:
-            count = plain_text.count(kw)
+            counts = _count_keyword_mentions(plain_text, kw)
+            count = int(counts['effectiveCount'])
+            keyword_stats[str(kw)] = counts
             if count < min_allowed:
                 issues.append(f'키워드 "{kw}" 부족 (현재 {count}회, 권장 {min_allowed}회 이상)')
             elif count > max_allowed:
@@ -109,7 +170,11 @@ class SEOAgent(Agent):
         return {
             'passed': len(issues) == 0,
             'issues': issues,
-            'stats': {'wordCount': actual_length, 'idealCurrent': ideal_count}
+            'stats': {
+                'wordCount': actual_length,
+                'idealCurrent': ideal_count,
+                'keywords': keyword_stats,
+            }
         }
 
     def validate_structure(self, content: str) -> Dict[str, Any]:
@@ -142,9 +207,8 @@ class SEOAgent(Agent):
         issues = []
 
         # Check repeated sentences
-        plain_text = re.sub(r'<[^>]*>', ' ', content)
-        plain_text = re.sub(r'\s+', ' ', plain_text).strip()
-        sentences = re.split(r'(?<=[.!?])\s+', plain_text)
+        plain_text = _strip_html_text(content)
+        sentences = _split_plain_sentences(plain_text)
         sentences = [s.strip() for s in sentences if len(s.strip()) > 20]
 
         seen = set()
@@ -157,6 +221,20 @@ class SEOAgent(Agent):
 
         if repeated:
             issues.append(f'반복된 문장 발견 ({len(repeated)}개)')
+
+        stem_repeats: List[str] = []
+        try:
+            from ..common import korean_morph
+            for sentence in sentences:
+                duplicates = korean_morph.find_duplicate_stems(sentence)
+                if not duplicates:
+                    continue
+                labels = ', '.join(stem for stem, _count in duplicates[:2])
+                stem_repeats.append(f'"{sentence[:40]}" ({labels})')
+        except Exception:
+            stem_repeats = []
+        if stem_repeats:
+            issues.append(f'서술어 어간 반복: {", ".join(stem_repeats[:3])}')
 
         # 3어절 이상 구문 반복 검출
         words = plain_text.split()
@@ -186,7 +264,7 @@ class SEOAgent(Agent):
         long_sentences = [s for s in sentences if len(s) > 25]
         word_sets = []
         for s in long_sentences:
-            ws = set(w for w in re.sub(r'[.?!,]', '', s).split() if len(w) >= 2)
+            ws = _sentence_token_set(s)
             word_sets.append(ws)
 
         similar_pairs = []
