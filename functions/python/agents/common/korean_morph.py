@@ -980,6 +980,23 @@ _DEMONSTRATIVE_MM_FORMS = frozenset({
     "이러한", "그러한", "이와", "이같은", "이런", "그런",
 })
 
+_DEMONSTRATIVE_ABSTRACT_NOUNS = frozenset({
+    "가치", "결과", "과제", "가능성", "노력", "논의", "대응",
+    "모델", "문제", "방안", "방향", "변화", "비전", "사례",
+    "상황", "선택", "성과", "소홀", "시도", "역할", "우려",
+    "의미", "이유", "접근", "정책", "점", "조건", "흐름",
+    "해법", "효과",
+})
+_DEMONSTRATIVE_ABSTRACT_PATTERN = re.compile(
+    r"(?P<modifier>이러한|이런|그러한|그런)\s+"
+    r"(?P<body>[0-9A-Za-z가-힣·\s]{0,28}?)"
+    r"(?P<noun>정책적\s+소홀함|성공\s+사례|"
+    r"가치|결과|과제|가능성|노력|논의|대응|모델|문제|방안|방향|변화|비전|"
+    r"사례|상황|선택|성과|소홀함|소홀|시도|역할|우려|의미|이유|접근|정책|점|조건|흐름|해법|효과)"
+    r"(?P<particle>은|는|이|가|을|를|으로|로|에서|에도|에게|께|도|만|까지|에|의|과|와)?",
+    re.IGNORECASE,
+)
+
 _ABSTRACT_MM = frozenset({"모든", "다양한", "각종", "전체"})
 _ABSTRACT_NNG = frozenset({
     "계층", "분야", "시민", "주민", "세대", "구성원",
@@ -997,6 +1014,111 @@ _VAGUE_SOURCE_NOUNS = frozenset({
 _HYPERBOLE_NOUNS = frozenset({
     "전환점", "이정표", "지평", "패러다임", "토대",
 })
+
+
+def _detect_demonstrative_abstract_phrases_regex(text: str) -> List[Dict[str, str]]:
+    results: List[Dict[str, str]] = []
+    for match in _DEMONSTRATIVE_ABSTRACT_PATTERN.finditer(str(text or "")):
+        phrase = re.sub(r"\s+", " ", str(match.group(0) or "")).strip()
+        if not phrase:
+            continue
+        noun = re.sub(r"\s+", " ", str(match.group("noun") or "")).strip()
+        results.append({
+            "phrase": phrase,
+            "modifier": str(match.group("modifier") or ""),
+            "noun": noun,
+            "start": str(match.start()),
+            "end": str(match.end()),
+            "source": "regex",
+        })
+    return results
+
+
+def detect_demonstrative_abstract_phrases(text: str) -> List[Dict[str, str]]:
+    """지시 관형사가 추상 명사를 수식하는 문구를 찾는다.
+
+    예: "이러한 정책", "이러한 성공 사례", "이러한 정책적 소홀함".
+    Kiwi 가 가능하면 MM/NNG 품사 기준으로 잡고, Kiwi 불가 환경에서는 regex
+    fallback 으로 같은 계열의 표면 패턴을 잡는다.
+    """
+    plain = str(text or "")
+    if not plain.strip():
+        return []
+
+    tokens = tokenize(plain)
+    if tokens is None:
+        return _detect_demonstrative_abstract_phrases_regex(plain)
+
+    results: List[Dict[str, str]] = []
+    for index, token in enumerate(tokens):
+        if token.tag != "MM" or token.form not in _DEMONSTRATIVE_MM_FORMS:
+            continue
+
+        start = int(getattr(token, "start", 0) or 0)
+        end = start + int(getattr(token, "len", len(str(token.form))) or len(str(token.form)))
+        hit_noun = ""
+
+        for next_index in range(index + 1, min(len(tokens), index + 8)):
+            next_token = tokens[next_index]
+            next_tag = str(getattr(next_token, "tag", "") or "")
+            next_form = str(getattr(next_token, "form", "") or "")
+            next_start = int(getattr(next_token, "start", end) or end)
+            next_end = next_start + int(getattr(next_token, "len", len(next_form)) or len(next_form))
+
+            if next_tag in _TRAILING_SKIP_TAGS:
+                break
+            if next_start - end > 12:
+                break
+
+            if next_tag.startswith("J"):
+                if hit_noun:
+                    end = max(end, next_end)
+                break
+
+            if next_tag in _NOUN_TAGS:
+                end = max(end, next_end)
+                if next_form in _DEMONSTRATIVE_ABSTRACT_NOUNS:
+                    hit_noun = next_form
+                    if next_index + 1 < len(tokens):
+                        follower = tokens[next_index + 1]
+                        follower_tag = str(getattr(follower, "tag", "") or "")
+                        if follower_tag.startswith("J"):
+                            follower_start = int(getattr(follower, "start", end) or end)
+                            follower_len = int(
+                                getattr(
+                                    follower,
+                                    "len",
+                                    len(str(getattr(follower, "form", ""))),
+                                )
+                                or 0
+                            )
+                            end = max(end, follower_start + follower_len)
+                    break
+                continue
+
+            if next_tag in {"XSN", "XR", "VA", "VV", "XSA", "XSV", "ETM"}:
+                end = max(end, next_end)
+                continue
+
+            if hit_noun:
+                break
+
+        if not hit_noun:
+            continue
+
+        phrase = re.sub(r"\s+", " ", plain[start:end]).strip()
+        if not phrase:
+            continue
+        results.append({
+            "phrase": phrase,
+            "modifier": str(token.form),
+            "noun": hit_noun,
+            "start": str(start),
+            "end": str(end),
+            "source": "kiwi",
+        })
+
+    return results
 
 # --- B 그룹: 표면 매칭 ---
 

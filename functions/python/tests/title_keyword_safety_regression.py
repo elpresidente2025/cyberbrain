@@ -769,6 +769,25 @@ def test_calculate_title_quality_score_rejects_consecutive_duplicate_token_title
     assert result.get("repairedTitle") == "민주당, 혁신과 정치적 무게감의 대결 구도"
 
 
+# synthetic_fixture
+def test_calculate_title_quality_score_rejects_demonstrative_abstract_title() -> None:
+    result = calculate_title_quality_score(
+        "지역화폐 부활, 이러한 정책으로 활성화",
+        {
+            "topic": "민생 정책 점검",
+            "contentPreview": "지역화폐 캐시백 회복과 조례 정비를 설명했습니다.",
+            "userKeywords": ["지역화폐"],
+            "fullName": "{user_name}",
+            "category": "policy",
+        },
+        {"autoFitLength": False},
+    )
+
+    assert result["passed"] is False
+    assert "malformedSurface" in result["breakdown"]
+    assert result["breakdown"]["malformedSurface"]["issue"] == "demonstrative_abstract_title"
+
+
 def test_calculate_title_quality_score_repairs_missing_object_particle_title() -> None:
     result = calculate_title_quality_score(
         "이재성 위한 정책",
@@ -1752,6 +1771,10 @@ def main() -> None:
         (
             "calculate_title_quality_score_rejects_consecutive_duplicate_token_title",
             test_calculate_title_quality_score_rejects_consecutive_duplicate_token_title,
+        ),
+        (
+            "calculate_title_quality_score_rejects_demonstrative_abstract_title",
+            test_calculate_title_quality_score_rejects_demonstrative_abstract_title,
         ),
         (
             "calculate_title_quality_score_repairs_missing_object_particle_title",

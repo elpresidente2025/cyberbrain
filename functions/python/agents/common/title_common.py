@@ -838,6 +838,34 @@ def _assess_focus_name_possessive_modifier_title_surface(
     }
 
 
+def _assess_demonstrative_abstract_title_surface(title: str) -> Dict[str, Any]:
+    normalized_title = normalize_title_surface(title) or str(title or "").strip()
+    if not normalized_title:
+        return {"passed": True, "reason": "", "repairedTitle": "", "issue": ""}
+
+    try:
+        from .korean_morph import detect_demonstrative_abstract_phrases
+
+        issues = detect_demonstrative_abstract_phrases(normalized_title)
+    except Exception:
+        issues = []
+
+    if not issues:
+        return {"passed": True, "reason": "", "repairedTitle": "", "issue": ""}
+
+    sample = str(issues[0].get("phrase") or "").strip()
+    noun = str(issues[0].get("noun") or "").strip()
+    return {
+        "passed": False,
+        "reason": (
+            f'제목의 "{sample}" 표현이 앞 문맥에 기대는 지시어입니다. '
+            f'"{noun}"처럼 추상 명사를 "이러한/이런"으로 받지 말고 정책명·수치·쟁점을 직접 쓰세요.'
+        ),
+        "repairedTitle": "",
+        "issue": "demonstrative_abstract_title",
+    }
+
+
 def _repair_bare_day_fragment_title_surface(title: str) -> str:
     normalized = normalize_title_surface(title) or str(title or "").strip()
     if not normalized:
@@ -955,6 +983,10 @@ def assess_malformed_title_surface(title: str, params: Optional[Dict[str, Any]] 
     awkward_focus_modifier = _assess_focus_name_possessive_modifier_title_surface(normalized, params)
     if not awkward_focus_modifier.get("passed", True):
         return awkward_focus_modifier
+
+    demonstrative_abstract = _assess_demonstrative_abstract_title_surface(normalized)
+    if not demonstrative_abstract.get("passed", True):
+        return demonstrative_abstract
 
     adjacent_keyword_repaired = _repair_adjacent_focus_keyword_surface(normalized, params)
     if adjacent_keyword_repaired and adjacent_keyword_repaired != normalized:

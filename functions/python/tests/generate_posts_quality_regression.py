@@ -4744,7 +4744,9 @@ def test_final_sentence_polish_repairs_matchup_result_and_future_role_fragments(
     repaired = _apply_final_sentence_polish_once(content, full_name="이재성")
     updated = str(repaired.get("content") or "")
 
-    assert "가상대결의 여론조사 결과는 이러한 가능성을 보여줍니다." in updated
+    assert "가상대결의 여론조사 결과는 가능성을 보여줍니다." in updated
+    assert "이러한 가능성" not in updated
+    assert "이러한 노력" not in updated
     assert "향후 주 의원과의 경쟁에서도" in updated
     assert "가상대결에서 제가 여론조사 결과는" not in updated
     assert "미래 주 의원과의 경쟁에서도" not in updated
@@ -5114,6 +5116,25 @@ def test_final_sentence_polish_removes_verbose_postpositions_and_link_prefixes()
     assert "점검 기준을 분명히 하겠습니다." in updated
     assert "시민의 삶을 바꾸겠습니다." in updated
     assert "해법은 분명합니다." in updated
+
+
+# synthetic_fixture
+def test_final_sentence_polish_strips_demonstrative_abstract_modifiers() -> None:
+    content = (
+        "<p>{policy_name}은 지역 상권을 살리는 제도입니다.</p>"
+        "<p>이러한 정책적 소홀함으로 이용자 수가 줄었습니다.</p>"
+        "<p>이러한 성공 사례는 골목상권 순환을 보여줍니다.</p>"
+        "<p>다시는 이런 비극이 발생하지 않게 하겠습니다.</p>"
+    )
+
+    repaired = _apply_final_sentence_polish_once(content, full_name="{user_name}")
+    updated = str(repaired.get("content") or "")
+
+    assert "이러한 정책적 소홀함" not in updated
+    assert "정책적 소홀함으로 이용자 수가 줄었습니다." in updated
+    assert "이러한 성공 사례" not in updated
+    assert "성공 사례는 골목상권 순환을 보여줍니다." in updated
+    assert "이런 비극" in updated
 
 
 def test_final_sentence_polish_drops_translationese_sentences() -> None:
@@ -6340,6 +6361,10 @@ def main() -> None:
         (
             "final_sentence_polish_removes_verbose_postpositions_and_link_prefixes",
             test_final_sentence_polish_removes_verbose_postpositions_and_link_prefixes,
+        ),
+        (
+            "final_sentence_polish_strips_demonstrative_abstract_modifiers",
+            test_final_sentence_polish_strips_demonstrative_abstract_modifiers,
         ),
         (
             "final_sentence_polish_drops_translationese_sentences",

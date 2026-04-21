@@ -29,6 +29,7 @@ from agents.common.editorial import KEYWORD_SPEC, QUALITY_SPEC, STRUCTURE_SPEC
 from agents.common.h2_repair import (
     build_subheading_role_surface as _h2_repair_build_subheading_role_surface,
 )
+from agents.common.korean_morph import detect_demonstrative_abstract_phrases
 from agents.common.person_naming import (
     ROLE_TOKEN_PRIORITY,
     canonical_role_label,
@@ -1536,6 +1537,13 @@ _LINK_EXPR_RE_LIST: tuple[re.Pattern[str], ...] = (
     re.compile(r"^이를\s*통해,?\s*", re.IGNORECASE),
     re.compile(r"^이러한\s*점에서,?\s*", re.IGNORECASE),
 )
+_DEMONSTRATIVE_ABSTRACT_MODIFIER_RE = re.compile(
+    r"(?:이러한|이런|그러한|그런)\s+"
+    r"(?=[^<.!?]{0,28}(?:정책적\s+소홀함|성공\s+사례|"
+    r"가치|결과|과제|가능성|노력|논의|대응|모델|문제|방안|방향|변화|비전|"
+    r"사례|상황|선택|성과|소홀함|소홀|시도|역할|우려|의미|이유|접근|정책|점|조건|흐름|해법|효과))",
+    re.IGNORECASE,
+)
 _TRANSLATION_RE_LIST: tuple[re.Pattern[str], ...] = (
     re.compile(r"것은\s*사실(?:이다|입니다)", re.IGNORECASE),
     re.compile(r"라고\s*할\s*수\s*있다", re.IGNORECASE),
@@ -2254,6 +2262,43 @@ def _repair_contextless_section_openers_once(content: str) -> Dict[str, Any]:
         "content": repaired,
         "edited": repaired != base,
         "actions": [f"repair_contextless_section_opener:{repaired_count}"],
+    }
+
+
+def _repair_demonstrative_abstract_modifiers_once(content: str) -> Dict[str, Any]:
+    base = str(content or "")
+    if not base.strip():
+        return {"content": base, "edited": False, "actions": []}
+
+    pieces: list[str] = []
+    last_end = 0
+    repaired_count = 0
+
+    for paragraph_match in PARAGRAPH_TAG_PATTERN.finditer(base):
+        inner = str(paragraph_match.group(1) or "")
+        plain_inner = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", inner))
+        issues = detect_demonstrative_abstract_phrases(plain_inner)
+        if not issues:
+            continue
+
+        updated_inner, changed = _DEMONSTRATIVE_ABSTRACT_MODIFIER_RE.subn("", inner)
+        if changed <= 0 or updated_inner == inner:
+            continue
+
+        pieces.append(base[last_end: paragraph_match.start(1)])
+        pieces.append(updated_inner)
+        last_end = paragraph_match.end(1)
+        repaired_count += changed
+
+    if repaired_count == 0:
+        return {"content": base, "edited": False, "actions": []}
+
+    pieces.append(base[last_end:])
+    repaired = "".join(pieces)
+    return {
+        "content": repaired,
+        "edited": repaired != base,
+        "actions": [f"strip_demonstrative_abstract_modifier:{repaired_count}"],
     }
 
 
@@ -7420,6 +7465,16 @@ def _apply_final_sentence_polish_once(
         repaired, changed = pattern.subn(replacement, repaired)
         if changed > 0:
             actions.append(f"{action_name}:{changed}")
+
+    demonstrative_repair = _repair_demonstrative_abstract_modifiers_once(repaired)
+    demonstrative_actions = demonstrative_repair.get("actions")
+    if isinstance(demonstrative_actions, list):
+        for action in demonstrative_actions:
+            action_text = str(action).strip()
+            if action_text:
+                actions.append(action_text)
+    if demonstrative_repair.get("edited"):
+        repaired = str(demonstrative_repair.get("content") or repaired)
 
     low_signal_repair = _drop_low_signal_analysis_sentences_once(repaired)
     low_signal_actions = low_signal_repair.get("actions")
