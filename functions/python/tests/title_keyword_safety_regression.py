@@ -658,6 +658,33 @@ def test_ensure_closing_section_min_sentences_once_strengthens_single_sentence_c
     assert "말보다 실행으로 결과를 증명하겠습니다." in updated or "시민의 삶에서 먼저 달라지는 변화로 끝까지 증명하겠습니다." in updated
 
 
+# synthetic_fixture
+def test_ensure_closing_section_min_sentences_once_restores_weak_aeo_archetype() -> None:
+    content = (
+        "<p>{policy_keyword}은 주민 생활과 연결된 핵심 정책입니다.</p>"
+        "<h2>좋은 정치로 시민에게 보답하겠습니다</h2>"
+        "<p>저는 {region} 주민 여러분의 삶에 실질적인</p>"
+        "<p>변화를 가져올 수 있도록 끊임없이 노력하고 반드시 해내겠습니다.</p>"
+        "<p>감사합니다.</p>"
+    )
+
+    result = _ensure_closing_section_min_sentences_once(
+        content,
+        full_name="{user_name}",
+        writing_method="logical_writing",
+        user_keywords=["{policy_keyword}"],
+    )
+    updated = str(result.get("content") or "")
+    tail = updated.split("<h2>좋은 정치로 시민에게 보답하겠습니다</h2>", 1)[-1]
+
+    assert result["edited"] is True
+    assert "restore_closing_archetype:pledge" in result["actions"]
+    assert tail.count("<p>") == 3
+    assert "{policy_keyword}" in tail
+    assert "조례, 예산, 현장 점검" in tail
+    assert "좋은 정치로 시민의 삶에 남는 변화" in tail
+
+
 def test_build_title_prompt_includes_name_priority_rule_for_matchup() -> None:
     prompt = build_title_prompt(
         {
@@ -1705,6 +1732,10 @@ def main() -> None:
         (
             "ensure_closing_section_min_sentences_once_strengthens_single_sentence_closing",
             test_ensure_closing_section_min_sentences_once_strengthens_single_sentence_closing,
+        ),
+        (
+            "ensure_closing_section_min_sentences_once_restores_weak_aeo_archetype",
+            test_ensure_closing_section_min_sentences_once_restores_weak_aeo_archetype,
         ),
         (
             "build_title_prompt_includes_name_priority_rule_for_matchup",

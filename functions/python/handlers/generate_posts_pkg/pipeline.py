@@ -24,6 +24,7 @@ from firebase_admin import firestore
 from firebase_functions import https_fn
 
 from agents.common.election_rules import check_election_eligibility
+from agents.common.aeo_config import get_conclusion_archetype
 from agents.common.editorial import KEYWORD_SPEC, QUALITY_SPEC, STRUCTURE_SPEC
 from agents.common.h2_repair import (
     build_subheading_role_surface as _h2_repair_build_subheading_role_surface,
@@ -6970,7 +6971,109 @@ def _build_generic_closing_answer_lead(heading: str, *, full_name: str = "") -> 
     return "결국 중요한 것은 약속을 실행으로 연결해 시민이 체감할 변화를 만드는 일입니다."
 
 
-def _ensure_closing_section_min_sentences_once(content: str, *, full_name: str = "") -> Dict[str, Any]:
+def _select_conclusion_anchor(
+    body_text: str,
+    *,
+    user_keywords: Optional[list[str]] = None,
+    full_name: str = "",
+) -> str:
+    body_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(body_text or "")))
+    compact_body = body_plain.replace(" ", "")
+    ignored = {str(full_name or "").replace(" ", "")}
+    for raw_keyword in user_keywords or []:
+        keyword = _normalize_inline_whitespace(str(raw_keyword or "").strip(" \"'“”‘’"))
+        compact_keyword = keyword.replace(" ", "")
+        if len(compact_keyword) < 2 or len(compact_keyword) > 30:
+            continue
+        if compact_keyword in ignored:
+            continue
+        if compact_keyword and compact_keyword in compact_body:
+            return keyword
+    return "이 과제"
+
+
+def _conclusion_archetype_key(writing_method: str) -> str:
+    normalized = str(writing_method or "").strip()
+    if normalized == "logical_writing":
+        return "pledge"
+    if normalized in {"critical_writing", "diagnostic_writing"}:
+        return "diagnosis"
+    if normalized == "analytical_writing":
+        return "action"
+    return ""
+
+
+def _closing_section_needs_archetype_repair(
+    paragraphs: list[str],
+    *,
+    section_plain: str,
+    writing_method: str = "",
+) -> bool:
+    if not get_conclusion_archetype(str(writing_method or "").strip()):
+        return False
+    if len(paragraphs) < 3:
+        return True
+    body_plain = _normalize_inline_whitespace(section_plain)
+    if len(body_plain) < 210:
+        return True
+    short_count = sum(1 for paragraph in paragraphs if len(paragraph) < 45)
+    if short_count >= 2:
+        return True
+    predicateless_count = sum(
+        1
+        for paragraph in paragraphs
+        if paragraph and not re.search(r"[.!?。！？]$", paragraph.strip())
+    )
+    if predicateless_count >= 1 and len(body_plain) < 260:
+        return True
+    last_plain = paragraphs[-1].strip() if paragraphs else ""
+    if last_plain in {"감사합니다.", "감사합니다", "고맙습니다.", "고맙습니다"}:
+        return True
+    return False
+
+
+def _build_conclusion_archetype_paragraphs(
+    *,
+    writing_method: str,
+    heading: str,
+    body_text: str,
+    user_keywords: Optional[list[str]] = None,
+    full_name: str = "",
+) -> list[str]:
+    anchor = _select_conclusion_anchor(
+        body_text,
+        user_keywords=user_keywords,
+        full_name=full_name,
+    )
+    subject = anchor if anchor != "이 과제" else "이 과제"
+    archetype_key = _conclusion_archetype_key(writing_method)
+
+    if archetype_key == "diagnosis":
+        return [
+            f"{subject}이 보여주는 핵심 진단은 분명합니다. 시민의 부담을 개인에게 떠넘기는 방식으로는 생활의 불안을 줄일 수 없습니다.",
+            "지금 필요한 것은 문제를 축소하는 행정이 아니라 원인과 책임을 분명히 보고, 실행 가능한 대안을 제도와 예산으로 연결하는 일입니다.",
+            "저는 시민 여러분의 목소리를 끝까지 듣고 필요한 변화를 책임 있게 추진하겠습니다. 좋은 정치로 시민의 삶에 보답하겠습니다. 감사합니다.",
+        ]
+    if archetype_key == "action":
+        return [
+            f"{subject}은 현장에서 확인한 문제의식을 더 미룰 수 없다는 신호입니다. 생활의 변화는 구체적인 행동과 후속 조치로 증명되어야 합니다.",
+            "저는 현장 의견 수렴, 조례와 예산 점검, 관계 기관 협의를 함께 추진해 실행 경로를 분명히 만들겠습니다.",
+            "주민 여러분과 함께 끝까지 확인하고 부족한 부분은 빠르게 보완하겠습니다. 좋은 정치로 지역의 변화를 만들겠습니다. 감사합니다.",
+        ]
+    return [
+        f"{subject}은 말로 끝낼 약속이 아니라 시민 생활에서 확인되어야 할 민생 과제입니다. 본론에서 확인한 문제를 실행의 결과로 연결하겠습니다.",
+        "저는 조례, 예산, 현장 점검을 함께 묶어 추진 경로를 분명히 세우겠습니다. 과정과 결과를 시민께 투명하게 보고드리겠습니다.",
+        "주민 여러분의 의견을 끝까지 듣고 필요한 보완은 빠르게 이어가겠습니다. 좋은 정치로 시민의 삶에 남는 변화를 만들겠습니다. 감사합니다.",
+    ]
+
+
+def _ensure_closing_section_min_sentences_once(
+    content: str,
+    *,
+    full_name: str = "",
+    writing_method: str = "",
+    user_keywords: Optional[list[str]] = None,
+) -> Dict[str, Any]:
     base = str(content or "")
     if not base.strip():
         return {"content": base, "edited": False, "actions": []}
@@ -7012,13 +7115,37 @@ def _ensure_closing_section_min_sentences_once(content: str, *, full_name: str =
             "actions": ["restore_closing_min_sentences:empty_section"],
         }
 
+    paragraph_texts: list[str] = []
     total_sentences = 0
     for match in paragraph_matches:
         plain_inner = re.sub(r"<[^>]*>", " ", str(match.group(1) or ""))
         plain_inner = _normalize_inline_whitespace(plain_inner)
         if not plain_inner:
             continue
+        paragraph_texts.append(plain_inner)
         total_sentences += len(_split_sentence_like_units(plain_inner))
+
+    section_plain = _normalize_inline_whitespace(" ".join(paragraph_texts))
+    if _closing_section_needs_archetype_repair(
+        paragraph_texts,
+        section_plain=section_plain,
+        writing_method=writing_method,
+    ):
+        rebuilt_paragraphs = _build_conclusion_archetype_paragraphs(
+            writing_method=writing_method,
+            heading=heading_inner,
+            body_text=base[: last_match.start()],
+            user_keywords=user_keywords,
+            full_name=full_name,
+        )
+        if len(rebuilt_paragraphs) >= 3:
+            rebuilt_section_html = "\n" + "\n".join(f"<p>{paragraph}</p>" for paragraph in rebuilt_paragraphs[:3])
+            repaired = base[:section_start] + rebuilt_section_html + base[section_end:]
+            return {
+                "content": repaired,
+                "edited": repaired != base,
+                "actions": [f"restore_closing_archetype:{_conclusion_archetype_key(writing_method)}"],
+            }
 
     if total_sentences >= 2:
         return {"content": base, "edited": False, "actions": []}
@@ -7067,6 +7194,7 @@ def _apply_final_sentence_polish_once(
     content: str,
     *,
     category: str = "",
+    writing_method: str = "",
     full_name: str = "",
     user_keywords: Optional[list[str]] = None,
     role_facts: Optional[Dict[str, str]] = None,
@@ -7528,6 +7656,8 @@ def _apply_final_sentence_polish_once(
     closing_sentence_repair = _ensure_closing_section_min_sentences_once(
         repaired,
         full_name=full_name,
+        writing_method=writing_method,
+        user_keywords=user_keywords,
     )
     closing_sentence_actions = closing_sentence_repair.get("actions")
     if isinstance(closing_sentence_actions, list):
@@ -11258,6 +11388,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     sentence_polish_result = _apply_final_sentence_polish_once(
         generated_content,
         category=category,
+        writing_method=writing_method,
         full_name=full_name,
         user_keywords=user_keywords,
         role_facts=role_facts,
@@ -12079,6 +12210,8 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     final_closing_sentence_repair = _ensure_closing_section_min_sentences_once(
         generated_content,
         full_name=full_name,
+        writing_method=writing_method,
+        user_keywords=user_keywords,
     )
     if final_closing_sentence_repair.get("edited"):
         generated_content = str(final_closing_sentence_repair.get("content") or generated_content)
