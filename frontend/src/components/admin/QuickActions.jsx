@@ -15,7 +15,8 @@ import {
   Api,
   ToggleOn,
   Psychology,
-  Style
+  Style,
+  MenuBook
 } from '@mui/icons-material';
 import UserListModal from './UserListModal';
 import StatusUpdateModal from './StatusUpdateModal';
@@ -34,6 +35,8 @@ function QuickActions() {
   const [ragProgress, setRagProgress] = useState('');
   const [styleBatching, setStyleBatching] = useState(false);
   const [styleBatchProgress, setStyleBatchProgress] = useState('');
+  const [clicheDictRefreshing, setClicheDictRefreshing] = useState(false);
+  const [clicheDictProgress, setClicheDictProgress] = useState('');
 
   // cleanup ref
   const isMountedRef = useRef(true);
@@ -277,6 +280,50 @@ function QuickActions() {
       );
     } finally {
       setStyleBatching(false);
+    }
+  }, [showNotification]);
+
+  // 상투어 사전 갱신
+  const refreshClicheDictionary = useCallback(async () => {
+    if (!window.confirm(
+      '상투어 대체어 사전을 갱신합니다.\n\n' +
+      '• centroid 구축 → 후보 추출 → 승격 처리 3단계 실행\n' +
+      '• 최대 9분 소요될 수 있습니다.\n\n' +
+      '진행하시겠습니까?'
+    )) return;
+
+    setClicheDictRefreshing(true);
+    setClicheDictProgress('사전 갱신 중...');
+
+    try {
+      const functionUrl = buildFunctionsUrl('refresh_cliche_dictionary');
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(600000),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
+      setClicheDictProgress('');
+      showNotification(
+        `상투어 사전 갱신 완료 (${result.elapsed || '?'}초)`,
+        'success'
+      );
+    } catch (error) {
+      console.error('상투어 사전 갱신 실패:', error);
+      setClicheDictProgress('');
+      showNotification('상투어 사전 갱신 실패: ' + error.message, 'error');
+    } finally {
+      setClicheDictRefreshing(false);
     }
   }, [showNotification]);
 
@@ -544,6 +591,29 @@ function QuickActions() {
                 }}
               >
                 {styleBatching ? styleBatchProgress || '문체 분석 중...' : '문체 일괄 분석'}
+              </Button>
+            </Grid>
+            <Grid item>
+              <Button
+                size="small"
+                variant="text"
+                startIcon={<MenuBook aria-hidden="true" sx={{ fontSize: 18 }} />}
+                onClick={refreshClicheDictionary}
+                disabled={clicheDictRefreshing}
+                aria-label="상투어 대체어 사전 갱신"
+                sx={{
+                  color: '#2E7D32',
+                  '&:focus-visible': {
+                    outline: '2px solid #2E7D32',
+                    outlineOffset: '2px'
+                  },
+                  '&.Mui-disabled': {
+                    color: '#2E7D32',
+                    opacity: 0.7
+                  }
+                }}
+              >
+                {clicheDictRefreshing ? clicheDictProgress || '사전 갱신 중...' : '상투어 사전 갱신'}
               </Button>
             </Grid>
           </Grid>
