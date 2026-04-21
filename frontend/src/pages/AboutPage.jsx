@@ -219,12 +219,12 @@ AI가 이미 학습하고 있습니다.
     {
       id: 'faq-0',
       question: 'AI도 많은데 굳이 이걸 써야 하나요?',
-      answer: '일반 AI와 달리 정치 콘텐츠에 특화되어 있습니다. 준법 가드레일, 의원님 문체 학습, 장르별 구조 선택, 검색·SNS 노출 최적화까지 정치인에게 필요한 기능만 모았습니다.'
+      answer: '일반 AI는 빈 화면에서 글을 만들려 합니다. 전뇌비서관은 의원님이 직접 쓴 원문을 블로그·SNS 4채널에 맞게 다시 씁니다. 준법 가드레일, 의원님 문체 학습, 장르별 구조 선택, 채널별 노출 최적화까지 정치인 원문을 다루는 데 필요한 기능만 모았습니다.'
     },
     {
       id: 'faq-1',
       question: '지지 정당이 다른 사용자도 쓸 수 있나요?',
-      answer: '현재는 더불어민주당 당원을 대상으로 먼저 서비스를 시작하고 있습니다. 타 정당 지원은 순차적으로 검토하고 있습니다. 당원 인증(당적증명서, 당비납부 영수증)이 필요합니다.'
+      answer: '현재는 더불어민주당 당원 전용 서비스로 운영됩니다. 서비스 이용에는 당원 인증(당적증명서, 당비납부 영수증)이 필요합니다.'
     },
     {
       id: 'faq-2',
@@ -350,7 +350,7 @@ AI가 이미 학습하고 있습니다.
                     letterSpacing: '0.05em'
                   }}
                 >
-                  정치인 전용 블로그·SNS 원고 AI
+                  정치인이 직접 쓴 글, 다섯 채널로 퍼지게
                 </Typography>
 
                 <Typography
@@ -381,20 +381,48 @@ AI가 이미 학습하고 있습니다.
                     textWrap: 'balance'
                   }}
                 >
-                  홍보하지 않으면<br />이런 말도 못 듣습니다.
+                  한 채널에만 올리면<br />이런 칭찬은 한 번밖에 못 듣습니다.
                 </Typography>
 
                 <Typography
                   sx={{
-                    mb: 8,
+                    mb: 5,
                     color: 'var(--color-text-secondary)',
                     fontSize: { xs: '1rem', md: '1.2rem' },
                     lineHeight: 1.6,
                     wordBreak: 'keep-all'
                   }}
                 >
-                  블로그 한 편으로 인스타·페이스북·X·스레드까지. 월 90회 생성.
+                  의원님이 직접 쓴 주력 SNS 원문을
+                  블로그·인스타·페이스북·X·스레드에 맞게 다시 써 드립니다.
                 </Typography>
+
+                {/* 가격 배지 */}
+                <Box
+                  sx={{
+                    mb: 6,
+                    px: { xs: 2.5, md: 3.5 },
+                    py: { xs: 1.25, md: 1.75 },
+                    borderRadius: 'var(--radius-md)',
+                    border: '1.5px solid var(--color-primary)',
+                    bgcolor: 'var(--color-primary-lighter)',
+                    display: 'inline-flex',
+                    flexWrap: 'wrap',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    gap: { xs: 1, md: 1.5 },
+                    color: 'var(--color-primary)',
+                    fontSize: { xs: '0.9rem', md: '1rem' },
+                    fontWeight: 700,
+                    ...numericStyle
+                  }}
+                >
+                  <Box component="span">월 50,000원 (VAT 별도)</Box>
+                  <Box component="span" sx={{ opacity: 0.45 }}>·</Box>
+                  <Box component="span">월 90회 생성</Box>
+                  <Box component="span" sx={{ opacity: 0.45 }}>·</Box>
+                  <Box component="span">5채널 변환 무료</Box>
+                </Box>
 
                 <Box sx={{ display: 'flex', gap: 3, justifyContent: 'center', flexWrap: 'wrap' }}>
                   <Button
@@ -462,6 +490,358 @@ AI가 이미 학습하고 있습니다.
               </Container>
             </Box>
           </motion.div>
+
+          {/* ════════════════════════════════════════════════════════
+              문제 제기 섹션 — 채널별 재배포의 고통
+              ════════════════════════════════════════════════════════ */}
+          <Box sx={{ bgcolor: 'var(--color-surface)' }}>
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: '-80px' }}
+              transition={{ duration: 0.6 }}
+            >
+              <Container maxWidth="md" sx={{ py: { xs: 10, md: 14 } }}>
+                <Typography
+                  variant="h2"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 2,
+                    textAlign: 'center',
+                    color: 'var(--color-text-primary)',
+                    fontSize: { xs: '2rem', md: '2.8rem' },
+                    letterSpacing: '-0.02em',
+                    wordBreak: 'keep-all',
+                    textWrap: 'balance'
+                  }}
+                >
+                  이미 쓰고 계십니다.<br />문제는 그다음입니다.
+                </Typography>
+                <Typography sx={{
+                  mb: 6,
+                  textAlign: 'center',
+                  color: 'var(--color-text-secondary)',
+                  fontSize: { xs: '1rem', md: '1.125rem' },
+                  lineHeight: 1.7,
+                  wordBreak: 'keep-all'
+                }}>
+                  주력 SNS에는 직접 쓰십니다. 그런데 같은 메시지를 다른 채널에 올리는 일이 매번 일입니다.
+                </Typography>
+
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {[
+                    '페이스북에 올린 긴 글, 블로그에 옮기기엔 구조가 맞지 않습니다.',
+                    'X 길이에 맞추면 맥락이 잘리고, 블로그 길이에 맞추면 늘어집니다.',
+                    '인스타는 문장 리듬과 감정 포인트가 다른 채널과 다릅니다.',
+                    '같은 표현도 채널에 따라 더 공격적으로 읽힐 수 있습니다.'
+                  ].map((text, index) => (
+                    <Box
+                      key={index}
+                      sx={{
+                        p: { xs: 2.5, md: 3 },
+                        borderRadius: 'var(--radius-md)',
+                        bgcolor: 'var(--color-background)',
+                        border: '1px solid var(--color-border)',
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 2
+                      }}
+                    >
+                      <Box sx={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: '50%',
+                        bgcolor: 'var(--color-primary-lighter)',
+                        color: 'var(--color-primary)',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        fontSize: '0.95rem',
+                        fontWeight: 700,
+                        flexShrink: 0,
+                        ...numericStyle
+                      }}>
+                        {index + 1}
+                      </Box>
+                      <Typography sx={{
+                        color: 'var(--color-text-primary)',
+                        fontSize: { xs: '1rem', md: '1.125rem' },
+                        lineHeight: 1.7,
+                        wordBreak: 'keep-all',
+                        pt: 0.25
+                      }}>
+                        {text}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Box>
+              </Container>
+            </motion.div>
+          </Box>
+
+          {/* ════════════════════════════════════════════════════════
+              해결 방식 섹션 — 변환(Converter) 흐름
+              ════════════════════════════════════════════════════════ */}
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: '-80px' }}
+            transition={{ duration: 0.6 }}
+          >
+            <Container maxWidth="lg" sx={{ py: { xs: 10, md: 14 } }}>
+              <Typography
+                variant="h2"
+                sx={{
+                  fontWeight: 700,
+                  mb: 2,
+                  textAlign: 'center',
+                  color: 'var(--color-text-primary)',
+                  fontSize: { xs: '2rem', md: '2.8rem' },
+                  letterSpacing: '-0.02em',
+                  wordBreak: 'keep-all',
+                  textWrap: 'balance'
+                }}
+              >
+                {BRANDING.serviceName}은 생각을 만들지 않습니다.
+              </Typography>
+              <Typography sx={{
+                mb: 8,
+                textAlign: 'center',
+                color: 'var(--color-text-secondary)',
+                fontSize: { xs: '1rem', md: '1.125rem' },
+                lineHeight: 1.7,
+                wordBreak: 'keep-all'
+              }}>
+                의원님이 직접 쓴 한 편을 받아, 다섯 채널에 맞게 다시 씁니다.
+              </Typography>
+
+              <Grid container spacing={3}>
+                {[
+                  {
+                    icon: <EditNote aria-hidden="true" />,
+                    step: '01',
+                    title: '직접 쓴 원문 입력',
+                    description: '주력 SNS에 올린 입장문·페이스북 글을 그대로 붙여넣습니다.'
+                  },
+                  {
+                    icon: <Fingerprint aria-hidden="true" />,
+                    step: '02',
+                    title: '문체 지문 학습',
+                    description: '의원님이 써 오신 문장의 결·어미·수사 습관을 6차원으로 분석합니다.'
+                  },
+                  {
+                    icon: <Share aria-hidden="true" />,
+                    step: '03',
+                    title: '채널별 길이·리듬 변환',
+                    description: '블로그는 늘리고, X는 압축하고, 인스타는 리듬을 맞춥니다.'
+                  },
+                  {
+                    icon: <FactCheck aria-hidden="true" />,
+                    step: '04',
+                    title: '위험 표현 1차 점검',
+                    description: '허위사실·비방·기부행위 암시를 채널별로 미리 걸러냅니다.'
+                  }
+                ].map((item, index) => (
+                  <Grid item xs={12} sm={6} md={3} key={index}>
+                    <motion.div
+                      initial={{ opacity: 0, y: 24 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true }}
+                      transition={{ duration: 0.5, delay: index * 0.1 }}
+                      style={{ height: '100%' }}
+                    >
+                      <Box sx={{
+                        p: { xs: 3, md: 3.5 },
+                        height: '100%',
+                        borderRadius: 'var(--radius-lg)',
+                        bgcolor: 'var(--color-surface)',
+                        border: '1px solid var(--color-border)',
+                        boxShadow: brandShadow
+                      }}>
+                        <Typography sx={{
+                          color: 'var(--color-primary)',
+                          fontSize: '0.85rem',
+                          fontWeight: 700,
+                          letterSpacing: '0.08em',
+                          mb: 1.5,
+                          ...numericStyle
+                        }}>
+                          STEP {item.step}
+                        </Typography>
+                        <Box sx={{
+                          mb: 2,
+                          '& .MuiSvgIcon-root': {
+                            color: 'var(--color-primary)',
+                            fontSize: 40
+                          }
+                        }}>
+                          {item.icon}
+                        </Box>
+                        <Typography sx={{
+                          fontWeight: 700,
+                          mb: 1,
+                          color: 'var(--color-text-primary)',
+                          fontSize: { xs: '1.1rem', md: '1.2rem' },
+                          wordBreak: 'keep-all'
+                        }}>
+                          {item.title}
+                        </Typography>
+                        <Typography sx={{
+                          color: 'var(--color-text-secondary)',
+                          fontSize: { xs: '0.95rem', md: '1rem' },
+                          lineHeight: 1.65,
+                          wordBreak: 'keep-all'
+                        }}>
+                          {item.description}
+                        </Typography>
+                      </Box>
+                    </motion.div>
+                  </Grid>
+                ))}
+              </Grid>
+            </Container>
+          </motion.div>
+
+          {/* ════════════════════════════════════════════════════════
+              산출물 섹션 — 입력 1건 → 5개 채널 결과물
+              ════════════════════════════════════════════════════════ */}
+          <Box sx={{ bgcolor: 'var(--color-surface)', borderTop: '1px solid var(--color-border)' }}>
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: '-80px' }}
+              transition={{ duration: 0.6 }}
+            >
+              <Container maxWidth="lg" sx={{ py: { xs: 10, md: 14 } }}>
+                <Typography
+                  variant="h2"
+                  sx={{
+                    fontWeight: 700,
+                    mb: 2,
+                    textAlign: 'center',
+                    color: 'var(--color-text-primary)',
+                    fontSize: { xs: '2rem', md: '2.8rem' },
+                    letterSpacing: '-0.02em',
+                    wordBreak: 'keep-all',
+                    textWrap: 'balance'
+                  }}
+                >
+                  입력 하나, 다섯 채널
+                </Typography>
+                <Typography sx={{
+                  mb: 8,
+                  textAlign: 'center',
+                  color: 'var(--color-text-secondary)',
+                  fontSize: { xs: '1rem', md: '1.125rem' },
+                  lineHeight: 1.7,
+                  wordBreak: 'keep-all'
+                }}>
+                  직접 쓴 원문 하나를 넣으면, 다음 결과물이 한 번에 나옵니다.
+                </Typography>
+
+                <Grid container spacing={3} alignItems="stretch">
+                  {/* 입력 카드 */}
+                  <Grid item xs={12} md={4}>
+                    <Box sx={{
+                      p: { xs: 3, md: 4 },
+                      height: '100%',
+                      borderRadius: 'var(--radius-lg)',
+                      bgcolor: 'var(--color-background)',
+                      border: '2px dashed var(--color-primary)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      textAlign: 'center'
+                    }}>
+                      <Typography sx={{
+                        color: 'var(--color-primary)',
+                        fontSize: '0.85rem',
+                        fontWeight: 700,
+                        letterSpacing: '0.08em',
+                        mb: 2
+                      }}>
+                        INPUT
+                      </Typography>
+                      <Typography sx={{
+                        fontWeight: 700,
+                        color: 'var(--color-text-primary)',
+                        fontSize: { xs: '1.25rem', md: '1.4rem' },
+                        mb: 1.5,
+                        wordBreak: 'keep-all'
+                      }}>
+                        의원님이 직접 쓴<br />주력 SNS 원문 1건
+                      </Typography>
+                      <Typography sx={{
+                        color: 'var(--color-text-secondary)',
+                        fontSize: { xs: '0.95rem', md: '1rem' },
+                        lineHeight: 1.7,
+                        wordBreak: 'keep-all'
+                      }}>
+                        입장문, 페이스북 글,
+                        현장 메모 어느 것이든 괜찮습니다.
+                      </Typography>
+                    </Box>
+                  </Grid>
+
+                  {/* 출력 카드 5개 */}
+                  <Grid item xs={12} md={8}>
+                    <Grid container spacing={2}>
+                      {[
+                        { label: '블로그', description: '구조를 갖춘 긴 호흡의 확장본' },
+                        { label: '페이스북', description: '스크롤을 잡는 정리본' },
+                        { label: '인스타그램', description: '캡션 리듬에 맞춘 짧은 변환' },
+                        { label: 'X', description: '맥락을 지키면서 압축된 버전' },
+                        { label: '스레드', description: '흐름형 연재에 맞춘 구성' },
+                        { label: '위험 표현 점검', description: '채널별 선거법·표현 리스크 1차 필터' }
+                      ].map((item, index) => (
+                        <Grid item xs={12} sm={6} key={index}>
+                          <Box sx={{
+                            p: { xs: 2, md: 2.5 },
+                            height: '100%',
+                            borderRadius: 'var(--radius-md)',
+                            bgcolor: 'var(--color-background)',
+                            border: '1px solid var(--color-border)',
+                            transition: springTransition,
+                            '&:hover': {
+                              borderColor: 'var(--color-primary)',
+                              boxShadow: brandShadow
+                            }
+                          }}>
+                            <Typography sx={{
+                              fontWeight: 700,
+                              color: 'var(--color-primary)',
+                              fontSize: { xs: '0.95rem', md: '1rem' },
+                              mb: 0.5
+                            }}>
+                              {item.label}
+                            </Typography>
+                            <Typography sx={{
+                              color: 'var(--color-text-secondary)',
+                              fontSize: { xs: '0.85rem', md: '0.9rem' },
+                              lineHeight: 1.6,
+                              wordBreak: 'keep-all'
+                            }}>
+                              {item.description}
+                            </Typography>
+                          </Box>
+                        </Grid>
+                      ))}
+                    </Grid>
+                  </Grid>
+                </Grid>
+
+                <Typography sx={{
+                  mt: 4,
+                  textAlign: 'center',
+                  color: 'var(--color-text-secondary)',
+                  fontSize: '0.9rem',
+                  wordBreak: 'keep-all'
+                }}>
+                  월 90회 원고 생성 1회당 블로그 + SNS 4채널이 함께 제공됩니다. SNS 변환은 회차를 소진하지 않습니다.
+                </Typography>
+              </Container>
+            </motion.div>
+          </Box>
 
           {/* ════════════════════════════════════════════════════════
               성과 그래프 섹션 — surface 배경
@@ -699,7 +1079,7 @@ AI가 이미 학습하고 있습니다.
                   textWrap: 'balance'
                 }}
               >
-                정치인 글쓰기는 다릅니다
+                정치인 원문을 다루는 법은 다릅니다
               </Typography>
               <Typography sx={{
                 mb: 8,
@@ -709,7 +1089,7 @@ AI가 이미 학습하고 있습니다.
                 lineHeight: 1.7,
                 wordBreak: 'keep-all'
               }}>
-                일반 AI에는 없는, 정치 콘텐츠 전용 기능.
+                일반 AI에는 없는, 정치 콘텐츠 변환에 특화된 설계.
               </Typography>
 
               <Grid container spacing={4}>
@@ -1195,6 +1575,32 @@ AI가 이미 학습하고 있습니다.
             transition={{ duration: 0.6 }}
           >
             <Container maxWidth="sm" sx={{ py: 20 }}>
+              <Typography
+                variant="h2"
+                sx={{
+                  fontWeight: 700,
+                  mb: 2,
+                  textAlign: 'center',
+                  color: 'var(--color-text-primary)',
+                  fontSize: { xs: '1.75rem', md: '2.4rem' },
+                  letterSpacing: '-0.02em',
+                  wordBreak: 'keep-all',
+                  textWrap: 'balance'
+                }}
+              >
+                생각은 직접 쓰고,<br />확산은 {BRANDING.serviceName}으로.
+              </Typography>
+              <Typography sx={{
+                mb: 6,
+                textAlign: 'center',
+                color: 'var(--color-text-secondary)',
+                fontSize: { xs: '1rem', md: '1.125rem' },
+                lineHeight: 1.7,
+                wordBreak: 'keep-all'
+              }}>
+                주력 SNS에 올린 원문 한 편을 다섯 채널에 맞게 다시 씁니다. 위험 표현은 미리 점검합니다.
+              </Typography>
+
               <Card
                 elevation={0}
                 sx={{
@@ -1207,7 +1613,7 @@ AI가 이미 학습하고 있습니다.
                 }}
               >
                 <CardContent>
-                  <Box sx={{ mb: 6 }}>
+                  <Box sx={{ mb: 5 }}>
                     <Typography
                       variant="h1"
                       component="div"
@@ -1243,11 +1649,55 @@ AI가 이미 학습하고 있습니다.
                         fontSize: 'clamp(1.8rem, 8vw, 3.5rem)',
                         letterSpacing: '-0.02em',
                         lineHeight: 1.2,
-                        wordBreak: 'keep-all'
+                        wordBreak: 'keep-all',
+                        mb: 3
                       }}
                     >
                       무료 체험 기간
                     </Typography>
+
+                    <Box sx={{
+                      mt: 3,
+                      textAlign: 'left',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 1.25,
+                      maxWidth: 360,
+                      mx: 'auto'
+                    }}>
+                      {[
+                        '월 90회 원고 생성',
+                        '블로그 + SNS 4채널 변환 무료',
+                        '위험 표현 1차 점검',
+                        '의원님 문체 학습 및 유지'
+                      ].map((feature, index) => (
+                        <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                          <Box sx={{
+                            width: 20,
+                            height: 20,
+                            borderRadius: '50%',
+                            bgcolor: 'var(--color-primary-lighter)',
+                            color: 'var(--color-primary)',
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            flexShrink: 0
+                          }}>
+                            ✓
+                          </Box>
+                          <Typography sx={{
+                            color: 'var(--color-text-primary)',
+                            fontSize: { xs: '0.95rem', md: '1rem' },
+                            lineHeight: 1.6,
+                            wordBreak: 'keep-all'
+                          }}>
+                            {feature}
+                          </Typography>
+                        </Box>
+                      ))}
+                    </Box>
                   </Box>
                   <Button
                     variant="contained"
