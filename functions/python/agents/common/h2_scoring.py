@@ -894,8 +894,22 @@ def score_h2_aeo(
                 issues.append("H2_TITLE_ECHO")
                 uniqueness_score = min(uniqueness_score, 0.3)
 
-    # 구체성 체크: 인물명·지역명을 제외한 고유명사/숫자가 0개면 상투적 H2
-    if not _has_concrete_content(text, name_clean, str(full_region or "")):
+    keyword_surfaces = [
+        str(item or "").strip()
+        for item in ([target_keyword_canonical] + list(user_keywords or []))
+        if str(item or "").strip()
+    ]
+    keyword_concrete = any(
+        keyword
+        and keyword != name_clean
+        and len(keyword) >= 2
+        and keyword in text
+        for keyword in keyword_surfaces
+    )
+
+    # 구체성 체크: 인물명·지역명·사용자 정책 키워드를 제외하고 구체 토큰이 전무하면 상투적 H2.
+    # 사용자 지정 정책명은 NNP/SN이 아니어도 해당 글의 구체 주제이므로 구체성 신호로 인정한다.
+    if not keyword_concrete and not _has_concrete_content(text, name_clean, str(full_region or "")):
         issues.append("H2_GENERIC_CONTENT")
         uniqueness_score = min(uniqueness_score, 0.3)
 

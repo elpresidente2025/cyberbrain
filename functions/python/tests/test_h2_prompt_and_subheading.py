@@ -1904,6 +1904,30 @@ def test_incomplete_ending_trailing_slash() -> None:
     assert has_incomplete_h2_ending("계양 테크노밸리 S-BRT/") is True
 
 
+# synthetic_fixture
+def test_incomplete_ending_unbalanced_ascii_quote_fragment() -> None:
+    """짝이 맞지 않는 인용부호 + 영문 조각으로 끝나면 잘림."""
+    from agents.common.h2_guide import has_incomplete_h2_ending
+
+    assert has_incomplete_h2_ending("해외 사례 'Housing") is True
+
+
+# synthetic_fixture
+def test_incomplete_ending_balanced_ascii_quote_passes() -> None:
+    """짝이 맞는 영문 인용구 뒤에 한국어 핵심어가 있으면 통과."""
+    from agents.common.h2_guide import has_incomplete_h2_ending
+
+    assert has_incomplete_h2_ending("해외 'Housing First' 사례") is False
+
+
+# synthetic_fixture
+def test_truncated_comma_tail_dangling_adverb() -> None:
+    """쉼표 뒤 '다시' 같은 부사 꼬리만 남으면 Kiwi 없이도 잘림."""
+    from agents.common.h2_guide import has_incomplete_h2_ending
+
+    assert has_incomplete_h2_ending("지역화폐, 다시") is True
+
+
 # ── 개체 명사 종결 / "왜" 미완결 질문 ────────────────────────────────
 
 def _kiwi_can_run() -> bool:

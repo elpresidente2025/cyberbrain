@@ -71,6 +71,9 @@ _H2_CONDITIONAL_TAIL_RE = re.compile(
 _H2_TRAILING_VERBAL_MODIFIER_RE = re.compile(
     r"[가-힣]{1,}(?:할|갈|낼|될|올|볼|칠|킬)$"
 )
+_H2_TRAILING_QUOTED_ASCII_FRAGMENT_RE = re.compile(
+    r"(?:^|\s)[\"'“‘][A-Za-z][A-Za-z0-9/_-]*$"
+)
 
 # 주어 조사 `가`가 문장 중간에 나타나지만 술어가 전혀 없는 경우를 감지한다.
 # 예: "청년의 목소리가 실질적 변화" — "목소리가" 뒤에 동사/서술어가 없음.
@@ -153,6 +156,13 @@ def has_incomplete_h2_ending(text: str, *, skip_comma_tail: bool = False) -> boo
     if len(last_token) <= 1:
         return True
 
+    # 짝이 맞지 않는 인용부호 또는 인용부호가 붙은 영문 조각으로 끝나는 경우.
+    # 예: "핀란드 'Housing" → 잘림 / "핀란드 'Housing First' 사례" → 통과.
+    if _has_unbalanced_quote(candidate):
+        return True
+    if _H2_TRAILING_QUOTED_ASCII_FRAGMENT_RE.search(candidate):
+        return True
+
     # 영문 약어 잘림 감지: "B/C", "S-", "ABC/" 등 슬래시·하이픈으로 끝나는 토큰
     if last_token[-1] in ('/', '-'):
         return True
@@ -185,6 +195,23 @@ def has_incomplete_h2_ending(text: str, *, skip_comma_tail: bool = False) -> boo
     if not skip_comma_tail and _has_truncated_comma_tail(candidate):
         return True
 
+    return False
+
+
+def _has_unbalanced_quote(heading: str) -> bool:
+    stripped = str(heading or "").strip()
+    if not stripped:
+        return False
+
+    # ASCII 따옴표는 제목 내 인용에 쓰일 수 있으므로 홀수 개면 잘림으로 본다.
+    for quote in ("'", '"'):
+        if stripped.count(quote) % 2 == 1:
+            return True
+
+    quote_pairs = (("“", "”"), ("‘", "’"))
+    for left, right in quote_pairs:
+        if stripped.count(left) != stripped.count(right):
+            return True
     return False
 
 
@@ -253,6 +280,16 @@ _COMMA_TAIL_PREDICATE_TAGS = frozenset({
     "XSV", "XSA",                      # 파생 접미사
     "EF", "EC", "ETM",                 # 어미
 })
+_COMMA_TAIL_DANGLING_ADVERBS = frozenset({
+    "다시",
+    "재차",
+    "새로",
+    "더",
+    "더욱",
+    "계속",
+    "꾸준히",
+    "반드시",
+})
 
 
 def _has_truncated_comma_tail(heading: str) -> bool:
@@ -272,6 +309,10 @@ def _has_truncated_comma_tail(heading: str) -> bool:
     tail = stripped[comma_pos + 1:].strip()
     if not tail:
         return True  # 쉼표 뒤 아무것도 없으면 잘림
+
+    # Kiwi가 없어도 "인천e음, 다시" 같은 부사 꼬리는 결정론적으로 잡는다.
+    if tail in _COMMA_TAIL_DANGLING_ADVERBS:
+        return True
 
     tokens = korean_morph.tokenize(tail)
     if tokens is None:
