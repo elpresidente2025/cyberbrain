@@ -9,6 +9,11 @@
 
 from __future__ import annotations
 
+import re
+from typing import Any, Iterable
+
+from .local_currency_names import LOCAL_CURRENCY_ENTRIES
+
 # ============================================================================
 # 5대 핵심 가치
 # ============================================================================
@@ -697,13 +702,154 @@ def build_leadership_philosophy_xml() -> str:
     return "\n".join(parts)
 
 
-def _build_higher_principle_brief() -> str:
+_MATERIAL_STOPWORDS = {
+    "정책",
+    "비전",
+    "방안",
+    "구체",
+    "추진",
+    "활성화",
+    "필요",
+    "경제",
+    "사회",
+    "시민",
+    "주민",
+    "국민",
+    "의원",
+    "후보",
+}
+
+_LOCAL_CURRENCY_BRAND_TERMS = tuple(
+    name
+    for name, region in LOCAL_CURRENCY_ENTRIES
+    if region not in {"공통", "운영대행사", "한국조폐공사"}
+)
+
+_TOPIC_SIGNAL_TERMS = {
+    "local_currency": (
+        "지역화폐",
+        "지역사랑상품권",
+        "이음카드",
+        "캐시백",
+        "골목상권",
+        "소상공인",
+        "자영업",
+        "전통시장",
+        "지역순환",
+        "역외유출",
+        *_LOCAL_CURRENCY_BRAND_TERMS,
+    ),
+    "basic_income": (
+        "기본소득",
+        "기본사회",
+        "청년배당",
+        "청년기본소득",
+        "기본서비스",
+    ),
+}
+_COMPACT_TOPIC_SIGNAL_TERMS = {
+    _compact_term
+    for _terms in _TOPIC_SIGNAL_TERMS.values()
+    for _compact_term in (re.sub(r"\s+", "", _term.lower()) for _term in _terms)
+}
+
+
+def _material_text(item: Any) -> str:
+    if isinstance(item, dict):
+        return " ".join(str(value or "") for value in item.values())
+    return str(item or "")
+
+
+def _compact(text: str) -> str:
+    return re.sub(r"\s+", "", str(text or "").lower())
+
+
+def _query_terms(*, topic: str = "", instructions: str = "", keywords: Iterable[str] | None = None) -> set[str]:
+    raw = " ".join(
+        part
+        for part in [
+            str(topic or ""),
+            str(instructions or ""),
+            " ".join(str(k or "") for k in (keywords or [])),
+        ]
+        if part
+    )
+    if not raw.strip():
+        return set()
+
+    compact_raw = _compact(raw)
+    terms = {
+        term
+        for term in re.findall(r"[가-힣A-Za-z0-9]+", raw)
+        if len(term) >= 2 and term not in _MATERIAL_STOPWORDS
+    }
+
+    for signal_terms in _TOPIC_SIGNAL_TERMS.values():
+        if any(_compact(signal) in compact_raw for signal in signal_terms):
+            terms.update(signal_terms)
+
+    return {_compact(term) for term in terms if _compact(term)}
+
+
+def _score_material(item: Any, terms: set[str]) -> int:
+    if not terms:
+        return 0
+    haystack = _compact(_material_text(item))
+    score = 0
+    for term in terms:
+        if term and term in haystack:
+            score += 3 if term in _COMPACT_TOPIC_SIGNAL_TERMS else 1
+    return score
+
+
+def _select_material(items: list[dict], terms: set[str]) -> dict:
+    if not items:
+        return {}
+    if not terms:
+        return items[0]
+    ranked = sorted(
+        ((-_score_material(item, terms), index, item) for index, item in enumerate(items)),
+        key=lambda row: (row[0], row[1]),
+    )
+    best_score = -ranked[0][0]
+    return ranked[0][2] if best_score > 0 else items[0]
+
+
+def _select_material_with_score(items: list[dict], terms: set[str]) -> tuple[dict, int]:
+    selected = _select_material(items, terms)
+    return selected, _score_material(selected, terms)
+
+
+def _build_evidence_brief(*, topic: str = "", instructions: str = "", keywords: Iterable[str] | None = None) -> str:
+    terms = _query_terms(topic=topic, instructions=instructions, keywords=keywords)
+    if not terms:
+        return ""
+
+    lines: list[str] = []
+    for value_id, data in ARGUMENT_LAYER.items():
+        chain, chain_score = _select_material_with_score(data.get("argument_chains") or [{}], terms)
+        evidence, evidence_score = _select_material_with_score(data.get("empirical_evidence") or [{}], terms)
+        if max(chain_score, evidence_score) <= 0:
+            continue
+        core = CORE_LEADERSHIP_VALUES.get(value_id, {})
+        label = core.get("vision", value_id)
+        lines.append(
+            f"{label}: {chain.get('policy_domain', '')} — {chain.get('logic', '')} → "
+            f"{chain.get('connection', '')}. 활용 가능한 근거: {evidence.get('claim', '')} "
+            f"({evidence.get('source', '')})."
+        )
+
+    return "\n".join(lines[:3])
+
+
+def _build_higher_principle_brief(*, topic: str = "", instructions: str = "", keywords: Iterable[str] | None = None) -> str:
+    terms = _query_terms(topic=topic, instructions=instructions, keywords=keywords)
     lines: list[str] = []
     for value_id, data in ARGUMENT_LAYER.items():
         core = CORE_LEADERSHIP_VALUES.get(value_id, {})
-        chain = (data.get("argument_chains") or [{}])[0]
-        evidence = (data.get("empirical_evidence") or [{}])[0]
-        korean_context = (data.get("korean_context") or [{}])[0]
+        chain = _select_material(data.get("argument_chains") or [{}], terms)
+        evidence = _select_material(data.get("empirical_evidence") or [{}], terms)
+        korean_context = _select_material(data.get("korean_context") or [{}], terms)
         label = core.get("vision", value_id)
         lines.append(
             f"{label}: {chain.get('logic', '')} → {chain.get('connection', '')}. "
@@ -713,11 +859,12 @@ def _build_higher_principle_brief() -> str:
     return "\n".join(lines)
 
 
-def _build_counterargument_rebuttal_brief() -> str:
+def _build_counterargument_rebuttal_brief(*, topic: str = "", instructions: str = "", keywords: Iterable[str] | None = None) -> str:
+    terms = _query_terms(topic=topic, instructions=instructions, keywords=keywords)
     lines: list[str] = []
     for value_id, data in ARGUMENT_LAYER.items():
         core = CORE_LEADERSHIP_VALUES.get(value_id, {})
-        rebuttal = (data.get("counter_rebuttals") or [{}])[0]
+        rebuttal = _select_material(data.get("counter_rebuttals") or [{}], terms)
         label = core.get("vision", value_id)
         criticism = str(rebuttal.get("criticism", "")).strip()
         rebut = str(rebuttal.get("rebuttal", "")).strip()
@@ -726,12 +873,32 @@ def _build_counterargument_rebuttal_brief() -> str:
     return "\n".join(lines)
 
 
-def build_argument_role_material_block(role: str) -> str:
+def build_argument_role_material_block(
+    role: str,
+    *,
+    topic: str = "",
+    instructions: str = "",
+    keywords: Iterable[str] | None = None,
+) -> str:
     """역할 섹션 바로 아래에 붙일 자연어 소재 블록."""
-    if role == "higher_principle":
-        summary = _build_higher_principle_brief()
+    if role == "evidence":
+        summary = _build_evidence_brief(
+            topic=topic,
+            instructions=instructions,
+            keywords=keywords,
+        )
+    elif role == "higher_principle":
+        summary = _build_higher_principle_brief(
+            topic=topic,
+            instructions=instructions,
+            keywords=keywords,
+        )
     elif role == "counterargument_rebuttal":
-        summary = _build_counterargument_rebuttal_brief()
+        summary = _build_counterargument_rebuttal_brief(
+            topic=topic,
+            instructions=instructions,
+            keywords=keywords,
+        )
     else:
         return ""
 
@@ -739,7 +906,9 @@ def build_argument_role_material_block(role: str) -> str:
         return ""
 
     lines = [f'    <role_material role="{role}" priority="critical">']
-    if role == "higher_principle":
+    if role == "evidence":
+        lines.append('      <instruction>아래 소재 중 이 글과 가장 맞는 1개 이상을 골라, 근거 문단에서 실행 방식·인과관계·사례로 직접 풀어 쓰십시오.</instruction>')
+    elif role == "higher_principle":
         lines.append('      <instruction>아래 소재 중 이 글과 가장 맞는 1개를 골라, 가치 선언과 구체 근거와 한국 맥락을 한 섹션 안에서 함께 쓰십시오.</instruction>')
     else:
         lines.append('      <instruction>아래 소재 중 이 글과 가장 맞는 반론-재반론 1개를 골라, 반론을 인정한 뒤 사실·사례로 재반론하십시오.</instruction>')
