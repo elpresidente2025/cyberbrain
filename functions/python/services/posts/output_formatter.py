@@ -1065,6 +1065,45 @@ def _remove_paragraph_blocks(content: str, blocks: list[dict[str, Any]], remove_
     return updated.strip()
 
 
+def _section_paragraph_counts(content: str) -> list[int]:
+    source = str(content or "")
+    if not source.strip():
+        return []
+
+    first_h2 = re.search(r"<h2\b", source, re.IGNORECASE)
+    section_htmls: list[str] = []
+    if first_h2:
+        intro_html = source[: first_h2.start()].strip()
+        if intro_html:
+            section_htmls.append(intro_html)
+        section_htmls.extend(
+            block.strip()
+            for block in re.split(r"(?=<h2\b)", source[first_h2.start():], flags=re.IGNORECASE)
+            if block and block.strip()
+        )
+    else:
+        return []
+
+    counts: list[int] = []
+    for section_html in section_htmls:
+        count = len(PARAGRAPH_BLOCK_RE.findall(section_html))
+        if count > 0:
+            counts.append(count)
+    return counts
+
+
+def _preserves_section_paragraph_min(before: str, after: str, *, min_p: int = 3) -> bool:
+    before_counts = _section_paragraph_counts(before)
+    if not before_counts:
+        return True
+    if any(count < min_p for count in before_counts):
+        return False
+    after_counts = _section_paragraph_counts(after)
+    if len(after_counts) != len(before_counts):
+        return False
+    return all(count >= min_p for count in after_counts)
+
+
 def _looks_tail_duplicate(a: str, b: str) -> bool:
     left = _normalize_plain_text(a)
     right = _normalize_plain_text(b)
@@ -1532,6 +1571,7 @@ def finalize_output(
     context_analysis: Dict[str, Any] | None = None,
     full_name: str = "",
     target_word_count: int | None = None,
+    append_terminal_addons: bool = True,
 ) -> Dict[str, Any]:
     updated = normalize_ascii_double_quotes(content)
     final_meta: Dict[str, Any] = {}
@@ -1545,7 +1585,11 @@ def finalize_output(
     before_tail_trim = updated
     updated = trim_trailing_diagnostics(updated, allow_diagnostic_tail=allow_diagnostic_tail)
     after_diagnostic_trim = updated
-    updated = trim_after_closing(updated)
+    closing_trim_candidate = trim_after_closing(updated)
+    if _preserves_section_paragraph_min(updated, closing_trim_candidate):
+        updated = closing_trim_candidate
+    else:
+        logger.info("Closing tail trim skipped to preserve section paragraph minimum")
     updated = _strip_orphaned_trailing_h2(updated)
 
     # Guard against accidental hard cut by broad closing markers in the body.
@@ -1577,23 +1621,38 @@ def finalize_output(
 
     repetition_before = _measure_repetition_signals(updated)
 
-    updated, dedup_removed = dedupe_tail_paragraphs(updated)
+    dedupe_candidate, dedup_removed = dedupe_tail_paragraphs(updated)
     if dedup_removed > 0:
-        logger.info("Tail paragraph dedupe applied: removed=%s", dedup_removed)
+        if _preserves_section_paragraph_min(updated, dedupe_candidate):
+            updated = dedupe_candidate
+            logger.info("Tail paragraph dedupe applied: removed=%s", dedup_removed)
+        else:
+            logger.info("Tail paragraph dedupe skipped to preserve section paragraph minimum")
+            dedup_removed = 0
 
-    updated, redundant_removed = compress_redundant_paragraphs(updated)
+    redundant_candidate, redundant_removed = compress_redundant_paragraphs(updated)
     if redundant_removed > 0:
-        logger.info("Redundant paragraph compression applied: removed=%s", redundant_removed)
+        if _preserves_section_paragraph_min(updated, redundant_candidate):
+            updated = redundant_candidate
+            logger.info("Redundant paragraph compression applied: removed=%s", redundant_removed)
+        else:
+            logger.info("Redundant paragraph compression skipped to preserve section paragraph minimum")
+            redundant_removed = 0
 
-    updated, sentence_compress = compress_redundant_sentences(updated)
+    sentence_candidate, sentence_compress = compress_redundant_sentences(updated)
     removed_sentences = int(sentence_compress.get("removedSentences") or 0)
     if removed_sentences > 0:
-        logger.info(
-            "Sentence-level compression applied: removed=%s introTrimmed=%s pollPairTrimmed=%s",
-            removed_sentences,
-            int(sentence_compress.get("introTrimmed") or 0),
-            int(sentence_compress.get("pollPairTrimmed") or 0),
-        )
+        if _preserves_section_paragraph_min(updated, sentence_candidate):
+            updated = sentence_candidate
+            logger.info(
+                "Sentence-level compression applied: removed=%s introTrimmed=%s pollPairTrimmed=%s",
+                removed_sentences,
+                int(sentence_compress.get("introTrimmed") or 0),
+                int(sentence_compress.get("pollPairTrimmed") or 0),
+            )
+        else:
+            logger.info("Sentence-level compression skipped to preserve section paragraph minimum")
+            sentence_compress = {"removedSentences": 0, "introTrimmed": 0, "pollPairTrimmed": 0}
 
     repetition_after = _measure_repetition_signals(updated)
     if repetition_before != repetition_after:
@@ -1603,7 +1662,7 @@ def finalize_output(
             repetition_after,
         )
 
-    updated, trim_removed, before_chars, after_chars = trim_tail_for_length(
+    trim_candidate, trim_removed, before_chars, after_chars = trim_tail_for_length(
         updated,
         target_word_count=target_word_count,
         keyword_result=keyword_result,
@@ -1612,13 +1671,18 @@ def finalize_output(
         context_analysis=context_analysis,
     )
     if trim_removed > 0:
-        logger.info(
-            "Length tail trim applied (공백 제외 기준): target=%s before=%s after=%s removed_paragraphs=%s",
-            int(target_word_count or 0),
-            before_chars,
-            after_chars,
-            trim_removed,
-        )
+        if _preserves_section_paragraph_min(updated, trim_candidate):
+            updated = trim_candidate
+            logger.info(
+                "Length tail trim applied (공백 제외 기준): target=%s before=%s after=%s removed_paragraphs=%s",
+                int(target_word_count or 0),
+                before_chars,
+                after_chars,
+                trim_removed,
+            )
+        else:
+            logger.info("Length tail trim skipped to preserve section paragraph minimum")
+            trim_removed = 0
 
     # 최종 wordCount는 '공백 제외' 기준으로 계산한다.
     updated, extracted_meta = _extract_embedded_meta_tail(updated)
@@ -1629,9 +1693,9 @@ def finalize_output(
     updated = strip_generated_poll_citation(updated)
     word_count = count_without_space(updated)
 
-    if donation_enabled and str(donation_info or "").strip():
+    if append_terminal_addons and donation_enabled and str(donation_info or "").strip():
         updated = insert_donation_info(updated, normalize_ascii_double_quotes(donation_info))
-    if slogan_enabled and str(slogan or "").strip():
+    if append_terminal_addons and slogan_enabled and str(slogan or "").strip():
         updated = insert_slogan(updated, normalize_ascii_double_quotes(slogan))
     normalized_poll_body = _resolve_final_poll_citation_body(
         poll_citation=poll_citation,
@@ -1641,7 +1705,8 @@ def finalize_output(
     if normalized_poll_body:
         final_meta["pollCitation"] = normalized_poll_body
         final_meta["pollCitationForced"] = True
-        updated = insert_poll_citation(updated, normalized_poll_body)
+        if append_terminal_addons:
+            updated = insert_poll_citation(updated, normalized_poll_body)
     updated = repair_duplicate_particles_and_tokens(updated)
     updated = normalize_ascii_double_quotes(updated)
 

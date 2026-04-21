@@ -152,6 +152,8 @@ class SectionNormalizerMixin:
         )
         if len(cleaned_list) <= 1:
             return cleaned_list
+        if len(cleaned_list) <= target_count:
+            return cleaned_list
 
         merged: List[str] = []
         for paragraph in cleaned_list:
@@ -181,6 +183,34 @@ class SectionNormalizerMixin:
             break
 
         return merged
+
+    def _split_plain_paragraph_for_count(self, paragraph: Any) -> Optional[Tuple[str, str]]:
+        cleaned = self._clean_plain_text(paragraph)
+        if len(cleaned) < 48:
+            return None
+
+        sentences = [self._clean_plain_text(sentence) for sentence in split_sentences(cleaned)]
+        sentences = [sentence for sentence in sentences if sentence]
+        if len(sentences) >= 2:
+            mid = max(1, len(sentences) // 2)
+            left = " ".join(sentences[:mid]).strip()
+            right = " ".join(sentences[mid:]).strip()
+            if len(left) >= 18 and len(right) >= 18:
+                return left, right
+
+        split_at = len(cleaned) // 2
+        right_space = cleaned.find(" ", split_at)
+        left_space = cleaned.rfind(" ", 0, split_at)
+        boundary = right_space if right_space != -1 else left_space
+        if boundary == -1:
+            return None
+        if boundary < 18 or boundary > len(cleaned) - 18:
+            return None
+        left = cleaned[:boundary].strip()
+        right = cleaned[boundary + 1 :].strip()
+        if not left or not right:
+            return None
+        return left, right
 
     def _heading_identity_key(self, heading: Any) -> str:
         text = self._clean_plain_text(heading)
@@ -309,6 +339,22 @@ class SectionNormalizerMixin:
             if tail:
                 keep.append(tail)
             cleaned_list = keep
+
+        for _ in range(6):
+            if len(cleaned_list) >= target_count:
+                break
+            if not cleaned_list:
+                break
+            longest_idx = max(range(len(cleaned_list)), key=lambda idx: len(cleaned_list[idx]))
+            split_pair = self._split_plain_paragraph_for_count(cleaned_list[longest_idx])
+            if not split_pair:
+                break
+            left, right = split_pair
+            cleaned_list = (
+                cleaned_list[:longest_idx]
+                + [left, right]
+                + cleaned_list[longest_idx + 1 :]
+            )
 
         if len(cleaned_list) < target_count:
             print(
@@ -460,7 +506,7 @@ class SectionNormalizerMixin:
         for paragraph in cleaned_paragraphs:
             if paragraph and paragraph not in kept_paragraphs:
                 kept_paragraphs.append(paragraph)
-            if len(kept_paragraphs) >= 2:
+            if len(kept_paragraphs) >= 3:
                 break
         if not kept_paragraphs and cleaned_paragraphs:
             kept_paragraphs.append(cleaned_paragraphs[0])

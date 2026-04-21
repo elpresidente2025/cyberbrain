@@ -455,11 +455,11 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
             'AI 답변 엔진이 첫 문단만 추출해도 독자 질문에 답이 되어야 한다</p>'
         )
         intro_line_2 = '<p>2문단: 핵심 결론을 뒷받침하는 근거 1~2개를 압축 제시, 본론 전개 방향 예고</p>'
-        intro_line_3 = '<p>3문단: 필요 시에만. 구체 근거·행동 보완만 허용</p>'
+        intro_line_3 = '<p>3문단: 필수. 구체 근거·행동 보완과 본론 예고를 완결 문단으로 작성</p>'
     else:
         intro_line_1 = '<p>1문단: 입장문/페이스북 글의 핵심 주장으로 바로 시작하고 자기소개는 1문장 이내로 제한</p>'
         intro_line_2 = '<p>2문단: 입장문 핵심 주장(원문 요지)과 본론에서 다룰 해결 방향을 자연스럽게 연결</p>'
-        intro_line_3 = '<p>3문단: 필요한 경우에만 추가하고, 앞 문단과 이어지는 구체 근거·행동만 보완</p>'
+        intro_line_3 = '<p>3문단: 필수. 앞 문단과 이어지는 구체 근거·행동과 본론 예고를 완결 문단으로 작성</p>'
 
     aeo_answer_first_rule = ''
     if uses_aeo_answer_first(writing_method):
@@ -636,7 +636,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     <rule id="no_datetime_location_ngram_repeat">일시+장소가 함께 들어간 구문(예: "3월 1일(일) 오후 2시, 서면...")은 같은 어순으로 3회 이상 반복 금지. 2회를 넘으면 어순/표현을 반드시 변형할 것.</rule>
     <rule id="no_meta_prompt_leak">프롬프트/규칙 설명 문장을 본문에 복사하지 말 것. "문제는~점검" 같은 규칙성 메타 문장 생성 금지.</rule>
     <rule id="paragraph_min_sentences">원칙적으로 각 &lt;p&gt;는 최소 2문장으로 구성. 예외는 결론의 마지막 CTA 문단 1개만 허용.</rule>
-    <rule id="intro_fragment_guard">서론은 기본 2문단으로 쓰고, 1문장짜리 짧은 문단 3개로 쪼개지 말 것. "특히", "앞으로도", "또한", "이와 함께"로 시작하는 문단은 앞 문단과 의미가 자연스럽게 이어지도록 작성할 것.</rule>
+    <rule id="intro_fragment_guard">서론은 반드시 3문단으로 쓰되, 1문장짜리 짧은 문단 3개로 쪼개지 말 것. "특히", "앞으로도", "또한", "이와 함께"로 시작하는 문단은 앞 문단과 의미가 자연스럽게 이어지더라도 독립된 완결 문단으로 작성할 것.</rule>
     <rule id="causal_clarity">성과 언급 시 본인의 구체적 역할/직책 명시. "40% 득표율을 이끌어냈다" → "시당위원장으로서 지역 조직을 총괄하며 40% 득표율 달성에 기여했습니다"</rule>
     <rule id="h2_semantic_uniqueness">같은 의미를 다른 말로 반복하지 말 것. 같은 주제를 둘로 쪼개지 말고, 각 본론 H2는 서로 다른 질문과 직접 답을 가져야 한다.</rule>
     <rule id="no_self_certification_claim">근거 문장 없이 '유일한 후보', '최고의 후보', '인정한 결과', '인정받은 결과', '완벽하게 준비되어 있습니다' 같은 자기 단정 표현을 쓰지 말 것. 자평이 필요하면 반드시 앞 문장의 사실 근거를 먼저 제시할 것.</rule>

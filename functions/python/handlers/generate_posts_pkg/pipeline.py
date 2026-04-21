@@ -60,7 +60,13 @@ from agents.common.section_contract import (
     validate_cross_section_contracts,
 )
 from agents.common.stance_filters import looks_like_hashtag_bullet_line
-from agents.core.structure_normalizer import _join_sections, _pad_short_section, _plain_len, _split_into_sections
+from agents.core.structure_normalizer import (
+    _join_sections,
+    _pad_short_section,
+    _plain_len,
+    _split_into_sections,
+    normalize_section_p_count,
+)
 from agents.core.subheading_agent import SubheadingAgent
 from services.authz import is_admin_user, is_tester_user
 from services.memory import get_recent_selected_titles
@@ -1203,6 +1209,23 @@ def _restore_terminal_output_addons_once(
         "edited": updated != base,
         "actions": actions,
     }
+
+
+def _collect_section_paragraph_issues(content: str, *, min_p: int = 3) -> list[str]:
+    issues: list[str] = []
+    sections = _split_into_sections(str(content or ""))
+    for index, section in enumerate(sections, start=1):
+        section_html = str(section.get("html") or "")
+        p_count = len(re.findall(r"<p\b[^>]*>[\s\S]*?</p\s*>", section_html, re.IGNORECASE))
+        if p_count == 0:
+            continue
+        if p_count < min_p:
+            heading = str(section.get("h2_text") or "").strip()
+            label = f"{index}번 섹션"
+            if heading:
+                label += f"({heading})"
+            issues.append(f"{label} 문단 수 {p_count}개 < {min_p}개")
+    return issues
 
 
 def _extract_stance_count(pipeline_result: Dict[str, Any]) -> int:
@@ -9365,6 +9388,7 @@ def _apply_last_mile_postprocess(
             ),
             full_name=str(output_options.get("fullName") or ""),
             target_word_count=target_word_count,
+            append_terminal_addons=False,
         )
         finalized_content = str(finalized.get("content") or cleaned).strip()
 
@@ -10116,6 +10140,11 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         "attempted": False,
         "applied": False,
         "actions": [],
+    }
+    final_structure_gate: Dict[str, Any] = {
+        "attempted": False,
+        "normalized": False,
+        "issues": [],
     }
     subheading_entity_gate: Dict[str, Any] = {
         "attempted": False,
@@ -12210,7 +12239,44 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                     reason,
                 )
 
+    final_structure_gate["attempted"] = True
+    structure_base_content = str(generated_content or "").strip()
+    normalized_structure_content = normalize_section_p_count(structure_base_content)
+    if normalized_structure_content != structure_base_content:
+        generated_content = normalized_structure_content
+        word_count = _count_chars_no_space(generated_content)
+        final_structure_gate["normalized"] = True
+        _refresh_terminal_validation_state()
+        final_keyword_gate_ok, final_keyword_gate_msg = _validate_keyword_gate(
+            keyword_validation,
+            gate_user_keywords,
+        )
+        logger.info("최종 구조 정규화 적용: 섹션 문단 수 재분배")
+
+    final_structure_issues = _collect_section_paragraph_issues(
+        str(generated_content or "").strip(),
+        min_p=3,
+    )
+    final_structure_gate["issues"] = final_structure_issues
+    if final_structure_gate.get("normalized") is True:
+        _append_quality_warning(
+            quality_warnings,
+            "최종 구조 게이트에서 섹션 문단 수 정규화가 적용되었습니다.",
+        )
+
     # 하드 차단: 화자 정체성 불일치, 문장 무결성 치명 오류, 선거법 위반.
+    if final_structure_issues:
+        issue_text = "; ".join(final_structure_issues[:2])
+        logger.warning(
+            "QUALITY_METRIC generate_posts outcome=blocked reason=structure warnings=%s issues=%s",
+            len(quality_warnings),
+            len(final_structure_issues),
+        )
+        raise ApiError(
+            "failed-precondition",
+            f"[BLOCKER:STRUCTURE] {issue_text}",
+        )
+
     if final_speaker_issues:
         speaker_gate["blocked"] = True
         issue_text = "; ".join(final_speaker_issues[:2])
@@ -12289,6 +12355,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     )
     if terminal_output_addons.get("edited"):
         generated_content = str(terminal_output_addons.get("content") or generated_content)
+        word_count = _count_chars_no_space(generated_content)
         logger.info(
             "Terminal output addons restored: %s",
             terminal_output_addons.get("actions") or [],
@@ -12406,7 +12473,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                 "wordCount": word_count,
                 "qualityGate": {
                     "mode": "soft-first",
-                    "hardBlockers": ["SPEAKER_IDENTITY", "INTEGRITY", "ELECTION_LAW"],
+                    "hardBlockers": ["STRUCTURE", "SPEAKER_IDENTITY", "INTEGRITY", "ELECTION_LAW"],
                     "warnings": quality_warnings,
                     "warningCount": len(quality_warnings),
                     "titleGuard": {
@@ -12463,6 +12530,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
                         "integrityEditorRepairError": str(integrity_editor_repair.get("error") or ""),
                         "integrityEditorRepairSummary": list(integrity_editor_repair.get("summary") or []),
                         "lastMilePostprocessApplied": last_mile_postprocess_applied,
+                        "finalStructureGate": final_structure_gate,
                         "contentRepairSteps": content_repair_steps,
                         "contentRepairMaxSteps": max_content_repair_steps,
                         "contentRepairRollbacks": content_repair_rollbacks,

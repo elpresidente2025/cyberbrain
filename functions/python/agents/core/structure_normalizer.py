@@ -461,7 +461,6 @@ def normalize_section_p_count(content: str) -> str:
     sections = _split_into_sections(content)
 
     for sec_idx, section in enumerate(sections):
-        is_last_h2_section = sec_idx == len(sections) - 1 and section["has_h2"]
         min_p = 3
         max_p = 4
 
@@ -486,13 +485,12 @@ def normalize_section_p_count(content: str) -> str:
                 elif sentences:
                     new_ps.append(f"<p>{' '.join(sentences).strip()}</p>")
                 else:
-                    if not is_last_h2_section:
-                        full_text = " ".join(strip_html(s["html"]) for s in sections)
-                        supplement = _build_padding_text(sec_idx + 1, 60, existing_text=full_text)
-                        if supplement:
-                            new_ps.append(f"<p>{supplement}</p>")
+                    full_text = " ".join(strip_html(s["html"]) for s in sections)
+                    supplement = _build_padding_text(sec_idx + 1, 60, existing_text=full_text)
+                    if supplement:
+                        new_ps.append(f"<p>{supplement}</p>")
 
-                while len(new_ps) < min_p and not is_last_h2_section:
+                while len(new_ps) < min_p:
                     full_text = " ".join(strip_html(s["html"]) for s in sections)
                     supplement = _build_padding_text(sec_idx + 1, 50 + len(new_ps) * 20, existing_text=full_text)
                     if not supplement:
@@ -509,8 +507,6 @@ def normalize_section_p_count(content: str) -> str:
                 left, right = split_pair
                 replacement = f"<p>{left}</p>\n<p>{right}</p>"
                 section["html"] = section["html"].replace(longest_p, replacement, 1)
-            elif is_last_h2_section:
-                break
             else:
                 full_text = " ".join(strip_html(s["html"]) for s in sections)
                 supplement = _build_padding_text(sec_idx + 1, 60, existing_text=full_text)
@@ -519,7 +515,7 @@ def normalize_section_p_count(content: str) -> str:
                 section["html"] = f"{section['html'].strip()}\n<p>{supplement}</p>".strip()
 
         p_blocks = _get_p_blocks(section["html"])
-        while len(p_blocks) < min_p and not is_last_h2_section:
+        while len(p_blocks) < min_p:
             full_text = " ".join(strip_html(s["html"]) for s in sections)
             supplement = _build_padding_text(sec_idx + 1, 60 + len(p_blocks) * 20, existing_text=full_text)
             if not supplement:
@@ -613,13 +609,13 @@ def normalize_section_length(content: str, min_chars: int = 200, max_chars: int 
 
 def normalize_total_p_count(content: str, total_sections: int) -> str:
     """
-    전체 문단 수가 validator 하한(total_sections * 2)을 만족하도록 보정한다.
+    전체 문단 수가 validator 하한(total_sections * 3)을 만족하도록 보정한다.
     """
     sections = _split_into_sections(content)
     if not sections:
         return content
 
-    expected_min_p = max(0, int(total_sections) * 2)
+    expected_min_p = max(0, int(total_sections) * 3)
     if expected_min_p <= 0:
         return content
 
@@ -632,7 +628,7 @@ def normalize_total_p_count(content: str, total_sections: int) -> str:
         candidates = [
             (idx, _count_p_tags(section["html"]))
             for idx, section in enumerate(sections)
-            if _count_p_tags(section["html"]) < 4 and not (idx == len(sections) - 1 and section["has_h2"])
+            if _count_p_tags(section["html"]) < 4
         ]
         if not candidates:
             break

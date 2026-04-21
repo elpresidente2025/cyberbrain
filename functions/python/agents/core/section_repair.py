@@ -905,6 +905,16 @@ class SectionRepairMixin:
                                 f"⚠️ [StructureAgent] best-effort 구조 보정 실패, 원본 유지"
                             )
 
+                    if best_code in ('SECTION_P_COUNT', 'P_SHORT'):
+                        final_reason = (
+                            best_validation.get('reason')
+                            or best_validation.get('feedback')
+                            or f"구조 검증 실패: {best_code}"
+                        )
+                        raise Exception(
+                            f"StructureAgent 실패 ({max_retries}회 재시도 후): {final_reason}"
+                        )
+
                     print(
                         f"⚠️ [StructureAgent] 검증 미통과 — best-effort 반환: "
                         f"code={best_code}, len={best_len}, "

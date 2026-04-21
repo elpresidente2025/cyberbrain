@@ -111,7 +111,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         )
         self.structural_recovery_rounds = _coerce_int_option(
             self.options.get("structureStructuralRecoveryRounds"),
-            default=0,
+            default=1,
             minimum=0,
             maximum=3,
         )

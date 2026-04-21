@@ -194,6 +194,24 @@ def test_normalize_section_p_count_does_not_fill_last_section_with_generic_paddi
     assert "지역 현안에 대한 전문가 자문과 주민 토론을 병행하겠습니다." not in tail
 
 
+# synthetic_fixture
+def test_normalize_section_p_count_splits_last_section_when_content_allows() -> None:
+    content = (
+        "<p>{region} 변화는 더 미룰 수 없습니다.</p>"
+        "<p>현장에서 확인한 과제를 정책으로 연결하겠습니다.</p>"
+        "<p>주민이 체감하는 결과를 만들겠습니다.</p>"
+        "<h2>{region} 민생 회복 전략</h2>"
+        "<p>{region} 지역화폐는 골목상권 소비를 다시 묶는 수단입니다. "
+        "소상공인 매출 흐름을 살리고 주민 구매 부담을 낮추는 효과도 있습니다. "
+        "예산과 집행 기준을 함께 설계해야 지속 가능한 정책으로 자리 잡을 수 있습니다.</p>"
+    )
+
+    normalized = normalize_section_p_count(content)
+    tail = normalized.split("<h2>{region} 민생 회복 전략</h2>", 1)[-1]
+
+    assert tail.count("<p>") == 3
+
+
 def test_normalize_section_length_does_not_pad_underfilled_body_section_with_generic_text() -> None:
     content = (
         "<p>부산의 변화는 더 미룰 수 없습니다.</p>"
@@ -237,6 +255,10 @@ def main() -> None:
         (
             "normalize_section_p_count_does_not_fill_last_section_with_generic_padding",
             test_normalize_section_p_count_does_not_fill_last_section_with_generic_padding,
+        ),
+        (
+            "normalize_section_p_count_splits_last_section_when_content_allows",
+            test_normalize_section_p_count_splits_last_section_when_content_allows,
         ),
         (
             "normalize_section_length_does_not_pad_underfilled_body_section_with_generic_text",

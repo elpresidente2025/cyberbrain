@@ -258,7 +258,7 @@ def test_build_structure_prompt_skips_hashtag_bullet_stance_items() -> None:
     assert "{region} 주민 삶의 질을 높이겠습니다." in prompt
 
 # synthetic_fixture
-def test_build_structure_prompt_guides_intro_as_two_paragraphs_by_default() -> None:
+def test_build_structure_prompt_guides_intro_as_three_paragraphs_by_default() -> None:
     prompt = build_structure_prompt(
         {
             "topic": "{region} 현안과 정책 방향",
@@ -289,8 +289,8 @@ def test_build_structure_prompt_guides_intro_as_two_paragraphs_by_default() -> N
         }
     )
 
-    assert '<intro paragraphs="기본 2, 필요 시 3"' in prompt
-    assert "서론은 기본 2문단으로 쓰고" in prompt
+    assert '<intro paragraphs="3"' in prompt
+    assert "서론은 반드시 3문단으로 쓰되" in prompt
 
 
 # synthetic_fixture
@@ -2413,8 +2413,9 @@ def test_structure_agent_build_html_merges_fragmented_intro_paragraphs() -> None
 
     intro_html = content.split("<h2>", 1)[0]
 
-    assert intro_html.count("<p>") <= 2
-    assert "{user_title} {user_name}입니다. 특히, {region} 현안과 주민들의 삶의 질 향상을 위해 더 치열하게 움직이겠습니다." in intro_html
+    assert intro_html.count("<p>") == 3
+    assert "{user_title} {user_name}입니다." in intro_html
+    assert "특히, {region} 현안과 주민들의 삶의 질 향상을 위해 더 치열하게 움직이겠습니다." in intro_html
     assert "앞으로도 저는 새로운 관점으로 {region}의 해법을 찾겠습니다." in intro_html
 
 
@@ -3490,6 +3491,29 @@ def test_finalize_output_reuses_embedded_poll_summary() -> None:
 
 
 # synthetic_fixture
+def test_finalize_output_can_defer_terminal_addons() -> None:
+    content = "<p>{region} 민생 회복을 위해 뛰겠습니다.</p>"
+    result = finalize_output(
+        content,
+        slogan="일하는 시의원",
+        slogan_enabled=True,
+        donation_info="후원계좌 : 신한 000-000",
+        donation_enabled=True,
+        poll_citation="조사기관: {organization}\n표본수: 1,000명",
+        embed_poll_citation=True,
+        append_terminal_addons=False,
+    )
+    updated = str(result.get("content") or "")
+    meta = result.get("meta") or {}
+
+    assert "후원계좌" not in updated
+    assert "일하는 시의원" not in updated
+    assert "<strong>조사개요</strong>" not in updated
+    assert meta.get("pollCitation")
+    assert meta.get("pollCitationForced") is True
+
+
+# synthetic_fixture
 def test_finalize_output_strips_keyword_reflection_meta_tail_and_repairs_duplicate_particles() -> None:
     content = """
     <p>{user_name}은 계양구민 삶의 질 향상을을 위해 끝까지 뛰겠습니다.</p>
@@ -3527,6 +3551,26 @@ def test_finalize_output_compresses_near_duplicate_event_sentences() -> None:
 
     assert updated.count("비상계엄") == 1
     assert "{region} 현안과 지역화폐 정책도 함께 추진하겠습니다." in updated
+
+
+# synthetic_fixture
+def test_finalize_output_does_not_reduce_final_section_below_three_paragraphs() -> None:
+    content = """
+    <p>{region} 현안은 더 미룰 수 없습니다.</p>
+    <p>{organization}과 함께 실행 순서를 세우겠습니다.</p>
+    <p>주민이 체감하는 변화를 만들겠습니다.</p>
+    <h2>{region} 민생 회복 전략</h2>
+    <p>{region} 소상공인 지원은 소비 흐름을 살리는 출발점입니다.</p>
+    <p>{region} 소상공인 지원은 소비 흐름을 살리는 출발점입니다.</p>
+    <p>예산과 현장 점검을 함께 묶어 실효성을 높이겠습니다.</p>
+    """
+
+    result = finalize_output(content, embed_poll_citation=False)
+    updated = str(result.get("content") or "")
+    final_section = updated.split("<h2>{region} 민생 회복 전략</h2>", 1)[-1]
+
+    assert final_section.count("<p>") == 3
+    assert final_section.count("소상공인 지원은 소비 흐름을 살리는 출발점입니다.") == 2
 
 
 def test_enforce_keyword_requirements_keeps_speaker_name_without_generic_opponent_fallback() -> None:
@@ -6008,6 +6052,7 @@ def main() -> None:
         ("poll_citation_drops_reporter_signoff", test_poll_citation_drops_reporter_signoff),
         ("finalize_output_forces_poll_citation", test_finalize_output_forces_poll_citation),
         ("finalize_output_reuses_embedded_poll_summary", test_finalize_output_reuses_embedded_poll_summary),
+        ("finalize_output_can_defer_terminal_addons", test_finalize_output_can_defer_terminal_addons),
         (
             "finalize_output_strips_keyword_reflection_meta_tail_and_repairs_duplicate_particles",
             test_finalize_output_strips_keyword_reflection_meta_tail_and_repairs_duplicate_particles,
@@ -6015,6 +6060,10 @@ def main() -> None:
         (
             "finalize_output_compresses_near_duplicate_event_sentences",
             test_finalize_output_compresses_near_duplicate_event_sentences,
+        ),
+        (
+            "finalize_output_does_not_reduce_final_section_below_three_paragraphs",
+            test_finalize_output_does_not_reduce_final_section_below_three_paragraphs,
         ),
         (
             "enforce_keyword_requirements_keeps_speaker_name_without_generic_opponent_fallback",
