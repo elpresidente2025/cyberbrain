@@ -78,6 +78,7 @@ functions/restore_admin.js
 
 # Codex / Claude local artifacts
 .agent/
+.playwright-cli/
 .claude/agents/
 .claude/commands/
 .claude/hooks/

@@ -8,6 +8,9 @@
       "hosting": {
         "default": [
           "ai-secretary-6e9c8"
+        ],
+        "minjoo": [
+          "ai-secretary-minjoo"
         ]
       }
     }
