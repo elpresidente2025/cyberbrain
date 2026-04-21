@@ -834,7 +834,7 @@ _LOCAL_CURRENCY_BRAND_TERMS = tuple(
     if region not in {"공통", "운영대행사", "한국조폐공사"}
 )
 
-_TOPIC_SIGNAL_TERMS = {
+_POLICY_SIGNAL_GROUPS = {
     "local_currency": (
         "지역화폐",
         "지역사랑상품권",
@@ -854,12 +854,126 @@ _TOPIC_SIGNAL_TERMS = {
         "청년배당",
         "청년기본소득",
         "기본서비스",
+        "재난기본소득",
+        "농민기본소득",
+        "보편지급",
+    ),
+    "public_health": (
+        "공공의료",
+        "공공병원",
+        "의료원",
+        "성남시의료원",
+        "병원",
+        "의료공백",
+        "병상",
+        "의료접근권",
+        "보건",
+        "치과주치의",
+        "구강검사",
+        "불소도포",
+        "공공보건",
+    ),
+    "housing_care": (
+        "주거",
+        "주거권",
+        "공공실버주택",
+        "실버주택",
+        "실버복지관",
+        "노숙",
+        "Housing First",
+        "하우징퍼스트",
+        "고령",
+        "노인",
+        "생활동선",
+        "복지관",
+    ),
+    "care_services": (
+        "돌봄",
+        "통합돌봄",
+        "간호간병",
+        "영케어러",
+        "상병수당",
+        "장애인",
+        "영유아",
+        "초등",
+        "노인",
+        "권리증진",
+        "일자리",
+    ),
+    "fair_construction": (
+        "원가공개",
+        "원가 공개",
+        "표준시장단가",
+        "공공건설",
+        "건설",
+        "분양가",
+        "공공입찰",
+        "페이퍼컴퍼니",
+        "하천",
+        "계곡",
+        "불법시설",
+        "체납",
+        "특사경",
+        "카르텔",
+        "지대",
+    ),
+    "platform_market": (
+        "플랫폼",
+        "배달앱",
+        "공공배달앱",
+        "배달특급",
+        "수수료",
+        "독과점",
+        "독점",
+        "소상공인 비용",
+        "소비자 비용",
+        "데이터",
+        "게이트키퍼",
+    ),
+    "credit_inclusion": (
+        "저신용",
+        "극저신용대출",
+        "재도전론",
+        "대출",
+        "사금융",
+        "불법사금융",
+        "불법 대부업",
+        "대부업",
+        "금융 포용",
+        "제1금융권",
+    ),
+    "public_transport": (
+        "교통",
+        "버스",
+        "공공버스",
+        "준공영제",
+        "이동권",
+        "노선",
+        "적자노선",
+        "대중교통",
+    ),
+    "fiscal_welfare": (
+        "재정",
+        "모라토리엄",
+        "채무",
+        "재정자립도",
+        "무상복지",
+        "무상급식",
+        "무상교복",
+        "산후조리",
+        "공공산후조리",
+        "지방재정",
+        "예산 구조조정",
     ),
 }
-_COMPACT_TOPIC_SIGNAL_TERMS = {
-    _compact_term
-    for _terms in _TOPIC_SIGNAL_TERMS.values()
-    for _compact_term in (re.sub(r"\s+", "", _term.lower()) for _term in _terms)
+_COMPACT_POLICY_SIGNAL_GROUPS = {
+    group: frozenset(re.sub(r"\s+", "", term.lower()) for term in terms)
+    for group, terms in _POLICY_SIGNAL_GROUPS.items()
+}
+_COMPACT_POLICY_SIGNAL_TERMS = {
+    term
+    for terms in _COMPACT_POLICY_SIGNAL_GROUPS.values()
+    for term in terms
 }
 
 
@@ -873,7 +987,12 @@ def _compact(text: str) -> str:
     return re.sub(r"\s+", "", str(text or "").lower())
 
 
-def _query_terms(*, topic: str = "", instructions: str = "", keywords: Iterable[str] | None = None) -> set[str]:
+def _query_features(
+    *,
+    topic: str = "",
+    instructions: str = "",
+    keywords: Iterable[str] | None = None,
+) -> tuple[set[str], set[str], set[str]]:
     raw = " ".join(
         part
         for part in [
@@ -884,102 +1003,196 @@ def _query_terms(*, topic: str = "", instructions: str = "", keywords: Iterable[
         if part
     )
     if not raw.strip():
-        return set()
+        return set(), set(), set()
 
     compact_raw = _compact(raw)
-    terms = {
+    explicit_terms = {
         term
         for term in re.findall(r"[가-힣A-Za-z0-9]+", raw)
         if len(term) >= 2 and term not in _MATERIAL_STOPWORDS
     }
+    terms = set(explicit_terms)
 
-    for signal_terms in _TOPIC_SIGNAL_TERMS.values():
+    active_groups: set[str] = set()
+    for group, signal_terms in _POLICY_SIGNAL_GROUPS.items():
         if any(_compact(signal) in compact_raw for signal in signal_terms):
+            active_groups.add(group)
             terms.update(signal_terms)
 
-    return {_compact(term) for term in terms if _compact(term)}
+    return (
+        {_compact(term) for term in terms if _compact(term)},
+        active_groups,
+        {_compact(term) for term in explicit_terms if _compact(term)},
+    )
 
 
-def _score_material(item: Any, terms: set[str]) -> int:
+def _query_terms(*, topic: str = "", instructions: str = "", keywords: Iterable[str] | None = None) -> set[str]:
+    terms, _active_groups, _explicit_terms = _query_features(
+        topic=topic,
+        instructions=instructions,
+        keywords=keywords,
+    )
+    return terms
+
+
+def _score_material(
+    item: Any,
+    terms: set[str],
+    active_groups: set[str] | None = None,
+    explicit_terms: set[str] | None = None,
+) -> int:
     if not terms:
         return 0
     haystack = _compact(_material_text(item))
     score = 0
+    for term in explicit_terms or set():
+        if term and term in haystack:
+            score += 12 if term in _COMPACT_POLICY_SIGNAL_TERMS else 6
+
     for term in terms:
         if term and term in haystack:
-            score += 3 if term in _COMPACT_TOPIC_SIGNAL_TERMS else 1
+            score += 2 if term in _COMPACT_POLICY_SIGNAL_TERMS else 1
+
+    for group in active_groups or set():
+        group_hits = sum(
+            1
+            for term in _COMPACT_POLICY_SIGNAL_GROUPS.get(group, frozenset())
+            if term and term in haystack
+        )
+        if group_hits:
+            score += min(12, group_hits * 2)
     return score
 
 
-def _select_material(items: list[dict], terms: set[str]) -> dict:
+def _select_material(
+    items: list[dict],
+    terms: set[str],
+    active_groups: set[str] | None = None,
+    explicit_terms: set[str] | None = None,
+) -> dict:
     if not items:
         return {}
     if not terms:
         return items[0]
     ranked = sorted(
-        ((-_score_material(item, terms), index, item) for index, item in enumerate(items)),
+        (
+            (-_score_material(item, terms, active_groups, explicit_terms), index, item)
+            for index, item in enumerate(items)
+        ),
         key=lambda row: (row[0], row[1]),
     )
     best_score = -ranked[0][0]
     return ranked[0][2] if best_score > 0 else items[0]
 
 
-def _select_material_with_score(items: list[dict], terms: set[str]) -> tuple[dict, int]:
-    selected = _select_material(items, terms)
-    return selected, _score_material(selected, terms)
+def _select_material_with_score(
+    items: list[dict],
+    terms: set[str],
+    active_groups: set[str] | None = None,
+    explicit_terms: set[str] | None = None,
+) -> tuple[dict, int]:
+    selected = _select_material(items, terms, active_groups, explicit_terms)
+    return selected, _score_material(selected, terms, active_groups, explicit_terms)
 
 
 def _build_evidence_brief(*, topic: str = "", instructions: str = "", keywords: Iterable[str] | None = None) -> str:
-    terms = _query_terms(topic=topic, instructions=instructions, keywords=keywords)
+    terms, active_groups, explicit_terms = _query_features(topic=topic, instructions=instructions, keywords=keywords)
     if not terms:
         return ""
 
-    lines: list[str] = []
-    for value_id, data in ARGUMENT_LAYER.items():
-        chain, chain_score = _select_material_with_score(data.get("argument_chains") or [{}], terms)
-        evidence, evidence_score = _select_material_with_score(data.get("empirical_evidence") or [{}], terms)
-        if max(chain_score, evidence_score) <= 0:
+    candidates: list[tuple[int, int, str]] = []
+    for index, (value_id, data) in enumerate(ARGUMENT_LAYER.items()):
+        chain, chain_score = _select_material_with_score(
+            data.get("argument_chains") or [{}],
+            terms,
+            active_groups,
+            explicit_terms,
+        )
+        evidence, evidence_score = _select_material_with_score(
+            data.get("empirical_evidence") or [{}],
+            terms,
+            active_groups,
+            explicit_terms,
+        )
+        combined_score = chain_score + evidence_score
+        if combined_score <= 0:
             continue
         core = CORE_LEADERSHIP_VALUES.get(value_id, {})
         label = core.get("vision", value_id)
-        lines.append(
+        candidates.append((
+            combined_score,
+            index,
             f"{label}: {chain.get('policy_domain', '')} — {chain.get('logic', '')} → "
             f"{chain.get('connection', '')}. 활용 가능한 근거: {evidence.get('claim', '')} "
-            f"({evidence.get('source', '')})."
-        )
+            f"({evidence.get('source', '')}).",
+        ))
 
-    return "\n".join(lines[:3])
+    candidates.sort(key=lambda row: (-row[0], row[1]))
+    return "\n".join(line for _score, _index, line in candidates[:3])
 
 
 def _build_higher_principle_brief(*, topic: str = "", instructions: str = "", keywords: Iterable[str] | None = None) -> str:
-    terms = _query_terms(topic=topic, instructions=instructions, keywords=keywords)
-    lines: list[str] = []
-    for value_id, data in ARGUMENT_LAYER.items():
+    terms, active_groups, explicit_terms = _query_features(topic=topic, instructions=instructions, keywords=keywords)
+    candidates: list[tuple[int, int, str]] = []
+    for index, (value_id, data) in enumerate(ARGUMENT_LAYER.items()):
         core = CORE_LEADERSHIP_VALUES.get(value_id, {})
-        chain = _select_material(data.get("argument_chains") or [{}], terms)
-        evidence = _select_material(data.get("empirical_evidence") or [{}], terms)
-        korean_context = _select_material(data.get("korean_context") or [{}], terms)
+        chain, chain_score = _select_material_with_score(
+            data.get("argument_chains") or [{}],
+            terms,
+            active_groups,
+            explicit_terms,
+        )
+        evidence, evidence_score = _select_material_with_score(
+            data.get("empirical_evidence") or [{}],
+            terms,
+            active_groups,
+            explicit_terms,
+        )
+        korean_context, context_score = _select_material_with_score(
+            data.get("korean_context") or [{}],
+            terms,
+            active_groups,
+            explicit_terms,
+        )
+        combined_score = chain_score + evidence_score + context_score
+        if terms and combined_score <= 0:
+            continue
         label = core.get("vision", value_id)
-        lines.append(
+        candidates.append((
+            combined_score,
+            index,
             f"{label}: {chain.get('logic', '')} → {chain.get('connection', '')}. "
             f"근거는 {evidence.get('claim', '')} ({evidence.get('source', '')})이고, "
-            f"한국 맥락은 {korean_context.get('context', '')} → {korean_context.get('implication', '')}."
-        )
-    return "\n".join(lines)
+            f"한국 맥락은 {korean_context.get('context', '')} → {korean_context.get('implication', '')}.",
+        ))
+    candidates.sort(key=lambda row: (-row[0], row[1]))
+    return "\n".join(line for _score, _index, line in candidates[:3])
 
 
 def _build_counterargument_rebuttal_brief(*, topic: str = "", instructions: str = "", keywords: Iterable[str] | None = None) -> str:
-    terms = _query_terms(topic=topic, instructions=instructions, keywords=keywords)
-    lines: list[str] = []
-    for value_id, data in ARGUMENT_LAYER.items():
+    terms, active_groups, explicit_terms = _query_features(topic=topic, instructions=instructions, keywords=keywords)
+    candidates: list[tuple[int, int, str]] = []
+    for index, (value_id, data) in enumerate(ARGUMENT_LAYER.items()):
         core = CORE_LEADERSHIP_VALUES.get(value_id, {})
-        rebuttal = _select_material(data.get("counter_rebuttals") or [{}], terms)
+        rebuttal, score = _select_material_with_score(
+            data.get("counter_rebuttals") or [{}],
+            terms,
+            active_groups,
+            explicit_terms,
+        )
+        if terms and score <= 0:
+            continue
         label = core.get("vision", value_id)
         criticism = str(rebuttal.get("criticism", "")).strip()
         rebut = str(rebuttal.get("rebuttal", "")).strip()
         if criticism and rebut:
-            lines.append(f"{label}: '{criticism}'라는 반론에는 '{rebut}'라는 재반론으로 답하십시오.")
-    return "\n".join(lines)
+            candidates.append((
+                score,
+                index,
+                f"{label}: '{criticism}'라는 반론에는 '{rebut}'라는 재반론으로 답하십시오.",
+            ))
+    candidates.sort(key=lambda row: (-row[0], row[1]))
+    return "\n".join(line for _score, _index, line in candidates[:3])
 
 
 def build_argument_role_material_block(

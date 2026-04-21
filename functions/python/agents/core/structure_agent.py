@@ -895,6 +895,9 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         base_prompt: str,
         length_spec: Dict[str, int],
         writing_method: str = '',
+        topic: str = '',
+        instructions: str = '',
+        user_keywords: Optional[List[str]] = None,
     ) -> str:
         """AEO 2단계 생성의 2단계: 아웃라인을 고정한 채 본문 확장을 요청하는 프롬프트."""
         from ..common.aeo_config import uses_dialectical_structure, build_dialectical_roles
@@ -930,7 +933,12 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                         f'      <ban>이 섹션에 정책 실행 다짐(~하겠습니다), 새 공약 나열, 구체적 사업 계획을 넣지 마십시오. 그런 내용은 evidence 섹션의 영역입니다.</ban>\n'
                         f'    </expansion_role>\n'
                     )
-                    role_material = build_argument_role_material_block(effective_role)
+                    role_material = build_argument_role_material_block(
+                        effective_role,
+                        topic=topic,
+                        instructions=instructions,
+                        keywords=user_keywords or [],
+                    )
                 elif effective_role == 'higher_principle':
                     role_hint = (
                         f'    <expansion_role priority="critical">{effective_role}: {guide}\n'
@@ -941,7 +949,20 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                         f'      </paragraph_roles>\n'
                         f'    </expansion_role>\n'
                     )
-                    role_material = build_argument_role_material_block(effective_role)
+                    role_material = build_argument_role_material_block(
+                        effective_role,
+                        topic=topic,
+                        instructions=instructions,
+                        keywords=user_keywords or [],
+                    )
+                elif effective_role == 'evidence':
+                    role_hint = f'    <expansion_role>{effective_role}: {guide}</expansion_role>\n'
+                    role_material = build_argument_role_material_block(
+                        effective_role,
+                        topic=topic,
+                        instructions=instructions,
+                        keywords=user_keywords or [],
+                    )
                 else:
                     role_hint = f'    <expansion_role>{effective_role}: {guide}</expansion_role>\n'
             body_lines.append(

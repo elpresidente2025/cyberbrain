@@ -10,6 +10,7 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
 from agents.core.structure_agent import StructureAgent
+from agents.common.leadership import build_argument_role_material_block
 from agents.core.structure_normalizer import (
     normalize_section_length,
     normalize_section_p_count,
@@ -157,6 +158,109 @@ def test_structure_agent_build_expansion_json_prompt_inlines_role_material_insid
     assert '한국 맥락 착지' in section4
 
 
+# real_fixture_ok: 지역화폐 브랜드명 기반 소재 매칭 회귀 검증에는 실제 명칭이 필요함
+def test_leadership_material_prioritizes_local_currency_for_registered_brand_names() -> None:
+    for brand in ("인천e음", "동백전", "여민전", "탐나는전", "경기지역화폐"):
+        evidence = build_argument_role_material_block(
+            "evidence",
+            topic=f"{brand} 활성화 방안",
+            keywords=[brand],
+        )
+        higher = build_argument_role_material_block(
+            "higher_principle",
+            topic=f"{brand} 활성화 방안",
+            keywords=[brand],
+        )
+        rebuttal = build_argument_role_material_block(
+            "counterargument_rebuttal",
+            topic=f"{brand} 활성화 방안",
+            keywords=[brand],
+        )
+
+        assert '<role_material role="evidence"' in evidence
+        assert "지역화폐 지급" in evidence or "지역화폐 → 골목상권 강제 순환" in evidence
+        assert "지역화폐 → 골목상권 강제 순환" in higher
+        assert "모세혈관 경제" in higher
+        assert "지역화폐 지급이 민생구제와 골목상권 매출 증대의 이중 효과" in rebuttal
+
+
+# real_fixture_ok: 지역화폐 브랜드명 기반 프롬프트 연결 회귀 검증에는 실제 명칭이 필요함
+def test_expansion_prompt_injects_local_currency_material_into_evidence_sections() -> None:
+    agent = StructureAgent(options={})
+    outline = {
+        "title": "동백전 활성화 방안",
+        "intro_lead": "지역화폐를 다시 민생경제의 실질적 도구로 세우겠습니다.",
+        "body": [
+            {
+                "heading": "소상공인 매출과 지역 순환",
+                "lead_sentence": "지역 안에서 돈이 돌 때 골목상권이 버팁니다.",
+                "role": "evidence",
+            },
+            {
+                "heading": "예상되는 우려와 재정의 답",
+                "lead_sentence": "일부에서는 지역화폐가 재정 부담만 키운다고 말합니다.",
+                "role": "counterargument_rebuttal",
+            },
+            {
+                "heading": "기본생활을 지키는 지역경제 원칙",
+                "lead_sentence": "지역화폐는 소비 지원을 넘어 공동체 안전망과도 연결됩니다.",
+                "role": "higher_principle",
+            },
+        ],
+        "conclusion_heading": "지역경제를 다시 움직일 실천",
+    }
+
+    prompt = agent._build_expansion_json_prompt(
+        outline=outline,
+        base_prompt="BASE_PROMPT",
+        length_spec={"body_sections": 3, "paragraphs_per_section": 3},
+        writing_method="logical_writing",
+        topic="동백전 활성화 방안",
+        user_keywords=["동백전"],
+    )
+    section1 = prompt.split('<body_section order="1">', 1)[1].split('</body_section>', 1)[0]
+
+    assert '<role_material role="evidence"' in section1
+    assert "지역화폐" in section1
+    assert "골목상권" in section1
+
+
+# real_fixture_ok: leadership.py의 실제 정책 재료 선택 회귀 검증에는 실제 정책명·사례명이 필요함
+def test_leadership_material_prioritizes_multiple_policy_domains() -> None:
+    cases = [
+        (
+            "공공병원 의료공백 해소 방안",
+            "evidence",
+            ("성남시의료원", "의료공백"),
+        ),
+        (
+            "공공배달앱 수수료 부담 완화",
+            "counterargument_rebuttal",
+            ("공공배달앱은 민간 혁신", "플랫폼 사업자"),
+        ),
+        (
+            "저신용자 불법 사금융 대책",
+            "evidence",
+            ("극저신용대출", "불법사금융"),
+        ),
+        (
+            "공공건설 원가 공개 확대",
+            "counterargument_rebuttal",
+            ("원가 공개·표준시장단가", "4.4% 절감"),
+        ),
+        (
+            "공공버스 준공영제와 이동권",
+            "evidence",
+            ("공공버스", "이동권"),
+        ),
+    ]
+
+    for topic, role, expected_fragments in cases:
+        material = build_argument_role_material_block(role, topic=topic, keywords=[topic])
+        assert material, topic
+        assert any(fragment in material for fragment in expected_fragments), material
+
+
 def test_normalize_structure_padding_avoids_deprecated_boilerplate_sentences() -> None:
     content = "<h2>부산의 변화</h2><p>부산 경제를 다시 세우겠습니다.</p>"
 
@@ -243,6 +347,18 @@ def main() -> None:
         (
             "structure_agent_build_expansion_json_prompt_inlines_role_material_inside_target_body_sections",
             test_structure_agent_build_expansion_json_prompt_inlines_role_material_inside_target_body_sections,
+        ),
+        (
+            "leadership_material_prioritizes_local_currency_for_registered_brand_names",
+            test_leadership_material_prioritizes_local_currency_for_registered_brand_names,
+        ),
+        (
+            "expansion_prompt_injects_local_currency_material_into_evidence_sections",
+            test_expansion_prompt_injects_local_currency_material_into_evidence_sections,
+        ),
+        (
+            "leadership_material_prioritizes_multiple_policy_domains",
+            test_leadership_material_prioritizes_multiple_policy_domains,
         ),
         (
             "structure_agent_repair_low_alignment_heading_ignores_name_only_overlap",

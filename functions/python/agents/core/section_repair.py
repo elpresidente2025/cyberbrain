@@ -642,6 +642,9 @@ class SectionRepairMixin:
                         base_prompt=current_prompt,
                         length_spec=length_spec,
                         writing_method=writing_method,
+                        topic=topic,
+                        instructions=source_instructions,
+                        user_keywords=user_keywords if isinstance(user_keywords, list) else [],
                     )
                     response_schema = self._build_structure_json_schema(length_spec)
                     payload = await self.call_llm_json_contract(
