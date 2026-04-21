@@ -6992,8 +6992,46 @@ def _select_conclusion_anchor(
     return "이 과제"
 
 
-def _conclusion_archetype_key(writing_method: str) -> str:
-    normalized = str(writing_method or "").strip()
+_CONCLUSION_WRITING_METHOD_ALIASES: Dict[str, str] = {
+    "policy-proposal": "logical_writing",
+    "policy_proposal": "logical_writing",
+    "policy": "logical_writing",
+    "정책 및 비전": "logical_writing",
+    "정책": "logical_writing",
+    "current-affairs": "critical_writing",
+    "current_affairs": "critical_writing",
+    "시사": "critical_writing",
+    "시사 비판": "critical_writing",
+    "diagnostic": "diagnostic_writing",
+    "diagnosis": "diagnostic_writing",
+    "시사 진단": "diagnostic_writing",
+    "local-issues": "analytical_writing",
+    "local_issues": "analytical_writing",
+    "지역현안": "analytical_writing",
+    "지역 현안": "analytical_writing",
+}
+
+
+def _resolve_conclusion_writing_method(writing_method: str = "", *, category: str = "") -> str:
+    for raw in (writing_method, category):
+        normalized = _normalize_inline_whitespace(str(raw or ""))
+        if not normalized:
+            continue
+        if get_conclusion_archetype(normalized):
+            return normalized
+        lowered = normalized.lower()
+        for key in (lowered, lowered.replace("_", "-"), lowered.replace("-", "_")):
+            resolved = _CONCLUSION_WRITING_METHOD_ALIASES.get(key)
+            if resolved:
+                return resolved
+        resolved = _CONCLUSION_WRITING_METHOD_ALIASES.get(normalized)
+        if resolved:
+            return resolved
+    return ""
+
+
+def _conclusion_archetype_key(writing_method: str, *, category: str = "") -> str:
+    normalized = _resolve_conclusion_writing_method(writing_method, category=category)
     if normalized == "logical_writing":
         return "pledge"
     if normalized in {"critical_writing", "diagnostic_writing"}:
@@ -7003,13 +7041,22 @@ def _conclusion_archetype_key(writing_method: str) -> str:
     return ""
 
 
+def _topic_particle_surface(text: str) -> str:
+    return "은" if _has_final_consonant(text) else "는"
+
+
+def _subject_particle_surface(text: str) -> str:
+    return "이" if _has_final_consonant(text) else "가"
+
+
 def _closing_section_needs_archetype_repair(
     paragraphs: list[str],
     *,
     section_plain: str,
     writing_method: str = "",
+    category: str = "",
 ) -> bool:
-    if not get_conclusion_archetype(str(writing_method or "").strip()):
+    if not _conclusion_archetype_key(writing_method, category=category):
         return False
     if len(paragraphs) < 3:
         return True
@@ -7035,6 +7082,7 @@ def _closing_section_needs_archetype_repair(
 def _build_conclusion_archetype_paragraphs(
     *,
     writing_method: str,
+    category: str = "",
     heading: str,
     body_text: str,
     user_keywords: Optional[list[str]] = None,
@@ -7046,22 +7094,24 @@ def _build_conclusion_archetype_paragraphs(
         full_name=full_name,
     )
     subject = anchor if anchor != "이 과제" else "이 과제"
-    archetype_key = _conclusion_archetype_key(writing_method)
+    topic_particle = _topic_particle_surface(subject)
+    subject_particle = _subject_particle_surface(subject)
+    archetype_key = _conclusion_archetype_key(writing_method, category=category)
 
     if archetype_key == "diagnosis":
         return [
-            f"{subject}이 보여주는 핵심 진단은 분명합니다. 시민의 부담을 개인에게 떠넘기는 방식으로는 생활의 불안을 줄일 수 없습니다.",
+            f"{subject}{subject_particle} 보여주는 핵심 진단은 분명합니다. 시민의 부담을 개인에게 떠넘기는 방식으로는 생활의 불안을 줄일 수 없습니다.",
             "지금 필요한 것은 문제를 축소하는 행정이 아니라 원인과 책임을 분명히 보고, 실행 가능한 대안을 제도와 예산으로 연결하는 일입니다.",
             "저는 시민 여러분의 목소리를 끝까지 듣고 필요한 변화를 책임 있게 추진하겠습니다. 좋은 정치로 시민의 삶에 보답하겠습니다. 감사합니다.",
         ]
     if archetype_key == "action":
         return [
-            f"{subject}은 현장에서 확인한 문제의식을 더 미룰 수 없다는 신호입니다. 생활의 변화는 구체적인 행동과 후속 조치로 증명되어야 합니다.",
+            f"{subject}{topic_particle} 현장에서 확인한 문제의식을 더 미룰 수 없다는 신호입니다. 생활의 변화는 구체적인 행동과 후속 조치로 증명되어야 합니다.",
             "저는 현장 의견 수렴, 조례와 예산 점검, 관계 기관 협의를 함께 추진해 실행 경로를 분명히 만들겠습니다.",
             "주민 여러분과 함께 끝까지 확인하고 부족한 부분은 빠르게 보완하겠습니다. 좋은 정치로 지역의 변화를 만들겠습니다. 감사합니다.",
         ]
     return [
-        f"{subject}은 말로 끝낼 약속이 아니라 시민 생활에서 확인되어야 할 민생 과제입니다. 본론에서 확인한 문제를 실행의 결과로 연결하겠습니다.",
+        f"{subject}{topic_particle} 말로 끝낼 약속이 아니라 시민 생활에서 확인되어야 할 민생 과제입니다. 본론에서 확인한 문제를 실행의 결과로 연결하겠습니다.",
         "저는 조례, 예산, 현장 점검을 함께 묶어 추진 경로를 분명히 세우겠습니다. 과정과 결과를 시민께 투명하게 보고드리겠습니다.",
         "주민 여러분의 의견을 끝까지 듣고 필요한 보완은 빠르게 이어가겠습니다. 좋은 정치로 시민의 삶에 남는 변화를 만들겠습니다. 감사합니다.",
     ]
@@ -7072,6 +7122,7 @@ def _ensure_closing_section_min_sentences_once(
     *,
     full_name: str = "",
     writing_method: str = "",
+    category: str = "",
     user_keywords: Optional[list[str]] = None,
 ) -> Dict[str, Any]:
     base = str(content or "")
@@ -7130,9 +7181,11 @@ def _ensure_closing_section_min_sentences_once(
         paragraph_texts,
         section_plain=section_plain,
         writing_method=writing_method,
+        category=category,
     ):
         rebuilt_paragraphs = _build_conclusion_archetype_paragraphs(
             writing_method=writing_method,
+            category=category,
             heading=heading_inner,
             body_text=base[: last_match.start()],
             user_keywords=user_keywords,
@@ -7144,7 +7197,7 @@ def _ensure_closing_section_min_sentences_once(
             return {
                 "content": repaired,
                 "edited": repaired != base,
-                "actions": [f"restore_closing_archetype:{_conclusion_archetype_key(writing_method)}"],
+                "actions": [f"restore_closing_archetype:{_conclusion_archetype_key(writing_method, category=category)}"],
             }
 
     if total_sentences >= 2:
@@ -7657,6 +7710,7 @@ def _apply_final_sentence_polish_once(
         repaired,
         full_name=full_name,
         writing_method=writing_method,
+        category=category,
         user_keywords=user_keywords,
     )
     closing_sentence_actions = closing_sentence_repair.get("actions")
@@ -12211,6 +12265,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         generated_content,
         full_name=full_name,
         writing_method=writing_method,
+        category=category,
         user_keywords=user_keywords,
     )
     if final_closing_sentence_repair.get("edited"):
