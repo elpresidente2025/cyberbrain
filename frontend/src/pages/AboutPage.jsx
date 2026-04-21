@@ -381,7 +381,7 @@ AI가 이미 학습하고 있습니다.
                     textWrap: 'balance'
                   }}
                 >
-                  한 채널에만 올리면<br />이런 칭찬은 한 번밖에 못 듣습니다.
+                  홍보하지 않으면<br />이런 말도 못 듣습니다.
                 </Typography>
 
                 <Typography
