@@ -921,9 +921,61 @@ def test_optimize_headings_deterministic_fallback_when_repair_raises(
     # H2 개수 parity — 원본 매치 수 유지
     assert rebuilt.count("<h2>") == 2
     assert stats["matches"] == 2
-    # repair 실패 시 Gen 최선 결과 사용 (original fallback 없음)
+    # repair 실패 시에도 hard-fail H2를 그대로 출력하지 않고 결정론 fallback으로 교체
+    assert "제가 해냅니다" not in rebuilt
+    assert "좋은 성과입니다" not in rebuilt
     actions = {item["action"] for item in trace}
-    assert "best_effort" in actions
+    assert any(action.startswith("deterministic_fallback") for action in actions)
+    assert "best_effort" not in actions
+
+
+# synthetic_fixture
+def test_optimize_headings_replaces_truncated_comma_tail_before_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    call_log: list[int] = []
+
+    async def _fake(_prompt: str, **_kwargs):
+        call_log.append(1)
+        if len(call_log) == 1:
+            return {
+                "headings": [
+                    "지역화폐, 다시",
+                    "지역화폐 조례 개정 약속",
+                ]
+            }
+        raise subheading_module.StructuredOutputError("forced repair failure")
+
+    monkeypatch.setattr(subheading_module, "generate_json_async", _fake)
+
+    content = (
+        "<h2>원본 제목 1</h2>\n"
+        "<p>지역화폐는 지역 내 소비를 촉진하고 골목상권 매출을 늘리는 정책입니다. "
+        "지역화폐 부활은 지역경제 회복의 출발점입니다.</p>\n"
+        "<h2>원본 제목 2</h2>\n"
+        "<p>조례 개정과 예산 점검으로 지역화폐 실행 계획을 제도화하겠습니다. "
+        "지역화폐가 시민 생활에 닿도록 제도 기반을 세우겠습니다.</p>\n"
+    )
+
+    agent = _make_agent()
+    rebuilt, trace, _stats = _run_async(
+        agent.optimize_headings_in_content(
+            content=content,
+            category="policy-proposal",
+            full_name="{user_name}",
+            full_region="{region}",
+            stance_text="",
+            user_keywords=["지역화폐"],
+            topic="지역화폐 부활",
+        )
+    )
+
+    assert "지역화폐, 다시" not in rebuilt
+    assert rebuilt.count("<h2>") == 2
+    assert any(
+        item["action"].startswith("deterministic_fallback")
+        for item in trace
+    )
 
 
 def test_optimize_headings_preserves_original_on_total_primary_failure(

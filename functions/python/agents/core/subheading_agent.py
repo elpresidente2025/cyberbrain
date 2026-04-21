@@ -135,6 +135,21 @@ _UNSAFE_KEYWORD_SUFFIXES = (
     "에도", "으로도", "으로", "부터", "까지", "에서", "에게",
     "도", "시", "를", "을", "은", "는", "이", "가", "에", "의", "과", "와", "만",
 )
+_FALLBACK_LOW_SIGNAL_KEYWORDS = frozenset({
+    "다시",
+    "정책",
+    "사업",
+    "문제",
+    "방안",
+    "시민",
+    "주민",
+    "여러분",
+    "감사합니다",
+    "지역",
+    "경제",
+    "활성화",
+    "변화",
+})
 
 
 def _is_field_copy(heading: str, plan: Dict[str, Any]) -> bool:
@@ -184,6 +199,48 @@ def _keyword_is_template_safe(keyword: str, plan: Dict[str, Any]) -> bool:
     if kw.endswith(_UNSAFE_KEYWORD_SUFFIXES):
         return False
     return True
+
+
+def _issue_key(issue: Any) -> str:
+    return str(issue or "").split(":", 1)[0]
+
+
+def _hard_fail_issue_count(score: Dict[str, Any]) -> int:
+    return sum(
+        1
+        for issue in score.get("issues") or []
+        if _issue_key(issue) in H2_HARD_FAIL_ISSUES
+    )
+
+
+def _has_batchim(text: str) -> bool:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return False
+    code = ord(normalized[-1])
+    if 0xAC00 <= code <= 0xD7A3:
+        return (code - 0xAC00) % 28 != 0
+    return False
+
+
+def _subject_particle(text: str) -> str:
+    return "이" if _has_batchim(text) else "가"
+
+
+def _object_particle(text: str) -> str:
+    return "을" if _has_batchim(text) else "를"
+
+
+def _dedupe_preserve_order(items: Sequence[str]) -> List[str]:
+    seen: set = set()
+    result: List[str] = []
+    for item in items or ():
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
 
 
 class SubheadingAgent(Agent):
@@ -599,6 +656,7 @@ class SubheadingAgent(Agent):
             descriptor_pool=descriptor_pool,
             body_first_sentences=body_first_sentences,
             target_keyword_canonical=target_keyword_canonical,
+            user_keywords=list(user_keywords or []),
             score_key="first",
             article_title=article_title,
         )
@@ -628,6 +686,7 @@ class SubheadingAgent(Agent):
                     descriptor_pool=descriptor_pool,
                     body_first_sentences=body_first_sentences,
                     target_keyword_canonical=target_keyword_canonical,
+                    user_keywords=list(user_keywords or []),
                     article_title=article_title,
                 )
                 current_scores[i] = new_score
@@ -707,6 +766,7 @@ class SubheadingAgent(Agent):
                             descriptor_pool=descriptor_pool,
                             body_first_sentences=body_first_sentences,
                             target_keyword_canonical=target_keyword_canonical,
+                            user_keywords=list(user_keywords or []),
                             article_title=article_title,
                         )
                         trace[idx]["llm_repair"] = cleaned
@@ -716,7 +776,7 @@ class SubheadingAgent(Agent):
                             working[idx] = cleaned
                             current_scores[idx] = new_score
 
-        # ---------- Phase 6: best-effort (StructureAgent H2가 빈 마커이므로 original fallback 없음)
+        # ---------- Phase 6: final hard-fail control (실패 H2는 출력 전 결정론 fallback으로 교체)
         final_headings: List[str] = []
         for i, heading in enumerate(working):
             if current_scores[i].get("passed"):
@@ -731,8 +791,44 @@ class SubheadingAgent(Agent):
                 final_headings.append(heading)
                 continue
 
-            # scoring 미통과여도 Gen/Repair 최선 결과 사용
+            fallback_result = self._select_deterministic_fallback_heading(
+                plan=plans[i],
+                index=i,
+                current_score=current_scores[i],
+                siblings=working,
+                h2_style=h2_style,
+                preferred_types=preferred_types,
+                full_name=full_name,
+                full_region=full_region,
+                descriptor_pool=descriptor_pool,
+                body_first_sentences=body_first_sentences,
+                target_keyword_canonical=target_keyword_canonical,
+                user_keywords=list(user_keywords or []),
+                article_title=article_title,
+                is_conclusion=(i == len(working) - 1),
+            )
+            fallback_heading = str(fallback_result.get("heading") or "").strip()
+            fallback_score = fallback_result.get("score")
+            if fallback_heading and isinstance(fallback_score, dict):
+                working[i] = fallback_heading
+                current_scores[i] = fallback_score
+                trace[i]["deterministic_fallback"] = fallback_heading
+                trace[i]["deterministic_fallback_score"] = fallback_score.get("score", 0.0)
+                trace[i]["deterministic_fallback_issues"] = list(fallback_score.get("issues", []))
+                trace[i]["deterministic_fallback_candidates"] = list(
+                    fallback_result.get("candidates") or []
+                )
+                trace[i]["action"] = (
+                    "deterministic_fallback"
+                    if fallback_score.get("passed")
+                    else "deterministic_fallback_unpassed"
+                )
+                final_headings.append(fallback_heading)
+                continue
+
+            # fallback 후보도 없을 때만 최후의 best-effort. 이 경로는 구조 parity 보존용이다.
             trace[i]["action"] = "best_effort"
+            trace[i]["best_effort_issues"] = list(current_scores[i].get("issues") or [])
             final_headings.append(heading)
 
         # ---------- Phase 6.5: fullName 앵커 cap 강제 (스탬핑 방지)
@@ -900,7 +996,10 @@ class SubheadingAgent(Agent):
                     "kept",
                     "pre_repaired",
                     "llm_repaired",
+                    "deterministic_fallback",
+                    "deterministic_fallback_unpassed",
                     "fallback_original",
+                    "best_effort",
                 )
             },
         }
@@ -1190,6 +1289,7 @@ class SubheadingAgent(Agent):
         descriptor_pool: Sequence[str],
         body_first_sentences: Sequence[str],
         target_keyword_canonical: str,
+        user_keywords: Optional[Sequence[str]] = None,
         article_title: str = "",
     ) -> H2Score:
         """단일 heading 의 score_h2 결과에 AEO advisory + emotion hard-fail 을 병합.
@@ -1218,6 +1318,7 @@ class SubheadingAgent(Agent):
             descriptor_pool=list(descriptor_pool or []),
             body_first_sentence=body_first,
             target_keyword_canonical=target_keyword_canonical,
+            user_keywords=list(user_keywords or []),
             section_index=index,
             section_count=len(list(siblings or [])),
             article_title=article_title,
@@ -1257,6 +1358,7 @@ class SubheadingAgent(Agent):
         descriptor_pool: Sequence[str],
         body_first_sentences: Sequence[str],
         target_keyword_canonical: str,
+        user_keywords: Optional[Sequence[str]] = None,
         score_key: str,
         article_title: str = "",
     ) -> None:
@@ -1272,6 +1374,7 @@ class SubheadingAgent(Agent):
                 descriptor_pool=descriptor_pool,
                 body_first_sentences=body_first_sentences,
                 target_keyword_canonical=target_keyword_canonical,
+                user_keywords=list(user_keywords or []),
                 article_title=article_title,
             )
             trace[i][f"{score_key}_score"] = sc.get("score", 0.0)
@@ -1500,6 +1603,7 @@ class SubheadingAgent(Agent):
                 descriptor_pool=descriptor_pool,
                 body_first_sentences=body_first_sentences,
                 target_keyword_canonical=target_keyword_canonical,
+                user_keywords=list(user_keywords or []),
                 article_title=article_title,
             )
             trace[i]["h2_repair_chain_score"] = new_score.get("score", 0.0)
@@ -1654,42 +1758,193 @@ class SubheadingAgent(Agent):
         return result
 
     # --------------------------------------------------------- fallback heading
-    def _deterministic_fallback_heading(self, plan: SectionPlan) -> str:
-        keyword = str(plan.get("must_include_keyword") or "").strip()
-        # 오염된 키워드("약화시", "외에도" 등)가 템플릿에 꽂히는 것을 차단.
-        # 빈 문자열로 치환하면 대부분 템플릿 람다가 "" 를 반환 → 호출부가 원본 유지.
-        if keyword and not _keyword_is_template_safe(keyword, plan):
-            keyword = ""
+    def _fallback_keyword_candidates(self, plan: SectionPlan) -> List[str]:
+        raw_candidates: List[str] = []
+        raw_candidates.append(str(plan.get("must_include_keyword") or "").strip())
+        raw_candidates.extend(str(item or "").strip() for item in plan.get("candidate_keywords") or [])
+        raw_candidates.extend(str(item or "").strip() for item in plan.get("entity_hints") or [])
+
+        candidates: List[str] = []
+        for keyword in _dedupe_preserve_order(raw_candidates):
+            normalized = re.sub(r"\s+", " ", keyword).strip(" ,.:;!?\"'“”‘’")
+            if len(normalized) < 2 or len(normalized) > 18:
+                continue
+            if normalized in _FALLBACK_LOW_SIGNAL_KEYWORDS:
+                continue
+            if not _keyword_is_template_safe(normalized, plan):
+                continue
+            candidates.append(normalized)
+        return candidates
+
+    def _normalize_fallback_heading_candidate(self, raw: str) -> str:
+        candidate = re.sub(r"\s+", " ", str(raw or "")).strip()
+        if not candidate:
+            return ""
+        try:
+            candidate = sanitize_h2_text(candidate)
+        except ValueError:
+            return ""
+        if len(candidate) < H2_MIN_LENGTH or len(candidate) > H2_MAX_LENGTH:
+            return ""
+        if has_incomplete_h2_ending(candidate):
+            return ""
+        return candidate
+
+    def _deterministic_fallback_candidates(
+        self,
+        plan: SectionPlan,
+        *,
+        is_conclusion: bool = False,
+    ) -> List[str]:
+        keywords = self._fallback_keyword_candidates(plan)
+        if not keywords:
+            return []
+
+        keyword = keywords[0]
         suggested_type = str(plan.get("suggested_type") or "")
         numerics = list(plan.get("numerics") or [])
         key_claim = str(plan.get("key_claim") or "").strip()
+        section_text = str(plan.get("section_text") or "")
+
+        subject_particle = _subject_particle(keyword)
+        object_particle = _object_particle(keyword)
+        raw_candidates: List[str] = []
+
+        def add(text: str) -> None:
+            if text:
+                raw_candidates.append(text)
 
         def _claim_declarative_ok() -> bool:
             return 12 <= len(key_claim) <= 22 and key_claim.endswith(("다", "다."))
 
+        if is_conclusion:
+            add(f"{keyword}, 실행으로 증명하겠습니다")
+            add(f"{keyword}{object_particle} 제도로 뒷받침하겠습니다")
+
+        if re.search(r"(재정|건전성|부채|포퓰리즘|우려)", section_text):
+            add(f"{keyword} 재정 우려, 어떻게 넘을까?")
+            add(f"{keyword}{subject_particle} 낭비가 아닌 이유")
+        if re.search(r"(조례|예산|제도|개정|근거|기반)", section_text):
+            add(f"{keyword}, 제도 기반을 세우겠습니다")
+            add(f"{keyword}{object_particle} 조례로 뒷받침하겠습니다")
+        if re.search(r"(자영업|소상공인|안전망|생존|골목상권)", section_text):
+            add(f"{keyword}, 민생 안전망이 되다")
+            add(f"{keyword}{subject_particle} 자영업자를 지킨다")
+        if re.search(r"(소비|상권|경제|매출|역외|선순환)", section_text):
+            add(f"{keyword}, 지역경제 회복의 출발점")
+
         templates = {
-            "질문형": lambda: f"{keyword}, 무엇이 달라지나요?" if keyword else "",
+            "질문형": lambda: f"{keyword}, 핵심 쟁점은 무엇인가요?",
             "목표형": lambda: (
-                f"{keyword}을 위한 3가지 약속" if keyword else ""
+                f"{keyword}, 실행 계획을 세우겠습니다"
             ),
             "주장형": lambda: (
-                key_claim if _claim_declarative_ok() else (f"{keyword}은 바로잡아야 한다" if keyword else "")
+                key_claim if _claim_declarative_ok() else f"{keyword}{subject_particle} 필요하다"
             ),
-            "이유형": lambda: f"{keyword}이 필요한 이유" if keyword else "",
-            "대조형": lambda: f"{keyword}, 무엇이 다른가" if keyword else "",
+            "이유형": lambda: f"{keyword}{subject_particle} 필요한 이유",
+            "대조형": lambda: f"{keyword}, 기존 정책과 차이는?",
             "사례형": lambda: (
-                f"{keyword} {numerics[0]}, 핵심 변화는" if keyword and numerics else ""
+                f"{keyword} {numerics[0]}, 핵심 변화는?" if numerics else f"{keyword}, 현장에서 확인하다"
             ),
         }
+        add(templates.get(suggested_type, lambda: f"{keyword}{subject_particle} 필요한 이유")())
 
-        raw = templates.get(suggested_type, lambda: (f"{keyword}이 필요한 이유" if keyword else key_claim))()
-        raw = raw.strip()
-        if not raw:
-            return ""
-        try:
-            return sanitize_h2_text(raw)
-        except ValueError:
-            return raw[:H2_MAX_LENGTH]
+        # 첫 키워드가 너무 길어 모든 템플릿이 탈락할 때를 대비해 다음 후보도 짧게 시도한다.
+        for alt_keyword in keywords[1:3]:
+            alt_subject = _subject_particle(alt_keyword)
+            add(f"{alt_keyword}{alt_subject} 필요한 이유")
+            add(f"{alt_keyword}, 핵심 쟁점은 무엇인가요?")
+
+        return _dedupe_preserve_order(
+            [
+                candidate
+                for candidate in (
+                    self._normalize_fallback_heading_candidate(item)
+                    for item in raw_candidates
+                )
+                if candidate
+            ]
+        )
+
+    def _deterministic_fallback_heading(self, plan: SectionPlan) -> str:
+        candidates = self._deterministic_fallback_candidates(plan)
+        return candidates[0] if candidates else ""
+
+    def _select_deterministic_fallback_heading(
+        self,
+        *,
+        plan: SectionPlan,
+        index: int,
+        current_score: H2Score,
+        siblings: Sequence[str],
+        h2_style: str,
+        preferred_types: Sequence[str],
+        full_name: str,
+        full_region: str,
+        descriptor_pool: Sequence[str],
+        body_first_sentences: Sequence[str],
+        target_keyword_canonical: str,
+        user_keywords: Sequence[str],
+        article_title: str = "",
+        is_conclusion: bool = False,
+    ) -> Dict[str, Any]:
+        candidates = self._deterministic_fallback_candidates(
+            plan,
+            is_conclusion=is_conclusion,
+        )
+        if not candidates:
+            return {"heading": "", "score": None, "candidates": []}
+
+        current_hard_count = _hard_fail_issue_count(current_score)
+        best_heading = ""
+        best_score: Optional[H2Score] = None
+        best_rank: tuple = (-999, -999, -999.0, -999.0, -999)
+
+        for order, candidate in enumerate(candidates):
+            score = score_h2(
+                candidate,
+                plan,
+                style=h2_style,
+                preferred_types=list(preferred_types or []),
+            )
+            self._enrich_score_one(
+                score,
+                heading=candidate,
+                index=index,
+                siblings=siblings,
+                full_name=full_name,
+                full_region=full_region,
+                descriptor_pool=descriptor_pool,
+                body_first_sentences=body_first_sentences,
+                target_keyword_canonical=target_keyword_canonical,
+                user_keywords=list(user_keywords or []),
+                article_title=article_title,
+            )
+            hard_count = _hard_fail_issue_count(score)
+            rank = (
+                1 if score.get("passed") else 0,
+                -hard_count,
+                float(score.get("score") or 0.0),
+                float(score.get("aeo_score") or 0.0),
+                -order,
+            )
+            if rank > best_rank:
+                best_rank = rank
+                best_heading = candidate
+                best_score = score
+
+        if not best_heading or best_score is None:
+            return {"heading": "", "score": None, "candidates": candidates}
+
+        # fallback이 hard-fail 수를 줄이지 못하고 점수도 낮으면 기존 결과를 보존한다.
+        if (
+            not best_score.get("passed")
+            and _hard_fail_issue_count(best_score) >= current_hard_count
+            and float(best_score.get("score") or 0.0) <= float(current_score.get("score") or 0.0)
+        ):
+            return {"heading": "", "score": None, "candidates": candidates}
+
+        return {"heading": best_heading, "score": best_score, "candidates": candidates}
 
     # -------------------------------------------------------- content rewrite
     def _replace_h2_headings(
