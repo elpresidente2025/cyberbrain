@@ -1,5 +1,6 @@
+import os
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..common.aeo_config import uses_aeo_answer_first
 from services.topic_classifier import classify_topic
@@ -133,6 +134,194 @@ class SectionRepairMixin:
                 )
 
         return content
+
+    async def _run_sequential_structure(
+        self,
+        *,
+        is_aeo: bool,
+        writing_method: str,
+        current_prompt: str,
+        length_spec: Dict[str, int],
+        topic: str,
+        source_instructions: str,
+        user_keywords: List[str],
+        existing_outline: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """ENABLE_SEQUENTIAL_STRUCTURE flag on 시 호출.
+
+        outline → intro → body × N → conclusion 순으로 LLM 을 개별 호출하여
+        각 섹션이 앞 섹션의 확정 텍스트를 prior_sections 로 참조하게 한다.
+
+        성공 시 ``{title, intro:{paragraphs}, body:[{heading, paragraphs}],
+        conclusion:{heading, paragraphs}}`` 모양의 payload(기존
+        ``_build_html_from_structure_json`` 과 동일) 를 반환.
+        실패 시 None — 호출부는 legacy 경로로 폴백한다.
+
+        outline 단계가 AEO 경로에서 이미 완료됐을 경우 existing_outline 으로
+        넘겨받아 중복 호출을 피한다.
+        """
+        try:
+            outline = existing_outline
+            if outline is None:
+                outline_prompt = self._build_outline_json_prompt(
+                    prompt=current_prompt,
+                    length_spec=length_spec,
+                    writing_method=writing_method,
+                )
+                outline_schema = self._build_outline_json_schema(
+                    length_spec, writing_method=writing_method,
+                )
+                try:
+                    outline = await self.call_llm_json_contract(
+                        outline_prompt,
+                        response_schema=outline_schema,
+                        required_keys=("title", "intro_lead", "body", "conclusion_heading"),
+                        stage="seq-outline",
+                        max_output_tokens=2048,
+                    )
+                except Exception as e:
+                    print(f"❌ [SequentialStructure] outline 호출 실패: {e}")
+                    return None
+
+                lead_failures = self._validate_outline_lead_sentences(
+                    outline, writing_method=writing_method,
+                )
+                if lead_failures:
+                    print(
+                        f"⚠️ [SequentialStructure] outline lead_sentence 검증 실패 "
+                        f"({len(lead_failures)}건): {lead_failures}"
+                    )
+                    return None
+
+                role_failures = self._validate_outline_roles(
+                    outline, writing_method=writing_method,
+                )
+                if role_failures:
+                    from ..common.aeo_config import build_dialectical_roles
+                    body_list = outline.get('body', []) or []
+                    expected = build_dialectical_roles(len(body_list))
+                    for section, exp in zip(body_list, expected):
+                        section['role'] = exp['role']
+                    print("📋 [SequentialStructure] role 시퀀스 강제 교정")
+
+            body_sections_info = outline.get('body', []) or []
+            if not body_sections_info:
+                print("❌ [SequentialStructure] outline.body 가 비어있음")
+                return None
+            body_total = len(body_sections_info)
+
+            completed: List[Dict[str, Any]] = []
+
+            intro_lead = str(outline.get('intro_lead') or '').strip()
+            intro_paragraphs = await self.generate_section(
+                role='intro',
+                heading='',
+                lead_sentence=intro_lead,
+                prior_sections=[],
+                base_prompt=current_prompt,
+                length_spec=length_spec,
+                writing_method=writing_method,
+                stage='seq-intro',
+                section_order=0,
+                body_total=body_total,
+                topic=topic,
+                instructions=source_instructions,
+                user_keywords=user_keywords,
+            )
+            if not intro_paragraphs:
+                print("❌ [SequentialStructure] intro 생성 실패 — legacy 경로로 폴백")
+                return None
+            completed.append({
+                'role': 'intro',
+                'heading': '',
+                'paragraphs': list(intro_paragraphs),
+            })
+
+            body_results: List[Dict[str, Any]] = []
+            for i, body_info in enumerate(body_sections_info, 1):
+                heading = str(body_info.get('heading') or '').strip()
+                lead = str(body_info.get('lead_sentence') or '').strip()
+                role = str(body_info.get('role') or 'evidence').strip() or 'evidence'
+                section_paragraphs = await self.generate_section(
+                    role=role,
+                    heading=heading,
+                    lead_sentence=lead,
+                    prior_sections=list(completed),
+                    base_prompt=current_prompt,
+                    length_spec=length_spec,
+                    writing_method=writing_method,
+                    stage=f'seq-body-{i}',
+                    section_order=i,
+                    body_total=body_total,
+                    topic=topic,
+                    instructions=source_instructions,
+                    user_keywords=user_keywords,
+                )
+                if not section_paragraphs:
+                    print(
+                        f"❌ [SequentialStructure] body {i} 생성 실패 — "
+                        f"legacy 경로로 폴백 (role={role}, heading='{heading[:20]}')"
+                    )
+                    return None
+                body_results.append({
+                    'heading': heading,
+                    'paragraphs': list(section_paragraphs),
+                })
+                completed.append({
+                    'role': role,
+                    'heading': heading,
+                    'paragraphs': list(section_paragraphs),
+                })
+
+            conclusion_heading = str(outline.get('conclusion_heading') or '').strip()
+            conclusion_paragraphs = await self.generate_section(
+                role='conclusion',
+                heading=conclusion_heading,
+                lead_sentence='',
+                prior_sections=list(completed),
+                base_prompt=current_prompt,
+                length_spec=length_spec,
+                writing_method=writing_method,
+                stage='seq-conclusion',
+                section_order=body_total + 1,
+                body_total=body_total,
+                topic=topic,
+                instructions=source_instructions,
+                user_keywords=user_keywords,
+            )
+            if not conclusion_paragraphs:
+                print("❌ [SequentialStructure] conclusion 생성 실패 — legacy 경로로 폴백")
+                return None
+
+            raw_title = str(outline.get('title') or '').strip()
+            if not raw_title:
+                raw_title = (topic or '새 원고').strip()[:40]
+
+            payload: Dict[str, Any] = {
+                'title': raw_title[:80],
+                'intro': {'paragraphs': list(intro_paragraphs)},
+                'body': body_results,
+                'conclusion': {
+                    'heading': conclusion_heading,
+                    'paragraphs': list(conclusion_paragraphs),
+                },
+            }
+
+            total_chars = (
+                sum(len(p) for p in intro_paragraphs)
+                + sum(len(p) for sec in body_results for p in sec['paragraphs'])
+                + sum(len(p) for p in conclusion_paragraphs)
+            )
+            print(
+                f"✅ [SequentialStructure] 순차 생성 완료 — "
+                f"aeo={is_aeo}, body_sections={body_total}, total_chars={total_chars}"
+            )
+            return payload
+        except Exception as e:
+            import traceback
+            print(f"❌ [SequentialStructure] 예외: {e}")
+            print(traceback.format_exc())
+            return None
 
     async def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
         topic = context.get('topic', '')
@@ -631,42 +820,63 @@ class SectionRepairMixin:
                         print(f"⚠️ [StructureAgent] 아웃라인 생성 실패, 단일 호출로 폴백: {outline_err}")
                         is_aeo = False
 
-                # === LLM 본문 생성 ===
-                print(
-                    f"📋 [StructureAgent] 본문 생성 경로: "
-                    f"is_aeo={is_aeo}, has_outline={aeo_outline is not None}"
-                )
-                if is_aeo and aeo_outline is not None:
-                    json_prompt = self._build_expansion_json_prompt(
-                        outline=aeo_outline,
-                        base_prompt=current_prompt,
-                        length_spec=length_spec,
+                # === (flag) ENABLE_SEQUENTIAL_STRUCTURE — 섹션 단위 순차 생성 ===
+                seq_payload: Optional[Dict[str, Any]] = None
+                seq_flag_on = os.environ.get("ENABLE_SEQUENTIAL_STRUCTURE", "false").lower() == "true"
+                if seq_flag_on:
+                    seq_payload = await self._run_sequential_structure(
+                        is_aeo=is_aeo,
                         writing_method=writing_method,
-                        topic=topic,
-                        instructions=source_instructions,
-                        user_keywords=user_keywords if isinstance(user_keywords, list) else [],
-                    )
-                    response_schema = self._build_structure_json_schema(length_spec)
-                    payload = await self.call_llm_json_contract(
-                        json_prompt,
-                        response_schema=response_schema,
-                        required_keys=("title", "intro", "body", "conclusion"),
-                        stage="expansion",
-                        max_output_tokens=8192,
-                    )
-                else:
-                    json_prompt = self._build_structure_json_prompt(
-                        prompt=current_prompt,
+                        current_prompt=current_prompt,
                         length_spec=length_spec,
+                        topic=topic,
+                        source_instructions=source_instructions,
+                        user_keywords=user_keywords if isinstance(user_keywords, list) else [],
+                        existing_outline=aeo_outline if is_aeo else None,
                     )
-                    response_schema = self._build_structure_json_schema(length_spec)
-                    payload = await self.call_llm_json_contract(
-                        json_prompt,
-                        response_schema=response_schema,
-                        required_keys=("title", "intro", "body", "conclusion"),
-                        stage="structure",
-                        max_output_tokens=8192,
+                    if seq_payload is None:
+                        print("⚠️ [StructureAgent] sequential 경로 실패 — legacy 경로로 폴백")
+
+                # === LLM 본문 생성 ===
+                if seq_payload is not None:
+                    print("📋 [StructureAgent] 본문 생성 경로: sequential (flag on)")
+                    payload = seq_payload
+                else:
+                    print(
+                        f"📋 [StructureAgent] 본문 생성 경로: "
+                        f"is_aeo={is_aeo}, has_outline={aeo_outline is not None}"
                     )
+                    if is_aeo and aeo_outline is not None:
+                        json_prompt = self._build_expansion_json_prompt(
+                            outline=aeo_outline,
+                            base_prompt=current_prompt,
+                            length_spec=length_spec,
+                            writing_method=writing_method,
+                            topic=topic,
+                            instructions=source_instructions,
+                            user_keywords=user_keywords if isinstance(user_keywords, list) else [],
+                        )
+                        response_schema = self._build_structure_json_schema(length_spec)
+                        payload = await self.call_llm_json_contract(
+                            json_prompt,
+                            response_schema=response_schema,
+                            required_keys=("title", "intro", "body", "conclusion"),
+                            stage="expansion",
+                            max_output_tokens=8192,
+                        )
+                    else:
+                        json_prompt = self._build_structure_json_prompt(
+                            prompt=current_prompt,
+                            length_spec=length_spec,
+                        )
+                        response_schema = self._build_structure_json_schema(length_spec)
+                        payload = await self.call_llm_json_contract(
+                            json_prompt,
+                            response_schema=response_schema,
+                            required_keys=("title", "intro", "body", "conclusion"),
+                            stage="structure",
+                            max_output_tokens=8192,
+                        )
 
                 raw_content, title = self._build_html_from_structure_json(
                     payload,

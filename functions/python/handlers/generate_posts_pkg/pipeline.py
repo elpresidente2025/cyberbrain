@@ -7016,6 +7016,12 @@ def _build_generic_closing_answer_lead(heading: str, *, full_name: str = "") -> 
     return "결국 중요한 것은 약속을 실행으로 연결해 시민이 체감할 변화를 만드는 일입니다."
 
 
+_BODY_ANCHOR_NUMBER_UNIT_RE = re.compile(
+    r"(\d{1,4}(?:[.,]\d{1,4})?\s*(?:억\s*원|만\s*원|조\s*원|천\s*원|원|억|만|천|명|가구|세대|%|퍼센트|년|개월|주|일|시간|회|건|곳|개))"
+)
+_BODY_ANCHOR_QUOTED_RE = re.compile(r"[“\"「『]([^\"”」』\n]{2,30})[”\"」』]")
+
+
 def _select_conclusion_anchor(
     body_text: str,
     *,
@@ -7034,6 +7040,21 @@ def _select_conclusion_anchor(
             continue
         if compact_keyword and compact_keyword in compact_body:
             return keyword
+
+    number_match = _BODY_ANCHOR_NUMBER_UNIT_RE.search(body_plain)
+    if number_match:
+        candidate = _normalize_inline_whitespace(number_match.group(1))
+        if candidate and candidate.replace(" ", "") not in ignored:
+            return candidate
+
+    for quoted_match in _BODY_ANCHOR_QUOTED_RE.finditer(body_plain):
+        candidate = _normalize_inline_whitespace(quoted_match.group(1))
+        compact_candidate = candidate.replace(" ", "")
+        if not compact_candidate or compact_candidate in ignored:
+            continue
+        if 2 <= len(compact_candidate) <= 30:
+            return candidate
+
     return "이 과제"
 
 
@@ -7156,7 +7177,7 @@ def _build_conclusion_archetype_paragraphs(
             "주민 여러분과 함께 끝까지 확인하고 부족한 부분은 빠르게 보완하겠습니다. 좋은 정치로 지역의 변화를 만들겠습니다. 감사합니다.",
         ]
     return [
-        f"{subject}{topic_particle} 말로 끝낼 약속이 아니라 시민 생활에서 확인되어야 할 민생 과제입니다. 본론에서 확인한 문제를 실행의 결과로 연결하겠습니다.",
+        f"{subject}{topic_particle} 말로 끝낼 약속이 아니라 시민 생활에서 확인되어야 할 민생 과제입니다. {subject}{subject_particle} 흐지부지되지 않도록 결과로 증명하겠습니다.",
         "저는 조례, 예산, 현장 점검을 함께 묶어 추진 경로를 분명히 세우겠습니다. 과정과 결과를 시민께 투명하게 보고드리겠습니다.",
         "주민 여러분의 의견을 끝까지 듣고 필요한 보완은 빠르게 이어가겠습니다. 좋은 정치로 시민의 삶에 남는 변화를 만들겠습니다. 감사합니다.",
     ]
