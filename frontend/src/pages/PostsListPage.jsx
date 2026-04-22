@@ -307,7 +307,13 @@ function CalendarView({ posts, onPostClick, theme, onDelete, onSNS, onPublish })
                 <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
                   {formattedDate}
                 </Typography>
-                <Button size="small" onClick={() => setSelectedDate(null)}>
+                <Button
+                  size="small"
+                  onClick={() => setSelectedDate(null)}
+                  sx={{
+                    color: theme.palette.mode === 'dark' ? '#fff' : undefined,
+                  }}
+                >
                   닫기
                 </Button>
               </Box>

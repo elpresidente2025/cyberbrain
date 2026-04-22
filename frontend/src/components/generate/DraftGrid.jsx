@@ -20,6 +20,7 @@ export default function DraftGrid({
   items = [],
   onSelect,
   onSave,
+  saving = false,
   maxAttempts = 3,
   isMobile = false,
   user = null  // 🆕 사용자 정보 추가
@@ -216,8 +217,10 @@ export default function DraftGrid({
               <Button
                 size="small"
                 startIcon={<Save />}
+                disabled={saving}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (saving) return;
                   onSave?.(draft);
                 }}
                 sx={{
@@ -226,11 +229,15 @@ export default function DraftGrid({
                   '&:hover': {
                     borderColor: 'rgba(255,255,255,0.8)',
                     backgroundColor: 'rgba(255,255,255,0.1)'
+                  },
+                  '&.Mui-disabled': {
+                    color: 'rgba(255,255,255,0.5)',
+                    borderColor: 'rgba(255,255,255,0.3)'
                   }
                 }}
                 variant="outlined"
               >
-                저장
+                {saving ? '저장 중...' : '저장'}
               </Button>
             </CardActions>
           </Card>

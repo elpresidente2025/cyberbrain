@@ -320,6 +320,9 @@ const GeneratePage = () => {
   // --- 👁️ 미리보기 상태 관리 ---
   const [selectedDraft, setSelectedDraft] = React.useState(null); // 사용자가 선택한 초안
 
+  // --- 💾 저장 진행 상태 (중복 저장 방지) ---
+  const [isSaving, setIsSaving] = React.useState(false);
+
   // --- 📱 SNS 변환 상태 관리 ---
   const [snsModalOpen, setSnsModalOpen] = React.useState(false);
   const [snsPost, setSnsPost] = React.useState(null);
@@ -540,26 +543,33 @@ const GeneratePage = () => {
     showNotification('원고를 선택했습니다. 저장하시겠습니까?', 'info');
   };
 
-  /** 선택된 원고를 최종 저장하는 함수 */
-  const handleConfirmSelection = async (draft) => {
+  /**
+   * 초안 저장 → 내 원고 목록으로 이동하는 통합 핸들러.
+   * 카드의 '저장'과 미리보기 모달의 '이 원고 저장'이 같은 흐름을 탄다.
+   * isSaving 가드로 연타·두 진입점 동시 클릭에 의한 중복 저장을 차단한다.
+   */
+  const handleSave = async (draft) => {
+    if (!draft || isSaving) return;
+    setIsSaving(true);
     try {
-      // 실제 저장 로직
       const result = await save(draft);
 
       if (result.success) {
-        // 최종 선택 완료 → 브라우저에 임시 보관하던 폼 입력값은 이제 비운다.
         clearPersistedForm();
+        setSelectedDraft(null);
         showNotification('원고가 저장되었습니다. 내 원고 목록으로 이동합니다.', 'success');
-        // 저장 성공 후 내 원고 목록으로 이동
         setTimeout(() => {
           navigate('/posts');
         }, 1000);
+        // 이동이 예약된 동안에는 isSaving을 true로 유지 → 추가 클릭 무시
       } else {
         showNotification(result.error || '저장에 실패했습니다.', 'error');
+        setIsSaving(false);
       }
     } catch (error) {
       console.error('원고 저장 오류:', error);
       showNotification('저장 처리 중 오류가 발생했습니다.', 'error');
+      setIsSaving(false);
     }
   };
 
@@ -567,27 +577,6 @@ const GeneratePage = () => {
   const handleSNSConvert = (draft) => {
     setSnsPost(draft);
     setSnsModalOpen(true);
-  };
-
-  /** 초안 저장 버튼 클릭 시 실행되는 함수 */
-  const handleSave = async (draft) => {
-    try {
-      console.log('💾 저장 시작:', draft.title);
-      const result = await save(draft);
-      console.log('💾 저장 결과:', result);
-
-      // 저장 API 결과에 따라 스낵바를 띄움
-      if (result.success) {
-        // 최종 선택 완료 → 브라우저에 임시 보관하던 폼 입력값 제거
-        clearPersistedForm();
-        showNotification(result.message || '원고가 저장되었습니다.', 'success');
-      } else {
-        showNotification(result.error || '저장에 실패했습니다.', 'error');
-      }
-    } catch (error) {
-      console.error('💾 저장 핸들러 오류:', error);
-      showNotification('저장 처리 중 오류가 발생했습니다.', 'error');
-    }
   };
 
 
@@ -689,6 +678,7 @@ const GeneratePage = () => {
             items={drafts}
             onSelect={setSelectedDraft} // 항상 자세히 보기 모달 활성화
             onSave={handleSave}         // 초안 저장 시 호출될 함수
+            saving={isSaving}           // 저장 중이면 모든 카드의 저장 버튼 비활성화
             maxAttempts={maxAttempts}
             isMobile={isMobile}
             user={user}                 // 🆕 관리자/테스터 메타데이터 표시용
@@ -757,10 +747,11 @@ const GeneratePage = () => {
               </Button>
               <Button
                 variant="contained"
-                onClick={() => handleConfirmSelection(selectedDraft)}
+                onClick={() => handleSave(selectedDraft)}
                 color="primary"
+                disabled={isSaving}
               >
-                이 원고 저장
+                {isSaving ? '저장 중...' : '이 원고 저장'}
               </Button>
             </Box>
           </DialogActions>

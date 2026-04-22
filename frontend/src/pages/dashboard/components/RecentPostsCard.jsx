@@ -11,7 +11,8 @@ import {
     ListItemText,
     Divider,
     Chip,
-    Button
+    Button,
+    useTheme
 } from '@mui/material';
 import { Article } from '@mui/icons-material';
 import EmptyState from '../../../components/ui/feedback/EmptyState';
@@ -29,6 +30,9 @@ const RecentPostsCard = ({
     onSNSConvert,
     onViewAll
 }) => {
+    const theme = useTheme();
+    const isDark = theme.palette.mode === 'dark';
+
     // 유틸리티 함수들
     const formatDate = (iso) => {
         if (!iso) return '';
@@ -125,7 +129,7 @@ const RecentPostsCard = ({
                 {onViewAll && (
                     <Button
                         size="small"
-                        sx={{ color: 'var(--color-primary)' }}
+                        sx={{ color: isDark ? '#fff' : 'var(--color-primary)' }}
                         onClick={onViewAll}
                     >
                         전체 보기
@@ -171,8 +175,8 @@ const RecentPostsCard = ({
                                             sx={{
                                                 height: 20,
                                                 fontSize: '0.7rem',
-                                                bgcolor: 'var(--color-primary-light)',
-                                                color: 'var(--color-primary)'
+                                                bgcolor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'var(--color-primary-light)',
+                                                color: isDark ? '#fff' : 'var(--color-primary)'
                                             }}
                                         />
                                     </Box>
@@ -211,7 +215,7 @@ const RecentPostsCard = ({
                         variant="text"
                         size="small"
                         onClick={onViewAll}
-                        sx={{ color: 'var(--color-primary)' }}
+                        sx={{ color: isDark ? '#fff' : 'var(--color-primary)' }}
                     >
                         더 보기 ({posts.length - maxItems}개 더)
                     </Button>
