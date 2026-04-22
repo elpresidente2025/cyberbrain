@@ -1096,6 +1096,15 @@ def _build_role_keyword_title_policy_instruction(role_keyword_policy: Dict[str, 
                     f'출마/거론 의도를 붙인 검색 앵커로만 제목에 사용할 것.'
                     f"</rule>"
                 )
+            elif bool(entry.get("allowCompetitorIntent", True)) is False:
+                relation = entry.get("speakerRelation") if isinstance(entry.get("speakerRelation"), dict) else {}
+                relation_label = str(relation.get("relation") or "프로필상 직접 경쟁 관계 아님").strip()
+                lines.append(
+                    f'  <rule keyword="{keyword}" mode="profile_not_competitor">'
+                    f'"{keyword}"는 사용자 프로필과 대조하면 직접 경쟁자 검색 앵커가 아닙니다'
+                    f'({relation_label}). 제목에서 출마론/거론형 경쟁자 앵커로 바꾸지 마세요.'
+                    f"</rule>"
+                )
             else:
                 lines.append(
                     f'  <rule keyword="{keyword}" mode="blocked">'

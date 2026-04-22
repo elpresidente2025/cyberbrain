@@ -28,6 +28,7 @@ from agents.common.title_common import (
 from agents.common.h2_guide import has_incomplete_h2_ending, sanitize_h2_text
 from agents.core.structure_normalizer import _generate_h2_text
 from agents.common.role_keyword_policy import build_role_keyword_policy
+from agents.common.title_repairers import _resolve_competitor_intent_title_keyword
 from agents.core.keyword_injector_agent import KeywordInjectorAgent
 from agents.core.prompt_builder import build_structure_prompt
 from agents.core.structure_agent import StructureAgent
@@ -482,6 +483,67 @@ def test_rewrite_sentence_to_reduce_keyword_keeps_self_identification_sentence()
     )
 
     assert rewritten == "뼛속까지 부산사람, 이재성입니다."
+
+
+# synthetic_fixture
+def test_role_keyword_policy_marks_same_region_other_office_as_non_competitor() -> None:
+    policy = build_role_keyword_policy(
+        ["가나 샘플구청장"],
+        source_texts=[
+            "가나 샘플구청장 후보와 함께 필승의 각오로 샘플구 곳곳을 뛰고 있습니다.",
+        ],
+        speaker_profile={
+            "name": "다라",
+            "position": "광역의원",
+            "regionMetro": "샘플광역시",
+            "regionLocal": "샘플구",
+        },
+    )
+    entry = (policy.get("entries") or {}).get("가나 샘플구청장") or {}
+    relation = entry.get("speakerRelation") or {}
+
+    assert relation.get("relation") == "same_region_allied_candidate"
+    assert relation.get("speakerOfficeLevel") == "metropolitan_assembly"
+    assert relation.get("targetOfficeLevel") == "basic_municipal_head"
+    assert entry.get("allowCompetitorIntent") is False
+    assert entry.get("allowTitleIntentAnchor") is False
+
+
+# synthetic_fixture
+def test_competitor_intent_keyword_suppressed_by_profile_office_mismatch() -> None:
+    params = {
+        "topic": "샘플구청장 경선 마무리 이후 본격 선거 시작",
+        "contentPreview": (
+            "샘플구청장 경선이 마무리되었습니다. 예비후보 등록 첫 마음으로 "
+            "샘플구 주민을 만나겠습니다."
+        ),
+        "stanceText": (
+            "샘플구청장 경선이 마무리되었습니다. 이제 저도 본격적으로 "
+            "제 선거를 향해 나아갑니다."
+        ),
+        "competitorIntentKeyword": "샘플구청장",
+        "fullName": "다라",
+        "position": "광역의원",
+        "regionMetro": "샘플광역시",
+        "regionLocal": "샘플구",
+        "speakerProfile": {
+            "name": "다라",
+            "position": "광역의원",
+            "regionMetro": "샘플광역시",
+            "regionLocal": "샘플구",
+        },
+        "userKeywords": [],
+        "category": "activity-report",
+    }
+
+    assert _resolve_competitor_intent_title_keyword(params) == ""
+    result = calculate_title_quality_score(
+        "샘플구청장 경선 이후, 다라가 주민을 만나겠습니다",
+        params,
+        {"autoFitLength": False},
+    )
+
+    assert "competitorIntentTail" not in (result.get("breakdown") or {})
 
 
 def test_repair_identity_signature_exact_form_once_restores_name_after_keyword_reduction() -> None:
@@ -1373,6 +1435,53 @@ def test_title_agent_prefers_structured_title_before_llm() -> None:
         assert result["titleType"] == "STRUCTURED_PLAN"
         assert result["titleHistory"][0]["source"] == "structured_plan"
         assert "이재성" in result["title"] and "전재수" in result["title"]
+
+    asyncio.run(_run())
+
+
+# synthetic_fixture
+def test_title_agent_keeps_auto_keywords_out_of_user_keyword_policy() -> None:
+    captured = {}
+
+    async def _fake_generate_and_validate_title(_generate_fn, params, options=None):
+        captured["params"] = params
+        return {
+            "title": "샘플구 경선 이후 주민을 만나겠습니다",
+            "score": 80,
+            "history": [],
+        }
+
+    async def _run() -> None:
+        with patch(
+            "agents.core.title_agent.build_structured_title_candidates",
+            return_value=[],
+        ), patch(
+            "agents.core.title_agent.generate_and_validate_title",
+            new=_fake_generate_and_validate_title,
+        ):
+            agent = TitleAgent(options={})
+            result = await agent.process(
+                {
+                    "topic": "샘플구청장 경선 이후 예비후보 활동 시작",
+                    "content": "<p>샘플구청장 경선 이후 예비후보 등록 첫 마음으로 주민을 만나겠습니다.</p>",
+                    "stanceText": "샘플구청장 경선이 마무리되었습니다. 이제 제 선거를 시작합니다.",
+                    "userKeywords": [],
+                    "keywords": ["가나 샘플구청장"],
+                    "author": {"name": "다라"},
+                    "userProfile": {
+                        "name": "다라",
+                        "position": "광역의원",
+                        "regionMetro": "샘플광역시",
+                        "regionLocal": "샘플구",
+                    },
+                    "category": "activity-report",
+                }
+            )
+
+        assert result["titleScore"] == 80
+        params = captured.get("params") or {}
+        assert params.get("userKeywords") == []
+        assert (params.get("roleKeywordPolicy") or {}).get("entries") == {}
 
     asyncio.run(_run())
 

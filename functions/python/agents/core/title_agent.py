@@ -61,9 +61,8 @@ class TitleAgent(Agent):
         content_preview_text = re.sub(r'<[^>]*>', ' ', content_preview)
         content_preview_text = re.sub(r'\s+', ' ', content_preview_text).strip()
 
-        user_keywords = context.get('userKeywords') or context.get('keywords') or []  # User provided keywords
-        if not isinstance(user_keywords, list):
-            user_keywords = []
+        raw_user_keywords = context.get('userKeywords')
+        user_keywords = raw_user_keywords if isinstance(raw_user_keywords, list) else []  # User provided keywords only
         generated_keywords = (context.get('analysis') or {}).get('keywords', []) # SEO extracts
         context_analysis = context.get('contextAnalysis')
         if not isinstance(context_analysis, dict):
@@ -87,6 +86,9 @@ class TitleAgent(Agent):
             context.get('sourceInput'),
             context.get('sourceContent'),
             context.get('originalContent'),
+            context.get('stanceText'),
+            context.get('background'),
+            content_preview_text,
         ]
         person_roles: Dict[str, str] = {}
         for text in source_texts:
@@ -121,6 +123,8 @@ class TitleAgent(Agent):
             'regionLocal': str(user_profile.get('regionLocal') or '').strip(),
             'electoralDistrict': str(user_profile.get('electoralDistrict') or '').strip(),
             'position': str(user_profile.get('position') or '').strip(),
+            'targetElection': user_profile.get('targetElection') if isinstance(user_profile.get('targetElection'), dict) else {},
+            'speakerProfile': user_profile,
             'category': category,
             'status': status,
             'titleScope': title_scope,
@@ -132,6 +136,7 @@ class TitleAgent(Agent):
                 user_keywords,
                 person_roles=person_roles,
                 source_texts=source_texts,
+                speaker_profile=user_profile,
             ),
             'titleConstraintText': '동일 인물 이름은 제목 전체에서 1회만 사용할 것.',
             # 빈 응답 예방: 제목 프롬프트를 경량화해 모델 부담을 낮춘다.

@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 from .role_keyword_policy import (
     build_role_keyword_intent_anchor_text,
+    classify_role_keyword_speaker_relation,
     extract_role_keyword_parts,
     is_role_keyword_intent_surface,
     order_role_keyword_intent_anchor_candidates,
@@ -35,7 +36,9 @@ def _resolve_competitor_intent_title_keyword(params: Optional[Dict[str, Any]]) -
     params_dict = params if isinstance(params, dict) else {}
     explicit_keyword = str(params_dict.get("competitorIntentKeyword") or "").strip()
     if explicit_keyword:
-        return explicit_keyword
+        if _allow_competitor_intent_keyword(explicit_keyword, params_dict):
+            return explicit_keyword
+        return ""
 
     role_keyword_policy = params_dict.get("roleKeywordPolicy") if isinstance(params_dict.get("roleKeywordPolicy"), dict) else {}
     entries = role_keyword_policy.get("entries") if isinstance(role_keyword_policy.get("entries"), dict) else {}
@@ -48,7 +51,10 @@ def _resolve_competitor_intent_title_keyword(params: Optional[Dict[str, Any]]) -
         entry = entries.get(keyword) if isinstance(entries, dict) else {}
         mode = str((entry or {}).get("mode") or "").strip().lower()
         allow_title_intent_anchor = bool((entry or {}).get("allowTitleIntentAnchor"))
-        if mode == "intent_only" or (mode == "blocked" and allow_title_intent_anchor):
+        allow_competitor_intent = bool((entry or {}).get("allowCompetitorIntent", True))
+        if allow_competitor_intent and (
+            mode == "intent_only" or (mode == "blocked" and allow_title_intent_anchor)
+        ):
             return keyword
 
     fallback_candidates: List[str] = []
@@ -66,6 +72,8 @@ def _resolve_competitor_intent_title_keyword(params: Optional[Dict[str, Any]]) -
             continue
         if full_name and name == full_name:
             continue
+        if not _allow_competitor_intent_keyword(keyword, params_dict):
+            continue
         fallback_candidates.append(keyword)
 
     if fallback_candidates:
@@ -79,6 +87,49 @@ def _resolve_competitor_intent_title_keyword(params: Optional[Dict[str, Any]]) -
         return str(fallback_candidates[0] or "").strip()
 
     return ""
+
+
+def _speaker_profile_from_title_params(params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    params_dict = params if isinstance(params, dict) else {}
+    profile = params_dict.get("speakerProfile") if isinstance(params_dict.get("speakerProfile"), dict) else {}
+    merged = dict(profile)
+    for key in ("regionMetro", "regionLocal", "electoralDistrict", "position", "targetElection"):
+        if key == "targetElection":
+            value = params_dict.get(key)
+            if isinstance(value, dict) and value:
+                merged[key] = value
+            continue
+        value = str(params_dict.get(key) or "").strip()
+        if value:
+            merged[key] = value
+    return merged
+
+
+def _allow_competitor_intent_keyword(keyword: str, params: Optional[Dict[str, Any]]) -> bool:
+    params_dict = params if isinstance(params, dict) else {}
+    role_keyword_policy = (
+        params_dict.get("roleKeywordPolicy")
+        if isinstance(params_dict.get("roleKeywordPolicy"), dict)
+        else {}
+    )
+    entries = role_keyword_policy.get("entries") if isinstance(role_keyword_policy.get("entries"), dict) else {}
+    entry = entries.get(keyword) if isinstance(entries, dict) else None
+    if isinstance(entry, dict):
+        return bool(entry.get("allowCompetitorIntent", True))
+
+    source_texts = [
+        params_dict.get("topic"),
+        params_dict.get("contentPreview"),
+        params_dict.get("stanceText"),
+        params_dict.get("backgroundText"),
+    ]
+    relation = classify_role_keyword_speaker_relation(
+        keyword=keyword,
+        role=keyword,
+        speaker_profile=_speaker_profile_from_title_params(params_dict),
+        source_texts=source_texts,
+    )
+    return bool(relation.get("allowCompetitorIntent", True))
 
 def _has_competitor_intent_anchor_surface(title: str, intent_keyword: str) -> bool:
     normalized_title = normalize_title_surface(title) or str(title or "").strip()

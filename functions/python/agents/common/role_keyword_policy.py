@@ -19,6 +19,8 @@ ROLE_SURFACE_CORE_TOKENS: tuple[str, ...] = (
 ROLE_SURFACE_PATTERN = (
     r"(?:"
     r"[가-힣]{1,10}(?:특별|광역|자치)?(?:시장|도지사)"
+    r"|[가-힣]{1,10}(?:구청장|군수|시의원|도의원|구의원|군의원)"
+    r"|광역의원|기초의원|시의원|도의원|구의원|군의원"
     r"|구청장|군수|교육감|국회의원|의원|대표|당대표|원내대표|위원장|장관|후보"
     r")"
 )
@@ -53,6 +55,24 @@ TITLE_INTENT_ANCHOR_SUFFIXES: tuple[str, ...] = (
     "출마 가능성",
     "거론 속",
     "구도",
+)
+METRO_REGION_PREFIXES: tuple[str, ...] = (
+    "서울",
+    "부산",
+    "대구",
+    "인천",
+    "광주",
+    "대전",
+    "울산",
+    "세종",
+)
+ALLIED_CONTEXT_PATTERN = re.compile(
+    r"(?:함께|같이|동행|지원|필승|힘을\s*모아|발로\s*뛰|손잡고|원팀)",
+    re.IGNORECASE,
+)
+DIRECT_COMPETITION_CONTEXT_PATTERN = re.compile(
+    r"(?:맞대결|가상대결|양자대결|대결|경쟁|상대|vs|VS|접전|판세|적합도|여론조사)",
+    re.IGNORECASE,
 )
 CANDIDATE_LABEL_PATTERN = r"(?:예비후보|후보(?!군|론|설))"
 PERSON_TARGET_CANDIDATE_PATTERN = re.compile(
@@ -116,6 +136,12 @@ def _normalize_role_surface_token(token: Any) -> str:
         return ""
     if canonical in {
         "국회의원",
+        "광역의원",
+        "기초의원",
+        "시의원",
+        "도의원",
+        "구의원",
+        "군의원",
         "대표",
         "당대표",
         "원내대표",
@@ -128,6 +154,8 @@ def _normalize_role_surface_token(token: Any) -> str:
         return canonical
     if canonical.endswith("시장") or canonical.endswith("도지사"):
         return canonical
+    if canonical.endswith("구청장") or canonical.endswith("군수"):
+        return canonical
     return ""
 
 
@@ -139,9 +167,34 @@ def normalize_role_label(role: Any) -> str:
         text = text[1:]
     if text == "의원":
         return "국회의원"
-    if text in {"대표", "당대표", "원내대표", "위원장", "장관", "후보", "구청장", "군수", "교육감"}:
+    if text in {
+        "대표",
+        "당대표",
+        "원내대표",
+        "위원장",
+        "장관",
+        "후보",
+        "구청장",
+        "군수",
+        "교육감",
+        "광역의원",
+        "기초의원",
+        "시의원",
+        "도의원",
+        "구의원",
+        "군의원",
+    }:
         return text
-    if text.endswith("시장") or text.endswith("도지사"):
+    if (
+        text.endswith("시장")
+        or text.endswith("도지사")
+        or text.endswith("구청장")
+        or text.endswith("군수")
+        or text.endswith("시의원")
+        or text.endswith("도의원")
+        or text.endswith("구의원")
+        or text.endswith("군의원")
+    ):
         return text
     return text
 
@@ -160,6 +213,14 @@ def roles_equivalent(left: Any, right: Any) -> bool:
     if normalized_left.endswith("도지사") and normalized_right == "도지사":
         return True
     if normalized_right.endswith("도지사") and normalized_left == "도지사":
+        return True
+    if normalized_left.endswith("구청장") and normalized_right == "구청장":
+        return True
+    if normalized_right.endswith("구청장") and normalized_left == "구청장":
+        return True
+    if normalized_left.endswith("군수") and normalized_right == "군수":
+        return True
+    if normalized_right.endswith("군수") and normalized_left == "군수":
         return True
     return False
 
@@ -183,6 +244,210 @@ def extract_role_keyword_parts(keyword: Any) -> Dict[str, str]:
 def is_role_keyword(keyword: Any) -> bool:
     parts = extract_role_keyword_parts(keyword)
     return bool(parts.get("name") and parts.get("role"))
+
+
+def _normalize_region_token(value: Any) -> str:
+    text = re.sub(r"[^가-힣A-Za-z0-9]", "", str(value or "")).strip()
+    if not text:
+        return ""
+    suffixes = (
+        "특별자치시",
+        "특별자치도",
+        "특별시",
+        "광역시",
+        "자치시",
+        "자치도",
+        "시",
+        "도",
+        "구",
+        "군",
+    )
+    for suffix in suffixes:
+        if text.endswith(suffix) and len(text) > len(suffix):
+            return text[: -len(suffix)]
+    return text
+
+
+def _office_level_from_role(role: Any, *, profile_region_metro: str = "") -> str:
+    normalized = normalize_role_label(role)
+    compact = re.sub(r"\s+", "", normalized)
+    if not compact:
+        return ""
+    if compact in {"국회의원"}:
+        return "national_assembly"
+    if compact in {"광역의원", "도의원"}:
+        return "metropolitan_assembly"
+    if compact == "시의원":
+        metro_hint = _normalize_region_token(profile_region_metro)
+        return "metropolitan_assembly" if metro_hint in METRO_REGION_PREFIXES else "basic_assembly"
+    if compact in {"기초의원", "구의원", "군의원"}:
+        return "basic_assembly"
+    if compact in {"대표", "당대표", "원내대표", "위원장"}:
+        return "party_role"
+    if compact in {"장관"}:
+        return "government_role"
+    if compact == "교육감":
+        return "education_head"
+    if compact.endswith("도지사"):
+        return "metropolitan_head"
+    if compact.endswith("구청장") or compact.endswith("군수"):
+        return "basic_municipal_head"
+    if compact.endswith("시장"):
+        prefix = compact[: -len("시장")]
+        if _normalize_region_token(prefix) in METRO_REGION_PREFIXES:
+            return "metropolitan_head"
+        return "basic_municipal_head"
+    return ""
+
+
+def _role_region_hint(role: Any) -> Dict[str, str]:
+    compact = re.sub(r"\s+", "", normalize_role_label(role))
+    if not compact:
+        return {"metro": "", "local": ""}
+    if compact.endswith("구청장"):
+        return {"metro": "", "local": _normalize_region_token(compact[: -len("구청장")])}
+    if compact.endswith("군수"):
+        return {"metro": "", "local": _normalize_region_token(compact[: -len("군수")])}
+    if compact.endswith("시장"):
+        prefix = _normalize_region_token(compact[: -len("시장")])
+        if prefix in METRO_REGION_PREFIXES:
+            return {"metro": prefix, "local": ""}
+        return {"metro": "", "local": prefix}
+    if compact.endswith("도지사"):
+        return {"metro": _normalize_region_token(compact[: -len("도지사")]), "local": ""}
+    return {"metro": "", "local": ""}
+
+
+def _profile_region_hints(profile: Optional[Dict[str, Any]]) -> Dict[str, set[str]]:
+    profile_dict = profile if isinstance(profile, dict) else {}
+    metro_values = {
+        _normalize_region_token(profile_dict.get("regionMetro")),
+        _normalize_region_token(profile_dict.get("metroRegion")),
+        _normalize_region_token(profile_dict.get("region")),
+    }
+    local_values = {
+        _normalize_region_token(profile_dict.get("regionLocal")),
+        _normalize_region_token(profile_dict.get("regionDistrict")),
+        _normalize_region_token(profile_dict.get("electoralDistrict")),
+    }
+    return {
+        "metro": {item for item in metro_values if item},
+        "local": {item for item in local_values if item},
+    }
+
+
+def _profile_position(profile: Optional[Dict[str, Any]]) -> str:
+    profile_dict = profile if isinstance(profile, dict) else {}
+    target = profile_dict.get("targetElection") if isinstance(profile_dict.get("targetElection"), dict) else {}
+    for key in ("position", "office", "role"):
+        value = str(target.get(key) or "").strip()
+        if value:
+            return value
+    for key in ("position", "currentPosition", "office", "role"):
+        value = str(profile_dict.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _role_matches_profile_region(role: Any, profile: Optional[Dict[str, Any]]) -> bool:
+    role_region = _role_region_hint(role)
+    profile_regions = _profile_region_hints(profile)
+    role_metro = str(role_region.get("metro") or "")
+    role_local = str(role_region.get("local") or "")
+    if role_local and role_local in profile_regions.get("local", set()):
+        return True
+    if role_metro and role_metro in profile_regions.get("metro", set()):
+        return True
+    return False
+
+
+def _units_containing_person(name: str, texts: Iterable[Any]) -> list[str]:
+    normalized_name = _clean_name(name)
+    if not normalized_name:
+        return []
+    units: list[str] = []
+    for text in texts or []:
+        for unit in _split_context_units(text):
+            if normalized_name in unit:
+                units.append(unit)
+    return units
+
+
+def _has_allied_person_context(name: str, texts: Iterable[Any]) -> bool:
+    return any(ALLIED_CONTEXT_PATTERN.search(unit) for unit in _units_containing_person(name, texts))
+
+
+def _has_direct_competition_person_context(name: str, texts: Iterable[Any]) -> bool:
+    return any(DIRECT_COMPETITION_CONTEXT_PATTERN.search(unit) for unit in _units_containing_person(name, texts))
+
+
+def classify_role_keyword_speaker_relation(
+    *,
+    keyword: Any = "",
+    name: Any = "",
+    role: Any = "",
+    speaker_profile: Optional[Dict[str, Any]] = None,
+    source_texts: Optional[Iterable[Any]] = None,
+) -> Dict[str, Any]:
+    """사용자 프로필과 역할형 키워드의 관계를 분류한다.
+
+    이 함수는 제목의 경쟁자 intent 활성화 여부를 정하기 위한 일반 규칙이다.
+    같은 지역의 다른 선거 단위 후보나 당 지도부를 직접 경쟁자로 오판하지
+    않도록, 화자 직책/지역과 원문 문맥을 함께 본다.
+    """
+    profile = speaker_profile if isinstance(speaker_profile, dict) else {}
+    source_text_list = list(source_texts or [])
+    parts = extract_role_keyword_parts(keyword)
+    person_name = _clean_name(name or parts.get("name") or "")
+    role_text = str(role or parts.get("role") or keyword or "").strip()
+
+    speaker_role = _profile_position(profile)
+    speaker_level = _office_level_from_role(
+        speaker_role,
+        profile_region_metro=str(profile.get("regionMetro") or ""),
+    )
+    target_level = _office_level_from_role(
+        role_text,
+        profile_region_metro=str(profile.get("regionMetro") or ""),
+    )
+    same_region = _role_matches_profile_region(role_text, profile)
+    allied_context = _has_allied_person_context(person_name, source_text_list) if person_name else False
+    direct_context = _has_direct_competition_person_context(person_name, source_text_list) if person_name else False
+
+    relation = "unknown"
+    allow_competitor_intent = True
+    if not speaker_level or not target_level:
+        relation = "unknown"
+    elif target_level == "party_role":
+        relation = "party_allied_figure"
+        allow_competitor_intent = False
+    elif speaker_level != target_level:
+        if allied_context and same_region:
+            relation = "same_region_allied_candidate"
+        elif allied_context:
+            relation = "allied_figure"
+        elif same_region:
+            relation = "same_region_other_office"
+        else:
+            relation = "different_office"
+        allow_competitor_intent = False
+    elif direct_context:
+        relation = "direct_competitor"
+    else:
+        relation = "same_office_unknown"
+
+    return {
+        "relation": relation,
+        "allowCompetitorIntent": allow_competitor_intent,
+        "speakerRole": speaker_role,
+        "speakerOfficeLevel": speaker_level,
+        "targetRole": role_text,
+        "targetOfficeLevel": target_level,
+        "sameRegion": same_region,
+        "alliedContext": allied_context,
+        "directCompetitionContext": direct_context,
+    }
 
 
 def extract_person_role_facts_from_text(text: Any) -> Dict[str, str]:
@@ -384,6 +649,7 @@ def build_role_keyword_policy(
     *,
     person_roles: Optional[Dict[str, str]] = None,
     source_texts: Optional[Iterable[Any]] = None,
+    speaker_profile: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     roles = person_roles or {}
     source_text_list = list(source_texts or [])
@@ -422,6 +688,18 @@ def build_role_keyword_policy(
                 mode = "blocked"
                 reason = "source_role_conflict_without_target_role_context"
 
+        speaker_relation = classify_role_keyword_speaker_relation(
+            keyword=keyword,
+            name=parts.get("name"),
+            role=parts.get("role"),
+            speaker_profile=speaker_profile,
+            source_texts=source_text_list,
+        )
+        allow_competitor_intent = bool(speaker_relation.get("allowCompetitorIntent", True))
+        if not allow_competitor_intent and mode == "intent_only":
+            mode = "exact"
+            reason = "profile_not_direct_competitor"
+
         entries[keyword] = {
             "keyword": keyword,
             "name": parts["name"],
@@ -432,7 +710,14 @@ def build_role_keyword_policy(
             "targetRoleSupported": target_role_supported,
             "mode": mode,
             "reason": reason,
-            "allowTitleIntentAnchor": bool(mode == "blocked" and parts.get("name") and parts.get("role")),
+            "speakerRelation": speaker_relation,
+            "allowCompetitorIntent": allow_competitor_intent,
+            "allowTitleIntentAnchor": bool(
+                mode == "blocked"
+                and parts.get("name")
+                and parts.get("role")
+                and allow_competitor_intent
+            ),
         }
 
     return {
@@ -575,6 +860,7 @@ __all__ = [
     "extract_target_role_contexts",
     "build_person_reference_facts",
     "build_role_keyword_policy",
+    "classify_role_keyword_speaker_relation",
     "get_role_keyword_entry",
     "get_person_reference_fact",
     "should_block_role_keyword",
