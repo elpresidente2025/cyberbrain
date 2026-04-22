@@ -17,6 +17,13 @@ class ContextAnalyzer:
     def __init__(self, model_name: str):
         self.model_name = model_name
 
+    _IMPLEMENTATION_PLAN_TYPES = {
+        "implementation_plan",
+        "policy_revival_plan",
+        "problem_solution_plan",
+        "restoration_plan",
+    }
+
     def _sanitize_context_material_text(self, value: Any) -> str:
         text = normalize_context_text(value)
         if not text:
@@ -82,6 +89,80 @@ class ContextAnalyzer:
             r"^\s*가\s*$",
         ]
         return any(re.search(pattern, plain, re.IGNORECASE) for pattern in hard_meta_patterns)
+
+    def _normalize_answer_type(self, value: Any) -> str:
+        raw = re.sub(r"[^0-9A-Za-z가-힣_-]+", "_", str(value or "").strip().lower()).strip("_")
+        aliases = {
+            "policy_revival_plan": "implementation_plan",
+            "revival_plan": "implementation_plan",
+            "restoration_plan": "implementation_plan",
+            "problem_solution_plan": "implementation_plan",
+            "solution_plan": "implementation_plan",
+            "execution_plan": "implementation_plan",
+            "실행안": "implementation_plan",
+            "부활방안": "implementation_plan",
+            "복구계획": "implementation_plan",
+            "정책실행안": "implementation_plan",
+            "policy_defense": "policy_defense",
+            "policy_promotion": "policy_promotion",
+            "value_statement": "value_statement",
+            "activity_report": "activity_report",
+        }
+        return aliases.get(raw, raw)
+
+    def _dedupe_execution_items(self, values: List[str], *, max_items: int = 8) -> List[str]:
+        items: List[str] = []
+        seen: set[str] = set()
+        for raw in values:
+            item = self._sanitize_context_material_text(raw)
+            item = re.sub(r"\s+", " ", item).strip(" \t-•,.;")
+            if len(strip_html(item)) < 4:
+                continue
+            key = material_key(item)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            items.append(item)
+            if len(items) >= max_items:
+                break
+        return items
+
+    def _coerce_execution_item_list(self, value: Any) -> List[str]:
+        if isinstance(value, list):
+            return [str(item) for item in value]
+        if isinstance(value, str):
+            return [value]
+        return []
+
+    def _augment_execution_plan(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = dict(analysis) if isinstance(analysis, dict) else {}
+        answer_type = self._normalize_answer_type(normalized.get("answer_type"))
+        execution_items = self._dedupe_execution_items(
+            self._coerce_execution_item_list(normalized.get("execution_items"))
+        )
+        central_claim = self._sanitize_context_material_text(normalized.get("central_claim"))
+
+        if answer_type in self._IMPLEMENTATION_PLAN_TYPES:
+            answer_type = "implementation_plan"
+
+        if answer_type == "implementation_plan":
+            content_strategy = normalized.get("contentStrategy")
+            if not isinstance(content_strategy, dict):
+                content_strategy = {}
+            content_strategy.setdefault("structure", "문제 원인 → 실행 항목 → 제도화와 효과 확인")
+            emphasis = content_strategy.get("emphasis")
+            if not isinstance(emphasis, list):
+                emphasis = []
+            for item in ("구체 실행 항목", "제도화", "효과 확인"):
+                if item not in emphasis:
+                    emphasis.append(item)
+            content_strategy["emphasis"] = emphasis[:6]
+            normalized["contentStrategy"] = content_strategy
+
+        normalized["answer_type"] = answer_type or ""
+        normalized["execution_items"] = execution_items
+        normalized["central_claim"] = central_claim
+        return normalized
 
     def _extract_news_fact_candidates(self, news_text: str, *, max_items: int = 6) -> List[str]:
         source = normalize_context_text(news_text, sep="\n")
@@ -268,6 +349,16 @@ class ContextAnalyzer:
         )
         normalized_analysis["newsQuotes"] = quotes
 
+        normalized_analysis["answer_type"] = self._normalize_answer_type(
+            normalized_analysis.get("answer_type")
+        )
+        normalized_analysis["central_claim"] = self._sanitize_context_material_text(
+            normalized_analysis.get("central_claim")
+        )
+        normalized_analysis["execution_items"] = self._dedupe_execution_items(
+            self._coerce_execution_item_list(normalized_analysis.get("execution_items"))
+        )
+
         return normalized_analysis
 
     async def analyze(self, stance_text: str, news_data_text: str, author_name: str) -> Optional[Dict[str, Any]]:
@@ -290,6 +381,13 @@ class ContextAnalyzer:
         news_preview = (news_data_text or "")[:4000] if news_data_text else "(없음)"
         context_json_example = """{
   "intent": "policy_promotion",
+  "answer_type": "implementation_plan",
+  "central_claim": "핵심 정책을 되살리는 실행 방안을 마련하겠다",
+  "execution_items": [
+    "후퇴한 지원책 복원",
+    "전담 추진체계 재정비",
+    "효과 분석과 조례 개정"
+  ],
   "contentStrategy": {
     "tone": "논리적 설득",
     "structure": "문제 제기 → 실행 전략 → 기대 효과",
@@ -343,6 +441,14 @@ class ContextAnalyzer:
       <field name="structure">전개 구조</field>
       <field name="emphasis">강조 포인트 리스트</field>
     </content_strategy>
+    <answer_shape critical="true">
+      <field name="answer_type">implementation_plan | policy_defense | value_statement | activity_report 중 하나</field>
+      <rule>입장문이 "부활 방안", "복원", "회복", "개정", "마련", "모색"을 말하면 implementation_plan으로 분류.</rule>
+      <field name="central_claim">글 전체가 답해야 할 한 문장</field>
+      <field name="execution_items">실행 항목 리스트. 문제 원인은 반대로 뒤집어 실행 항목으로 추출.</field>
+      <example>캐시백 요율을 줄였다 → 캐시백 요율 회복</example>
+      <example>담당 부서를 축소했다 → 전담 추진체계 재정비</example>
+    </answer_shape>
     <must_include_from_stance max_items="3">
       <rule>반드시 stance_text에서만 추출하고 news_or_data 문구를 topic에 넣지 말 것.</rule>
       <rule>핵심 주장/문제의식만 추출하고 기사 메타 문구(입력, 기자명, 연합뉴스)는 배제.</rule>
@@ -411,6 +517,7 @@ class ContextAnalyzer:
                             filtered_list.append(item)
                 analysis["mustIncludeFromStance"] = filtered_list
 
+            analysis = self._augment_execution_plan(analysis)
             analysis = self._augment_context_analysis_with_news_facts(analysis, news_data_text)
             analysis = self.normalize_materials(analysis)
 

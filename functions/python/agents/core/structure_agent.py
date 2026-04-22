@@ -594,10 +594,22 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         from ..common.aeo_config import uses_dialectical_structure, build_dialectical_roles
 
         body_sections = max(1, int(length_spec.get('body_sections') or 1))
+        is_execution_plan = '<execution_plan' in str(prompt or '')
 
         # 변증법 매크로 구조 블록 (논증·설득형 writing method만)
         argument_structure_block = ''
-        if uses_dialectical_structure(writing_method) and body_sections >= 3:
+        if is_execution_plan:
+            argument_structure_block = (
+                '  <implementation_structure priority="critical">\n'
+                '    <overview>context_injection의 execution_plan이 감지되었습니다. '
+                '본론은 정책 효과 일반론이 아니라 실행 항목을 답하는 구조여야 합니다.</overview>\n'
+                '    <section order="1" role="problem_to_recovery">원문에 제시된 후퇴 지점과 왜 복구해야 하는지 정리하십시오.</section>\n'
+                '    <section order="2" role="execution_package">execution_items 중 핵심 실행 항목 3개 이상을 묶어 구체 방안으로 선언하십시오.</section>\n'
+                '    <section order="3" role="institutionalization">연구·효과분석·조례·예산·추진체계 등 제도화 방안을 선언하십시오.</section>\n'
+                '    <rule>body_sections가 3개를 넘으면 execution_package를 여러 섹션으로 나누고, 실행 항목 누락을 만들지 마십시오.</rule>\n'
+                '  </implementation_structure>\n'
+            )
+        elif uses_dialectical_structure(writing_method) and body_sections >= 3:
             roles = build_dialectical_roles(body_sections)
             role_lines = []
             for r in roles:
@@ -614,7 +626,11 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             )
 
         # lead_sentence 규칙 — 변증법 대상이면 반론 섹션 예외 + role 순서 규칙 추가
-        is_dialectical = uses_dialectical_structure(writing_method) and body_sections >= 3
+        is_dialectical = (
+            not is_execution_plan
+            and uses_dialectical_structure(writing_method)
+            and body_sections >= 3
+        )
         if is_dialectical:
             lead_rule = (
                 "    <rule>각 body 항목의 lead_sentence: 해당 섹션의 핵심 주장·해법·결론을 한 문장으로 직접 선언할 것. "
@@ -655,6 +671,11 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule priority='critical'>본론 각 섹션의 주제(heading + lead_sentence)는 반드시 사용자 입장문(stanceText)의 핵심 주제에서 도출하십시오. "
             "프롬프트에 [화자 실적·활동 보조자료]나 참고자료가 포함되어 있더라도, 그것을 별도 본론 섹션의 주제로 삼지 마십시오. "
             "보조자료는 입장문 주제를 뒷받침하는 근거·사례로만 활용하십시오.</rule>\n"
+            + (
+                "    <rule priority='critical'>execution_plan이 있으면 body heading과 lead_sentence에 execution_items의 실행 항목을 직접 배치하십시오. "
+                "성공 사례·상위 가치·이념 설명은 실행 항목을 뒷받침하는 근거로만 짧게 쓰고 독립 섹션 주제로 삼지 마십시오.</rule>\n"
+                if is_execution_plan else ''
+            ) +
             "  </rules>\n"
             + self._build_outline_json_shape(writing_method, body_sections) +
             "</json_output_contract>"
