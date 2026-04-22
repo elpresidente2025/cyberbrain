@@ -30,6 +30,7 @@ from agents.common.editorial import KEYWORD_SPEC, QUALITY_SPEC, STRUCTURE_SPEC
 from agents.common.h2_repair import (
     build_subheading_role_surface as _h2_repair_build_subheading_role_surface,
 )
+from agents.common.h2_quality import h2_semantic_family_key as _common_h2_semantic_family_key
 from agents.common.korean_morph import detect_demonstrative_abstract_phrases
 from agents.common.person_naming import (
     ROLE_TOKEN_PRIORITY,
@@ -5592,13 +5593,7 @@ def _section_overlap_score(text_a: str, text_b: str) -> float:
 
 
 def _heading_semantic_family_key(text: str) -> str:
-    normalized = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(text or "")))
-    compact = re.sub(r"\s+", "", normalized)
-    if not compact:
-        return ""
-    if "주목" in compact and ("가능성" in compact or "이유" in compact):
-        return "possibility_focus"
-    return ""
+    return _common_h2_semantic_family_key(text)
 
 
 def _dedupe_overlapping_sections_once(content: str) -> Dict[str, Any]:

@@ -36,7 +36,7 @@ class SectionRepairMixin:
         poll_focus_bundle: Optional[Dict[str, Any]],
     ) -> Optional[Tuple[str, str, str]]:
         code = str(validation.get('code') or '')
-        if code not in {'SECTION_ROLE_CONTRACT', 'SECTION_LENGTH', 'SECTION_P_COUNT'}:
+        if code not in {'SECTION_ROLE_CONTRACT', 'SECTION_LENGTH', 'SECTION_P_COUNT', 'P_THIN', 'SECTION_OPENING_DEPENDENT_REFERENCE'}:
             return None
         if bool(validation.get('isIntroSection')):
             return None
@@ -338,7 +338,7 @@ class SectionRepairMixin:
     ) -> Optional[Dict[str, Any]]:
         """순차 경로 산출물이 validator를 통과하지 못했을 때 해당 섹션만 재생성."""
         code = str(validation.get('code') or '')
-        if code not in {'SECTION_LENGTH', 'SECTION_P_COUNT', 'SECTION_ROLE_CONTRACT', 'META_PROMPT_LEAK'}:
+        if code not in {'SECTION_LENGTH', 'SECTION_P_COUNT', 'SECTION_ROLE_CONTRACT', 'META_PROMPT_LEAK', 'P_THIN', 'SECTION_OPENING_DEPENDENT_REFERENCE'}:
             return None
         if bool(validation.get('isIntroSection')):
             return None
@@ -653,6 +653,7 @@ class SectionRepairMixin:
             'H2_LONG',
             'P_SHORT',
             'P_LONG',
+            'P_THIN',
             'SECTION_P_COUNT',
             'H2_MALFORMED',
             'P_MALFORMED',
@@ -676,6 +677,12 @@ class SectionRepairMixin:
             'H2_TEXT_MODIFIER',
             'H2_TEXT_FIRST_PERSON',
             'H2_TEXT_SHORT',
+            'H2_DUPLICATE',
+            'H2_GENERIC_FAMILY_REPEAT',
+            'H2_TEXT_FRAGMENT',
+            'H2_USER_KEYWORD_MISSING',
+            'SECTION_OPENING_DEPENDENT_REFERENCE',
+            'LEADERSHIP_DETACHED',
         }
 
         def _candidate_rank(candidate_validation: Dict[str, Any], candidate_content: str) -> tuple:
@@ -688,6 +695,7 @@ class SectionRepairMixin:
                 'H2_LONG': 4,
                 'P_SHORT': 5,
                 'P_LONG': 5,
+                'P_THIN': 5,
                 'H2_MALFORMED': 6,
                 'P_MALFORMED': 6,
                 'TAG_DISALLOWED': 6,
@@ -739,6 +747,7 @@ class SectionRepairMixin:
                 'SECTION_P_COUNT',
                 'P_SHORT',
                 'P_LONG',
+                'P_THIN',
                 'SECTION_LENGTH',
                 'H2_MALFORMED',
                 'P_MALFORMED',
@@ -747,6 +756,11 @@ class SectionRepairMixin:
                 'H2_TEXT_LONG',
                 'H2_TEXT_MODIFIER',
                 'H2_TEXT_FIRST_PERSON',
+                'H2_DUPLICATE',
+                'H2_GENERIC_FAMILY_REPEAT',
+                'H2_TEXT_FRAGMENT',
+                'H2_USER_KEYWORD_MISSING',
+                'SECTION_OPENING_DEPENDENT_REFERENCE',
             }
 
             def _failure_stage(validation_result: Dict[str, Any]) -> int:

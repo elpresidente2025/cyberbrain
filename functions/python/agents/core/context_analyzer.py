@@ -219,6 +219,18 @@ class ContextAnalyzer:
         add(bool(re.search(r"조례.{0,12}(개정|제정|정비)|관련\s*조례", text)), "관련 조례 개정")
         add(bool(re.search(r"예산.{0,12}(확보|편성|운용)", text)), "예산 확보와 운용 기준 마련")
         add(bool(re.search(r"가맹점.{0,18}(확대|지원|관리)", text)), "가맹점 확대와 현장 지원")
+        add(bool(re.search(r"조례.{0,12}제정|조례\s*제정", text)), "조례 제정 추진")
+        add("햇빛지도" in compact or bool(re.search(r"일조량.{0,12}(분석|조사)", text)), "햇빛지도 제작과 일조량 분석")
+        add(
+            bool(re.search(r"공영\s*주차장|공공기관\s*옥상|태양광\s*발전시설", text)),
+            "태양광 발전시설 입지 검토",
+        )
+        add(bool(re.search(r"수익성.{0,12}(분석|검토)|용역", text)), "입지·수익성 분석 용역 추진")
+        add(bool(re.search(r"이익.{0,12}(주민|지역\s*주민).{0,20}(나눠|분배|공유)", text)), "개발이익 주민 공유")
+        add(bool(re.search(r"이익\s*공유형\s*기본소득|이익공유형\s*기본소득", text)), "이익공유형 기본소득 모델 설계")
+        district_match = re.search(r"((?:[가-힣]{2,12}구)|(?:\{region\}))부터.{0,20}(점진|시범|먼저|추진)", text)
+        if district_match:
+            add(True, f"{district_match.group(1)}부터 점진 추진")
 
         return self._dedupe_execution_items(items)
 
@@ -227,6 +239,7 @@ class ContextAnalyzer:
         compact = re.sub(r"\s+", "", text)
         if not compact:
             return []
+        primary_policy = self._extract_primary_policy_surface(text)
 
         facts: List[str] = []
 
@@ -242,8 +255,41 @@ class ContextAnalyzer:
         add("역외" in compact and "소비" in compact, "지역 내 소비와 역외 소비 둔화 효과 약화")
         add("연구단체" in compact, "의원 연구단체 구성")
         add(bool(re.search(r"조례.{0,12}(개정|제정|정비)|관련\s*조례", text)), "관련 조례 개정")
+        add(bool(re.search(r"신재생에너지.{0,20}개발이익.{0,12}공유|개발이익\s*공유", text)), "신재생에너지 개발이익 공유")
+        add(bool(primary_policy and "연금" in primary_policy), f"{primary_policy} 지역 모델")
+        add("햇빛지도" in compact, "햇빛지도 제작")
+        add(bool(re.search(r"일조량.{0,12}(분석|조사)", text)), "관내 일조량 분석")
+        add(bool(re.search(r"공영\s*주차장|공공기관\s*옥상", text)), "공영주차장·공공기관 옥상 검토")
+        add(bool(re.search(r"태양광\s*발전시설", text)), "태양광 발전시설 적합 지역 분석")
+        add(bool(re.search(r"수익성.{0,12}(분석|검토)|용역", text)), "수익성 분석 용역")
+        add(bool(re.search(r"지역\s*주민.{0,20}(나눠|분배|공유)", text)), "지역 주민 개발이익 공유")
+        add(bool(re.search(r"환경친화적|지속가능한\s*시민의\s*연금", text)), "환경친화적이고 지속가능한 시민 연금")
 
         return self._dedupe_execution_items(facts)
+
+    def _extract_source_sequence_items_from_stance(self, stance_text: str) -> List[str]:
+        text = normalize_context_text(stance_text)
+        compact = re.sub(r"\s+", "", text)
+        if not compact:
+            return []
+
+        items: List[str] = []
+
+        def add(condition: bool, item: str) -> None:
+            if condition:
+                items.append(item)
+
+        add("햇빛지도" in compact or bool(re.search(r"일조량.{0,12}(분석|조사)", text)), "햇빛지도와 일조량 분석")
+        add(bool(re.search(r"공영\s*주차장|공공기관\s*옥상|태양광\s*발전시설", text)), "태양광 발전시설 입지 검토")
+        add(bool(re.search(r"수익성.{0,12}(분석|검토)|용역", text)), "입지·수익성 분석 용역")
+        add(bool(re.search(r"예산.{0,12}(확보|편성|운용)", text)), "관련 예산 확보")
+        add(bool(re.search(r"이익.{0,12}(주민|지역\s*주민).{0,20}(나눠|분배|공유)", text)), "개발이익 주민 공유")
+        add(bool(re.search(r"이익\s*공유형\s*기본소득|이익공유형\s*기본소득", text)), "이익공유형 기본소득 모델")
+        add(bool(re.search(r"조례.{0,12}(제정|개정|정비)", text)), "조례 제정·정비")
+        district_match = re.search(r"((?:[가-힣]{2,12}구)|(?:\{region\}))부터.{0,20}(점진|시범|먼저|추진)", text)
+        if district_match:
+            add(True, f"{district_match.group(1)}부터 점진 추진")
+        return self._dedupe_execution_items(items)
 
     def _build_forbidden_inferred_actions(self, stance_text: str) -> List[str]:
         text = normalize_context_text(stance_text)
@@ -257,7 +303,19 @@ class ContextAnalyzer:
             ("모바일 결제 시스템 고도화", ("모바일결제시스템", "결제시스템고도화")),
             ("온라인 플랫폼 확대", ("온라인플랫폼",)),
             ("예산 확보", ("예산확보", "예산편성")),
+            ("10만", ("10만",)),
+            ("AI", ("ai",)),
+            ("인공지능", ("인공지능",)),
+            ("로봇", ("로봇",)),
+            ("노동의 종말", ("노동의종말",)),
+            ("다니엘 라벤토스", ("다니엘라벤토스", "라벤토스")),
+            ("선별복지", ("선별복지",)),
+            ("조세 저항", ("조세저항",)),
+            ("낙수효과", ("낙수효과",)),
+            ("지역화폐형 기본소득", ("지역화폐형기본소득",)),
         ]
+        for year in range(2020, 2031):
+            candidates.append((f"{year}년", (f"{year}년", str(year))))
         forbidden: List[str] = []
         lowered_compact = compact.lower()
         for label, probes in candidates:
@@ -292,6 +350,10 @@ class ContextAnalyzer:
             self._coerce_execution_item_list(contract.get("required_source_facts"))
             + self._extract_required_source_facts_from_stance(stance_text)
         )
+        source_sequence_items = self._dedupe_execution_items(
+            self._coerce_execution_item_list(contract.get("source_sequence_items"))
+            + self._extract_source_sequence_items_from_stance(stance_text)
+        )
 
         normalized_answer_type = self._normalize_answer_type(contract.get("answer_type") or answer_type)
         if normalized_answer_type in self._IMPLEMENTATION_PLAN_TYPES:
@@ -317,9 +379,11 @@ class ContextAnalyzer:
                 ),
                 "required_source_facts": required_facts,
                 "execution_items": merged_items,
+                "source_sequence_items": source_sequence_items,
                 "forbidden_inferred_actions": self._dedupe_contract_labels(
                     self._coerce_execution_item_list(contract.get("forbidden_inferred_actions"))
-                    + self._build_forbidden_inferred_actions(stance_text)
+                    + self._build_forbidden_inferred_actions(stance_text),
+                    max_items=32,
                 ),
             }
         )
@@ -334,10 +398,11 @@ class ContextAnalyzer:
             contract["answer_type"] = "implementation_plan"
         contract["primary_keyword"] = self._sanitize_context_material_text(contract.get("primary_keyword"))
         contract["central_claim"] = self._sanitize_context_material_text(contract.get("central_claim"))
-        for key in ("required_source_facts", "execution_items"):
+        for key in ("required_source_facts", "execution_items", "source_sequence_items"):
             contract[key] = self._dedupe_execution_items(self._coerce_execution_item_list(contract.get(key)))
         contract["forbidden_inferred_actions"] = self._dedupe_contract_labels(
-            self._coerce_execution_item_list(contract.get("forbidden_inferred_actions"))
+            self._coerce_execution_item_list(contract.get("forbidden_inferred_actions")),
+            max_items=32,
         )
         return contract
 

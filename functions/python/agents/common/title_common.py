@@ -987,6 +987,37 @@ def _assess_broken_basis_why_title_surface(title: str) -> Dict[str, Any]:
     return {"passed": True, "reason": "", "repairedTitle": "", "issue": ""}
 
 
+def _assess_source_contract_forbidden_title_surface(title: str, params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    normalized = normalize_title_surface(title) or str(title or "").strip()
+    if not normalized or not isinstance(params, dict):
+        return {"passed": True, "reason": "", "repairedTitle": "", "issue": ""}
+    context_analysis = params.get("contextAnalysis")
+    source_contract = (
+        context_analysis.get("source_contract")
+        if isinstance(context_analysis, dict) and isinstance(context_analysis.get("source_contract"), dict)
+        else {}
+    )
+    forbidden_items = source_contract.get("forbidden_inferred_actions") if isinstance(source_contract, dict) else []
+    if not isinstance(forbidden_items, list):
+        return {"passed": True, "reason": "", "repairedTitle": "", "issue": ""}
+    normalized_compact = re.sub(r"[\s,.;:·!?\"'“”‘’()\[\]{}<>]+", "", normalized).lower()
+    for raw_item in forbidden_items:
+        item = normalize_title_surface(str(raw_item or "").strip())
+        if not item or item == "(없음)":
+            continue
+        item_compact = re.sub(r"[\s,.;:·!?\"'“”‘’()\[\]{}<>]+", "", item).lower()
+        if len(item_compact) < 2:
+            continue
+        if item in normalized or item_compact in normalized_compact:
+            return {
+                "passed": False,
+                "reason": f'사용자 원문에 없는 제목 요소 "{item}"이 포함되었습니다. source_contract의 실행 항목 안에서만 제목을 다시 작성하세요.',
+                "repairedTitle": "",
+                "issue": "source_contract_forbidden_title",
+            }
+    return {"passed": True, "reason": "", "repairedTitle": "", "issue": ""}
+
+
 def assess_malformed_title_surface(title: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     normalized = normalize_title_surface(title) or str(title or "").strip()
     if not normalized:
@@ -1007,6 +1038,10 @@ def assess_malformed_title_surface(title: str, params: Optional[Dict[str, Any]] 
     broken_basis_why = _assess_broken_basis_why_title_surface(normalized)
     if not broken_basis_why.get("passed", True):
         return broken_basis_why
+
+    source_contract_forbidden = _assess_source_contract_forbidden_title_surface(normalized, params)
+    if not source_contract_forbidden.get("passed", True):
+        return source_contract_forbidden
 
     adjacent_keyword_repaired = _repair_adjacent_focus_keyword_surface(normalized, params)
     if adjacent_keyword_repaired and adjacent_keyword_repaired != normalized:
@@ -1622,8 +1657,24 @@ def build_structured_title_candidates(
                 return "캐시백"
             if "지원책" in item:
                 return "지원책"
+            if "햇빛지도" in item or "일조량" in item:
+                return "햇빛지도"
+            if "개발이익" in item and ("공유" in item or "주민" in item):
+                return "개발이익 공유"
+            if "이익공유형" in item and "기본소득" in item:
+                return "기본소득 모델"
+            if "수익성" in item or "용역" in item:
+                return "입지·수익성 용역"
+            if "태양광" in item and "입지" in item:
+                return "태양광 입지"
+            if "예산" in item:
+                return "예산 확보"
             if "조례" in item:
+                if "제정" in item:
+                    return "조례 제정"
                 return "관련 조례 개정" if "관련" in item else "조례 개정"
+            if "점진 추진" in item or "시범" in item:
+                return "시범 추진"
             if "담당 부서" in item or "추진체계" in item or "추진 체계" in item:
                 return "담당 부서"
             if "명칭" in item or "브랜드" in item:
@@ -1632,7 +1683,22 @@ def build_structured_title_candidates(
                 return "연구단체"
             return re.sub(r"\s*(회복|복원|재정비|개정|구성|분석|마련|확보)$", "", item).strip()
 
-        priority_order = ("캐시백", "지원책", "관련 조례 개정", "조례 개정", "담당 부서", "명칭 회복", "연구단체")
+        priority_order = (
+            "캐시백",
+            "지원책",
+            "햇빛지도",
+            "개발이익 공유",
+            "기본소득 모델",
+            "입지·수익성 용역",
+            "조례 제정",
+            "관련 조례 개정",
+            "조례 개정",
+            "시범 추진",
+            "예산 확보",
+            "담당 부서",
+            "명칭 회복",
+            "연구단체",
+        )
         short_actions: List[str] = []
         for preferred in priority_order:
             if any(preferred in _title_action_surface(item) for item in execution_items):
@@ -1644,6 +1710,13 @@ def build_structured_title_candidates(
         action_triplet = "·".join(short_actions[:3])
         action_pair = "·".join(short_actions[:2])
         candidate_pool: List[str] = []
+        action_set = set(short_actions)
+        if primary_keyword and {"햇빛지도", "조례 제정"} <= action_set:
+            candidate_pool.append(f"{primary_keyword}, 햇빛지도와 조례 제정이 첫 단계입니다")
+        if primary_keyword and {"개발이익 공유", "조례 제정"} <= action_set:
+            candidate_pool.append(f"{primary_keyword} 해법, 개발이익 공유와 조례 제정으로 풉니다")
+        if primary_keyword and "시범 추진" in action_set:
+            candidate_pool.append(f"{primary_keyword}, 시범 추진으로 어떻게 시작하나")
         if primary_keyword and action_triplet:
             if action_triplet.endswith("개정"):
                 candidate_pool.append(f"{primary_keyword} 부활 방안, {action_triplet}으로 풉니다")

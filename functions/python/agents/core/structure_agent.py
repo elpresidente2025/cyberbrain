@@ -871,7 +871,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule>intro에는 heading 필드를 넣지 말고 paragraphs만 작성.</rule>\n"
             "    <rule>body 각 항목은 heading 1개 + paragraphs 배열로 작성.</rule>\n"
             "    <rule>conclusion은 heading 1개 + paragraphs 배열로 작성하고 paragraphs는 반드시 3개 작성.</rule>\n"
-            "    <rule>각 paragraphs 원소는 완결 문장 2~3개로 구성하고 110~140자 범위를 맞출 것. 한 섹션 전체는 330~420자.</rule>\n"
+            "    <rule priority='critical'>각 paragraphs 원소는 완결 문장 최소 3개로 구성하고 90~120자 범위를 맞출 것. 1~2문장짜리 단문을 별도 문단으로 분리하면 불합격.</rule>\n"
             "    <rule priority='critical'>각 섹션의 첫 문장(= 첫 번째 문단의 첫 문장)을 접속사('또한/아울러/나아가/한편/더불어')나 "
             "지시 대명사('이·그·저' 계열: 이는, 이것은, 이러한, 이와 같은, 이를 통해 등)로 시작하지 말 것. "
             "각 섹션은 해당 섹션의 핵심 주어·주제어로 독립적으로 시작할 것.</rule>\n"
@@ -894,6 +894,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule>소제목에 조사나 술어가 어색하게 잘린 경우('확신을 길', '진짜 승' 등) 반드시 고친 뒤 출력할 것.</rule>\n"
             "    <rule>소제목은 10~25자의 완결된 구문이어야 합니다. 명사만 나열('A, B')하거나 서술어 없이 끊는 토막 제목은 금지. "
             "\"위한/향한/만드는/통한/대한\" 관형절 수식도 금지.</rule>\n"
+            "    <rule priority='critical'>소제목은 서로 다른 원문 실행수단을 답해야 하며, '제도 기반을 세우겠습니다', '조례로 뒷받침하겠습니다' 같은 저정보 템플릿을 반복하지 말 것.</rule>\n"
             "    <rule>소제목에 '저는/제가/나는/내가' 같은 1인칭 표현 금지.</rule>\n"
             "    <rule>어느 body/conclusion 섹션이 비어 보이거나 설명이 모자라면, 독자가 '그래서 구체적으로 어떻게 할 건데?'라고 물을 지점을 찾아 그 섹션에만 구체 문장 1개 이상을 더할 것. 어떤 후보나 어떤 선거에도 쓸 수 있는 일반 공약 문장은 추가하지 말 것.</rule>\n"
             "    <rule priority='critical'>conclusion 문단은 본문에서 실제로 사용한 정책명·수치·실행수단을 다시 불러와 닫을 것. '시민의 목소리', '삶의 질', '다양한 분야', '좋은 정치', '기대를 저버리지 않겠습니다' 같은 범용 다짐만으로 결론을 채우면 불합격.</rule>\n"
@@ -1361,7 +1362,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         schema_block = (
             '  <json_shape><![CDATA[\n'
             '{\n'
-            '  "paragraphs": ["문단1 (110~140자)", "문단2 (110~140자)", "문단3 (110~140자)"]\n'
+            '  "paragraphs": ["문단1 (3문장, 90~120자)", "문단2 (3문장, 90~120자)", "문단3 (3문장, 90~120자)"]\n'
             '}\n'
             '  ]]></json_shape>\n'
         )
@@ -1374,7 +1375,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "  <override>기존 XML output_format 지시는 무시하고, 최종 응답은 단일 JSON 객체 1개만 출력하십시오. "
             "제목·다른 섹션은 절대 포함하지 말고 현재 섹션의 paragraphs 배열만 출력.</override>\n"
             f"  <task>locked_section 의 heading/lead_sentence/role 에 맞춰, 이 섹션의 문단 {section_paragraphs}개만 작성하십시오.</task>\n"
-            f"  <length>섹션 전체 {per_section_min}~{per_section_max}자, 각 문단 110~140자.</length>\n"
+            f"  <length>섹션 전체 {per_section_min}~{per_section_max}자, 각 문단은 최소 3문장·90~120자.</length>\n"
             + role_block +
             "  <rules>\n"
             "    <rule>코드블록(```) 금지, 설명문 금지, JSON 외 텍스트 금지.</rule>\n"
@@ -1382,6 +1383,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule>JSON 문자열 안에 큰따옴표(\")를 직접 쓰지 말 것. 인용이 필요하면 작은따옴표(') 또는 괄호를 사용.</rule>\n"
             "    <rule>각 문자열 값은 한 줄로 작성하고 줄바꿈 문자를 넣지 말 것.</rule>\n"
             "    <rule>역슬래시(\\)를 임의로 출력하지 말 것.</rule>\n"
+            "    <rule priority='critical'>각 paragraphs 원소는 최소 3문장짜리 실질 문단이어야 한다. 1~2문장 단문은 앞뒤 문장과 합쳐 완성된 문단으로 쓰라.</rule>\n"
             + (
                 "    <rule priority='critical'>paragraphs[0] 의 첫 문장은 lead_sentence 그대로 사용하거나 자연스럽게 이어받을 것.</rule>\n"
                 if lead_sentence else ''

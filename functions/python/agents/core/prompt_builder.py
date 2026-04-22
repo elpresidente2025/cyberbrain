@@ -356,6 +356,11 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
             for item in source_contract.get('forbidden_inferred_actions', [])
             if normalize_context_text(item)
         ] if isinstance(source_contract.get('forbidden_inferred_actions'), list) else []
+        source_sequence_items = [
+            normalize_context_text(item)
+            for item in source_contract.get('source_sequence_items', [])
+            if normalize_context_text(item)
+        ] if isinstance(source_contract.get('source_sequence_items'), list) else []
         if answer_type == 'implementation_plan' or execution_items:
             item_lines = "\n".join(
                 f'    <item priority="{i + 1}">{_xml_text(item)}</item>'
@@ -367,7 +372,11 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
             )
             forbidden_lines = "\n".join(
                 f'    <item>{_xml_text(item)}</item>'
-                for item in forbidden_inferred_actions[:10]
+                for item in forbidden_inferred_actions[:16]
+            )
+            sequence_lines = "\n".join(
+                f'    <item order="{i + 1}">{_xml_text(item)}</item>'
+                for i, item in enumerate(source_sequence_items[:10])
             )
             context_injection += f"""
 <execution_plan mandatory="true">
@@ -380,15 +389,19 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
   <execution_items>
 {item_lines or '    <item>(추출 실패)</item>'}
   </execution_items>
+  <source_sequence_items>
+{sequence_lines or '    <item>(추출 실패)</item>'}
+  </source_sequence_items>
   <forbidden_inferred_actions>
 {forbidden_lines or '    <item>(없음)</item>'}
   </forbidden_inferred_actions>
   <rules>
     <rule priority="critical">이 글은 정책 일반론이 아니라 위 실행 항목을 답하는 실행안입니다.</rule>
     <rule priority="critical">required_source_facts는 사용자 입력 텍스트의 재료입니다. 누락하지 말고 본론에 모두 반영하십시오.</rule>
+    <rule priority="critical">source_sequence_items는 원문 실행 순서입니다. 본론 섹션마다 서로 다른 항목 묶음을 배정하고 같은 항목을 여러 섹션에서 반복하지 마십시오.</rule>
     <rule priority="critical">본문의 절반 이상을 execution_items의 실행 항목 설명에 배정하십시오.</rule>
     <rule priority="critical">forbidden_inferred_actions에 있는 수치·조직·사업 방식은 사용자 입력에 없으므로 새 공약처럼 쓰지 마십시오.</rule>
-    <rule priority="critical">타지역 사례·이념·가치 담론은 실행 항목을 뒷받침하는 근거로만 짧게 사용하고 본론의 주인공으로 만들지 마십시오.</rule>
+    <rule priority="critical">leadership.py의 상위 원칙은 허용되지만, 같은 문단 안에서 required_source_facts나 execution_items의 구체 실행수단과 직접 연결될 때만 사용하십시오. 상위 원칙만 독립 문단으로 늘어놓지 마십시오.</rule>
     <rule priority="critical">결론은 central_claim과 execution_items 중 최소 3개를 다시 묶어 닫으십시오.</rule>
   </rules>
 </execution_plan>

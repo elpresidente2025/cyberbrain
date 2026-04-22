@@ -4,6 +4,11 @@ from typing import Dict, Any, Optional, List, Tuple
 from .structure_utils import strip_html, material_key, normalize_context_text
 from .intro_echo_utils import find_intro_conclusion_duplicates
 from ..common.h2_guide import H2_MIN_LENGTH, H2_MAX_LENGTH
+from ..common.h2_quality import (
+    detect_dependent_section_opening,
+    h2_semantic_family_key,
+    is_h2_prefix_fragment,
+)
 from ..common.editorial import STRUCTURE_SPEC, QUALITY_SPEC
 from ..common.section_contract import (
     find_section_semantic_mismatch,
@@ -223,6 +228,150 @@ class ContentValidator:
             if sentence:
                 sentences.append(sentence)
         return sentences
+
+    def _first_plain_sentence(self, text: str) -> str:
+        sentences = self._split_plain_sentences(text)
+        return sentences[0] if sentences else normalize_context_text(text)
+
+    def _validate_h2_quality_set(
+        self,
+        h2_texts: List[str],
+        *,
+        user_keywords: Optional[List[str]],
+        context_analysis: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        seen: set[str] = set()
+        seen_family: Dict[str, str] = {}
+
+        for h2_text in h2_texts:
+            normalized = normalize_context_text(h2_text)
+            compact = material_key(normalized)
+            if compact and compact in seen:
+                return {
+                    'passed': False,
+                    'code': 'H2_DUPLICATE',
+                    'reason': f'소제목 중복 ({normalized})',
+                    'feedback': f'중복된 소제목 "{normalized}"을 섹션의 고유 실행수단이 드러나도록 다시 쓰십시오.',
+                    'sectionHeading': normalized,
+                }
+            if compact:
+                seen.add(compact)
+
+            if is_h2_prefix_fragment(normalized):
+                return {
+                    'passed': False,
+                    'code': 'H2_TEXT_FRAGMENT',
+                    'reason': f'앞말이 잘린 소제목 ({normalized})',
+                    'feedback': f'소제목 "{normalized}"은 앞 토큰이 잘린 형태입니다. 원문 정책명이나 검색어가 온전하게 보이도록 다시 쓰십시오.',
+                    'sectionHeading': normalized,
+                }
+
+            family = h2_semantic_family_key(normalized)
+            if family:
+                previous = seen_family.get(family)
+                if previous:
+                    return {
+                        'passed': False,
+                        'code': 'H2_GENERIC_FAMILY_REPEAT',
+                        'reason': f'저정보 소제목 템플릿 반복 ({previous} / {normalized})',
+                        'feedback': (
+                            f'"{previous}"와 "{normalized}"이 같은 저정보 소제목 틀을 반복합니다. '
+                            '각 소제목은 원문에 있는 해당 섹션의 고유 실행수단을 직접 드러내야 합니다.'
+                        ),
+                        'sectionHeading': normalized,
+                        'previousHeading': previous,
+                    }
+                seen_family[family] = normalized
+
+        keyword_candidates: List[str] = []
+        if isinstance(context_analysis, dict):
+            contract = context_analysis.get("source_contract")
+            if isinstance(contract, dict):
+                primary_keyword = normalize_context_text(contract.get("primary_keyword"))
+                if primary_keyword:
+                    keyword_candidates.append(primary_keyword)
+        for raw_keyword in user_keywords or []:
+            keyword = normalize_context_text(raw_keyword)
+            if keyword and keyword not in keyword_candidates:
+                keyword_candidates.append(keyword)
+
+        concrete_keywords = [
+            keyword
+            for keyword in keyword_candidates
+            if len(material_key(keyword)) >= 3 and keyword not in {"정책", "방안", "지역", "시민"}
+        ]
+        if concrete_keywords and h2_texts:
+            if not any(any(keyword in h2 for keyword in concrete_keywords[:3]) for h2 in h2_texts):
+                joined = ", ".join(concrete_keywords[:3])
+                return {
+                    'passed': False,
+                    'code': 'H2_USER_KEYWORD_MISSING',
+                    'reason': f'검색어/핵심 정책명이 소제목에 없음 ({joined})',
+                    'feedback': f'소제목 중 최소 1개는 검색어 또는 핵심 정책명({joined})을 앞부분에 포함해야 합니다.',
+                    'keywords': concrete_keywords[:3],
+                }
+
+        return None
+
+    def _paragraph_minimums(
+        self,
+        *,
+        is_intro_section: bool,
+        is_last_section: bool,
+        paragraph_index: int,
+        paragraph_count: int,
+    ) -> Tuple[int, int]:
+        if is_intro_section and paragraph_index == 1:
+            return (2, 60)
+        if is_last_section and paragraph_index == paragraph_count:
+            return (2, 60)
+        return (3, 80)
+
+    def _validate_paragraph_substance(
+        self,
+        paragraph_text: str,
+        *,
+        section_index: int,
+        paragraph_index: int,
+        paragraph_count: int,
+        is_intro_section: bool,
+        is_last_section: bool,
+        section_heading: str,
+    ) -> Optional[Dict[str, Any]]:
+        plain = normalize_context_text(paragraph_text)
+        if not plain:
+            return None
+        min_sentences, min_chars = self._paragraph_minimums(
+            is_intro_section=is_intro_section,
+            is_last_section=is_last_section,
+            paragraph_index=paragraph_index,
+            paragraph_count=paragraph_count,
+        )
+        sentences = self._split_plain_sentences(plain)
+        sentence_count = len(sentences) or 1
+        if sentence_count < min_sentences or len(plain) < min_chars:
+            return {
+                'passed': False,
+                'code': 'P_THIN',
+                'reason': (
+                    f"섹션 {section_index} 문단 {paragraph_index}이 실질 문단 기준 미달 "
+                    f"({sentence_count}문장/{len(plain)}자, 최소 {min_sentences}문장/{min_chars}자)"
+                ),
+                'feedback': (
+                    f"섹션 {section_index} 문단 {paragraph_index}은 최소 {min_sentences}문장, "
+                    f"{min_chars}자 이상의 실질 문단이어야 합니다. 한 문장을 별도 <p>로 분리하지 말고 "
+                    "주장, 근거, 의미/실행 문장을 한 문단 안에서 완성하십시오."
+                ),
+                'sectionIndex': section_index,
+                'paragraphIndex': paragraph_index,
+                'sentenceCount': sentence_count,
+                'paragraphLength': len(plain),
+                'paragraphMinSentences': min_sentences,
+                'paragraphMinChars': min_chars,
+                'sectionHeading': section_heading,
+                'isIntroSection': is_intro_section,
+            }
+        return None
 
     def _find_meta_prompt_leak_sentences(self, content: str) -> List[str]:
         plain_text = re.sub(r'<[^>]*>', ' ', content or '')
@@ -502,6 +651,57 @@ class ContentValidator:
             return hits == 1
         return hits >= min(2, len(tokens))
 
+    _DETACHED_LEADERSHIP_MARKERS = (
+        "AI",
+        "인공지능",
+        "로봇",
+        "노동의 종말",
+        "다니엘",
+        "라벤토스",
+        "공화주의",
+        "낙수효과",
+        "분수효과",
+        "선별 복지",
+        "선별복지",
+        "조세 저항",
+        "보편적 복지",
+        "기본사회",
+        "존엄성",
+    )
+
+    def _find_detached_leadership_paragraphs(
+        self,
+        content: str,
+        contract: Dict[str, Any],
+    ) -> List[str]:
+        source_items: List[str] = []
+        for key in ("required_source_facts", "execution_items", "source_sequence_items"):
+            raw_values = contract.get(key)
+            if not isinstance(raw_values, list):
+                continue
+            for raw in raw_values:
+                item = normalize_context_text(raw)
+                if item and item not in source_items:
+                    source_items.append(item)
+        primary_keyword = normalize_context_text(contract.get("primary_keyword"))
+        if primary_keyword:
+            source_items.append(primary_keyword)
+        if not source_items:
+            return []
+
+        detached: List[str] = []
+        paragraph_blocks = re.findall(r'<p\b[^>]*>([\s\S]*?)</p\s*>', content or '', re.IGNORECASE)
+        for block in paragraph_blocks:
+            paragraph = normalize_context_text(strip_html(block), sep=' ')
+            if not paragraph:
+                continue
+            if not any(marker in paragraph for marker in self._DETACHED_LEADERSHIP_MARKERS):
+                continue
+            if any(self._plain_covers_contract_item(paragraph, item) for item in source_items):
+                continue
+            detached.append(paragraph)
+        return detached
+
     def _validate_source_contract(
         self,
         content: str,
@@ -541,8 +741,23 @@ class ContentValidator:
                 'unsupportedItems': forbidden_hits[:5],
             }
 
+        detached_leadership = self._find_detached_leadership_paragraphs(content, contract)
+        if detached_leadership:
+            sample = detached_leadership[0][:80]
+            return {
+                'passed': False,
+                'code': 'LEADERSHIP_DETACHED',
+                'reason': f"상위 원칙이 원문 실행수단과 분리됨 ({sample})",
+                'feedback': (
+                    "leadership.py의 상위 원칙은 허용되지만, 같은 문단 안에서 사용자 원문에 있는 "
+                    "정책명·실행수단·제도화 항목과 직접 연결해야 합니다. 원문과 분리된 일반론은 삭제하거나 "
+                    "원문 실행수단에 붙여 다시 쓰십시오."
+                ),
+                'paragraphSamples': detached_leadership[:3],
+            }
+
         required_items: List[str] = []
-        for key in ("required_source_facts", "execution_items"):
+        for key in ("required_source_facts", "execution_items", "source_sequence_items"):
             raw_values = contract.get(key)
             if not isinstance(raw_values, list):
                 continue
@@ -636,6 +851,14 @@ class ContentValidator:
                     'feedback': f'소제목은 헤드라인형으로 작성하고 1인칭 표현(저는/제가/나는/내가)을 제거하십시오: "{h2_text}"',
                 }
 
+        h2_quality_issue = self._validate_h2_quality_set(
+            h2_texts,
+            user_keywords=user_keywords,
+            context_analysis=context_analysis,
+        )
+        if h2_quality_issue:
+            return h2_quality_issue
+
         section_blocks: List[str] = []
         section_intro_flags: List[bool] = []
         first_h2_match = re.search(r'<h2\b', content, re.IGNORECASE)
@@ -657,7 +880,12 @@ class ContentValidator:
         section_plain_lengths = [len(strip_html(block)) for block in section_blocks]
 
         for section_index, section_content in enumerate(section_blocks, start=1):
-            section_p_count = len(re.findall(r'<p\b[^>]*>[\s\S]*?</p\s*>', section_content, re.IGNORECASE))
+            section_paragraphs = [
+                strip_html(item).strip()
+                for item in re.findall(r'<p\b[^>]*>([\s\S]*?)</p\s*>', section_content, re.IGNORECASE)
+                if strip_html(item).strip()
+            ]
+            section_p_count = len(section_paragraphs)
             is_intro_section = bool(section_intro_flags[section_index - 1]) if section_index - 1 < len(section_intro_flags) else False
             heading_match = re.search(r'<h2[^>]*>(.*?)</h2>', section_content, re.IGNORECASE | re.DOTALL)
             section_heading = strip_html(heading_match.group(1)).strip() if heading_match else ''
@@ -677,6 +905,40 @@ class ContentValidator:
                     'sectionBlockIndex': section_block_index,
                     'isIntroSection': is_intro_section,
                 }
+            if not is_intro_section and section_paragraphs:
+                first_sentence = self._first_plain_sentence(section_paragraphs[0])
+                opening_issue = detect_dependent_section_opening(first_sentence)
+                if opening_issue.get('detected'):
+                    return {
+                        'passed': False,
+                        'code': 'SECTION_OPENING_DEPENDENT_REFERENCE',
+                        'reason': (
+                            f"섹션 {section_index} 첫 문장이 독립 주어 없이 앞 문맥에 의존함 "
+                            f"({opening_issue.get('surface')})"
+                        ),
+                        'feedback': (
+                            f"섹션 {section_index} 첫 문장은 '{opening_issue.get('surface')}'처럼 앞 문맥을 받는 표현으로 시작하지 말고, "
+                            "정책명·제도명·지역명·실행수단 같은 명시적 주어로 다시 시작하십시오."
+                        ),
+                        'sectionIndex': section_index,
+                        'sectionHeading': section_heading,
+                        'sectionBlockIndex': section_block_index,
+                        'opening': dict(opening_issue),
+                    }
+
+            for paragraph_index, paragraph_text in enumerate(section_paragraphs, start=1):
+                substance_issue = self._validate_paragraph_substance(
+                    paragraph_text,
+                    section_index=section_index,
+                    paragraph_index=paragraph_index,
+                    paragraph_count=section_p_count,
+                    is_intro_section=is_intro_section,
+                    is_last_section=(section_index == len(section_blocks)),
+                    section_heading=section_heading,
+                )
+                if substance_issue:
+                    substance_issue['sectionBlockIndex'] = section_block_index
+                    return substance_issue
             section_plain_length = section_plain_lengths[section_index - 1]
             sec_min = length_spec.get('per_section_min', int(STRUCTURE_SPEC['sectionCharMin'])) - int(STRUCTURE_SPEC['validatorSectionTolerance'])
             sec_max = length_spec.get('per_section_max', int(STRUCTURE_SPEC['sectionCharMax'])) + int(STRUCTURE_SPEC['validatorSectionTolerance'])

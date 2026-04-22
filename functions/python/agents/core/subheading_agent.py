@@ -33,6 +33,7 @@ from ..common.h2_guide import (
     resolve_category_archetypes,
     sanitize_h2_text,
 )
+from ..common.h2_quality import h2_semantic_family_key, is_h2_prefix_fragment
 from ..common.h2_planning import (
     SectionPlan,
     StanceBrief,
@@ -1327,6 +1328,17 @@ class SubheadingAgent(Agent):
         for issue in aeo.get("issues") or []:
             if issue not in merged_issues:
                 merged_issues.append(issue)
+
+        if is_h2_prefix_fragment(text) and "H2_TEXT_FRAGMENT" not in merged_issues:
+            merged_issues.append("H2_TEXT_FRAGMENT")
+
+        current_family = h2_semantic_family_key(text)
+        if current_family:
+            for sibling in sibling_others:
+                if h2_semantic_family_key(sibling) == current_family:
+                    if "H2_GENERIC_FAMILY_REPEAT" not in merged_issues:
+                        merged_issues.append("H2_GENERIC_FAMILY_REPEAT")
+                    break
 
         emotion_label = detect_emotion_appeal(text)
         if emotion_label:

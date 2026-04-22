@@ -207,12 +207,20 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     if isinstance(source_contract, dict) and str(source_contract.get('answer_type') or '') == 'implementation_plan':
         primary_keyword = str(source_contract.get('primary_keyword') or '').strip()
         execution_items = source_contract.get('execution_items') if isinstance(source_contract.get('execution_items'), list) else []
+        source_sequence_items = source_contract.get('source_sequence_items') if isinstance(source_contract.get('source_sequence_items'), list) else []
+        forbidden_items = source_contract.get('forbidden_inferred_actions') if isinstance(source_contract.get('forbidden_inferred_actions'), list) else []
         execution_text = ', '.join(str(item).strip() for item in execution_items[:5] if str(item).strip())
+        sequence_text = ', '.join(str(item).strip() for item in source_sequence_items[:5] if str(item).strip())
+        forbidden_text = ', '.join(str(item).strip() for item in forbidden_items[:16] if str(item).strip())
         implementation_title_contract = f"""
 <implementation_title_contract priority="critical">
   <primary_keyword>{primary_keyword}</primary_keyword>
   <execution_items>{execution_text}</execution_items>
+  <source_sequence_items>{sequence_text}</source_sequence_items>
+  <forbidden_inferred_items>{forbidden_text}</forbidden_inferred_items>
   <rule>이 글의 제목은 실행안형 AEO 제목이어야 합니다. primary_keyword를 제목 앞쪽에 두고, execution_items 중 2~3개를 답으로 압축하십시오.</rule>
+  <rule>source_sequence_items에 없는 연도·수치·기관명·실행수단을 제목에 만들지 마십시오.</rule>
+  <rule>forbidden_inferred_items에 있는 표현은 제목에도 쓰지 마십시오.</rule>
   <rule>한국조세재정연구원·경기연구원·성남시 같은 외부 근거는 본문 보조자료입니다. 실행안형 제목의 주어·핵심 슬롯으로 올리지 마십시오.</rule>
   <rule>"바탕으로 ... 왜?"처럼 배경 근거와 의문사를 억지로 붙인 제목은 금지합니다.</rule>
   <example good="{primary_keyword} 부활 방안, 캐시백·지원책·조례 개정으로 풉니다" />

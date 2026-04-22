@@ -583,6 +583,12 @@ def build_retry_directive(
             f"군더더기 없는 문장으로 길이 범위({min_chars}~{max_chars}자)를 지키십시오."
         )
 
+    if code == 'P_THIN':
+        return (
+            "얇은 문단을 실질 문단으로 보강하십시오. 일반 본문 문단은 최소 3문장, 80자 이상으로 쓰고, "
+            "한 문장을 별도 <p>로 분리하지 마십시오. 각 문단은 주장 → 근거/설명 → 의미 또는 실행 문장으로 완성하십시오."
+        )
+
     if code == 'EVENT_INVITE_REDUNDANT':
         return (
             "행사 안내 문구 반복을 줄이십시오. \"직접 만나\", \"진솔한 소통\", \"기다리겠습니다\" 류 표현은 "
@@ -639,6 +645,25 @@ def build_retry_directive(
             "소제목에 1인칭 표현(저는/제가/나는/내가)이 포함되어 있습니다. "
             "소제목은 헤드라인형으로 작성하고, 대결/비교 문맥이면 'vs 주진우, 이재성의 약진'처럼 "
             "인물명+쟁점 중심 명사형으로 바꾸십시오."
+        )
+
+    if code in {'H2_DUPLICATE', 'H2_GENERIC_FAMILY_REPEAT', 'H2_TEXT_FRAGMENT', 'H2_USER_KEYWORD_MISSING'}:
+        return (
+            "소제목을 다시 쓰십시오. 각 H2는 서로 다른 원문 실행수단을 답해야 하며, "
+            "'제도 기반을 세우겠습니다' 같은 저정보 템플릿을 반복하지 마십시오. "
+            "검색어/핵심 정책명은 최소 1개 H2 앞부분에 온전하게 포함하고, 앞말이 잘린 조각 제목은 금지입니다."
+        )
+
+    if code == 'SECTION_OPENING_DEPENDENT_REFERENCE':
+        return (
+            "실패한 섹션의 첫 문장만 다시 쓰십시오. H2 직후 첫 문장은 앞 문맥을 받는 대명사·접속부사로 시작하지 말고, "
+            "정책명·제도명·지역명·실행수단 같은 명시적 주어로 독립적으로 시작하십시오."
+        )
+
+    if code == 'LEADERSHIP_DETACHED':
+        return (
+            "상위 원칙 문단을 원문 실행수단에 붙여 다시 쓰십시오. leadership 철학은 허용되지만, "
+            "같은 문단 안에 사용자 원문에서 나온 정책명·실행수단·제도화 항목을 함께 넣어야 합니다."
         )
 
     if code == 'SECTION_LENGTH':

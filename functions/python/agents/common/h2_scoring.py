@@ -93,6 +93,10 @@ H2_HARD_FAIL_ISSUES = frozenset(
         "H2_SIBLING_PREFIX_OVERLAP",
         # 인물명·지역명을 제외하면 구체적 고유명사/숫자가 전무한 상투적 H2.
         "H2_GENERIC_CONTENT",
+        # 같은 글 안에서 "제도 기반을 세우겠습니다" 류 저정보 템플릿이 반복됨.
+        "H2_GENERIC_FAMILY_REPEAT",
+        # "형 햇빛연금"처럼 앞 토큰이 잘린 소제목.
+        "H2_TEXT_FRAGMENT",
     }
 )
 
