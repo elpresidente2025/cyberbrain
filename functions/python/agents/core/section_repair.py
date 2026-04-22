@@ -323,6 +323,118 @@ class SectionRepairMixin:
             print(traceback.format_exc())
             return None
 
+    async def _regenerate_sequential_payload_section(
+        self,
+        *,
+        payload: Dict[str, Any],
+        outline: Dict[str, Any],
+        validation: Dict[str, Any],
+        current_prompt: str,
+        length_spec: Dict[str, int],
+        writing_method: str,
+        topic: str,
+        source_instructions: str,
+        user_keywords: List[str],
+    ) -> Optional[Dict[str, Any]]:
+        """순차 경로 산출물이 validator를 통과하지 못했을 때 해당 섹션만 재생성."""
+        code = str(validation.get('code') or '')
+        if code not in {'SECTION_LENGTH', 'SECTION_P_COUNT', 'SECTION_ROLE_CONTRACT', 'META_PROMPT_LEAK'}:
+            return None
+        if bool(validation.get('isIntroSection')):
+            return None
+
+        body_payload = payload.get('body') if isinstance(payload, dict) else None
+        if not isinstance(body_payload, list) or not body_payload:
+            return None
+        outline_body = outline.get('body') if isinstance(outline, dict) else None
+        if not isinstance(outline_body, list):
+            outline_body = []
+
+        body_total = len(body_payload)
+        section_index = int(validation.get('sectionIndex') or 0)
+        if section_index <= 0 and code == 'META_PROMPT_LEAK':
+            # 메타 디스코스 누수는 대개 결론에서 발생하고 validator가 섹션 위치를
+            # 주지 않으므로, 순차 경로에서는 결론만 한 번 다시 쓴다.
+            section_index = body_total + 2
+        if section_index <= 1:
+            return None
+
+        intro_payload = payload.get('intro') if isinstance(payload.get('intro'), dict) else {}
+        intro_paragraphs = list(intro_payload.get('paragraphs') or [])
+
+        def _completed_intro() -> Dict[str, Any]:
+            return {'role': 'intro', 'heading': '', 'paragraphs': intro_paragraphs}
+
+        def _completed_body(body_idx: int) -> Dict[str, Any]:
+            body_item = body_payload[body_idx] if body_idx < len(body_payload) else {}
+            outline_item = outline_body[body_idx] if body_idx < len(outline_body) else {}
+            return {
+                'role': str(outline_item.get('role') or 'evidence'),
+                'heading': str(body_item.get('heading') or outline_item.get('heading') or ''),
+                'paragraphs': list(body_item.get('paragraphs') or []),
+            }
+
+        if 2 <= section_index <= body_total + 1:
+            body_idx = section_index - 2
+            body_info = outline_body[body_idx] if body_idx < len(outline_body) else {}
+            current_body = body_payload[body_idx] if body_idx < len(body_payload) else {}
+            role = str(body_info.get('role') or 'evidence').strip() or 'evidence'
+            heading = str(body_info.get('heading') or current_body.get('heading') or '').strip()
+            lead = str(body_info.get('lead_sentence') or '').strip()
+            prior_sections = [_completed_intro()] + [
+                _completed_body(idx) for idx in range(body_idx)
+            ]
+            stage = f'seq-repair-body-{body_idx + 1}'
+        elif section_index == body_total + 2:
+            role = 'conclusion'
+            heading = str(outline.get('conclusion_heading') or '').strip()
+            lead = ''
+            prior_sections = [_completed_intro()] + [
+                _completed_body(idx) for idx in range(body_total)
+            ]
+            stage = 'seq-repair-conclusion'
+        else:
+            return None
+
+        regenerated = await self.generate_section(
+            role=role,
+            heading=heading,
+            lead_sentence=lead,
+            prior_sections=prior_sections,
+            base_prompt=current_prompt,
+            length_spec=length_spec,
+            writing_method=writing_method,
+            stage=stage,
+            section_order=max(0, section_index - 1),
+            body_total=body_total,
+            topic=topic,
+            instructions=source_instructions,
+            user_keywords=user_keywords,
+        )
+        if not regenerated:
+            return None
+
+        next_payload: Dict[str, Any] = {
+            'title': payload.get('title'),
+            'intro': {'paragraphs': intro_paragraphs},
+            'body': [
+                {
+                    'heading': str(item.get('heading') or ''),
+                    'paragraphs': list(item.get('paragraphs') or []),
+                }
+                for item in body_payload
+            ],
+            'conclusion': {
+                'heading': str((payload.get('conclusion') or {}).get('heading') or ''),
+                'paragraphs': list((payload.get('conclusion') or {}).get('paragraphs') or []),
+            },
+        }
+        if 2 <= section_index <= body_total + 1:
+            next_payload['body'][section_index - 2]['paragraphs'] = list(regenerated)
+        else:
+            next_payload['conclusion']['paragraphs'] = list(regenerated)
+        return next_payload
+
     async def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
         topic = context.get('topic', '')
         user_profile = context.get('userProfile', {})
@@ -535,6 +647,7 @@ class SectionRepairMixin:
         best_candidate: Dict[str, Any] = {}
         is_aeo = uses_aeo_answer_first(writing_method)
         aeo_outline: Optional[Dict[str, Any]] = None
+        sequential_disabled_after_failure = False
         structural_recoverable_codes = {
             'H2_SHORT',
             'H2_LONG',
@@ -735,6 +848,7 @@ class SectionRepairMixin:
                     f"\"{feedback}\"{retry_block}"
                 )
 
+            seq_payload: Optional[Dict[str, Any]] = None
             try:
                 # === AEO 2단계: 아웃라인 생성 (첫 시도에서만) ===
                 if is_aeo and aeo_outline is None:
@@ -821,8 +935,11 @@ class SectionRepairMixin:
                         is_aeo = False
 
                 # === (flag) ENABLE_SEQUENTIAL_STRUCTURE — 섹션 단위 순차 생성 ===
-                seq_payload: Optional[Dict[str, Any]] = None
-                seq_flag_on = os.environ.get("ENABLE_SEQUENTIAL_STRUCTURE", "false").lower() == "true"
+                seq_flag_on = (
+                    os.environ.get("ENABLE_SEQUENTIAL_STRUCTURE", "false").lower() == "true"
+                    and is_aeo
+                    and not sequential_disabled_after_failure
+                )
                 if seq_flag_on:
                     seq_payload = await self._run_sequential_structure(
                         is_aeo=is_aeo,
@@ -926,6 +1043,12 @@ class SectionRepairMixin:
                     f"⚠️ [StructureAgent] 검증 실패: code={validation.get('code')} "
                     f"reason={validation['reason']}"
                 )
+                if seq_payload is not None:
+                    sequential_disabled_after_failure = True
+                    print(
+                        "⚠️ [StructureAgent] sequential 결과가 검증을 통과하지 못해 "
+                        "다음 생성 시도부터 legacy 경로를 사용합니다."
+                    )
                 if str(validation.get('code') or '') == 'DUPLICATE_SENTENCE':
                     dup_samples = validation.get('duplicateSamples') or []
                     dup_count = validation.get('duplicateCount')
@@ -940,6 +1063,59 @@ class SectionRepairMixin:
                         f"🔎 [StructureAgent] INTRO_CONCLUSION_ECHO details: "
                         f"count={dup_count}, samples={dup_samples}"
                     )
+
+                if seq_payload is not None and aeo_outline is not None:
+                    seq_repaired_payload = await self._regenerate_sequential_payload_section(
+                        payload=seq_payload,
+                        outline=aeo_outline,
+                        validation=validation,
+                        current_prompt=current_prompt,
+                        length_spec=length_spec,
+                        writing_method=writing_method,
+                        topic=topic,
+                        source_instructions=source_instructions,
+                        user_keywords=user_keywords if isinstance(user_keywords, list) else [],
+                    )
+                    if seq_repaired_payload is not None:
+                        repaired_raw_content, repaired_title = self._build_html_from_structure_json(
+                            seq_repaired_payload,
+                            length_spec=length_spec,
+                            topic=topic,
+                            poll_focus_bundle=poll_focus_bundle,
+                        )
+                        repaired_raw_content = normalize_artifacts(repaired_raw_content)
+                        repaired_raw_content = normalize_html_structure_tags(repaired_raw_content)
+                        repaired_raw_content = self._strip_counterargument_pledge_tail(
+                            repaired_raw_content,
+                            aeo_outline,
+                        )
+                        repaired_title = normalize_artifacts(repaired_title)
+                        repaired_content, repaired_validation, repaired_source = _evaluate_candidate_with_normalizer(
+                            repaired_raw_content,
+                            repaired_title,
+                            source='sequential-section-repair',
+                            source_attempt=attempt,
+                        )
+                        if repaired_validation.get('passed'):
+                            print(
+                                f"✅ [StructureAgent] sequential 섹션 재생성 통과({repaired_source}): "
+                                f"{len(strip_html(repaired_content))}자"
+                            )
+                            if not repaired_title.strip():
+                                repaired_title = topic[:20] if topic else '새 원고'
+                            return {
+                                'content': repaired_content,
+                                'title': repaired_title,
+                                'writingMethod': writing_method,
+                                'contextAnalysis': context_analysis,
+                            }
+                        print(
+                            f"⚠️ [StructureAgent] sequential 섹션 재생성 후에도 검증 실패: "
+                            f"code={repaired_validation.get('code')} reason={repaired_validation.get('reason')}"
+                        )
+                        content = repaired_content
+                        title = repaired_title
+                        validation = dict(repaired_validation or {})
 
                 recovery_code = str(validation.get('code') or '')
                 recovery_content = content
@@ -1072,6 +1248,12 @@ class SectionRepairMixin:
             except Exception as e:
                 error_msg = str(e)
                 print(f"❌ [StructureAgent] 에러 발생: {error_msg}")
+                if seq_payload is not None:
+                    sequential_disabled_after_failure = True
+                    print(
+                        "⚠️ [StructureAgent] sequential 결과 처리 중 예외가 발생해 "
+                        "다음 생성 시도부터 legacy 경로를 사용합니다."
+                    )
                 feedback = error_msg
                 retry_directive = ''
                 last_error = error_msg

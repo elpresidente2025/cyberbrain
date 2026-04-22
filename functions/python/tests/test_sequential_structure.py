@@ -8,7 +8,7 @@ Plan 1-2-wild-anchor.md 의 검증 항목 중 단위 테스트 가능 항목:
 - (6') content_validator META_PROMPT_LEAK 패턴이 plan 에서 추가한 표현을 잡아냄
 - (추가) _select_conclusion_anchor 의 body 앵커 추출 (수치+단위, 인용)
 
-CLAUDE.md 범용성 원칙: placeholder(`홍길동`, `샘플구`) 만 사용.
+CLAUDE.md 범용성 원칙: `{user_name}` 같은 슬롯 placeholder 만 사용.
 """
 from __future__ import annotations
 
@@ -100,7 +100,8 @@ class TestMetaPromptLeakPatterns:
         "위에서 살펴본 흐름대로 진행됩니다.",
         "위 다룬 내용을 이어받아 정리하면 다음과 같습니다.",
     ])
-    def test_new_patterns_flagged(self, sentence):
+    def test_new_patterns_flagged(self, monkeypatch, sentence):
+        monkeypatch.setenv("ENABLE_SEQUENTIAL_STRUCTURE", "true")
         leaks = self.validator._find_meta_prompt_leak_sentences(
             f"<p>{sentence}</p>"
         )
@@ -111,7 +112,16 @@ class TestMetaPromptLeakPatterns:
         "시민들이 느끼는 불편은 다양한 방식으로 드러났습니다.",
         "문제가 지속되는 이유는 제도적 공백 때문입니다.",
     ])
-    def test_false_positives_not_flagged(self, sentence):
+    def test_false_positives_not_flagged(self, monkeypatch, sentence):
+        monkeypatch.setenv("ENABLE_SEQUENTIAL_STRUCTURE", "true")
+        leaks = self.validator._find_meta_prompt_leak_sentences(
+            f"<p>{sentence}</p>"
+        )
+        assert sentence not in leaks
+
+    def test_new_patterns_disabled_when_flag_off(self, monkeypatch):
+        monkeypatch.delenv("ENABLE_SEQUENTIAL_STRUCTURE", raising=False)
+        sentence = "본론에서 확인한 문제를 실행으로 연결하겠습니다."
         leaks = self.validator._find_meta_prompt_leak_sentences(
             f"<p>{sentence}</p>"
         )
@@ -123,7 +133,8 @@ class TestMetaPromptLeakPatterns:
 # ---------------------------------------------------------------------------
 
 class TestConclusionDefaultFallback:
-    def test_default_fallback_has_no_meta_discourse(self):
+    def test_default_fallback_has_no_meta_discourse_when_flag_on(self, monkeypatch):
+        monkeypatch.setenv("ENABLE_SEQUENTIAL_STRUCTURE", "true")
         from handlers.generate_posts_pkg.pipeline import (
             _build_conclusion_archetype_paragraphs,
         )
@@ -133,7 +144,7 @@ class TestConclusionDefaultFallback:
             heading="",
             body_text="<p>샘플 본론입니다.</p>",
             user_keywords=[],
-            full_name="홍길동",
+            full_name="{user_name}",
         )
         joined = " ".join(paragraphs)
         forbidden = [
@@ -146,6 +157,21 @@ class TestConclusionDefaultFallback:
         for phrase in forbidden:
             assert phrase not in joined, f"default fallback 에 금지 문구 잔존: {phrase}"
 
+    def test_default_fallback_preserves_legacy_when_flag_off(self, monkeypatch):
+        monkeypatch.delenv("ENABLE_SEQUENTIAL_STRUCTURE", raising=False)
+        from handlers.generate_posts_pkg.pipeline import (
+            _build_conclusion_archetype_paragraphs,
+        )
+        paragraphs = _build_conclusion_archetype_paragraphs(
+            writing_method="",
+            category="",
+            heading="",
+            body_text="<p>샘플 본론입니다.</p>",
+            user_keywords=[],
+            full_name="{user_name}",
+        )
+        assert "본론에서 확인한 문제" in " ".join(paragraphs)
+
 
 # ---------------------------------------------------------------------------
 # _select_conclusion_anchor body 앵커 추출
@@ -157,36 +183,48 @@ class TestSelectConclusionAnchor:
         anchor = _select_conclusion_anchor(
             "<p>샘플 정책이 본문에 등장합니다.</p>",
             user_keywords=["샘플 정책"],
-            full_name="홍길동",
+            full_name="{user_name}",
         )
         assert anchor == "샘플 정책"
 
-    def test_falls_back_to_number_unit(self):
+    def test_falls_back_to_number_unit_when_flag_on(self, monkeypatch):
+        monkeypatch.setenv("ENABLE_SEQUENTIAL_STRUCTURE", "true")
         from handlers.generate_posts_pkg.pipeline import _select_conclusion_anchor
         anchor = _select_conclusion_anchor(
             "<p>예산 300억원이 집행될 예정입니다.</p>",
             user_keywords=[],
-            full_name="홍길동",
+            full_name="{user_name}",
         )
         # 300억원 혹은 공백을 포함한 변형
         compact = anchor.replace(" ", "")
         assert "300억원" in compact
 
-    def test_falls_back_to_quoted_proper_noun(self):
+    def test_falls_back_to_quoted_proper_noun_when_flag_on(self, monkeypatch):
+        monkeypatch.setenv("ENABLE_SEQUENTIAL_STRUCTURE", "true")
         from handlers.generate_posts_pkg.pipeline import _select_conclusion_anchor
         anchor = _select_conclusion_anchor(
             '<p>이 사업은 "샘플 특구" 지정을 포함합니다.</p>',
             user_keywords=[],
-            full_name="홍길동",
+            full_name="{user_name}",
         )
         assert anchor == "샘플 특구"
+
+    def test_body_anchor_fallback_disabled_when_flag_off(self, monkeypatch):
+        monkeypatch.delenv("ENABLE_SEQUENTIAL_STRUCTURE", raising=False)
+        from handlers.generate_posts_pkg.pipeline import _select_conclusion_anchor
+        anchor = _select_conclusion_anchor(
+            "<p>예산 300억원과 \"샘플 특구\"가 함께 등장합니다.</p>",
+            user_keywords=[],
+            full_name="{user_name}",
+        )
+        assert anchor == "이 과제"
 
     def test_final_fallback_when_no_anchor(self):
         from handlers.generate_posts_pkg.pipeline import _select_conclusion_anchor
         anchor = _select_conclusion_anchor(
             "<p>추상적인 본문 텍스트입니다.</p>",
             user_keywords=[],
-            full_name="홍길동",
+            full_name="{user_name}",
         )
         assert anchor == "이 과제"
 
@@ -204,6 +242,7 @@ class _MockRunner:
 
     def __init__(self, *, outline_body_count=3, outline_fail=False):
         self.calls = []
+        self.generate_requests = []
         self.outline_fail = outline_fail
         self.outline_body_count = outline_body_count
 
@@ -238,7 +277,7 @@ class _MockRunner:
             ]
             return {
                 "title": "샘플 제목",
-                "intro_lead": "안녕하세요, 홍길동 의원입니다. 샘플 정책을 추진하겠습니다.",
+                "intro_lead": "안녕하세요, {user_name} 의원입니다. 샘플 정책을 추진하겠습니다.",
                 "body": body,
                 "conclusion_heading": "마치며",
             }
@@ -258,6 +297,12 @@ class _MockRunner:
     ):
         # 실제 generate_section 호출 흔적을 stage 로 남긴다
         self.calls.append(stage)
+        self.generate_requests.append({
+            "stage": stage,
+            "role": role,
+            "heading": heading,
+            "prior_roles": [sec.get("role") for sec in prior_sections],
+        })
         return [
             f"{role} 섹션 첫 문단 " + "가" * 100,
             f"{role} 섹션 둘째 문단 " + "나" * 100,
@@ -271,6 +316,9 @@ class TestRunSequentialStructure:
         # _MockRunner 에 SectionRepairMixin._run_sequential_structure 만 붙인 인스턴스
         runner = _MockRunner(**kwargs)
         runner._run_sequential_structure = SectionRepairMixin._run_sequential_structure.__get__(
+            runner, type(runner)
+        )
+        runner._regenerate_sequential_payload_section = SectionRepairMixin._regenerate_sequential_payload_section.__get__(
             runner, type(runner)
         )
         return runner
@@ -320,3 +368,74 @@ class TestRunSequentialStructure:
         assert payload is None
         # outline 호출만 기록되고 intro/body/conclusion 은 호출되지 않았어야 함
         assert runner.calls == ['seq-outline']
+
+    def test_validator_failure_regenerates_only_failed_body_section(self):
+        runner = self._make_runner()
+        payload = {
+            "title": "샘플 제목",
+            "intro": {"paragraphs": ["서론 문단"]},
+            "body": [
+                {"heading": "섹션 1", "paragraphs": ["본문 1"]},
+                {"heading": "섹션 2", "paragraphs": ["본문 2"]},
+                {"heading": "섹션 3", "paragraphs": ["본문 3"]},
+            ],
+            "conclusion": {"heading": "마치며", "paragraphs": ["결론 문단"]},
+        }
+        outline = {
+            "body": [
+                {"heading": "섹션 1", "lead_sentence": "첫째를 추진하겠습니다.", "role": "evidence"},
+                {"heading": "섹션 2", "lead_sentence": "둘째를 추진하겠습니다.", "role": "counterargument_rebuttal"},
+                {"heading": "섹션 3", "lead_sentence": "셋째를 추진하겠습니다.", "role": "higher_principle"},
+            ],
+            "conclusion_heading": "마치며",
+        }
+        repaired = asyncio.new_event_loop().run_until_complete(
+            runner._regenerate_sequential_payload_section(
+                payload=payload,
+                outline=outline,
+                validation={"code": "SECTION_LENGTH", "sectionIndex": 3},
+                current_prompt="BASE_PROMPT",
+                length_spec={"body_sections": 3, "per_section_min": 300, "paragraphs_per_section": 3},
+                writing_method="logical_writing",
+                topic="샘플 주제",
+                source_instructions="샘플 입장문",
+                user_keywords=["샘플"],
+            )
+        )
+        assert repaired is not None
+        assert runner.calls == ["seq-repair-body-2"]
+        assert runner.generate_requests[-1]["prior_roles"] == ["intro", "evidence"]
+        assert repaired["body"][0]["paragraphs"] == ["본문 1"]
+        assert repaired["body"][1]["paragraphs"][0].startswith("counterargument_rebuttal 섹션")
+
+    def test_meta_prompt_leak_regenerates_conclusion_when_section_unknown(self):
+        runner = self._make_runner()
+        payload = {
+            "title": "샘플 제목",
+            "intro": {"paragraphs": ["서론 문단"]},
+            "body": [{"heading": "섹션 1", "paragraphs": ["본문 1"]}],
+            "conclusion": {"heading": "마치며", "paragraphs": ["결론 문단"]},
+        }
+        outline = {
+            "body": [
+                {"heading": "섹션 1", "lead_sentence": "첫째를 추진하겠습니다.", "role": "evidence"},
+            ],
+            "conclusion_heading": "마치며",
+        }
+        repaired = asyncio.new_event_loop().run_until_complete(
+            runner._regenerate_sequential_payload_section(
+                payload=payload,
+                outline=outline,
+                validation={"code": "META_PROMPT_LEAK"},
+                current_prompt="BASE_PROMPT",
+                length_spec={"body_sections": 1, "per_section_min": 300, "paragraphs_per_section": 3},
+                writing_method="logical_writing",
+                topic="샘플 주제",
+                source_instructions="샘플 입장문",
+                user_keywords=[],
+            )
+        )
+        assert repaired is not None
+        assert runner.calls == ["seq-repair-conclusion"]
+        assert runner.generate_requests[-1]["prior_roles"] == ["intro", "evidence"]
+        assert repaired["conclusion"]["paragraphs"][0].startswith("conclusion 섹션")

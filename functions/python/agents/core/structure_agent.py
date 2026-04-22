@@ -1318,11 +1318,15 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                     '중 1개를 실제 이름으로 인용해 앞 논의와 연결하십시오(강제 아님).</rule>\n'
                 )
 
+        from xml.sax.saxutils import escape
+        safe_heading = escape(str(heading or ''))
+        safe_lead_sentence = escape(str(lead_sentence or ''))
+        safe_role = escape(str(role or ''))
         locked_block = (
             '<locked_section priority="absolute">\n'
-            f'  <heading>{heading}</heading>\n'
-            + (f'  <lead_sentence>{lead_sentence}</lead_sentence>\n' if lead_sentence else '')
-            + f'  <section_role>{role}</section_role>\n'
+            f'  <heading>{safe_heading}</heading>\n'
+            + (f'  <lead_sentence>{safe_lead_sentence}</lead_sentence>\n' if lead_sentence else '')
+            + f'  <section_role>{safe_role}</section_role>\n'
             + f'  <section_order>{section_order}/{body_total}</section_order>\n'
             + '</locked_section>\n'
         )
