@@ -127,6 +127,23 @@ class ContextAnalyzer:
                 break
         return items
 
+    def _dedupe_contract_labels(self, values: List[str], *, max_items: int = 12) -> List[str]:
+        items: List[str] = []
+        seen: set[str] = set()
+        for raw in values:
+            item = self._sanitize_context_material_text(raw)
+            item = re.sub(r"\s+", " ", item).strip(" \t-•,.;")
+            if not item:
+                continue
+            key = material_key(item) or item
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append(item)
+            if len(items) >= max_items:
+                break
+        return items
+
     def _coerce_execution_item_list(self, value: Any) -> List[str]:
         if isinstance(value, list):
             return [str(item) for item in value]
@@ -134,13 +151,219 @@ class ContextAnalyzer:
             return [value]
         return []
 
-    def _augment_execution_plan(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
+    def _extract_primary_policy_surface(self, stance_text: str) -> str:
+        text = normalize_context_text(stance_text)
+        if not text:
+            return ""
+
+        candidates: List[Tuple[int, str]] = []
+
+        quote_pattern = re.compile(r"[\"'“”‘’「『]([^\"'“”‘’」』\n]{2,30})[\"'“”‘’」』]")
+        for match in quote_pattern.finditer(text):
+            value = normalize_context_text(match.group(1))
+            if not value:
+                continue
+            left = text[max(0, match.start() - 24):match.start()]
+            right = text[match.end():min(len(text), match.end() + 24)]
+            around = f"{left} {right}"
+            score = 3
+            if re.search(r"(지역화폐|정책|사업|제도|상품권|조례|지원)", around):
+                score += 5
+            if re.search(r"[A-Za-z0-9]", value):
+                score += 2
+            if value in {"도루묵", "포퓰리즘"}:
+                score -= 8
+            candidates.append((score, value))
+
+        policy_pattern = re.compile(
+            r"([가-힣A-Za-z0-9][가-힣A-Za-z0-9·+\-]{1,28})\s*"
+            r"(?:지역화폐|정책|사업|제도|상품권)"
+        )
+        for match in policy_pattern.finditer(text):
+            value = normalize_context_text(match.group(1))
+            if value and len(value.replace(" ", "")) >= 2:
+                candidates.append((4, value))
+
+        if not candidates:
+            return ""
+
+        candidates.sort(key=lambda item: (item[0], len(item[1])), reverse=True)
+        return candidates[0][1]
+
+    def _extract_execution_items_from_stance(self, stance_text: str, primary_policy: str = "") -> List[str]:
+        text = normalize_context_text(stance_text)
+        compact = re.sub(r"\s+", "", text)
+        if not compact:
+            return []
+
+        items: List[str] = []
+
+        def add(condition: bool, item: str) -> None:
+            if condition:
+                items.append(item)
+
+        add(bool(re.search(r"캐시백.{0,20}(줄|축소|삭감|감소|낮)", text)), "캐시백 요율 회복")
+        add(bool(re.search(r"지원책.{0,20}(줄|축소|삭감|감소)", text)) or "각종지원책" in compact, "지원책 복원")
+        add(
+            bool(re.search(r"담당\s*부서|부서.{0,20}말석|추진\s*체계|전담\s*부서", text)),
+            "담당 부서 재정비",
+        )
+        name_item = f"{primary_policy} 명칭 회복" if primary_policy else "정책 명칭 회복"
+        add(
+            bool(re.search(r"명칭.{0,20}(사용하지|쓰지|재개|회복)|브랜드|이름.{0,12}(사용하지|재개|회복)", text)),
+            name_item,
+        )
+        add(bool(re.search(r"이용자\s*수|결제액", text)), "이용자 수와 결제액 회복")
+        add("연구단체" in compact, "의원 연구단체 구성")
+        add(bool(re.search(r"(영향|효과).{0,20}(분석|짚|점검)|분석", text)), "정책 효과 분석")
+        add(bool(re.search(r"조례.{0,12}(개정|제정|정비)|관련\s*조례", text)), "관련 조례 개정")
+        add(bool(re.search(r"예산.{0,12}(확보|편성|운용)", text)), "예산 확보와 운용 기준 마련")
+        add(bool(re.search(r"가맹점.{0,18}(확대|지원|관리)", text)), "가맹점 확대와 현장 지원")
+
+        return self._dedupe_execution_items(items)
+
+    def _extract_required_source_facts_from_stance(self, stance_text: str) -> List[str]:
+        text = normalize_context_text(stance_text)
+        compact = re.sub(r"\s+", "", text)
+        if not compact:
+            return []
+
+        facts: List[str] = []
+
+        def add(condition: bool, fact: str) -> None:
+            if condition:
+                facts.append(fact)
+
+        add(bool(re.search(r"캐시백.{0,20}(줄|축소|삭감|감소|낮)", text)), "캐시백 요율 축소")
+        add(bool(re.search(r"지원책.{0,20}(줄|축소|삭감|감소)", text)) or "각종지원책" in compact, "지원책 축소")
+        add(bool(re.search(r"담당\s*부서|부서.{0,20}말석", text)), "담당 부서 위상 약화")
+        add(bool(re.search(r"명칭.{0,20}(사용하지|쓰지)|브랜드|이름.{0,12}(사용하지|쓰지)", text)), "정책 명칭 미사용")
+        add(bool(re.search(r"이용자\s*수.{0,20}급감|결제액.{0,20}급감|이용자\s*수와\s*결제액", text)), "이용자 수와 결제액 급감")
+        add("역외" in compact and "소비" in compact, "지역 내 소비와 역외 소비 둔화 효과 약화")
+        add("연구단체" in compact, "의원 연구단체 구성")
+        add(bool(re.search(r"조례.{0,12}(개정|제정|정비)|관련\s*조례", text)), "관련 조례 개정")
+
+        return self._dedupe_execution_items(facts)
+
+    def _build_forbidden_inferred_actions(self, stance_text: str) -> List[str]:
+        text = normalize_context_text(stance_text)
+        compact = re.sub(r"\s+", "", text)
+        candidates = [
+            ("10%", ("10%", "10퍼센트")),
+            ("수수료 전액 지원", ("수수료전액지원",)),
+            ("전담 TF", ("전담tf", "태스크포스")),
+            ("정기 간담회", ("정기간담회",)),
+            ("맞춤형 프로모션", ("맞춤형프로모션", "프로모션")),
+            ("모바일 결제 시스템 고도화", ("모바일결제시스템", "결제시스템고도화")),
+            ("온라인 플랫폼 확대", ("온라인플랫폼",)),
+            ("예산 확보", ("예산확보", "예산편성")),
+        ]
+        forbidden: List[str] = []
+        lowered_compact = compact.lower()
+        for label, probes in candidates:
+            if not any(str(probe).lower() in lowered_compact for probe in probes):
+                forbidden.append(label)
+        return forbidden
+
+    def _looks_like_implementation_plan_stance(self, stance_text: str, execution_items: List[str]) -> bool:
+        text = normalize_context_text(stance_text)
+        if not text:
+            return False
+        plan_markers = re.search(r"부활|복원|회복|되찾|재정비|개정|마련|모색|활성화|방안|해법", text)
+        policy_markers = re.search(r"정책|지역화폐|사업|제도|조례|지원책|캐시백|담당\s*부서", text)
+        return bool(plan_markers and (policy_markers or execution_items))
+
+    def _build_source_contract(
+        self,
+        analysis: Dict[str, Any],
+        *,
+        stance_text: str = "",
+        answer_type: str = "",
+        execution_items: Optional[List[str]] = None,
+        central_claim: str = "",
+    ) -> Dict[str, Any]:
+        existing = analysis.get("source_contract")
+        contract: Dict[str, Any] = dict(existing) if isinstance(existing, dict) else {}
+
+        primary_policy = normalize_context_text(contract.get("primary_keyword")) or self._extract_primary_policy_surface(stance_text)
+        extracted_items = self._extract_execution_items_from_stance(stance_text, primary_policy=primary_policy)
+        merged_items = self._dedupe_execution_items(list(execution_items or []) + extracted_items)
+        required_facts = self._dedupe_execution_items(
+            self._coerce_execution_item_list(contract.get("required_source_facts"))
+            + self._extract_required_source_facts_from_stance(stance_text)
+        )
+
+        normalized_answer_type = self._normalize_answer_type(contract.get("answer_type") or answer_type)
+        if normalized_answer_type in self._IMPLEMENTATION_PLAN_TYPES:
+            normalized_answer_type = "implementation_plan"
+        if normalized_answer_type != "implementation_plan" and self._looks_like_implementation_plan_stance(
+            stance_text,
+            merged_items,
+        ):
+            normalized_answer_type = "implementation_plan"
+
+        if normalized_answer_type != "implementation_plan" and not (merged_items or required_facts):
+            return {}
+
+        if not central_claim and primary_policy and normalized_answer_type == "implementation_plan":
+            central_claim = f"{primary_policy} 부활 방안을 마련하겠다"
+
+        contract.update(
+            {
+                "answer_type": normalized_answer_type,
+                "primary_keyword": primary_policy,
+                "central_claim": self._sanitize_context_material_text(
+                    contract.get("central_claim") or central_claim
+                ),
+                "required_source_facts": required_facts,
+                "execution_items": merged_items,
+                "forbidden_inferred_actions": self._dedupe_contract_labels(
+                    self._coerce_execution_item_list(contract.get("forbidden_inferred_actions"))
+                    + self._build_forbidden_inferred_actions(stance_text)
+                ),
+            }
+        )
+        return contract
+
+    def _normalize_source_contract(self, value: Any) -> Dict[str, Any]:
+        if not isinstance(value, dict):
+            return {}
+        contract = dict(value)
+        contract["answer_type"] = self._normalize_answer_type(contract.get("answer_type"))
+        if contract["answer_type"] in self._IMPLEMENTATION_PLAN_TYPES:
+            contract["answer_type"] = "implementation_plan"
+        contract["primary_keyword"] = self._sanitize_context_material_text(contract.get("primary_keyword"))
+        contract["central_claim"] = self._sanitize_context_material_text(contract.get("central_claim"))
+        for key in ("required_source_facts", "execution_items"):
+            contract[key] = self._dedupe_execution_items(self._coerce_execution_item_list(contract.get(key)))
+        contract["forbidden_inferred_actions"] = self._dedupe_contract_labels(
+            self._coerce_execution_item_list(contract.get("forbidden_inferred_actions"))
+        )
+        return contract
+
+    def _augment_execution_plan(self, analysis: Dict[str, Any], *, stance_text: str = "") -> Dict[str, Any]:
         normalized = dict(analysis) if isinstance(analysis, dict) else {}
         answer_type = self._normalize_answer_type(normalized.get("answer_type"))
         execution_items = self._dedupe_execution_items(
             self._coerce_execution_item_list(normalized.get("execution_items"))
         )
         central_claim = self._sanitize_context_material_text(normalized.get("central_claim"))
+
+        source_contract = self._build_source_contract(
+            normalized,
+            stance_text=stance_text,
+            answer_type=answer_type,
+            execution_items=execution_items,
+            central_claim=central_claim,
+        )
+        if source_contract:
+            normalized["source_contract"] = source_contract
+            if source_contract.get("answer_type") == "implementation_plan":
+                answer_type = "implementation_plan"
+            if not execution_items:
+                execution_items = list(source_contract.get("execution_items") or [])
+            if not central_claim:
+                central_claim = self._sanitize_context_material_text(source_contract.get("central_claim"))
 
         if answer_type in self._IMPLEMENTATION_PLAN_TYPES:
             answer_type = "implementation_plan"
@@ -358,6 +581,9 @@ class ContextAnalyzer:
         normalized_analysis["execution_items"] = self._dedupe_execution_items(
             self._coerce_execution_item_list(normalized_analysis.get("execution_items"))
         )
+        normalized_analysis["source_contract"] = self._normalize_source_contract(
+            normalized_analysis.get("source_contract")
+        )
 
         return normalized_analysis
 
@@ -517,7 +743,7 @@ class ContextAnalyzer:
                             filtered_list.append(item)
                 analysis["mustIncludeFromStance"] = filtered_list
 
-            analysis = self._augment_execution_plan(analysis)
+            analysis = self._augment_execution_plan(analysis, stance_text=stance_text)
             analysis = self._augment_context_analysis_with_news_facts(analysis, news_data_text)
             analysis = self.normalize_materials(analysis)
 

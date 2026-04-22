@@ -7200,6 +7200,67 @@ def _join_anchor_surfaces(anchors: list[str], *, fallback: str = "실행 과제"
     return ", ".join(cleaned[:3])
 
 
+def _contract_list_items(source_contract: Optional[Dict[str, Any]], key: str, *, limit: int = 8) -> list[str]:
+    if not isinstance(source_contract, dict):
+        return []
+    raw_values = source_contract.get(key)
+    if not isinstance(raw_values, list):
+        return []
+    items: list[str] = []
+    seen: set[str] = set()
+    for raw_item in raw_values:
+        item = _normalize_inline_whitespace(str(raw_item or ""))
+        if not item or item == "(없음)":
+            continue
+        compact = item.replace(" ", "")
+        if compact in seen:
+            continue
+        seen.add(compact)
+        items.append(item)
+        if len(items) >= limit:
+            break
+    return items
+
+
+def _build_source_contract_conclusion_paragraphs(
+    *,
+    source_contract: Optional[Dict[str, Any]],
+    fallback_subject: str,
+) -> list[str]:
+    if not isinstance(source_contract, dict):
+        return []
+    if str(source_contract.get("answer_type") or "").strip() != "implementation_plan":
+        return []
+
+    subject = _normalize_inline_whitespace(str(source_contract.get("primary_keyword") or "")) or fallback_subject
+    central_claim = _normalize_inline_whitespace(str(source_contract.get("central_claim") or ""))
+    execution_items = _contract_list_items(source_contract, "execution_items", limit=7)
+    required_facts = _contract_list_items(source_contract, "required_source_facts", limit=7)
+    if not subject or not execution_items:
+        return []
+
+    first_items = _join_anchor_surfaces(execution_items[:3], fallback=subject)
+    middle_items = _join_anchor_surfaces(execution_items[3:6], fallback=first_items)
+    fact_items = _join_anchor_surfaces(required_facts[:3], fallback=subject)
+    topic_particle = _topic_particle_surface(subject)
+    subject_particle = _subject_particle_surface(subject)
+
+    claim_sentence = (
+        f"{subject}{topic_particle} 말로 끝낼 약속이 아니라 시민 생활에서 확인되어야 할 민생 과제입니다."
+    )
+    if central_claim:
+        claim_stem = central_claim.rstrip(".")
+        if claim_stem.endswith("다"):
+            claim_stem = claim_stem[:-1]
+        claim_sentence = f"{claim_stem}다는 약속은 시민 생활에서 확인되어야 할 민생 과제입니다."
+
+    return [
+        f"{claim_sentence} {first_items}{_object_particle_surface(first_items)} 실제 변화로 묶어 {subject}{subject_particle} 흐지부지되지 않도록 하겠습니다.",
+        f"실행은 {middle_items}{_object_particle_surface(middle_items)} 차례로 점검하는 데서 시작하겠습니다. 조례는 {subject} 추진을 뒷받침하는 제도적 수단으로 세우고, 원문에서 약속한 범위를 넘어 새 공약처럼 부풀리지 않겠습니다.",
+        f"성과는 {fact_items} 같은 후퇴가 실제로 되돌아서는지로 보고드리겠습니다. 추진 과정과 보완 과제를 숨기지 않고 설명하며 {subject}의 변화를 결과로 답하겠습니다. 감사합니다.",
+    ]
+
+
 _CONCLUSION_WRITING_METHOD_ALIASES: Dict[str, str] = {
     "policy-proposal": "logical_writing",
     "policy_proposal": "logical_writing",
@@ -7304,6 +7365,7 @@ def _build_conclusion_archetype_paragraphs(
     body_text: str,
     user_keywords: Optional[list[str]] = None,
     full_name: str = "",
+    source_contract: Optional[Dict[str, Any]] = None,
 ) -> list[str]:
     anchor = _select_conclusion_anchor(
         body_text,
@@ -7311,6 +7373,13 @@ def _build_conclusion_archetype_paragraphs(
         full_name=full_name,
     )
     subject = anchor if anchor != "이 과제" else "이 과제"
+    contract_paragraphs = _build_source_contract_conclusion_paragraphs(
+        source_contract=source_contract,
+        fallback_subject=subject,
+    )
+    if contract_paragraphs:
+        return contract_paragraphs
+
     topic_particle = _topic_particle_surface(subject)
     subject_particle = _subject_particle_surface(subject)
     subject_object_particle = _object_particle_surface(subject)
@@ -7353,6 +7422,7 @@ def _ensure_closing_section_min_sentences_once(
     writing_method: str = "",
     category: str = "",
     user_keywords: Optional[list[str]] = None,
+    context_analysis: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     base = str(content or "")
     if not base.strip():
@@ -7419,6 +7489,11 @@ def _ensure_closing_section_min_sentences_once(
             body_text=base[: last_match.start()],
             user_keywords=user_keywords,
             full_name=full_name,
+            source_contract=(
+                context_analysis.get("source_contract")
+                if isinstance(context_analysis, dict)
+                else None
+            ),
         )
         if len(rebuilt_paragraphs) >= 3:
             rebuilt_section_html = "\n" + "\n".join(f"<p>{paragraph}</p>" for paragraph in rebuilt_paragraphs[:3])
@@ -7485,6 +7560,7 @@ def _apply_final_sentence_polish_once(
     style_guide: str = "",
     style_fingerprint: Optional[Dict[str, Any]] = None,
     style_polish_mode: str = "",
+    context_analysis: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """최종 단계에서 문장 파손 가능성이 낮은 경량 윤문만 1회 적용한다."""
     base = str(content or "")
@@ -7951,6 +8027,7 @@ def _apply_final_sentence_polish_once(
         writing_method=writing_method,
         category=category,
         user_keywords=user_keywords,
+        context_analysis=context_analysis,
     )
     closing_sentence_actions = closing_sentence_repair.get("actions")
     if isinstance(closing_sentence_actions, list):
@@ -11690,6 +11767,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         style_guide=style_guide,
         style_fingerprint=style_fingerprint,
         style_polish_mode=style_polish_mode,
+        context_analysis=context_analysis_for_title,
     )
     sentence_polish_candidate = str(sentence_polish_result.get("content") or generated_content).strip()
     final_sentence_polish["actions"] = list(sentence_polish_result.get("actions") or [])
@@ -12506,6 +12584,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
         writing_method=writing_method,
         category=category,
         user_keywords=user_keywords,
+        context_analysis=context_analysis_for_title,
     )
     if final_closing_sentence_repair.get("edited"):
         generated_content = str(final_closing_sentence_repair.get("content") or generated_content)

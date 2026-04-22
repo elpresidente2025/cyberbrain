@@ -971,6 +971,22 @@ def _has_bare_day_fragment_title_issue(title: str) -> bool:
     return False
 
 
+def _assess_broken_basis_why_title_surface(title: str) -> Dict[str, Any]:
+    normalized = normalize_title_surface(title) or str(title or "").strip()
+    if not normalized:
+        return {"passed": True, "reason": "", "repairedTitle": "", "issue": ""}
+    missing_basis_particle = bool(re.search(r"[0-9A-Za-z가-힣)]\s+바탕으로", normalized))
+    dangling_why_tail = bool(re.search(r"(?:외면|무시|방치|포기|후퇴|축소)\s+왜[?？]?$", normalized))
+    if missing_basis_particle or dangling_why_tail:
+        return {
+            "passed": False,
+            "reason": '제목의 "바탕으로/왜" 연결이 비문입니다. 배경 근거를 제목 중심에 붙이지 말고 검색어와 핵심 답변으로 다시 작성하세요.',
+            "repairedTitle": "",
+            "issue": "broken_basis_why_surface",
+        }
+    return {"passed": True, "reason": "", "repairedTitle": "", "issue": ""}
+
+
 def assess_malformed_title_surface(title: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     normalized = normalize_title_surface(title) or str(title or "").strip()
     if not normalized:
@@ -987,6 +1003,10 @@ def assess_malformed_title_surface(title: str, params: Optional[Dict[str, Any]] 
     demonstrative_abstract = _assess_demonstrative_abstract_title_surface(normalized)
     if not demonstrative_abstract.get("passed", True):
         return demonstrative_abstract
+
+    broken_basis_why = _assess_broken_basis_why_title_surface(normalized)
+    if not broken_basis_why.get("passed", True):
+        return broken_basis_why
 
     adjacent_keyword_repaired = _repair_adjacent_focus_keyword_surface(normalized, params)
     if adjacent_keyword_repaired and adjacent_keyword_repaired != normalized:
@@ -1554,6 +1574,95 @@ def build_structured_title_candidates(
     params_dict = params if isinstance(params, dict) else {}
     if str(title_purpose or "").strip() == "event_announcement":
         return _build_structured_event_title_candidates(params_dict)[:limit]
+
+    def _contract_items(key: str, item_limit: int = 4) -> List[str]:
+        context_analysis = params_dict.get("contextAnalysis")
+        contract = (
+            context_analysis.get("source_contract")
+            if isinstance(context_analysis, dict) and isinstance(context_analysis.get("source_contract"), dict)
+            else {}
+        )
+        raw_values = contract.get(key) if isinstance(contract, dict) else []
+        if not isinstance(raw_values, list):
+            return []
+        values: List[str] = []
+        seen: set[str] = set()
+        for raw_value in raw_values:
+            value = normalize_title_surface(str(raw_value or "").strip())
+            if not value or value == "(없음)":
+                continue
+            compact = re.sub(r"\s+", "", value)
+            if compact in seen:
+                continue
+            seen.add(compact)
+            values.append(value)
+            if len(values) >= item_limit:
+                break
+        return values
+
+    context_analysis = params_dict.get("contextAnalysis")
+    source_contract = (
+        context_analysis.get("source_contract")
+        if isinstance(context_analysis, dict) and isinstance(context_analysis.get("source_contract"), dict)
+        else {}
+    )
+    if isinstance(source_contract, dict) and str(source_contract.get("answer_type") or "") == "implementation_plan":
+        primary_keyword = normalize_title_surface(str(source_contract.get("primary_keyword") or "").strip())
+        if not primary_keyword:
+            raw_keywords = params_dict.get("userKeywords") if isinstance(params_dict.get("userKeywords"), list) else []
+            for raw_keyword in raw_keywords:
+                keyword = normalize_title_surface(str(raw_keyword or "").strip())
+                if keyword:
+                    primary_keyword = keyword
+                    break
+        execution_items = _contract_items("execution_items", item_limit=8)
+
+        def _title_action_surface(item: str) -> str:
+            if "캐시백" in item:
+                return "캐시백"
+            if "지원책" in item:
+                return "지원책"
+            if "조례" in item:
+                return "관련 조례 개정" if "관련" in item else "조례 개정"
+            if "담당 부서" in item or "추진체계" in item or "추진 체계" in item:
+                return "담당 부서"
+            if "명칭" in item or "브랜드" in item:
+                return "명칭 회복"
+            if "연구단체" in item:
+                return "연구단체"
+            return re.sub(r"\s*(회복|복원|재정비|개정|구성|분석|마련|확보)$", "", item).strip()
+
+        priority_order = ("캐시백", "지원책", "관련 조례 개정", "조례 개정", "담당 부서", "명칭 회복", "연구단체")
+        short_actions: List[str] = []
+        for preferred in priority_order:
+            if any(preferred in _title_action_surface(item) for item in execution_items):
+                short_actions.append(preferred)
+        for item in execution_items:
+            surface = _title_action_surface(item)
+            if surface and surface not in short_actions:
+                short_actions.append(surface)
+        action_triplet = "·".join(short_actions[:3])
+        action_pair = "·".join(short_actions[:2])
+        candidate_pool: List[str] = []
+        if primary_keyword and action_triplet:
+            if action_triplet.endswith("개정"):
+                candidate_pool.append(f"{primary_keyword} 부활 방안, {action_triplet}으로 풉니다")
+            candidate_pool.append(f"{primary_keyword} 부활, {action_triplet}부터 다시 세웁니다")
+        if primary_keyword and action_pair:
+            candidate_pool.append(f"{primary_keyword} 회복의 핵심, {action_pair}입니다")
+        if primary_keyword:
+            candidate_pool.append(f"{primary_keyword} 부활 방안, 원문 약속대로 세웁니다")
+
+        normalized_candidates: List[str] = []
+        for raw_candidate in candidate_pool:
+            candidate = _fit_title_length(normalize_title_surface(raw_candidate) or raw_candidate)
+            if not candidate:
+                continue
+            candidate_length = len(candidate)
+            if TITLE_LENGTH_HARD_MIN <= candidate_length <= TITLE_LENGTH_HARD_MAX:
+                normalized_candidates.append(candidate)
+        if normalized_candidates:
+            return _dedupe_preserve_order(normalized_candidates, limit=limit)
 
     focus_names = collect_title_focus_names(params_dict, limit=2)
     bundle = params_dict.get("pollFocusBundle") if isinstance(params_dict.get("pollFocusBundle"), dict) else {}

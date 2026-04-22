@@ -605,7 +605,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                 '본론은 정책 효과 일반론이 아니라 실행 항목을 답하는 구조여야 합니다.</overview>\n'
                 '    <section order="1" role="problem_to_recovery">원문에 제시된 후퇴 지점과 왜 복구해야 하는지 정리하십시오.</section>\n'
                 '    <section order="2" role="execution_package">execution_items 중 핵심 실행 항목 3개 이상을 묶어 구체 방안으로 선언하십시오.</section>\n'
-                '    <section order="3" role="institutionalization">연구·효과분석·조례·예산·추진체계 등 제도화 방안을 선언하십시오.</section>\n'
+                '    <section order="3" role="institutionalization">연구·효과분석·조례·추진체계 등 execution_items에 있는 제도화 방안을 선언하십시오. 예산은 사용자 입력 또는 execution_items에 있을 때만 쓰십시오.</section>\n'
                 '    <rule>body_sections가 3개를 넘으면 execution_package를 여러 섹션으로 나누고, 실행 항목 누락을 만들지 마십시오.</rule>\n'
                 '  </implementation_structure>\n'
             )
@@ -1004,7 +1004,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         conclusion_guide = '  <conclusion_structure priority="critical">\n'
         conclusion_guide += '    결론은 반드시 3개 문단(각 110~140자, 전체 330~420자)으로 구성하고 다음 규칙을 지키십시오:\n'
         conclusion_guide += '    <rule priority="critical">결론 각 문단은 본문에서 실제로 쓴 정책명·수치·실행수단 중 하나를 문장 주어 또는 목적어로 포함하십시오. "시민의 목소리", "삶의 질", "다양한 분야", "좋은 정치"처럼 어느 글에도 붙는 표현만으로 문단을 채우면 불합격입니다.</rule>\n'
-        conclusion_guide += '    <rule priority="critical">2문단은 조례·예산·협의 같은 수단만 나열하지 말고, 그 수단이 본문 앵커(정책명·요율·규모·지원 프로그램 등)를 어떻게 움직이는지까지 쓰십시오.</rule>\n'
+        conclusion_guide += '    <rule priority="critical">2문단은 조례·추진체계·협의 같은 수단만 나열하지 말고, 그 수단이 본문 앵커(정책명·요율·규모·지원 프로그램 등)를 어떻게 움직이는지까지 쓰십시오. 예산은 원문이나 본문에서 이미 다룬 경우에만 쓰십시오.</rule>\n'
 
         if archetype:
             conclusion_guide += (

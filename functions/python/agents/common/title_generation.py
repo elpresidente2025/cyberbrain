@@ -159,6 +159,12 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     title_scope = params.get('titleScope', {})
     forced_type = params.get('_forcedType')
     stance_text = params.get('stanceText', '')  # 🔑 [NEW] 입장문
+    context_analysis = params.get('contextAnalysis') if isinstance(params.get('contextAnalysis'), dict) else {}
+    source_contract = (
+        context_analysis.get('source_contract')
+        if isinstance(context_analysis.get('source_contract'), dict)
+        else {}
+    )
     prompt_lite = bool(params.get('titlePromptLite'))
     title_purpose = resolve_title_purpose(topic, params)
     if title_purpose == 'event_announcement':
@@ -197,6 +203,21 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
         primary_type['id'], params, slot_opportunities=slot_opportunities_map
     )
     common_anti_patterns = build_common_title_anti_pattern_instruction()
+    implementation_title_contract = ''
+    if isinstance(source_contract, dict) and str(source_contract.get('answer_type') or '') == 'implementation_plan':
+        primary_keyword = str(source_contract.get('primary_keyword') or '').strip()
+        execution_items = source_contract.get('execution_items') if isinstance(source_contract.get('execution_items'), list) else []
+        execution_text = ', '.join(str(item).strip() for item in execution_items[:5] if str(item).strip())
+        implementation_title_contract = f"""
+<implementation_title_contract priority="critical">
+  <primary_keyword>{primary_keyword}</primary_keyword>
+  <execution_items>{execution_text}</execution_items>
+  <rule>이 글의 제목은 실행안형 AEO 제목이어야 합니다. primary_keyword를 제목 앞쪽에 두고, execution_items 중 2~3개를 답으로 압축하십시오.</rule>
+  <rule>한국조세재정연구원·경기연구원·성남시 같은 외부 근거는 본문 보조자료입니다. 실행안형 제목의 주어·핵심 슬롯으로 올리지 마십시오.</rule>
+  <rule>"바탕으로 ... 왜?"처럼 배경 근거와 의문사를 억지로 붙인 제목은 금지합니다.</rule>
+  <example good="{primary_keyword} 부활 방안, 캐시백·지원책·조례 개정으로 풉니다" />
+</implementation_title_contract>
+""".strip()
     narrative_principle_xml = '' if prompt_lite else _render_narrative_principle_xml(primary_type.get('principle', ''))
 
     good_examples_source = list(primary_type.get('good', []))
@@ -447,6 +468,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 
 {user_few_shot}
 {common_anti_patterns}
+{implementation_title_contract}
 
 <rules priority="critical">
   <rule id="length_target">제목은 기본적으로 {TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자로 작성 (최우선 목표).</rule>

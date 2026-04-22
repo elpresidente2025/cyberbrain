@@ -323,27 +323,71 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
 
         answer_type = str(context_analysis.get('answer_type') or '').strip()
         central_claim = normalize_context_text(context_analysis.get('central_claim'))
+        source_contract = context_analysis.get('source_contract')
+        if not isinstance(source_contract, dict):
+            source_contract = {}
+        contract_answer_type = normalize_context_text(source_contract.get('answer_type'))
+        primary_keyword = normalize_context_text(source_contract.get('primary_keyword'))
+        if contract_answer_type and not answer_type:
+            answer_type = contract_answer_type
+        if not central_claim:
+            central_claim = normalize_context_text(source_contract.get('central_claim'))
         raw_execution_items = context_analysis.get('execution_items')
         execution_items = [
             normalize_context_text(item)
             for item in raw_execution_items
             if normalize_context_text(item)
         ] if isinstance(raw_execution_items, list) else []
+        contract_execution_items = [
+            normalize_context_text(item)
+            for item in source_contract.get('execution_items', [])
+            if normalize_context_text(item)
+        ] if isinstance(source_contract.get('execution_items'), list) else []
+        for item in contract_execution_items:
+            if item not in execution_items:
+                execution_items.append(item)
+        required_source_facts = [
+            normalize_context_text(item)
+            for item in source_contract.get('required_source_facts', [])
+            if normalize_context_text(item)
+        ] if isinstance(source_contract.get('required_source_facts'), list) else []
+        forbidden_inferred_actions = [
+            normalize_context_text(item)
+            for item in source_contract.get('forbidden_inferred_actions', [])
+            if normalize_context_text(item)
+        ] if isinstance(source_contract.get('forbidden_inferred_actions'), list) else []
         if answer_type == 'implementation_plan' or execution_items:
             item_lines = "\n".join(
                 f'    <item priority="{i + 1}">{_xml_text(item)}</item>'
                 for i, item in enumerate(execution_items[:8])
             )
+            required_fact_lines = "\n".join(
+                f'    <fact priority="{i + 1}">{_xml_text(item)}</fact>'
+                for i, item in enumerate(required_source_facts[:10])
+            )
+            forbidden_lines = "\n".join(
+                f'    <item>{_xml_text(item)}</item>'
+                for item in forbidden_inferred_actions[:10]
+            )
             context_injection += f"""
 <execution_plan mandatory="true">
   <answer_type>{_xml_text(answer_type or 'implementation_plan')}</answer_type>
+  <primary_keyword>{_xml_text(primary_keyword)}</primary_keyword>
   <central_claim>{_xml_text(central_claim)}</central_claim>
+  <required_source_facts>
+{required_fact_lines or '    <fact>(추출 실패)</fact>'}
+  </required_source_facts>
   <execution_items>
 {item_lines or '    <item>(추출 실패)</item>'}
   </execution_items>
+  <forbidden_inferred_actions>
+{forbidden_lines or '    <item>(없음)</item>'}
+  </forbidden_inferred_actions>
   <rules>
     <rule priority="critical">이 글은 정책 일반론이 아니라 위 실행 항목을 답하는 실행안입니다.</rule>
+    <rule priority="critical">required_source_facts는 사용자 입력 텍스트의 재료입니다. 누락하지 말고 본론에 모두 반영하십시오.</rule>
     <rule priority="critical">본문의 절반 이상을 execution_items의 실행 항목 설명에 배정하십시오.</rule>
+    <rule priority="critical">forbidden_inferred_actions에 있는 수치·조직·사업 방식은 사용자 입력에 없으므로 새 공약처럼 쓰지 마십시오.</rule>
     <rule priority="critical">타지역 사례·이념·가치 담론은 실행 항목을 뒷받침하는 근거로만 짧게 사용하고 본론의 주인공으로 만들지 마십시오.</rule>
     <rule priority="critical">결론은 central_claim과 execution_items 중 최소 3개를 다시 묶어 닫으십시오.</rule>
   </rules>

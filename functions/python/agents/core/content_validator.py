@@ -453,6 +453,124 @@ class ContentValidator:
             'violation': violation,
         }
 
+    _SOURCE_CONTRACT_STOP_TOKENS = {
+        "관련",
+        "정책",
+        "방안",
+        "효과",
+        "회복",
+        "복원",
+        "재정비",
+        "구성",
+        "분석",
+        "개정",
+        "축소",
+        "약화",
+        "미사용",
+        "급감",
+    }
+
+    def _contract_item_tokens(self, item: str) -> List[str]:
+        text = normalize_context_text(item)
+        tokens = [
+            token
+            for token in re.findall(r"[0-9A-Za-z가-힣]+", text)
+            if len(token) >= 2 and token not in self._SOURCE_CONTRACT_STOP_TOKENS
+        ]
+        if not tokens:
+            tokens = [
+                token
+                for token in re.findall(r"[0-9A-Za-z가-힣]+", text)
+                if len(token) >= 2
+            ]
+        return tokens
+
+    def _plain_covers_contract_item(self, plain_text: str, item: str) -> bool:
+        item_text = normalize_context_text(item)
+        if not item_text:
+            return True
+        plain_compact = material_key(plain_text)
+        item_compact = material_key(item_text)
+        if item_compact and len(item_compact) >= 6 and item_compact in plain_compact:
+            return True
+
+        tokens = self._contract_item_tokens(item_text)
+        if not tokens:
+            return True
+        hits = sum(1 for token in tokens if token in plain_text)
+        if len(tokens) == 1:
+            return hits == 1
+        return hits >= min(2, len(tokens))
+
+    def _validate_source_contract(
+        self,
+        content: str,
+        context_analysis: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        if not isinstance(context_analysis, dict):
+            return None
+        contract = context_analysis.get("source_contract")
+        if not isinstance(contract, dict):
+            return None
+        if normalize_context_text(contract.get("answer_type")) != "implementation_plan":
+            return None
+
+        plain_text = normalize_context_text(strip_html(content), sep=' ')
+        if not plain_text:
+            return None
+
+        forbidden_hits: List[str] = []
+        plain_compact = material_key(plain_text)
+        for raw_item in contract.get("forbidden_inferred_actions") or []:
+            item = normalize_context_text(raw_item)
+            if not item or item == "(없음)":
+                continue
+            item_compact = material_key(item)
+            if item in plain_text or (item_compact and item_compact in plain_compact):
+                forbidden_hits.append(item)
+        if forbidden_hits:
+            joined = ", ".join(forbidden_hits[:3])
+            return {
+                'passed': False,
+                'code': 'UNSUPPORTED_INFERRED_ACTION',
+                'reason': f"사용자 입력에 없는 실행안 생성 ({joined})",
+                'feedback': (
+                    f"사용자 입력에 없는 실행안({joined})을 삭제하고, "
+                    "원문에 있는 실행 항목만으로 다시 작성하십시오."
+                ),
+                'unsupportedItems': forbidden_hits[:5],
+            }
+
+        required_items: List[str] = []
+        for key in ("required_source_facts", "execution_items"):
+            raw_values = contract.get(key)
+            if not isinstance(raw_values, list):
+                continue
+            for raw_item in raw_values:
+                item = normalize_context_text(raw_item)
+                if item and item not in required_items:
+                    required_items.append(item)
+
+        missing = [
+            item
+            for item in required_items
+            if not self._plain_covers_contract_item(plain_text, item)
+        ]
+        if missing:
+            joined = ", ".join(missing[:4])
+            return {
+                'passed': False,
+                'code': 'SOURCE_CONTRACT_MISSING',
+                'reason': f"사용자 입력 핵심 재료 누락 ({joined})",
+                'feedback': (
+                    f"사용자 입력 텍스트의 핵심 재료({joined})를 본문에 반영하십시오. "
+                    "외부 사례나 일반론을 늘리지 말고 원문 재료를 중심으로 다시 작성하십시오."
+                ),
+                'missingItems': missing[:8],
+            }
+
+        return None
+
     def validate(
         self,
         content: str,
@@ -684,6 +802,10 @@ class ContentValidator:
         meta_leaks = self._find_meta_prompt_leak_sentences(content)
         if meta_leaks:
             return {'passed': False, 'code': 'META_PROMPT_LEAK', 'reason': "메타 문구 누수", 'feedback': "프롬프트 설명 문장이 본문으로 출력되었습니다. 삭제하십시오."}
+
+        source_contract_issue = self._validate_source_contract(content, context_analysis)
+        if source_contract_issue:
+            return source_contract_issue
 
         overused_anchor_phrases = self._find_overused_anchor_phrases(content)
         if overused_anchor_phrases:

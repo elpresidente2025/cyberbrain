@@ -666,6 +666,8 @@ class SectionRepairMixin:
             'INTRO_CONCLUSION_ECHO',
             'LOCATION_ORPHAN_REPEAT',
             'META_PROMPT_LEAK',
+            'SOURCE_CONTRACT_MISSING',
+            'UNSUPPORTED_INFERRED_ACTION',
             'EVENT_FACT_REPEAT',
             'EVENT_INVITE_REDUNDANT',
             'SECTION_LENGTH',
