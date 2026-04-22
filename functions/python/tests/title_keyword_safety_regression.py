@@ -681,8 +681,37 @@ def test_ensure_closing_section_min_sentences_once_restores_weak_aeo_archetype()
     assert "restore_closing_archetype:pledge" in result["actions"]
     assert tail.count("<p>") == 3
     assert "{policy_keyword}" in tail
-    assert "조례, 예산, 현장 점검" in tail
-    assert "좋은 정치로 시민의 삶에 남는 변화" in tail
+    assert "조례와 예산" in tail
+    assert "좋은 정치로" not in tail
+
+
+# synthetic_fixture
+def test_ensure_closing_section_min_sentences_once_rewrites_generic_template_closing() -> None:
+    content = (
+        "<p>{policy_keyword}은 캐시백 요율과 발행 규모를 함께 점검해야 합니다.</p>"
+        "<p>소상공인 매출과 지역 자금 순환도 성과 지표로 확인해야 합니다.</p>"
+        "<h2>{policy_keyword}을 조례로 뒷받침하겠습니다</h2>"
+        "<p>시민 여러분의 목소리에 항상 귀 기울이며 실질적인 변화를 만들겠습니다.</p>"
+        "<p>시민들의 삶의 질 향상을 최우선 가치로 삼고 교육, 환경, 교통 등 다양한 분야를 추진하겠습니다.</p>"
+        "<p>기대를 저버리지 않고 약속을 반드시 지키는 정치인이 되겠습니다. 감사합니다.</p>"
+    )
+
+    result = _ensure_closing_section_min_sentences_once(
+        content,
+        full_name="{user_name}",
+        writing_method="logical_writing",
+        category="정책 및 비전",
+        user_keywords=["{policy_keyword}"],
+    )
+    updated = str(result.get("content") or "")
+    tail = updated.split("<h2>{policy_keyword}을 조례로 뒷받침하겠습니다</h2>", 1)[-1]
+
+    assert result["edited"] is True
+    assert "restore_closing_archetype:pledge" in result["actions"]
+    assert "{policy_keyword}" in tail
+    assert "캐시백 요율" in tail or "발행 규모" in tail
+    assert "교육, 환경, 교통" not in tail
+    assert "약속을 반드시 지키는 정치인" not in tail
 
 
 def test_build_title_prompt_includes_name_priority_rule_for_matchup() -> None:

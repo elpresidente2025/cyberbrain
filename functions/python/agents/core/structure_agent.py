@@ -875,6 +875,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "\"위한/향한/만드는/통한/대한\" 관형절 수식도 금지.</rule>\n"
             "    <rule>소제목에 '저는/제가/나는/내가' 같은 1인칭 표현 금지.</rule>\n"
             "    <rule>어느 body/conclusion 섹션이 비어 보이거나 설명이 모자라면, 독자가 '그래서 구체적으로 어떻게 할 건데?'라고 물을 지점을 찾아 그 섹션에만 구체 문장 1개 이상을 더할 것. 어떤 후보나 어떤 선거에도 쓸 수 있는 일반 공약 문장은 추가하지 말 것.</rule>\n"
+            "    <rule priority='critical'>conclusion 문단은 본문에서 실제로 사용한 정책명·수치·실행수단을 다시 불러와 닫을 것. '시민의 목소리', '삶의 질', '다양한 분야', '좋은 정치', '기대를 저버리지 않겠습니다' 같은 범용 다짐만으로 결론을 채우면 불합격.</rule>\n"
             "    <rule>새 섹션 첫 문장을 쓸 때는 직전 섹션 마지막 2문장의 흐름을 이어받을 것. '이는', '이러한', '이것은'으로 시작한다면 그 지시 대상이 직전 섹션에 실제로 있는지 스스로 확인하고, 없으면 명시적 주어로 다시 쓸 것.</rule>\n"
             "    <rule>JSON 문자열 안에 큰따옴표(\")를 직접 쓰지 말 것. 인용이 필요하면 작은따옴표(') 또는 괄호를 사용.</rule>\n"
             "    <rule>각 문자열 값은 한 줄로 작성하고 줄바꿈 문자를 넣지 말 것.</rule>\n"
@@ -981,6 +982,8 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
 
         conclusion_guide = '  <conclusion_structure priority="critical">\n'
         conclusion_guide += '    결론은 반드시 3개 문단(각 110~140자, 전체 330~420자)으로 구성하고 다음 규칙을 지키십시오:\n'
+        conclusion_guide += '    <rule priority="critical">결론 각 문단은 본문에서 실제로 쓴 정책명·수치·실행수단 중 하나를 문장 주어 또는 목적어로 포함하십시오. "시민의 목소리", "삶의 질", "다양한 분야", "좋은 정치"처럼 어느 글에도 붙는 표현만으로 문단을 채우면 불합격입니다.</rule>\n'
+        conclusion_guide += '    <rule priority="critical">2문단은 조례·예산·협의 같은 수단만 나열하지 말고, 그 수단이 본문 앵커(정책명·요율·규모·지원 프로그램 등)를 어떻게 움직이는지까지 쓰십시오.</rule>\n'
 
         if archetype:
             conclusion_guide += (
@@ -999,6 +1002,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
 
         conclusion_guide += '    <ban>본론에서 다루지 않은 새로운 주제·정책·제도를 결론에서 처음 언급하지 마십시오.</ban>\n'
         conclusion_guide += '    <ban>결론이 한두 문장으로 끝나면 불합격입니다.</ban>\n'
+        conclusion_guide += '    <ban>"교육, 환경, 교통 등 다양한 분야", "항상 귀 기울이겠습니다", "기대를 저버리지 않겠습니다"처럼 본문 앵커 없이 범용 다짐으로 확장하지 마십시오.</ban>\n'
 
         if is_dialectical:
             conclusion_guide += (
@@ -1260,8 +1264,10 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                 + archetype_block +
                 '    <rule priority="critical">prior_sections 블록에 나타난 구체 앵커(수치·정책명·고유명사) 중 최소 1개를 실제 이름으로 인용하십시오. '
                 '"본론에서 확인한", "앞서 살펴본", "위에서 다룬" 등 메타 디스코스 표현은 절대 사용 금지 — 구체 이름으로 지칭하세요.</rule>\n'
+                '    <rule priority="critical">결론 2문단은 조례·예산·협의 같은 수단만 나열하지 말고, 그 수단이 prior_sections의 정책명·요율·규모·지원 프로그램을 어떻게 실행으로 바꾸는지까지 쓰십시오.</rule>\n'
                 '    <ban>본론에서 다루지 않은 새 주제·정책·제도를 결론에서 처음 언급하지 말 것.</ban>\n'
                 '    <ban>한두 문장으로 끝내면 불합격.</ban>\n'
+                '    <ban>"시민의 목소리", "삶의 질", "다양한 분야", "좋은 정치", "기대를 저버리지 않겠습니다" 같은 범용 결론 문구로 문단을 채우지 말 것.</ban>\n'
                 '  </section_role>\n'
             )
 

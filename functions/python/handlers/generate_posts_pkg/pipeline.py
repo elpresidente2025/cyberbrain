@@ -7021,10 +7021,133 @@ _BODY_ANCHOR_NUMBER_UNIT_RE = re.compile(
     r"(\d{1,4}(?:[.,]\d{1,4})?\s*(?:억\s*원|만\s*원|조\s*원|천\s*원|원|억|만|천|명|가구|세대|%|퍼센트|년|개월|주|일|시간|회|건|곳|개))"
 )
 _BODY_ANCHOR_QUOTED_RE = re.compile(r"[“\"「『]([^\"”」』\n]{2,30})[”\"」』]")
+_BODY_ANCHOR_POLICY_NOUN_RE = re.compile(
+    r"([가-힣A-Za-z0-9][가-힣A-Za-z0-9·+\-]*"
+    r"(?:\s+[가-힣A-Za-z0-9][가-힣A-Za-z0-9·+\-]*){0,3}\s*"
+    r"(?:요율|규모|시스템|지원|교육|프로그램|상권|자금|매출|소비|조례|예산|협의|점검|가맹점|자영업자|소상공인|가구|세대|일자리|교통|주거|돌봄|안전|환경|의료|복지))"
+)
+
+_GENERIC_CONCLUSION_TEMPLATE_TOKENS = (
+    "시민 여러분의 목소리",
+    "항상 귀 기울",
+    "실질적인 변화",
+    "삶의 질 향상",
+    "최우선 가치",
+    "끊임없이 고민하고 행동",
+    "교육, 환경, 교통",
+    "다양한 분야",
+    "살기 좋은",
+    "기대를 저버리지",
+    "약속을 반드시 지키",
+    "좋은 정치로",
+)
+
+_CONCLUSION_ANCHOR_STOPWORDS = {
+    "이 과제",
+    "시민 여러분",
+    "주민 여러분",
+    "당원 동지",
+    "감사합니다",
+    "좋은 정치",
+    "실질적인 변화",
+    "삶의 질 향상",
+    "예산",
+    "조례",
+    "협의",
+    "점검",
+    "지원",
+    "교육",
+    "프로그램",
+    "소비",
+    "복지",
+    "환경",
+    "교통",
+    "안전",
+}
 
 
 def _sequential_structure_enabled() -> bool:
     return os.environ.get("ENABLE_SEQUENTIAL_STRUCTURE", "false").lower() == "true"
+
+
+def _clean_conclusion_anchor_candidate(candidate: str, *, full_name: str = "") -> str:
+    cleaned = _normalize_inline_whitespace(str(candidate or ""))
+    cleaned = re.sub(r"^(저는|제가|또한|그리고|아울러|나아가|특히|실제로|구체적으로|이를 위해)\s+", "", cleaned)
+    cleaned = re.sub(r"^(?:을|를|과|와|및)\s+", "", cleaned)
+    if "도록 " in cleaned:
+        cleaned = cleaned.split("도록 ", 1)[1]
+    cleaned = re.sub(
+        r"\s*(?:을|를|이|가|은|는|도)?\s*(?:함께\s*)?"
+        r"(?:점검|확인|강화|추진|확대|상향|도입|활용|보장|보호|마련|개선|연결|보고)"
+        r"(?:해야|하겠|할|하는|합니다|되|해).*$",
+        "",
+        cleaned,
+    )
+    cleaned = re.sub(
+        r"^(?:함께\s*)?(?:점검|확인|강화|추진|확대|상향|도입|활용|보장|보호|마련|개선|연결|보고)$",
+        "",
+        cleaned,
+    )
+    subject_split = re.split(r"(?:은|는)\s+", cleaned, maxsplit=1)
+    if len(subject_split) == 2 and len(subject_split[1].replace(" ", "")) >= 4:
+        cleaned = subject_split[1]
+    cleaned = re.sub(r"\s*(?:을|를|이|가|은|는|도|까지)$", "", cleaned)
+    cleaned = cleaned.strip(" \t\r\n,.;:·'\"“”‘’()[]")
+    cleaned = _normalize_inline_whitespace(cleaned)
+    compact = cleaned.replace(" ", "")
+    if not compact:
+        return ""
+    if compact == str(full_name or "").replace(" ", ""):
+        return ""
+    if len(compact) < 2 or len(compact) > 40:
+        return ""
+    if compact in {item.replace(" ", "") for item in _CONCLUSION_ANCHOR_STOPWORDS}:
+        return ""
+    if re.search(r"(본론|서론|결론)에서|앞서|위(?:에서)?", cleaned):
+        return ""
+    return cleaned
+
+
+def _iter_conclusion_anchor_candidates(
+    body_text: str,
+    *,
+    user_keywords: Optional[list[str]] = None,
+    full_name: str = "",
+):
+    body_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(body_text or "")))
+    compact_body = body_plain.replace(" ", "")
+    seen: set[str] = set()
+
+    def _yield(candidate: str):
+        cleaned = _clean_conclusion_anchor_candidate(candidate, full_name=full_name)
+        compact = cleaned.replace(" ", "")
+        if not cleaned or compact in seen:
+            return None
+        seen.add(compact)
+        return cleaned
+
+    for raw_keyword in user_keywords or []:
+        keyword = _normalize_inline_whitespace(str(raw_keyword or "").strip(" \"'“”‘’"))
+        compact_keyword = keyword.replace(" ", "")
+        if compact_keyword and compact_keyword in compact_body:
+            yielded = _yield(keyword)
+            if yielded:
+                yield yielded
+
+    for quoted_match in _BODY_ANCHOR_QUOTED_RE.finditer(body_plain):
+        yielded = _yield(quoted_match.group(1))
+        if yielded:
+            yield yielded
+
+    for noun_match in _BODY_ANCHOR_POLICY_NOUN_RE.finditer(body_plain):
+        yielded = _yield(noun_match.group(1))
+        if yielded:
+            yield yielded
+
+    for number_match in _BODY_ANCHOR_NUMBER_UNIT_RE.finditer(body_plain):
+        yielded = _yield(number_match.group(1))
+        if yielded:
+            yield yielded
 
 
 def _select_conclusion_anchor(
@@ -7033,37 +7156,48 @@ def _select_conclusion_anchor(
     user_keywords: Optional[list[str]] = None,
     full_name: str = "",
 ) -> str:
-    body_plain = _normalize_inline_whitespace(re.sub(r"<[^>]*>", " ", str(body_text or "")))
-    compact_body = body_plain.replace(" ", "")
-    ignored = {str(full_name or "").replace(" ", "")}
-    for raw_keyword in user_keywords or []:
-        keyword = _normalize_inline_whitespace(str(raw_keyword or "").strip(" \"'“”‘’"))
-        compact_keyword = keyword.replace(" ", "")
-        if len(compact_keyword) < 2 or len(compact_keyword) > 30:
-            continue
-        if compact_keyword in ignored:
-            continue
-        if compact_keyword and compact_keyword in compact_body:
-            return keyword
-
-    if not _sequential_structure_enabled():
-        return "이 과제"
-
-    for quoted_match in _BODY_ANCHOR_QUOTED_RE.finditer(body_plain):
-        candidate = _normalize_inline_whitespace(quoted_match.group(1))
-        compact_candidate = candidate.replace(" ", "")
-        if not compact_candidate or compact_candidate in ignored:
-            continue
-        if 2 <= len(compact_candidate) <= 30:
-            return candidate
-
-    number_match = _BODY_ANCHOR_NUMBER_UNIT_RE.search(body_plain)
-    if number_match:
-        candidate = _normalize_inline_whitespace(number_match.group(1))
-        if candidate and candidate.replace(" ", "") not in ignored:
-            return candidate
+    for candidate in _iter_conclusion_anchor_candidates(
+        body_text,
+        user_keywords=user_keywords,
+        full_name=full_name,
+    ):
+        return candidate
 
     return "이 과제"
+
+
+def _select_conclusion_support_anchors(
+    body_text: str,
+    *,
+    user_keywords: Optional[list[str]] = None,
+    full_name: str = "",
+    primary_anchor: str = "",
+    limit: int = 3,
+) -> list[str]:
+    primary_compact = str(primary_anchor or "").replace(" ", "")
+    anchors: list[str] = []
+    for candidate in _iter_conclusion_anchor_candidates(
+        body_text,
+        user_keywords=user_keywords,
+        full_name=full_name,
+    ):
+        compact = candidate.replace(" ", "")
+        if compact == primary_compact:
+            continue
+        if any(compact == existing.replace(" ", "") for existing in anchors):
+            continue
+        anchors.append(candidate)
+        if len(anchors) >= limit:
+            break
+    return anchors
+
+
+def _join_anchor_surfaces(anchors: list[str], *, fallback: str = "실행 과제") -> str:
+    cleaned = [_clean_conclusion_anchor_candidate(anchor) for anchor in anchors]
+    cleaned = [anchor for anchor in cleaned if anchor]
+    if not cleaned:
+        return fallback
+    return ", ".join(cleaned[:3])
 
 
 _CONCLUSION_WRITING_METHOD_ALIASES: Dict[str, str] = {
@@ -7123,6 +7257,10 @@ def _subject_particle_surface(text: str) -> str:
     return "이" if _has_final_consonant(text) else "가"
 
 
+def _object_particle_surface(text: str) -> str:
+    return "을" if _has_final_consonant(text) else "를"
+
+
 def _closing_section_needs_archetype_repair(
     paragraphs: list[str],
     *,
@@ -7139,6 +7277,11 @@ def _closing_section_needs_archetype_repair(
         return True
     short_count = sum(1 for paragraph in paragraphs if len(paragraph) < 45)
     if short_count >= 2:
+        return True
+    generic_template_hits = sum(
+        1 for token in _GENERIC_CONCLUSION_TEMPLATE_TOKENS if token in body_plain
+    )
+    if generic_template_hits >= 2:
         return True
     predicateless_count = sum(
         1
@@ -7170,30 +7313,36 @@ def _build_conclusion_archetype_paragraphs(
     subject = anchor if anchor != "이 과제" else "이 과제"
     topic_particle = _topic_particle_surface(subject)
     subject_particle = _subject_particle_surface(subject)
+    subject_object_particle = _object_particle_surface(subject)
+    support_anchors = _select_conclusion_support_anchors(
+        body_text,
+        user_keywords=user_keywords,
+        full_name=full_name,
+        primary_anchor=anchor,
+        limit=4,
+    )
+    execution_focus = _join_anchor_surfaces(support_anchors[:2], fallback=subject)
+    impact_focus = _join_anchor_surfaces(support_anchors[2:4], fallback=execution_focus)
+    execution_object_particle = _object_particle_surface(execution_focus)
+    impact_object_particle = _object_particle_surface(impact_focus)
     archetype_key = _conclusion_archetype_key(writing_method, category=category)
 
     if archetype_key == "diagnosis":
         return [
-            f"{subject}{subject_particle} 보여주는 핵심 진단은 분명합니다. 시민의 부담을 개인에게 떠넘기는 방식으로는 생활의 불안을 줄일 수 없습니다.",
-            "지금 필요한 것은 문제를 축소하는 행정이 아니라 원인과 책임을 분명히 보고, 실행 가능한 대안을 제도와 예산으로 연결하는 일입니다.",
-            "저는 시민 여러분의 목소리를 끝까지 듣고 필요한 변화를 책임 있게 추진하겠습니다. 좋은 정치로 시민의 삶에 보답하겠습니다. 감사합니다.",
+            f"{subject}{subject_particle} 보여주는 핵심 진단은 분명합니다. {execution_focus}의 변화 없이 시민 부담을 개인에게 떠넘기는 방식으로는 생활의 불안을 줄일 수 없습니다.",
+            f"지금 필요한 것은 문제를 축소하는 행정이 아니라 원인과 책임을 분명히 보고, {impact_focus}까지 이어지는 실행 대안을 제도와 예산으로 연결하는 일입니다.",
+            f"성과는 {subject}{subject_object_particle} 둘러싼 현장의 변화로 점검하겠습니다. 추진 과정과 보완 과제를 숨기지 않고 설명하며 책임 있는 결과로 답하겠습니다. 감사합니다.",
         ]
     if archetype_key == "action":
         return [
-            f"{subject}{topic_particle} 현장에서 확인한 문제의식을 더 미룰 수 없다는 신호입니다. 생활의 변화는 구체적인 행동과 후속 조치로 증명되어야 합니다.",
-            "저는 현장 의견 수렴, 조례와 예산 점검, 관계 기관 협의를 함께 추진해 실행 경로를 분명히 만들겠습니다.",
-            "주민 여러분과 함께 끝까지 확인하고 부족한 부분은 빠르게 보완하겠습니다. 좋은 정치로 지역의 변화를 만들겠습니다. 감사합니다.",
-        ]
-    if _sequential_structure_enabled():
-        return [
-            f"{subject}{topic_particle} 말로 끝낼 약속이 아니라 시민 생활에서 확인되어야 할 민생 과제입니다. {subject}{subject_particle} 흐지부지되지 않도록 결과로 증명하겠습니다.",
-            "저는 조례, 예산, 현장 점검을 함께 묶어 추진 경로를 분명히 세우겠습니다. 과정과 결과를 시민께 투명하게 보고드리겠습니다.",
-            "주민 여러분의 의견을 끝까지 듣고 필요한 보완은 빠르게 이어가겠습니다. 좋은 정치로 시민의 삶에 남는 변화를 만들겠습니다. 감사합니다.",
+            f"{subject}{topic_particle} 현장에서 확인한 문제의식을 더 미룰 수 없다는 신호입니다. {execution_focus}이 실제 생활의 변화로 이어질 때 이 약속은 힘을 갖습니다.",
+            f"실행은 {impact_focus}{impact_object_particle} 먼저 점검하는 데서 시작하겠습니다. 조례와 예산은 {subject} 추진을 뒷받침하는 수단으로 묶고, 필요한 협의와 현장 안내를 빠뜨리지 않겠습니다.",
+            f"성과는 {subject}{subject_object_particle} 이용하는 주민과 현장이 체감하는 변화로 확인하겠습니다. 부족한 부분은 공개적으로 보완하며 약속의 무게를 결과로 증명하겠습니다. 감사합니다.",
         ]
     return [
-        f"{subject}{topic_particle} 말로 끝낼 약속이 아니라 시민 생활에서 확인되어야 할 민생 과제입니다. 본론에서 확인한 문제를 실행의 결과로 연결하겠습니다.",
-        "저는 조례, 예산, 현장 점검을 함께 묶어 추진 경로를 분명히 세우겠습니다. 과정과 결과를 시민께 투명하게 보고드리겠습니다.",
-        "주민 여러분의 의견을 끝까지 듣고 필요한 보완은 빠르게 이어가겠습니다. 좋은 정치로 시민의 삶에 남는 변화를 만들겠습니다. 감사합니다.",
+        f"{subject}{topic_particle} 말로 끝낼 약속이 아니라 시민 생활에서 확인되어야 할 민생 과제입니다. {execution_focus}{execution_object_particle} 실제 변화로 묶어 {subject}{subject_particle} 흐지부지되지 않도록 하겠습니다.",
+        f"실행은 {impact_focus}{impact_object_particle} 점검하는 데서 시작하겠습니다. 조례와 예산은 {subject} 추진을 뒷받침하는 수단으로 세우고, 필요한 협의와 현장 안내를 빠뜨리지 않겠습니다.",
+        f"성과는 {subject}{subject_object_particle} 이용하는 시민과 현장이 체감하는 변화로 보고드리겠습니다. 추진 과정과 보완 과제를 숨기지 않고 설명하며 결과로 답하겠습니다. 감사합니다.",
     ]
 
 

@@ -133,8 +133,8 @@ class TestMetaPromptLeakPatterns:
 # ---------------------------------------------------------------------------
 
 class TestConclusionDefaultFallback:
-    def test_default_fallback_has_no_meta_discourse_when_flag_on(self, monkeypatch):
-        monkeypatch.setenv("ENABLE_SEQUENTIAL_STRUCTURE", "true")
+    def test_default_fallback_has_no_meta_discourse(self, monkeypatch):
+        monkeypatch.delenv("ENABLE_SEQUENTIAL_STRUCTURE", raising=False)
         from handlers.generate_posts_pkg.pipeline import (
             _build_conclusion_archetype_paragraphs,
         )
@@ -157,20 +157,23 @@ class TestConclusionDefaultFallback:
         for phrase in forbidden:
             assert phrase not in joined, f"default fallback 에 금지 문구 잔존: {phrase}"
 
-    def test_default_fallback_preserves_legacy_when_flag_off(self, monkeypatch):
+    def test_default_fallback_uses_body_anchors_when_flag_off(self, monkeypatch):
         monkeypatch.delenv("ENABLE_SEQUENTIAL_STRUCTURE", raising=False)
         from handlers.generate_posts_pkg.pipeline import (
             _build_conclusion_archetype_paragraphs,
         )
         paragraphs = _build_conclusion_archetype_paragraphs(
-            writing_method="",
-            category="",
+            writing_method="logical_writing",
+            category="정책 및 비전",
             heading="",
-            body_text="<p>샘플 본론입니다.</p>",
-            user_keywords=[],
+            body_text="<p>샘플 정책은 캐시백 요율과 발행 규모를 함께 점검해야 합니다. 소상공인 매출도 확인해야 합니다.</p>",
+            user_keywords=["샘플 정책"],
             full_name="{user_name}",
         )
-        assert "본론에서 확인한 문제" in " ".join(paragraphs)
+        joined = " ".join(paragraphs)
+        assert "샘플 정책" in joined
+        assert "캐시백 요율" in joined or "발행 규모" in joined
+        assert "본론에서 확인한 문제" not in joined
 
 
 # ---------------------------------------------------------------------------
@@ -187,8 +190,8 @@ class TestSelectConclusionAnchor:
         )
         assert anchor == "샘플 정책"
 
-    def test_falls_back_to_number_unit_when_flag_on(self, monkeypatch):
-        monkeypatch.setenv("ENABLE_SEQUENTIAL_STRUCTURE", "true")
+    def test_falls_back_to_number_unit(self, monkeypatch):
+        monkeypatch.delenv("ENABLE_SEQUENTIAL_STRUCTURE", raising=False)
         from handlers.generate_posts_pkg.pipeline import _select_conclusion_anchor
         anchor = _select_conclusion_anchor(
             "<p>예산 300억원이 집행될 예정입니다.</p>",
@@ -199,8 +202,8 @@ class TestSelectConclusionAnchor:
         compact = anchor.replace(" ", "")
         assert "300억원" in compact
 
-    def test_falls_back_to_quoted_proper_noun_when_flag_on(self, monkeypatch):
-        monkeypatch.setenv("ENABLE_SEQUENTIAL_STRUCTURE", "true")
+    def test_falls_back_to_quoted_proper_noun(self, monkeypatch):
+        monkeypatch.delenv("ENABLE_SEQUENTIAL_STRUCTURE", raising=False)
         from handlers.generate_posts_pkg.pipeline import _select_conclusion_anchor
         anchor = _select_conclusion_anchor(
             '<p>이 사업은 "샘플 특구" 지정을 포함합니다.</p>',
@@ -209,7 +212,7 @@ class TestSelectConclusionAnchor:
         )
         assert anchor == "샘플 특구"
 
-    def test_body_anchor_fallback_disabled_when_flag_off(self, monkeypatch):
+    def test_body_anchor_fallback_available_when_flag_off(self, monkeypatch):
         monkeypatch.delenv("ENABLE_SEQUENTIAL_STRUCTURE", raising=False)
         from handlers.generate_posts_pkg.pipeline import _select_conclusion_anchor
         anchor = _select_conclusion_anchor(
@@ -217,7 +220,7 @@ class TestSelectConclusionAnchor:
             user_keywords=[],
             full_name="{user_name}",
         )
-        assert anchor == "이 과제"
+        assert anchor == "샘플 특구"
 
     def test_final_fallback_when_no_anchor(self):
         from handlers.generate_posts_pkg.pipeline import _select_conclusion_anchor
