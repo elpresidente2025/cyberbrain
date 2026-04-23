@@ -28,6 +28,15 @@ _INTRO_ORPHAN_TRANSITION_PREFIXES = (
     "이제는",
 )
 
+_LOW_INFORMATION_H2_SURFACE_RE = re.compile(
+    r"(?:"
+    r"실행\s*계획을\s*세우겠습니다|"
+    r"제도\s*기반을\s*세우겠습니다|"
+    r"제도로\s*뒷받침하겠습니다|"
+    r"재정\s*우려,?\s*어떻게\s*넘"
+    r")"
+)
+
 class ContentValidator:
     def _validate_bundle_section_contracts(
         self,
@@ -263,6 +272,18 @@ class ContentValidator:
                     'code': 'H2_TEXT_FRAGMENT',
                     'reason': f'앞말이 잘린 소제목 ({normalized})',
                     'feedback': f'소제목 "{normalized}"은 앞 토큰이 잘린 형태입니다. 원문 정책명이나 검색어가 온전하게 보이도록 다시 쓰십시오.',
+                    'sectionHeading': normalized,
+                }
+
+            if _LOW_INFORMATION_H2_SURFACE_RE.search(normalized):
+                return {
+                    'passed': False,
+                    'code': 'H2_LOW_INFORMATION_TEMPLATE',
+                    'reason': f'본문 고유 실행수단이 빠진 추상 소제목 ({normalized})',
+                    'feedback': (
+                        f'소제목 "{normalized}"은 실행 계획/제도 기반 같은 추상 틀만 반복합니다. '
+                        '해당 섹션 본문에 있는 사업명·시설·절차·수치·대상 중 하나를 소제목에 직접 넣으십시오.'
+                    ),
                     'sectionHeading': normalized,
                 }
 

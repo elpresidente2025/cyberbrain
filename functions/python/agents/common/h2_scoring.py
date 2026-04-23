@@ -97,6 +97,9 @@ H2_HARD_FAIL_ISSUES = frozenset(
         "H2_GENERIC_FAMILY_REPEAT",
         # "형 햇빛연금"처럼 앞 토큰이 잘린 소제목.
         "H2_TEXT_FRAGMENT",
+        # "실행 계획을 세우겠습니다", "제도 기반을 세우겠습니다"처럼
+        # 본문 고유 실행수단을 하나도 담지 않은 저정보 H2.
+        "H2_LOW_INFORMATION_TEMPLATE",
     }
 )
 
@@ -147,6 +150,13 @@ _H2_ALIGNMENT_STOPWORDS = frozenset(
 _BODY_ALIGNMENT_HARD_FAIL = 0.34
 # 부분 감점만 주는 soft 임계 (이 사이는 비례 스코어)
 _BODY_ALIGNMENT_FULL_PASS = 0.67
+
+_LOW_INFORMATION_HEADING_PATTERNS: List[tuple[str, re.Pattern[str]]] = [
+    ("execution_plan", re.compile(r"(?:실행\s*계획|실행\s*방안|추진\s*계획|계획을\s*세우)")),
+    ("institutional_basis", re.compile(r"(?:제도\s*기반|제도적\s*기반|제도로\s*뒷받침|조례로\s*뒷받침|근거를\s*마련)")),
+    ("financial_concern", re.compile(r"(?:재정\s*우려|예산\s*우려|재원\s*우려|어떻게\s*넘)")),
+    ("generic_issue", re.compile(r"(?:핵심\s*쟁점|필요한\s*이유|기존\s*정책과\s*차이|회복의\s*출발점)")),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +243,31 @@ def _body_alignment_score(coverage: float) -> float:
         return 0.0
     span = _BODY_ALIGNMENT_FULL_PASS - _BODY_ALIGNMENT_HARD_FAIL
     return round((coverage - _BODY_ALIGNMENT_HARD_FAIL) / span, 4)
+
+
+def _low_information_heading_family(heading: str) -> str:
+    text = re.sub(r"\s+", " ", str(heading or "")).strip()
+    if not text:
+        return ""
+    for family, pattern in _LOW_INFORMATION_HEADING_PATTERNS:
+        if pattern.search(text):
+            return family
+    return ""
+
+
+def _matches_specific_anchor(heading: str, plan: SectionPlan) -> bool:
+    text = str(heading or "")
+    if not text:
+        return False
+    anchors = [
+        str(anchor or "").strip()
+        for anchor in (plan.get("specific_anchors") or [])
+        if str(anchor or "").strip()
+    ]
+    for anchor in anchors:
+        if anchor and anchor in text:
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -471,6 +506,16 @@ def score_h2(
         "weighted": alignment_weighted,
         "coverage": round(alignment_coverage, 4),
     }
+
+    low_info_family = _low_information_heading_family(heading_text)
+    if low_info_family:
+        anchor_matched = _matches_specific_anchor(heading_text, plan)
+        breakdown["specific_anchor"] = {
+            "matched": 1.0 if anchor_matched else 0.0,
+            "family": low_info_family,
+        }
+        if not anchor_matched:
+            issues.append(f"H2_LOW_INFORMATION_TEMPLATE:{low_info_family}")
 
     total = round(
         length_weighted

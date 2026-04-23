@@ -101,6 +101,7 @@ class SectionPlan(TypedDict, total=False):
     suggested_type: str
     must_include_keyword: str
     candidate_keywords: List[str]
+    specific_anchors: List[str]
     numerics: List[str]
     entity_hints: List[str]
     key_claim: str
@@ -257,6 +258,156 @@ def _filter_by_body_presence(tokens: Iterable[str], body: str) -> List[str]:
         if text in haystack:
             out.append(text)
     return out
+
+
+_ANCHOR_TRAILING_PARTICLE_RE = re.compile(
+    r"(?:으로|에서|에게|까지|부터|처럼|보다|과|와|의|은|는|이|가|을|를|에|만|로)$"
+)
+_ANCHOR_VERBAL_SUFFIX_RE = re.compile(
+    r"(?:하게|하여|해서|하고|하며|되는|하는|있는|없는|됩니다|입니다|합니다|하겠습니다|되겠습니다)$"
+)
+_ADMIN_REGION_TOKEN_RE = re.compile(r"^[가-힣]{2,}(?:시|군|구|읍|면|동)$")
+_SPECIFIC_ANCHOR_STOPWORDS = frozenset(
+    {
+        "정책",
+        "사업",
+        "문제",
+        "방안",
+        "시민",
+        "주민",
+        "지역",
+        "경제",
+        "활성화",
+        "변화",
+        "실행",
+        "계획",
+        "기반",
+        "제도",
+        "근거",
+        "추진",
+        "도입",
+        "마련",
+        "모색",
+        "설계",
+        "분배",
+        "공유",
+        "효과",
+        "전략",
+        "가치",
+        "미래",
+        "희망",
+        "발걸음",
+        "첫걸음",
+        "단계",
+        "시작",
+        "출발점",
+        "핵심",
+        "쟁점",
+        "이유",
+        "우려",
+        "해법",
+        "region",
+        "user_name",
+        "opponent_name",
+        "organization",
+        "policy_keyword",
+    }
+)
+
+
+def _normalize_specific_anchor(raw: str) -> str:
+    text = re.sub(r"\s+", " ", str(raw or "")).strip(" ,.:;!?\"'“”‘’")
+    if not text:
+        return ""
+    for _ in range(2):
+        stripped = _ANCHOR_TRAILING_PARTICLE_RE.sub("", text).strip()
+        if stripped == text:
+            break
+        text = stripped
+    if len(text) < 2:
+        return ""
+    if _ANCHOR_VERBAL_SUFFIX_RE.search(text):
+        return ""
+    if re.fullmatch(r"\{?[A-Za-z_][A-Za-z0-9_]*\}?", text):
+        return ""
+    if text in _SPECIFIC_ANCHOR_STOPWORDS:
+        return ""
+    if _ADMIN_REGION_TOKEN_RE.fullmatch(text):
+        return ""
+    return text
+
+
+def _specific_anchor_exclusion_set(
+    *,
+    must_include_keyword: str,
+    user_keywords: Sequence[str],
+    entity_hints: Sequence[str],
+) -> set[str]:
+    exclusions: set[str] = set()
+    for raw in [must_include_keyword, *(user_keywords or ()), *(entity_hints or ())]:
+        raw_text = str(raw or "")
+        surfaces = [raw_text]
+        surfaces.extend(re.findall(r"\{?[가-힣A-Za-z0-9_]{2,}\}?", raw_text))
+        for surface in surfaces:
+            normalized = _normalize_specific_anchor(surface)
+            if normalized:
+                exclusions.add(normalized)
+                canonical = canonicalize_entity_surface(normalized)
+                if canonical:
+                    exclusions.add(canonical)
+    return exclusions
+
+
+def extract_specific_anchors(
+    *,
+    section_text: str,
+    candidate_keywords: Sequence[str],
+    must_include_keyword: str = "",
+    user_keywords: Sequence[str] = (),
+    entity_hints: Sequence[str] = (),
+    numerics: Sequence[str] = (),
+    limit: int = 6,
+) -> List[str]:
+    """섹션 본문 고유 실행수단·대상·수치 앵커를 추출한다.
+
+    `must_include_keyword`, 사용자 검색어, 인물명, 지역명은 H2에 이미 찍히기
+    쉬운 주제 앵커이므로 제외한다. 여기서는 그 아래 본문을 실제로 구분해 주는
+    사업명·시설·절차·수치 같은 보조 앵커만 남긴다.
+    """
+    body = strip_html(section_text)
+    if not body:
+        return []
+
+    exclusions = _specific_anchor_exclusion_set(
+        must_include_keyword=must_include_keyword,
+        user_keywords=user_keywords,
+        entity_hints=entity_hints,
+    )
+    raw_items: List[str] = []
+    raw_items.extend(str(item or "") for item in numerics or ())
+    raw_items.extend(str(item or "") for item in candidate_keywords or ())
+
+    anchors: List[str] = []
+    seen: set[str] = set()
+    for raw in raw_items:
+        anchor = _normalize_specific_anchor(raw)
+        if not anchor:
+            continue
+        canonical = canonicalize_entity_surface(anchor)
+        if anchor in exclusions or canonical in exclusions:
+            continue
+        if anchor not in body:
+            continue
+        compact = re.sub(r"\s+", "", anchor)
+        if len(compact) < 3 and not re.search(r"\d", compact):
+            continue
+        if anchor in seen:
+            continue
+        seen.add(anchor)
+        anchors.append(anchor)
+        if len(anchors) >= limit:
+            break
+    return anchors
 
 
 # ---------------------------------------------------------------------------
@@ -618,11 +769,11 @@ def extract_section_plan(
     raw_slice = str(section_text or "")[:_SECTION_TEXT_MAX_LEN]
     cleaned = strip_html(raw_slice)
 
-    entity_hints = _dedupe_preserve_order(
+    identity_hints = _dedupe_preserve_order(
         list(extra_entities or ()) + [full_name, full_region]
     )
     proper_nouns = _extract_proper_nouns(cleaned)
-    entity_hints = _dedupe_preserve_order(entity_hints + proper_nouns)
+    entity_hints = _dedupe_preserve_order(identity_hints + proper_nouns)
 
     numerics_bundle = extract_numbers_from_content(cleaned) or {}
     numerics = list(numerics_bundle.get("numbers") or [])
@@ -667,6 +818,14 @@ def extract_section_plan(
         must_include = candidate_keywords[0]
 
     key_claim = extract_key_claim(cleaned, style=style)
+    specific_anchors = extract_specific_anchors(
+        section_text=cleaned,
+        candidate_keywords=candidate_keywords,
+        must_include_keyword=must_include,
+        user_keywords=user_keywords or (),
+        entity_hints=identity_hints,
+        numerics=numerics,
+    )
 
     return SectionPlan(
         index=int(index),
@@ -674,6 +833,7 @@ def extract_section_plan(
         suggested_type=suggested_type,
         must_include_keyword=must_include,
         candidate_keywords=candidate_keywords,
+        specific_anchors=specific_anchors,
         numerics=numerics,
         entity_hints=entity_hints,
         key_claim=key_claim,

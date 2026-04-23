@@ -1206,6 +1206,7 @@ class SubheadingAgent(Agent):
         for plan in plans:
             ctx_slice = str(plan.get("section_text") or "")[:400]
             numerics = ", ".join(plan.get("numerics") or []) or "(없음)"
+            specific_anchors = ", ".join(plan.get("specific_anchors") or []) or "(없음)"
             section_xml_parts.append(
                 f"""<section index="{int(plan.get("index", 0)) + 1}">
   <suggested_type>{plan.get("suggested_type") or "(없음)"}</suggested_type>
@@ -1214,6 +1215,7 @@ class SubheadingAgent(Agent):
   <answer_type>{plan.get("answer_type") or "question-form"}</answer_type>
   <assigned_entity_surface>{plan.get("assigned_entity_surface") or "(없음)"}</assigned_entity_surface>
   <numerics>{numerics}</numerics>
+  <specific_anchors>{specific_anchors}</specific_anchors>
   <key_claim>{plan.get("key_claim") or "(없음)"}</key_claim>
   <context>{ctx_slice}</context>
 </section>"""
@@ -1246,7 +1248,8 @@ class SubheadingAgent(Agent):
 {build_h2_rules(h2_style)}
 {tone_section}
 # Section Plan Table
-각 section 은 suggested_type / must_include_keyword / query_intent / answer_type / assigned_entity_surface / numerics / key_claim / context 로 구성되어 있습니다. must_include_keyword는 해당 소제목 앞 1/3 안에 등장시키되, **context 본문의 실제 주제와 must_include_keyword가 맞지 않으면 본문 주제를 우선하세요.** 소제목은 본문을 정답으로 가정한 질문·주장이어야 합니다.
+각 section 은 suggested_type / must_include_keyword / query_intent / answer_type / assigned_entity_surface / numerics / specific_anchors / key_claim / context 로 구성되어 있습니다. must_include_keyword는 해당 소제목 앞 1/3 안에 등장시키되, **context 본문의 실제 주제와 must_include_keyword가 맞지 않으면 본문 주제를 우선하세요.** 소제목은 본문을 정답으로 가정한 질문·주장이어야 합니다.
+`specific_anchors`가 있으면 H2에 최소 1개를 자연스럽게 포함하십시오. "실행 계획", "제도 기반", "제도로 뒷받침", "재정 우려" 같은 추상 틀은 specific_anchors 없이 쓰면 실패입니다.
 {sections_xml}
 
 # [AEO/SEO] Entity Surface 정책 (필수 준수)
@@ -1265,6 +1268,7 @@ class SubheadingAgent(Agent):
 - {H2_MAX_LENGTH - 2}자를 넘기지 마세요. (네이버 최적 범위 {H2_BEST_RANGE}자 이내를 목표로 하세요.)
 - 소제목은 반드시 완결된 어절로 끝나야 합니다. 조사("를", "을", "의", "에서", "과" 등)나 미완결 어미("겠", "하는", "있는" 등)로 끝나는 소제목은 금지입니다.
 - 본문 구절을 그대로 잘라 붙여 소제목을 만들지 마세요.
+- 본문 고유 실행수단·대상·수치가 빠진 추상 소제목은 금지입니다. BAD: "기본소득, 제도 기반을 세우겠습니다" / GOOD: "기본소득은 태양광 배당에서 시작된다".
 - 같은 단어를 연속으로 반복하거나 조사 오타가 남은 소제목은 출력하지 마세요.
 
 # Output Format (JSON Only)
@@ -1652,6 +1656,7 @@ class SubheadingAgent(Agent):
             issues_text = ", ".join(issues_map.get(idx, [])) or "(없음)"
             ctx_slice = str(plan.get("section_text") or "")[:400]
             numerics = ", ".join(plan.get("numerics") or []) or "(없음)"
+            specific_anchors = ", ".join(plan.get("specific_anchors") or []) or "(없음)"
             failed_xml_parts.append(
                 f"""<failed_section index="{int(plan.get("index", idx))}">
   <previous_attempt>{prev_headings[idx] or "(비어 있음)"}</previous_attempt>
@@ -1662,6 +1667,7 @@ class SubheadingAgent(Agent):
   <answer_type>{plan.get("answer_type") or "question-form"}</answer_type>
   <assigned_entity_surface>{plan.get("assigned_entity_surface") or "(없음)"}</assigned_entity_surface>
   <numerics>{numerics}</numerics>
+  <specific_anchors>{specific_anchors}</specific_anchors>
   <key_claim>{plan.get("key_claim") or "(없음)"}</key_claim>
   <context>{ctx_slice}</context>
 </failed_section>"""
@@ -1678,6 +1684,10 @@ class SubheadingAgent(Agent):
             "H2_GENERIC_CONTENT": (
                 "소제목이 추상어만으로 구성됨. 본문의 구체적 사업명·지명·숫자·고유명사를 포함하세요. "
                 "BAD: '혁신과 변화로 미래를 열겠습니다' → GOOD: '귤현동 탄약고 이전, 2027년까지 완료 목표'"
+            ),
+            "H2_LOW_INFORMATION_TEMPLATE": (
+                "소제목이 저정보 템플릿에 머물렀음. specific_anchors 중 최소 1개를 넣어 본문 고유 실행수단을 드러내세요. "
+                "BAD: '기본소득, 제도 기반을 세우겠습니다' → GOOD: '기본소득은 태양광 배당에서 시작된다'"
             ),
             "ARCHETYPE_MISMATCH": (
                 "소제목이 7 아키타입(질문형/목표형/주장형/이유형/대조형/사례형/서술형) 중 어디에도 해당하지 않음. "
@@ -1702,8 +1712,9 @@ class SubheadingAgent(Agent):
         all_issues: set = set()
         for idx in failing_indices:
             all_issues.update(issues_map.get(idx, []))
+        all_issue_keys = {_issue_key(issue) for issue in all_issues}
         issue_hints = [
-            f"- **{k}**: {v}" for k, v in _ISSUE_HINTS.items() if k in all_issues
+            f"- **{k}**: {v}" for k, v in _ISSUE_HINTS.items() if k in all_issue_keys
         ]
         issue_hint_block = "\n".join(issue_hints)
         issue_hint_section = f"\n# Issue-Specific Guidance\n{issue_hint_block}\n" if issue_hints else ""
@@ -1716,7 +1727,8 @@ class SubheadingAgent(Agent):
 # 핵심 원칙
 1. **소제목은 본문(context)을 정답으로 가정한 질문·주장**이어야 합니다.
 2. context 본문을 읽고, 본문 내용에서 H2를 역산하세요.
-3. {H2_OPTIMAL_MIN}~{H2_MAX_LENGTH}자 이내로 작성하세요.
+3. `specific_anchors`가 있으면 최소 1개를 소제목에 반영하세요.
+4. {H2_OPTIMAL_MIN}~{H2_MAX_LENGTH}자 이내로 작성하세요.
 
 # 금지
 - `assigned_entity_surface` 값을 그대로 소제목으로 쓰지 마세요. 인물 표면형은 소제목의 **일부**로만 사용하세요.
@@ -1813,6 +1825,11 @@ class SubheadingAgent(Agent):
             return []
 
         keyword = keywords[0]
+        specific_anchors = [
+            str(anchor or "").strip()
+            for anchor in (plan.get("specific_anchors") or [])
+            if str(anchor or "").strip()
+        ]
         suggested_type = str(plan.get("suggested_type") or "")
         numerics = list(plan.get("numerics") or [])
         key_claim = str(plan.get("key_claim") or "").strip()
@@ -1829,32 +1846,68 @@ class SubheadingAgent(Agent):
         def _claim_declarative_ok() -> bool:
             return 12 <= len(key_claim) <= 22 and key_claim.endswith(("다", "다."))
 
+        if specific_anchors:
+            primary_anchor = specific_anchors[0]
+            primary_anchor_subject = _subject_particle(primary_anchor)
+            add(f"{keyword}은 {primary_anchor}에서 시작된다")
+            add(f"{keyword}, {primary_anchor}부터 시작합니다")
+            if len(specific_anchors) >= 2:
+                secondary_anchor = specific_anchors[1]
+                add(f"{keyword}은 {primary_anchor}와 {secondary_anchor}로 답한다")
+        else:
+            primary_anchor = ""
+            primary_anchor_subject = ""
+
         if is_conclusion:
-            add(f"{keyword}, 실행으로 증명하겠습니다")
-            add(f"{keyword}{object_particle} 제도로 뒷받침하겠습니다")
+            if primary_anchor:
+                add(f"{keyword}은 {primary_anchor}로 증명하겠습니다")
+            else:
+                add(f"{keyword}, 실행으로 증명하겠습니다")
 
         if re.search(r"(재정|건전성|부채|포퓰리즘|우려)", section_text):
-            add(f"{keyword} 재정 우려, 어떻게 넘을까?")
-            add(f"{keyword}{subject_particle} 낭비가 아닌 이유")
+            if primary_anchor:
+                add(f"{keyword} 재원은 {primary_anchor}에서 시작된다")
+            else:
+                add(f"{keyword}{subject_particle} 낭비가 아닌 이유")
         if re.search(r"(조례|예산|제도|개정|근거|기반)", section_text):
-            add(f"{keyword}, 제도 기반을 세우겠습니다")
-            add(f"{keyword}{object_particle} 조례로 뒷받침하겠습니다")
+            if primary_anchor:
+                add(f"{keyword}은 {primary_anchor}로 제도화된다")
+            else:
+                add(f"{keyword}{object_particle} 조례로 뒷받침하겠습니다")
         if re.search(r"(자영업|소상공인|안전망|생존|골목상권)", section_text):
-            add(f"{keyword}, 민생 안전망이 되다")
+            if primary_anchor:
+                add(f"{keyword}은 {primary_anchor}에서 효과를 낸다")
+            else:
+                add(f"{keyword}, 민생 안전망이 되다")
             add(f"{keyword}{subject_particle} 자영업자를 지킨다")
         if re.search(r"(소비|상권|경제|매출|역외|선순환)", section_text):
-            add(f"{keyword}, 지역경제 회복의 출발점")
+            if primary_anchor:
+                add(f"{keyword}은 {primary_anchor}에서 효과를 낸다")
 
         templates = {
-            "질문형": lambda: f"{keyword}, 핵심 쟁점은 무엇인가요?",
+            "질문형": lambda: (
+                f"{keyword}, {primary_anchor}{primary_anchor_subject} 왜 필요한가"
+                if primary_anchor
+                else f"{keyword}, 핵심 쟁점은 무엇인가요?"
+            ),
             "목표형": lambda: (
-                f"{keyword}, 실행 계획을 세우겠습니다"
+                f"{keyword}은 {primary_anchor}에서 시작된다"
+                if primary_anchor
+                else f"{keyword}, 실행 계획을 세우겠습니다"
             ),
             "주장형": lambda: (
                 key_claim if _claim_declarative_ok() else f"{keyword}{subject_particle} 필요하다"
             ),
-            "이유형": lambda: f"{keyword}{subject_particle} 필요한 이유",
-            "대조형": lambda: f"{keyword}, 기존 정책과 차이는?",
+            "이유형": lambda: (
+                f"{keyword}에 {primary_anchor}{primary_anchor_subject} 필요한 이유"
+                if primary_anchor
+                else f"{keyword}{subject_particle} 필요한 이유"
+            ),
+            "대조형": lambda: (
+                f"{keyword}은 {primary_anchor}에서 다르다"
+                if primary_anchor
+                else f"{keyword}, 기존 정책과 차이는?"
+            ),
             "사례형": lambda: (
                 f"{keyword} {numerics[0]}, 핵심 변화는?" if numerics else f"{keyword}, 현장에서 확인하다"
             ),
@@ -1864,8 +1917,12 @@ class SubheadingAgent(Agent):
         # 첫 키워드가 너무 길어 모든 템플릿이 탈락할 때를 대비해 다음 후보도 짧게 시도한다.
         for alt_keyword in keywords[1:3]:
             alt_subject = _subject_particle(alt_keyword)
-            add(f"{alt_keyword}{alt_subject} 필요한 이유")
-            add(f"{alt_keyword}, 핵심 쟁점은 무엇인가요?")
+            if primary_anchor:
+                add(f"{alt_keyword}은 {primary_anchor}에서 시작된다")
+                add(f"{alt_keyword}, {primary_anchor}{primary_anchor_subject} 왜 필요한가")
+            else:
+                add(f"{alt_keyword}{alt_subject} 필요한 이유")
+                add(f"{alt_keyword}, 핵심 쟁점은 무엇인가요?")
 
         return _dedupe_preserve_order(
             [

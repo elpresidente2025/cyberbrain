@@ -27,11 +27,12 @@ from agents.common.h2_planning import (
     pick_suggested_type,
 )
 from agents.common import korean_morph
-from agents.common.h2_scoring import H2_MIN_PASSING_SCORE, score_h2
+from agents.common.h2_scoring import H2_HARD_FAIL_ISSUES, H2_MIN_PASSING_SCORE, score_h2
 from agents.common.title_prompt_parts import (
     _build_few_shot_slot_values,
     build_user_provided_few_shot_instruction,
 )
+from agents.core.content_validator import ContentValidator
 from agents.core.prompt_builder import build_structure_prompt
 from agents.core.subheading_agent import SubheadingAgent, _is_field_copy
 
@@ -1856,6 +1857,127 @@ def test_generic_content_is_hard_fail() -> None:
     from agents.common.h2_scoring import H2_HARD_FAIL_ISSUES
 
     assert "H2_GENERIC_CONTENT" in H2_HARD_FAIL_ISSUES
+
+
+# synthetic_fixture
+def test_section_plan_extracts_specific_anchors_beyond_main_keyword() -> None:
+    """주 검색어와 지역명 말고, H2가 반영해야 할 본문 고유 앵커를 추출한다."""
+    plan = extract_section_plan(
+        section_text=(
+            "샘플연금 도입은 {region} 관내 일조량 분석에서 시작됩니다. "
+            "햇빛지도 제작과 태양광 발전시설 입지 분석을 먼저 진행하고, "
+            "공영주차장과 공공기관 옥상을 활용해 수익성 용역을 추진합니다."
+        ),
+        index=0,
+        category="policy-proposal",
+        style_config=_policy_style_config(),
+        user_keywords=["샘플연금"],
+        full_name="{user_name}",
+        full_region="{region}",
+    )
+
+    anchors = plan.get("specific_anchors") or []
+
+    assert "샘플연금" not in anchors
+    assert "{region}" not in anchors
+    assert any(anchor in anchors for anchor in ("햇빛지도", "태양광", "공영주차장"))
+
+
+# synthetic_fixture
+def test_specific_anchors_exclude_full_region_surface_tokens() -> None:
+    """지역명은 본문에 있어도 H2 구체 앵커로 보지 않는다."""
+    plan = extract_section_plan(
+        section_text=(
+            "샘플광역시 샘플구 샘플연금은 햇빛지도 제작과 태양광 발전시설 "
+            "입지 분석으로 사업성을 검토합니다."
+        ),
+        index=0,
+        category="policy-proposal",
+        style_config=_policy_style_config(),
+        user_keywords=["샘플연금"],
+        full_name="{user_name}",
+        full_region="샘플광역시 샘플구",
+    )
+
+    anchors = plan.get("specific_anchors") or []
+
+    assert "샘플광역시" not in anchors
+    assert "샘플구" not in anchors
+    assert "햇빛지도" in anchors
+
+
+# synthetic_fixture
+def test_score_h2_rejects_low_information_template_without_body_anchor() -> None:
+    """본문 앵커 없이 '실행 계획/제도 기반' 틀만 쓰는 H2는 hard-fail이다."""
+    plan = {
+        "section_text": (
+            "샘플연금 도입은 햇빛지도 제작과 태양광 발전시설 입지 분석을 통해 "
+            "공영주차장 수익성 용역으로 검증합니다."
+        ),
+        "suggested_type": "목표형",
+        "must_include_keyword": "샘플연금",
+        "candidate_keywords": ["샘플연금", "햇빛지도", "태양광", "공영주차장"],
+        "specific_anchors": ["햇빛지도", "태양광", "공영주차장"],
+        "user_keywords": ["샘플연금"],
+        "entity_hints": ["{user_name}", "{region}"],
+    }
+
+    bad = score_h2(
+        "샘플연금, 실행 계획을 세우겠습니다",
+        plan,
+        preferred_types=["목표형", "주장형", "질문형"],
+    )
+    good = score_h2(
+        "샘플연금은 햇빛지도에서 시작된다",
+        plan,
+        preferred_types=["목표형", "주장형", "질문형"],
+    )
+
+    assert "H2_LOW_INFORMATION_TEMPLATE" in H2_HARD_FAIL_ISSUES
+    assert any(issue.startswith("H2_LOW_INFORMATION_TEMPLATE") for issue in bad["issues"])
+    assert bad["passed"] is False
+    assert not any(issue.startswith("H2_LOW_INFORMATION_TEMPLATE") for issue in good["issues"])
+
+
+# synthetic_fixture
+def test_deterministic_fallback_prefers_specific_anchor_over_abstract_template() -> None:
+    """fallback 후보도 '실행 계획' 틀보다 본문 앵커를 먼저 사용한다."""
+    agent = SubheadingAgent.__new__(SubheadingAgent)
+    plan = {
+        "section_text": (
+            "샘플연금 도입은 햇빛지도 제작과 태양광 발전시설 입지 분석을 통해 "
+            "공영주차장 수익성 용역으로 검증합니다."
+        ),
+        "suggested_type": "목표형",
+        "must_include_keyword": "샘플연금",
+        "candidate_keywords": ["샘플연금", "햇빛지도", "태양광", "공영주차장"],
+        "specific_anchors": ["햇빛지도", "태양광", "공영주차장"],
+        "numerics": [],
+        "key_claim": "",
+        "user_keywords": ["샘플연금"],
+        "entity_hints": ["{user_name}", "{region}"],
+    }
+
+    candidates = agent._deterministic_fallback_candidates(plan)
+
+    assert candidates
+    assert candidates[0] == "샘플연금은 햇빛지도에서 시작된다"
+    assert "샘플연금, 실행 계획을 세우겠습니다" not in candidates
+
+
+# synthetic_fixture
+def test_content_validator_rejects_low_information_h2_surface() -> None:
+    """최종 검증도 완전히 추상적인 H2 표면형을 반려한다."""
+    validator = ContentValidator()
+
+    issue = validator._validate_h2_quality_set(
+        ["샘플연금, 실행 계획을 세우겠습니다"],
+        user_keywords=["샘플연금"],
+        context_analysis={},
+    )
+
+    assert issue is not None
+    assert issue["code"] == "H2_LOW_INFORMATION_TEMPLATE"
 
 
 @pytest.mark.skipif(
