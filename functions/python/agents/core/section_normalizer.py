@@ -191,26 +191,16 @@ class SectionNormalizerMixin:
 
         sentences = [self._clean_plain_text(sentence) for sentence in split_sentences(cleaned)]
         sentences = [sentence for sentence in sentences if sentence]
-        if len(sentences) >= 2:
+        # 문단 수 보정을 위해 문장 내부를 공백 기준으로 자르지 않는다.
+        # 양쪽 모두 2문장 이상인 경우에만 문장 경계에서 분할한다.
+        if len(sentences) >= 4:
             mid = max(1, len(sentences) // 2)
             left = " ".join(sentences[:mid]).strip()
             right = " ".join(sentences[mid:]).strip()
-            if len(left) >= 18 and len(right) >= 18:
+            if len(left) >= 18 and len(right) >= 18 and len(sentences[:mid]) >= 2 and len(sentences[mid:]) >= 2:
                 return left, right
 
-        split_at = len(cleaned) // 2
-        right_space = cleaned.find(" ", split_at)
-        left_space = cleaned.rfind(" ", 0, split_at)
-        boundary = right_space if right_space != -1 else left_space
-        if boundary == -1:
-            return None
-        if boundary < 18 or boundary > len(cleaned) - 18:
-            return None
-        left = cleaned[:boundary].strip()
-        right = cleaned[boundary + 1 :].strip()
-        if not left or not right:
-            return None
-        return left, right
+        return None
 
     def _heading_identity_key(self, heading: Any) -> str:
         text = self._clean_plain_text(heading)

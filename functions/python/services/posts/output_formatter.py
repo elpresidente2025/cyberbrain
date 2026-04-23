@@ -1235,13 +1235,22 @@ def compress_redundant_sentences(content: str) -> tuple[str, dict[str, int]]:
             continue
 
         paragraph_sentences: list[str] = []
-        for sentence in sentences:
+        cleaned_sentences = [str(sentence or "").strip() for sentence in sentences if str(sentence or "").strip()]
+        # 2문장짜리 문단을 1문장으로 깎지는 않는다. 단, 한 문장짜리
+        # 중복 문단은 통째 제거될 수 있어야 반복 압축이 정상 작동한다.
+        min_sentence_keep = 2 if len(cleaned_sentences) >= 2 else 0
+
+        def _can_drop_sentence(current_index: int) -> bool:
+            remaining_after = max(0, len(cleaned_sentences) - current_index - 1)
+            return len(paragraph_sentences) + remaining_after >= min_sentence_keep
+
+        for sentence_index, sentence in enumerate(cleaned_sentences):
             text = str(sentence or "").strip()
             if not text:
                 continue
 
             if _is_intro_sentence(text):
-                if intro_kept >= INTRO_SENTENCE_MAX:
+                if intro_kept >= INTRO_SENTENCE_MAX and _can_drop_sentence(sentence_index):
                     removed_sentences += 1
                     intro_trimmed += 1
                     continue
@@ -1250,7 +1259,7 @@ def compress_redundant_sentences(content: str) -> tuple[str, dict[str, int]]:
             poll_pair_key = _extract_poll_pair_key(text)
             if poll_pair_key:
                 poll_count = int(poll_pair_kept.get(poll_pair_key) or 0)
-                if poll_count >= POLL_PAIR_SENTENCE_MAX:
+                if poll_count >= POLL_PAIR_SENTENCE_MAX and _can_drop_sentence(sentence_index):
                     removed_sentences += 1
                     poll_pair_trimmed += 1
                     continue
@@ -1275,7 +1284,7 @@ def compress_redundant_sentences(content: str) -> tuple[str, dict[str, int]]:
                     ):
                         duplicate = True
                         break
-                if duplicate:
+                if duplicate and _can_drop_sentence(sentence_index):
                     removed_sentences += 1
                     continue
                 kept_norms.append(norm)

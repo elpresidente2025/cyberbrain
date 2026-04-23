@@ -113,27 +113,78 @@ def _split_paragraph_text(text: str) -> Optional[Tuple[str, str]]:
         return None
 
     sentences = _split_sentences(normalized)
-    if len(sentences) >= 2:
+    # 문단 수를 맞추려고 한 문장을 공백 기준으로 자르면
+    # "태양광 발전시설 / 설치에 적합한..." 같은 반쪽 문단이 생긴다.
+    # 문장 경계에서 양쪽 모두 실질 문단이 될 때만 분할한다.
+    if len(sentences) >= 4:
         mid = len(sentences) // 2
         left = " ".join(sentences[:mid]).strip()
         right = " ".join(sentences[mid:]).strip()
-        if left and right:
+        if len(_split_sentences(left)) >= 2 and len(_split_sentences(right)) >= 2:
             return left, right
 
-    split_at = len(normalized) // 2
-    right_space = normalized.find(" ", split_at)
-    left_space = normalized.rfind(" ", 0, split_at)
-    boundary = right_space if right_space != -1 else left_space
-    if boundary == -1:
-        return None
-    if boundary < 12 or boundary > len(normalized) - 12:
-        return None
+    return None
 
-    left = normalized[:boundary].strip()
-    right = normalized[boundary + 1 :].strip()
-    if not left or not right:
-        return None
-    return left, right
+def _sentence_count(text: str) -> int:
+    sentences = _split_sentences(text)
+    return len(sentences) if sentences else (1 if re.sub(r"\s+", "", text or "") else 0)
+
+
+def _has_terminal_sentence_punctuation(text: str) -> bool:
+    return bool(re.search(r"[.!?。！？…]\s*$", str(text or "").strip()))
+
+
+def _paragraph_needs_merge(text: str) -> bool:
+    plain = re.sub(r"\s+", " ", text or "").strip()
+    if not plain:
+        return False
+    if not _has_terminal_sentence_punctuation(plain):
+        return True
+    return _sentence_count(plain) <= 1
+
+
+def _rebuild_section_from_paragraph_texts(section_html: str, paragraph_texts: List[str]) -> str:
+    h2_tag = _extract_h2_tag(section_html)
+    parts: List[str] = []
+    if h2_tag:
+        parts.append(h2_tag)
+    for text in paragraph_texts:
+        plain = re.sub(r"\s+", " ", text or "").strip()
+        if plain:
+            parts.append(f"<p>{plain}</p>")
+    return "\n".join(parts).strip()
+
+
+def _merge_thin_or_broken_paragraphs(section_html: str) -> str:
+    p_blocks = _get_p_blocks(section_html)
+    if len(p_blocks) < 2:
+        return section_html
+
+    paragraphs = [_strip_tags(block) for block in p_blocks]
+    changed = False
+    idx = 0
+    while idx < len(paragraphs):
+        current = paragraphs[idx]
+        if not _paragraph_needs_merge(current):
+            idx += 1
+            continue
+
+        if idx + 1 < len(paragraphs):
+            paragraphs[idx] = f"{current} {paragraphs[idx + 1]}".strip()
+            paragraphs.pop(idx + 1)
+            changed = True
+            continue
+        if idx > 0:
+            paragraphs[idx - 1] = f"{paragraphs[idx - 1]} {current}".strip()
+            paragraphs.pop(idx)
+            changed = True
+            idx = max(0, idx - 1)
+            continue
+        idx += 1
+
+    if not changed:
+        return section_html
+    return _rebuild_section_from_paragraph_texts(section_html, paragraphs)
 
 
 def _extract_h2_tag(section_html: str) -> str:
@@ -463,6 +514,7 @@ def normalize_section_p_count(content: str) -> str:
     for sec_idx, section in enumerate(sections):
         min_p = 3
         max_p = 4
+        section["html"] = _merge_thin_or_broken_paragraphs(section["html"])
 
         for _ in range(6):
             p_blocks = _get_p_blocks(section["html"])
@@ -474,13 +526,13 @@ def normalize_section_p_count(content: str) -> str:
                 raw_text = _strip_tags(re.sub(r"<h2[^>]*>.*?</h2>", "", section["html"], flags=re.IGNORECASE | re.DOTALL))
                 sentences = _split_sentences(raw_text)
                 new_ps: List[str] = []
-                if len(sentences) >= 2 and min_p >= 2:
+                if len(sentences) >= 4 and min_p >= 2:
                     mid = len(sentences) // 2
                     left = " ".join(sentences[:mid]).strip()
                     right = " ".join(sentences[mid:]).strip()
-                    if left:
+                    if left and _sentence_count(left) >= 2:
                         new_ps.append(f"<p>{left}</p>")
-                    if right:
+                    if right and _sentence_count(right) >= 2:
                         new_ps.append(f"<p>{right}</p>")
                 elif sentences:
                     new_ps.append(f"<p>{' '.join(sentences).strip()}</p>")
@@ -507,6 +559,7 @@ def normalize_section_p_count(content: str) -> str:
                 left, right = split_pair
                 replacement = f"<p>{left}</p>\n<p>{right}</p>"
                 section["html"] = section["html"].replace(longest_p, replacement, 1)
+                section["html"] = _merge_thin_or_broken_paragraphs(section["html"])
             else:
                 full_text = " ".join(strip_html(s["html"]) for s in sections)
                 supplement = _build_padding_text(sec_idx + 1, 60, existing_text=full_text)

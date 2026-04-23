@@ -1,4 +1,5 @@
 import pathlib
+import re
 import sys
 
 
@@ -16,6 +17,7 @@ from agents.core.structure_normalizer import (
     normalize_section_p_count,
     normalize_structure,
 )
+from services.posts.output_formatter import compress_redundant_sentences
 
 
 def test_structure_agent_build_structure_json_schema_requires_three_paragraphs_per_section() -> None:
@@ -307,13 +309,66 @@ def test_normalize_section_p_count_splits_last_section_when_content_allows() -> 
         "<h2>{region} 민생 회복 전략</h2>"
         "<p>{region} 지역화폐는 골목상권 소비를 다시 묶는 수단입니다. "
         "소상공인 매출 흐름을 살리고 주민 구매 부담을 낮추는 효과도 있습니다. "
-        "예산과 집행 기준을 함께 설계해야 지속 가능한 정책으로 자리 잡을 수 있습니다.</p>"
+        "예산과 집행 기준을 함께 설계해야 지속 가능한 정책으로 자리 잡을 수 있습니다. "
+        "상권별 소비 데이터를 확인해 필요한 지원 대상을 더 정확히 잡겠습니다. "
+        "공공 배달과 전통시장 결제망을 연계해 사용처도 넓히겠습니다. "
+        "정산 속도와 가맹점 안내를 개선해 소상공인의 불편을 줄이겠습니다. "
+        "주민 설명과 집행 점검을 병행해 정책 신뢰를 높이겠습니다. "
+        "분기별 성과를 공개해 보완 과제까지 책임 있게 챙기겠습니다.</p>"
     )
 
     normalized = normalize_section_p_count(content)
     tail = normalized.split("<h2>{region} 민생 회복 전략</h2>", 1)[-1]
 
     assert tail.count("<p>") == 3
+    paragraphs = re.findall(r"<p\b[^>]*>([\s\S]*?)</p\s*>", tail, re.IGNORECASE)
+    assert all(len(re.findall(r"[.!?。！？]", paragraph)) >= 2 for paragraph in paragraphs)
+
+
+# synthetic_fixture
+def test_normalize_section_p_count_does_not_split_single_sentence_mid_phrase() -> None:
+    content = (
+        "<h2>{region} 실행 계획</h2>"
+        "<p>{region} 관내 일조량을 정밀하게 분석하여 햇빛지도를 제작하고, "
+        "햇빛지도를 기반으로 태양광 발전시설 설치에 적합한 공영주차장과 "
+        "공공기관 옥상 등의 지역과 수익성을 분석하는 용역을 추진하겠습니다.</p>"
+    )
+
+    normalized = normalize_section_p_count(content)
+
+    assert "태양광 발전시설</p>\n<p>설치에 적합한" not in normalized
+    assert normalized.count("<p>") == 1
+
+
+# synthetic_fixture
+def test_normalize_section_p_count_merges_broken_mid_sentence_paragraphs() -> None:
+    content = (
+        "<h2>{region} 실행 계획</h2>"
+        "<p>{region} 관내 일조량을 정밀하게 분석하여 햇빛지도를 제작하고, "
+        "햇빛지도를 기반으로 태양광 발전시설</p>"
+        "<p>설치에 적합한 공영주차장과 공공기관 옥상 등의 지역과 수익성을 분석하는 용역을 추진하겠습니다.</p>"
+        "<p>사업성 검토는 주민 공유 모델을 설계하는 첫 단계입니다.</p>"
+    )
+
+    normalized = normalize_section_p_count(content)
+
+    assert "태양광 발전시설 설치에 적합한" in normalized
+    assert "태양광 발전시설</p>\n<p>설치에 적합한" not in normalized
+    assert "<p>사업성 검토는 주민 공유 모델을 설계하는 첫 단계입니다.</p>" not in normalized
+
+
+# synthetic_fixture
+def test_compress_redundant_sentences_keeps_two_sentence_minimum() -> None:
+    content = (
+        "<h2>{region} 정책 점검</h2>"
+        "<p>현장 점검을 이어가겠습니다. 현장 점검을 이어가겠습니다.</p>"
+        "<p>예산 흐름을 확인하겠습니다. 주민 설명도 병행하겠습니다.</p>"
+    )
+
+    compressed, meta = compress_redundant_sentences(content)
+
+    assert int(meta.get("removedSentences") or 0) == 0
+    assert "현장 점검을 이어가겠습니다. 현장 점검을 이어가겠습니다." in compressed
 
 
 def test_normalize_section_length_does_not_pad_underfilled_body_section_with_generic_text() -> None:
@@ -375,6 +430,18 @@ def main() -> None:
         (
             "normalize_section_p_count_splits_last_section_when_content_allows",
             test_normalize_section_p_count_splits_last_section_when_content_allows,
+        ),
+        (
+            "normalize_section_p_count_does_not_split_single_sentence_mid_phrase",
+            test_normalize_section_p_count_does_not_split_single_sentence_mid_phrase,
+        ),
+        (
+            "normalize_section_p_count_merges_broken_mid_sentence_paragraphs",
+            test_normalize_section_p_count_merges_broken_mid_sentence_paragraphs,
+        ),
+        (
+            "compress_redundant_sentences_keeps_two_sentence_minimum",
+            test_compress_redundant_sentences_keeps_two_sentence_minimum,
         ),
         (
             "normalize_section_length_does_not_pad_underfilled_body_section_with_generic_text",

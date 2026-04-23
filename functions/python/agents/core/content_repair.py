@@ -264,22 +264,22 @@ class ContentRepairAgent:
         # 동적 HTML 스켈레톤 생성
         skeleton_lines = [
             '<!-- 서론: h2 없음 -->',
-            '<p>서론 1문단 (2~3문장)</p>',
-            '<p>서론 2문단 (2~3문장)</p>',
-            '<p>서론 3문단 (2~3문장)</p>',
+            '<p>서론 1문단 (최소 2문장, 60자 이상)</p>',
+            '<p>서론 2문단 (최소 3문장, 80자 이상)</p>',
+            '<p>서론 3문단 (최소 3문장, 80자 이상)</p>',
         ]
         body_count = max(1, expected_h2 - 1)  # 본론 섹션 수 (결론 제외)
         for i in range(1, body_count + 1):
             skeleton_lines.append(f'<!-- 본론 {i} -->')
             skeleton_lines.append(f'<h2>본론{i} 소제목 ({H2_OPTIMAL_MIN}~{H2_MAX_LENGTH}자, 질문형 권장)</h2>')
-            skeleton_lines.append(f'<p>본론{i} 1문단 (2~3문장)</p>')
-            skeleton_lines.append(f'<p>본론{i} 2문단 (2~3문장)</p>')
-            skeleton_lines.append(f'<p>본론{i} 3문단 (2~3문장)</p>')
+            skeleton_lines.append(f'<p>본론{i} 1문단 (최소 3문장, 80자 이상)</p>')
+            skeleton_lines.append(f'<p>본론{i} 2문단 (최소 3문장, 80자 이상)</p>')
+            skeleton_lines.append(f'<p>본론{i} 3문단 (최소 3문장, 80자 이상)</p>')
         skeleton_lines.append('<!-- 결론 -->')
         skeleton_lines.append('<h2>결론 소제목</h2>')
-        skeleton_lines.append('<p>결론 1문단 (2~3문장)</p>')
-        skeleton_lines.append('<p>결론 2문단 (2~3문장)</p>')
-        skeleton_lines.append('<p>결론 3문단 (CTA 포함)</p>')
+        skeleton_lines.append('<p>결론 1문단 (최소 3문장, 80자 이상)</p>')
+        skeleton_lines.append('<p>결론 2문단 (최소 3문장, 80자 이상)</p>')
+        skeleton_lines.append('<p>결론 3문단 (최소 2문장, 60자 이상, CTA 포함)</p>')
         skeleton_text = '\n'.join(skeleton_lines)
 
         full_rewrite_prompt = f"""
@@ -312,6 +312,7 @@ class ContentRepairAgent:
     <rule order="10">h2 개수를 정확히 {expected_h2}개로 맞출 것. 서론에는 h2를 넣지 말 것.</rule>
     <rule order="11">각 섹션(서론/본론/결론)마다 p 태그를 최소 {paragraphs_per_section}개, 최대 {max_section_paragraphs}개로 유지할 것. 2개 이하 섹션은 허용되지 않습니다.</rule>
     <rule order="12">서론과 결론에 동일 문구를 반복하지 말 것. 결론에서는 새로운 표현으로 재작성.</rule>
+    <rule order="13">한 문장짜리 &lt;p&gt;를 만들지 말 것. 문장을 공백 기준으로 반으로 자르지 말고, 주장·근거·의미를 한 문단 안에서 완성할 것.</rule>
   </rules>
   <topic>{_xml_cdata(topic)}</topic>
   <author_bio>{_xml_cdata((author_bio or '(없음)')[:1800])}</author_bio>
@@ -409,7 +410,7 @@ class ContentRepairAgent:
                 "어떤 후보나 어떤 선거에도 쓸 수 있는 일반 공약 문장은 금지합니다."
             )
         shortfall_focus_rule_line = (
-            f'    <rule order="5">{_xml_text(shortfall_focus_rule)}</rule>\n'
+            f'    <rule order="6">{_xml_text(shortfall_focus_rule)}</rule>\n'
             if shortfall_focus_rule
             else ""
         )
@@ -442,7 +443,8 @@ class ContentRepairAgent:
     <rule order="3">이 섹션 블록은 &lt;p&gt;를 최소 {paragraphs_per_section}개, 최대 {max_section_paragraphs}개로 유지하십시오. 2개 이하 문단은 허용되지 않습니다.</rule>
     <rule order="4">경험 문장 다음에는 사실, 당시 행동, 구체 결과, 현재 해법 연결만 허용합니다.</rule>
     <rule order="5">자기 역량 인증, 청중 반응 해설, 인지도 자기서술은 금지합니다.</rule>
-{shortfall_focus_rule_line}    <rule order="7">최종 응답은 title/content XML만 출력하고, content 안에는 이 섹션 블록 하나만 넣으십시오.</rule>
+    <rule order="7">각 &lt;p&gt;는 최소 3문장, 80자 이상의 실질 문단으로 작성하십시오. 한 문장짜리 문단이나 문장 중간을 끊은 문단은 금지합니다.</rule>
+{shortfall_focus_rule_line}    <rule order="8">최종 응답은 title/content XML만 출력하고, content 안에는 이 섹션 블록 하나만 넣으십시오.</rule>
   </rules>
   <topic>{_xml_cdata(topic)}</topic>
   <title>{_xml_cdata(title)}</title>
