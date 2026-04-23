@@ -291,11 +291,11 @@ class H2Score(TypedDict, total=False):
 
 def _length_band_score(heading: str) -> float:
     length = len(heading)
-    if 15 <= length <= 22:
+    if 15 <= length <= 28:
         return 1.0
-    if 12 <= length <= 14 or 23 <= length <= 25:
+    if 12 <= length <= 14 or 29 <= length <= H2_MAX_LENGTH:
         return 0.7
-    if 10 <= length <= 11 or 26 <= length <= 27:
+    if 10 <= length <= 11:
         return 0.3
     return 0.0
 

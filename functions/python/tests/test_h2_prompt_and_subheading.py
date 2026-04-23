@@ -1864,22 +1864,23 @@ def test_section_plan_extracts_specific_anchors_beyond_main_keyword() -> None:
     """주 검색어와 지역명 말고, H2가 반영해야 할 본문 고유 앵커를 추출한다."""
     plan = extract_section_plan(
         section_text=(
-            "샘플연금 도입은 {region} 관내 일조량 분석에서 시작됩니다. "
+            "{policy_keyword} 도입은 {region_metro} {region_district} 관내 일조량 분석에서 시작됩니다. "
             "햇빛지도 제작과 태양광 발전시설 입지 분석을 먼저 진행하고, "
             "공영주차장과 공공기관 옥상을 활용해 수익성 용역을 추진합니다."
         ),
         index=0,
         category="policy-proposal",
         style_config=_policy_style_config(),
-        user_keywords=["샘플연금"],
+        user_keywords=["{policy_keyword}"],
         full_name="{user_name}",
-        full_region="{region}",
+        full_region="{region_metro} {region_district}",
     )
 
     anchors = plan.get("specific_anchors") or []
 
-    assert "샘플연금" not in anchors
-    assert "{region}" not in anchors
+    assert "{policy_keyword}" not in anchors
+    assert "{region_metro}" not in anchors
+    assert "{region_district}" not in anchors
     assert any(anchor in anchors for anchor in ("햇빛지도", "태양광", "공영주차장"))
 
 
@@ -1888,21 +1889,21 @@ def test_specific_anchors_exclude_full_region_surface_tokens() -> None:
     """지역명은 본문에 있어도 H2 구체 앵커로 보지 않는다."""
     plan = extract_section_plan(
         section_text=(
-            "샘플광역시 샘플구 샘플연금은 햇빛지도 제작과 태양광 발전시설 "
+            "{region_metro} {region_district} {policy_keyword}은 햇빛지도 제작과 태양광 발전시설 "
             "입지 분석으로 사업성을 검토합니다."
         ),
         index=0,
         category="policy-proposal",
         style_config=_policy_style_config(),
-        user_keywords=["샘플연금"],
+        user_keywords=["{policy_keyword}"],
         full_name="{user_name}",
-        full_region="샘플광역시 샘플구",
+        full_region="{region_metro} {region_district}",
     )
 
     anchors = plan.get("specific_anchors") or []
 
-    assert "샘플광역시" not in anchors
-    assert "샘플구" not in anchors
+    assert "{region_metro}" not in anchors
+    assert "{region_district}" not in anchors
     assert "햇빛지도" in anchors
 
 
@@ -1911,24 +1912,24 @@ def test_score_h2_rejects_low_information_template_without_body_anchor() -> None
     """본문 앵커 없이 '실행 계획/제도 기반' 틀만 쓰는 H2는 hard-fail이다."""
     plan = {
         "section_text": (
-            "샘플연금 도입은 햇빛지도 제작과 태양광 발전시설 입지 분석을 통해 "
+            "{policy_keyword} 도입은 햇빛지도 제작과 태양광 발전시설 입지 분석을 통해 "
             "공영주차장 수익성 용역으로 검증합니다."
         ),
         "suggested_type": "목표형",
-        "must_include_keyword": "샘플연금",
-        "candidate_keywords": ["샘플연금", "햇빛지도", "태양광", "공영주차장"],
+        "must_include_keyword": "{policy_keyword}",
+        "candidate_keywords": ["{policy_keyword}", "햇빛지도", "태양광", "공영주차장"],
         "specific_anchors": ["햇빛지도", "태양광", "공영주차장"],
-        "user_keywords": ["샘플연금"],
-        "entity_hints": ["{user_name}", "{region}"],
+        "user_keywords": ["{policy_keyword}"],
+        "entity_hints": ["{user_name}", "{region_metro} {region_district}"],
     }
 
     bad = score_h2(
-        "샘플연금, 실행 계획을 세우겠습니다",
+        "{policy_keyword}, 실행 계획을 세우겠습니다",
         plan,
         preferred_types=["목표형", "주장형", "질문형"],
     )
     good = score_h2(
-        "샘플연금은 햇빛지도에서 시작된다",
+        "{policy_keyword}은 햇빛지도에서 시작된다",
         plan,
         preferred_types=["목표형", "주장형", "질문형"],
     )
@@ -1945,24 +1946,24 @@ def test_deterministic_fallback_prefers_specific_anchor_over_abstract_template()
     agent = SubheadingAgent.__new__(SubheadingAgent)
     plan = {
         "section_text": (
-            "샘플연금 도입은 햇빛지도 제작과 태양광 발전시설 입지 분석을 통해 "
+            "{policy_keyword} 도입은 햇빛지도 제작과 태양광 발전시설 입지 분석을 통해 "
             "공영주차장 수익성 용역으로 검증합니다."
         ),
         "suggested_type": "목표형",
-        "must_include_keyword": "샘플연금",
-        "candidate_keywords": ["샘플연금", "햇빛지도", "태양광", "공영주차장"],
+        "must_include_keyword": "{policy_keyword}",
+        "candidate_keywords": ["{policy_keyword}", "햇빛지도", "태양광", "공영주차장"],
         "specific_anchors": ["햇빛지도", "태양광", "공영주차장"],
         "numerics": [],
         "key_claim": "",
-        "user_keywords": ["샘플연금"],
-        "entity_hints": ["{user_name}", "{region}"],
+        "user_keywords": ["{policy_keyword}"],
+        "entity_hints": ["{user_name}", "{region_metro} {region_district}"],
     }
 
     candidates = agent._deterministic_fallback_candidates(plan)
 
     assert candidates
-    assert candidates[0] == "샘플연금은 햇빛지도에서 시작된다"
-    assert "샘플연금, 실행 계획을 세우겠습니다" not in candidates
+    assert candidates[0] == "{policy_keyword}은 햇빛지도에서 시작된다"
+    assert "{policy_keyword}, 실행 계획을 세우겠습니다" not in candidates
 
 
 # synthetic_fixture
@@ -1971,8 +1972,8 @@ def test_content_validator_rejects_low_information_h2_surface() -> None:
     validator = ContentValidator()
 
     issue = validator._validate_h2_quality_set(
-        ["샘플연금, 실행 계획을 세우겠습니다"],
-        user_keywords=["샘플연금"],
+        ["{policy_keyword}, 실행 계획을 세우겠습니다"],
+        user_keywords=["{policy_keyword}"],
         context_analysis={},
     )
 
@@ -2290,7 +2291,8 @@ def test_prerepair_completion_respects_max_length() -> None:
     """완성 후 H2_MAX_LENGTH 초과 시 보충하지 않는다."""
     agent = SubheadingAgent.__new__(SubheadingAgent)
     plan = {"answer_type": "question-form"}
-    # 24자 + "가?" = 26자 > H2_MAX_LENGTH(25) → 보충 안 됨
-    long_h2 = "가나다라마바사아자차카타파하하하하하하하하하 것인"  # 24 chars
+    # H2_MAX_LENGTH - 1자 + "가?" = H2_MAX_LENGTH 초과 → 보충 안 됨
+    syllables = "가나다라마바사아자차카타파하거너더러머버서어저처커터퍼허고노도로모보소오조초코토포호"
+    long_h2 = syllables[: H2_MAX_LENGTH - len(" 것인") - 1] + " 것인"
     result = agent._deterministic_prerepair(long_h2, plan, style="aeo")
     assert not result.endswith("것인가?"), f"should not complete over max: {result!r}"

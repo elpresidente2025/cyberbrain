@@ -22,7 +22,7 @@ import math
 import re
 from typing import Any, Dict, List, Sequence
 
-from .h2_guide import H2_MIN_LENGTH
+from .h2_guide import H2_MAX_LENGTH, H2_MIN_LENGTH
 from .h2_planning import canonicalize_entity_surface
 from .person_naming import (
     canonical_role_label,
@@ -76,7 +76,7 @@ def build_keyword_intent_h2(keyword: Any) -> str:
 
     if ROLE_KEYWORD_PATTERN.fullmatch(normalized):
         quoted_candidate = f"'{normalized}' 검색어가 거론되는 이유"
-        if 10 <= len(quoted_candidate) <= 25:
+        if H2_MIN_LENGTH <= len(quoted_candidate) <= H2_MAX_LENGTH:
             return quoted_candidate
 
     candidates = (
@@ -85,15 +85,15 @@ def build_keyword_intent_h2(keyword: Any) -> str:
         f"{normalized} 쟁점은?",
     )
     for candidate in candidates:
-        if 10 <= len(candidate) <= 25:
+        if H2_MIN_LENGTH <= len(candidate) <= H2_MAX_LENGTH:
             return candidate
 
     fallback = f"{normalized} 쟁점"
-    if len(fallback) > 25:
-        trimmed = normalized[: max(8, 25 - len(" 쟁점"))].rstrip(" ,.:;!?")
+    if len(fallback) > H2_MAX_LENGTH:
+        trimmed = normalized[: max(8, H2_MAX_LENGTH - len(" 쟁점"))].rstrip(" ,.:;!?")
         fallback = f"{trimmed} 쟁점"
-    if len(fallback) < 10:
-        fallback = (fallback + " 분석")[:25]
+    if len(fallback) < H2_MIN_LENGTH:
+        fallback = (fallback + " 분석")[:H2_MAX_LENGTH]
     return fallback
 
 

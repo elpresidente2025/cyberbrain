@@ -10,6 +10,7 @@ LLM_CALL_TIMEOUT = 120  # 2분 타임아웃
 CONTEXT_ANALYZER_TIMEOUT = 60  # 1분 타임아웃
 
 from ..common.editorial import STRUCTURE_SPEC
+from ..common.h2_guide import H2_MAX_LENGTH, H2_MIN_LENGTH
 from ..common.section_contract import infer_sentence_role, validate_section_contract
 
 logger = logging.getLogger(__name__)
@@ -666,7 +667,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule>코드블록(```) 금지, 설명문 금지, JSON 외 텍스트 금지.</rule>\n"
             "    <rule>intro_lead: 화자 실명+직함 자기소개(예: '안녕하세요, OOO입니다.') 1문장으로 시작한 뒤 핵심 결론(1~2문장)을 이어 선언. 호격('여러분')만으로는 인삿말이 아님 — 반드시 화자가 누구인지 밝힐 것. AI 답변 엔진이 이 문단만 추출해도 답이 되어야 한다.</rule>\n"
             + lead_rule +
-            "    <rule>소제목은 10~25자의 완결된 구문이어야 합니다. 명사만 나열('A, B')하거나 서술어 없이 끊는 토막 제목은 금지. "
+            f"    <rule>소제목은 {H2_MIN_LENGTH}~{H2_MAX_LENGTH}자의 완결된 구문이어야 합니다. 명사만 나열('A, B')하거나 서술어 없이 끊는 토막 제목은 금지. "
             "\"위한/향한/만드는/통한/대한\" 관형절 수식도 금지.</rule>\n"
             "    <rule priority='critical'>본론 각 섹션의 주제(heading + lead_sentence)는 반드시 사용자 입장문(stanceText)의 핵심 주제에서 도출하십시오. "
             "프롬프트에 [화자 실적·활동 보조자료]나 참고자료가 포함되어 있더라도, 그것을 별도 본론 섹션의 주제로 삼지 마십시오. "
@@ -757,7 +758,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         is_dialectical = uses_dialectical_structure(writing_method) and body_sections >= 3
 
         body_item_properties: Dict[str, Any] = {
-            "heading": {"type": "string", "minLength": 10, "maxLength": 25},
+            "heading": {"type": "string", "minLength": H2_MIN_LENGTH, "maxLength": H2_MAX_LENGTH},
             "lead_sentence": {
                 "type": "string",
                 "description": "이 섹션의 핵심 주장·해법·결론을 첫 문장으로 직접 선언. 문제 진단·배경 설명·현황 묘사로 시작하지 말 것.",
@@ -801,7 +802,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                         "properties": body_item_properties,
                     },
                 },
-                "conclusion_heading": {"type": "string", "minLength": 10, "maxLength": 25},
+                "conclusion_heading": {"type": "string", "minLength": H2_MIN_LENGTH, "maxLength": H2_MAX_LENGTH},
             },
         }
 
@@ -892,7 +893,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule>소제목에 '[인물명]의 [형용사형 어구]' 구조를 쓰지 말 것. 예: '[인물명]의 경제 대전환'처럼 이름 뒤 소유격만 앞세우지 말고, '경제 대전환 로드맵', '경제 대전환, [인물명]의 전략'처럼 의미가 완결되게 다시 쓸 것.</rule>\n"
             "    <rule>소제목이 '명사1과 명사2, 명사3 구도'처럼 서술어 없는 명사 나열로 끝나면 질문형('~은?', '~는?') 또는 서술형('~이다', '~해야')으로 바꿀 것.</rule>\n"
             "    <rule>소제목에 조사나 술어가 어색하게 잘린 경우('확신을 길', '진짜 승' 등) 반드시 고친 뒤 출력할 것.</rule>\n"
-            "    <rule>소제목은 10~25자의 완결된 구문이어야 합니다. 명사만 나열('A, B')하거나 서술어 없이 끊는 토막 제목은 금지. "
+            f"    <rule>소제목은 {H2_MIN_LENGTH}~{H2_MAX_LENGTH}자의 완결된 구문이어야 합니다. 명사만 나열('A, B')하거나 서술어 없이 끊는 토막 제목은 금지. "
             "\"위한/향한/만드는/통한/대한\" 관형절 수식도 금지.</rule>\n"
             "    <rule priority='critical'>소제목은 서로 다른 원문 실행수단을 답해야 하며, '제도 기반을 세우겠습니다', '조례로 뒷받침하겠습니다' 같은 저정보 템플릿을 반복하지 말 것.</rule>\n"
             "    <rule>소제목에 '저는/제가/나는/내가' 같은 1인칭 표현 금지.</rule>\n"

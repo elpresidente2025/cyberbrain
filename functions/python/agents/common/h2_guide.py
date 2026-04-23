@@ -14,10 +14,10 @@ from . import korean_morph
 # 상수 (validator, normalizer, agent 공통)
 # ---------------------------------------------------------------------------
 H2_MIN_LENGTH = 10      # content_validator: 이 미만이면 H2_TEXT_SHORT
-H2_MAX_LENGTH = 25      # content_validator: 이 초과이면 H2_TEXT_LONG
+H2_MAX_LENGTH = 32      # content_validator: 이 초과이면 H2_TEXT_LONG
 H2_OPTIMAL_MIN = 12     # 프롬프트 권장 최소
-H2_OPTIMAL_MAX = 25     # 프롬프트 권장 최대
-H2_BEST_RANGE = "15~22" # 네이버 최적 범위
+H2_OPTIMAL_MAX = 30     # 프롬프트 권장 최대
+H2_BEST_RANGE = "15~28" # 네이버 최적 범위
 H2_TRUNCATION_RSTRIP_CHARS = " -_.,:;!?"
 H2_DUPLICATED_PARTICLES = (
     "으로",
@@ -546,12 +546,12 @@ def _build_aeo_examples() -> str:
   </archetype>
 
   <checklist>
-    <must>12~25자 범위 (네이버 최적 15~22자)</must>
+    <must>12~32자 범위 (네이버 최적 15~28자)</must>
     <must>핵심 키워드를 앞 1/3에 배치</must>
     <must>7 아키타입 중 하나로 본문이 답할 약속을 던질 것</must>
     <must>H2 바로 아래 첫 문장(40~60자)은 직접 답변</must>
     <must>문장 형태 다양성: 6개 H2 전체에서 쉼표(,)로 두 구를 끊어 잇는 형태(예: "X, Y합니다" / "X, Y인가요?")는 **최대 2개**. 나머지는 완결형 서술문·완결형 질문문·구두점 없는 명사구·동사종결형 등 서로 다른 형태로 분산할 것. 같은 표면형이 3개 이상 반복되면 본문 전체가 단조롭게 보인다.</must>
-    <ban>10자 미만 또는 25자 초과</ban>
+    <ban>10자 미만 또는 32자 초과</ban>
     <ban>"이것", "그것", "관련" 등 모호한 지시어</ban>
     <ban>"최고", "혁명적", "놀라운" 등 과장 표현</ban>
     <ban>키워드 없는 추상적 표현 ("노력", "열심히")</ban>
@@ -589,7 +589,7 @@ def _build_assertive_examples() -> str:
   </archetype>
 
   <checklist>
-    <must>12~25자 범위 (네이버 최적 15~22자)</must>
+    <must>12~32자 범위 (네이버 최적 15~28자)</must>
     <must>주장·이유·질문 아키타입 중 하나로 쟁점을 명시</must>
     <must>핵심 쟁점을 직접 드러내는 표현 사용</must>
     <ban>"생각해 봅시다", "함께 보시죠" 같은 완곡한 유도문</ban>
