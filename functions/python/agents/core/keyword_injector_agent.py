@@ -115,6 +115,10 @@ class KeywordInjectorAgent(Agent):
         mode: str,
         note: str = "",
     ) -> Dict[str, Any]:
+        # 모든 return path에서 max 초과 보장 — 경로별 trim 누락 방지
+        max_target = self.get_min_target(len(user_keywords)) + 1
+        content = self._trim_keyword_excess(content, user_keywords, max_target)
+
         final_keyword_result = validate_keyword_insertion(
             content,
             user_keywords,
@@ -351,7 +355,6 @@ class KeywordInjectorAgent(Agent):
             max_iterations=3,
         )
         repaired_content = str(enforcement.get('content') or current_content)
-        repaired_content = self._trim_keyword_excess(repaired_content, user_keywords, max_target)
         repaired_full_result = validate_keyword_insertion(
             repaired_content,
             user_keywords,
