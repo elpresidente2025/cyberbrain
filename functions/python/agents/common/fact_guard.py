@@ -332,21 +332,24 @@ def find_unsupported_numeric_tokens(content: str, allowlist: Dict[str, Any] = {}
         'details': results
     }
 
-async def validate_numeric_context(sentence: str, token: str, allowlist: Dict[str, Any], model_name: str = "gemini-2.5-flash"):
+async def _validate_numeric_context_batch(
+    items: List[Dict[str, str]],
+    allowlist: Dict[str, Any],
+    model_name: str = "gemini-2.5-flash",
+) -> List[Dict[str, Any]]:
+    """의심 수치 목록을 한 번의 LLM 호출로 일괄 검증."""
     from .gemini_client import generate_content_async, get_client
 
-    allowed_tokens_str = ', '.join((allowlist.get('tokens', []) or [])[:20]) or '(없음)'
-
     if not get_client():
-        return {'type': 'UNKNOWN', 'confidence': 0, 'reason': 'API Key fail'}
+        return [{'token': it['token'], 'type': 'UNKNOWN', 'confidence': 0, 'reason': 'API Key fail'} for it in items]
 
-    prompt = f"""당신은 팩트체크 전문가입니다. 문장에서 사용된 수치가 적절한지 판단하세요.
+    allowed_tokens_str = ', '.join((allowlist.get('tokens', []) or [])[:20]) or '(없음)'
+    items_text = "\n".join(
+        f'{i+1}. 수치: {it["token"]} / 문장: "{it["sentence"]}"'
+        for i, it in enumerate(items)
+    )
 
-[검증 대상 문장]
-"{sentence}"
-
-[검증 대상 수치]
-{token}
+    prompt = f"""당신은 팩트체크 전문가입니다. 아래 수치들이 각 문장에서 적절하게 사용됐는지 판단하세요.
 
 [출처에서 확인된 수치 목록]
 {allowed_tokens_str}
@@ -358,97 +361,72 @@ async def validate_numeric_context(sentence: str, token: str, allowlist: Dict[st
 4. GOAL - 미래 목표/계획 수치 (출처 없어도 허용 가능)
 5. HALLUCINATION - 출처 없는 구체적 수치 (위험)
 
-반드시 다음 JSON 형식으로만 응답:
-{{"type": "ALLOWED|DERIVED|COMMON|GOAL|HALLUCINATION", "confidence": 0.0-1.0, "reason": "판단 근거"}}"""
+[검증 대상]
+{items_text}
+
+반드시 다음 JSON 배열로만 응답 (항목 수는 검증 대상과 동일):
+[
+  {{"token": "수치", "type": "ALLOWED|DERIVED|COMMON|GOAL|HALLUCINATION", "confidence": 0.0-1.0, "reason": "판단 근거"}},
+  ...
+]"""
 
     try:
         response_text = await generate_content_async(
             prompt,
             model_name=model_name,
-            response_mime_type='application/json'
+            response_mime_type='application/json',
         )
-        # Clean markdown
         text = re.sub(r'```(?:json)?\s*([\s\S]*?)```', r'\1', response_text).strip()
         data = json.loads(text)
-        
-        # Defense: If response is a list, take the first element (common LLM hallucination in JSON format)
-        if isinstance(data, list) and len(data) > 0:
-            data = data[0]
-            
-        return data
+        if isinstance(data, dict):
+            data = [data]
+        if not isinstance(data, list):
+            raise ValueError(f"unexpected response type: {type(data)}")
+        # token 필드가 없으면 순서 기반으로 보완
+        results = []
+        for i, it in enumerate(items):
+            row = data[i] if i < len(data) else {}
+            results.append({
+                'token': it['token'],
+                'type': row.get('type', 'UNKNOWN'),
+                'confidence': row.get('confidence', 0),
+                'reason': row.get('reason', ''),
+            })
+        return results
     except Exception as e:
-        logger.warning(f"⚠️ [FactGuard] LLM 검증 실패: {e}")
-        return {'type': 'UNKNOWN', 'confidence': 0, 'reason': str(e)}
+        logger.warning(f"⚠️ [FactGuard] 배치 LLM 검증 실패: {e}")
+        return [{'token': it['token'], 'type': 'UNKNOWN', 'confidence': 0, 'reason': str(e)} for it in items]
+
 
 async def validate_with_llm(content: str, allowlist: Dict[str, Any] = {}, options: Dict[str, Any] = {}):
     model_name = options.get('modelName', "models/gemini-2.5-flash")
-    max_llm_calls = options.get('maxLLMCalls', 3)
-    
-    # 1. Rule based
+    max_tokens = options.get('maxLLMCalls', 3)
+
+    # 1. 규칙 기반
     rule_result = find_unsupported_numeric_tokens(content, allowlist, options)
-    
+
     if rule_result['passed']:
         return {**rule_result, 'llmValidated': False}
-        
-    # 2. LLM val
-    unsupported_tokens = rule_result['unsupported'][:max_llm_calls]
-    llm_results = []
-    
+
+    # 2. 배치 LLM 검증 (1회 호출)
+    sentences = re.split(r'[.!?]', content)
+    unsupported_tokens = rule_result['unsupported'][:max_tokens]
+    items = []
     for token in unsupported_tokens:
-        sentences = re.split(r'[.!?]', content)
-        relevant_sentence = next((s for s in sentences if token in s), content[:200])
-        
-        llm_res = await validate_numeric_context(relevant_sentence.strip(), token, allowlist, model_name)
-        
-        type_ = llm_res.get('type', 'UNKNOWN')
-        llm_results.append({
-            'token': token,
-            **llm_res,
-            'riskLevel': RISK_LEVELS.get(type_, 2)
-        })
+        sentence = next((s for s in sentences if token in s), content[:200])
+        items.append({'token': token, 'sentence': sentence.strip()})
+
+    batch_results = await _validate_numeric_context_batch(items, allowlist, model_name)
+
+    llm_results = []
+    for res in batch_results:
+        type_ = res.get('type', 'UNKNOWN')
+        llm_results.append({**res, 'riskLevel': RISK_LEVELS.get(type_, 2)})
         
     final_unsupported = [r['token'] for r in llm_results if r['riskLevel'] >= 3]
     warnings = [r['token'] for r in llm_results if r['riskLevel'] == 2]
-    
-    # If there are unsupported tokens NOT checked by LLM (due to maxLLMCalls), add them back as unsupported
-    # Actually logic in JS filters by riskLevel >= 3. If something wasn't checked, it remains unsupported?
-    # JS code:
-    # `unsupportedTokens` are those checked.
-    # What about those > max_calls?
-    # JS logic implies only `unsupportedTokens` (subset) are checked. The rest are ignored?
-    # Or maybe the function returns `passed` mainly based on checked ones?
-    # JS: `passed: finalUnsupported.length === 0`
-    # It effectively ignores unchecked tokens in `passed` calculation if they exceed limit.
-    # But wait, `finalUnsupported` is derived from `llmResults`.
-    # If I have 10 unsupported tokens, and check 3. If those 3 are refined to be OK, `finalUnsupported` is empty.
-    # But 7 remain unchecked.
-    # This seems like a flaw in JS or intended optimization. I'll follow JS logic.
-    
-    # Wait, `ruleBasedResult.unsupported` has ALL failures.
-    # `llmResults` has checks for first 3.
-    # If I check 3 and they are safe, `finalUnsupported` is empty.
-    # But what about the other 7?
-    # Re-reading JS:
-    # `const finalUnsupported = llmResults.filter(r => r.riskLevel >= 3).map(r => r.token);`
-    # It only considers checked ones.
-    # So if you have 10 errors, check 3, find 0 issues, you essentially pass?
-    # That sounds loose.
-    # BUT, `ruleBasedResult.unsupported` is NOT returned in the final object, only `finalUnsupported`.
-    # AND `tokens: ruleBasedResult.tokens` is returned.
-    
-    # However, if I look closely at JS `validateWithLLM`:
-    # It returns `unsupported: finalUnsupported`.
-    # So yes, it seems to "forgive" excess unchecked tokens or simply assumes they are effectively not "proven" hallucinations.
-    # Or maybe I should include unchecked ones in `finalUnsupported`?
-    # The JS implementation:
-    # `unsupportedTokens` = slice(0, 3)
-    # `llmResults` = loop over `unsupportedTokens`.
-    # `finalUnsupported` = filter `llmResults`.
-    # Returns `unsupported: finalUnsupported`.
-    
-    # So yes, unchecked tokens dropped from 'unsupported' list effectively.
-    # I will replicate this behavior even if it seems lenient.
-    
+
+
     return {
         'passed': len(final_unsupported) == 0,
         'tokens': rule_result['tokens'],
