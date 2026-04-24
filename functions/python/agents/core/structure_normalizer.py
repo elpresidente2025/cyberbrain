@@ -622,7 +622,7 @@ def normalize_section_length(content: str, min_chars: int = 200, max_chars: int 
             if idx > 0:
                 donor_ps = _get_p_blocks(sections[idx - 1]["html"])
                 donor_len = _plain_len(sections[idx - 1]["html"])
-                if donor_len > min_chars and len(donor_ps) >= 3:
+                if donor_len > min_chars and len(donor_ps) >= 4:
                     last_p = donor_ps[-1]
                     donor_after = donor_len - _plain_len(last_p)
                     if donor_after >= min_chars:
@@ -638,7 +638,7 @@ def normalize_section_length(content: str, min_chars: int = 200, max_chars: int 
             if idx < len(sections) - 1:
                 donor_ps = _get_p_blocks(sections[idx + 1]["html"])
                 donor_len = _plain_len(sections[idx + 1]["html"])
-                if donor_len > min_chars and len(donor_ps) >= 3:
+                if donor_len > min_chars and len(donor_ps) >= 4:
                     first_p = donor_ps[0]
                     donor_after = donor_len - _plain_len(first_p)
                     if donor_after >= min_chars:
