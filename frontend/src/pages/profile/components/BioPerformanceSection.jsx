@@ -143,10 +143,11 @@ const BioPerformanceSection = ({
                                             control={
                                                 <Checkbox
                                                     size="small"
+                                                    color="default"
                                                     checked={entry.isOngoing !== false}
                                                     onChange={(e) => handleOngoingChange(index, e.target.checked)}
                                                     disabled={disabled}
-                                                    sx={{ py: 0, color: 'text.secondary', '&.Mui-checked': { color: 'primary.main' } }}
+                                                    sx={{ py: 0 }}
                                                 />
                                             }
                                             label={
