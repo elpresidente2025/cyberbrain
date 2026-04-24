@@ -11,7 +11,7 @@
 - agents/common/h2_guide.py (has_incomplete_h2_ending)
 - agents/common/h2_scoring.py (_has_question_form, 명사구 hard-fail)
 - agents/core/structure_normalizer.py (_split_sentences Kiwi 우선 전환)
-- agents/core/editor_agent.py (apply_hard_constraints 치환 후 문법 검증 + 문장 레벨 비문 스캔 + AI 수사 라벨링)
+- agents/core/editor_agent.py (apply_hard_constraints 치환 후 문법 검증 + 문장 레벨 비문 스캔 + AI 수사 라벨링 + correct_postpositions)
 - agents/common/title_hook_quality.py (_is_body_exclusive — tokens_share_stem/extract_nouns)
 - (확장 가능) stylometry/features/ 등
 """
@@ -423,6 +423,114 @@ def check_post_substitution_grammar(
         "has_duplicate_particle": len(dup) > 0,
         "is_incomplete": bool(inc),
     }
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 조사 이형태 자동 교정
+# ──────────────────────────────────────────────────────────────────────
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+# (받침 있을 때, 받침 없을 때) 쌍. tag 필터로 품사 혼동 방지.
+_JOSA_PAIRS: Dict[str, Tuple[str, str]] = {
+    "이": ("이", "가"),    # JKS
+    "가": ("이", "가"),
+    "을": ("을", "를"),    # JKO
+    "를": ("을", "를"),
+    "은": ("은", "는"),    # JX
+    "는": ("은", "는"),
+    "으로": ("으로", "로"), # JKB — ㄹ 받침 예외는 아래에서 별도 처리
+    "로": ("으로", "로"),
+    "과": ("과", "와"),    # JC
+    "와": ("과", "와"),
+    "이나": ("이나", "나"), # JX
+    "나": ("이나", "나"),
+    "이랑": ("이랑", "랑"), # JX
+    "랑": ("이랑", "랑"),
+}
+_JOSA_CORRECTION_TAGS = frozenset({"JKS", "JKO", "JKB", "JX", "JC"})
+
+
+def _has_batchim(char: str) -> bool:
+    if not char:
+        return False
+    code = ord(char)
+    if not (0xAC00 <= code <= 0xD7A3):
+        return False
+    return (code - 0xAC00) % 28 != 0
+
+
+def _ends_in_rieul(char: str) -> bool:
+    """ㄹ 받침 여부 — 으로/로 이형태 결정에 사용."""
+    if not char:
+        return False
+    code = ord(char)
+    if not (0xAC00 <= code <= 0xD7A3):
+        return False
+    return (code - 0xAC00) % 28 == 8
+
+
+def _correct_postpositions_plain(text: str) -> str:
+    """HTML 태그 없는 순수 텍스트 청크의 조사 이형태를 교정한다."""
+    if not text.strip():
+        return text
+    tokens = tokenize(text)
+    if not tokens:
+        return text
+
+    replacements: List[Tuple[int, int, str]] = []
+    for tok in tokens:
+        if tok.tag not in _JOSA_CORRECTION_TAGS:
+            continue
+        pair = _JOSA_PAIRS.get(tok.form)
+        if pair is None:
+            continue
+        start: int = tok.start
+        if start == 0:
+            continue
+        prev_char = text[start - 1]
+        has_bc = _has_batchim(prev_char)
+        ends_rl = _ends_in_rieul(prev_char)
+
+        if tok.form in ("으로", "로"):
+            correct = "로" if (not has_bc or ends_rl) else "으로"
+        else:
+            correct = pair[0] if has_bc else pair[1]
+
+        if tok.form != correct:
+            end = start + len(tok.form)
+            replacements.append((start, end, correct))
+
+    if not replacements:
+        return text
+
+    result = list(text)
+    for start, end, new_form in sorted(replacements, key=lambda x: x[0], reverse=True):
+        result[start:end] = list(new_form)
+    return "".join(result)
+
+
+def correct_postpositions(text: str) -> str:
+    """생성 텍스트의 조사 이형태 오류를 교정한다.
+
+    HTML 태그는 건드리지 않고 텍스트 노드만 처리한다.
+    Kiwi 불가 환경에서는 원본을 그대로 반환한다.
+    """
+    if get_kiwi() is None:
+        return text
+    if not text:
+        return text
+
+    chunks = _HTML_TAG_RE.split(text)
+    tags = _HTML_TAG_RE.findall(text)
+    corrected = [_correct_postpositions_plain(c) for c in chunks]
+
+    result: List[str] = []
+    for i, chunk in enumerate(corrected):
+        result.append(chunk)
+        if i < len(tags):
+            result.append(tags[i])
+    return "".join(result)
 
 
 # ──────────────────────────────────────────────────────────────────────

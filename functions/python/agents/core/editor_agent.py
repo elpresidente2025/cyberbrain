@@ -142,6 +142,12 @@ class EditorAgent(Agent):
                 previous_summary=edit_summary
             )
 
+            # 2.1. 조사 이형태 교정 (Kiwi, best-effort)
+            _pre_josa = constrained['content']
+            constrained['content'] = korean_morph.correct_postpositions(constrained['content'])
+            if constrained['content'] != _pre_josa:
+                print("[EditorAgent] Step 2.1 조사 이형태 교정 적용")
+
             # 3.7. "저는" 문두 비율 검증 (LLM 교정 결과 확인)
             _fp_re = re.compile(r'저는\s')
             _fp_plain = re.sub(r'<[^>]+>', ' ', constrained['content'])
