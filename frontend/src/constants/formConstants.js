@@ -31,6 +31,7 @@ export const CATEGORIES = [
     label: '정책 및 비전',
     description: '자신의 정치적 비전과 핵심 정책을 주민들께 알기 쉽게 설명합니다.',
     subCategories: [
+      { value: 'campaign_declaration', label: '출마선언 및 지지 호소', writingMethod: 'campaign_declaration', needsAudienceStance: false },
       { value: 'policy_pledge_announcement', label: '정책/공약 발표', writingMethod: 'logical_writing', needsAudienceStance: false },
       { value: 'vision_philosophy_declaration', label: '비전과 철학 선언', writingMethod: 'direct_writing', needsAudienceStance: false },
     ],

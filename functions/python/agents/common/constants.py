@@ -36,7 +36,8 @@ CATEGORY_TO_WRITING_METHOD = {
 # 하위 카테고리 → 작법(writingMethod) 매핑
 SUBCATEGORY_TO_WRITING_METHOD = {
     'current_affairs_diagnosis': 'diagnostic_writing',
-    'policy_explanation': 'logical_writing'
+    'policy_explanation': 'logical_writing',
+    'campaign_declaration': 'campaign_declaration',
 }
 
 def resolve_writing_method(category: str, sub_category: Optional[str] = None) -> str:

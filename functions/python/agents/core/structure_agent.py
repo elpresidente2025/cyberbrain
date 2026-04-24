@@ -658,9 +658,26 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                 '  </available_anchors>\n'
             )
 
+        # 출마선언 전용 구조 블록
+        is_campaign_declaration = (writing_method == 'campaign_declaration')
+
         # 변증법 매크로 구조 블록 (논증·설득형 writing method만)
         argument_structure_block = ''
-        if is_execution_plan:
+        if is_campaign_declaration:
+            argument_structure_block = (
+                '  <campaign_structure priority="critical">\n'
+                '    <overview>이 원고는 출마선언/지지 호소 글입니다. '
+                '본론은 화자의 bio 공약·정책 항목을 섹션별로 배분하는 구조여야 합니다.</overview>\n'
+                '    <section order="1" role="self_introduction">화자는 누구이며 왜 출마했는지를 선언하십시오. '
+                '이름, 직함, 지역, 출마 동기를 담되 공약 소개는 하지 마십시오.</section>\n'
+                '    <section order="2+" role="policy_pledge">프로필의 공약/정책 bio 항목을 주제별로 나누어 '
+                '섹션당 1개씩 배정하십시오. 섹션 제목에 해당 공약의 핵심 키워드와 구체 수치·앵커를 담으십시오.</section>\n'
+                '    <section order="last" role="call_to_action">마지막 섹션은 지지 호소로 마무리하십시오. '
+                '"기회를 주십시오", "함께 만들겠습니다" 형태의 직접 호소로 끝냅니다.</section>\n'
+                '    <rule>bio 공약 항목이 없으면 입장문에서 공약을 추출하여 섹션 소재로 사용하십시오.</rule>\n'
+                '  </campaign_structure>\n'
+            )
+        elif is_execution_plan:
             argument_structure_block = (
                 '  <implementation_structure priority="critical">\n'
                 '    <overview>context_injection의 execution_plan이 감지되었습니다. '
