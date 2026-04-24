@@ -45,6 +45,7 @@ INFO_GAP_PATTERNS: List[Pattern[str]] = [
     re.compile(r'(?:^|[\s,])어떻게\s'),                       # 어떻게 질문
     re.compile(r'(?:^|[\s,])(?:무엇이|무엇을|얼마(?:나|까지)|'
                r'어디서?|언제|어느)'),                        # 기타 의문사
+    re.compile(r'(?:^|[\s,])어떤\s'),                         # 영향형: "어떤 변화가", "어떤 영향이"
     re.compile(r'(이유|비결|비책|속내|답은|선택은|판단은|한\s*수|'
                r'이정표|전환점)\s*$'),                        # 미완결 명사 마무리
     re.compile(r'(그\s*이유|그\s*속내|그\s*답|그\s*선택)'),  # 지시어 미완결
@@ -67,6 +68,34 @@ NARRATIVE_ARC_PATTERNS: List[Pattern[str]] = [
     re.compile(r'(\d+(?:년|월|일|주년|분기|개월))\s*만에'),   # "12개월 만에"
     re.compile(r'(\d+(?:억|만원|%|명|건|가구|곳))\s*(증가|감소|개선|확대|절감|확보|달성)'),
 ]
+
+
+# ---------------------------------------------------------------------------
+# POLITICAL SAFETY — 정치 콘텐츠에서 금지해야 할 상업형/음모론형 패턴
+# ---------------------------------------------------------------------------
+#
+# HIGH_RISK: 충격·폭로·음모론형 — 정치 콘텐츠 신뢰 파괴 및 선거 리스크.
+#   매칭 시 assess_title_hook_quality() 에서 -5 감점.
+# CAUTION: 공포 유발형 조건문 — 단독으로는 큰 문제가 없으나 맥락에 따라 위험.
+#   매칭 시 -2 감점.
+# 범용성 원칙: 정당·인물·지역 하드코드 없음. 표현 패턴만.
+
+POLITICAL_HIGH_RISK_PATTERNS: List[Pattern[str]] = [
+    re.compile(r'충격[!！]?|경악|소름|발칵'),
+    re.compile(r'망합니다|끝장|폭망|대참사'),
+    re.compile(r'숨겨진\s*진실|아무도\s*말하지\s*않는|진짜\s*속내|진짜\s*진실'),
+    re.compile(r'상대(?:는|가).{0,10}(?:숨기|감추|외면|말하지\s*않)'),
+]
+
+POLITICAL_CAUTION_PATTERNS: List[Pattern[str]] = [
+    re.compile(r'절대\s*(?:모르면|놓치면|하면\s*안\s*되는)'),
+    re.compile(r'반드시\s*(?:알아야|봐야|해야\s*하는)'),
+]
+
+POLITICAL_RISK_PENALTY: Dict[str, int] = {
+    'high': 5,
+    'caution': 2,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -650,6 +679,24 @@ def assess_title_hook_quality(
         features.append('본문재활용희박')
     total = max(0, total - body_reuse_penalty)
 
+    # political_risk — 상업형/음모론형 표현 감점
+    political_risk_level = None
+    political_risk_penalty = 0
+    for pat in POLITICAL_HIGH_RISK_PATTERNS:
+        if pat.search(clean_title):
+            political_risk_level = 'high'
+            political_risk_penalty = POLITICAL_RISK_PENALTY['high']
+            features.append('political_high_risk')
+            break
+    if not political_risk_level:
+        for pat in POLITICAL_CAUTION_PATTERNS:
+            if pat.search(clean_title):
+                political_risk_level = 'caution'
+                political_risk_penalty = POLITICAL_RISK_PENALTY['caution']
+                features.append('political_caution')
+                break
+    total = max(0, total - political_risk_penalty)
+
     if total >= 9:
         status = 'strong'
     elif total >= 5:
@@ -690,6 +737,8 @@ def assess_title_hook_quality(
             },
         },
         'body_reuse_penalty': body_reuse_penalty,
+        'political_risk_level': political_risk_level,
+        'political_risk_penalty': political_risk_penalty,
         'features': features,
         'missed_opportunities': missed,
         'opportunities': opportunities or {},
@@ -962,6 +1011,30 @@ def render_hook_rubric_block() -> str:
         f'  <dimension id="answer_anchor" max="{HOOK_DIMENSION_MAX["answer_anchor"]}">'
         'AEO 답변 앵커 — 위 required_answer_anchors 참조. 신호 1개당 +1.</dimension>\n'
         '  <pass_gate>status=flat → 실격. 반드시 ok(&gt;=5/15) 이상.</pass_gate>\n'
+        '  <hook_selection_tracks priority="high">\n'
+        '    <principle>제목은 먼저 답변 가능성을 확보하고, 그다음 독자 관심을 유도한다. '
+        '정치 콘텐츠에서는 상업형 후킹을 쓰지 않는다.</principle>\n'
+        '    <track type="aeo_priority" maps_to="QUESTION_ANSWER|DATA_BASED|COMPARISON"\n'
+        '           when="본문에 수치·정책명·기관명·비교 재료가 있을 때">\n'
+        '      <rule>구체 재료를 제목에 최소 1개 이상 반영한다.</rule>\n'
+        '      <rule>왜/어떻게/어떤 변화가/무엇이 달라지나 중 하나의 답변 구조를 만든다.</rule>\n'
+        '      <good>[정책명], 왜 지금 필요한지 설명드립니다</good>\n'
+        '      <good>[이슈], 주민 생활에 어떤 변화가 생기나</good>\n'
+        '      <good>[지표] [이전값]→[현재값], 무엇이 달라졌나</good>\n'
+        '    </track>\n'
+        '    <track type="engagement_first" maps_to="VIRAL_HOOK|ISSUE_ANALYSIS"\n'
+        '           when="서사·현장 중심이고 수치 재료가 희박할 때">\n'
+        '      <rule>폭로·공포·상대 공격 없이 문제의식과 대안을 연결한다.</rule>\n'
+        '      <good>현장에서 확인한 [이슈], 대안은 무엇인가</good>\n'
+        '      <good>[이슈], 왜 지금 주목해야 하나</good>\n'
+        '      <acceptable>주민 여러분이 가장 자주 말씀하신 문제부터 살펴보겠습니다</acceptable>\n'
+        '    </track>\n'
+        '    <banned reason="정치 콘텐츠 신뢰 파괴·선거 리스크 — scorer에서 political_high_risk 감점">\n'
+        '      <bad>충격! [이슈]의 숨겨진 진실</bad>\n'
+        '      <bad>이 정책 모르면 주민들이 손해봅니다</bad>\n'
+        '      <bad>상대가 절대 말하지 않는 비밀</bad>\n'
+        '    </banned>\n'
+        '  </hook_selection_tracks>\n'
         '</hook_quality_rubric>\n'
     )
 
@@ -971,6 +1044,9 @@ __all__ = [
     'HOOK_TOTAL_MAX',
     'INFO_GAP_PATTERNS',
     'NARRATIVE_ARC_PATTERNS',
+    'POLITICAL_HIGH_RISK_PATTERNS',
+    'POLITICAL_CAUTION_PATTERNS',
+    'POLITICAL_RISK_PENALTY',
     'assess_title_hook_quality',
     'compute_slot_preferences',
     'count_slots_used_in_title',

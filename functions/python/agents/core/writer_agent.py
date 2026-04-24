@@ -175,6 +175,29 @@ def _should_keep_must_include_stance(candidate: Any, author_name: Any = "") -> b
         return False
     return True
 
+
+def _build_opening_hook_policy_block() -> str:
+    """정치 안전형 첫 문단 후킹 정책 XML 블록.
+
+    main template 앞에 주입해서 LLM 이 "이 제약 안에서 템플릿을 실행한다"는
+    상위 원칙으로 읽도록 한다. 지역명·인물명 하드코드 없음.
+    """
+    return (
+        '<opening-hook-policy priority="high">\n'
+        '  <principle>첫 문단은 과장·폭로·공포가 아니라 주민 생활과 연결되는 문제의식으로 시작한다.</principle>\n'
+        '  <banned>충격, 경악, 망합니다, 진실, 비밀, 아무도 말하지 않는, 상대가 숨기는</banned>\n'
+        '  <track type="aeo_first" when="본문에 정책명·수치·비교 재료가 있을 때">\n'
+        '    <example>[정책명]이 주민 생활에 어떤 변화를 가져오는지 차분히 설명드립니다.</example>\n'
+        '    <example>이번 사안은 [이슈]와 직접 연결되어 있어 구체적으로 살펴볼 필요가 있습니다.</example>\n'
+        '  </track>\n'
+        '  <track type="engagement_first" when="현장·서사·주민 불편 중심일 때">\n'
+        '    <example>주민 여러분이 반복해서 말씀하신 불편부터 살펴보겠습니다.</example>\n'
+        '    <example>현장의 목소리를 바탕으로 개선 방향을 정리했습니다.</example>\n'
+        '  </track>\n'
+        '</opening-hook-policy>'
+    )
+
+
 class WriterAgent:
     def __init__(self):
         from ..common.gemini_client import get_client, DEFAULT_MODEL
@@ -475,7 +498,10 @@ class WriterAgent:
             prompt_sections.append(build_reference_section(instructions, news_context))
             prompt_sections.append(build_style_guide_section(style_prompt, author_name, target_word_count))
             prompt_sections.append(build_writing_rules_section(author_name, target_word_count))
-            
+
+        # 6.7.7 Opening Hook Policy (정치 안전형 첫 문단 가이드 — main template 앞에 두어 상위 원칙으로 작동)
+        prompt_sections.append(_build_opening_hook_policy_block())
+
         # Main Prompt
         prompt_sections.append(prompt)
         
