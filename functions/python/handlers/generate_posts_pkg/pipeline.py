@@ -1239,7 +1239,8 @@ async def _terminal_p_count_repair_async(
     title: str,
     model_name: str,
 ) -> str:
-    """2문단 섹션에 LLM이 생성한 3번째 문단을 삽입한다. 실패 시 원본 반환."""
+    """2문단 섹션을 3문단으로 복구한다.
+    1차: LLM 문단 추가. 2차: LLM 섹션 전체 재작성. 양쪽 실패 시 원본 유지."""
     from agents.common.gemini_client import generate_json_async
 
     sections = _split_into_sections(str(content or ""))
@@ -1248,13 +1249,16 @@ async def _terminal_p_count_repair_async(
     def _plain(html_str: str) -> str:
         return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html_str or "")).strip()
 
-    for section in sections:
+    for section_index, section in enumerate(sections, start=1):
         section_html = str(section.get("html") or "")
         p_blocks = re.findall(r"<p\b[^>]*>[\s\S]*?</p\s*>", section_html, re.IGNORECASE)
         if len(p_blocks) == 0 or len(p_blocks) >= 3:
             continue
         h2_text = str(section.get("h2_text") or "").strip()
         existing_text = "\n".join(f"[문단{i+1}] {_plain(p)}" for i, p in enumerate(p_blocks))
+        section_repaired = False
+
+        # 1차 시도: 부족한 문단 1개 추가
         prompt = (
             "<task>아래 섹션에 마지막 문단 한 개를 추가하십시오.</task>\n"
             f"<topic>{topic}</topic>\n"
@@ -1284,11 +1288,104 @@ async def _terminal_p_count_repair_async(
                 required_keys=("paragraph",),
             )
             new_p_text = re.sub(r"\s+", " ", str(result.get("paragraph") or "")).strip()
-            if new_p_text and len(new_p_text) >= 40:
+            if not new_p_text:
+                logger.warning(
+                    "terminal_p_count_repair empty response: section=%s heading=%r",
+                    section_index,
+                    h2_text,
+                )
+            elif len(new_p_text) < 40:
+                logger.warning(
+                    "terminal_p_count_repair short response: section=%s heading=%r len=%s text=%r",
+                    section_index,
+                    h2_text,
+                    len(new_p_text),
+                    new_p_text[:120],
+                )
+            else:
                 section["html"] = section_html.rstrip() + f"\n<p>{new_p_text}</p>"
                 changed = True
-        except Exception:
-            pass
+                section_repaired = True
+        except Exception as _sec_err:
+            logger.warning(
+                "terminal_p_count_repair 1차 failed: section=%s heading=%r actual=%s error=%s",
+                section_index,
+                h2_text,
+                len(p_blocks),
+                _sec_err,
+                exc_info=True,
+            )
+
+        if section_repaired:
+            continue
+
+        # 2차 시도: 섹션 전체 3문단 재작성
+        fallback_prompt = (
+            "<task>아래 섹션을 3개 문단으로 재작성하십시오.</task>\n"
+            f"<topic>{topic}</topic>\n"
+            f"<section_heading>{h2_text}</section_heading>\n"
+            f"<existing_content>{existing_text}</existing_content>\n"
+            "<requirements>\n"
+            "- 기존 내용의 핵심 사실을 유지하면서 3개 문단으로 재구성\n"
+            "- 각 문단: 3문장 이상, 80자 이상\n"
+            "- 추상 umbrella 어휘 금지\n"
+            "- 응답: {\"paragraphs\": [\"문단1\", \"문단2\", \"문단3\"]} JSON 1개만\n"
+            "</requirements>"
+        )
+        fallback_schema = {
+            "type": "object",
+            "required": ["paragraphs"],
+            "properties": {
+                "paragraphs": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 40},
+                    "minItems": 3,
+                }
+            },
+        }
+        try:
+            fallback_result = await generate_json_async(
+                fallback_prompt,
+                model_name=model_name,
+                temperature=0.5,
+                max_output_tokens=1024,
+                retries=1,
+                response_schema=fallback_schema,
+                required_keys=("paragraphs",),
+            )
+            paragraphs = [
+                re.sub(r"\s+", " ", str(p)).strip()
+                for p in (fallback_result.get("paragraphs") or [])
+                if str(p).strip()
+            ]
+            valid_paragraphs = [p for p in paragraphs if len(p) >= 40]
+            if len(valid_paragraphs) >= 3:
+                h2_match = re.match(r"(<h2[^>]*>[\s\S]*?</h2>)", section_html, re.IGNORECASE)
+                h2_tag = h2_match.group(1) if h2_match else f"<h2>{h2_text}</h2>"
+                p_tags = "\n".join(f"<p>{p}</p>" for p in valid_paragraphs[:3])
+                section["html"] = f"{h2_tag}\n{p_tags}"
+                changed = True
+                section_repaired = True
+                logger.info(
+                    "terminal_p_count_repair 2차 rewrite applied: section=%s heading=%r",
+                    section_index,
+                    h2_text,
+                )
+            else:
+                logger.warning(
+                    "terminal_p_count_repair 2차 insufficient: section=%s heading=%r got=%s",
+                    section_index,
+                    h2_text,
+                    len(valid_paragraphs),
+                )
+        except Exception as _fallback_err:
+            logger.warning(
+                "terminal_p_count_repair 2차 failed: section=%s heading=%r error=%s",
+                section_index,
+                h2_text,
+                _fallback_err,
+                exc_info=True,
+            )
 
     if not changed:
         return content
