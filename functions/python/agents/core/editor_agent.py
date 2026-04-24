@@ -142,41 +142,6 @@ class EditorAgent(Agent):
                 previous_summary=edit_summary
             )
 
-            # 3.6. Deterministic progressive overuse fix
-            # "하고 있습니다" 초과분을 Kiwi 기반으로 기계적 치환
-            _step36_plain = re.sub(r'<[^>]+>', ' ', constrained['content'])
-            _step36_plain = re.sub(r'\s+', ' ', _step36_plain).strip()
-            _prog_info = korean_morph.find_progressive_overuse_kiwi(_step36_plain)
-            if _prog_info is not None and _prog_info.get("fixable"):
-                _prog_fixed = 0
-                _prog_content = constrained['content']
-                _hada_map = korean_morph.HADA_PROGRESSIVE_MAP
-                # 뒤에서부터 치환 (앞부분 문맥 보존)
-                for item in reversed(_prog_info["fixable"]):
-                    ending = item["ending_form"]
-                    replacement = _hada_map.get(ending)
-                    if not replacement:
-                        continue
-                    # HTML 태그를 허용하는 패턴 (속격 복원과 동일 전략)
-                    pattern = r'하고\s*(?:<[^>]*>\s*)*있' + re.escape(ending)
-                    new_content = re.sub(pattern, replacement, _prog_content, count=1)
-                    if new_content != _prog_content:
-                        _prog_content = new_content
-                        _prog_fixed += 1
-                if _prog_fixed > 0:
-                    constrained['content'] = _prog_content
-                    constrained['editSummary'].append(
-                        f"진행형 '하고 있다' {_prog_fixed}건 → 현재형 강제 변환"
-                        f" (전체 {_prog_info['total']}건 중 {_prog_info['total'] - len(_prog_info['fixable'])}건 유지)"
-                    )
-                print(
-                    f"[EditorAgent] Step 3.6 progressive: total={_prog_info['total']}, "
-                    f"fixable={len(_prog_info['fixable'])}, fixed={_prog_fixed}"
-                )
-            else:
-                _prog_total = _prog_info["total"] if _prog_info else 0
-                print(f"[EditorAgent] Step 3.6 progressive: total={_prog_total}, fixable=0")
-
             # 3.7. "저는" 문두 비율 검증 (LLM 교정 결과 확인)
             _fp_re = re.compile(r'저는\s')
             _fp_plain = re.sub(r'<[^>]+>', ' ', constrained['content'])
@@ -218,69 +183,6 @@ class EditorAgent(Agent):
                     constrained['editSummary'].append(
                         f"AI 수사 잔존 — {', '.join(_ai_warnings)}"
                     )
-
-            # 3.8. "테크노밸리" → "TV" 약어 분산
-            # 트리거 1: 사용자 키워드에 "테크노밸리" 포함 & SEO 허용치 초과 → 초과분 TV
-            # 트리거 2: 제목에 "테크노밸리" 포함 → 본문 5:5 비율로 TV 교체
-            _tv_content = constrained['content']
-            _tv_title = constrained.get('title', '')
-            _TV_KEYWORD = "테크노밸리"
-            _TV_ABBR = "TV"
-            _TV_MAX_SEO = 6  # SEO 허용 최대 등장 횟수
-
-            # 본문 plain text 에서 "테크노밸리" 횟수 측정 (제목 제외)
-            _tv_plain = re.sub(r'<[^>]+>', ' ', _tv_content)
-            _tv_plain = re.sub(r'\s+', ' ', _tv_plain).strip()
-            _tv_body_count = len(re.findall(re.escape(_TV_KEYWORD), _tv_plain))
-
-            # 키워드에 "테크노밸리" 가 포함된 키워드 찾기
-            _tv_kw_match = [kw for kw in (user_keywords or []) if _TV_KEYWORD in str(kw)]
-            _tv_in_title = _TV_KEYWORD in _tv_title
-
-            print(f"[EditorAgent] Step 3.8 TV: body_count={_tv_body_count}, kw_match={_tv_kw_match}, in_title={_tv_in_title}")
-            _tv_target_count = 0  # TV 로 바꿀 횟수
-            if _tv_kw_match and _tv_body_count > _TV_MAX_SEO:
-                # 트리거 1: SEO 초과분 전부 TV
-                _tv_target_count = _tv_body_count - _TV_MAX_SEO
-            elif _tv_in_title and _tv_body_count >= 4:
-                # 트리거 2: 제목에 있으면 본문 절반을 TV
-                _tv_target_count = _tv_body_count // 2
-
-            if _tv_target_count > 0:
-                # H2 제외 후 치환 가능한 위치 수집
-                _tv_matches = list(re.finditer(re.escape(_TV_KEYWORD), _tv_content))
-                _tv_eligible = []
-                for m in _tv_matches:
-                    before = _tv_content[:m.start()]
-                    if re.search(r'<h2[^>]*>[^<]*$', before):
-                        continue
-                    _tv_eligible.append(m)
-
-                # 균등 분산: eligible 중 등간격으로 target_count 개 선택
-                _tv_replaced = 0
-                n = len(_tv_eligible)
-                if n > 0 and _tv_target_count > 0:
-                    if _tv_target_count >= n:
-                        to_replace = set(range(n))
-                    else:
-                        # 간격을 두고 분산 선택 (0번째는 보존, 1번째부터 시작)
-                        step = n / (_tv_target_count + 1)
-                        to_replace = set()
-                        for k in range(1, _tv_target_count + 1):
-                            idx = min(int(k * step), n - 1)
-                            to_replace.add(idx)
-
-                    # 뒤에서부터 치환 (offset 보존)
-                    for idx in sorted(to_replace, reverse=True):
-                        m = _tv_eligible[idx]
-                        _tv_content = _tv_content[:m.start()] + _TV_ABBR + _tv_content[m.end():]
-                        _tv_replaced += 1
-                if _tv_replaced > 0:
-                    constrained['content'] = _tv_content
-                    constrained['editSummary'].append(
-                        f"'테크노밸리' → 'TV' {_tv_replaced}건 약어 분산 (본문 {_tv_body_count}회 중)"
-                    )
-            print(f"[EditorAgent] Step 3.8 TV 결과: target={_tv_target_count}, replaced={_tv_replaced if _tv_target_count > 0 else 0}")
 
             # 3.9. 소스에 없는 허구 수치가 포함된 문장 삭제
             # <p> 블록 전체 삭제 대신 문장 단위로 drop 하여 섹션 문단 수 계약을 보존한다.
