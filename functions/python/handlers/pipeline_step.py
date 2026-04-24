@@ -99,6 +99,9 @@ def handle_step(req: https_fn.Request) -> https_fn.Response:
                 return _json_response({"success": True, "status": "completed"}, 200)
 
             agent_name = step_info["name"]
+            context = job_data.get("context") or {}
+            job_manager.save_checkpoint(job_id, step_index, context)
+
             job_manager.update_step_status(
                 job_id,
                 step_index,
@@ -106,7 +109,6 @@ def handle_step(req: https_fn.Request) -> https_fn.Response:
                 startedAt=datetime.utcnow(),
             )
 
-            context = job_data.get("context") or {}
             set_request_context(
                 job_id=job_id,
                 uid=str(context.get("uid") or ""),

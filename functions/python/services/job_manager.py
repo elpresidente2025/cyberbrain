@@ -148,6 +148,7 @@ class JobManager:
             "lockedAt": None
         })
         logger.info(f"Job {job_id} completed")
+        self.delete_checkpoints(job_id)
     
     def fail_job(self, job_id: str, error: Dict[str, Any]):
         """Job 실패 처리"""
@@ -178,6 +179,53 @@ class JobManager:
         }
         return pipelines.get(pipeline, pipelines["modular"])
     
+    def save_checkpoint(self, job_id: str, step_index: int, context: Dict[str, Any]) -> bool:
+        """Step 실행 직전 context를 Firestore 서브컬렉션에 저장한다. Firestore가 datetime 타입을 보존한다."""
+        try:
+            self.db.collection(COLLECTION).document(job_id)\
+                .collection("checkpoints").document(str(step_index)).set({
+                    "context": context,
+                    "step": step_index,
+                    "savedAt": datetime.utcnow(),
+                })
+            logger.info("Checkpoint saved: job=%s step=%s", job_id, step_index)
+            return True
+        except Exception as exc:
+            logger.warning("Checkpoint save failed (non-fatal): job=%s step=%s error=%s", job_id, step_index, exc)
+            return False
+
+    def restore_checkpoint(self, job_id: str, step_index: int) -> Optional[Dict[str, Any]]:
+        """step_index 직전 서브컬렉션 스냅샷을 로드하여 반환한다. 없거나 실패하면 None."""
+        try:
+            doc = self.db.collection(COLLECTION).document(job_id)\
+                .collection("checkpoints").document(str(step_index)).get()
+            if not doc.exists:
+                logger.warning("No checkpoint for job=%s step=%s", job_id, step_index)
+                return None
+            context = doc.to_dict().get("context")
+            logger.info("Checkpoint restored: job=%s step=%s", job_id, step_index)
+            return context
+        except Exception as exc:
+            logger.warning("Checkpoint restore failed: job=%s step=%s error=%s", job_id, step_index, exc)
+            return None
+
+    def delete_checkpoints(self, job_id: str) -> int:
+        """job 완료 후 서브컬렉션 checkpoint 문서들을 정리한다. 실패해도 무시."""
+        count = 0
+        try:
+            checkpoints_ref = self.db.collection(COLLECTION).document(job_id)\
+                .collection("checkpoints")
+            for doc_ref in checkpoints_ref.list_documents():
+                try:
+                    doc_ref.delete()
+                    count += 1
+                except Exception:
+                    pass
+            logger.info("Deleted %d checkpoints for job %s", count, job_id)
+        except Exception as exc:
+            logger.warning("Checkpoint cleanup failed (non-fatal): job=%s error=%s", job_id, exc)
+        return count
+
     def _create_initial_context(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """초기 context 생성"""
         user_profile = input_data.get("userProfile", {})

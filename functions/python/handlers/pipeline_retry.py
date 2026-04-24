@@ -97,7 +97,15 @@ def handle_retry(req: https_fn.Request) -> https_fn.Response:
             )
         
         logger.info(f"Retrying job {job_id} from step {retry_from_step}")
-        
+
+        # checkpoint rollback (best-effort)
+        restored_context = job_manager.restore_checkpoint(job_id, retry_from_step)
+        if restored_context is None:
+            logger.warning(
+                "No checkpoint for job=%s step=%s; retrying with current context",
+                job_id, retry_from_step,
+            )
+
         # Job 상태 리셋
         # 실패한 단계와 그 이후 단계들을 pending으로 초기화
         steps = job_data["steps"]
@@ -108,17 +116,21 @@ def handle_retry(req: https_fn.Request) -> https_fn.Response:
                 steps[step_key]["duration"] = None
                 steps[step_key]["startedAt"] = None
                 steps[step_key]["completedAt"] = None
-        
-        # Firestore 업데이트
-        job_manager.db.collection("pipeline_jobs").document(job_id).update({
+
+        # Firestore 업데이트 (context rollback 포함)
+        update_payload = {
             "status": "running",
             "currentStep": retry_from_step,
             "steps": steps,
             "error": None,
             "updatedAt": datetime.utcnow(),
             "lockedBy": None,
-            "lockedAt": None
-        })
+            "lockedAt": None,
+        }
+        if restored_context is not None:
+            update_payload["context"] = restored_context
+
+        job_manager.db.collection("pipeline_jobs").document(job_id).update(update_payload)
         
         # 단계 트리거
         task_name = create_step_task(job_id, retry_from_step)
