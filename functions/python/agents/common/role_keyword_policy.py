@@ -24,6 +24,20 @@ ROLE_SURFACE_PATTERN = (
     r"|구청장|군수|교육감|국회의원|의원|대표|당대표|원내대표|위원장|장관|후보"
     r")"
 )
+# ROLE_SURFACE_PATTERN 의 candidate-role 전용 확장판. 단독 "시장|도지사" 도
+# 매치해 "아무개 시장후보" 같은 표현을 잡는다. ROLE_SURFACE_PATTERN 에 바로
+# "시장|도지사" 를 추가하면 PERSON_ROLE_FACT_PATTERN 등에서 "재래 시장에서"
+# 같은 문구가 person fact 로 잡혀 person_roles 가 오염되므로, 후보 라벨이
+# 반드시 뒤따르는 candidate-role 매칭에서만 이 확장판을 사용한다.
+ROLE_SURFACE_PATTERN_CANDIDATE = (
+    r"(?:"
+    r"[가-힣]{1,10}(?:특별|광역|자치)?(?:시장|도지사)"
+    r"|[가-힣]{1,10}(?:구청장|군수|시의원|도의원|구의원|군의원)"
+    r"|광역의원|기초의원|시의원|도의원|구의원|군의원"
+    r"|구청장|군수|교육감|국회의원|의원|대표|당대표|원내대표|위원장|장관|후보"
+    r"|시장|도지사"
+    r")"
+)
 ROLE_KEYWORD_PATTERN = re.compile(
     rf"^(?P<name>[가-힣]{{2,8}})\s*(?P<role>{ROLE_SURFACE_PATTERN})$"
 )
@@ -76,11 +90,11 @@ DIRECT_COMPETITION_CONTEXT_PATTERN = re.compile(
 )
 CANDIDATE_LABEL_PATTERN = r"(?:예비후보|후보(?!군|론|설))"
 PERSON_TARGET_CANDIDATE_PATTERN = re.compile(
-    rf"(?P<name>[가-힣]{{2,8}})\s*(?P<target>{ROLE_SURFACE_PATTERN})\s*(?P<label>{CANDIDATE_LABEL_PATTERN})",
+    rf"(?P<name>[가-힣]{{2,8}})\s*(?P<target>{ROLE_SURFACE_PATTERN_CANDIDATE})\s*(?P<label>{CANDIDATE_LABEL_PATTERN})",
     re.IGNORECASE,
 )
 TARGET_CANDIDATE_PERSON_PATTERN = re.compile(
-    rf"(?P<target>{ROLE_SURFACE_PATTERN})\s*(?P<label>{CANDIDATE_LABEL_PATTERN})\s*(?P<name>[가-힣]{{2,8}})(?:은|는|이|가|도|의)?",
+    rf"(?P<target>{ROLE_SURFACE_PATTERN_CANDIDATE})\s*(?P<label>{CANDIDATE_LABEL_PATTERN})\s*(?P<name>[가-힣]{{2,8}})(?:은|는|이|가|도|의)?",
     re.IGNORECASE,
 )
 PERSON_CANDIDATE_PATTERN = re.compile(
@@ -720,9 +734,68 @@ def build_role_keyword_policy(
             ),
         }
 
+    # ── personRelations ──
+    # 사용자 키워드 루프(entries) 와 별도로, source_texts 에 등장한 모든
+    # 인물(personReferenceFacts) 에 대해 ally classification 을 돌린다.
+    # dd923cf 가 추가한 부정 차단(profile_not_competitor) 의 짝꿍 — 화자와
+    # 같은 팀의 다른 직책 후보(러닝메이트) 를 LLM 에게 명시 안내한다.
+    # allowCompetitorIntent == False 인 인물만 모은다 (직접 경쟁자/미상 제외).
+    speaker_full_name_raw = ""
+    if isinstance(speaker_profile, dict):
+        speaker_full_name_raw = str(
+            speaker_profile.get("name") or speaker_profile.get("displayName") or ""
+        )
+    speaker_full_name = _clean_name(speaker_full_name_raw)
+    covered_names = set()
+    for entry in entries.values():
+        if not isinstance(entry, dict):
+            continue
+        cleaned = _clean_name(entry.get("name"))
+        if cleaned:
+            covered_names.add(cleaned)
+
+    person_relations: Dict[str, Dict[str, Any]] = {}
+    for raw_name, fact in person_reference_facts.items():
+        name = _clean_name(raw_name)
+        if not name or not isinstance(fact, dict):
+            continue
+        if speaker_full_name and name == speaker_full_name:
+            continue
+        if name in covered_names:
+            continue
+        role_for_relation = (
+            _normalize_spaces(fact.get("explicitCandidateRole"))
+            or _normalize_spaces(fact.get("sourceRole"))
+        )
+        if not role_for_relation:
+            continue
+        relation_info = classify_role_keyword_speaker_relation(
+            keyword="",
+            name=name,
+            role=role_for_relation,
+            speaker_profile=speaker_profile,
+            source_texts=source_text_list,
+        )
+        if bool(relation_info.get("allowCompetitorIntent", True)):
+            continue
+        candidate_label = _normalize_spaces(fact.get("explicitCandidateLabel"))
+        person_relations[name] = {
+            "name": name,
+            "role": role_for_relation,
+            "candidateLabel": candidate_label,
+            "relation": str(relation_info.get("relation") or ""),
+            "speakerOfficeLevel": str(relation_info.get("speakerOfficeLevel") or ""),
+            "targetOfficeLevel": str(relation_info.get("targetOfficeLevel") or ""),
+            "sameRegion": bool(relation_info.get("sameRegion")),
+            "alliedContext": bool(relation_info.get("alliedContext")),
+            "allowCompetitorIntent": False,
+        }
+
     return {
         "entries": entries,
         "personReferenceFacts": person_reference_facts,
+        "personRelations": person_relations,
+        "allyPeople": sorted(person_relations.keys()),
         "sourceRoleContexts": sorted(source_role_contexts),
         "intentOnlyKeywords": sorted(
             keyword for keyword, entry in entries.items() if str(entry.get("mode") or "") == "intent_only"
@@ -753,6 +826,23 @@ def get_person_reference_fact(policy: Any, name: Any) -> Dict[str, Any]:
     normalized_name = _clean_name(name)
     fact = reference_facts.get(normalized_name)
     return fact if isinstance(fact, dict) else {}
+
+
+def get_person_relation(policy: Any, name: Any) -> Dict[str, Any]:
+    """personRelations 에서 이름으로 ally 관계 정보를 조회한다.
+
+    person_relations 는 build_role_keyword_policy 가 source_texts 의
+    인물들에 대해 ally classification 을 돌린 결과로, 사용자 키워드 루프에는
+    들어오지 않은 인물(러닝메이트 등)을 LLM 에 명시 안내할 때 사용한다.
+    """
+    if not isinstance(policy, dict):
+        return {}
+    relations = policy.get("personRelations")
+    if not isinstance(relations, dict):
+        return {}
+    normalized_name = _clean_name(name)
+    relation = relations.get(normalized_name)
+    return relation if isinstance(relation, dict) else {}
 
 
 def should_block_role_keyword(policy: Any, keyword: Any) -> bool:
@@ -863,6 +953,7 @@ __all__ = [
     "classify_role_keyword_speaker_relation",
     "get_role_keyword_entry",
     "get_person_reference_fact",
+    "get_person_relation",
     "should_block_role_keyword",
     "should_render_role_keyword_as_intent",
     "is_role_keyword",

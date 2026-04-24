@@ -1070,8 +1070,14 @@ def build_title_skeleton_protocol(
 """.strip()
 
 def _build_role_keyword_title_policy_instruction(role_keyword_policy: Dict[str, Any]) -> str:
-    entries = role_keyword_policy.get("entries") if isinstance(role_keyword_policy, dict) else {}
-    if not isinstance(entries, dict) or not entries:
+    policy_dict = role_keyword_policy if isinstance(role_keyword_policy, dict) else {}
+    entries = policy_dict.get("entries") if isinstance(policy_dict.get("entries"), dict) else {}
+    person_relations = (
+        policy_dict.get("personRelations")
+        if isinstance(policy_dict.get("personRelations"), dict)
+        else {}
+    )
+    if not entries and not person_relations:
         return ""
 
     lines: List[str] = []
@@ -1112,6 +1118,28 @@ def _build_role_keyword_title_policy_instruction(role_keyword_policy: Dict[str, 
                     f"target role 근거도 없으므로 제목에서 사용 금지."
                     f"</rule>"
                 )
+
+    # personRelations: 사용자 키워드에 들어오지 않았지만 source_texts 에서
+    # 등장한 인물 중 화자와 ally(러닝메이트/같은 팀 다른 직책 후보) 관계로
+    # 분류된 인물에 대한 긍정 명시 룰. dd923cf 의 부정 차단의 짝꿍.
+    for raw_name, raw_relation in person_relations.items():
+        relation = raw_relation if isinstance(raw_relation, dict) else {}
+        person_name = str(raw_name or "").strip()
+        if not person_name:
+            continue
+        role_text = str(relation.get("role") or "").strip()
+        candidate_label = str(relation.get("candidateLabel") or "").strip()
+        relation_label = str(relation.get("relation") or "").strip() or "ally"
+        role_display = (role_text + candidate_label).strip() or role_text or "다른 직책"
+        lines.append(
+            f'  <rule person="{person_name}" mode="ally">'
+            f'"{person_name}"는 화자와 같은 팀의 다른 직책({role_display})입니다 — '
+            f"관계: {relation_label}. 화자가 아니므로 제목에서 화자를 \"{person_name}\"의 "
+            f"직책으로 묘사하거나 그 사람의 선거를 화자의 선거로 통합하지 마세요. "
+            f'필요하면 "함께/동행/지원" 같은 어휘로 관계를 명시하세요.'
+            f"</rule>"
+        )
+
     if not lines:
         return ""
     return "<role_keyword_policy>\n" + "\n".join(lines) + "\n</role_keyword_policy>"
