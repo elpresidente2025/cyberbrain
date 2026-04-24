@@ -845,31 +845,35 @@ def calculate_title_quality_score(
     # 본문이 비어 있어 후보가 0개면 게이트를 건너뛴다(프로필 전용 케이스).
     # 행사 안내 제목은 일정·장소 전달이 목적이라 적용하지 않는다.
     anchor_coverage: Dict[str, Any] = {'passed': True, 'skipped': True}
-    if title_purpose != 'event_announcement':
+    anchor_advisory_penalty = 0
+    anchor_advisory_breakdown: Dict[str, Any] = {}
+    anchor_advisory_suggestion = ''
+    if title_purpose not in ('event_announcement', 'stance_announcement'):
         anchor_coverage = _assess_body_anchor_coverage(title, params)
         if not anchor_coverage.get('passed', True) and not anchor_coverage.get('skipped'):
+            # Advisory 강등 — 기존 score=0 hard-fail 대신 soft penalty 로 전환.
+            # 실제 정책 글이 앵커를 빠뜨리면 penalty 와 bodyAnchorStrength 약함이
+            # 같이 쌓여 min_score 를 못 넘기므로 재시도 경로는 여전히 발동한다.
+            # status 에 '실격' 문자열이 없으면 degraded_pass 가 열리므로 선언형
+            # 오탐이나 차선 통과 대상은 원고가 사용자에게 전달된다.
             anchor_reason = str(
                 anchor_coverage.get('reason')
                 or '제목에 본문 구체 앵커가 인용되지 않았습니다.'
             )
-            return {
+            anchor_advisory_penalty = 20
+            anchor_advisory_breakdown = {
                 'score': 0,
-                'breakdown': {
-                    'bodyAnchorCoverage': {
-                        'score': 0,
-                        'max': 100,
-                        'status': '실격(본문앵커없음)',
-                        'reason': anchor_reason,
-                        'available': dict(anchor_coverage.get('available') or {}),
-                    }
-                },
-                'passed': False,
-                'suggestions': [
-                    anchor_reason
-                    + ' <available_slots> 의 policy/institution/numeric/year '
-                    '버킷에서 본문 고유 토큰 1개 이상을 골라 제목에 직접 넣으세요.'
-                ],
+                'max': 0,
+                'status': '경고(본문앵커없음)',
+                'reason': anchor_reason,
+                'available': dict(anchor_coverage.get('available') or {}),
+                'advisoryPenalty': anchor_advisory_penalty,
             }
+            anchor_advisory_suggestion = (
+                anchor_reason
+                + ' <available_slots> 의 policy/institution/numeric/year '
+                '버킷에서 본문 고유 토큰 1개 이상을 포함하면 advisory 감점이 해제됩니다.'
+            )
 
     event_anchor_context: Dict[str, Any] = {
         'dateHint': '',
@@ -1382,12 +1386,20 @@ def calculate_title_quality_score(
                 '단어만 재사용했습니다. body_exclusive 토큰 1개를 넣으면 +6점.'
             )
 
+    if anchor_advisory_breakdown:
+        breakdown['bodyAnchorCoverage'] = anchor_advisory_breakdown
+    if anchor_advisory_suggestion:
+        suggestions.insert(0, anchor_advisory_suggestion)
+
     # Total Score
     total_score = sum(item.get('score', 0) for item in breakdown.values())
     max_possible = sum(item.get('max', 0) for item in breakdown.values())
 
     # Normalize to 100
     normalized_score = round(total_score / max_possible * 100) if max_possible > 0 else 0
+
+    if anchor_advisory_penalty:
+        normalized_score = max(0, normalized_score - anchor_advisory_penalty)
 
     result = {
         'score': normalized_score,

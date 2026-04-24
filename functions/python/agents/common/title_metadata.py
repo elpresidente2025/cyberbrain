@@ -132,6 +132,29 @@ def _has_event_metadata(params: Dict[str, Any]) -> bool:
     return bool(str(must_preserve.get('eventDate') or '').strip() or str(must_preserve.get('eventLocation') or '').strip())
 
 
+_STANCE_ANNOUNCEMENT_STRONG_MARKERS = (
+    '경선 마무리', '경선이 마무리', '경선 결과', '경선 종료',
+    '출마', '출사표', '불출마', '당선 인사', '낙선 인사',
+    '용퇴', '사퇴', '사임', '거취',
+    '입장문', '입장 표명', '입장을 밝',
+    '감사 인사', '새해 인사 말씀', '송년 인사',
+)
+
+
+def _looks_like_stance_announcement_text(text: str) -> bool:
+    """출마·경선 결과·입장문·사임 등 '선언/입장' 성격 글 시그널.
+
+    Why: anchor coverage 게이트는 정책 글 전제로 짜여 있어, 선언형 글은
+    본문에 정책 앵커가 없는 게 정상인데도 실격 처리된다. 오탐(실제 정책 글을
+    선언형으로 착각)은 품질 누출이므로 구·절 단위 strong marker 매칭으로만
+    좁게 판정한다. 범용 정치 어휘만 사용한다.
+    """
+    normalized = re.sub(r'\s+', ' ', str(text or '')).strip()
+    if not normalized:
+        return False
+    return any(marker in normalized for marker in _STANCE_ANNOUNCEMENT_STRONG_MARKERS)
+
+
 def _looks_like_event_announcement_text(text: str, *, allow_generic_markers: bool = True) -> bool:
     normalized = re.sub(r'\s+', ' ', str(text or '')).strip()
     if not normalized:
@@ -174,6 +197,17 @@ def resolve_title_purpose(topic: str, params: Dict[str, Any]) -> str:
     intent = str(context_analysis.get('intent') or '').strip().lower()
     if intent == 'event_announcement':
         return 'event_announcement'
+    if intent == 'stance_announcement':
+        return 'stance_announcement'
+
+    # Stance 판정 — 경선·출마·입장문 같은 선언형 글은 정책 앵커를 담는 글 종류가
+    # 아니므로 anchor coverage 게이트에서 면제한다. topic·stanceText 둘 다 체크.
+    if topic_text and _looks_like_stance_announcement_text(topic_text):
+        return 'stance_announcement'
+    stance_text = str(params.get('stanceText') or '').strip()
+    if stance_text and _looks_like_stance_announcement_text(stance_text):
+        return 'stance_announcement'
+
     if intent:
         return intent
     return ''
