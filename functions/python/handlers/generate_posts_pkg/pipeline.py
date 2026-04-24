@@ -12748,15 +12748,13 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
 
     final_structure_gate["attempted"] = True
     structure_base_content = str(generated_content or "").strip()
-    # [NO-FALLBACK] sequential 모드에서는 섹션별로 문단 수 계약을 LLM 레벨에서 엄격히 강제한다.
-    # 마지막 단계의 normalize_section_p_count 는 부족한 문단을 기계 템플릿으로 때우는 padding 을
-    # 포함하므로 (feedback_no_fallback.md), sequential 모드에서는 호출 자체를 스킵한다.
-    # 섹션 문단 수 미달은 _collect_section_paragraph_issues 에서 그대로 감지되어 BLOCKER raise.
-    if _sequential_structure_enabled():
-        final_structure_gate["padding_skipped"] = True
-        normalized_structure_content = structure_base_content
-    else:
-        normalized_structure_content = normalize_section_p_count(structure_base_content)
+    # normalize_section_p_count 는 기계 padding (빈 섹션에 템플릿 문장 삽입) 과 split (긴 문단 쪼개기) 를
+    # 모두 포함하는데, 기계 padding 은 structure_normalizer 의 ALLOW_GENERIC_SECTION_PADDING=False 로
+    # 이미 차단되어 있다 (_build_padding_text / _pad_short_section 가 빈 문자열 반환).
+    # split 기능은 sequential/legacy 가 2문단으로 반환한 섹션을 긴 문단 쪼개기로 3문단화하는 최후 보정이며,
+    # 이는 사용자 원칙 (feedback_no_fallback.md) 의 "기계 padding" 금지와 별개로 허용된다.
+    # 이전 sequential 전용 skip 은 과보정이었다 — split 까지 버려 2문단 섹션을 구제하지 못했다.
+    normalized_structure_content = normalize_section_p_count(structure_base_content)
     if normalized_structure_content != structure_base_content:
         generated_content = normalized_structure_content
         word_count = _count_chars_no_space(generated_content)
