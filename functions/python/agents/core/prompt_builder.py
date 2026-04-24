@@ -181,13 +181,22 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
             "보조자료 활용: 뉴스/데이터가 비어 있으므로 사용자 추가정보를 화자의 역량·신뢰 보강 소재로 활용하되, "
             "본론의 주제는 입장문에 집중하세요. 추가정보 항목을 별도 본론 섹션의 주제로 확장하지 마세요."
         )
-    elif not news_context_text and profile_support_context:
+    elif profile_support_context:
         source_blocks.append(f"[작성자 BIO 보강 맥락]\n{profile_support_context}")
         bio_source_line = "- 보강 자료: 사용자 Bio (경력/이력/가치)"
-        bio_source_rule = (
-            "Bio 보강 활용: 뉴스/데이터와 구조화 추가정보가 모두 부족하므로 "
-            "사용자 Bio에서 확인 가능한 경력/성과/핵심가치를 사실 근거로 활용하세요."
-        )
+        if news_context_text:
+            bio_source_rule = (
+                "Bio 활용: 본론의 주제는 입장문과 뉴스에서 가져오고, "
+                "Bio는 화자의 역량·경력·가치를 보여주는 뒷받침 소재로만 활용하세요. "
+                "Bio 항목을 별도 본론 섹션 주제로 확장하지 마세요. "
+                "문단 안에서 '저는 이런 경험이 있어 이 정책이 필요하다고 확신합니다' 식으로 "
+                "화자 신뢰를 보강하는 1~2문장 뒷받침으로 활용하세요."
+            )
+        else:
+            bio_source_rule = (
+                "Bio 보강 활용: 뉴스/데이터와 구조화 추가정보가 모두 부족하므로 "
+                "사용자 Bio에서 확인 가능한 경력/성과/핵심가치를 사실 근거로 활용하세요."
+            )
 
     source_text = "\n\n---\n\n".join(block for block in source_blocks if block)
     ref_section = ""
