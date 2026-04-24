@@ -11,7 +11,7 @@ from difflib import SequenceMatcher
 import html as html_lib
 import logging
 import re
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from agents.common.poll_citation import normalize_poll_citation_text
 from .content_processor import repair_duplicate_particles_and_tokens
@@ -1092,16 +1092,18 @@ def _section_paragraph_counts(content: str) -> list[int]:
     return counts
 
 
-def _preserves_section_paragraph_min(before: str, after: str, *, min_p: int = 3) -> bool:
+def _preserves_section_paragraph_min(before: str, after: str, *, min_p: Optional[int] = None) -> bool:
     before_counts = _section_paragraph_counts(before)
     if not before_counts:
         return True
-    if any(count < min_p for count in before_counts):
-        return False
+    # 계약값이 주어지지 않으면 현재 원고가 이미 충족하고 있는 최솟값을 기준으로 삼는다.
+    # 이렇게 하면 AEO(섹션당 3문단)든 비AEO(섹션당 2문단)든 "현재 상태 이하로 떨어뜨리지
+    # 않는다"는 일관된 의미가 된다.
+    effective_min = int(min_p) if min_p is not None else min(before_counts)
     after_counts = _section_paragraph_counts(after)
     if len(after_counts) != len(before_counts):
         return False
-    return all(count >= min_p for count in after_counts)
+    return all(count >= effective_min for count in after_counts)
 
 
 def _looks_tail_duplicate(a: str, b: str) -> bool:

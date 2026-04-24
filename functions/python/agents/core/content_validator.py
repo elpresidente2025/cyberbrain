@@ -900,6 +900,11 @@ class ContentValidator:
             section_intro_flags.append(True)
         section_plain_lengths = [len(strip_html(block)) for block in section_blocks]
 
+        from ..common.aeo_config import paragraph_contract_from_length_spec
+        paragraph_contract = paragraph_contract_from_length_spec(length_spec)
+        min_p = int(paragraph_contract['section_paragraph_min'])
+        max_p = int(paragraph_contract['section_paragraph_max'])
+
         for section_index, section_content in enumerate(section_blocks, start=1):
             section_paragraphs = [
                 strip_html(item).strip()
@@ -911,17 +916,16 @@ class ContentValidator:
             heading_match = re.search(r'<h2[^>]*>(.*?)</h2>', section_content, re.IGNORECASE | re.DOTALL)
             section_heading = strip_html(heading_match.group(1)).strip() if heading_match else ''
             section_block_index = section_index - 2 if not is_intro_section else -1
-            min_p = 3
-            if section_p_count < min_p or section_p_count > 4:
+            if section_p_count < min_p or section_p_count > max_p:
                 return {
                     'passed': False,
                     'code': 'SECTION_P_COUNT',
-                    'reason': f"섹션 {section_index} 문단 수 위반 ({section_p_count}개, 허용 {min_p}~4개)",
-                    'feedback': f"섹션 {section_index}의 <p> 개수는 {min_p}~4개여야 합니다. 현재 {section_p_count}개입니다.",
+                    'reason': f"섹션 {section_index} 문단 수 위반 ({section_p_count}개, 허용 {min_p}~{max_p}개)",
+                    'feedback': f"섹션 {section_index}의 <p> 개수는 {min_p}~{max_p}개여야 합니다. 현재 {section_p_count}개입니다.",
                     'sectionIndex': section_index,
                     'sectionParagraphCount': section_p_count,
                     'sectionParagraphMin': min_p,
-                    'sectionParagraphMax': 4,
+                    'sectionParagraphMax': max_p,
                     'sectionHeading': section_heading,
                     'sectionBlockIndex': section_block_index,
                     'isIntroSection': is_intro_section,
@@ -1057,8 +1061,8 @@ class ContentValidator:
         if p_count != len(p_close_tags):
             return {'passed': False, 'code': 'P_MALFORMED', 'reason': f"p 태그 짝 불일치", 'feedback': '모든 문단은 <p>...</p> 형태로 정확히 닫아 주십시오.'}
 
-        expected_min_p = total_sections * 3
-        expected_max_p = total_sections * 4
+        expected_min_p = total_sections * int(paragraph_contract['section_paragraph_min'])
+        expected_max_p = total_sections * int(paragraph_contract['section_paragraph_max'])
         if p_count < expected_min_p:
              return {'passed': False, 'code': 'P_SHORT', 'reason': f"문단 수 부족", 'feedback': f"최소 {expected_min_p}개 문단이 필요합니다."}
         if p_count > expected_max_p:

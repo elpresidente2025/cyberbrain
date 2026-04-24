@@ -5,7 +5,11 @@ import logging
 import re
 from typing import Any, Dict, Optional
 
-from agents.common.constants import CATEGORY_TO_WRITING_METHOD, SUBCATEGORY_TO_WRITING_METHOD
+from agents.common.constants import (
+    CATEGORY_TO_WRITING_METHOD,
+    SUBCATEGORY_TO_WRITING_METHOD,
+    detect_personal_reflection_topic,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +81,12 @@ CATEGORY_PATTERNS = {
         r"일상",
         r"소통",
         r"인사",
+        r"소회",
+        r"다짐",
+        r"경선\s*마무리",
+        r"다시\s*시작",
+        r"보답하겠습니다",
+        r"함께해\s*주십시오",
     ),
     "activity-report": (
         r"활동보고",
@@ -440,6 +450,13 @@ def refine_with_stance(primary: Dict[str, Any], stance_text: str) -> Dict[str, A
     activity_signal_score = _pattern_score(normalized_stance, SUBSTANTIVE_ACTIVITY_PATTERNS)
     policy_commitment_score = _pattern_score(normalized_stance, POLICY_COMMITMENT_PATTERNS)
     best = _best_scored_category(normalized_stance)
+
+    if detect_personal_reflection_topic("", normalized_stance):
+        return _build_result(
+            category="daily-communication",
+            confidence=max(confidence, 0.86),
+            source=f"{source}+stance_reflection",
+        )
 
     if category == "current-affairs" and diagnosis_score >= 1:
         return _build_result(

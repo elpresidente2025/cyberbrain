@@ -23,21 +23,94 @@ from services.posts.output_formatter import compress_redundant_sentences
 def test_structure_agent_build_structure_json_schema_requires_three_paragraphs_per_section() -> None:
     agent = StructureAgent(options={})
 
+    # is_aeo 미지정 → AEO 기본값(섹션당 3~4문단) 계약이 적용된다.
     schema = agent._build_structure_json_schema(
         {
             "body_sections": 2,
-            "paragraphs_per_section": 2,
+            "paragraphs_per_section": 3,
         }
     )
 
     assert schema["properties"]["intro"]["properties"]["paragraphs"]["minItems"] == 3
-    assert schema["properties"]["intro"]["properties"]["paragraphs"]["maxItems"] == 3
+    assert schema["properties"]["intro"]["properties"]["paragraphs"]["maxItems"] == 4
     assert schema["properties"]["body"]["minItems"] == 2
     assert schema["properties"]["body"]["maxItems"] == 2
     assert schema["properties"]["body"]["items"]["properties"]["paragraphs"]["minItems"] == 3
-    assert schema["properties"]["body"]["items"]["properties"]["paragraphs"]["maxItems"] == 3
+    assert schema["properties"]["body"]["items"]["properties"]["paragraphs"]["maxItems"] == 4
     assert schema["properties"]["conclusion"]["properties"]["paragraphs"]["minItems"] == 3
+    assert schema["properties"]["conclusion"]["properties"]["paragraphs"]["maxItems"] == 4
+
+
+def test_structure_agent_build_structure_json_schema_allows_two_paragraphs_for_emotional_writing() -> None:
+    agent = StructureAgent(options={})
+
+    # 비AEO(emotional_writing) 계약: 섹션당 2~3문단을 허용한다.
+    schema = agent._build_structure_json_schema(
+        {
+            "body_sections": 2,
+            "is_aeo": False,
+            "section_paragraph_min": 2,
+            "section_paragraph_max": 3,
+        }
+    )
+
+    assert schema["properties"]["intro"]["properties"]["paragraphs"]["minItems"] == 2
+    assert schema["properties"]["intro"]["properties"]["paragraphs"]["maxItems"] == 3
+    assert schema["properties"]["body"]["items"]["properties"]["paragraphs"]["minItems"] == 2
+    assert schema["properties"]["body"]["items"]["properties"]["paragraphs"]["maxItems"] == 3
+    assert schema["properties"]["conclusion"]["properties"]["paragraphs"]["minItems"] == 2
     assert schema["properties"]["conclusion"]["properties"]["paragraphs"]["maxItems"] == 3
+
+
+def test_structure_agent_build_length_spec_emits_contract_fields() -> None:
+    agent = StructureAgent(options={})
+
+    aeo_spec = agent._build_length_spec(2000, writing_method='logical_writing')
+    assert aeo_spec['is_aeo'] is True
+    assert aeo_spec['section_paragraph_min'] == 3
+    assert aeo_spec['section_paragraph_max'] == 4
+
+    emotional_spec = agent._build_length_spec(2000, writing_method='emotional_writing')
+    assert emotional_spec['is_aeo'] is False
+    assert emotional_spec['section_paragraph_min'] == 2
+    assert emotional_spec['section_paragraph_max'] == 3
+
+
+def test_content_validator_accepts_two_paragraphs_for_emotional_writing() -> None:
+    from agents.core.content_validator import ContentValidator
+
+    validator = ContentValidator()
+    # 섹션당 2문단짜리 비AEO 원고 (placeholder 데이터, 범용성 원칙 준수).
+    content = (
+        "<p>저는 홍길동입니다. 지난 몇 달간 샘플구의 여러 현장을 함께 돌았던 시간이 이제 한 매듭을 짓습니다. 고맙습니다.</p>"
+        "<p>되돌아보니 제 자리의 무게를 확인하는 여정이었습니다. 이제 다음 걸음을 위해 다시 마음을 다잡습니다. 함께해 주시길 부탁드립니다.</p>"
+        "<h2>샘플구 주민 곁에서 들은 이야기</h2>"
+        "<p>교통·주거·생활 문제 같은 작지만 큰 현안을 꾸준히 들었습니다. 많은 분들이 같은 걱정을 말씀해 주셨습니다. 지금까지의 기록을 정리하는 계기였습니다.</p>"
+        "<p>제가 들은 이야기는 혼자만 겪는 문제가 아니었고, 이웃의 공통 과제였습니다. 그 목소리를 정확히 옮기는 일이 저의 몫이라고 느꼈습니다. 잊지 않겠습니다.</p>"
+        "<h2>앞으로 어떻게 함께할지</h2>"
+        "<p>선거 국면이 다시 열리기 전까지 저는 더 가까이에서 말씀을 듣겠습니다. 한 가지 다짐을 드립니다. 성급히 답하기보다 충분히 듣는 자리를 늘리겠습니다.</p>"
+        "<p>특정 정책을 지금 당장 발표하지는 않겠습니다. 준비가 되지 않은 약속은 오히려 실망을 드린다고 배웠습니다. 책임 있는 걸음을 먼저 약속드립니다.</p>"
+    )
+    length_spec = {
+        "body_sections": 1,
+        "total_sections": 3,
+        "expected_h2": 2,
+        "min_chars": 500,
+        "max_chars": 1800,
+        "per_section_min": 120,
+        "per_section_max": 900,
+        "per_section_recommended": 260,
+        "is_aeo": False,
+        "section_paragraph_min": 2,
+        "section_paragraph_max": 3,
+        "paragraphs_per_section": 2,
+    }
+
+    result = validator.validate(content, length_spec, category="daily-communication")
+    # 결과가 통과(True)든 다른 문제로 실패하든, 최소한 문단 개수(2개) 때문에는 실패하지 않아야 한다.
+    assert result.get('code') not in {'SECTION_P_COUNT', 'P_SHORT', 'P_LONG'}, (
+        f"비AEO 2문단 섹션이 문단 수 게이트에서 거절됨: {result}"
+    )
 
 
 def test_structure_agent_repair_low_alignment_heading_ignores_name_only_overlap() -> None:
@@ -394,6 +467,18 @@ def main() -> None:
         (
             "structure_agent_build_structure_json_schema_requires_three_paragraphs_per_section",
             test_structure_agent_build_structure_json_schema_requires_three_paragraphs_per_section,
+        ),
+        (
+            "structure_agent_build_structure_json_schema_allows_two_paragraphs_for_emotional_writing",
+            test_structure_agent_build_structure_json_schema_allows_two_paragraphs_for_emotional_writing,
+        ),
+        (
+            "structure_agent_build_length_spec_emits_contract_fields",
+            test_structure_agent_build_length_spec_emits_contract_fields,
+        ),
+        (
+            "content_validator_accepts_two_paragraphs_for_emotional_writing",
+            test_content_validator_accepts_two_paragraphs_for_emotional_writing,
         ),
         (
             "structure_agent_build_html_keeps_conclusion_content_when_empty_body_section_is_dropped",

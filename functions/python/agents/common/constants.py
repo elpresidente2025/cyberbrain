@@ -67,6 +67,59 @@ _CRITIQUE_MARKERS = (
     "의혹", "논란", "프레임", "가짜뉴스", "날조",
 )
 
+# 개인의 소회·다짐형 글을 식별하기 위한 장르 마커 목록.
+# 여기 담긴 표현은 특정 사용자의 고유 시그니처가 아니라, 정치인 글쓰기 전반에서
+# 반복되는 "국면 마감 + 다음 국면 각오" 장르의 관용구다. 따라서 이 파일에 박혀
+# 있어도 특정 사용자에 대한 편향이 되지 않는다.
+# 감지 임계값은 최소 2개 이상 일치 (함수 아래 참조) 이므로 우연한 단어 하나로는
+# 트리거되지 않는다.
+_PERSONAL_REFLECTION_PATTERNS = (
+    r"경선\s*(?:이\s*)?마무리",
+    r"본격적으로\s*(?:제\s*)?선거",
+    r"선거를\s*향해",
+    r"다시\s*시작",
+    r"새롭게\s*시작",
+    r"소회",
+    r"다짐",
+    r"끝까지\s*함께",
+    r"함께해\s*주십시오",
+    r"좋은\s*결과로\s*보답",
+    r"보답하겠습니다",
+    r"곁에서\s*듣겠습니다",
+    r"더\s*가까이에서\s*듣겠습니다",
+)
+
+_SUBSTANTIVE_POLICY_MARKERS = (
+    "조례", "예산", "공약", "정책", "제도", "사업", "법안", "발의", "도입", "개정",
+    "추진계획", "로드맵", "수익성", "용역", "시설", "지원대상", "지원금",
+)
+
+
+def _regex_marker_score(text: str, patterns: tuple[str, ...]) -> int:
+    return sum(1 for pattern in patterns if re.search(pattern, text, re.IGNORECASE))
+
+
+def detect_personal_reflection_topic(topic: str, stance_text: str = "") -> bool:
+    """개인의 소회·다짐형 글인지 판정한다.
+
+    정책 제안이나 의정 보고가 아니라 선거·활동의 한 국면을 마무리하고 독자에게 동행을
+    요청하는 글이면 AEO 논증 구조보다 emotional_writing이 자연스럽다.
+    """
+    blob = f"{topic or ''}\n{stance_text or ''}".strip()
+    if not blob:
+        return False
+
+    reflection_hits = _regex_marker_score(blob, _PERSONAL_REFLECTION_PATTERNS)
+    if reflection_hits < 2:
+        return False
+
+    critique_hits = sum(1 for marker in _CRITIQUE_MARKERS if marker in blob)
+    if critique_hits >= reflection_hits:
+        return False
+
+    policy_hits = sum(1 for marker in _SUBSTANTIVE_POLICY_MARKERS if marker in blob)
+    return policy_hits <= 1 or reflection_hits >= policy_hits + 2
+
 
 def detect_commemorative_topic(topic: str, stance_text: str = "") -> bool:
     """주제·입장문에 기념/추념/성찰 시그널이 있고 비판 대상 시그널이 약한지 판정."""
@@ -97,6 +150,8 @@ def refine_writing_method(
     주제에 기념 마커가 있고 비판 마커가 약하면 emotional_writing (daily_communication 템플릿) 으로
     우회시켜 성찰·다짐 톤을 유지한다.
     """
+    if detect_personal_reflection_topic(topic, stance_text):
+        return 'emotional_writing'
     if writing_method != 'critical_writing':
         return writing_method
     if detect_commemorative_topic(topic, stance_text):

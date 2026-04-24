@@ -142,7 +142,16 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             return int(STRUCTURE_SPEC['idealTotalMin'])
         return max(1600, min(parsed, 3200))
 
-    def _build_length_spec(self, target_word_count: Any, stance_count: int = 0, *, reference_text_len: int = 0) -> Dict[str, int]:
+    def _build_length_spec(
+        self,
+        target_word_count: Any,
+        stance_count: int = 0,
+        *,
+        reference_text_len: int = 0,
+        writing_method: str = '',
+    ) -> Dict[str, Any]:
+        from ..common.aeo_config import paragraph_contract_for_writing_method
+
         target_chars = self._sanitize_target_word_count(target_word_count)
         section_char_target = int(STRUCTURE_SPEC['sectionCharTarget'])
         section_char_min = int(STRUCTURE_SPEC['sectionCharMin'])
@@ -151,7 +160,9 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         max_sections = int(STRUCTURE_SPEC['maxSections'])
         ideal_total_min = int(STRUCTURE_SPEC['idealTotalMin'])
         ideal_total_max = int(STRUCTURE_SPEC['idealTotalMax'])
-        paragraphs_per_section = int(STRUCTURE_SPEC['paragraphsPerSection'])
+
+        # writing_method별 문단 계약: AEO는 3문단(3~4), 비AEO는 2문단(2~3)
+        contract = paragraph_contract_for_writing_method(writing_method or '')
 
         # 섹션당 350자 내외를 기준으로 5~7섹션 계획
         total_sections = round(target_chars / section_char_target)
@@ -190,7 +201,11 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             'min_chars': min_chars,
             'max_chars': max_chars,
             'expected_h2': total_sections - 1,
-            'paragraphs_per_section': paragraphs_per_section
+            'paragraphs_per_section': int(contract['paragraphs_per_section']),
+            'section_paragraph_min': int(contract['section_paragraph_min']),
+            'section_paragraph_max': int(contract['section_paragraph_max']),
+            'is_aeo': bool(contract['is_aeo']),
+            'writing_method': writing_method or '',
         }
 
     def _is_low_context_input(
@@ -463,9 +478,14 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             'usedBioCount': max(0, len(selected_items) - len(selected_additional)),
         }
 
-    def _build_structure_json_schema(self, length_spec: Dict[str, int]) -> Dict[str, Any]:
+    def _build_structure_json_schema(self, length_spec: Dict[str, Any]) -> Dict[str, Any]:
+        from ..common.aeo_config import paragraph_contract_from_length_spec
+
         paragraph_schema: Dict[str, Any] = {"type": "string"}
         body_sections = max(1, int(length_spec.get('body_sections') or 1))
+        contract = paragraph_contract_from_length_spec(length_spec)
+        min_p = int(contract['section_paragraph_min'])
+        max_p = int(contract['section_paragraph_max'])
 
         return {
             "type": "object",
@@ -478,8 +498,8 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                     "properties": {
                         "paragraphs": {
                             "type": "array",
-                            "minItems": 3,
-                            "maxItems": 3,
+                            "minItems": min_p,
+                            "maxItems": max_p,
                             "items": paragraph_schema,
                         }
                     },
@@ -497,8 +517,8 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                             },
                             "paragraphs": {
                                 "type": "array",
-                                "minItems": 3,
-                                "maxItems": 3,
+                                "minItems": min_p,
+                                "maxItems": max_p,
                                 "items": paragraph_schema,
                             },
                         },
@@ -513,8 +533,8 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                         },
                         "paragraphs": {
                             "type": "array",
-                            "minItems": 3,
-                            "maxItems": 3,
+                            "minItems": min_p,
+                            "maxItems": max_p,
                             "items": paragraph_schema,
                         },
                     },
@@ -1167,21 +1187,20 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         parts.append('</prior_sections>')
         return "\n".join(parts)
 
-    def _build_section_json_schema(self, length_spec: Dict[str, int]) -> Dict[str, Any]:
-        section_paragraphs = _coerce_int_option(
-            length_spec.get('paragraphs_per_section'),
-            default=int(STRUCTURE_SPEC['paragraphsPerSection']),
-            minimum=2,
-            maximum=4,
-        )
+    def _build_section_json_schema(self, length_spec: Dict[str, Any]) -> Dict[str, Any]:
+        from ..common.aeo_config import paragraph_contract_from_length_spec
+
+        contract = paragraph_contract_from_length_spec(length_spec)
+        min_p = int(contract['section_paragraph_min'])
+        max_p = int(contract['section_paragraph_max'])
         return {
             "type": "object",
             "required": ["paragraphs"],
             "properties": {
                 "paragraphs": {
                     "type": "array",
-                    "minItems": section_paragraphs,
-                    "maxItems": section_paragraphs,
+                    "minItems": min_p,
+                    "maxItems": max_p,
                     "items": {"type": "string"},
                 }
             },
@@ -1313,14 +1332,14 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         user_keywords: List[str],
     ) -> str:
         """섹션 한 개 분량의 paragraphs 만 요청하는 프롬프트."""
+        from ..common.aeo_config import paragraph_contract_from_length_spec
+
         per_section_min = int(length_spec.get('per_section_min') or STRUCTURE_SPEC['sectionCharMin'])
         per_section_max = int(length_spec.get('per_section_max') or STRUCTURE_SPEC['sectionCharMax'])
-        section_paragraphs = _coerce_int_option(
-            length_spec.get('paragraphs_per_section'),
-            default=int(STRUCTURE_SPEC['paragraphsPerSection']),
-            minimum=2,
-            maximum=4,
-        )
+        contract = paragraph_contract_from_length_spec(length_spec)
+        section_paragraph_min = int(contract['section_paragraph_min'])
+        section_paragraph_max = int(contract['section_paragraph_max'])
+        section_paragraphs = int(contract['paragraphs_per_section'])
 
         prior_block = self._build_prior_sections_block(prior_sections)
         role_block = self._build_section_role_guidance(
@@ -1360,10 +1379,14 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             + '</locked_section>\n'
         )
 
+        paragraph_slot_texts = ", ".join(
+            f'"문단{i+1} (3문장, 90~120자)"'
+            for i in range(section_paragraphs)
+        )
         schema_block = (
             '  <json_shape><![CDATA[\n'
             '{\n'
-            '  "paragraphs": ["문단1 (3문장, 90~120자)", "문단2 (3문장, 90~120자)", "문단3 (3문장, 90~120자)"]\n'
+            f'  "paragraphs": [{paragraph_slot_texts}]\n'
             '}\n'
             '  ]]></json_shape>\n'
         )
@@ -1375,7 +1398,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             + "\n<json_output_contract priority=\"critical\">\n"
             "  <override>기존 XML output_format 지시는 무시하고, 최종 응답은 단일 JSON 객체 1개만 출력하십시오. "
             "제목·다른 섹션은 절대 포함하지 말고 현재 섹션의 paragraphs 배열만 출력.</override>\n"
-            f"  <task>locked_section 의 heading/lead_sentence/role 에 맞춰, 이 섹션의 문단 {section_paragraphs}개만 작성하십시오.</task>\n"
+            f"  <task>locked_section 의 heading/lead_sentence/role 에 맞춰, 이 섹션의 문단을 {section_paragraph_min}~{section_paragraph_max}개 범위로 작성하십시오.</task>\n"
             f"  <length>섹션 전체 {per_section_min}~{per_section_max}자, 각 문단은 최소 3문장·90~120자.</length>\n"
             + role_block +
             "  <rules>\n"

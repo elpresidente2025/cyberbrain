@@ -581,6 +581,7 @@ class SectionRepairMixin:
             target_word_count,
             stance_count,
             reference_text_len=reference_text_len,
+            writing_method=writing_method,
         )
         print(
             f"📏 [StructureAgent] 분량 계획: {length_spec['total_sections']}섹션, "

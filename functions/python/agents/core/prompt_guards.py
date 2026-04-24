@@ -551,8 +551,10 @@ def build_retry_directive(
     max_chars = length_spec['max_chars']
     per_section_recommended = length_spec['per_section_recommended']
     expected_h2 = length_spec['expected_h2']
-    paragraphs_per_section = int(STRUCTURE_SPEC['paragraphsPerSection'])
-    paragraphs_per_section_max = paragraphs_per_section + 1
+    from ..common.aeo_config import paragraph_contract_from_length_spec
+    contract = paragraph_contract_from_length_spec(length_spec)
+    paragraphs_per_section = int(contract['section_paragraph_min'])
+    paragraphs_per_section_max = int(contract['section_paragraph_max'])
     section_min_delta = int(STRUCTURE_SPEC['sectionCharTarget']) - int(STRUCTURE_SPEC['sectionCharMin'])
     section_max_delta = int(STRUCTURE_SPEC['sectionCharMax']) - int(STRUCTURE_SPEC['sectionCharTarget'])
 
@@ -678,7 +680,7 @@ def build_retry_directive(
         return (
             "실패한 섹션의 문단 수만 부분 수정하십시오. "
             f"모든 섹션(서론·본론·결론)은 <p>를 {paragraphs_per_section}~{paragraphs_per_section_max}개로 맞추십시오. "
-            f"특히 2개 이하로 줄어든 섹션은 반드시 {paragraphs_per_section}개 이상으로 복구하십시오."
+            f"최소 개수({paragraphs_per_section}개)보다 적은 섹션은 반드시 보강하십시오."
         )
 
     if code == 'SECTION_ROLE_CONTRACT':
