@@ -7062,7 +7062,8 @@ _CONCLUSION_ANCHOR_STOPWORDS = {
 
 
 def _sequential_structure_enabled() -> bool:
-    return os.environ.get("ENABLE_SEQUENTIAL_STRUCTURE", "false").lower() == "true"
+    # 기본값 "true" — sequential 경로가 프로덕션 기본. 비상 시 env 로 "false" 명시 주입하면 off.
+    return os.environ.get("ENABLE_SEQUENTIAL_STRUCTURE", "true").lower() == "true"
 
 
 def _clean_conclusion_anchor_candidate(candidate: str, *, full_name: str = "") -> str:

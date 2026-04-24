@@ -405,7 +405,7 @@ class ContentValidator:
             re.compile(r'그래도 .*문제는 .*점검해야', re.IGNORECASE),
             re.compile(r'현장 .*데이터.*함께 .*점검', re.IGNORECASE),
         ]
-        if os.environ.get("ENABLE_SEQUENTIAL_STRUCTURE", "false").lower() == "true":
+        if os.environ.get("ENABLE_SEQUENTIAL_STRUCTURE", "true").lower() == "true":
             patterns.extend([
                 re.compile(r'(본론|서론|결론)에서 (확인한|다룬|언급한|살펴본|제기한)', re.IGNORECASE),
                 re.compile(r'앞서 (확인한|다룬|언급한|살펴본|제기한)', re.IGNORECASE),

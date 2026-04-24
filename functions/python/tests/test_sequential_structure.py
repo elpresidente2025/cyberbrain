@@ -120,7 +120,8 @@ class TestMetaPromptLeakPatterns:
         assert sentence not in leaks
 
     def test_new_patterns_disabled_when_flag_off(self, monkeypatch):
-        monkeypatch.delenv("ENABLE_SEQUENTIAL_STRUCTURE", raising=False)
+        # 기본값이 "true" 로 바뀌었으므로 off 상태는 env 를 명시 "false" 로 설정해야 한다.
+        monkeypatch.setenv("ENABLE_SEQUENTIAL_STRUCTURE", "false")
         sentence = "본론에서 확인한 문제를 실행으로 연결하겠습니다."
         leaks = self.validator._find_meta_prompt_leak_sentences(
             f"<p>{sentence}</p>"

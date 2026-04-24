@@ -966,8 +966,10 @@ class SectionRepairMixin:
                         is_aeo = False
 
                 # === (flag) ENABLE_SEQUENTIAL_STRUCTURE — 섹션 단위 순차 생성 ===
+                # 기본값을 "true" 로 전환하여 sequential 경로를 프로덕션 기본 경로로 사용.
+                # 비상 시 env 로 "false" 를 명시 주입하면 legacy expansion 경로로 되돌아감.
                 seq_flag_on = (
-                    os.environ.get("ENABLE_SEQUENTIAL_STRUCTURE", "false").lower() == "true"
+                    os.environ.get("ENABLE_SEQUENTIAL_STRUCTURE", "true").lower() == "true"
                     and is_aeo
                     and not sequential_disabled_after_failure
                 )
