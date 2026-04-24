@@ -1007,6 +1007,27 @@ class SubheadingAgent(Agent):
         print(f"✅ [SubheadingAgent] 완료. stats={stats}")
         for i, entry in enumerate(trace):
             print(f"[SubheadingAgent] trace[{i}] {entry}")
+
+        try:
+            from ..common.telemetry import emit_quality_signal
+
+            emit_quality_signal(
+                signal_type="h2_set",
+                payload={
+                    "totalHeadings": len(first_scores),
+                    "passedFirst": stats["passed_first"],
+                    "passedAfterPreRepair": stats["passed_after_pre_repair"],
+                    "llmCalls": stats["llm_calls"],
+                    "actions": stats["actions"],
+                    "firstScores": [
+                        round(float(sc.get("score") or 0.0), 3) for sc in first_scores
+                    ],
+                    "finalHeadings": list(final_headings),
+                },
+            )
+        except Exception:
+            pass
+
         return rebuilt, trace, stats
 
     # ---------------------------------------------------------- Plan / prompt

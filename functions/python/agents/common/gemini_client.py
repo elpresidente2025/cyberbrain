@@ -31,6 +31,10 @@ MAX_RETRY_DELAY_SEC = 8.0
 DEFAULT_TOP_K = 20
 DEFAULT_TOP_P = 0.80
 
+# Phase A-3: per-call timeout safety net for async path. Conservative default —
+# above current observed max so existing pipelines see no behavior change.
+DEFAULT_TIMEOUT_SEC: Optional[float] = 90.0
+
 # LLM이 JSON 대신 반환하는 흔한 프리앰블 패턴 (lowercase 비교)
 _PREAMBLE_PATTERNS = (
     "here is the json",
@@ -186,6 +190,38 @@ def _compute_backoff_sec(attempt: int) -> float:
     exponential = min(BASE_RETRY_DELAY_SEC * (2 ** (attempt - 1)), MAX_RETRY_DELAY_SEC)
     jitter = random.uniform(0, 0.25)
     return exponential + jitter
+
+
+def _emit_call_telemetry(
+    *,
+    model: str,
+    usage: Any,
+    duration_ms: int,
+    timeout_sec: Optional[float],
+    timed_out: bool,
+    retries_used: int,
+    success: bool,
+    error_type: Optional[str] = None,
+) -> None:
+    """Phase A-1 cost emit. Best-effort — must never break the pipeline."""
+    try:
+        from .telemetry import emit_gemini_call
+
+        emit_gemini_call(
+            model=model,
+            prompt_tokens=getattr(usage, "prompt_token_count", None) if usage else None,
+            candidates_tokens=getattr(usage, "candidates_token_count", None) if usage else None,
+            thoughts_tokens=getattr(usage, "thoughts_token_count", None) if usage else None,
+            total_tokens=getattr(usage, "total_token_count", None) if usage else None,
+            duration_ms=duration_ms,
+            timeout_sec=timeout_sec,
+            timed_out=timed_out,
+            retries_used=retries_used,
+            success=success,
+            error_type=error_type,
+        )
+    except Exception:
+        pass
 
 
 def _build_generation_config(
@@ -708,6 +744,7 @@ def generate_content(
 
     tries = max(1, int(retries or 1))
     last_error: Optional[Exception] = None
+    started = time.monotonic()
 
     for attempt in range(1, tries + 1):
         try:
@@ -728,6 +765,15 @@ def generate_content(
                     getattr(usage, "thoughts_token_count", "?"),
                     getattr(usage, "total_token_count", "?"),
                 )
+            _emit_call_telemetry(
+                model=normalized_model,
+                usage=usage,
+                duration_ms=int((time.monotonic() - started) * 1000),
+                timeout_sec=None,
+                timed_out=False,
+                retries_used=attempt - 1,
+                success=True,
+            )
             return text
         except Exception as error:  # pragma: no cover
             last_error = error
@@ -737,6 +783,17 @@ def generate_content(
             delay_sec = _compute_backoff_sec(attempt)
             logger.info("[GeminiClient] retry after %.2fs", delay_sec)
             time.sleep(delay_sec)
+
+    _emit_call_telemetry(
+        model=normalized_model,
+        usage=None,
+        duration_ms=int((time.monotonic() - started) * 1000),
+        timeout_sec=None,
+        timed_out=False,
+        retries_used=tries,
+        success=False,
+        error_type=type(last_error).__name__ if last_error else "Unknown",
+    )
 
     raise GeminiClientError(
         get_user_friendly_error_message(last_error or Exception("Unknown error")),
@@ -752,6 +809,7 @@ async def generate_content_async(
     response_mime_type: Optional[str] = None,
     retries: int = DEFAULT_RETRIES,
     options: Optional[Dict[str, Any]] = None,
+    timeout_sec: Optional[float] = DEFAULT_TIMEOUT_SEC,
 ) -> str:
     # Route to Claude client when model name starts with "claude-"
     if str(model_name or "").startswith("claude-"):
@@ -781,16 +839,22 @@ async def generate_content_async(
 
     tries = max(1, int(retries or 1))
     last_error: Optional[Exception] = None
+    timed_out_anywhere = False
+    started = time.monotonic()
 
     try:
         for attempt in range(1, tries + 1):
             try:
                 logger.info("[GeminiClient] async call (%s/%s) model=%s", attempt, tries, normalized_model)
-                response = await client.aio.models.generate_content(
+                api_call = client.aio.models.generate_content(
                     model=normalized_model,
                     contents=prompt,
                     config=config,
                 )
+                if timeout_sec is not None and timeout_sec > 0:
+                    response = await asyncio.wait_for(api_call, timeout=timeout_sec)
+                else:
+                    response = await api_call
                 text = _extract_response_text(response)
                 usage = getattr(response, "usage_metadata", None)
                 if usage:
@@ -802,7 +866,27 @@ async def generate_content_async(
                         getattr(usage, "thoughts_token_count", "?"),
                         getattr(usage, "total_token_count", "?"),
                     )
+                _emit_call_telemetry(
+                    model=normalized_model,
+                    usage=usage,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                    timeout_sec=timeout_sec,
+                    timed_out=timed_out_anywhere,
+                    retries_used=attempt - 1,
+                    success=True,
+                )
                 return text
+            except asyncio.TimeoutError as error:
+                last_error = error
+                timed_out_anywhere = True
+                logger.warning(
+                    "[GeminiClient] async timeout (%s/%s) after %ss model=%s",
+                    attempt, tries, timeout_sec, normalized_model,
+                )
+                if attempt >= tries:
+                    break
+                delay_sec = _compute_backoff_sec(attempt)
+                await asyncio.sleep(delay_sec)
             except Exception as error:  # pragma: no cover
                 last_error = error
                 logger.warning("[GeminiClient] async failed (%s/%s): %s", attempt, tries, error)
@@ -813,6 +897,17 @@ async def generate_content_async(
                 await asyncio.sleep(delay_sec)
     finally:
         await _close_async_client(client)
+
+    _emit_call_telemetry(
+        model=normalized_model,
+        usage=None,
+        duration_ms=int((time.monotonic() - started) * 1000),
+        timeout_sec=timeout_sec,
+        timed_out=timed_out_anywhere,
+        retries_used=tries,
+        success=False,
+        error_type=type(last_error).__name__ if last_error else "Unknown",
+    )
 
     raise GeminiClientError(
         get_user_friendly_error_message(last_error or Exception("Unknown error")),
@@ -830,6 +925,7 @@ async def generate_json_async(
     options: Optional[Dict[str, Any]] = None,
     response_schema: Optional[Dict[str, Any]] = None,
     required_keys: Optional[Iterable[str]] = None,
+    timeout_sec: Optional[float] = DEFAULT_TIMEOUT_SEC,
 ) -> Dict[str, Any]:
     """
     Generate structured JSON and return a validated top-level object.
@@ -856,6 +952,7 @@ async def generate_json_async(
                 response_mime_type="application/json",
                 retries=content_retries if parse_attempt == 1 else max(1, content_retries - 1),
                 options=merged_options,
+                timeout_sec=timeout_sec,
             )
         except (GeminiClientError, RuntimeError) as error:
             last_error = error

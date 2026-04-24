@@ -15,6 +15,8 @@ from datetime import datetime
 
 from firebase_functions import https_fn
 
+from agents.common.telemetry import set_request_context
+
 logger = logging.getLogger(__name__)
 
 
@@ -105,6 +107,11 @@ def handle_step(req: https_fn.Request) -> https_fn.Response:
             )
 
             context = job_data.get("context") or {}
+            set_request_context(
+                job_id=job_id,
+                uid=str(context.get("uid") or ""),
+                agent=agent_name,
+            )
             result, duration_ms = executor.run_sync(step_info, context)
 
             # 4) Merge context
