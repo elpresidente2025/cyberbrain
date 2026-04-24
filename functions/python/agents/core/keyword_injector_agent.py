@@ -351,6 +351,7 @@ class KeywordInjectorAgent(Agent):
             max_iterations=3,
         )
         repaired_content = str(enforcement.get('content') or current_content)
+        repaired_content = self._trim_keyword_excess(repaired_content, user_keywords, max_target)
         repaired_full_result = validate_keyword_insertion(
             repaired_content,
             user_keywords,
@@ -799,6 +800,83 @@ class KeywordInjectorAgent(Agent):
             if self._has_safe_match_boundaries(text, start, end):
                 return match
         return None
+
+    def _trim_keyword_excess(self, content: str, keywords: List[str], max_target: int) -> str:
+        result = content
+        for kw in keywords:
+            result = self._trim_single_keyword_excess(result, kw, max_target)
+        return result
+
+    def _trim_single_keyword_excess(self, content: str, keyword: str, max_target: int) -> str:
+        current = count_keyword_occurrences(content, keyword)
+        if current <= max_target:
+            return content
+
+        excess = current - max_target
+
+        # 보호 구간: 첫 번째 등장 위치, H2 태그 내부
+        first_pos = content.find(keyword)
+        h2_spans = [
+            (m.start(), m.end())
+            for m in re.finditer(r'<h2[^>]*>[\s\S]*?</h2>', content, re.IGNORECASE)
+        ]
+
+        def is_protected(pos: int) -> bool:
+            if pos == first_pos:
+                return True
+            return any(s <= pos < e for s, e in h2_spans)
+
+        # 전체 등장 위치 수집
+        positions: List[int] = []
+        start = 0
+        while True:
+            idx = content.find(keyword, start)
+            if idx < 0:
+                break
+            positions.append(idx)
+            start = idx + 1
+
+        # 보호되지 않은 위치 중 뒤에서부터(낮은 우선순위) 제거
+        removable = [p for p in positions if not is_protected(p)]
+        to_remove = list(reversed(removable))[:excess]
+        to_remove.sort(reverse=True)  # 높은 위치부터 처리 → 앞쪽 위치 불변
+
+        _NAME_BEFORE = re.compile(r'([가-힣]{2,4})\s+$')
+        _NAME_AFTER = re.compile(r'^\s+([가-힣]{2,4})')
+        kw_len = len(keyword)
+        result = content
+
+        for pos in to_remove:
+            kw_end = pos + kw_len
+
+            # 축약 1: "이름 검색어" → "이름"
+            prefix = result[max(0, pos - 10):pos]
+            m = _NAME_BEFORE.search(prefix)
+            if m:
+                remove_start = pos - len(prefix) + m.start()
+                result = result[:remove_start] + m.group(1) + result[kw_end:]
+                continue
+
+            # 축약 2: "검색어 이름" → "이름"
+            suffix = result[kw_end:kw_end + 10]
+            m = _NAME_AFTER.match(suffix)
+            if m:
+                result = result[:pos] + m.group(1) + result[kw_end + m.end():]
+                continue
+
+            # 폴백: 검색어 + 인접 공백 제거
+            if pos > 0 and result[pos - 1] == ' ':
+                result = result[:pos - 1] + result[kw_end:]
+            elif kw_end < len(result) and result[kw_end] == ' ':
+                result = result[:pos] + result[kw_end + 1:]
+            else:
+                result = result[:pos] + result[kw_end:]
+
+        print(
+            f"[KeywordInjectorAgent] 검색어 과다 trim: \"{keyword}\" {current}회 → "
+            f"{count_keyword_occurrences(result, keyword)}회"
+        )
+        return result
 
     def _is_whitespace_gap_insert_position(self, text: str, insert_at: int) -> bool:
         left_char = text[insert_at - 1] if insert_at > 0 else ''
