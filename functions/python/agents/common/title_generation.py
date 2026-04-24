@@ -44,6 +44,7 @@ from .title_prompt_parts import (
     build_archetype_constraint_block,
     build_event_title_policy_instruction,
     build_poll_focus_title_instruction,
+    build_stance_title_policy_instruction,
     build_title_skeleton_protocol,
     build_user_provided_few_shot_instruction,
     get_keyword_strategy_instruction,
@@ -170,6 +171,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
     if title_purpose == 'event_announcement':
         return _build_event_title_prompt(params)
     event_title_policy = build_event_title_policy_instruction(params) if title_purpose == 'event_announcement' else ''
+    stance_title_policy = build_stance_title_policy_instruction(params) if title_purpose == 'stance_announcement' else ''
     poll_focus_title_policy = build_poll_focus_title_instruction(params)
     competitor_intent_title_policy = build_competitor_intent_title_instruction(params)
     title_constraint_text = str(params.get('titleConstraintText') or '').strip()
@@ -541,6 +543,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 {skeleton_protocol}
 
 {event_title_policy}
+{stance_title_policy}
 {poll_focus_title_policy}
 {competitor_intent_title_policy}
 {election_compliance}

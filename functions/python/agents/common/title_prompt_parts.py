@@ -1691,6 +1691,31 @@ def build_event_title_policy_instruction(params: Dict[str, Any]) -> str:
 </title_goal>
 """.strip()
 
+
+def build_stance_title_policy_instruction(params: Dict[str, Any]) -> str:
+    """선언·입장문 intent 용 제목 정책.
+
+    Why: stance_announcement intent 는 body-anchor coverage 게이트에서 면제되지만,
+    default 프롬프트에는 여전히 정책 글 전제의 rule (prefer_concrete_policy_over_abstract_honorific,
+    aeo_answerable_query_form, require_body_exclusive_anchor_when_present) 들이
+    강하게 걸려 있어, LLM 이 그 룰을 만족시키려고 본문에 없는 추상 umbrella 어휘
+    (예: "경제 해법 제시", "종합 대책", "구조적 해법") 를 제목에서 **발명**하는
+    경향이 있다. 이 instruction 은 그 압력을 상쇄한다. stance intent 에서는
+    본문이 담고 있는 입장·관계·계기가 제목의 중심이어야 하고, 본문에 없는
+    정책 디테일을 제목에서 새로 만들어 붙이는 것은 금지한다.
+    """
+    del params  # 현재 구현은 파라미터 없이 고정 규칙만 내보낸다.
+    return """
+<title_goal purpose="stance_announcement" priority="critical">
+  <context>이 글은 선언·입장문(경선 결과·출마/사퇴·입장 표명·인사 등). 정책 해설 글이 아니다.</context>
+  <rule>제목은 stance/선언 중심으로 작성하라. 책임·각오·관계·계기·일정이 중심어다. 정책 앵커 인용은 선택이지 필수가 아니다.</rule>
+  <rule priority="critical">본문에 명시적으로 등장하지 않는 추상 umbrella 어휘를 제목에서 **새로 만들어 넣지 말라**. 구체 예시: "경제 해법 제시", "정책 비전", "실질적 변화", "종합 대책", "구조적 해법", "경쟁력 강화", "미래 청사진". 본문이 입장·관계·일정 위주라면 제목도 거기에 충실할 것. 본문이 담고 있지 않은 정책 디테일을 제목이 주장하면 허위 사실 리스크.</rule>
+  <rule>default 규칙 중 &lt;prefer_concrete_policy_over_abstract_honorific&gt;, &lt;aeo_answerable_query_form&gt;, &lt;require_body_exclusive_anchor_when_present&gt; 가 요구하는 [정책명][수치] 쿼리 형식은 이 intent 에서 **권장이지 강제가 아니다**. 본문에 구체 앵커가 없다면 선언형 평서문이 자연스러운 답이다. 예: "[맥락], 책임지겠습니다", "[맥락], 함께 나아가겠습니다", "[맥락], 주민 여러분께 드리는 인사".</rule>
+  <rule>반대로 본문에 실제 정책·수치·조례·사업명이 등장한다면 그 중 1개를 제목에 인용하는 것은 여전히 품질을 높인다. 다만 없는 것을 지어내는 것보다 없이 선언형으로 쓰는 것이 우선이다.</rule>
+</title_goal>
+""".strip()
+
+
 def _render_narrative_principle_xml(raw_text: str) -> str:
     text = str(raw_text or "").strip()
     if not text:
