@@ -13003,17 +13003,19 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             "최종 구조 게이트에서 섹션 문단 수 정규화가 적용되었습니다.",
         )
 
-    # 하드 차단: 화자 정체성 불일치, 문장 무결성 치명 오류, 선거법 위반.
+    # 구조 품질 미달(문단 수 부족 등)은 soft warning으로 통과 — repair 후에도 잔존하는 경우.
+    # 화자·무결성·선거법 오류와 달리 내용 자체가 틀린 것이 아니므로 원고를 반환한다.
     if final_structure_issues:
         issue_text = "; ".join(final_structure_issues[:2])
         logger.warning(
-            "QUALITY_METRIC generate_posts outcome=blocked reason=structure warnings=%s issues=%s",
+            "QUALITY_METRIC generate_posts outcome=degraded_pass reason=structure warnings=%s issues=%s detail=%s",
             len(quality_warnings),
             len(final_structure_issues),
+            issue_text,
         )
-        raise ApiError(
-            "failed-precondition",
-            f"[BLOCKER:STRUCTURE] {issue_text}",
+        _append_quality_warning(
+            quality_warnings,
+            f"[구조 미달] {issue_text}",
         )
 
     if final_speaker_issues:
