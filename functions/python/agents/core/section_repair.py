@@ -103,6 +103,7 @@ class SectionRepairMixin:
         source_instructions: str,
         user_keywords: List[str],
         existing_outline: Optional[Dict[str, Any]] = None,
+        user_profile: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """ENABLE_SEQUENTIAL_STRUCTURE flag on 시 호출.
 
@@ -191,6 +192,7 @@ class SectionRepairMixin:
                 instructions=source_instructions,
                 user_keywords=user_keywords,
                 cached_content_name=cached_name,
+                user_profile=user_profile,
             )
             if not intro_paragraphs:
                 print("❌ [SequentialStructure] intro 생성 실패 — legacy 경로로 폴백")
@@ -223,6 +225,7 @@ class SectionRepairMixin:
                     user_keywords=user_keywords,
                     cached_content_name=cached_name,
                     anchor_hint=anchor_hint,
+                    user_profile=user_profile,
                 )
                 if not section_paragraphs:
                     print(
@@ -256,6 +259,7 @@ class SectionRepairMixin:
                 instructions=source_instructions,
                 user_keywords=user_keywords,
                 cached_content_name=cached_name,
+                user_profile=user_profile,
             )
             if not conclusion_paragraphs:
                 print("❌ [SequentialStructure] conclusion 생성 실패 — legacy 경로로 폴백")
@@ -958,6 +962,7 @@ class SectionRepairMixin:
                         source_instructions=source_instructions,
                         user_keywords=user_keywords if isinstance(user_keywords, list) else [],
                         existing_outline=aeo_outline if is_aeo else None,
+                        user_profile=user_profile,
                     )
                     if seq_payload is None:
                         print("⚠️ [StructureAgent] sequential 경로 실패 — legacy 경로로 폴백")
@@ -980,6 +985,7 @@ class SectionRepairMixin:
                             topic=topic,
                             instructions=source_instructions,
                             user_keywords=user_keywords if isinstance(user_keywords, list) else [],
+                            user_profile=user_profile,
                         )
                         response_schema = self._build_structure_json_schema(length_spec)
                         payload = await self.call_llm_json_contract(

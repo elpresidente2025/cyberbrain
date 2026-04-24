@@ -736,9 +736,10 @@ def build_leadership_philosophy_xml() -> str:
     parts: list[str] = [
         '<political_philosophy priority="baseline">',
         '  <premise>'
-        '이 글은 아래 정치 철학을 기본 전제로 삼는다. '
-        '글의 논조·정책 방향·가치 판단이 이 철학과 충돌해서는 안 된다. '
-        '이 전제는 화자의 소속 정당이나 개인 성향과 무관하게 적용된다.'
+        '아래 정치 철학은 화자의 비전·정책·공약·행보를 정당화하고 해석하는 배경 프레임이다. '
+        '글의 주어와 중심 서사는 반드시 화자 본인에게 두고, '
+        '아래 철학은 화자의 선택이 어떤 가치와 정책 방향 위에 서 있는지 뒷받침하는 용도로만 사용한다. '
+        '아래 철학의 사례·수치·성과가 화자의 직접 실적이나 공약처럼 읽히지 않게 한다.'
         '</premise>',
     ]
 
@@ -799,16 +800,27 @@ def build_leadership_philosophy_xml() -> str:
     # ── 사일런트 정치 가드: 기본 입장 설정 ──
     parts.append('  <baseline_stance>')
     parts.append(
-        '    현 정부(국민주권정부)의 정책 방향은 이 철학의 실현으로 간주한다. '
-        '글의 논조가 현 정부의 핵심 정책 기조와 정면 충돌하는 방향으로 '
-        '전개되어서는 안 된다. 비판적 논의가 필요한 경우, '
-        '건설적 비판 원칙(상대 논리 인정 → 현실적 한계 → 대안 제시)을 따르되 '
-        '기본 철학의 가치 체계 안에서 전개할 것.'
+        '    현 정부(국민주권정부)의 정책 방향은 위 철학을 현실 정치에서 구현하려는 흐름으로 참고한다. '
+        '글의 중심은 화자의 지역·직책·공약·행보이며, '
+        '정부 정책은 화자의 주장을 보강하는 맥락으로만 사용한다. '
+        '비판적 논의가 필요한 경우, '
+        '건설적 비판 원칙(상대 논리 인정 → 현실적 한계 → 대안 제시)에 따라 전개한다.'
     )
     parts.append('  </baseline_stance>')
 
     parts.append('</political_philosophy>')
     return "\n".join(parts)
+
+
+def _is_basic_lawmaker(user_profile: dict | None) -> bool:
+    """position canonical 값이 기초의원이면 True.
+
+    position(권한 범위)과 status(예비후보/후보/현직)를 혼용하지 않는다.
+    is_current_lawmaker()(prompt_builder.py)와 동일한 canonical 완전 일치 패턴.
+    """
+    if not user_profile:
+        return False
+    return str(user_profile.get('position') or '').strip() == '기초의원'
 
 
 _MATERIAL_STOPWORDS = {
@@ -1201,6 +1213,7 @@ def build_argument_role_material_block(
     topic: str = "",
     instructions: str = "",
     keywords: Iterable[str] | None = None,
+    user_profile: dict | None = None,
 ) -> str:
     """역할 섹션 바로 아래에 붙일 자연어 소재 블록."""
     if role == "evidence":
@@ -1227,13 +1240,41 @@ def build_argument_role_material_block(
     if not summary.strip():
         return ""
 
+    is_basic = _is_basic_lawmaker(user_profile)
+
     lines = [f'    <role_material role="{role}" priority="critical">']
+    # 공통: 본문 주어는 화자, 소재는 보조 근거
+    lines.append(
+        '      <subject_anchor>본문의 주어와 중심 서사는 반드시 화자 본인입니다. '
+        '아래 소재는 화자의 비전·정책·공약·행보를 정당화하는 보조 근거로만 사용하고, '
+        '소재의 사례·수치·성과가 화자의 직접 실적처럼 읽히지 않게 하십시오.</subject_anchor>'
+    )
+    # role별 instruction
     if role == "evidence":
-        lines.append('      <instruction>아래 소재 중 이 글과 가장 맞는 1개 이상을 골라, 근거 문단에서 실행 방식·인과관계·사례로 직접 풀어 쓰십시오.</instruction>')
+        if is_basic:
+            lines.append(
+                '      <instruction>아래 소재에는 단체장급 행정 사례가 포함될 수 있습니다. '
+                '수치·실적을 화자의 직접 공약처럼 인용하지 말고, '
+                '그 사례가 보여주는 원리만 추출해 기초의원 권한인 조례 발의·예산심의·'
+                '구정질의·행정사무감사·주민참여예산·위원회 활동으로 번역해 쓰십시오.</instruction>'
+            )
+        else:
+            lines.append('      <instruction>아래 소재 중 이 글과 가장 맞는 1개 이상을 골라, 근거 문단에서 실행 방식·인과관계·사례로 직접 풀어 쓰십시오.</instruction>')
     elif role == "higher_principle":
-        lines.append('      <instruction>아래 소재 중 이 글과 가장 맞는 1개를 골라, 가치 선언과 구체 근거와 한국 맥락을 한 섹션 안에서 함께 쓰십시오.</instruction>')
+        lines.append(
+            '      <instruction>아래 소재는 화자의 비전·정책·공약을 정당화하는 배경 원리입니다. '
+            '소재 자체를 글의 중심으로 삼지 말고, 화자의 선택이 어떤 가치 위에 서 있는지 '
+            '보조 설명으로만 사용하십시오.</instruction>'
+        )
     else:
-        lines.append('      <instruction>아래 소재 중 이 글과 가장 맞는 반론-재반론 1개를 골라, 반론을 인정한 뒤 사실·사례로 재반론하십시오.</instruction>')
+        if is_basic:
+            lines.append(
+                '      <instruction>아래 반론-재반론 소재는 단체장급 행정 경험을 배경으로 합니다. '
+                '재반론 논리의 원리만 추출해 화자 본인의 현장 경험·지역 사례로 바꿔 쓰십시오. '
+                '경기도·성남 수치를 직접 인용하지 마십시오.</instruction>'
+            )
+        else:
+            lines.append('      <instruction>아래 소재 중 이 글과 가장 맞는 반론-재반론 1개를 골라, 반론을 인정한 뒤 사실·사례로 재반론하십시오.</instruction>')
     for line in summary.splitlines():
         if line.strip():
             lines.append(f'      <item>{_xml_esc(line.strip())}</item>')

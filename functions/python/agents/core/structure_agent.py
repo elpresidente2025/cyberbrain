@@ -1014,6 +1014,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         topic: str = '',
         instructions: str = '',
         user_keywords: Optional[List[str]] = None,
+        user_profile: Optional[Dict] = None,
     ) -> str:
         """AEO 2단계 생성의 2단계: 아웃라인을 고정한 채 본문 확장을 요청하는 프롬프트."""
         from ..common.aeo_config import uses_dialectical_structure, build_dialectical_roles
@@ -1054,6 +1055,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                         topic=topic,
                         instructions=instructions,
                         keywords=user_keywords or [],
+                        user_profile=user_profile,
                     )
                 elif effective_role == 'higher_principle':
                     role_hint = (
@@ -1070,6 +1072,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                         topic=topic,
                         instructions=instructions,
                         keywords=user_keywords or [],
+                        user_profile=user_profile,
                     )
                 elif effective_role == 'evidence':
                     role_hint = f'    <expansion_role>{effective_role}: {guide}</expansion_role>\n'
@@ -1078,6 +1081,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                         topic=topic,
                         instructions=instructions,
                         keywords=user_keywords or [],
+                        user_profile=user_profile,
                     )
                 else:
                     role_hint = f'    <expansion_role>{effective_role}: {guide}</expansion_role>\n'
@@ -1286,6 +1290,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         topic: str,
         instructions: str,
         user_keywords: List[str],
+        user_profile: Optional[Dict] = None,
     ) -> str:
         """섹션 역할별 고정 가이드 블록. 기존 expansion 경로의 role 지침을 재사용."""
         from ..common.aeo_config import get_conclusion_archetype
@@ -1308,6 +1313,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                 topic=topic,
                 instructions=instructions,
                 keywords=user_keywords or [],
+                user_profile=user_profile,
             )
             return (
                 '  <section_role value="counterargument_rebuttal" priority="critical">\n'
@@ -1326,6 +1332,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                 topic=topic,
                 instructions=instructions,
                 keywords=user_keywords or [],
+                user_profile=user_profile,
             )
             return (
                 '  <section_role value="higher_principle" priority="critical">\n'
@@ -1343,6 +1350,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                 topic=topic,
                 instructions=instructions,
                 keywords=user_keywords or [],
+                user_profile=user_profile,
             )
             return (
                 '  <section_role value="evidence" priority="critical">\n'
@@ -1404,6 +1412,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         user_keywords: List[str],
         omit_base_prompt: bool = False,
         anchor_hint: str = '',
+        user_profile: Optional[Dict] = None,
     ) -> str:
         """섹션 한 개 분량의 paragraphs 만 요청하는 프롬프트."""
         from ..common.aeo_config import paragraph_contract_from_length_spec
@@ -1421,6 +1430,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             topic=topic,
             instructions=instructions,
             user_keywords=user_keywords,
+            user_profile=user_profile,
         )
 
         anchor_rule = ''
@@ -1548,6 +1558,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         user_keywords: Optional[List[str]] = None,
         cached_content_name: Optional[str] = None,
         anchor_hint: str = '',
+        user_profile: Optional[Dict] = None,
     ) -> Optional[List[str]]:
         """단일 섹션의 paragraphs 를 생성. 실패 시 None 반환.
 
@@ -1570,6 +1581,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             user_keywords=user_keywords,
             omit_base_prompt=bool(cached_content_name),
             anchor_hint=anchor_hint,
+            user_profile=user_profile,
         )
         schema = self._build_section_json_schema(length_spec)
         min_total_chars = max(160, int(length_spec.get('per_section_min') or 250) - 40)
