@@ -408,6 +408,9 @@ class EditorAgent(Agent):
             print(f"[EditorAgent] Step 3.8 TV 결과: target={_tv_target_count}, replaced={_tv_replaced if _tv_target_count > 0 else 0}")
 
             # 3.9. 소스에 없는 허구 수치가 포함된 문장 삭제
+            # <p> 블록 전체 삭제 대신 문장 단위로 drop 하여 섹션 문단 수 계약을 보존한다.
+            # 문장을 모두 drop 해 <p> 가 비게 되면 그 <p> 는 원본 유지 (허구 수치 잔존 감수 —
+            # BLOCKER:STRUCTURE 로 원고가 안 나오는 것보다는 낫다).
             _source_texts = context.get('sourceTexts') or []
             if _source_texts:
                 from ..common.fact_guard import build_fact_allowlist, find_unsupported_numeric_tokens
@@ -417,24 +420,57 @@ class EditorAgent(Agent):
                 _fact_check = find_unsupported_numeric_tokens(_fact_plain, _fact_allowlist)
                 _unsupported = _fact_check.get('unsupported') or []
                 if _unsupported:
-                    # unsupported 수치가 포함된 문장을 HTML에서 삭제
-                    _fact_removed = 0
                     _fc = constrained['content']
-                    for token in _unsupported:
-                        # token이 포함된 <p>...</p> 또는 문장을 찾아 삭제
-                        escaped = re.escape(token)
-                        # <p> 태그 안 문장 삭제
-                        p_pattern = r'<p>[^<]*' + escaped + r'[^<]*</p>\s*'
-                        new_fc = re.sub(p_pattern, '', _fc)
-                        if new_fc != _fc:
-                            _fact_removed += 1
-                            _fc = new_fc
-                    if _fact_removed > 0:
+                    _before_fc = _fc
+                    _sentences_dropped = 0
+                    _empty_paragraphs_preserved = 0
+
+                    def _strip_token_sentences_from_p(match: re.Match) -> str:
+                        nonlocal _sentences_dropped, _empty_paragraphs_preserved
+                        full = match.group(0)
+                        inner_m = re.match(r'(<p[^>]*>)([\s\S]*?)(</p\s*>)', full, re.IGNORECASE)
+                        if not inner_m:
+                            return full
+                        open_tag, inner, close_tag = inner_m.groups()
+
+                        hit_tokens = [tok for tok in _unsupported if tok and tok in inner]
+                        if not hit_tokens:
+                            return full
+
+                        sentences = re.split(r'(?<=[.!?。！？…])\s+', inner.strip())
+                        kept: list = []
+                        for sent in sentences:
+                            sent_stripped = sent.strip()
+                            if not sent_stripped:
+                                continue
+                            contains_token = any(tok in sent_stripped for tok in hit_tokens)
+                            if contains_token:
+                                _sentences_dropped += 1
+                                continue
+                            kept.append(sent_stripped)
+
+                        if not kept:
+                            _empty_paragraphs_preserved += 1
+                            return full  # <p> 통째 삭제 금지 — 원본 유지
+                        return f"{open_tag}{' '.join(kept)}{close_tag}"
+
+                    _fc = re.sub(
+                        r'<p\b[^>]*>[\s\S]*?</p\s*>',
+                        _strip_token_sentences_from_p,
+                        _fc,
+                    )
+
+                    if _fc != _before_fc:
                         constrained['content'] = _fc
-                        constrained['editSummary'].append(
-                            f"소스에 없는 허구 수치 {_unsupported} 포함 문장 {_fact_removed}건 삭제"
-                        )
-                    print(f"[EditorAgent] Step 3.9 unsupported_numerics: {_unsupported}, removed={_fact_removed}")
+                        msg = f"소스에 없는 허구 수치 {_unsupported} 포함 문장 {_sentences_dropped}건 삭제"
+                        if _empty_paragraphs_preserved:
+                            msg += f" (문단 구조 보존을 위해 {_empty_paragraphs_preserved}개 문단은 원본 유지)"
+                        constrained['editSummary'].append(msg)
+                    print(
+                        f"[EditorAgent] Step 3.9 unsupported_numerics: {_unsupported}, "
+                        f"sentences_dropped={_sentences_dropped}, "
+                        f"paragraphs_preserved_intact={_empty_paragraphs_preserved}"
+                    )
                 else:
                     print("[EditorAgent] Step 3.9 unsupported_numerics: none")
             else:

@@ -3274,6 +3274,55 @@ def _repair_terminal_sentence_spacing_once(text: Any) -> Dict[str, Any]:
     }
 
 
+def _build_editor_fact_allowlist_sources(
+    data: Dict[str, Any],
+    pipeline_result: Dict[str, Any],
+    user_profile: Dict[str, Any],
+) -> list:
+    """EditorAgent Step 3.9 (unsupported_numerics) 의 allowlist 에 사용될 소스 텍스트 묶음.
+
+    포함 대상 (사용자 지시):
+    1. 사용자 입력: stanceText, newsDataText, sourceInput, sourceContent
+    2. 화자 Bio: userProfile.bio / careerSummary / bioEntries
+    3. 정치 철학 baseline: leadership.py 의 XML 블록 (숫자 패턴 스캔만 하므로 XML 태그 허용)
+
+    이 allowlist 에 등장한 수치는 "허구 수치" 판정에서 제외되어 삭제되지 않는다.
+    """
+    sources: list = [
+        data.get("stanceText"),
+        data.get("newsDataText"),
+        pipeline_result.get("newsDataText"),
+        data.get("sourceInput"),
+        pipeline_result.get("sourceInput"),
+        data.get("sourceContent"),
+        pipeline_result.get("sourceContent"),
+    ]
+
+    if isinstance(user_profile, dict):
+        sources.append(user_profile.get("bio"))
+        sources.append(user_profile.get("careerSummary"))
+        bio_entries = user_profile.get("bioEntries")
+        if isinstance(bio_entries, list):
+            for entry in bio_entries:
+                if isinstance(entry, dict):
+                    for key in ("title", "summary", "content", "description", "value", "text"):
+                        val = entry.get(key)
+                        if val:
+                            sources.append(val)
+                elif entry:
+                    sources.append(entry)
+
+    try:
+        from agents.common.leadership import build_leadership_philosophy_xml
+        leadership_text = build_leadership_philosophy_xml()
+        if leadership_text:
+            sources.append(leadership_text)
+    except Exception:
+        pass
+
+    return [str(s) for s in sources if s]
+
+
 def _build_person_role_facts(
     *,
     data: Dict[str, Any],
@@ -11092,13 +11141,7 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             generation_profile=generation_profile,
             style_polish_mode=style_polish_mode,
             keyword_aliases=keyword_aliases,
-            source_texts=[
-                data.get("stanceText"),
-                data.get("newsDataText"),
-                pipeline_result.get("newsDataText"),
-                data.get("sourceInput"),
-                pipeline_result.get("sourceInput"),
-            ],
+            source_texts=_build_editor_fact_allowlist_sources(data, pipeline_result, user_profile),
         )
         editor_auto_repair["error"] = editor_fix.get("error")
         summary = editor_fix.get("editSummary")
