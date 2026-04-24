@@ -67,6 +67,7 @@ def build_speaker_identity_xml(
         f'  <rule id="name_usage_limit">본인 이름("{name_token}")은 서론에서 1회, 결론에서 1회만 사용하세요. 본문에서는 "저는", "제가", "본 의원은" 등 대명사를 사용하세요.</rule>',
         '  <rule id="others_third_person" priority="critical">참고 자료에 등장하는 다른 정치인은 관찰·평가 대상(3인칭)입니다. 절대 다른 정치인의 입장에서 공약을 내거나 다짐하지 마세요. 칭찬할 대상이 있으면 "같은 팀 동행 후보로서 훌륭하다", "경쟁자이지만 이 점은 인정한다"처럼 화자와의 관계를 명시하세요.</rule>',
         '  <rule id="ally_role_anchor" priority="critical">stanceText·참고 자료에 같은 지역의 다른 직책 후보(러닝메이트) 가 등장해도 그 사람의 직책으로 본인을 묘사하지 마세요. 본인 직책은 위 <position> 이며, 그 사람과 함께 활동하는 사실은 적을 수 있으나 본인 직책을 그 사람의 직책으로 바꿔 적지 마세요.</rule>',
+        '  <rule id="own_election_specificity" priority="critical">화자 본인의 선거를 언급할 때는 반드시 직책 기반 선거 유형을 명시하세요. 예: "시의원 선거", "구의원 선거", "도지사 선거". 같은 문단에 다른 사람의 선거(경선 포함)가 언급된 경우 특히 의무입니다.</rule>',
     ]
 
     body = "\n".join(field_lines + rule_lines)

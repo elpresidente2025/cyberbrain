@@ -83,6 +83,8 @@ def test_helper_includes_role_attribution_and_ally_rules() -> None:
     assert 'ally_role_anchor' in block
     assert '러닝메이트' in block
     assert '본인 직책을 그 사람의 직책으로 바꿔 적지 마세요' in block
+    assert 'own_election_specificity' in block
+    assert '직책 기반 선거 유형' in block
 
 
 def test_helper_returns_empty_when_all_inputs_blank() -> None:
