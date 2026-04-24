@@ -1540,26 +1540,45 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
 
         last_error: Optional[str] = None
         last_paragraphs_count: int = 0
-        for sub_attempt in range(2):
-            # retry 시 직전 실패 이유를 feedback 으로 주입 (같은 프롬프트 반복 대신 지시 강화).
+        last_total_chars: int = 0
+        max_attempts = 3
+        for sub_attempt in range(max_attempts):
+            # retry 시 계약형 repair directive 를 주입하고 샘플링 다양성을 위해 temperature 를 상향한다.
             effective_prompt = section_prompt
+            retry_temperature = 0.0
             if sub_attempt > 0:
+                retry_temperature = 0.4
+                shortfall_kind = (
+                    "paragraph_count" if last_paragraphs_count != section_paragraph_min
+                    else "total_chars"
+                )
                 effective_prompt = (
                     section_prompt
-                    + "\n\n<feedback priority=\"absolute\">\n"
-                    + f"  직전 시도가 paragraphs 배열을 {last_paragraphs_count}개 원소로 반환하여 거부되었다.\n"
-                    + f"  이번 시도에서는 paragraphs 배열에 정확히 {section_paragraph_min}개의 문단을 담아라.\n"
-                    + "  각 문단은 최소 3문장·90~120자를 준수하고, 빈 문자열이나 한 문장 단편을 원소로 넣지 말 것.\n"
-                    + "</feedback>"
+                    + "\n\n<repair_contract priority=\"absolute\">\n"
+                    + f"  <failure code=\"SECTION_P_COUNT\">\n"
+                    + f"    <required>paragraphs 배열 길이 정확히 {section_paragraph_min}, 섹션 총 {min_total_chars}자 이상</required>\n"
+                    + f"    <actual>직전 시도 paragraphs 길이 {last_paragraphs_count}, 총 {last_total_chars}자</actual>\n"
+                    + f"    <shortfall>{shortfall_kind}</shortfall>\n"
+                    + f"  </failure>\n"
+                    + "  <hard_requirements>\n"
+                    + f"    <r1>paragraphs 배열 크기 = 정확히 {section_paragraph_min}. {section_paragraph_min - 1}개나 {section_paragraph_min + 1}개 모두 거부된다.</r1>\n"
+                    + "    <r2>각 원소는 완결 문장 3개 이상, 90~120자. 빈 문자열·한 문장 단편은 원소로 넣지 말 것.</r2>\n"
+                    + "    <r3>기존 locked_section 의 heading·lead_sentence 는 유지한다.</r3>\n"
+                    + "    <r4>새 주제를 추가하지 말고, 기존 논지를 3개의 실질 문단으로 분리·확장하라. 요약 반복은 금지.</r4>\n"
+                    + f"    <r5>문단 역할 분담: 문단1=주장 선언, 문단2=구체 근거(정책명·수치·사례·인과), 문단3=의미 부여('그래서 왜 중요한가'에 답하며 마감). 총 {section_paragraph_min}개를 이 역할로 채워라.</r5>\n"
+                    + "    <r6>3번째 문단에 쓸 말이 없다고 판단되면: 참고자료(입장문·뉴스·Bio·ragContext) 속 구체 앵커(정책명·수치·기관명·지명) 중 본 섹션 주제와 연결되는 것을 한 번 더 인용해 의미 부여 문단을 구성하라. 추상 umbrella 어휘로 억지로 채우지 말 것.</r6>\n"
+                    + "  </hard_requirements>\n"
+                    + "</repair_contract>"
                 )
             try:
                 payload = await self.call_llm_json_contract(
                     effective_prompt,
                     response_schema=schema,
                     required_keys=("paragraphs",),
-                    stage=f"{stage}{'-retry' if sub_attempt else ''}",
+                    stage=f"{stage}{'-retry' + str(sub_attempt) if sub_attempt else ''}",
                     max_output_tokens=2048,
                     cached_content_name=cached_content_name,
+                    temperature=retry_temperature,
                 )
             except Exception as e:
                 last_error = str(e)
@@ -1574,6 +1593,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             cleaned = [p for p in cleaned if p]
             total_chars = sum(len(p) for p in cleaned)
             last_paragraphs_count = len(cleaned)
+            last_total_chars = total_chars
             if len(cleaned) >= section_paragraph_min and total_chars >= min_total_chars:
                 return cleaned
             last_error = f'paragraph count/length contract violation (paragraphs={len(cleaned)}, required>={section_paragraph_min}, chars={total_chars}, required>={min_total_chars})'
@@ -1601,10 +1621,11 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         stage: str,
         max_output_tokens: int,
         cached_content_name: Optional[str] = None,
+        temperature: float = 0.0,
     ) -> Dict[str, Any]:
         from ..common.gemini_client import StructuredOutputError, generate_json_async
 
-        print(f"📤 [StructureAgent] LLM JSON 호출 시작 (stage={stage})")
+        print(f"📤 [StructureAgent] LLM JSON 호출 시작 (stage={stage}, temp={temperature})")
         start_time = time.time()
         call_retries = max(1, int(self.llm_retries_per_attempt or 1))
 
@@ -1612,7 +1633,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             payload = await generate_json_async(
                 prompt,
                 model_name=self.model_name,
-                temperature=0.0,
+                temperature=temperature,
                 max_output_tokens=max_output_tokens,
                 retries=call_retries,
                 response_schema=response_schema,
