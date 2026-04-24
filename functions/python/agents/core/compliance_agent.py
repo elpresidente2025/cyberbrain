@@ -165,7 +165,7 @@ class ComplianceAgent(Agent):
             'issues': issues,
             'factCheck': fact_result,
             'riskReport': risk_report,
-            'compliancePassed': critical_count == 0
+            'compliancePassed': critical_count == 0 and high_count == 0
         }
 
     def neutralize_medical_content(self, content: str) -> Tuple[str, List[Dict[str, str]]]:

@@ -8548,6 +8548,11 @@ def _build_independent_final_title_context(
         "sourceInput": data.get("sourceInput") or pipeline_result.get("sourceInput") or "",
         "sourceContent": data.get("sourceContent") or pipeline_result.get("sourceContent") or "",
         "originalContent": data.get("originalContent") or pipeline_result.get("originalContent") or "",
+        # Step Functions 의 SEOAgent 가 optimize_title 로 정리한 제목을 seed 후보로
+        # 전달한다. TitleAgent 가 SEO 결과를 완전히 무시하고 새로 생성하면 응답
+        # 메타의 seo 검증과 최종 title 이 어긋날 수 있으므로, 후보 풀에 합류시켜
+        # 점수 비교를 거치게 한다 (강제 채택 아님 — score 가 더 좋은 후보가 있으면 선택).
+        "seoOptimizedTitle": str(pipeline_result.get("seoOptimizedTitle") or "").strip(),
     }
     normalized_recent_titles = _normalize_recent_title_memory_values(list(recent_titles or []))
     if normalized_recent_titles:

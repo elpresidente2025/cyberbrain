@@ -101,6 +101,9 @@ class SEOAgent(Agent):
         return {
             'content': content, # SEO agent usually validates, maybe optimizes meta description.
             'title': optimized_title,
+            # 후속 TitleAgent step 결과가 'title' 키를 덮어쓰기 때문에, SEO 가
+            # 조정한 제목을 별도 키로도 보존해 후처리 단계에서 seed 로 활용한다.
+            'seoOptimizedTitle': optimized_title,
             'seoPassed': passed,
             'details': {
                 'keywords': keyword_result,
