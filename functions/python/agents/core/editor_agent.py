@@ -25,23 +25,6 @@ def _is_identity_signature_phrase(text: str) -> bool:
     )
 
 
-# 선거법 위반 표현 패턴 (Regex)
-PLEDGE_REPLACEMENTS = [
-    (r'약속드?립니다', '필요성을 말씀드립니다'),
-    (r'약속합니다', '필요하다고 봅니다'),
-    (r'공약드?립니다', '방향을 제시합니다'),
-    (r'공약합니다', '방향을 제시합니다'),
-    (r'추진하겠(?:습니다)?', '추진이 필요합니다'),
-    (r'마련하겠(?:습니다)?', '마련이 필요합니다'),
-    (r'실현하겠(?:습니다)?', '실현이 필요합니다'),
-    (r'강화하겠(?:습니다)?', '강화가 필요합니다'),
-    (r'확대하겠(?:습니다)?', '확대가 필요합니다'),
-    (r'줄이겠(?:습니다)?', '줄이는 노력이 필요합니다'),
-    (r'늘리겠(?:습니다)?', '늘리는 방안이 필요합니다'),
-    (r'되겠(?:습니다)?', '되는 방향을 모색해야 합니다'),
-    (r'하겠(?:습니다)?', '할 필요가 있습니다')
-]
-
 class EditorAgent(Agent):
     def __init__(self, name: str = 'EditorAgent', options: Optional[Dict[str, Any]] = None):
         super().__init__(name, options)
@@ -103,7 +86,7 @@ class EditorAgent(Agent):
 
         if not self._client:
             logger.warning("No client for EditorAgent, returning original")
-            return self.apply_hard_constraints(content, title, user_keywords, status)
+            return self.apply_hard_constraints(content, title, user_keywords)
 
         # Call LLM
         try:
@@ -496,7 +479,7 @@ class EditorAgent(Agent):
         except Exception as e:
             logger.error(f"EditorAgent failed: {e}")
             # Fallback to hard constraints only
-            return self.apply_hard_constraints(content, title, user_keywords, status, error=str(e))
+            return self.apply_hard_constraints(content, title, user_keywords, error=str(e))
 
     def build_editor_prompt(
         self,
@@ -1227,7 +1210,7 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
   "changes": ["수정 사항 1", "수정 사항 2"]
 }}"""
 
-    def apply_hard_constraints(self, content: str, title: str, user_keywords: List[str], status: str, previous_summary: List[str] = [], error: str = None) -> Dict[str, Any]:
+    def apply_hard_constraints(self, content: str, title: str, user_keywords: List[str], previous_summary: List[str] = [], error: str = None) -> Dict[str, Any]:
         """
         Node.js applyHardConstraints logic ported.
         Handles:
@@ -1291,25 +1274,6 @@ GOOD: "시민 여러분이 직접 판단해 주시리라 믿습니다."
         updated_content, leak_count = _remove_leaked_sentences(updated_content)
         if leak_count:
             summary.append(f"프롬프트 누출 문장 {leak_count}건 제거")
-
-        # 1. 선거법 위반 표현 필터 (기계적 치환)
-        # Node.js switched to LLM delegation, but kept regex as fallback/safety. 
-        # Since user complained about rules not being followed, strict regex is safer.
-        if status in ['준비', '현역']: # Pre-candidate constraints
-            original_content = updated_content
-            for pattern, replacement in PLEDGE_REPLACEMENTS:
-                updated_content = re.sub(pattern, replacement, updated_content)
-                updated_title = re.sub(pattern, replacement, updated_title)
-            
-            if original_content != updated_content:
-                summary.append("선거법 위험 표현 기계적 완화 적용")
-                # Kiwi 기반 치환 후 문법 검증 (중복 조사 탐지)
-                from ..common import korean_morph
-                dup_tokens = korean_morph.find_duplicate_particles(updated_content)
-                if dup_tokens:  # None 이면 Kiwi 불가 → 스킵
-                    summary.append(
-                        f"치환 후 중복 조사 {len(dup_tokens)}건 감지 — 수동 확인 필요"
-                    )
 
         # 1.2. 고유명사 속격 "의" 삽입 강제 치환
         # LLM이 "계양 테크노밸리" → "계양의 테크노밸리"로 풀어쓰는 것을

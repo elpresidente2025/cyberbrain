@@ -13,6 +13,63 @@ from .structure_utils import normalize_context_text, strip_html
 from ..common.h2_guide import H2_MAX_LENGTH, has_incomplete_h2_ending
 
 
+_PLEDGE_TAIL_RE = re.compile(r'하겠습니다\s*[.!]?\s*$')
+
+
+def strip_counterargument_pledge_tail(content: str, outline: Dict[str, Any]) -> str:
+    """counterargument_rebuttal 섹션의 모든 문단에서 '~하겠습니다' 문장을 제거.
+
+    AEO 역할 경계 보호: counterargument_rebuttal 섹션은 반론 분석이 목적이므로
+    정책 다짐 문장이 유입되면 섹션 역할이 오염된다.
+    """
+    body = outline.get('body', [])
+    cr_indices = [
+        i for i, sec in enumerate(body) if sec.get('role') == 'counterargument_rebuttal'
+    ]
+    if not cr_indices:
+        return content
+
+    from ..common.korean_morph import split_sentences as kiwi_split
+
+    h2_positions = [m.start() for m in re.finditer(r'<h2\b', content, re.IGNORECASE)]
+    for cr_idx in cr_indices:
+        if cr_idx >= len(h2_positions):
+            continue
+        section_start = h2_positions[cr_idx]
+        section_end = h2_positions[cr_idx + 1] if cr_idx + 1 < len(h2_positions) else len(content)
+        section_html = content[section_start:section_end]
+
+        p_blocks = re.findall(r'<p\b[^>]*>([\s\S]*?)</p\s*>', section_html, re.IGNORECASE)
+        if not p_blocks:
+            continue
+
+        total_removed = 0
+        for p_inner in p_blocks:
+            p_text = re.sub(r'<[^>]*>', '', p_inner).strip()
+            if not _PLEDGE_TAIL_RE.search(p_text):
+                continue
+            sentences = kiwi_split(p_text) or [p_text]
+            kept = [s for s in sentences if not _PLEDGE_TAIL_RE.search(s.strip())]
+            if kept and len(kept) < len(sentences):
+                removed_count = len(sentences) - len(kept)
+                total_removed += removed_count
+                new_p_text = ' '.join(kept).strip()
+                old_p_tag = f'<p>{p_inner}</p>'
+                new_p_tag = f'<p>{new_p_text}</p>' if new_p_text else ''
+                content = content.replace(old_p_tag, new_p_tag, 1)
+            elif not kept:
+                print(
+                    f"⚠️ [StructureNormalizer] counterargument_rebuttal 문단 전체가 다짐 — 유지"
+                )
+        if total_removed:
+            print(
+                f"🩹 [StructureNormalizer] counterargument_rebuttal 역할 이탈 교정: "
+                f"다짐 문장 {total_removed}개 제거"
+            )
+
+    return content
+
+
 SECTION_PADDING_SENTENCES = (
     "현장에서 확인한 문제를 바탕으로 실행 가능한 대안을 분명히 제시하겠습니다.",
     "시민이 먼저 체감할 수 있는 변화부터 차근차근 만들겠습니다.",

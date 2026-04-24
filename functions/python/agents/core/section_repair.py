@@ -13,7 +13,7 @@ from .prompt_builder import (
     build_structure_prompt,
     build_style_role_priority_summary,
 )
-from .structure_normalizer import normalize_structure
+from .structure_normalizer import normalize_structure, strip_counterargument_pledge_tail
 from .structure_utils import (
     normalize_artifacts,
     normalize_context_text,
@@ -78,8 +78,6 @@ class SectionRepairMixin:
             return self._replace_h2_block(content, block_index, degraded_block), title, 'section-degraded'
         return None
 
-    _PLEDGE_TAIL_RE = re.compile(r'하겠습니다\s*[.!]?\s*$')
-
     @staticmethod
     def _count_section_paragraphs_static(content: str) -> List[int]:
         """content 를 <h2> 경계로 나누고 각 섹션의 <p> 개수를 리스트로 반환."""
@@ -93,61 +91,6 @@ class SectionRepairMixin:
             p_count = len(re.findall(r"<p\b[^>]*>[\s\S]*?</p\s*>", part, re.IGNORECASE))
             counts.append(p_count)
         return counts
-
-    def _strip_counterargument_pledge_tail(
-        self,
-        content: str,
-        outline: Dict[str, Any],
-    ) -> str:
-        """counterargument_rebuttal 섹션의 모든 문단에서 '~하겠습니다' 문장을 제거."""
-        body = outline.get('body', [])
-        cr_indices = [
-            i for i, sec in enumerate(body) if sec.get('role') == 'counterargument_rebuttal'
-        ]
-        if not cr_indices:
-            return content
-
-        from ..common.korean_morph import split_sentences as kiwi_split
-
-        # HTML에서 body section 위치 식별 (빈 <h2></h2> 마커 기준)
-        h2_positions = [m.start() for m in re.finditer(r'<h2\b', content, re.IGNORECASE)]
-        for cr_idx in cr_indices:
-            if cr_idx >= len(h2_positions):
-                continue
-            section_start = h2_positions[cr_idx]
-            section_end = h2_positions[cr_idx + 1] if cr_idx + 1 < len(h2_positions) else len(content)
-            section_html = content[section_start:section_end]
-
-            p_blocks = re.findall(r'<p\b[^>]*>([\s\S]*?)</p\s*>', section_html, re.IGNORECASE)
-            if not p_blocks:
-                continue
-
-            # 모든 문단을 순회하며 다짐 문장 제거
-            total_removed = 0
-            for p_inner in p_blocks:
-                p_text = re.sub(r'<[^>]*>', '', p_inner).strip()
-                if not self._PLEDGE_TAIL_RE.search(p_text):
-                    continue
-                sentences = kiwi_split(p_text) or [p_text]
-                kept = [s for s in sentences if not self._PLEDGE_TAIL_RE.search(s.strip())]
-                if kept and len(kept) < len(sentences):
-                    removed_count = len(sentences) - len(kept)
-                    total_removed += removed_count
-                    new_p_text = ' '.join(kept).strip()
-                    old_p_tag = f'<p>{p_inner}</p>'
-                    new_p_tag = f'<p>{new_p_text}</p>' if new_p_text else ''
-                    content = content.replace(old_p_tag, new_p_tag, 1)
-                elif not kept:
-                    print(
-                        f"⚠️ [StructureAgent] counterargument_rebuttal 문단 전체가 다짐 — 유지"
-                    )
-            if total_removed:
-                print(
-                    f"🩹 [StructureAgent] counterargument_rebuttal 역할 이탈 교정: "
-                    f"다짐 문장 {total_removed}개 제거"
-                )
-
-        return content
 
     async def _run_sequential_structure(
         self,
@@ -1072,7 +1015,7 @@ class SectionRepairMixin:
                 # counterargument_rebuttal 역할 이탈 검증:
                 # 마지막 문단이 "~하겠습니다"로 끝나면 정책 다짐 침투
                 if is_aeo and aeo_outline is not None:
-                    raw_content = self._strip_counterargument_pledge_tail(
+                    raw_content = strip_counterargument_pledge_tail(
                         raw_content, aeo_outline,
                     )
                 title = normalize_artifacts(title)
@@ -1148,7 +1091,7 @@ class SectionRepairMixin:
                         )
                         repaired_raw_content = normalize_artifacts(repaired_raw_content)
                         repaired_raw_content = normalize_html_structure_tags(repaired_raw_content)
-                        repaired_raw_content = self._strip_counterargument_pledge_tail(
+                        repaired_raw_content = strip_counterargument_pledge_tail(
                             repaired_raw_content,
                             aeo_outline,
                         )
