@@ -1,7 +1,7 @@
 // frontend/src/hooks/useGenerateAPI.js - 보안 및 성능 개선된 버전
 
-import { useState, useCallback, useEffect } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { callFunction, callFunctionWithNaverAuth, callGeneratePostsViaCloudRun } from '../services/firebaseService';
 import { useAuth } from './useAuth';
 import { handleHttpError } from '../utils/errorHandler';
@@ -16,6 +16,9 @@ export function useGenerateAPI() {
   const [drafts, setDrafts] = useState([]);
   const [attempts, setAttempts] = useState(0);
   const [progress, setProgress] = useState(null); // { step, progress, message }
+
+  // 현재 진행 중인 Firestore 진행 상황 문서 ref (취소 신호 전송용)
+  const currentProgressDocRef = useRef(null);
 
   // 🆕 생성 세션 관리
   const [sessionId, setSessionId] = useState(null);
@@ -204,6 +207,7 @@ export function useGenerateAPI() {
       // Firestore 진행 상황 리스너 먼저 등록 (백엔드 응답 전에 업데이트 수신)
       // 🔧 progressSessionId를 사용하여 백엔드와 동일한 문서 참조
       const progressDocRef = doc(db, 'generation_progress', progressSessionId);
+      currentProgressDocRef.current = progressDocRef;
       unsubscribe = onSnapshot(
         progressDocRef,
         (docSnapshot) => {
@@ -377,6 +381,13 @@ export function useGenerateAPI() {
       };
 
     } catch (err) {
+      // 사용자가 직접 취소한 경우 — 에러로 표시하지 않음
+      if (err.code === 'functions/CANCELLED' || err.code === 'functions/cancelled') {
+        console.log('🛑 사용자 취소 — 에러 없이 종료');
+        setProgress(null);
+        return { success: false, cancelled: true };
+      }
+
       console.error('❌ generatePosts 호출 실패:', err);
 
       // 📌 개선: 중앙화된 에러 처리
@@ -388,6 +399,7 @@ export function useGenerateAPI() {
 
     } finally {
       setLoading(false);
+      currentProgressDocRef.current = null;
 
       // 리스너 정리
       if (unsubscribe) {
@@ -467,6 +479,17 @@ export function useGenerateAPI() {
     }
   }, [collectMetadata, sessionId, getSessionStorageKey]);
 
+  // 생성 취소 함수 — Firestore 진행 문서에 cancelRequested 플래그 기록
+  const cancelGeneration = useCallback(async () => {
+    if (!currentProgressDocRef.current) return;
+    try {
+      await updateDoc(currentProgressDocRef.current, { cancelRequested: true });
+      console.log('🛑 생성 취소 신호 전송');
+    } catch (err) {
+      console.error('❌ 취소 신호 전송 실패:', err);
+    }
+  }, []);
+
   // 상태 초기화 함수
   const reset = useCallback(() => {
     setDrafts([]);
@@ -503,6 +526,7 @@ export function useGenerateAPI() {
     generate,
     save,
     reset,
+    cancelGeneration,
     // 🆕 세션 정보
     sessionId,
     sessionAttempts,

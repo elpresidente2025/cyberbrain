@@ -87,7 +87,7 @@ const DEFAULT_MESSAGES = [
   '잠시만 기다려 주세요...'
 ];
 
-const LoadingOverlayWithRotatingText = React.memo(({ loading, progress }) => {
+const LoadingOverlayWithRotatingText = React.memo(({ loading, progress, onCancel }) => {
   const [messageIndex, setMessageIndex] = React.useState(0);
 
   // 현재 단계에 맞는 메시지 목록 찾기
@@ -225,6 +225,26 @@ const LoadingOverlayWithRotatingText = React.memo(({ loading, progress }) => {
       <Typography variant="caption" color="rgba(255, 255, 255, 0.5)" sx={{ mt: 1 }}>
         보통 2~5분 소요, 상황에 따라 더 걸릴 수 있습니다
       </Typography>
+
+      {onCancel && (
+        <Button
+          variant="outlined"
+          size="small"
+          onClick={onCancel}
+          sx={{
+            mt: 3,
+            color: 'rgba(255, 255, 255, 0.6)',
+            borderColor: 'rgba(255, 255, 255, 0.25)',
+            '&:hover': {
+              borderColor: 'rgba(255, 255, 255, 0.6)',
+              backgroundColor: 'rgba(255, 255, 255, 0.08)',
+            },
+            fontSize: '0.75rem',
+          }}
+        >
+          생성 중단
+        </Button>
+      )}
     </Backdrop>
   );
 });
@@ -256,6 +276,7 @@ const GeneratePage = () => {
     generate,     // 원고 생성 API 호출 함수
     reset,        // API 상태 초기화 함수
     save,         // 원고 저장 API 호출 함수
+    cancelGeneration, // 생성 취소 함수
     // 🆕 세션 정보
     sessionId,
     sessionAttempts,
@@ -312,6 +333,22 @@ const GeneratePage = () => {
   // --- 📢 사용자 피드백(알림창) 상태 관리 ---
   const { notification, showNotification, hideNotification } = useNotification();
   const [formErrors, setFormErrors] = React.useState({ topic: '', instructions0: '' });
+
+  // --- 생성 중단 확인 다이얼로그 ---
+  const [cancelConfirmOpen, setCancelConfirmOpen] = React.useState(false);
+
+  const handleCancelRequest = () => {
+    setCancelConfirmOpen(true);
+  };
+
+  const handleCancelConfirm = async () => {
+    setCancelConfirmOpen(false);
+    await cancelGeneration();
+  };
+
+  const handleCancelDismiss = () => {
+    setCancelConfirmOpen(false);
+  };
 
   // --- 추모/애도 확인 다이얼로그 ---
   const [memorialConfirmOpen, setMemorialConfirmOpen] = React.useState(false);
@@ -845,7 +882,32 @@ const GeneratePage = () => {
       />
 
       {/* 🔄 전체 로딩 오버레이 (텍스트 순환 적용) */}
-      <LoadingOverlayWithRotatingText loading={loading} progress={progress} />
+      <LoadingOverlayWithRotatingText
+        loading={loading}
+        progress={progress}
+        onCancel={handleCancelRequest}
+      />
+
+      {/* 생성 중단 확인 다이얼로그 */}
+      <Dialog open={cancelConfirmOpen} onClose={handleCancelDismiss} maxWidth="xs" fullWidth>
+        <DialogTitle>생성 중단</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            생성을 중단하면 <strong>시도 횟수 1회가 차감</strong>됩니다.
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            중단하시겠습니까?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelDismiss} color="inherit">
+            계속 생성
+          </Button>
+          <Button onClick={handleCancelConfirm} color="error" variant="contained">
+            중단
+          </Button>
+        </DialogActions>
+      </Dialog>
 
     </DashboardLayout>
   );

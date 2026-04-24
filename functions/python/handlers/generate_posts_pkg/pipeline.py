@@ -568,6 +568,15 @@ class ProgressTracker:
     def error(self, error_message: str) -> None:
         self.update(-1, 0, f"오류: {error_message}", error=True)
 
+    def is_cancel_requested(self) -> bool:
+        try:
+            snapshot = self.ref.get()
+            if snapshot.exists:
+                return bool((snapshot.to_dict() or {}).get("cancelRequested"))
+        except Exception:
+            pass
+        return False
+
 
 class _InternalRequest:
     """
@@ -908,7 +917,15 @@ def _call_pipeline_start(start_payload: Dict[str, Any]) -> str:
     return job_id
 
 
-def _poll_pipeline(job_id: str, progress: ProgressTracker) -> Dict[str, Any]:
+def _poll_pipeline(
+    job_id: str,
+    progress: ProgressTracker,
+    *,
+    uid: str = "",
+    session: Optional[Dict[str, Any]] = None,
+    is_admin: bool = False,
+    is_tester: bool = False,
+) -> Dict[str, Any]:
     from services.job_manager import JobManager
 
     job_manager = JobManager()
@@ -919,6 +936,18 @@ def _poll_pipeline(job_id: str, progress: ProgressTracker) -> Dict[str, Any]:
 
     while time.time() - started_at < MAX_POLL_TIME_SECONDS:
         time.sleep(POLL_INTERVAL_SECONDS)
+
+        # 사용자 취소 신호 확인 (Firestore progress 문서의 cancelRequested 필드)
+        if progress.is_cancel_requested():
+            job_manager.cancel_job(job_id)
+            if uid and not is_admin:
+                try:
+                    from services.posts.profile_loader import increment_session_attempts
+                    increment_session_attempts(uid, session or {}, is_admin=is_admin, is_tester=is_tester)
+                except Exception as exc:
+                    logger.warning("Cancel attempt increment failed: %s", exc)
+            raise ApiError("cancelled", "사용자 요청으로 생성이 중단되었습니다.")
+
         job_data = job_manager.get_job(job_id)
         if not job_data:
             continue
@@ -952,6 +981,9 @@ def _poll_pipeline(job_id: str, progress: ProgressTracker) -> Dict[str, Any]:
             if not result:
                 raise ApiError("internal", "파이프라인 결과가 비어 있습니다.")
             return result
+
+        if status == "cancelled":
+            raise ApiError("cancelled", "사용자 요청으로 생성이 중단되었습니다.")
 
         if status == "failed":
             error_obj = _safe_dict(job_data.get("error"))
@@ -10615,7 +10647,10 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
     )
 
     job_id = _call_pipeline_start(start_payload)
-    pipeline_result = _poll_pipeline(job_id, progress)
+    pipeline_result = _poll_pipeline(
+        job_id, progress,
+        uid=uid, session=session, is_admin=is_admin, is_tester=is_tester,
+    )
     pipeline_user_keywords = _normalize_keywords(
         pipeline_result.get("userKeywords") or pipeline_result.get("keywords")
     )

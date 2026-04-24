@@ -160,6 +160,19 @@ class JobManager:
             "lockedAt": None
         })
         logger.error(f"Job {job_id} failed: {error}")
+
+    def cancel_job(self, job_id: str) -> None:
+        """사용자 요청으로 Job 취소 처리"""
+        try:
+            self.db.collection(COLLECTION).document(job_id).update({
+                "status": "cancelled",
+                "updatedAt": datetime.utcnow(),
+                "lockedBy": None,
+                "lockedAt": None,
+            })
+            logger.info("Job %s cancelled by user", job_id)
+        except Exception as exc:
+            logger.warning("Failed to cancel job %s: %s", job_id, exc)
     
     def _get_pipeline_steps(self, pipeline: str) -> List[Dict[str, str]]:
         """파이프라인별 단계 목록"""
