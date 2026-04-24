@@ -237,6 +237,88 @@ def _build_author_meta_block(user_info: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _build_sns_style_block(gen_profile: Dict[str, Any] | None) -> str:
+    """GenerationProfile → SNS 문체 제약 XML 블록.
+
+    블로그 _build_generation_profile_xml의 경량 버전.
+    플랫폼별 길이 제약이 이미 있으므로 문장 길이/리듬 수치는 제외.
+    종결어미·시그니처·금지패턴·스타일 요약만 주입한다.
+    camelCase(Firestore 저장 형식)를 primary, snake_case를 fallback으로 읽는다.
+    """
+    if not isinstance(gen_profile, dict) or not gen_profile:
+        return ""
+
+    parts: list[str] = [
+        '<author_style priority="high">',
+        "  <overview>작성자의 실제 문체 통계에서 산출된 스타일 제약이다. 플랫폼 길이 규칙을 지키면서 이 제약도 함께 반영한다.</overview>",
+    ]
+
+    try:
+        formality = float(gen_profile.get("formality") or 0)
+    except (TypeError, ValueError):
+        formality = 0.0
+    if formality >= 0.75:
+        parts.append('  <rule id="formality">격식체(-습니다/-입니다)를 일관되게 유지할 것.</rule>')
+    elif 0 < formality <= 0.35:
+        parts.append('  <rule id="formality">친근한 존대(-어요/-네요 혼용)를 허용. 공문서 어투 지양.</rule>')
+
+    preferred_endings = (
+        gen_profile.get("preferredEndings")
+        or gen_profile.get("preferred_endings")
+        or []
+    )
+    if isinstance(preferred_endings, list):
+        endings = [str(e).strip() for e in preferred_endings if str(e).strip()][:5]
+        if endings:
+            endings_str = "".join(f"<item>{e}</item>" for e in endings)
+            parts.append(
+                f'  <preferred_endings description="자주 쓰는 종결 어미 — 가능한 한 유지">'
+                f"{endings_str}</preferred_endings>"
+            )
+
+    signature_phrases = (
+        gen_profile.get("signaturePhrases")
+        or gen_profile.get("signature_phrases")
+        or []
+    )
+    if isinstance(signature_phrases, list):
+        signatures = [str(s).strip() for s in signature_phrases if str(s).strip()][:4]
+        if signatures:
+            sig_str = "".join(f"<item>{s}</item>" for s in signatures)
+            parts.append(
+                f'  <signature_phrases description="작성자 특징 표현 — SNS에 자연스러운 것은 재사용">'
+                f"{sig_str}</signature_phrases>"
+            )
+
+    forbidden_patterns = (
+        gen_profile.get("forbiddenPatterns")
+        or gen_profile.get("forbidden_patterns")
+        or []
+    )
+    if isinstance(forbidden_patterns, list):
+        patterns = [str(p).strip() for p in forbidden_patterns if str(p).strip()][:5]
+        if patterns:
+            pat_str = "".join(f"<item>{p}</item>" for p in patterns)
+            parts.append(
+                f'  <forbidden_patterns description="작성자 스타일에 맞지 않는 표현 — 사용 금지">'
+                f"{pat_str}</forbidden_patterns>"
+            )
+
+    style_summary = str(
+        gen_profile.get("styleSummary")
+        or gen_profile.get("style_summary")
+        or ""
+    ).strip()
+    if style_summary:
+        parts.append(f"  <style_summary>{style_summary[:200]}</style_summary>")
+
+    if len(parts) <= 2:
+        return ""
+
+    parts.append("</author_style>")
+    return "\n".join(parts)
+
+
 _AUTHOR_SELF_REFERENCE_GUARD = """
 <self_reference_guard priority="critical">
   <rule>author_name/author_role 태그는 메타 정보이며, 본문에 그대로 등장해서는 안 됩니다.</rule>
@@ -261,6 +343,8 @@ def build_facebook_instagram_prompt(
     quality_issues = options.get("qualityIssues", [])
     natural_tone_guide = build_sns_natural_tone_guide()
     extra_context = _build_topic_and_title_block(options) + _build_core_source_blocks(clean_content, options)
+    gen_profile = options.get("generationProfile") if isinstance(options.get("generationProfile"), dict) else None
+    sns_style_block = _build_sns_style_block(gen_profile)
 
     remediation_block = ""
     if isinstance(quality_issues, list) and quality_issues:
@@ -285,6 +369,8 @@ def build_facebook_instagram_prompt(
 {_AUTHOR_SELF_REFERENCE_GUARD}
 
 {extra_context}
+
+{sns_style_block}
 
 {natural_tone_guide}
 
@@ -371,6 +457,8 @@ def build_x_prompt(
     quality_issues = options.get("qualityIssues", [])
     natural_tone_guide = build_sns_natural_tone_guide()
     extra_context = _build_topic_and_title_block(options) + _build_core_source_blocks(clean_content, options)
+    gen_profile = options.get("generationProfile") if isinstance(options.get("generationProfile"), dict) else None
+    sns_style_block = _build_sns_style_block(gen_profile)
 
     # Node 로직과 유사한 분기
     is_friendly_style = category in {"일상 소통", "daily-communication"} or (
@@ -426,6 +514,8 @@ def build_x_prompt(
 {_AUTHOR_SELF_REFERENCE_GUARD}
 
 {extra_context}
+
+{sns_style_block}
 
 {natural_tone_guide}
 
@@ -572,6 +662,8 @@ def build_threads_prompt(
     quality_issues = options.get("qualityIssues", [])
     natural_tone_guide = build_sns_natural_tone_guide()
     extra_context = _build_topic_and_title_block(options) + _build_core_source_blocks(clean_content, options)
+    gen_profile = options.get("generationProfile") if isinstance(options.get("generationProfile"), dict) else None
+    sns_style_block = _build_sns_style_block(gen_profile)
 
     post_count_guidance = (
         f"게시물 수는 {target_post_count}개로 맞춰주세요."
@@ -604,6 +696,8 @@ def build_threads_prompt(
 {_AUTHOR_SELF_REFERENCE_GUARD}
 
 {extra_context}
+
+{sns_style_block}
 
 {natural_tone_guide}
 

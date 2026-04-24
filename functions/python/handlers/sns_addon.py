@@ -1019,6 +1019,7 @@ async def _convert_platform(
     stance_text: str = "",
     news_data_text: str = "",
     source_topic: str = "",
+    generation_profile: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     if platform_index > 0:
         await asyncio.sleep(platform_index * 2)
@@ -1035,6 +1036,7 @@ async def _convert_platform(
             "sourceType": source_type,
             "stanceText": stance_text,
             "newsDataText": news_data_text,
+            "generationProfile": generation_profile,
         }
 
     # 품질 검증 시 소스 시그널 참조 텍스트.
@@ -1424,6 +1426,18 @@ async def _convert_to_sns_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]
     if not user_doc.exists:
         raise ApiError(404, "not-found", "사용자를 찾을 수 없습니다.")
     user_data = user_doc.to_dict() or {}
+
+    generation_profile: Optional[Dict[str, Any]] = None
+    try:
+        bio_doc = db.collection("bios").document(uid).get()
+        if bio_doc.exists:
+            bio_data = bio_doc.to_dict() or {}
+            gp_raw = bio_data.get("generationProfile")
+            if isinstance(gp_raw, dict):
+                generation_profile = gp_raw
+    except Exception as exc:
+        logger.warning("[SNS] generationProfile 로드 실패 (무시): %s", exc)
+
     admin_access_source = get_admin_access_source(user_data)
     is_admin = bool(admin_access_source)
     is_tester = is_tester_user(user_data)
@@ -1522,6 +1536,7 @@ async def _convert_to_sns_core(uid: str, data: Dict[str, Any]) -> Dict[str, Any]
             stance_text=stance_text,
             news_data_text=news_data_text,
             source_topic=source_topic,
+            generation_profile=generation_profile,
         )
         for idx, platform in enumerate(platforms)
     ]
