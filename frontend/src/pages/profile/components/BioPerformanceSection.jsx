@@ -146,7 +146,7 @@ const BioPerformanceSection = ({
                                                     checked={entry.isOngoing !== false}
                                                     onChange={(e) => handleOngoingChange(index, e.target.checked)}
                                                     disabled={disabled}
-                                                    sx={{ py: 0 }}
+                                                    sx={{ py: 0, color: 'text.secondary', '&.Mui-checked': { color: 'primary.main' } }}
                                                 />
                                             }
                                             label={
