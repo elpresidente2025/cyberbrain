@@ -1448,8 +1448,13 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             + '</locked_section>\n'
         )
 
+        _para_role_labels = [
+            "주장·선언 — 이 섹션의 핵심을 직접 선언",
+            "근거·사례 — 수치·정책명·구체 사례로 뒷받침",
+            "의미·연결 — '그래서 왜 중요한가'에 답하며 마감",
+        ]
         paragraph_slot_texts = ", ".join(
-            f'"문단{i+1} (3문장, 90~120자)"'
+            f'"문단{i+1}({_para_role_labels[i] if i < len(_para_role_labels) else "보완 문단"}, 3문장, 90~120자)"'
             for i in range(section_paragraphs)
         )
         schema_block = (

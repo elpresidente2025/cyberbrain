@@ -1232,6 +1232,69 @@ def _collect_section_paragraph_issues(content: str, *, min_p: int = 3) -> list[s
     return issues
 
 
+async def _terminal_p_count_repair_async(
+    content: str,
+    *,
+    topic: str,
+    title: str,
+    model_name: str,
+) -> str:
+    """2문단 섹션에 LLM이 생성한 3번째 문단을 삽입한다. 실패 시 원본 반환."""
+    from agents.common.gemini_client import generate_json_async
+
+    sections = _split_into_sections(str(content or ""))
+    changed = False
+
+    def _plain(html_str: str) -> str:
+        return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html_str or "")).strip()
+
+    for section in sections:
+        section_html = str(section.get("html") or "")
+        p_blocks = re.findall(r"<p\b[^>]*>[\s\S]*?</p\s*>", section_html, re.IGNORECASE)
+        if len(p_blocks) == 0 or len(p_blocks) >= 3:
+            continue
+        h2_text = str(section.get("h2_text") or "").strip()
+        existing_text = "\n".join(f"[문단{i+1}] {_plain(p)}" for i, p in enumerate(p_blocks))
+        prompt = (
+            "<task>아래 섹션에 마지막 문단 한 개를 추가하십시오.</task>\n"
+            f"<topic>{topic}</topic>\n"
+            f"<section_heading>{h2_text}</section_heading>\n"
+            f"<existing_paragraphs>{existing_text}</existing_paragraphs>\n"
+            "<requirements>\n"
+            "- 기존 문단을 요약·반복하지 않는 새 문단\n"
+            "- '그래서 왜 중요한가'에 답하거나 실행 방법·후속 연결을 구체 서술\n"
+            "- 3문장 이상, 80~130자\n"
+            "- 추상 umbrella 어휘 금지 (지역경제 활성화, 주민 삶의 질 등)\n"
+            "- 응답: {\"paragraph\": \"완성된 문단 텍스트\"} JSON 1개만\n"
+            "</requirements>"
+        )
+        schema = {
+            "type": "object",
+            "required": ["paragraph"],
+            "properties": {"paragraph": {"type": "string", "minLength": 40}},
+        }
+        try:
+            result = await generate_json_async(
+                prompt,
+                model_name=model_name,
+                temperature=0.4,
+                max_output_tokens=512,
+                retries=2,
+                response_schema=schema,
+                required_keys=("paragraph",),
+            )
+            new_p_text = re.sub(r"\s+", " ", str(result.get("paragraph") or "")).strip()
+            if new_p_text and len(new_p_text) >= 40:
+                section["html"] = section_html.rstrip() + f"\n<p>{new_p_text}</p>"
+                changed = True
+        except Exception:
+            pass
+
+    if not changed:
+        return content
+    return _join_sections(sections)
+
+
 def _extract_stance_count(pipeline_result: Dict[str, Any]) -> int:
     context_analysis = pipeline_result.get("contextAnalysis")
     if not isinstance(context_analysis, dict):
@@ -12808,6 +12871,29 @@ def handle_generate_posts_call(req: https_fn.CallableRequest) -> Dict[str, Any]:
             gate_user_keywords,
         )
         logger.info("최종 구조 정규화 적용: 섹션 문단 수 재분배")
+
+    # LLM 보강 repair: 문단 분할로 구제 안 된 섹션에 새 문단 생성
+    _pre_repair_issues = _collect_section_paragraph_issues(
+        str(generated_content or "").strip(), min_p=3
+    )
+    if _pre_repair_issues:
+        try:
+            from agents.common.gemini_client import DEFAULT_MODEL
+            _repaired = _run_async_sync(
+                _terminal_p_count_repair_async(
+                    str(generated_content or "").strip(),
+                    topic=topic,
+                    title=str(pipeline_result.get("title") or topic)[:80],
+                    model_name=str(data.get("modelName") or DEFAULT_MODEL),
+                ),
+                timeout_sec=40,
+            )
+            if _repaired and _repaired != str(generated_content or "").strip():
+                generated_content = _repaired
+                final_structure_gate["llm_repair_applied"] = True
+                logger.info("terminal_p_count_repair: 2문단 섹션 LLM 문단 보강 완료")
+        except Exception as _repair_err:
+            logger.warning("terminal_p_count_repair 실패 (무시): %s", _repair_err)
 
     final_structure_issues = _collect_section_paragraph_issues(
         str(generated_content or "").strip(),
