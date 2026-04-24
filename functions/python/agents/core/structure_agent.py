@@ -374,6 +374,22 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             'experience': 4,
             'reference': 5,
         }
+        _entry_korean_labels = {
+            'policy': '정책/공약',
+            'legislation': '법안/조례',
+            'achievement': '성과/실적',
+            'vision': '비전/목표',
+            'experience': '경험/활동',
+            'reference': '참고자료',
+        }
+        # achievement/experience는 항상 과거 완료; policy/legislation은 isOngoing 필드로 결정
+        def _tense_suffix(entry_type: str, is_ongoing) -> str:
+            if entry_type == 'achievement':
+                return ' — 이미 완료'
+            if entry_type in ('policy', 'legislation'):
+                return ' — 현재 추진 중' if is_ongoing else ' — 향후 예정'
+            return ''
+
         typed_candidates: List[Tuple[int, str]] = []
         bio_entries = user_profile.get('bioEntries')
         if isinstance(bio_entries, list):
@@ -390,7 +406,9 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                 )
                 if not content:
                     continue
-                label = entry_type or 'profile'
+                korean_label = _entry_korean_labels.get(entry_type, entry_type)
+                tense = _tense_suffix(entry_type, entry.get('isOngoing'))
+                label = f"{korean_label}{tense}"
                 if title:
                     typed_candidates.append((priority, f"[{label}] {title} - {content}"))
                 else:

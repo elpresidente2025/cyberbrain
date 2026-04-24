@@ -1,7 +1,7 @@
 // frontend/src/pages/profile/components/BioPerformanceSection.jsx
 // 추가 정보 (정책/공약 등) 카드형 섹션
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
     Grid,
     Box,
@@ -16,10 +16,20 @@ import {
     FormControl,
     InputLabel,
     Select,
-    MenuItem
+    MenuItem,
+    FormControlLabel,
+    Checkbox,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogContentText,
+    DialogActions,
+    Button,
 } from '@mui/material';
 import { Add, Remove } from '@mui/icons-material';
 import { BIO_ENTRY_TYPES, BIO_CATEGORIES, VALIDATION_RULES } from '../../../constants/bio-types';
+
+const ONGOING_TYPES = new Set(['policy', 'legislation']);
 
 const iconButtonSx = {
     width: 24, height: 24,
@@ -45,7 +55,36 @@ const BioPerformanceSection = ({
     onRemove,
     disabled,
     totalEntries
-}) => (
+}) => {
+    const [pendingUncheckIndex, setPendingUncheckIndex] = useState(null);
+    const [dialogOpen, setDialogOpen] = useState(false);
+    const [suppressWarning, setSuppressWarning] = useState(false);
+
+    const handleOngoingChange = (globalIndex, checked) => {
+        if (checked) {
+            onEntryChange(globalIndex, 'isOngoing', true);
+        } else if (suppressWarning) {
+            onEntryChange(globalIndex, 'isOngoing', false);
+        } else {
+            setPendingUncheckIndex(globalIndex);
+            setDialogOpen(true);
+        }
+    };
+
+    const handleDialogConfirm = () => {
+        onEntryChange(pendingUncheckIndex, 'isOngoing', false);
+        setDialogOpen(false);
+        setPendingUncheckIndex(null);
+    };
+
+    const handleDialogSuppress = () => {
+        onEntryChange(pendingUncheckIndex, 'isOngoing', false);
+        setSuppressWarning(true);
+        setDialogOpen(false);
+        setPendingUncheckIndex(null);
+    };
+
+    return (
     <Box sx={{ mb: 'var(--spacing-xl)' }}>
         <Box sx={{
             display: 'flex', alignItems: 'center',
@@ -112,6 +151,25 @@ const BioPerformanceSection = ({
                                     </Select>
                                 </FormControl>
 
+                                {ONGOING_TYPES.has(entry.type) && (
+                                    <FormControlLabel
+                                        sx={{ mb: 'var(--spacing-sm)' }}
+                                        control={
+                                            <Checkbox
+                                                size="small"
+                                                checked={entry.isOngoing !== false}
+                                                onChange={(e) => handleOngoingChange(index, e.target.checked)}
+                                                disabled={disabled}
+                                            />
+                                        }
+                                        label={
+                                            <Typography variant="caption" sx={{ color: 'var(--color-text-secondary)' }}>
+                                                진행 중
+                                            </Typography>
+                                        }
+                                    />
+                                )}
+
                                 <TextField
                                     fullWidth
                                     multiline
@@ -150,7 +208,25 @@ const BioPerformanceSection = ({
                 );
             })}
         </Grid>
+
+        <Dialog open={dialogOpen} onClose={handleDialogConfirm}>
+            <DialogTitle>유형 변경 안내</DialogTitle>
+            <DialogContent>
+                <DialogContentText>
+                    입법·집행 완료 시 반드시 유형을 <strong>성과/실적</strong>으로 바꾸어 주세요.
+                </DialogContentText>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={handleDialogSuppress} color="inherit" size="small">
+                    이번에 다시 보지 않기
+                </Button>
+                <Button onClick={handleDialogConfirm} variant="contained" size="small" disableElevation>
+                    확인
+                </Button>
+            </DialogActions>
+        </Dialog>
     </Box>
-);
+    );
+};
 
 export default BioPerformanceSection;

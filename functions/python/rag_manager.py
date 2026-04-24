@@ -224,6 +224,14 @@ def graph_exists_in_gcs(bucket_name: str, uid: str) -> bool:
 # bioEntries → 색인용 텍스트 변환
 # ---------------------------------------------------------------------------
 
+def _entry_tense_suffix(entry_type: str, is_ongoing: Any) -> str:
+    if entry_type == "achievement":
+        return " — 이미 완료"
+    if entry_type in ("policy", "legislation"):
+        return " — 현재 추진 중" if is_ongoing else " — 향후 예정"
+    return ""
+
+
 def _entries_to_document(entries: List[Dict[str, Any]]) -> str:
     """bioEntries 배열을 LightRAG ainsert()에 넣을 단일 문서 텍스트로 변환."""
     blocks: list[str] = []
@@ -236,8 +244,9 @@ def _entries_to_document(entries: List[Dict[str, Any]]) -> str:
         if not content:
             continue
 
-        label = _ENTRY_TYPE_LABELS.get(entry_type, entry_type)
-        header = f"[{label}]"
+        base_label = _ENTRY_TYPE_LABELS.get(entry_type, entry_type)
+        tense = _entry_tense_suffix(entry_type, entry.get("isOngoing"))
+        header = f"[{base_label}{tense}]"
         if title:
             header += f" {title}"
         blocks.append(f"{header}\n{content}")

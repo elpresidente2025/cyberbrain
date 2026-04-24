@@ -8,9 +8,18 @@ export function useBioEntries(bioEntries, setBioEntries, setProfile, setError) {
 
     // Bio 엔트리 변경 핸들러
     const handleBioEntryChange = useCallback((index, field, value) => {
-        setBioEntries(prev => prev.map((entry, i) =>
-            i === index ? { ...entry, [field]: value } : entry
-        ));
+        setBioEntries(prev => prev.map((entry, i) => {
+            if (i !== index) return entry;
+            const updated = { ...entry, [field]: value };
+            if (field === 'type') {
+                if (value === 'policy' || value === 'legislation') {
+                    if (updated.isOngoing === undefined) updated.isOngoing = true;
+                } else {
+                    delete updated.isOngoing;
+                }
+            }
+            return updated;
+        }));
         // 첫 번째 엔트리(자기소개)면 기존 bio 필드도 동기화
         if (index === 0 && field === 'content') {
             setProfile(prev => ({ ...prev, bio: value }));
@@ -51,7 +60,8 @@ export function useBioEntries(bioEntries, setBioEntries, setProfile, setError) {
             title: '',
             content: '',
             tags: [],
-            weight: 1.0
+            weight: 1.0,
+            ...(defaultType === 'policy' || defaultType === 'legislation' ? { isOngoing: true } : {}),
         };
 
         setBioEntries(prev => [...prev, newEntry]);
