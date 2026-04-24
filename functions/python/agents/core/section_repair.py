@@ -1076,12 +1076,10 @@ class SectionRepairMixin:
                     f"⚠️ [StructureAgent] 검증 실패: code={validation.get('code')} "
                     f"reason={validation['reason']}"
                 )
-                if seq_payload is not None:
-                    sequential_disabled_after_failure = True
-                    print(
-                        "⚠️ [StructureAgent] sequential 결과가 검증을 통과하지 못해 "
-                        "다음 생성 시도부터 legacy 경로를 사용합니다."
-                    )
+                # [NO-FALLBACK] sequential 결과 검증 실패 시 legacy expansion 으로 도망치는
+                # 자동 fallback 은 사용자 원칙에 반함 (feedback_no_fallback.md).
+                # 같은 process() 내에서 _regenerate_sequential_payload_section 으로
+                # 섹션 단위 self-heal 만 시도하고, 그것도 실패하면 예외를 raise 한다.
                 if str(validation.get('code') or '') == 'DUPLICATE_SENTENCE':
                     dup_samples = validation.get('duplicateSamples') or []
                     dup_count = validation.get('duplicateCount')
@@ -1281,12 +1279,8 @@ class SectionRepairMixin:
             except Exception as e:
                 error_msg = str(e)
                 print(f"❌ [StructureAgent] 에러 발생: {error_msg}")
-                if seq_payload is not None:
-                    sequential_disabled_after_failure = True
-                    print(
-                        "⚠️ [StructureAgent] sequential 결과 처리 중 예외가 발생해 "
-                        "다음 생성 시도부터 legacy 경로를 사용합니다."
-                    )
+                # [NO-FALLBACK] sequential 예외 시 legacy expansion 으로 경로 전환하지 않는다.
+                # 같은 sequential 경로에서 재시도하거나, 재시도 한도 소진 시 예외가 상위로 propagate.
                 feedback = error_msg
                 retry_directive = ''
                 last_error = error_msg

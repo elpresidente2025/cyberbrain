@@ -1377,7 +1377,6 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         per_section_max = int(length_spec.get('per_section_max') or STRUCTURE_SPEC['sectionCharMax'])
         contract = paragraph_contract_from_length_spec(length_spec)
         section_paragraph_min = int(contract['section_paragraph_min'])
-        section_paragraph_max = int(contract['section_paragraph_max'])
         section_paragraphs = int(contract['paragraphs_per_section'])
 
         prior_block = self._build_prior_sections_block(prior_sections)
@@ -1448,10 +1447,15 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             prefix
             + (prior_block + "\n\n" if prior_block else '')
             + locked_block
-            + "\n<json_output_contract priority=\"critical\">\n"
+            + "\n<json_output_contract priority=\"absolute\">\n"
+            f"  <paragraph_count_contract priority=\"absolute\">\n"
+            f"    paragraphs 배열의 원소 수: 정확히 {section_paragraph_min}개.\n"
+            f"    {section_paragraph_min}개 미만이면 즉시 거부되고 원고 생성이 중단된다. 더도 덜도 말고 정확히 {section_paragraph_min}개를 제출하라.\n"
+            f"    각 원소는 하나의 완성된 문단(3문장 이상, 90~120자)이다. 짧은 메모·한 문장 단편·빈 문자열을 원소로 넣지 말 것.\n"
+            f"  </paragraph_count_contract>\n"
             "  <override>기존 XML output_format 지시는 무시하고, 최종 응답은 단일 JSON 객체 1개만 출력하십시오. "
             "제목·다른 섹션은 절대 포함하지 말고 현재 섹션의 paragraphs 배열만 출력.</override>\n"
-            f"  <task>locked_section 의 heading/lead_sentence/role 에 맞춰, 이 섹션의 문단을 {section_paragraph_min}~{section_paragraph_max}개 범위로 작성하십시오.</task>\n"
+            f"  <task>locked_section 의 heading/lead_sentence/role 에 맞춰, paragraphs 배열에 정확히 {section_paragraph_min}개의 문단을 배치하십시오.</task>\n"
             f"  <length>섹션 전체 {per_section_min}~{per_section_max}자, 각 문단은 최소 3문장·90~120자.</length>\n"
             + role_block +
             "  <rules>\n"
@@ -1460,6 +1464,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule>JSON 문자열 안에 큰따옴표(\")를 직접 쓰지 말 것. 인용이 필요하면 작은따옴표(') 또는 괄호를 사용.</rule>\n"
             "    <rule>각 문자열 값은 한 줄로 작성하고 줄바꿈 문자를 넣지 말 것.</rule>\n"
             "    <rule>역슬래시(\\)를 임의로 출력하지 말 것.</rule>\n"
+            f"    <rule priority='absolute'>paragraphs 배열 크기 재확인: 정확히 {section_paragraph_min}개 원소. 한 개라도 부족하거나 더 많으면 실패 처리된다.</rule>\n"
             "    <rule priority='critical'>각 paragraphs 원소는 최소 3문장짜리 실질 문단이어야 한다. 1~2문장 단문은 앞뒤 문장과 합쳐 완성된 문단으로 쓰라.</rule>\n"
             + (
                 "    <rule priority='critical'>paragraphs[0] 의 첫 문장은 lead_sentence 그대로 사용하거나 자연스럽게 이어받을 것.</rule>\n"
@@ -1529,11 +1534,27 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         schema = self._build_section_json_schema(length_spec)
         min_total_chars = max(160, int(length_spec.get('per_section_min') or 250) - 40)
 
+        from ..common.aeo_config import paragraph_contract_from_length_spec
+        section_contract = paragraph_contract_from_length_spec(length_spec)
+        section_paragraph_min = int(section_contract['section_paragraph_min'])
+
         last_error: Optional[str] = None
+        last_paragraphs_count: int = 0
         for sub_attempt in range(2):
+            # retry 시 직전 실패 이유를 feedback 으로 주입 (같은 프롬프트 반복 대신 지시 강화).
+            effective_prompt = section_prompt
+            if sub_attempt > 0:
+                effective_prompt = (
+                    section_prompt
+                    + "\n\n<feedback priority=\"absolute\">\n"
+                    + f"  직전 시도가 paragraphs 배열을 {last_paragraphs_count}개 원소로 반환하여 거부되었다.\n"
+                    + f"  이번 시도에서는 paragraphs 배열에 정확히 {section_paragraph_min}개의 문단을 담아라.\n"
+                    + "  각 문단은 최소 3문장·90~120자를 준수하고, 빈 문자열이나 한 문장 단편을 원소로 넣지 말 것.\n"
+                    + "</feedback>"
+                )
             try:
                 payload = await self.call_llm_json_contract(
-                    section_prompt,
+                    effective_prompt,
                     response_schema=schema,
                     required_keys=("paragraphs",),
                     stage=f"{stage}{'-retry' if sub_attempt else ''}",
@@ -1552,9 +1573,10 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             cleaned = [re.sub(r'\s+', ' ', str(p or '')).strip() for p in paragraphs]
             cleaned = [p for p in cleaned if p]
             total_chars = sum(len(p) for p in cleaned)
-            if len(cleaned) >= 2 and total_chars >= min_total_chars:
+            last_paragraphs_count = len(cleaned)
+            if len(cleaned) >= section_paragraph_min and total_chars >= min_total_chars:
                 return cleaned
-            last_error = f'too short (paragraphs={len(cleaned)}, chars={total_chars})'
+            last_error = f'paragraph count/length contract violation (paragraphs={len(cleaned)}, required>={section_paragraph_min}, chars={total_chars}, required>={min_total_chars})'
             print(f"⚠️ [StructureAgent] section generate 검증 실패 (stage={stage}, sub={sub_attempt}): {last_error}")
 
         print(f"❌ [StructureAgent] section generate 최종 실패 (stage={stage}): {last_error}")
