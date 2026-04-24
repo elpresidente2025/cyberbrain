@@ -65,11 +65,16 @@ def resolve_speaker_position_label(user_profile: Optional[Dict[str, Any]]) -> st
 
     customTitle 은 사용자가 직접 적은 자기 직함이므로
     canonical position 보다 사용자 의도를 더 정확히 반영한다.
+    단, status 가 예비/후보인 경우 customTitle 에 접미사가 없으면 자동으로 추가한다.
     """
     if not isinstance(user_profile, dict):
         return ""
     custom = (user_profile.get("customTitle") or "").strip()
     if custom:
+        status = (user_profile.get("status") or "").strip()
+        suffix = _STATUS_POSITION_SUFFIX.get(status, "")
+        if suffix and not custom.endswith(suffix.strip()):
+            return custom + suffix
         return custom
     return format_position_with_region(user_profile)
 

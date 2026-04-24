@@ -1731,7 +1731,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
 
         name = user_profile.get('name', '사용자')
         party_name = user_profile.get('partyName', '')
-        current_title = user_profile.get('customTitle') or self._format_position_with_region(user_profile)
+        current_title = self._resolve_speaker_position_label(user_profile)
         basic_bio = " ".join(filter(None, [party_name, current_title, name]))
 
         career = user_profile.get('careerSummary') or user_profile.get('bio', '')
@@ -1759,6 +1759,15 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         """
         from ..common.profile_label import format_position_with_region
         return format_position_with_region(user_profile)
+
+    @staticmethod
+    def _resolve_speaker_position_label(user_profile: Dict) -> str:
+        """customTitle + status suffix 를 합친 표시용 직함 라벨.
+
+        profile_label.resolve_speaker_position_label 에 위임한다.
+        """
+        from ..common.profile_label import resolve_speaker_position_label
+        return resolve_speaker_position_label(user_profile)
 
     def is_current_lawmaker(self, user_profile: Dict) -> bool:
         # position은 _canonical_position으로 국회의원/광역의원/기초의원/...으로
