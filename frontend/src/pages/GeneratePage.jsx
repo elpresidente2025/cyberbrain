@@ -133,7 +133,7 @@ const LoadingOverlayWithRotatingText = React.memo(({ loading, progress }) => {
 
   const activeStep = progress?.step ?? 0;
   const progressValue = progress?.progress ?? 0;
-  const STEP_LABELS = ['구조설계', '본문', 'SEO'];
+  const STEP_LABELS = ['구조설계', '본문', '최종 보정'];
 
   return (
     <Backdrop
