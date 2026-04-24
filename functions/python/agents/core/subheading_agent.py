@@ -232,6 +232,31 @@ def _object_particle(text: str) -> str:
     return "을" if _has_batchim(text) else "를"
 
 
+def _topic_particle(text: str) -> str:
+    return "은" if _has_batchim(text) else "는"
+
+
+def _conjunction_particle(text: str) -> str:
+    return "과" if _has_batchim(text) else "와"
+
+
+def _ends_in_rieul(text: str) -> bool:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return False
+    code = ord(normalized[-1])
+    if 0xAC00 <= code <= 0xD7A3:
+        return (code - 0xAC00) % 28 == 8
+    return False
+
+
+def _direction_particle(text: str) -> str:
+    """으로/로 이형태. ㄹ 받침이거나 받침 없으면 '로', 그 외 받침이면 '으로'."""
+    if not _has_batchim(text) or _ends_in_rieul(text):
+        return "로"
+    return "으로"
+
+
 def _dedupe_preserve_order(items: Sequence[str]) -> List[str]:
     seen: set = set()
     result: List[str] = []
@@ -1867,43 +1892,44 @@ class SubheadingAgent(Agent):
         def _claim_declarative_ok() -> bool:
             return 12 <= len(key_claim) <= 22 and key_claim.endswith(("다", "다."))
 
+        topic = _topic_particle(keyword)
         if specific_anchors:
             primary_anchor = specific_anchors[0]
             primary_anchor_subject = _subject_particle(primary_anchor)
-            add(f"{keyword}은 {primary_anchor}에서 시작된다")
+            add(f"{keyword}{topic} {primary_anchor}에서 시작된다")
             add(f"{keyword}, {primary_anchor}부터 시작합니다")
             if len(specific_anchors) >= 2:
                 secondary_anchor = specific_anchors[1]
-                add(f"{keyword}은 {primary_anchor}와 {secondary_anchor}로 답한다")
+                add(f"{keyword}{topic} {primary_anchor}{_conjunction_particle(primary_anchor)} {secondary_anchor}{_direction_particle(secondary_anchor)} 답한다")
         else:
             primary_anchor = ""
             primary_anchor_subject = ""
 
         if is_conclusion:
             if primary_anchor:
-                add(f"{keyword}은 {primary_anchor}로 증명하겠습니다")
+                add(f"{keyword}{topic} {primary_anchor}{_direction_particle(primary_anchor)} 증명하겠습니다")
             else:
                 add(f"{keyword}, 실행으로 증명하겠습니다")
 
         if re.search(r"(재정|건전성|부채|포퓰리즘|우려)", section_text):
             if primary_anchor:
-                add(f"{keyword} 재원은 {primary_anchor}에서 시작된다")
+                add(f"{keyword} 재원{_topic_particle('재원')} {primary_anchor}에서 시작된다")
             else:
                 add(f"{keyword}{subject_particle} 낭비가 아닌 이유")
         if re.search(r"(조례|예산|제도|개정|근거|기반)", section_text):
             if primary_anchor:
-                add(f"{keyword}은 {primary_anchor}로 제도화된다")
+                add(f"{keyword}{topic} {primary_anchor}{_direction_particle(primary_anchor)} 제도화된다")
             else:
                 add(f"{keyword}{object_particle} 조례로 뒷받침하겠습니다")
         if re.search(r"(자영업|소상공인|안전망|생존|골목상권)", section_text):
             if primary_anchor:
-                add(f"{keyword}은 {primary_anchor}에서 효과를 낸다")
+                add(f"{keyword}{topic} {primary_anchor}에서 효과를 낸다")
             else:
                 add(f"{keyword}, 민생 안전망이 되다")
             add(f"{keyword}{subject_particle} 자영업자를 지킨다")
         if re.search(r"(소비|상권|경제|매출|역외|선순환)", section_text):
             if primary_anchor:
-                add(f"{keyword}은 {primary_anchor}에서 효과를 낸다")
+                add(f"{keyword}{topic} {primary_anchor}에서 효과를 낸다")
 
         templates = {
             "질문형": lambda: (
@@ -1912,7 +1938,7 @@ class SubheadingAgent(Agent):
                 else f"{keyword}, 핵심 쟁점은 무엇인가요?"
             ),
             "목표형": lambda: (
-                f"{keyword}은 {primary_anchor}에서 시작된다"
+                f"{keyword}{topic} {primary_anchor}에서 시작된다"
                 if primary_anchor
                 else f"{keyword}, 실행 계획을 세우겠습니다"
             ),
@@ -1925,7 +1951,7 @@ class SubheadingAgent(Agent):
                 else f"{keyword}{subject_particle} 필요한 이유"
             ),
             "대조형": lambda: (
-                f"{keyword}은 {primary_anchor}에서 다르다"
+                f"{keyword}{topic} {primary_anchor}에서 다르다"
                 if primary_anchor
                 else f"{keyword}, 기존 정책과 차이는?"
             ),
