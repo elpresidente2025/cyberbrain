@@ -35,6 +35,17 @@ def normalize_artifacts(text: str) -> str:
 
     return cleaned.strip()
 
+def _count_keyword(text: str, keyword: str) -> int:
+    return strip_html(text or '').count(keyword)
+
+
+def _kw_min_count(n_keywords: int) -> int:
+    from ..common.editorial import KEYWORD_SPEC
+    if n_keywords == 1:
+        return int(KEYWORD_SPEC['singleKeywordMin'])
+    return int(KEYWORD_SPEC['perKeywordMin'])
+
+
 from ..base_agent import Agent
 
 class StyleAgent(Agent):
@@ -66,6 +77,13 @@ class StyleAgent(Agent):
         title = keyword_result.get('title')
         keyword_counts = keyword_result.get('keywordCounts', {})
 
+        required_keywords = [
+            str(k).strip()
+            for k in (context.get('keywords') or keyword_counts.keys())
+            if str(k).strip()
+        ]
+        before_counts = {kw: _count_keyword(content, kw) for kw in required_keywords}
+
         current_length = len(strip_html(content))
         min_length = max(1200, int(target_word_count * 0.85))
         target_min = target_word_count
@@ -79,11 +97,15 @@ class StyleAgent(Agent):
 
         if not needs_expansion and not needs_trimming and not needs_style_fix:
             logger.info("✅ [StyleAgent] Style/Length Check OK - Skipping")
+            final_counts = {kw: _count_keyword(content, kw) for kw in required_keywords} if required_keywords else keyword_counts
             return {
                 'content': content,
                 'title': title,
-                'keywordCounts': keyword_counts,
-                'finalLength': current_length
+                'keywordCounts': final_counts,
+                'keywordCountsBeforeStyle': before_counts,
+                'keywordLossDetected': False,
+                'lostKeywords': [],
+                'finalLength': current_length,
             }
 
         max_attempts = 2
@@ -174,11 +196,81 @@ class StyleAgent(Agent):
                 print(f"🩹 [StyleAgent] 문단 구조 복원: {before_p}p → {after_p}p")
             final_length = len(strip_html(final_content))
 
+        # ── 키워드 무결성 게이트 ────────────────────────────────────────────
+        keyword_loss_detected = False
+        repair_keywords: list = []
+        warning_keywords: list = []
+        after_counts: dict = {}
+
+        if required_keywords:
+            kw_min = _kw_min_count(len(required_keywords))
+            after_counts = {kw: _count_keyword(final_content, kw) for kw in required_keywords}
+
+            for kw in required_keywords:
+                b = before_counts.get(kw, 0)
+                a = after_counts.get(kw, 0)
+                if a < kw_min and b >= kw_min:
+                    repair_keywords.append(kw)
+                elif a < b and a >= kw_min:
+                    warning_keywords.append(kw)
+
+            if warning_keywords:
+                logger.info("[StyleAgent] Keyword count reduced but above min. warning=%s", warning_keywords)
+
+            if repair_keywords:
+                keyword_loss_detected = True
+                logger.warning(
+                    "[StyleAgent] Keyword below min=%s. Attempting repair. repair=%s before=%s after=%s",
+                    kw_min, repair_keywords, before_counts, after_counts,
+                )
+                try:
+                    repair_prompt = self.build_repair_prompt(final_content, repair_keywords, after_counts, kw_min)
+                    repair_payload = await generate_json_async(
+                        repair_prompt,
+                        model_name=self.model_name,
+                        response_schema=STYLE_RESPONSE_SCHEMA,
+                        required_keys=("content",),
+                        max_output_tokens=4000,
+                        temperature=0.2,
+                        retries=1,
+                    )
+                    repaired = normalize_artifacts(str(repair_payload.get('content') or '').strip())
+                    if repaired:
+                        repaired_counts = {kw: _count_keyword(repaired, kw) for kw in required_keywords}
+                        still_below = [kw for kw in repair_keywords if repaired_counts.get(kw, 0) < kw_min]
+                        if not still_below:
+                            final_content = repaired
+                            after_counts = repaired_counts
+                            final_length = len(strip_html(final_content))
+                            logger.info("[StyleAgent] Keyword repair succeeded. repaired=%s", repair_keywords)
+                        else:
+                            logger.warning(
+                                "[StyleAgent] Keyword repair failed. Rolling back. still_below=%s",
+                                still_below,
+                            )
+                            final_content = content
+                            after_counts = before_counts
+                            final_length = current_length
+                except Exception as exc:
+                    logger.warning("[StyleAgent] Keyword repair error. Rolling back. err=%s", exc)
+                    final_content = content
+                    after_counts = before_counts
+                    final_length = current_length
+
+        recalculated_counts = (
+            after_counts
+            if required_keywords
+            else {kw: _count_keyword(final_content, kw) for kw in keyword_counts.keys()}
+        )
+
         return {
             'content': final_content,
             'title': title,
-            'keywordCounts': keyword_counts,
-            'finalLength': final_length
+            'keywordCounts': recalculated_counts,
+            'keywordCountsBeforeStyle': before_counts,
+            'keywordLossDetected': keyword_loss_detected,
+            'lostKeywords': repair_keywords,
+            'finalLength': final_length,
         }
 
     def build_prompt(self, params: Dict[str, Any]) -> str:
@@ -272,6 +364,39 @@ class StyleAgent(Agent):
 
       ## 출력 형식
       교정된 전체 본문만 출력하세요. 설명 없이 HTML 본문만 출력하세요."""
+
+    def build_repair_prompt(
+        self,
+        content: str,
+        lost_keywords: list,
+        after_counts: dict,
+        min_count: int,
+    ) -> str:
+        keyword_lines = '\n'.join([
+            f'- "{kw}": 현재 {after_counts.get(kw, 0)}회 → 최소 {min_count}회 필요'
+            for kw in lost_keywords
+        ])
+        return f"""아래 HTML 본문에서 누락된 필수 검색어만 자연스럽게 복구하세요.
+
+절대 조건:
+1. 전체 문단 구조, h2/p 개수 유지
+2. 새 주제 추가 금지
+3. 문장 1~2개만 최소 수정
+4. 아래 검색어는 정확한 표기로 지정 횟수 이상 포함
+5. 설명 없이 JSON만 반환
+
+누락 검색어:
+{keyword_lines}
+
+본문:
+{content}
+
+# Output Contract
+Return JSON object only.
+{{
+  "content": "<h2>...</h2><p>...</p>"
+}}
+No markdown code fences."""
 
     def check_style_issues(self, content: str) -> bool:
         issues = [
