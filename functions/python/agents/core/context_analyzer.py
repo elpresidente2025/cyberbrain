@@ -652,8 +652,57 @@ class ContextAnalyzer:
 
         return normalized_analysis
 
-    async def analyze(self, stance_text: str, news_data_text: str, author_name: str) -> Optional[Dict[str, Any]]:
+    @staticmethod
+    def _render_speaker_profile_xml(
+        *,
+        full_name: str,
+        position_label: str,
+        region_metro: str,
+        region_local: str,
+        electoral_district: str,
+    ) -> str:
+        """LLM 에 화자 직책 앵커를 주입하는 <speaker_profile> XML 블록.
+
+        TitleAgent 의 동등 헬퍼와 같은 표기를 공유한다 — stance_text 안에
+        등장하는 다른 정치인의 직책을 화자에게 귀속시키지 못하도록 하는 게
+        목적. 빈 필드는 출력에서 생략한다.
+        """
+        name = (full_name or "").strip()
+        position = (position_label or "").strip()
+        metro = (region_metro or "").strip()
+        local = (region_local or "").strip()
+        district = (electoral_district or "").strip()
+        if not (name or position or metro or local or district):
+            return ""
+
+        lines = []
+        if name:
+            lines.append(f"  <full_name>{_xml_text(name)}</full_name>")
+        if position:
+            lines.append(f"  <position>{_xml_text(position)}</position>")
+        if metro:
+            lines.append(f"  <region_metro>{_xml_text(metro)}</region_metro>")
+        if local:
+            lines.append(f"  <region_local>{_xml_text(local)}</region_local>")
+        if district:
+            lines.append(f"  <electoral_district>{_xml_text(district)}</electoral_district>")
+        lines.append(
+            "  <rule>이 글의 화자는 위 인물이며, 위 직책의 시점에서 분석한다. "
+            "stance_text 에 다른 정치인이 등장해도 그 사람은 화자가 아니다. "
+            "화자의 직책·역할을 그 사람의 직책으로 바꿔 추출하지 말 것.</rule>"
+        )
+        body = "\n".join(lines)
+        return f'<speaker_profile priority="critical">\n{body}\n  </speaker_profile>'
+
+    async def analyze(
+        self,
+        stance_text: str,
+        news_data_text: str,
+        author_name: str,
+        speaker_profile: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
         from ..common.gemini_client import generate_content_async
+        from ..common.profile_label import resolve_speaker_position_label
 
         stance_len = len(strip_html(stance_text or ""))
         news_len = len(strip_html(news_data_text or ""))
@@ -710,10 +759,24 @@ class ContextAnalyzer:
   }
 }"""
 
+        speaker_profile_dict = speaker_profile if isinstance(speaker_profile, dict) else {}
+        speaker_position_label = resolve_speaker_position_label(speaker_profile_dict)
+        speaker_region_metro = str(speaker_profile_dict.get("regionMetro") or "").strip()
+        speaker_region_local = str(speaker_profile_dict.get("regionLocal") or "").strip()
+        speaker_electoral_district = str(speaker_profile_dict.get("electoralDistrict") or "").strip()
+        speaker_profile_xml = self._render_speaker_profile_xml(
+            full_name=author_name,
+            position_label=speaker_position_label,
+            region_metro=speaker_region_metro,
+            region_local=speaker_region_local,
+            electoral_district=speaker_electoral_district,
+        )
+
         context_prompt = f"""
 <context_analyzer_prompt version="xml-v1">
   <role>정치 콘텐츠 전략가로서 입장문과 뉴스/데이터를 분리 분석해 실행 가능한 글쓰기 설계를 만듭니다.</role>
   <inputs>
+    {speaker_profile_xml}
     <stance_text>{_xml_cdata(stance_text[:3000])}</stance_text>
     <news_or_data>{_xml_cdata(news_preview)}</news_or_data>
     <author_name>{_xml_text(author_name)}</author_name>
@@ -743,6 +806,7 @@ class ContextAnalyzer:
     <must_include_from_stance max_items="3">
       <rule>반드시 stance_text에서만 추출하고 news_or_data 문구를 topic에 넣지 말 것.</rule>
       <rule>핵심 주장/문제의식만 추출하고 기사 메타 문구(입력, 기자명, 연합뉴스)는 배제.</rule>
+      <rule>화자(speaker_profile.full_name)가 아닌 다른 정치인이 stance_text에 등장하면 그 사람을 central_claim의 주어나 execution_items의 행위자로 삼지 말 것. 화자가 그 사람과 함께 활동한다는 사실은 추출 가능하지만, 화자의 직책을 그 사람의 직책으로 바꿔 적지 말 것.</rule>
       <field name="topic">핵심 주장</field>
       <field name="expansion_why">배경</field>
       <field name="expansion_how">실행</field>

@@ -1587,11 +1587,18 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             raise
 
 
-    async def run_context_analyzer(self, stance_text: str, news_data_text: str, author_name: str) -> Optional[Dict]:
+    async def run_context_analyzer(
+        self,
+        stance_text: str,
+        news_data_text: str,
+        author_name: str,
+        speaker_profile: Optional[Dict] = None,
+    ) -> Optional[Dict]:
         return await self.context_analyzer.analyze(
             stance_text=stance_text,
             news_data_text=news_data_text,
             author_name=author_name,
+            speaker_profile=speaker_profile,
         )
 
     def build_author_bio(self, user_profile: Dict) -> tuple[str, str]:
@@ -1624,25 +1631,11 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
     def _format_position_with_region(user_profile: Dict) -> str:
         """position + regionMetro/regionLocal을 조합해 공식 직함을 생성한다.
 
-        예: position="광역의원", regionMetro="인천광역시" → "인천광역시의원"
+        agents.common.profile_label 의 동일 함수에 위임한다.
+        TitleAgent / ContextAnalyzer 도 같은 helper 를 직접 호출한다.
         """
-        position = (user_profile.get('position') or '').strip()
-        region_metro = (user_profile.get('regionMetro') or '').strip()
-        region_local = (user_profile.get('regionLocal') or '').strip()
-
-        if position == '광역의원' and region_metro:
-            return f"{region_metro}의원"
-        if position == '기초의원':
-            if region_local:
-                return f"{region_local}의원"
-            if region_metro:
-                return f"{region_metro}의원"
-        if position == '광역자치단체장' and region_metro:
-            return f"{region_metro}장"
-        if position == '기초자치단체장' and region_local:
-            return f"{region_local}장"
-
-        return position
+        from ..common.profile_label import format_position_with_region
+        return format_position_with_region(user_profile)
 
     def is_current_lawmaker(self, user_profile: Dict) -> bool:
         # position은 _canonical_position으로 국회의원/광역의원/기초의원/...으로

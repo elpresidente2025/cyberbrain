@@ -4,6 +4,7 @@ import re
 from typing import Dict, Any, Optional
 
 from ..base_agent import Agent
+from ..common.profile_label import resolve_speaker_position_label
 from ..common.role_keyword_policy import (
     build_role_keyword_policy,
     extract_person_role_facts_from_text,
@@ -123,6 +124,11 @@ class TitleAgent(Agent):
             'regionLocal': str(user_profile.get('regionLocal') or '').strip(),
             'electoralDistrict': str(user_profile.get('electoralDistrict') or '').strip(),
             'position': str(user_profile.get('position') or '').strip(),
+            # 화자 직책의 표시용 라벨 (region 합쳐 가공). build_title_prompt 의
+            # <speaker_profile> 블록이 이 값을 LLM 에게 보여 화자 직책 앵커를
+            # 만든다. position+region 합치는 규칙은 ContextAnalyzer /
+            # StructureAgent 와 공유한다 (agents/common/profile_label.py).
+            'speakerPositionLabel': resolve_speaker_position_label(user_profile),
             'targetElection': user_profile.get('targetElection') if isinstance(user_profile.get('targetElection'), dict) else {},
             'speakerProfile': user_profile,
             'category': category,
@@ -206,6 +212,19 @@ class TitleAgent(Agent):
                 title_purpose=title_purpose,
                 limit=8,
             )
+
+        # SEO 단계가 optimize_title 로 정리한 제목을 후보 풀 앞단에 합류시킨다.
+        # 강제 채택이 아니라 동일한 validation/scoring 을 거쳐 점수가 높을 때만 선택.
+        seo_seed_title = str(context.get('seoOptimizedTitle') or '').strip()
+        if seo_seed_title:
+            seed_normalized = normalize_title_surface(seo_seed_title) or seo_seed_title
+            if seed_normalized and seed_normalized not in structured_candidates:
+                structured_candidates = [seed_normalized, *structured_candidates]
+                logger.info(
+                    "[%s] SEO seed title prepended to candidate pool: %r",
+                    self.name,
+                    seed_normalized,
+                )
         if structured_candidates:
             best_structured_title = ""
             best_structured_score = -1

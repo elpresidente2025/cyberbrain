@@ -137,12 +137,59 @@ def _build_event_title_prompt(params: Dict[str, Any]) -> str:
 
 </event_title_prompt>"""
 
+
+def _render_speaker_profile_xml(
+    *,
+    full_name: str,
+    position_label: str,
+    region_metro: str,
+    region_local: str,
+    electoral_district: str,
+) -> str:
+    """LLM 에 화자 직책 앵커를 명시 주입하는 <speaker_profile> XML 블록.
+
+    stanceText·content_preview 안에 다른 정치인의 직책이 더 빈도 높게
+    등장해도 그것을 화자에게 귀속시키지 못하게 한다. 빈 필드는 출력에서
+    생략한다 (LLM 이 비어 있는 정보를 추측하지 않도록).
+    """
+    name = (full_name or '').strip()
+    position = (position_label or '').strip()
+    metro = (region_metro or '').strip()
+    local = (region_local or '').strip()
+    district = (electoral_district or '').strip()
+    if not (name or position or metro or local or district):
+        return ''
+
+    lines = []
+    if name:
+        lines.append(f'  <full_name>{name}</full_name>')
+    if position:
+        lines.append(f'  <position>{position}</position>')
+    if metro:
+        lines.append(f'  <region_metro>{metro}</region_metro>')
+    if local:
+        lines.append(f'  <region_local>{local}</region_local>')
+    if district:
+        lines.append(f'  <electoral_district>{district}</electoral_district>')
+    lines.append(
+        '  <rule>이 글의 화자는 위 인물이며, 위 직책의 시점에서 글이 작성된다. '
+        'stanceText·content_preview 에 다른 정치인의 직책이 등장해도 그 사람은 '
+        '화자가 아니다. 제목에서 다른 사람의 직책으로 본인을 묘사하지 말 것.</rule>'
+    )
+    body = "\n".join(lines)
+    return f'<speaker_profile priority="critical">\n{body}\n</speaker_profile>'
+
+
 def build_title_prompt(params: Dict[str, Any]) -> str:
     # No try/except blocking logic here. Let it propagate.
     content_preview = params.get('contentPreview', '')
     background_text = params.get('backgroundText', '')
     topic = params.get('topic', '')
     full_name = params.get('fullName', '')
+    speaker_position_label = str(params.get('speakerPositionLabel') or '').strip()
+    speaker_region_metro = str(params.get('regionMetro') or '').strip()
+    speaker_region_local = str(params.get('regionLocal') or '').strip()
+    speaker_electoral_district = str(params.get('electoralDistrict') or '').strip()
     keywords = params.get('keywords', [])
     role_keyword_policy = params.get('roleKeywordPolicy') if isinstance(params.get('roleKeywordPolicy'), dict) else {}
     raw_user_keywords = params.get('userKeywords') if isinstance(params.get('userKeywords'), list) else []
@@ -456,6 +503,13 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 
 {narrative_principle_xml}
 
+{_render_speaker_profile_xml(
+    full_name=full_name,
+    position_label=speaker_position_label,
+    region_metro=speaker_region_metro,
+    region_local=speaker_region_local,
+    electoral_district=speaker_electoral_district,
+)}
 <input>
   <topic>{topic}</topic>
   <author>{full_name}</author>

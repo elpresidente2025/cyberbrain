@@ -564,7 +564,8 @@ class SectionRepairMixin:
         context_analysis = await self.run_context_analyzer(
             analyzer_stance_text,
             analyzer_news_text,
-            author_name
+            author_name,
+            speaker_profile=user_profile,
         )
         if isinstance(context_analysis, dict):
             context_analysis = self._normalize_context_analysis_materials(context_analysis)
