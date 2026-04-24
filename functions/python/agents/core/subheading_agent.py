@@ -602,6 +602,11 @@ class SubheadingAgent(Agent):
             region_metro=(user_profile or {}).get("regionMetro", ""),
             region_local=(user_profile or {}).get("regionLocal", ""),
         )
+        _profile_status = str((user_profile or {}).get("status") or "").strip()
+        _status_suffix_map = {"예비": " 예비후보", "후보": " 후보"}
+        _status_suffix = _status_suffix_map.get(_profile_status, "")
+        if _status_suffix and user_role and not user_role.endswith(_status_suffix.strip()):
+            user_role = user_role + _status_suffix
         assigned_entity_surfaces = assign_h2_entity_slots(
             len(plans),
             full_name=full_name,

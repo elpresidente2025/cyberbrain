@@ -463,7 +463,20 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
             f'핵심 키워드 "{primary_kw_str}" 반드시 포함. 키워드 직후에는 쉼표(,) 또는 조사(에/의/에서 등)를 사용해 분리하세요. '
             '"[장소명], [날짜] [행사명] 안내", "[장소명]에서 열리는 [행사명] 안내", "[장소명] [인물명] [행사명]"'
         )
-    
+
+    _status_label_for_title = ""
+    if "예비후보" in speaker_position_label:
+        _status_label_for_title = "예비후보"
+    elif "후보" in speaker_position_label:
+        _status_label_for_title = "후보"
+    status_identity_rule = (
+        f'  <rule id="must_include_status_label" priority="critical">'
+        f'화자의 현재 신분은 "{_status_label_for_title}"이다. '
+        f'제목에 반드시 "{_status_label_for_title}"를 포함해야 한다. '
+        f'이름만 쓰면 현직 의원처럼 오독된다 — 반드시 신분어를 붙여라. '
+        f'예: "[인물명] {_status_label_for_title}, ..." 또는 "{_status_label_for_title} [인물명]이 ..."</rule>'
+    ) if _status_label_for_title else ""
+
     return f"""<title_generation_prompt>
 
 <role>네이버 블로그 제목 전문가 (클릭률 1위 카피라이터)</role>
@@ -535,6 +548,7 @@ def build_title_prompt(params: Dict[str, Any]) -> str:
 {implementation_title_contract}
 
 <rules priority="critical">
+{status_identity_rule}
   <rule id="length_target">제목은 기본적으로 {TITLE_LENGTH_OPTIMAL_MIN}-{TITLE_LENGTH_OPTIMAL_MAX}자로 작성 (최우선 목표).</rule>
   <rule id="length_max">{TITLE_LENGTH_HARD_MAX}자 이내 (네이버 모바일 검색 잘림 방지) - 절대 초과 금지.</rule>
   <rule id="length_floor">{TITLE_LENGTH_HARD_MIN}자 미만 금지. {TITLE_LENGTH_HARD_MIN}-14자와 {TITLE_LENGTH_OPTIMAL_MAX+1}-{TITLE_LENGTH_HARD_MAX}자는 예외 구간이므로 가급적 피할 것.</rule>
