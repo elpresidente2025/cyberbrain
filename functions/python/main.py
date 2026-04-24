@@ -1,6 +1,8 @@
 import os
 import json
 import asyncio
+import logging
+import sys
 from firebase_functions import https_fn, options
 from firebase_functions.firestore_fn import on_document_updated, Event, Change, DocumentSnapshot
 from firebase_admin import initialize_app
@@ -12,6 +14,19 @@ initialize_app()
 # Set LangSmith Configuration
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
 os.environ["LANGCHAIN_PROJECT"] = "ai-secretary-trace"
+
+# DIAGNOSTIC (임시): TitleAgent 피드백 경로 조사용. agents.common 의 INFO 로그를
+# Cloud Logging 까지 내보내기 위해 stderr 핸들러를 붙인다. body-anchor rewrite 모드
+# 전환, score=0 감지, body-anchor-repair 시도가 실제로 트리거되는지 확인 후 제거.
+_agents_common_logger = logging.getLogger("agents.common")
+_agents_common_logger.setLevel(logging.INFO)
+if not any(
+    isinstance(h, logging.StreamHandler) and h.level <= logging.INFO
+    for h in _agents_common_logger.handlers
+):
+    _diag_handler = logging.StreamHandler(sys.stderr)
+    _diag_handler.setLevel(logging.INFO)
+    _agents_common_logger.addHandler(_diag_handler)
 
 
 # ============================================================
