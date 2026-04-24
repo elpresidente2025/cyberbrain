@@ -249,6 +249,7 @@ class SectionRepairMixin:
                 heading = str(body_info.get('heading') or '').strip()
                 lead = str(body_info.get('lead_sentence') or '').strip()
                 role = str(body_info.get('role') or 'evidence').strip() or 'evidence'
+                anchor_hint = str(body_info.get('anchor_hint') or '').strip()
                 section_paragraphs = await self.generate_section(
                     role=role,
                     heading=heading,
@@ -264,6 +265,7 @@ class SectionRepairMixin:
                     instructions=source_instructions,
                     user_keywords=user_keywords,
                     cached_content_name=cached_name,
+                    anchor_hint=anchor_hint,
                 )
                 if not section_paragraphs:
                     print(

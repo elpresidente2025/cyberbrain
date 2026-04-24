@@ -296,7 +296,7 @@ class _MockRunner:
     async def generate_section(
         self, *, role, heading, lead_sentence, prior_sections, base_prompt,
         length_spec, writing_method, stage, section_order, body_total,
-        topic, instructions, user_keywords,
+        topic, instructions, user_keywords, anchor_hint='', **_extra,
     ):
         # 실제 generate_section 호출 흔적을 stage 로 남긴다
         self.calls.append(stage)

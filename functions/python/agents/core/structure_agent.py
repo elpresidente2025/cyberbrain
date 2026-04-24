@@ -560,9 +560,9 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                 "  \"title\": \"기사 제목\",\n"
                 "  \"intro_lead\": \"화자 실명+직함 자기소개 1문장 + 핵심 결론 1~2문장\",\n"
                 "  \"body\": [\n"
-                "    {\"heading\": \"소제목1\", \"lead_sentence\": \"근거 제시 행동 선언\", \"role\": \"evidence\"},\n"
-                "    {\"heading\": \"소제목2\", \"lead_sentence\": \"반론 인정 후 재반론 선언\", \"role\": \"counterargument_rebuttal\"},\n"
-                "    {\"heading\": \"소제목3\", \"lead_sentence\": \"상위 원칙 선언\", \"role\": \"higher_principle\"}\n"
+                "    {\"heading\": \"소제목1\", \"lead_sentence\": \"근거 제시 행동 선언\", \"role\": \"evidence\", \"anchor_hint\": \"이 섹션에서 우선 인용할 앵커 1개\"},\n"
+                "    {\"heading\": \"소제목2\", \"lead_sentence\": \"반론 인정 후 재반론 선언\", \"role\": \"counterargument_rebuttal\", \"anchor_hint\": \"이 섹션에서 우선 인용할 앵커 1개\"},\n"
+                "    {\"heading\": \"소제목3\", \"lead_sentence\": \"상위 원칙 선언\", \"role\": \"higher_principle\", \"anchor_hint\": \"이 섹션에서 우선 인용할 앵커 1개\"}\n"
                 "  ],\n"
                 "  \"conclusion_heading\": \"결론 소제목\"\n"
                 "}\n"
@@ -575,7 +575,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                 "  \"title\": \"기사 제목\",\n"
                 "  \"intro_lead\": \"화자 실명+직함 자기소개 1문장 + 핵심 결론 1~2문장\",\n"
                 "  \"body\": [\n"
-                "    {\"heading\": \"소제목\", \"lead_sentence\": \"이 섹션의 핵심 행동 선언 한 문장\"}\n"
+                "    {\"heading\": \"소제목\", \"lead_sentence\": \"이 섹션의 핵심 행동 선언 한 문장\", \"anchor_hint\": \"이 섹션에서 우선 인용할 앵커 1개\"}\n"
                 "  ],\n"
                 "  \"conclusion_heading\": \"결론 소제목\"\n"
                 "}\n"
@@ -613,9 +613,32 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
     ) -> str:
         """AEO 1단계: 아웃라인만 요청하는 전용 프롬프트. full-structure 프롬프트와 분리."""
         from ..common.aeo_config import uses_dialectical_structure, build_dialectical_roles
+        from ..common.title_hook_quality import extract_slot_opportunities
 
         body_sections = max(1, int(length_spec.get('body_sections') or 1))
         is_execution_plan = '<execution_plan' in str(prompt or '')
+
+        # 참고자료에서 구체 앵커 풀 추출 → outline 이 섹션별 anchor_hint 에 사전 분배하도록 유도.
+        # 목적: 앞쪽 섹션(1·2)이 포괄 어휘로 채워지고 뒤쪽 섹션에만 구체 앵커가 몰리는 편재를 방지.
+        available_anchors_block = ''
+        try:
+            anchor_buckets = extract_slot_opportunities(None, prompt)
+        except Exception:
+            anchor_buckets = {}
+        anchor_lines = []
+        for bucket_name in ('policy', 'institution', 'numeric', 'year', 'region'):
+            tokens = anchor_buckets.get(bucket_name, []) or []
+            if tokens:
+                safe_tokens = ', '.join(str(t) for t in tokens)
+                anchor_lines.append(f'    <{bucket_name}>{safe_tokens}</{bucket_name}>')
+        if anchor_lines:
+            available_anchors_block = (
+                '  <available_anchors priority="critical">\n'
+                '    <description>참고자료(입장문·뉴스·Bio·ragContext)에서 추출된 구체 앵커 목록. '
+                '본론 각 섹션의 anchor_hint 필드에 이 중에서 골라 배정하십시오.</description>\n'
+                + '\n'.join(anchor_lines) + '\n'
+                '  </available_anchors>\n'
+            )
 
         # 변증법 매크로 구조 블록 (논증·설득형 writing method만)
         argument_structure_block = ''
@@ -693,11 +716,21 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "프롬프트에 [화자 실적·활동 보조자료]나 참고자료가 포함되어 있더라도, 그것을 별도 본론 섹션의 주제로 삼지 마십시오. "
             "보조자료는 입장문 주제를 뒷받침하는 근거·사례로만 활용하십시오.</rule>\n"
             + (
+                "    <rule priority='critical'>body[i].anchor_hint: 위 <available_anchors>에서 해당 섹션에서 우선 인용할 앵커 1개를 고르십시오. "
+                "섹션 간 중복 배정 금지 — body[0]·body[1]·body[2]...가 같은 앵커를 anchor_hint로 쓰지 말 것. "
+                "앵커 풀이 섹션 수보다 적으면 일부 섹션의 anchor_hint는 빈 문자열로 두되, body[0]과 body[1]에는 최우선으로 배정하십시오. "
+                "anchor_hint에 배정한 앵커는 해당 섹션의 heading 또는 lead_sentence에 가능한 한 포함하여 섹션 주제가 구체 재료에 고정되도록 하십시오. "
+                "이 분배의 목적: 앞쪽 섹션이 포괄 어휘('주민 삶의 질', '지역 경제 활성화')로 채워지고 구체 재료가 뒤쪽 섹션에만 몰리는 편재를 방지하기 위함.</rule>\n"
+                if available_anchors_block else
+                "    <rule priority='high'>body[i].anchor_hint는 참고자료에 구체 앵커(정책명·기관명·수치·연도·지역명)가 있으면 1개씩 섹션별로 사전 배정하십시오. 앵커가 전혀 없다면 빈 문자열로 두되 포괄 어휘로 섹션을 채우지 말 것.</rule>\n"
+            ) +
+            (
                 "    <rule priority='critical'>execution_plan이 있으면 body heading과 lead_sentence에 execution_items의 실행 항목을 직접 배치하십시오. "
                 "성공 사례·상위 가치·이념 설명은 실행 항목을 뒷받침하는 근거로만 짧게 쓰고 독립 섹션 주제로 삼지 마십시오.</rule>\n"
                 if is_execution_plan else ''
             ) +
             "  </rules>\n"
+            + available_anchors_block
             + self._build_outline_json_shape(writing_method, body_sections) +
             "</json_output_contract>"
         )
@@ -1335,6 +1368,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         instructions: str,
         user_keywords: List[str],
         omit_base_prompt: bool = False,
+        anchor_hint: str = '',
     ) -> str:
         """섹션 한 개 분량의 paragraphs 만 요청하는 프롬프트."""
         from ..common.aeo_config import paragraph_contract_from_length_spec
@@ -1370,6 +1404,19 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                     '    <rule priority="high">가능하면 prior_sections 블록의 구체 앵커(수치·정책명·고유명사) '
                     '중 1개를 실제 이름으로 인용해 앞 논의와 연결하십시오(강제 아님).</rule>\n'
                 )
+
+        # outline 단계에서 섹션별로 배정된 우선 앵커가 있으면 섹션 프롬프트에 주입.
+        # 앞쪽 섹션(1·2)이 포괄 어휘로 채워지는 편재를 방지하기 위한 하드 핀.
+        anchor_hint_stripped = str(anchor_hint or '').strip()
+        if anchor_hint_stripped and role in {'evidence', 'counterargument_rebuttal', 'higher_principle'}:
+            from xml.sax.saxutils import escape as _xml_escape_anchor
+            safe_anchor_hint = _xml_escape_anchor(anchor_hint_stripped)
+            anchor_rule = (
+                f'    <rule priority="critical">이 섹션의 우선 인용 앵커: "{safe_anchor_hint}". '
+                '이 앵커를 본문 문단 중 최소 1개에 실제 이름으로 등장시키십시오. '
+                '참고자료에 등장한 원문을 그대로 쓰고 변형·일반화하지 말 것. '
+                '이 앵커가 본 섹션 주제와 직접 연결되지 않으면 다른 근거로 보완하되, 섹션 전체를 포괄 어휘로 채우지는 마십시오.</rule>\n'
+            ) + anchor_rule
 
         from xml.sax.saxutils import escape
         safe_heading = escape(str(heading or ''))
@@ -1455,6 +1502,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         instructions: str = '',
         user_keywords: Optional[List[str]] = None,
         cached_content_name: Optional[str] = None,
+        anchor_hint: str = '',
     ) -> Optional[List[str]]:
         """단일 섹션의 paragraphs 를 생성. 실패 시 None 반환.
 
@@ -1476,6 +1524,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             instructions=instructions,
             user_keywords=user_keywords,
             omit_base_prompt=bool(cached_content_name),
+            anchor_hint=anchor_hint,
         )
         schema = self._build_section_json_schema(length_spec)
         min_total_chars = max(160, int(length_spec.get('per_section_min') or 250) - 40)
