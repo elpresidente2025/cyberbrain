@@ -80,6 +80,20 @@ class SectionRepairMixin:
 
     _PLEDGE_TAIL_RE = re.compile(r'하겠습니다\s*[.!]?\s*$')
 
+    @staticmethod
+    def _count_section_paragraphs_static(content: str) -> List[int]:
+        """content 를 <h2> 경계로 나누고 각 섹션의 <p> 개수를 리스트로 반환."""
+        text = str(content or "")
+        if not text.strip():
+            return []
+        parts = re.split(r'(?=<h2\b)', text, flags=re.IGNORECASE)
+        parts = [part for part in parts if part.strip()]
+        counts: List[int] = []
+        for part in parts:
+            p_count = len(re.findall(r"<p\b[^>]*>[\s\S]*?</p\s*>", part, re.IGNORECASE))
+            counts.append(p_count)
+        return counts
+
     def _strip_counterargument_pledge_tail(
         self,
         content: str,
@@ -820,6 +834,24 @@ class SectionRepairMixin:
             )
             normalized_rank = _candidate_rank(normalized_validation, normalized_content)
             _remember_best(normalized_content, candidate_title, normalized_validation, source=source, source_attempt=source_attempt)
+
+            # p_count 보호 가드: 정규화 과정에서 어떤 섹션이든 문단 수가 줄었으면 정규화를 버리고 raw 선택.
+            # 최종 구조 게이트가 섹션당 3 문단 을 요구하는 상황에서 normalize_structure 체인이 donation,
+            # pledge_tail strip, length_balance 같은 경로로 3 -> 2 문단 축소를 반복적으로 유발했다.
+            # raw 에 이미 3 문단이 있으면 그것을 신뢰하는 게 원칙.
+            raw_section_pcounts = SectionRepairMixin._count_section_paragraphs_static(base_content)
+            normalized_section_pcounts = SectionRepairMixin._count_section_paragraphs_static(normalized_content)
+            section_count_min = min(len(raw_section_pcounts), len(normalized_section_pcounts))
+            p_count_regressed = any(
+                normalized_section_pcounts[i] < raw_section_pcounts[i]
+                for i in range(section_count_min)
+            )
+            if p_count_regressed:
+                print(
+                    f"🛡️ [StructureAgent] 정규화가 섹션 문단 수 축소 — raw 복원: "
+                    f"raw={raw_section_pcounts}, normalized={normalized_section_pcounts}"
+                )
+                return base_content, raw_validation, raw_source
 
             if raw_validation.get('passed') and not normalized_validation.get('passed'):
                 print(
