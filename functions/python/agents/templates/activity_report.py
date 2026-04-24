@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from ..common.editorial import STRUCTURE_SPEC, TITLE_SPEC
+from ..common.speaker_identity import build_speaker_identity_xml
 
 @dataclass
 class PromptOption:
@@ -33,6 +34,8 @@ VOCABULARY_MODULES = {
 def build_activity_report_prompt(options: dict) -> str:
     topic = options.get('topic', '')
     author_bio = options.get('authorBio', '')
+    author_name = options.get('authorName', '')
+    user_profile = options.get('userProfile', {})
     instructions = options.get('instructions', '')
     keywords = options.get('keywords', [])
     target_word_count = options.get('targetWordCount', int(STRUCTURE_SPEC['idealTotalMin']))
@@ -41,6 +44,12 @@ def build_activity_report_prompt(options: dict) -> str:
     declarative_structure_id = options.get('declarativeStructureId')
     rhetorical_tactic_id = options.get('rhetoricalTacticId')
     vocabulary_module_id = options.get('vocabularyModuleId')
+
+    speaker_identity_xml = build_speaker_identity_xml(
+        full_name=author_name,
+        author_bio=author_bio,
+        user_profile=user_profile,
+    )
     
     # Select components with defaults
     declarative_structure = next((v for v in DECLARATIVE_STRUCTURES.values() if v.id == declarative_structure_id), DECLARATIVE_STRUCTURES["GENERAL_ACTIVITY_REPORT"])
@@ -68,6 +77,8 @@ def build_activity_report_prompt(options: dict) -> str:
 
     prompt = f"""
 <task type="의정활동 보고" system="전자두뇌비서관">
+
+{speaker_identity_xml}
 
 <basic_info>
   <author>{author_bio}</author>

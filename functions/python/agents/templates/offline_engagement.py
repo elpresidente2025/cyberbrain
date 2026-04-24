@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from ..common.editorial import STRUCTURE_SPEC, TITLE_SPEC, QUALITY_SPEC
+from ..common.speaker_identity import build_speaker_identity_xml
 
 
 @dataclass
@@ -210,10 +211,16 @@ def build_offline_engagement_prompt(options: dict) -> str:
         instructions=str(instructions or ""),
         target_word_count=target_word_count,
     )
+    user_profile = options.get("userProfile", {})
     safe_author_bio = _xml_escape(author_bio)
     safe_author_name = _xml_escape(author_name)
     safe_topic = _xml_escape(topic)
     safe_instructions = _xml_cdata(instructions)
+    speaker_identity_xml = build_speaker_identity_xml(
+        full_name=author_name,
+        author_bio=author_bio,
+        user_profile=user_profile,
+    )
 
     keywords_section = ""
     if keywords:
@@ -349,6 +356,8 @@ def build_offline_engagement_prompt(options: dict) -> str:
 
     prompt = f"""
 <task type="오프라인 접점 콘텐츠" system="전자비서관">
+
+{speaker_identity_xml}
 
 <basic_info>
   <author>{safe_author_bio}</author>

@@ -134,6 +134,11 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
         'isCurrentLawmaker': is_current_lawmaker(user_profile),
         'politicalExperience': user_profile.get('politicalExperience', '정치 신인'),
         'familyStatus': user_profile.get('familyStatus', ''),
+        # 화자 정체성 XML 블록(speaker_identity) 을 7 개 템플릿이 모두 같은
+        # helper(agents/common/speaker_identity) 로 만들도록 user_profile 을
+        # 템플릿에 전달한다. 템플릿은 build_speaker_identity_xml(user_profile=...)
+        # 로 구조화 직책 앵커 + ally 룰을 한 번에 받는다.
+        'userProfile': user_profile,
         'emotionalArchetypeId': params.get('emotionalArchetypeId'),
         'narrativeFrameId': params.get('narrativeFrameId'),
         'declarativeStructureId': params.get('declarativeStructureId'),

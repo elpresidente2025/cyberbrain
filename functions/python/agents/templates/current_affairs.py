@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from ..common.editorial import get_active_strategies, STRUCTURE_SPEC, TITLE_SPEC
+from ..common.speaker_identity import build_speaker_identity_xml
 
 @dataclass
 class PromptOption:
@@ -81,7 +82,14 @@ def build_critical_writing_prompt(options: dict) -> str:
     offensive_tactic_id = options.get('offensiveTacticId')
     vocabulary_module_id = options.get('vocabularyModuleId')
     user_profile = options.get('userProfile', {})
+    author_name = options.get('authorName', '')
     negative_persona = options.get('negativePersona', '')
+
+    speaker_identity_xml = build_speaker_identity_xml(
+        full_name=author_name,
+        author_bio=author_bio,
+        user_profile=user_profile,
+    )
 
     # Select components with defaults
     critical_structure = next((v for v in CRITICAL_STRUCTURES.values() if v.id == critical_structure_id), CRITICAL_STRUCTURES["SOLUTION_FIRST_CRITICISM"])
@@ -120,6 +128,8 @@ def build_critical_writing_prompt(options: dict) -> str:
 
     prompt = f"""
 <task type="비판적 글쓰기" system="전자두뇌비서관">
+
+{speaker_identity_xml}
 
 <basic_info>
   <author>{author_bio}</author>
@@ -270,7 +280,14 @@ def build_diagnosis_writing_prompt(options: dict) -> str:
     target_word_count = options.get('targetWordCount', int(STRUCTURE_SPEC['idealTotalMin']))
     personalized_hints = options.get('personalizedHints', '')
     user_profile = options.get('userProfile', {})
+    author_name = options.get('authorName', '')
     negative_persona = options.get('negativePersona', '')
+
+    speaker_identity_xml = build_speaker_identity_xml(
+        full_name=author_name,
+        author_bio=author_bio,
+        user_profile=user_profile,
+    )
 
     # Rhetorical Strategy
     rhetorical_strategy = get_active_strategies(topic, instructions, user_profile)
@@ -302,6 +319,8 @@ def build_diagnosis_writing_prompt(options: dict) -> str:
 
     prompt = f"""
 <task type="현안 진단" system="전자두뇌비서관">
+
+{speaker_identity_xml}
 
 <basic_info>
   <author>{author_bio}</author>

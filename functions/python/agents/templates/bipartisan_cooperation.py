@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from typing import List, Dict, Optional
 import re
 
+from ..common.speaker_identity import build_speaker_identity_xml
+
 @dataclass
 class ToneLevel:
     id: str
@@ -126,11 +128,19 @@ def build_bipartisan_cooperation_prompt(options: dict = None) -> str:
     topic = merged_options['topic']
     target_count = merged_options['targetCount']
     author_bio = merged_options['authorBio']
+    author_name = options.get('authorName', '')
+    user_profile = options.get('userProfile', {})
     instructions = merged_options['instructions']
     news_context = merged_options['newsContext']
     template_id = merged_options['templateId']
     tone_level = merged_options['toneLevel']
     personalized_hints = merged_options['personalizedHints']
+
+    speaker_identity_xml = build_speaker_identity_xml(
+        full_name=author_name,
+        author_bio=author_bio,
+        user_profile=user_profile,
+    )
 
     # Validation
     valid_target_count = target_count if 500 <= target_count <= 5000 else 1800
@@ -155,6 +165,8 @@ def build_bipartisan_cooperation_prompt(options: dict = None) -> str:
 
     prompt = f"""
 <task type="초당적 협력 원고" system="전자두뇌비서관">
+
+{speaker_identity_xml}
 
   <priority_ratio_guard priority="critical" description="경쟁자 칭찬 비중 10-20% 제한">
     <rule>경쟁자(조경태 등) 언급은 최대 {comp_praise_chars}자(20%)</rule>

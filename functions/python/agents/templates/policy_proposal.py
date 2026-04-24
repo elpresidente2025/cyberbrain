@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from ..common.editorial import get_active_strategies, STRUCTURE_SPEC, TITLE_SPEC
 from ..common.election_rules import get_election_stage
+from ..common.speaker_identity import build_speaker_identity_xml
 
 @dataclass
 class PromptOption:
@@ -92,25 +93,17 @@ def build_policy_proposal_prompt(options: dict) -> str:
 </rhetorical_strategy>
 """
 
+    speaker_identity_xml = build_speaker_identity_xml(
+        full_name=author_name,
+        author_bio=author_bio,
+        user_profile=user_profile,
+    )
+
     prompt = f"""
 <task type="논리적 글쓰기 (정책/비전)" system="전자두뇌비서관">
 
 {election_compliance_section}
-<speaker_identity priority="critical" description="화자 정체성 - 절대 혼동 금지">
-  <declaration>당신은 "{author_bio}"입니다. 이 글의 유일한 1인칭 화자입니다.</declaration>
-  <rule>이 글은 철저히 1인칭 시점으로 작성합니다. "저는", "제가"를 사용하세요.</rule>
-  <rule priority="critical" description="본인 이름 사용 제한">"{speaker_name}"이라는 이름은 서론에서 1회, 결론에서 1회만 사용하세요.
-    <item type="must-not">"{speaker_name}은 약속합니다", "{speaker_name}은 노력하겠습니다" (본문에서 반복)</item>
-    <item type="must">"저 {speaker_name}은 약속드립니다" (서론/결론에서 1회씩만)</item>
-    <item type="must">본문에서는 "저는", "제가", "본 의원은" 등 대명사 사용</item>
-  </rule>
-  <rule>참고 자료에 등장하는 다른 정치인은 관찰과 평가의 대상(3인칭)입니다.
-    <item type="must-not">"조경태는 최선을 다할 것입니다." (작성자가 대변인이 아님)</item>
-    <item type="must">"조경태 의원의 소신에 박수를 보냅니다." (작성자가 평가함)</item>
-  </rule>
-  <rule>절대 다른 정치인의 입장에서 공약을 내거나 다짐하지 마십시오.</rule>
-  <rule>칭찬할 대상이 있다면, "경쟁자이지만 훌륭하다" 식으로 화자와의 관계성을 명확히 하십시오.</rule>
-</speaker_identity>
+{speaker_identity_xml}
 
 <basic_info>
   <author>{author_bio}</author>

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from ..common.editorial import STRUCTURE_SPEC, TITLE_SPEC
+from ..common.speaker_identity import build_speaker_identity_xml
 
 @dataclass
 class PromptOption:
@@ -36,7 +37,7 @@ def build_daily_communication_prompt(options: dict) -> str:
     topic = options.get('topic', '')
     author_bio = options.get('authorBio', '')
     author_name = options.get('authorName', '')
-    # user_profile = options.get('userProfile', {}) # Not used in JS template explicitly but passed in options
+    user_profile = options.get('userProfile', {})
     instructions = options.get('instructions', '')
     keywords = options.get('keywords', [])
     target_word_count = options.get('targetWordCount', int(STRUCTURE_SPEC['idealTotalMin']))
@@ -76,24 +77,16 @@ def build_daily_communication_prompt(options: dict) -> str:
     negative_persona_val = negative_persona if negative_persona else '상대방'
     negative_persona_quoted = f'"{negative_persona}"' if negative_persona else "'참고자료에 등장하는 타인들'"
 
+    speaker_identity_xml = build_speaker_identity_xml(
+        full_name=author_name,
+        author_bio=author_bio,
+        user_profile=user_profile,
+    )
+
     prompt = f"""
 <task type="일상 소통" system="전자두뇌비서관">
 
-<speaker_identity priority="critical" description="화자 정체성 - 절대 혼동 금지">
-  <declaration>당신은 "{author_bio}"입니다. 이 글의 유일한 1인칭 화자입니다.</declaration>
-  <rule>이 글은 철저히 1인칭 시점으로 작성합니다. "저는", "제가"를 사용하세요.</rule>
-  <rule priority="critical" description="본인 이름 사용 제한">"{speaker_name}"이라는 이름은 서론에서 1회, 결론에서 1회만 사용하세요.
-    <item type="must-not">"{speaker_name}은 약속합니다", "{speaker_name}은 노력하겠습니다" (본문에서 반복)</item>
-    <item type="must">"저 {speaker_name}은 약속드립니다" (서론/결론에서 1회씩만)</item>
-    <item type="must">본문에서는 "저는", "제가", "본 의원은" 등 대명사 사용</item>
-  </rule>
-  <rule>참고 자료에 다른 인물의 발언이나 행동이 있더라도, 그 사람이 화자인 척 하지 마세요.
-    <item type="must-not">"후원회장을 맡게 되었습니다" (당신이 후원회장이 아니라면)</item>
-    <item type="must">"OOO 배우님께서 후원회장을 맡아주셨습니다"</item>
-  </rule>
-  <rule>참고 자료에 등장하는 타인은 반드시 3인칭으로 언급하세요.</rule>
-  <rule>글의 처음부터 끝까지 화자의 관점을 일관되게 유지하세요.</rule>
-</speaker_identity>
+{speaker_identity_xml}
 
 <basic_info>
   <author>{author_bio}</author>

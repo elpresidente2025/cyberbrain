@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from ..common.editorial import get_active_strategies, STRUCTURE_SPEC, TITLE_SPEC
+from ..common.speaker_identity import build_speaker_identity_xml
 
 @dataclass
 class PromptOption:
@@ -44,6 +45,13 @@ def build_local_issues_prompt(options: dict) -> str:
     explanatory_tactic_id = options.get('explanatoryTacticId')
     vocabulary_module_id = options.get('vocabularyModuleId')
     user_profile = options.get('userProfile', {})
+    author_name = options.get('authorName', '')
+
+    speaker_identity_xml = build_speaker_identity_xml(
+        full_name=author_name,
+        author_bio=author_bio,
+        user_profile=user_profile,
+    )
 
     # Select components with defaults
     analytical_structure = next((v for v in ANALYTICAL_STRUCTURES.values() if v.id == analytical_structure_id), ANALYTICAL_STRUCTURES["ISSUE_ANALYSIS"])
@@ -77,6 +85,8 @@ def build_local_issues_prompt(options: dict) -> str:
 
     prompt = f"""
 <task type="분석적 글쓰기 (지역 현안)" system="전자두뇌비서관">
+
+{speaker_identity_xml}
 
 <basic_info>
   <author>{author_bio}</author>
