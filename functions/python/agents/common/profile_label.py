@@ -14,14 +14,22 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 
+# status → 직함 접미사. 현역/준비/active 는 접미사 없음(현직 또는 미등록 준비).
+_STATUS_POSITION_SUFFIX: Dict[str, str] = {
+    "예비": " 예비후보",
+    "후보": " 후보",
+}
+
+
 def format_position_with_region(user_profile: Optional[Dict[str, Any]]) -> str:
-    """canonical position + region 을 합친 표시용 직함 라벨.
+    """canonical position + region + status 를 합친 표시용 직함 라벨.
 
     - 광역의원 + regionMetro → "{regionMetro}의원"
     - 기초의원 + regionLocal → "{regionLocal}의원" (없으면 regionMetro)
     - 광역자치단체장 + regionMetro → "{regionMetro}장"
     - 기초자치단체장 + regionLocal → "{regionLocal}장"
     - 그 외 (국회의원 등) → position 원본 그대로
+    - status 가 예비/후보이면 뒤에 " 예비후보" / " 후보" 접미사 추가.
 
     region 이 비어 있으면 position 원본을 반환한다.
     """
@@ -30,20 +38,25 @@ def format_position_with_region(user_profile: Optional[Dict[str, Any]]) -> str:
     position = (user_profile.get("position") or "").strip()
     region_metro = (user_profile.get("regionMetro") or "").strip()
     region_local = (user_profile.get("regionLocal") or "").strip()
+    status = (user_profile.get("status") or "").strip()
 
     if position == "광역의원" and region_metro:
-        return f"{region_metro}의원"
-    if position == "기초의원":
+        base = f"{region_metro}의원"
+    elif position == "기초의원":
         if region_local:
-            return f"{region_local}의원"
-        if region_metro:
-            return f"{region_metro}의원"
-    if position == "광역자치단체장" and region_metro:
-        return f"{region_metro}장"
-    if position == "기초자치단체장" and region_local:
-        return f"{region_local}장"
+            base = f"{region_local}의원"
+        elif region_metro:
+            base = f"{region_metro}의원"
+        else:
+            base = position
+    elif position == "광역자치단체장" and region_metro:
+        base = f"{region_metro}장"
+    elif position == "기초자치단체장" and region_local:
+        base = f"{region_local}장"
+    else:
+        base = position
 
-    return position
+    return base + _STATUS_POSITION_SUFFIX.get(status, "")
 
 
 def resolve_speaker_position_label(user_profile: Optional[Dict[str, Any]]) -> str:
