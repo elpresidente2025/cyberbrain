@@ -1330,6 +1330,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         topic: str,
         instructions: str,
         user_keywords: List[str],
+        omit_base_prompt: bool = False,
     ) -> str:
         """섹션 한 개 분량의 paragraphs 만 요청하는 프롬프트."""
         from ..common.aeo_config import paragraph_contract_from_length_spec
@@ -1391,8 +1392,9 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             '  ]]></json_shape>\n'
         )
 
+        prefix = "" if omit_base_prompt else f"{base_prompt}\n\n"
         return (
-            f"{base_prompt}\n\n"
+            prefix
             + (prior_block + "\n\n" if prior_block else '')
             + locked_block
             + "\n<json_output_contract priority=\"critical\">\n"
@@ -1444,6 +1446,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         topic: str = '',
         instructions: str = '',
         user_keywords: Optional[List[str]] = None,
+        cached_content_name: Optional[str] = None,
     ) -> Optional[List[str]]:
         """단일 섹션의 paragraphs 를 생성. 실패 시 None 반환.
 
@@ -1464,6 +1467,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             topic=topic,
             instructions=instructions,
             user_keywords=user_keywords,
+            omit_base_prompt=bool(cached_content_name),
         )
         schema = self._build_section_json_schema(length_spec)
         min_total_chars = max(160, int(length_spec.get('per_section_min') or 250) - 40)
@@ -1477,6 +1481,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                     required_keys=("paragraphs",),
                     stage=f"{stage}{'-retry' if sub_attempt else ''}",
                     max_output_tokens=2048,
+                    cached_content_name=cached_content_name,
                 )
             except Exception as e:
                 last_error = str(e)
@@ -1516,6 +1521,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
         required_keys: Tuple[str, ...],
         stage: str,
         max_output_tokens: int,
+        cached_content_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         from ..common.gemini_client import StructuredOutputError, generate_json_async
 
@@ -1533,6 +1539,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                 response_schema=response_schema,
                 required_keys=required_keys,
                 options={"json_parse_retries": 2},
+                cached_content_name=cached_content_name,
             )
             elapsed = time.time() - start_time
             print(f"✅ [StructureAgent] LLM JSON 응답 완료 (stage={stage}, {elapsed:.1f}초)")

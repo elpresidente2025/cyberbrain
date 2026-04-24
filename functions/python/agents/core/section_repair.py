@@ -160,6 +160,11 @@ class SectionRepairMixin:
         outline 단계가 AEO 경로에서 이미 완료됐을 경우 existing_outline 으로
         넘겨받아 중복 호출을 피한다.
         """
+        from ..common.gemini_cache import ensure_cache, delete_cache
+        cached_name = await ensure_cache(
+            base_prompt=current_prompt,
+            model_name=self.model_name,
+        )
         try:
             outline = existing_outline
             if outline is None:
@@ -178,6 +183,7 @@ class SectionRepairMixin:
                         required_keys=("title", "intro_lead", "body", "conclusion_heading"),
                         stage="seq-outline",
                         max_output_tokens=2048,
+                        cached_content_name=cached_name,
                     )
                 except Exception as e:
                     print(f"❌ [SequentialStructure] outline 호출 실패: {e}")
@@ -227,6 +233,7 @@ class SectionRepairMixin:
                 topic=topic,
                 instructions=source_instructions,
                 user_keywords=user_keywords,
+                cached_content_name=cached_name,
             )
             if not intro_paragraphs:
                 print("❌ [SequentialStructure] intro 생성 실패 — legacy 경로로 폴백")
@@ -256,6 +263,7 @@ class SectionRepairMixin:
                     topic=topic,
                     instructions=source_instructions,
                     user_keywords=user_keywords,
+                    cached_content_name=cached_name,
                 )
                 if not section_paragraphs:
                     print(
@@ -288,6 +296,7 @@ class SectionRepairMixin:
                 topic=topic,
                 instructions=source_instructions,
                 user_keywords=user_keywords,
+                cached_content_name=cached_name,
             )
             if not conclusion_paragraphs:
                 print("❌ [SequentialStructure] conclusion 생성 실패 — legacy 경로로 폴백")
@@ -322,6 +331,8 @@ class SectionRepairMixin:
             print(f"❌ [SequentialStructure] 예외: {e}")
             print(traceback.format_exc())
             return None
+        finally:
+            await delete_cache(cached_name)
 
     async def _regenerate_sequential_payload_section(
         self,

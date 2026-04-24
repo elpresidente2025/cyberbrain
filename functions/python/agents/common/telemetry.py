@@ -79,6 +79,8 @@ def emit_gemini_call(
     retries_used: int,
     success: bool,
     error_type: Optional[str] = None,
+    cached: bool = False,
+    cached_tokens: Optional[int] = None,
     extra: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Append one row to telemetry_gemini_calls. Best-effort."""
@@ -104,6 +106,8 @@ def emit_gemini_call(
             "retriesUsed": int(retries_used),
             "success": bool(success),
             "errorType": error_type,
+            "cached": bool(cached),
+            "cachedTokens": cached_tokens,
         }
         if extra:
             doc["extra"] = extra

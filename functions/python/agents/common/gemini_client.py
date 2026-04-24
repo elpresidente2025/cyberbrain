@@ -202,10 +202,16 @@ def _emit_call_telemetry(
     retries_used: int,
     success: bool,
     error_type: Optional[str] = None,
+    cached_content_name: Optional[str] = None,
 ) -> None:
     """Phase A-1 cost emit. Best-effort — must never break the pipeline."""
     try:
         from .telemetry import emit_gemini_call
+
+        cached_tokens = (
+            getattr(usage, "cached_content_token_count", None) if usage else None
+        )
+        cached_hit = bool(cached_content_name) and bool(cached_tokens or 0)
 
         emit_gemini_call(
             model=model,
@@ -219,6 +225,8 @@ def _emit_call_telemetry(
             retries_used=retries_used,
             success=success,
             error_type=error_type,
+            cached=cached_hit,
+            cached_tokens=cached_tokens,
         )
     except Exception:
         pass
@@ -230,6 +238,7 @@ def _build_generation_config(
     max_output_tokens: int,
     response_mime_type: Optional[str],
     options: Optional[Dict[str, Any]],
+    cached_content_name: Optional[str] = None,
 ) -> types.GenerateContentConfig:
     opts = dict(options or {})
 
@@ -250,6 +259,12 @@ def _build_generation_config(
 
     if opts.get("response_json_schema") is not None:
         config.response_json_schema = opts["response_json_schema"]
+
+    if cached_content_name:
+        try:
+            config.cached_content = cached_content_name
+        except Exception:
+            pass  # SDK 미지원 시 무시 (호출은 cache 없이 진행)
 
     # thinking_config: 명시적 전달 또는 JSON 요청 시 자동 비활성화
     thinking_config = opts.get("thinking_config")
@@ -810,6 +825,7 @@ async def generate_content_async(
     retries: int = DEFAULT_RETRIES,
     options: Optional[Dict[str, Any]] = None,
     timeout_sec: Optional[float] = DEFAULT_TIMEOUT_SEC,
+    cached_content_name: Optional[str] = None,
 ) -> str:
     # Route to Claude client when model name starts with "claude-"
     if str(model_name or "").startswith("claude-"):
@@ -835,6 +851,7 @@ async def generate_content_async(
         max_output_tokens=max_output_tokens,
         response_mime_type=response_mime_type,
         options=options,
+        cached_content_name=cached_content_name,
     )
 
     tries = max(1, int(retries or 1))
@@ -874,6 +891,7 @@ async def generate_content_async(
                     timed_out=timed_out_anywhere,
                     retries_used=attempt - 1,
                     success=True,
+                    cached_content_name=cached_content_name,
                 )
                 return text
             except asyncio.TimeoutError as error:
@@ -907,6 +925,7 @@ async def generate_content_async(
         retries_used=tries,
         success=False,
         error_type=type(last_error).__name__ if last_error else "Unknown",
+        cached_content_name=cached_content_name,
     )
 
     raise GeminiClientError(
@@ -926,6 +945,7 @@ async def generate_json_async(
     response_schema: Optional[Dict[str, Any]] = None,
     required_keys: Optional[Iterable[str]] = None,
     timeout_sec: Optional[float] = DEFAULT_TIMEOUT_SEC,
+    cached_content_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Generate structured JSON and return a validated top-level object.
@@ -953,6 +973,7 @@ async def generate_json_async(
                 retries=content_retries if parse_attempt == 1 else max(1, content_retries - 1),
                 options=merged_options,
                 timeout_sec=timeout_sec,
+                cached_content_name=cached_content_name,
             )
         except (GeminiClientError, RuntimeError) as error:
             last_error = error
