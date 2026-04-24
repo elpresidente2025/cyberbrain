@@ -122,7 +122,12 @@ const BioPerformanceSection = ({
                             flexDirection: 'column'
                         }}>
                             <CardContent sx={{ flex: 1 }}>
-                                <Box sx={{ mb: 'var(--spacing-md)' }}>
+                                <Box sx={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    mb: 'var(--spacing-md)'
+                                }}>
                                     <Chip
                                         label={typeConfig.name}
                                         size="small"
@@ -132,6 +137,25 @@ const BioPerformanceSection = ({
                                             fontWeight: 600
                                         }}
                                     />
+                                    {ONGOING_TYPES.has(entry.type) && (
+                                        <FormControlLabel
+                                            sx={{ mr: 0 }}
+                                            control={
+                                                <Checkbox
+                                                    size="small"
+                                                    checked={entry.isOngoing !== false}
+                                                    onChange={(e) => handleOngoingChange(index, e.target.checked)}
+                                                    disabled={disabled}
+                                                    sx={{ py: 0 }}
+                                                />
+                                            }
+                                            label={
+                                                <Typography variant="caption" color="text.secondary">
+                                                    진행 중
+                                                </Typography>
+                                            }
+                                        />
+                                    )}
                                 </Box>
 
                                 <FormControl fullWidth sx={{ mb: 'var(--spacing-md)' }}>
@@ -150,25 +174,6 @@ const BioPerformanceSection = ({
                                         ))}
                                     </Select>
                                 </FormControl>
-
-                                {ONGOING_TYPES.has(entry.type) && (
-                                    <FormControlLabel
-                                        sx={{ mb: 'var(--spacing-sm)' }}
-                                        control={
-                                            <Checkbox
-                                                size="small"
-                                                checked={entry.isOngoing !== false}
-                                                onChange={(e) => handleOngoingChange(index, e.target.checked)}
-                                                disabled={disabled}
-                                            />
-                                        }
-                                        label={
-                                            <Typography variant="caption" sx={{ color: 'var(--color-text-secondary)' }}>
-                                                진행 중
-                                            </Typography>
-                                        }
-                                    />
-                                )}
 
                                 <TextField
                                     fullWidth
