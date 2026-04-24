@@ -60,9 +60,7 @@ KOREAN_DIGIT_MAP = {
 }
 
 RISK_LEVELS = {
-    'ALLOWED': 0,
-    'DERIVED': 1,
-    'COMMON': 1,
+    'SAFE': 1,
     'GOAL': 2,
     'UNKNOWN': 2,
     'HALLUCINATION': 3
@@ -350,23 +348,22 @@ async def _validate_numeric_context_batch(
     )
 
     prompt = f"""당신은 팩트체크 전문가입니다. 아래 수치들이 각 문장에서 적절하게 사용됐는지 판단하세요.
+규칙 기반 검사를 통과하지 못한 수치만 전달됩니다. 출처 직접 인용·계산 가능 여부는 이미 규칙이 확인했으므로, 문맥 판단에 집중하세요.
 
 [출처에서 확인된 수치 목록]
 {allowed_tokens_str}
 
 [판단 기준]
-1. ALLOWED - 출처 목록에서 직접 인용한 수치
-2. DERIVED - 출처 목록의 수치들로 계산/추론 가능 (합계, 차이, 비율 등)
-3. COMMON - 일반 상식 수치 (현재 연도, 공식 인구통계, 일반적 표현)
-4. GOAL - 미래 목표/계획 수치 (출처 없어도 허용 가능)
-5. HALLUCINATION - 출처 없는 구체적 수치 (위험)
+1. SAFE - 일반 상식이거나 문맥상 출처에서 추론 가능한 안전한 수치
+2. GOAL - 미래 목표·공약 수치 (출처 없어도 허용, 경고만)
+3. HALLUCINATION - 사실처럼 제시됐지만 근거 없는 수치 (차단)
 
 [검증 대상]
 {items_text}
 
 반드시 다음 JSON 배열로만 응답 (항목 수는 검증 대상과 동일):
 [
-  {{"token": "수치", "type": "ALLOWED|DERIVED|COMMON|GOAL|HALLUCINATION", "confidence": 0.0-1.0, "reason": "판단 근거"}},
+  {{"token": "수치", "type": "SAFE|GOAL|HALLUCINATION", "confidence": 0.0-1.0, "reason": "판단 근거"}},
   ...
 ]"""
 
