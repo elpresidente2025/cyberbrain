@@ -1074,6 +1074,46 @@ def label_first_person_sentences(
     return results
 
 
+def analyze_first_person_density(
+    plain_text: str,
+) -> Optional[Dict[str, Any]]:
+    """저는·제가 주어 밀도를 Kiwi 형태소 분석으로 계산한다.
+
+    반환:
+      {"counts": {"subject_total": int, "subject_start": int}, "sentence_count": int}
+      None — Kiwi 불가 (호출부에서 regex fallback 사용).
+
+    subject_start 주의: j==0 기준이라 "하지만 저는..." 같은 접속부사 선행 패턴은
+    미집계될 수 있다. pipeline 감지는 surface regex(TARGETED_POLISH_JEONIM_START_RE)가
+    처리하므로 gate 판정 정확도에는 영향 없음.
+    """
+    sents = split_sentences(plain_text)
+    if sents is None:
+        return None
+    counts: Dict[str, int] = {"subject_total": 0, "subject_start": 0}
+    for sent in sents:
+        tokens = tokenize(sent)
+        if tokens is None:
+            return None
+        for j, tok in enumerate(tokens):
+            if tok.form not in ("저", "제") or tok.tag != "NP":
+                continue
+            if j + 1 >= len(tokens):
+                continue
+            nxt = tokens[j + 1]
+            # 저는: 저(NP) + 는(JX)
+            if tok.form == "저" and nxt.tag == "JX" and nxt.form == "는":
+                counts["subject_total"] += 1
+                if j == 0:
+                    counts["subject_start"] += 1
+            # 제가: 제(NP) + 가(JKS) — humble subject form
+            elif tok.form == "제" and nxt.tag == "JKS" and nxt.form == "가":
+                counts["subject_total"] += 1
+                if j == 0:
+                    counts["subject_start"] += 1
+    return {"counts": counts, "sentence_count": len(sents)}
+
+
 # ──────────────────────────────────────────────────────────────────────
 # AI 수사 패턴 라벨링 (humanize 프롬프트 힌트 생성)
 # ──────────────────────────────────────────────────────────────────────

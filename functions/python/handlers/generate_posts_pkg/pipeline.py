@@ -31,7 +31,10 @@ from agents.common.h2_repair import (
     build_subheading_role_surface as _h2_repair_build_subheading_role_surface,
 )
 from agents.common.h2_quality import h2_semantic_family_key as _common_h2_semantic_family_key
-from agents.common.korean_morph import detect_demonstrative_abstract_phrases
+from agents.common.korean_morph import (
+    detect_demonstrative_abstract_phrases,
+    analyze_first_person_density,
+)
 from agents.common.person_naming import (
     ROLE_TOKEN_PRIORITY,
     canonical_role_label,
@@ -332,8 +335,20 @@ TARGETED_POLISH_BOILERPLATE_MARKERS: tuple[str, ...] = (
     "적극적으로 추진",
     "신뢰받는 정치인",
 )
-# 저는/제가 시작 반복 감지 (중간 본문 대상)
-TARGETED_POLISH_JEONIM_START_RE = re.compile(r"^(?:저는|제가|저의)\s")
+# 저는/제가 문두 반복 감지 (저의 제외 — 소유격은 1인칭 주어 아님)
+TARGETED_POLISH_JEONIM_START_RE = re.compile(r"^(?:저는|제가)\s")
+# 경력·책임 선언 문장 — 전역 초과 시에도 rewrite 금지
+# 주의: "의원/대표/위원장" 단어 단독 매칭 금지 ("저는 구의원이 되면..." 등 공약문 오보호 방지)
+FIRST_PERSON_PROTECTED_RE = re.compile(
+    r"(?:"
+    r"활동해\s*왔|활동하며\s+.{0,20}(?:들어왔|만나왔|확인했)|"
+    r"맡아\s*왔|걸어\s*왔|"
+    r"경험해\s*왔|준비해\s*왔|연구해\s*왔|"
+    r"출마를\s+결심|도전하게\s+된|"
+    r"책임(?:을)?\s*(?:지겠|다하겠)|"
+    r"약속드립"
+    r")"
+)
 TARGETED_POLISH_BOILERPLATE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"귀\s*기울이(?:는|고|며|어|여|았|었|왔|겠습니다|도록|려)", re.IGNORECASE),
     re.compile(r"겸허히\s+받아들이(?:며|고|겠)", re.IGNORECASE),
@@ -387,7 +402,7 @@ TARGETED_POLISH_REASON_HINTS: dict[str, str] = {
     "transition_voice_overlay": "문단 연결문을 덜 상투적으로 정리",
     "closing_voice_overlay": "마무리 문장을 사용자답게 다듬기",
     "boilerplate_voice_overlay": "AI스러운 상투 표현을 완화",
-    "jeonim_voice_overlay": "본문 중간 '저는/제가' 반복 시작 패턴을 다양화",
+    "jeonim_voice_overlay": "본문 '저는/제가' 문두 반복을 줄이고 정책·지역·주민 중심 문장으로 주어를 전환",
 }
 _UNSUPPORTED_COMPARISON_FIRST_PERSON_RE = re.compile(
     r"(?:저는|제가|저의)(?:[^%。.!?\d]{2,60})(?:보다|에 비해|보다 더|더 나은|더 구체적|더 실질적|더 현실적)",
@@ -6140,6 +6155,7 @@ def _detect_targeted_sentence_style_issue(
     paragraph_jeonim_count: int = 0,
     adjacent_jeonim: bool = False,
     ai_alternative_sources: tuple[str, ...] = (),
+    fp_over_limit: bool = False,
 ) -> str:
     candidate = _normalize_inline_whitespace(text)
     if not _is_targeted_style_candidate_safe(candidate):
@@ -6172,6 +6188,18 @@ def _detect_targeted_sentence_style_issue(
     if _contains_targeted_style_marker(candidate, TARGETED_POLISH_INTRO_MARKERS):
         return "intro_voice_overlay"
 
+    # ── 전역 초과 시 확장 감지 (fp_over_limit=True) ──────────────────────
+    # 경력·책임 선언 문장과 글 첫 문장은 제외.
+    # 정책 실행 동사 유무와 무관하게 비보호 저는/제가 문두는 후보로 수집.
+    if (
+        fp_over_limit
+        and TARGETED_POLISH_JEONIM_START_RE.match(candidate)
+        and not FIRST_PERSON_PROTECTED_RE.search(candidate)
+        and not (paragraph_index == 0 and sentence_index == 0)
+    ):
+        return "jeonim_voice_overlay"
+
+    # ── 로컬 클러스터 감지 (기존 로직 유지) ─────────────────────────────
     # 본문 중간에서 저는/제가 시작 반복 감지 (도입·마무리는 위에서 이미 처리됨)
     if (
         paragraph_count > 3
@@ -6309,6 +6337,11 @@ def _build_targeted_sentence_style_instruction(
     return "\n".join(lines)
 
 
+def _first_person_subject_limit(sentence_count: int) -> int:
+    """원고 문장 수 기반 1인칭 주어(저는·제가) 허용 상한."""
+    return max(4, min(6, round(sentence_count * 0.15)))
+
+
 def _collect_targeted_sentence_polish_candidates(
     content: str,
     *,
@@ -6319,6 +6352,24 @@ def _collect_targeted_sentence_polish_candidates(
     base = str(content or "")
     if not base.strip():
         return []
+
+    # ── 전역 1인칭 주어 카운트 (gate) ────────────────────────────────────
+    # limit 최솟값=4이므로 5개 미만이면 초과 불가 → Kiwi 생략
+    _fp_plain = re.sub(r"<[^>]+>", " ", base)
+    _fp_plain = re.sub(r"\s+", " ", _fp_plain).strip()
+    _fp_quick = len(re.findall(r"(?:저는|제가)", _fp_plain))
+    fp_over_limit = False
+    if _fp_quick > 4:
+        _fp_density = analyze_first_person_density(_fp_plain)
+        if _fp_density:
+            fp_over_limit = (
+                _fp_density["counts"]["subject_total"]
+                > _first_person_subject_limit(_fp_density["sentence_count"])
+            )
+        else:
+            # Kiwi 불가 — regex 근사치 fallback
+            _fp_sents = [s for s in re.split(r"(?<=[.!?])\s+", _fp_plain) if s.strip()]
+            fp_over_limit = _fp_quick > _first_person_subject_limit(len(_fp_sents))
 
     candidates: list[Dict[str, Any]] = []
     style_enabled = bool(str(style_instruction or "").strip())
@@ -6408,6 +6459,7 @@ def _collect_targeted_sentence_polish_candidates(
                         or (sentence_index + 1) in jeonim_sentence_indexes
                     ),
                     ai_alternative_sources=ai_alternative_sources,
+                    fp_over_limit=fp_over_limit,
                 )
             if not reason:
                 continue
@@ -6464,10 +6516,10 @@ def _collect_targeted_sentence_polish_candidates(
     normalized_mode = str(style_polish_mode or "").strip().lower()
     if normalized_mode not in TARGETED_POLISH_JEONIM_RESERVED_SLOTS:
         normalized_mode = "light"
-    jeonim_reserved = min(
-        overlay_limit,
-        int(TARGETED_POLISH_JEONIM_RESERVED_SLOTS.get(normalized_mode) or 0),
-    )
+    jeonim_base = int(TARGETED_POLISH_JEONIM_RESERVED_SLOTS.get(normalized_mode) or 0)
+    if fp_over_limit:
+        jeonim_base = min(jeonim_base + 2, 4)   # light: 1→3, medium: 2→4
+    jeonim_reserved = min(overlay_limit, jeonim_base)
     selected_capped_overlay_candidates: list[Dict[str, Any]] = []
     if overlay_limit > 0:
         jeonim_candidates = [
