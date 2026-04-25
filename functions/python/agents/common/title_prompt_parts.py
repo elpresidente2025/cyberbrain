@@ -336,8 +336,8 @@ TITLE_TYPES = {
         'pattern': '"어떻게", "무엇을", "왜", "얼마" + 질문형',
         'naverTip': '질문형으로 시작하면 검색 사용자의 클릭 유도',
         'good': [
-            {'title': '분당구 청년 주거, 월세 지원 얼마까지?', 'chars': 19, 'analysis': '지역 + 혜택 + 질문'},
-            {'title': '성남 교통 체증, 어떻게 풀까?', 'chars': 14, 'analysis': '문제 + 해결책 질문'},
+            {'title': '[샘플구] 청년 주거, 월세 지원 얼마까지?', 'chars': 19, 'analysis': '지역 + 혜택 + 질문'},
+            {'title': '[샘플시] 교통 체증, 어떻게 풀까?', 'chars': 14, 'analysis': '문제 + 해결책 질문'},
             {'title': '어르신 일자리, 어떤 프로그램이 있나?', 'chars': 19, 'analysis': '대상 + 정보 질문'},
             {'title': '2025년 보육료, 지원 기준 바뀌었어요?', 'chars': 20, 'analysis': '시기 + 변경 확인'},
             {'title': '주민 민원, 실제로 언제 해결돼요?', 'chars': 17, 'analysis': '현실적 질문'}
@@ -376,15 +376,15 @@ TITLE_TYPES = {
         'pattern': '행정구역명(동 단위) + 정책 + 숫자',
         'naverTip': '동단위 키워드는 경쟁도 낮아 상위노출 유리',
         'good': [
-            {'title': '분당구 정자동 도시가스, 기금 70억 확보', 'chars': 21, 'analysis': '구/동 + 구체적 예산'},
-            {'title': '수지구 풍덕천동 학교 신설, 올 9월 개교', 'chars': 21, 'analysis': '지역 + 시설 + 시기'},
-            {'title': '성남시 중원구 보육료 지원, 월 15만원 추가', 'chars': 22, 'analysis': '지역 + 혜택 구체화'},
-            {'title': '용인시 기흥구 어르신 요양원, 신청 마감 1주', 'chars': 23, 'analysis': '지역 + 긴급성'},
-            {'title': '영통구 광교동 교통 혼잡도, 6개월간 35% 개선', 'chars': 24, 'analysis': '지역 + 개선 수치'}
+            {'title': '[샘플구] [샘플동] 도시가스, 기금 70억 확보', 'chars': 21, 'analysis': '구/동 + 구체적 예산'},
+            {'title': '[샘플구] [샘플동] 학교 신설, 올 9월 개교', 'chars': 21, 'analysis': '지역 + 시설 + 시기'},
+            {'title': '[샘플시] [샘플구] 보육료 지원, 월 15만원 추가', 'chars': 22, 'analysis': '지역 + 혜택 구체화'},
+            {'title': '[샘플시] [샘플구] 어르신 요양원, 신청 마감 1주', 'chars': 23, 'analysis': '지역 + 긴급성'},
+            {'title': '[샘플구] [샘플동] 교통 혼잡도, 6개월간 35% 개선', 'chars': 24, 'analysis': '지역 + 개선 수치'}
         ],
         'bad': [
-            {'title': '우리 지역을 위해 노력합니다', 'problem': '어디?', 'fix': '분당구 정자동 도시가스 기금 70억'},
-            {'title': '지역 현안 해결하겠습니다', 'problem': '무엇을?', 'fix': '용인시 기흥구 어린이집 5곳 신축'}
+            {'title': '우리 지역을 위해 노력합니다', 'problem': '어디?', 'fix': '[샘플구] [샘플동] 도시가스 기금 70억'},
+            {'title': '지역 현안 해결하겠습니다', 'problem': '무엇을?', 'fix': '[샘플시] [샘플구] 어린이집 5곳 신축'}
         ]
     },
     'EXPERT_KNOWLEDGE': {
@@ -525,35 +525,35 @@ TITLE_SKELETONS: Dict[str, List[Dict[str, Any]]] = {
         {
             'id': 'S1',
             'pattern': '[SEO키워드], 왜 [인물지시구]이 [과거동사]나',
-            'example': '부산 지방선거, 왜 이 남자가 뛰어들었나',
+            'example': '[샘플시] 지방선거, 왜 이 사람이 뛰어들었나',
             'triggers': 'keywordPosition+쉼표, impact:원인질문(왜), impact:미완결서사',
             'note': '왜 질문형 — 구체적 인물 + 미완결',
         },
         {
             'id': 'S2',
             'pattern': '[SEO키워드]에 [과거동사형] [인물 배경/정체성 명사]',
-            'example': '부산 지방선거에 뛰어든 부두 노동자의 아들',
+            'example': '[샘플시] 지방선거에 뛰어든 부두 노동자의 아들',
             'triggers': 'keywordPosition(조사), titleFamily, 서사 아크',
             'note': '서사 아크 — 출신·배경으로 호기심 유발',
         },
         {
             'id': 'S3',
             'pattern': '[SEO키워드], [인물명]은 왜 [형용사+ㄴ가]',
-            'example': '부산 지방선거, 이재성은 왜 다른가',
+            'example': '[샘플시] 지방선거, [후보명]은 왜 다른가',
             'triggers': 'keywordPosition+쉼표, authorIncluded, impact:원인질문',
             'note': '간결 도발형 — 짧고 강렬',
         },
         {
             'id': 'S4',
             'pattern': '[SEO키워드], [수치][단위] [주체]이 [과거동사] [지역/대상]의 [사건명사]',
-            'example': '부산 지방선거, 10만 청년이 떠난 도시의 반란',
+            'example': '[샘플시] 지방선거, 10만 청년이 떠난 도시의 반란',
             'triggers': 'keywordPosition+쉼표, numbers, impact:미완결서사',
             'note': '수치+사건형 — 팩트 충격 + 암시',
         },
         {
             'id': 'S5',
             'pattern': '[SEO키워드], [가치/수단]만으로 이기는 [인물/진영]',
-            'example': '부산 지방선거, 원칙만으로 이기는 후보',
+            'example': '[샘플시] 지방선거, 원칙만으로 이기는 후보',
             'triggers': 'keywordPosition+쉼표, 도발적 선언',
             'note': '도발적 선언 — 가치 논쟁 평서체',
         },
@@ -599,14 +599,14 @@ TITLE_SKELETONS: Dict[str, List[Dict[str, Any]]] = {
         {
             'id': 'S1',
             'pattern': '[지역] [대상] [영역], [혜택항목] 얼마까지?',
-            'example': '분당구 청년 주거, 월세 지원 얼마까지?',
+            'example': '[샘플구] 청년 주거, 월세 지원 얼마까지?',
             'triggers': 'impact:질문형(?), keywordPosition',
             'note': '지역+혜택 질문',
         },
         {
             'id': 'S2',
             'pattern': '[지역] [현안], 어떻게 풀까?',
-            'example': '성남 교통 체증, 어떻게 풀까?',
+            'example': '[샘플시] 교통 체증, 어떻게 풀까?',
             'triggers': 'impact:질문형(?), impact:원인질문(어떻게)',
             'note': '문제+해결 질문 — 짧고 강력',
         },
@@ -673,35 +673,35 @@ TITLE_SKELETONS: Dict[str, List[Dict[str, Any]]] = {
         {
             'id': 'S1',
             'pattern': '[구] [동] [사업/정책], [예산항목] [금액][단위] 확보',
-            'example': '분당구 정자동 도시가스, 기금 70억 확보',
+            'example': '[샘플구] [샘플동] 도시가스, 기금 70억 확보',
             'triggers': 'numbers, keywordPosition, 초지역 SEO',
             'note': '구/동 + 구체적 예산',
         },
         {
             'id': 'S2',
             'pattern': '[구] [동] [시설] 신설, [시기] 개교',
-            'example': '수지구 풍덕천동 학교 신설, 올 9월 개교',
+            'example': '[샘플구] [샘플동] 학교 신설, 올 9월 개교',
             'triggers': 'keywordPosition, 시기 명시',
             'note': '지역 + 시설 + 시기',
         },
         {
             'id': 'S3',
             'pattern': '[시] [구] [정책] 지원, [단위] [수치][단위] 추가',
-            'example': '성남시 중원구 보육료 지원, 월 15만원 추가',
+            'example': '[샘플시] [샘플구] 보육료 지원, 월 15만원 추가',
             'triggers': 'numbers, keywordPosition',
             'note': '지역 + 혜택 구체화',
         },
         {
             'id': 'S4',
             'pattern': '[시] [구] [대상] [시설], 신청 마감 [기간]',
-            'example': '용인시 기흥구 어르신 요양원, 신청 마감 1주',
+            'example': '[샘플시] [샘플구] 어르신 요양원, 신청 마감 1주',
             'triggers': 'numbers, 긴급성',
             'note': '지역 + 긴급 행동',
         },
         {
             'id': 'S5',
             'pattern': '[구] [동] [지표], [기간]간 [수치]% 개선',
-            'example': '영통구 광교동 교통 혼잡도, 6개월간 35% 개선',
+            'example': '[샘플구] [샘플동] 교통 혼잡도, 6개월간 35% 개선',
             'triggers': 'numbers, impact:대비구조',
             'note': '지역 + 개선 수치',
         },
@@ -858,35 +858,35 @@ TITLE_SKELETONS: Dict[str, List[Dict[str, Any]]] = {
         {
             'id': 'S1',
             'pattern': '[화자], [대상] [수치][단위] [비판명사]',
-            'example': '이재성, 박형준 시장 0.7% 성장률 질타',
+            'example': '[후보명], [경쟁후보명] 시장 0.7% 성장률 질타',
             'triggers': 'authorIncluded+앞배치, numbers, keywordPosition+쉼표',
             'note': '화자 + 대상 + 비판',
         },
         {
             'id': 'S2',
             'pattern': '[제3자] 칭찬한 [화자], [이슈] 논평',
-            'example': '조경태 칭찬한 이재성, 尹 사형 논평',
+            'example': '[제3자명] 칭찬한 [후보명], 尹 사형 논평',
             'triggers': 'authorIncluded, 관계+화자, keywordPosition',
             'note': '관계 + 이슈 논평',
         },
         {
             'id': 'S3',
             'pattern': '[화자] "[이슈에 대한 인용문]"',
-            'example': '이재성 "부산 AI 예산 전액 삭감 충격"',
+            'example': '[후보명] "[샘플시] AI 예산 전액 삭감 충격"',
             'triggers': 'authorIncluded+앞배치, impact:인용문',
             'note': '화자 + 인용 + 감정',
         },
         {
             'id': 'S4',
             'pattern': '[대상] [사건/발언]에 대한 [화자] 반박',
-            'example': '박형준 시장 발언에 대한 이재성 반박',
+            'example': '[경쟁후보명] 시장 발언에 대한 [후보명] 반박',
             'triggers': 'authorIncluded, 대상+반응',
             'note': '대상 + 이슈 + 반응',
         },
         {
             'id': 'S5',
             'pattern': '[화자] "[대상], [평가]"',
-            'example': '이재성 "박형준, 경제 성적 낙제점"',
+            'example': '[후보명] "[경쟁후보명], 경제 성적 낙제점"',
             'triggers': 'authorIncluded+앞배치, impact:인용문',
             'note': '화자 + 인용 평가',
         },
@@ -1206,9 +1206,9 @@ def get_keyword_strategy_instruction(
   <description>두 검색어("{primary_kw}", "{secondary_kw}")가 공통 어절을 공유</description>
   <rule type="must">제목은 반드시 "{primary_kw}"로 시작</rule>
   <rule type="must">"{secondary_kw}"는 어절 단위로 해체하여 고유 어절({unique_hint})을 제목에 배치. 누락 시 scorer 가 0점 실격 처리한다.</rule>
-  <example kw1="서면 영광도서" kw2="부산 영광도서">"서면 영광도서, &lt;보고있나, 부산&gt; 출판기념회에 초대합니다"</example>
-  <example kw1="귤현동 탄약고" kw2="귤현역 탄약고">"귤현동 귤현역 탄약고 이전, 4년 숙원 해결하겠습니다"</example>
-  <example kw1="부산 대형병원" kw2="부산 암센터">"부산 대형병원, 암센터 확충으로 고령 환자도 안심"</example>
+  <example kw1="[샘플동] 영광도서" kw2="[샘플시] 영광도서">"[샘플동] 영광도서, &lt;보고있나, [샘플시]&gt; 출판기념회에 초대합니다"</example>
+  <example kw1="[샘플동] 탄약고" kw2="[샘플역] 탄약고">"[샘플동] [샘플역] 탄약고 이전, 4년 숙원 해결하겠습니다"</example>
+  <example kw1="[샘플시] 대형병원" kw2="[샘플시] 암센터">"[샘플시] 대형병원, 암센터 확충으로 고령 환자도 안심"</example>
 </keyword_placement>
 """
             else:
@@ -1217,8 +1217,8 @@ def get_keyword_strategy_instruction(
   <description>두 검색어("{primary_kw}", "{secondary_kw}")가 독립적</description>
   <rule type="must">제목은 반드시 "{primary_kw}"로 시작</rule>
   <rule type="must">"{secondary_kw}"는 제목 뒤쪽에 자연스럽게 배치. 누락 시 scorer 가 0점 실격 처리한다.</rule>
-  <example kw1="계양산 러브버그 방역" kw2="계양구청">"계양산 러브버그 방역, 계양구청에 적극 구제 촉구"</example>
-  <example kw1="성수역 3번 출구" kw2="코레일 노조">"성수역 3번 출구, 확장 공사 전현희 덕이라는 코레일 노조"</example>
+  <example kw1="[샘플산] 러브버그 방역" kw2="[샘플구]청">"[샘플산] 러브버그 방역, [샘플구]청에 적극 구제 촉구"</example>
+  <example kw1="[샘플역] 3번 출구" kw2="코레일 노조">"[샘플역] 3번 출구, 확장 공사 [제3자명] 덕이라는 코레일 노조"</example>
 </keyword_placement>
 """
 
@@ -1239,16 +1239,16 @@ def get_keyword_strategy_instruction(
   <description>네이버는 제목 앞 8-10자를 가장 중요하게 평가합니다. 핵심 키워드는 제목 시작 부분 배치를 권장하나, 강렬한 카피(Viral Hook)를 위해 문장 중간에 자연스럽게 녹여도 됩니다.</description>
   <examples>
     <bad>"우리 지역 청년들을 위한 청년 기본소득"</bad>
-    <good>"청년 기본소득, 분당구 월 50만원 지원"</good>
+    <good>"청년 기본소득, [샘플구] 월 50만원 지원"</good>
   </examples>
 </front_third_rule>
 
 <keyword_separator priority="critical">
   <description>키워드 직후에 쉼표(,) 또는 조사(에, 의, 에서 등)를 넣어 다음 단어와 분리하세요. 네이버는 공백만으로는 키워드 경계를 인식하지 못합니다.</description>
   <examples>
-    <good reason="키워드=부산 지방선거">"부산 지방선거, 왜 이 남자가"</good>
-    <good reason="키워드=부산 지방선거">"부산 지방선거에 뛰어든 부두 노동자"</good>
-    <bad reason="잘못 인식: 부산 지방선거 이재성 원칙">"부산 지방선거 이재성 원칙"</bad>
+    <good reason="키워드=[샘플시] 지방선거">"[샘플시] 지방선거, 왜 이 사람이"</good>
+    <good reason="키워드=[샘플시] 지방선거">"[샘플시] 지방선거에 뛰어든 부두 노동자"</good>
+    <bad reason="잘못 인식: [샘플시] 지방선거 [후보명] 원칙">"[샘플시] 지방선거 [후보명] 원칙"</bad>
   </examples>
 </keyword_separator>
 {title_keyword_rule}
@@ -1648,7 +1648,7 @@ def build_poll_focus_title_instruction(params: Dict[str, Any]) -> str:
     <rule>질문형을 쓰더라도 판세 전환형 표현('역전', '뒤집힘', '흔들림')은 사용하지 않습니다. 접전이나 경쟁력 수준에서만 해석합니다.</rule>
     <rule>단일 수치를 넣을 때는 primary_pair 또는 secondary_pairs의 실제 수치만 사용합니다.</rule>
     <rule>인물명은 title_name_priority 순서를 우선 참고하고, speaker를 먼저 배치합니다.</rule>
-    <rule>동일 인물명은 제목에서 최대 {title_name_repeat_limit}회만 사용합니다. "전재수 이재성, 이재성"처럼 같은 이름을 반복하지 않습니다.</rule>
+    <rule>동일 인물명은 제목에서 최대 {title_name_repeat_limit}회만 사용합니다. "[후보A] [후보B], [후보B]"처럼 같은 이름을 반복하지 않습니다.</rule>
   </rules>
 </poll_focus_title>
 """.strip()
@@ -1674,15 +1674,15 @@ def build_competitor_intent_title_instruction(params: Dict[str, Any]) -> str:
   <structure>[경쟁자 출마/거론 표현], [본문 핵심 논지]</structure>
   <tail_selection_order>
     <step priority="1">수치가 있으면 수치+해석을 우선합니다. 예: 31.7% 앞선 이유</step>
-    <step priority="2">수치가 없으면 정책·역량 키워드를 고릅니다. 예: AI 부산 해법, 현장 40년</step>
+    <step priority="2">수치가 없으면 정책·역량 키워드를 고릅니다. 예: AI [샘플시] 해법, 현장 40년</step>
     <step priority="3">위 둘이 약하면 지역 현안을 고릅니다. 예: 제조업 위기 해법, 청년 이탈 대안</step>
   </tail_selection_order>
   <rules>
     <rule>intent_only 경쟁자가 등장하면 제목 앞절은 경쟁자 출마/거론 검색 앵커로 고정하고, 쉼표 뒤만 본문 논지로 확장합니다.</rule>
-    <rule>"{intent_keyword}"를 제거하거나 "주진우, 이재성"처럼 인명을 쉼표로 나열하는 구조는 금지합니다.</rule>
+    <rule>"{intent_keyword}"를 제거하거나 "[경쟁후보명], [후보명]"처럼 인명을 쉼표로 나열하는 구조는 금지합니다.</rule>
     <rule>메인 제목에는 "저는/제가/저의/제 정책" 같은 1인칭 표현을 넣지 않습니다.</rule>
     <rule>쉼표 뒤에는 비전, 가능성, 가상대결, 접전, 경쟁력, 득표율 같은 금지어를 쓰지 말고 본문에서 가장 강한 주장 하나만 반영합니다.</rule>
-    <rule>여론조사 본문이면 쉼표 뒤에 실제 수치나 앞서는 이유를 넣어 "이재성 31.7% 앞선 배경"처럼 구체화합니다.</rule>
+    <rule>여론조사 본문이면 쉼표 뒤에 실제 수치나 앞서는 이유를 넣어 "[후보명] 31.7% 앞선 배경"처럼 구체화합니다.</rule>
     <rule>최근 제목에서 이미 사용한 경쟁자 앵커 variant는 우선 피합니다.</rule>
   </rules>
   <anchor_examples>
