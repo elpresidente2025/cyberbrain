@@ -403,6 +403,13 @@ def _build_aeo_rules() -> str:
     질문형 3개 이상이면 H2_QUESTION_ARCHETYPE_EXCESS 어드바이저리가 발생한다.
   </question_diversity>
 
+  <keyword_diversity severity="important">
+    동일한 핵심 키워드(4음절 이상 한국어)가 2개 이상의 H2에 반복되지 않도록 할 것.
+    예: "기본소득으로"가 두 H2에 모두 들어가면 독자에게 동어 반복으로 읽힌다.
+    각 H2는 서로 다른 정책 각도·행동 동사·대상 그룹을 사용해 구분한다.
+    반복이 감지되면 H2_SIBLING_KEYWORD_OVERLAP 어드바이저리가 발생한다.
+  </keyword_diversity>
+
   <archetypes>
     <archetype name="질문형" strength="AEO 최강">
       <good>청년 기본소득, 신청 방법은?</good>

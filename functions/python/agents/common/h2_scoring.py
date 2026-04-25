@@ -63,6 +63,7 @@ __all__ = [
     "compute_anchor_cap",
     "detect_sibling_suffix_overlap",
     "detect_sibling_prefix_overlap",
+    "detect_sibling_keyword_overlap",
     "detect_register_mismatch",
 ]
 
@@ -141,6 +142,7 @@ H2_AEO_ADVISORIES = frozenset(
         "H2_KEYWORD_STAMP_WARNING",
         "H2_USER_KEYWORD_STAMP",
         "H2_SIBLING_SUFFIX_OVERLAP",
+        "H2_SIBLING_KEYWORD_OVERLAP",  # 세트 내 4음절↑ 실질 키워드 반복
         "H2_BODY_ECHO_FIRST_SENTENCE",
         "H2_QA_PAIRING_FAIL",
         "H2_CANONICAL_FORM_MISMATCH",
@@ -731,6 +733,36 @@ def detect_sibling_prefix_overlap(headings: List[str]) -> List[tuple]:
     return [(tok, cnt) for tok, cnt in first_counts.items() if cnt >= 2]
 
 
+_KOREAN_CONTENT_TOKEN_RE = re.compile(r"[가-힣]{4,}")
+
+
+def detect_sibling_keyword_overlap(
+    headings: List[str],
+    exempt_tokens: Optional[set] = None,
+) -> List[str]:
+    """H2 세트 내 4음절 이상 한국어 토큰이 2개 이상 H2에 반복되면 반환한다.
+
+    접두/접미 위치와 무관하게 중간 키워드 반복을 잡는다.
+    exempt_tokens: 이름·지역·사용자 키워드처럼 의도된 반복은 제외.
+    - 단순 equal이 아닌 substring 포함 여부로 판정 (조사 변형 대응).
+    """
+    _exempt: set = set(exempt_tokens or [])
+
+    def _is_exempt(tok: str) -> bool:
+        return any(ex in tok for ex in _exempt) if _exempt else False
+
+    token_to_indices: Dict[str, set] = {}
+    for idx, h in enumerate(headings or []):
+        for tok in _KOREAN_CONTENT_TOKEN_RE.findall(str(h or "")):
+            if _is_exempt(tok):
+                continue
+            if tok not in token_to_indices:
+                token_to_indices[tok] = set()
+            token_to_indices[tok].add(idx)
+
+    return [tok for tok, indices in token_to_indices.items() if len(indices) >= 2]
+
+
 _POLITE_TAIL_RE = re.compile(
     r"(인가요|일까요|할까요|는가요|나요|인지요|ㄹ까요|인가요)\s*\??$"
 )
@@ -940,6 +972,24 @@ def score_h2_aeo(
     if prefix_overlaps:
         issues.append("H2_SIBLING_PREFIX_OVERLAP")
         uniqueness_score = min(uniqueness_score, 0.5)
+
+    # 세트 내 4음절↑ 실질 키워드 반복 감지 — 조사 변형 포함
+    _exempt_toks: set = set()
+    for _src in [
+        name_clean,
+        str(full_region or ""),
+        *[str(d or "") for d in (descriptor_pool or [])],
+        *[str(k or "") for k in (user_keywords or [])],
+    ]:
+        _exempt_toks.update(_KOREAN_CONTENT_TOKEN_RE.findall(_src))
+    # 사용자 키워드 원형도 추가 (조사 제거 전 substring 매칭용)
+    _exempt_toks.update(
+        str(k or "").strip() for k in (user_keywords or []) if str(k or "").strip()
+    )
+    kw_overlaps = detect_sibling_keyword_overlap(all_headings_for_overlap, _exempt_toks)
+    if kw_overlaps:
+        issues.append("H2_SIBLING_KEYWORD_OVERLAP")
+        uniqueness_score = min(uniqueness_score, 0.6)
 
     if detect_register_mismatch(all_headings_for_overlap):
         issues.append("H2_REGISTER_MISMATCH")
