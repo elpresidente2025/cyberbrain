@@ -242,6 +242,18 @@ def batch_index_bios(req: https_fn.Request) -> https_fn.Response:
 @https_fn.on_request(
     cors=options.CorsOptions(cors_origins="*", cors_methods=["POST", "OPTIONS"]),
     region="asia-northeast3",
+    memory=options.MemoryOption.MB_512,
+    timeout_sec=300,
+)
+def batch_compute_affinity(req: https_fn.Request) -> https_fn.Response:
+    """관리자 전용 — 전체 사용자 leadership affinity 재계산 (RAG 미포함, 빠름)"""
+    from handlers.rag_index import handle_batch_compute_affinity
+    return handle_batch_compute_affinity(req)
+
+
+@https_fn.on_request(
+    cors=options.CorsOptions(cors_origins="*", cors_methods=["POST", "OPTIONS"]),
+    region="asia-northeast3",
     memory=options.MemoryOption.GB_1,
     timeout_sec=300,
     secrets=["GEMINI_API_KEY"],

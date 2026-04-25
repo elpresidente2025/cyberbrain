@@ -163,6 +163,48 @@ def handle_batch_index_bios(req: https_fn.Request) -> https_fn.Response:
 
 
 # ---------------------------------------------------------------------------
+# handle_batch_compute_affinity
+# ---------------------------------------------------------------------------
+
+def handle_batch_compute_affinity(req: https_fn.Request) -> https_fn.Response:
+    """관리자 전용 — 전체(또는 지정) 사용자의 leadership affinity만 재계산한다.
+    RAG 재색인 없이 affinity만 갱신하므로 빠르다 (LLM 호출 없음)."""
+    if req.method == "OPTIONS":
+        return https_fn.Response("", status=204)
+
+    data = req.get_json(silent=True) or {}
+    target_uids: list[str] = data.get("uids") or []
+
+    db = firestore.client()
+    if not target_uids:
+        docs = db.collection("bios").stream()
+        target_uids = [doc.id for doc in docs]
+
+    results: list[Dict[str, Any]] = []
+    for uid in target_uids:
+        try:
+            bio_doc = db.collection("bios").document(uid).get()
+            bio_data = bio_doc.to_dict() or {}
+            entries = bio_data.get("bioEntries") or []
+            if not entries:
+                results.append({"uid": uid, "status": "skipped", "reason": "no entries"})
+                continue
+
+            _save_bio_leadership_affinity(db, uid, entries, bio_data)
+            results.append({"uid": uid, "status": "ok"})
+            logger.info("[AffinityBatch] 완료 — uid=%s", uid)
+        except Exception as exc:
+            logger.warning("[AffinityBatch] 실패 — uid=%s: %s", uid, exc)
+            results.append({"uid": uid, "status": "error", "error": str(exc)})
+
+    ok_count = sum(1 for r in results if r["status"] == "ok")
+    skip_count = sum(1 for r in results if r["status"] == "skipped")
+    err_count = sum(1 for r in results if r["status"] == "error")
+    logger.info("[AffinityBatch] 전체 완료 — ok=%d skip=%d err=%d", ok_count, skip_count, err_count)
+    return _json_response({"ok": ok_count, "skipped": skip_count, "failed": err_count, "results": results})
+
+
+# ---------------------------------------------------------------------------
 # handle_index_facebook_entries  (수동 트리거)
 # ---------------------------------------------------------------------------
 

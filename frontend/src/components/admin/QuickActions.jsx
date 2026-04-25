@@ -16,7 +16,8 @@ import {
   ToggleOn,
   Psychology,
   Style,
-  MenuBook
+  MenuBook,
+  AutoAwesome
 } from '@mui/icons-material';
 import UserListModal from './UserListModal';
 import StatusUpdateModal from './StatusUpdateModal';
@@ -33,6 +34,7 @@ function QuickActions() {
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
   const [ragIndexing, setRagIndexing] = useState(false);
   const [ragProgress, setRagProgress] = useState('');
+  const [affinityBatching, setAffinityBatching] = useState(false);
   const [styleBatching, setStyleBatching] = useState(false);
   const [styleBatchProgress, setStyleBatchProgress] = useState('');
   const [clicheDictRefreshing, setClicheDictRefreshing] = useState(false);
@@ -212,6 +214,38 @@ function QuickActions() {
       );
     } finally {
       setRagIndexing(false);
+    }
+  }, [showNotification]);
+
+  // Leadership Affinity 일괄 재계산
+  const batchComputeAffinity = useCallback(async () => {
+    if (!window.confirm(
+      '전체 사용자의 Bio를 분석해 leadership.py 도메인 친화도를 재계산합니다.\n\n' +
+      'RAG 재색인 없이 친화도만 갱신하므로 빠릅니다 (수십 초).\n\n' +
+      '계속하시겠습니까?'
+    )) return;
+
+    setAffinityBatching(true);
+    try {
+      const functionUrl = buildFunctionsUrl('batch_compute_affinity');
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(300000),
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const result = await response.json();
+      showNotification(
+        `Affinity 재계산 완료: 성공 ${result.ok ?? 0}명, 스킵 ${result.skipped ?? 0}명, 실패 ${result.failed ?? 0}명`,
+        (result.failed ?? 0) > 0 ? 'warning' : 'success'
+      );
+    } catch (error) {
+      console.error('Affinity 재계산 실패:', error);
+      showNotification(`Affinity 재계산 오류: ${error.message}`, 'error');
+    } finally {
+      setAffinityBatching(false);
     }
   }, [showNotification]);
 
@@ -568,6 +602,29 @@ function QuickActions() {
                 }}
               >
                 {ragIndexing ? ragProgress || 'RAG 색인 중...' : 'RAG 일괄 색인'}
+              </Button>
+            </Grid>
+            <Grid item>
+              <Button
+                size="small"
+                variant="text"
+                startIcon={<AutoAwesome aria-hidden="true" sx={{ fontSize: 18 }} />}
+                onClick={batchComputeAffinity}
+                disabled={affinityBatching}
+                aria-label="전체 사용자 leadership affinity 재계산"
+                sx={{
+                  color: '#003A87',
+                  '&:focus-visible': {
+                    outline: '2px solid #003A87',
+                    outlineOffset: '2px'
+                  },
+                  '&.Mui-disabled': {
+                    color: '#003A87',
+                    opacity: 0.7
+                  }
+                }}
+              >
+                {affinityBatching ? 'Affinity 계산 중...' : 'Affinity 재계산'}
               </Button>
             </Grid>
             <Grid item>
