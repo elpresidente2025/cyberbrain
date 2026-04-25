@@ -823,6 +823,13 @@ def _is_basic_lawmaker(user_profile: dict | None) -> bool:
     return str(user_profile.get('position') or '').strip() == '기초의원'
 
 
+# 광역·단체장급 소재 감지 신호 (compact 형태: 공백 제거·소문자)
+# _is_basic_lawmaker()==True 일 때 이 신호가 haystack에 있으면 score=0 처리
+_METRO_SCALE_SIGNALS_COMPACT: frozenset[str] = frozenset({
+    '성남시', '경기도', '도민',
+})
+
+
 _MATERIAL_STOPWORDS = {
     "정책",
     "비전",
@@ -1052,10 +1059,14 @@ def _score_material(
     terms: set[str],
     active_groups: set[str] | None = None,
     explicit_terms: set[str] | None = None,
+    *,
+    penalize_metro: bool = False,
 ) -> int:
     if not terms:
         return 0
     haystack = _compact(_material_text(item))
+    if penalize_metro and any(signal in haystack for signal in _METRO_SCALE_SIGNALS_COMPACT):
+        return 0
     score = 0
     for term in explicit_terms or set():
         if term and term in haystack:
@@ -1081,6 +1092,8 @@ def _select_material(
     terms: set[str],
     active_groups: set[str] | None = None,
     explicit_terms: set[str] | None = None,
+    *,
+    penalize_metro: bool = False,
 ) -> dict:
     if not items:
         return {}
@@ -1088,7 +1101,7 @@ def _select_material(
         return items[0]
     ranked = sorted(
         (
-            (-_score_material(item, terms, active_groups, explicit_terms), index, item)
+            (-_score_material(item, terms, active_groups, explicit_terms, penalize_metro=penalize_metro), index, item)
             for index, item in enumerate(items)
         ),
         key=lambda row: (row[0], row[1]),
@@ -1102,12 +1115,18 @@ def _select_material_with_score(
     terms: set[str],
     active_groups: set[str] | None = None,
     explicit_terms: set[str] | None = None,
+    *,
+    penalize_metro: bool = False,
 ) -> tuple[dict, int]:
-    selected = _select_material(items, terms, active_groups, explicit_terms)
-    return selected, _score_material(selected, terms, active_groups, explicit_terms)
+    selected = _select_material(items, terms, active_groups, explicit_terms, penalize_metro=penalize_metro)
+    return selected, _score_material(selected, terms, active_groups, explicit_terms, penalize_metro=penalize_metro)
 
 
-def _build_evidence_brief(*, topic: str = "", instructions: str = "", keywords: Iterable[str] | None = None) -> str:
+def _build_evidence_brief(
+    *, topic: str = "", instructions: str = "",
+    keywords: Iterable[str] | None = None,
+    penalize_metro: bool = False,
+) -> str:
     terms, active_groups, explicit_terms = _query_features(topic=topic, instructions=instructions, keywords=keywords)
     if not terms:
         return ""
@@ -1119,31 +1138,42 @@ def _build_evidence_brief(*, topic: str = "", instructions: str = "", keywords: 
             terms,
             active_groups,
             explicit_terms,
+            penalize_metro=penalize_metro,
         )
         evidence, evidence_score = _select_material_with_score(
             data.get("empirical_evidence") or [{}],
             terms,
             active_groups,
             explicit_terms,
+            penalize_metro=penalize_metro,
         )
         combined_score = chain_score + evidence_score
         if combined_score <= 0:
             continue
         core = CORE_LEADERSHIP_VALUES.get(value_id, {})
         label = core.get("vision", value_id)
-        candidates.append((
-            combined_score,
-            index,
+        base = (
             f"{label}: {chain.get('policy_domain', '')} — {chain.get('logic', '')} → "
-            f"{chain.get('connection', '')}. 활용 가능한 근거: {evidence.get('claim', '')} "
-            f"({evidence.get('source', '')}).",
-        ))
+            f"{chain.get('connection', '')}"
+        )
+        evidence_haystack = _compact(_material_text(evidence))
+        use_claim = not (
+            penalize_metro
+            and any(signal in evidence_haystack for signal in _METRO_SCALE_SIGNALS_COMPACT)
+        )
+        if use_claim and evidence.get('claim'):
+            base += f". 활용 가능한 근거: {evidence.get('claim', '')} ({evidence.get('source', '')})"
+        candidates.append((combined_score, index, base + "."))
 
     candidates.sort(key=lambda row: (-row[0], row[1]))
     return "\n".join(line for _score, _index, line in candidates[:3])
 
 
-def _build_higher_principle_brief(*, topic: str = "", instructions: str = "", keywords: Iterable[str] | None = None) -> str:
+def _build_higher_principle_brief(
+    *, topic: str = "", instructions: str = "",
+    keywords: Iterable[str] | None = None,
+    penalize_metro: bool = False,
+) -> str:
     terms, active_groups, explicit_terms = _query_features(topic=topic, instructions=instructions, keywords=keywords)
     candidates: list[tuple[int, int, str]] = []
     for index, (value_id, data) in enumerate(ARGUMENT_LAYER.items()):
@@ -1153,35 +1183,52 @@ def _build_higher_principle_brief(*, topic: str = "", instructions: str = "", ke
             terms,
             active_groups,
             explicit_terms,
+            penalize_metro=penalize_metro,
         )
         evidence, evidence_score = _select_material_with_score(
             data.get("empirical_evidence") or [{}],
             terms,
             active_groups,
             explicit_terms,
+            penalize_metro=penalize_metro,
         )
         korean_context, context_score = _select_material_with_score(
             data.get("korean_context") or [{}],
             terms,
             active_groups,
             explicit_terms,
+            penalize_metro=penalize_metro,
         )
         combined_score = chain_score + evidence_score + context_score
         if terms and combined_score <= 0:
             continue
         label = core.get("vision", value_id)
-        candidates.append((
-            combined_score,
-            index,
-            f"{label}: {chain.get('logic', '')} → {chain.get('connection', '')}. "
-            f"근거는 {evidence.get('claim', '')} ({evidence.get('source', '')})이고, "
-            f"한국 맥락은 {korean_context.get('context', '')} → {korean_context.get('implication', '')}.",
-        ))
+        evidence_haystack = _compact(_material_text(evidence))
+        metro_evidence = (
+            penalize_metro
+            and any(signal in evidence_haystack for signal in _METRO_SCALE_SIGNALS_COMPACT)
+        )
+        if metro_evidence:
+            brief_line = (
+                f"{label}: {chain.get('logic', '')} → {chain.get('connection', '')}. "
+                f"한국 맥락은 {korean_context.get('context', '')} → {korean_context.get('implication', '')}."
+            )
+        else:
+            brief_line = (
+                f"{label}: {chain.get('logic', '')} → {chain.get('connection', '')}. "
+                f"근거는 {evidence.get('claim', '')} ({evidence.get('source', '')})이고, "
+                f"한국 맥락은 {korean_context.get('context', '')} → {korean_context.get('implication', '')}."
+            )
+        candidates.append((combined_score, index, brief_line))
     candidates.sort(key=lambda row: (-row[0], row[1]))
     return "\n".join(line for _score, _index, line in candidates[:3])
 
 
-def _build_counterargument_rebuttal_brief(*, topic: str = "", instructions: str = "", keywords: Iterable[str] | None = None) -> str:
+def _build_counterargument_rebuttal_brief(
+    *, topic: str = "", instructions: str = "",
+    keywords: Iterable[str] | None = None,
+    penalize_metro: bool = False,
+) -> str:
     terms, active_groups, explicit_terms = _query_features(topic=topic, instructions=instructions, keywords=keywords)
     candidates: list[tuple[int, int, str]] = []
     for index, (value_id, data) in enumerate(ARGUMENT_LAYER.items()):
@@ -1191,6 +1238,7 @@ def _build_counterargument_rebuttal_brief(*, topic: str = "", instructions: str 
             terms,
             active_groups,
             explicit_terms,
+            penalize_metro=penalize_metro,
         )
         if terms and score <= 0:
             continue
@@ -1216,23 +1264,27 @@ def build_argument_role_material_block(
     user_profile: dict | None = None,
 ) -> str:
     """역할 섹션 바로 아래에 붙일 자연어 소재 블록."""
+    penalize_metro = _is_basic_lawmaker(user_profile)
     if role == "evidence":
         summary = _build_evidence_brief(
             topic=topic,
             instructions=instructions,
             keywords=keywords,
+            penalize_metro=penalize_metro,
         )
     elif role == "higher_principle":
         summary = _build_higher_principle_brief(
             topic=topic,
             instructions=instructions,
             keywords=keywords,
+            penalize_metro=penalize_metro,
         )
     elif role == "counterargument_rebuttal":
         summary = _build_counterargument_rebuttal_brief(
             topic=topic,
             instructions=instructions,
             keywords=keywords,
+            penalize_metro=penalize_metro,
         )
     else:
         return ""
@@ -1240,7 +1292,7 @@ def build_argument_role_material_block(
     if not summary.strip():
         return ""
 
-    is_basic = _is_basic_lawmaker(user_profile)
+    is_basic = penalize_metro
 
     lines = [f'    <role_material role="{role}" priority="critical">']
     # 공통: 본문 주어는 화자, 소재는 보조 근거
