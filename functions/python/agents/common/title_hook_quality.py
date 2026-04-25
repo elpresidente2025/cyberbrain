@@ -67,6 +67,13 @@ NARRATIVE_ARC_PATTERNS: List[Pattern[str]] = [
     re.compile(r'(이전|과거|작년|지난\s*해|종전).*(현재|지금|올해|이번)'),
     re.compile(r'(\d+(?:년|월|일|주년|분기|개월))\s*만에'),   # "12개월 만에"
     re.compile(r'(\d+(?:억|만원|%|명|건|가구|곳))\s*(증가|감소|개선|확대|절감|확보|달성)'),
+    # 정치 카피 핵심 서사 — "말이 아닌 결과", "약속에서 현실로"
+    re.compile(
+        r'(?:말\s*(?:이\s*아닌|뿐이\s*아닌|만으론?\s*안\s*되는)|'
+        r'약속\s*(?:이\s*아닌|에서\s*(?:결과|실행|현실))|'
+        r'계획\s*(?:이\s*아닌|에서\s*(?:현실|실천|행동)))'
+    ),
+    re.compile(r'결과로\s*(?:증명|보여|말하|답하)'),
 ]
 
 
@@ -482,10 +489,13 @@ ANSWER_ANCHOR_PATTERNS: List[Pattern[str]] = [
     # 비교 앵커 — "[기준] 수준 [행동]", "A vs B"
     re.compile(r'[가-힣A-Za-z0-9]{2,}\s*(?:수준|대비|수준으로)\s*'
                r'(?:도약|진입|추격|견인|근접|추월)'),
-    # 정책 행동 동사 단독 (수치 없이도 구체성 강함)
-    re.compile(r'(취득세\s*감면|조례\s*개정안\s*(?:발의|통과|시행)|'
-               r'광역교통망\s*확정|공백\s*해소|앵커기업\s*유치|'
-               r'직결\s*노선|역세권\s*지정|도첨산단\s*지정)'),
+    # 정책 수단·서비스 + 구체 행동 동사 (구의원~국회의원 수준 모두 포함)
+    re.compile(
+        r'[가-힣A-Za-z0-9]{2,}'
+        r'(?:망|조례|수당|센터|위원회|협의회|서비스|제도|정책|사업|프로그램|기금|시설|장터|바우처|플랫폼|스테이션)'
+        r'\s*'
+        r'(?:구축|설립|시행|지급|확충|개선|정비|조성|확대|강화|마련|도입|전환|개정|발의|추진|운영)'
+    ),
     # "N개 중 유일" / "N중 최초" — 답변 엔진이 매우 선호하는 랭킹 쿼리
     re.compile(r'\d+\s*(?:개|곳|시도|시·도|개\s*시도)\s*(?:중\s*)?(?:유일|최초|최다|최대|최소)'),
     # 단계 예고형 — "2단계로 정리", "3단계별 접근" (단계·체크리스트 확정형 변환)
@@ -499,14 +509,43 @@ ANSWER_ANCHOR_PATTERNS: List[Pattern[str]] = [
 # HOOK QUALITY ASSESSMENT — 차원별 독립 가산
 # ---------------------------------------------------------------------------
 
+EMPATHY_RESONANCE_PATTERNS: List[Pattern[str]] = [
+    # 생활비·비용 직접 명사
+    re.compile(r'(?:교육비|교통비|의료비|보육료|주거비|생활비|난방비|돌봄\s*비용)'),
+    # 생활 불편 복합 명사
+    re.compile(r'(?:주차난|돌봄\s*공백|교통\s*체증|복지\s*사각|안전\s*불안|고립|은둔)'),
+    # 구체 영향 인구 수치 + 생활 명사
+    re.compile(r'\d+\s*(?:명|가구|세대|가정)\s*(?:의\s*)?(?:생활|불편|부담|어려움|문제)'),
+    # 직접 체감 동사
+    re.compile(r'(?:조용히\s*겪|직접\s*겪|불편\s*겪|힘들었던|불편했던|어려웠던)'),
+    # 현장 공감 표현
+    re.compile(r'(?:현장에서\s*(?:확인|목격|들)|직접\s*들었|주민들이\s*(?:겪|호소|말씀))'),
+    # 부담·불안 완화 행동 동사
+    re.compile(r'(?:부담|불안|불편|고립|외로움|돌봄|생계|안전)\s*(?:을|를)?\s*(?:줄이|덜어|막|살피)'),
+    # 취약 계층 + 생활 어려움 명사
+    re.compile(r'(?:아이|어르신|청년|1인\s*가구|소상공인|부모님|주민)\s*(?:의\s*)?(?:불편|부담|불안|고립|어려움)'),
+]
+
+
+def _count_empathy_resonance_signals(title: str) -> Tuple[int, List[str]]:
+    if not title:
+        return 0, []
+    hits: List[str] = []
+    for pat in EMPATHY_RESONANCE_PATTERNS:
+        if pat.search(title):
+            hits.append(pat.pattern)
+    return len(hits), hits
+
+
 HOOK_DIMENSION_MAX: Dict[str, int] = {
-    'info_gap': 4,        # 질문/미완결 서사 1개라도 있으면 +4
-    'concrete_slot': 6,   # 본문 고유 재료를 n개 인용 → n * 2 (최대 6)
-    'narrative_arc': 2,   # 변화/대비 구조 (축소: 3 → 2)
-    'specificity': 1,     # 제목 길이 대비 고유명사 비중 (축소: 2 → 1)
-    'answer_anchor': 2,   # AEO 앵커 (신규)
+    'info_gap': 4,              # 질문/미완결 서사 1개라도 있으면 +4
+    'concrete_slot': 6,         # 본문 고유 재료를 n개 인용 → n * 2 (최대 6)
+    'narrative_arc': 2,         # 변화/대비 구조 (축소: 3 → 2)
+    'specificity': 1,           # 제목 길이 대비 고유명사 비중 (축소: 2 → 1)
+    'answer_anchor': 2,         # AEO 앵커
+    'empathy_resonance': 2,     # 생활 밀착 감성 후킹 (신규)
 }
-HOOK_TOTAL_MAX: int = sum(HOOK_DIMENSION_MAX.values())  # 15
+HOOK_TOTAL_MAX: int = sum(HOOK_DIMENSION_MAX.values())  # 17
 
 
 def _count_info_gap_signals(title: str) -> Tuple[int, List[str]]:
@@ -649,12 +688,19 @@ def assess_title_hook_quality(
     if answer_anchor_score:
         features.append(f'답변앵커×{min(anchor_count, HOOK_DIMENSION_MAX["answer_anchor"])}')
 
+    # empathy_resonance — 생활 밀착 감성 후킹
+    empathy_count, empathy_signals = _count_empathy_resonance_signals(clean_title)
+    empathy_resonance_score = min(empathy_count, HOOK_DIMENSION_MAX['empathy_resonance'])
+    if empathy_resonance_score:
+        features.append(f'공감공명×{empathy_resonance_score}')
+
     total = (
         info_gap_score
         + concrete_slot_score
         + narrative_arc_score
         + specificity_score
         + answer_anchor_score
+        + empathy_resonance_score
     )
 
     # 누락된 slot 재료 — 제목이 "쓸 수 있었는데 안 쓴" 카테고리만 뽑는다
@@ -704,9 +750,9 @@ def assess_title_hook_quality(
                 break
     total = max(0, total - political_risk_penalty)
 
-    if total >= 9:
+    if total >= 10:
         status = 'strong'
-    elif total >= 5:
+    elif total >= 6:
         status = 'ok'
     else:
         status = 'flat'
@@ -741,6 +787,11 @@ def assess_title_hook_quality(
                 'score': answer_anchor_score,
                 'max': HOOK_DIMENSION_MAX['answer_anchor'],
                 'signals': anchor_signals,
+            },
+            'empathy_resonance': {
+                'score': empathy_resonance_score,
+                'max': HOOK_DIMENSION_MAX['empathy_resonance'],
+                'signals': empathy_signals,
             },
         },
         'body_reuse_penalty': body_reuse_penalty,
@@ -989,7 +1040,7 @@ def render_hook_rubric_block() -> str:
         '  <contract>이 블록은 scorer(title_hook_quality.assess_title_hook_quality) '
         '가 사용하는 rubric 을 그대로 노출한다. 아래 required / dimension 정의는 '
         '프롬프트 장식이 아니라 실제 신호 채점으로 강제된다. '
-        '통과선: status &gt;= "ok" (총점 &gt;= 5 / 15). '
+        '통과선: status &gt;= "ok" (총점 &gt;= 6 / 17). '
         '추가로 본문에서 뽑힌 구체 앵커(정책·기관·수치·연도) 중 최소 1개를 '
         '제목에 직접 인용해야 하며, 없으면 body_anchor_coverage 게이트에서 '
         '자동 실격 처리된다.</contract>\n'
@@ -1017,7 +1068,10 @@ def render_hook_rubric_block() -> str:
         '숫자+단위 토큰, 따옴표/괄호 고유어 인용.</dimension>\n'
         f'  <dimension id="answer_anchor" max="{HOOK_DIMENSION_MAX["answer_anchor"]}">'
         'AEO 답변 앵커 — 위 required_answer_anchors 참조. 신호 1개당 +1.</dimension>\n'
-        '  <pass_gate>status=flat → 실격. 반드시 ok(&gt;=5/15) 이상.</pass_gate>\n'
+        f'  <dimension id="empathy_resonance" max="{HOOK_DIMENSION_MAX["empathy_resonance"]}">'
+        '생활 밀착 감성 앵커 — 교육비·교통비·보육료 같은 생활비 명사, 주차난·돌봄공백 같은 불편 명사, '
+        '"겪던 문제" 체감 동사, 취약계층+어려움 표현. 신호 1개 +1 (최대 2).</dimension>\n'
+        '  <pass_gate>status=flat → 실격. 반드시 ok(&gt;=6/17) 이상.</pass_gate>\n'
         '  <hook_selection_tracks priority="high">\n'
         '    <principle>제목은 먼저 답변 가능성을 확보하고, 그다음 독자 관심을 유도한다. '
         '정치 콘텐츠에서는 상업형 후킹을 쓰지 않는다.</principle>\n'

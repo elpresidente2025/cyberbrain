@@ -190,6 +190,9 @@ _LOW_INFORMATION_HEADING_PATTERNS: List[tuple[str, re.Pattern[str]]] = [
     ("institutional_basis", re.compile(r"(?:제도\s*기반|제도적\s*기반|제도로\s*뒷받침|조례로\s*뒷받침|근거를\s*마련)")),
     ("financial_concern", re.compile(r"(?:재정\s*우려|예산\s*우려|재원\s*우려|어떻게\s*넘)")),
     ("generic_issue", re.compile(r"(?:핵심\s*쟁점|필요한\s*이유|기존\s*정책과\s*차이|회복의\s*출발점)")),
+    ("abstract_sentiment_question", re.compile(
+        r'^.{0,16}(?:책임감|패기|각오|신념|포부|다짐|사명감)\s*(?:은|는)?\s*\??$'
+    )),
 ]
 
 
@@ -198,7 +201,7 @@ _LOW_INFORMATION_HEADING_PATTERNS: List[tuple[str, re.Pattern[str]]] = [
 # ---------------------------------------------------------------------------
 
 H2_BANNED_PATTERNS_AEO: List[tuple] = [
-    ("추상표현", re.compile(r"(노력|열정|마음가짐|최선|열심히)")),
+    ("추상표현", re.compile(r"(노력|열정|마음가짐|최선|열심히|책임감|패기|각오|신념|포부|다짐|사명감)")),
     ("모호지시어", re.compile(r"(이것|그것|저것|관련\s?내용|관련\s?이야기)")),
     ("과장표현", re.compile(r"(최고의?|혁명적|놀라운|엄청난|대박)")),
     ("서술어포함", re.compile(r"(에\s?대한\s?설명|을\s?알려드립니다|에\s?관한\s?모든)")),
