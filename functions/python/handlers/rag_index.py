@@ -23,6 +23,26 @@ _RAG_BUCKET = "ai-secretary-6e9c8.appspot.com"
 _REINDEX_COOLDOWN = timedelta(minutes=5)
 
 
+def _save_bio_leadership_affinity(db, uid: str, entries: list, bio_data: dict) -> None:
+    """bio 기반 leadership affinity 계산 후 Firestore 저장. 실패해도 예외 전파 안 함."""
+    try:
+        from agents.common.leadership import compute_bio_affinity
+
+        affinity = compute_bio_affinity(entries, user_profile=bio_data)
+        db.collection("users").document(uid) \
+            .collection("memory").document("profile_affinity") \
+            .set(
+                {
+                    "updatedAt": firestore.SERVER_TIMESTAMP,
+                    "matches": affinity["matches"],
+                },
+                merge=False,
+            )
+        logger.info("[LeadershipAffinity] 저장 완료 — uid=%s matches=%d", uid, len(affinity["matches"]))
+    except Exception as exc:
+        logger.warning("[LeadershipAffinity] 계산 실패(무시) — uid=%s: %s", uid, exc)
+
+
 def _json_response(payload: Dict[str, Any], status: int = 200) -> https_fn.Response:
     return https_fn.Response(
         json.dumps(payload, ensure_ascii=False),
@@ -88,6 +108,8 @@ def handle_index_bio(req: https_fn.Request) -> https_fn.Response:
         except Exception as alias_exc:
             logger.warning("[AliasExtract] 별칭 추출 실패(무시) — uid=%s: %s", uid, alias_exc)
 
+        _save_bio_leadership_affinity(db, uid, entries, bio_data)
+
         logger.info("[RAGIndex] bio 색인 완료 — uid=%s chars=%d", uid, char_count)
         return _json_response({"success": True, "uid": uid, "chars": char_count})
 
@@ -128,7 +150,9 @@ def handle_batch_index_bios(req: https_fn.Request) -> https_fn.Response:
                 manager = LightRAGManager(bucket_name=_RAG_BUCKET, uid=u)
                 return await manager.index_entries(e)
 
+            bio_data = bio_doc.to_dict() or {}
             _run_async(_index())
+            _save_bio_leadership_affinity(db, uid, entries, bio_data)
             results.append({"uid": uid, "status": "ok"})
             logger.info("[BatchIndex] 완료 — uid=%s", uid)
         except Exception as exc:

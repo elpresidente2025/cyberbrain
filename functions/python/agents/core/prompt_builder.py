@@ -785,7 +785,14 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
 
     natural_tone_guide = build_natural_tone_prompt({'severity': 'standard'})
     writing_principles = build_writing_principles_xml()
-    leadership_philosophy = build_leadership_philosophy_xml()
+    affinity_ids = [
+        m["id"]
+        for m in (user_profile.get("leadershipAffinity") or {}).get("matches", [])
+        if m.get("id")
+    ]
+    leadership_philosophy = build_leadership_philosophy_xml(
+        affinity_ids=affinity_ids if affinity_ids else None
+    )
 
     return f"""
 <structure_agent_prompt version="xml-v1">

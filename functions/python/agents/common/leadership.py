@@ -725,7 +725,9 @@ def _xml_esc(text: str) -> str:
     return s
 
 
-def build_leadership_philosophy_xml() -> str:
+def build_leadership_philosophy_xml(
+    affinity_ids: list[str] | None = None,
+) -> str:
     """프로젝트 핵심 정치 철학을 XML 블록으로 반환.
 
     모든 사용자에게 상시 주입된다.
@@ -808,6 +810,15 @@ def build_leadership_philosophy_xml() -> str:
     )
     parts.append('  </baseline_stance>')
 
+    if affinity_ids:
+        valid_ids = [aid for aid in affinity_ids if aid in ARGUMENT_LAYER]
+        if valid_ids:
+            parts.append(
+                f'  <user_affinity_hint>'
+                f'<priority_domains>{_xml_esc(",".join(valid_ids))}</priority_domains>'
+                f'</user_affinity_hint>'
+            )
+
     parts.append('</political_philosophy>')
     return "\n".join(parts)
 
@@ -821,6 +832,53 @@ def _is_basic_lawmaker(user_profile: dict | None) -> bool:
     if not user_profile:
         return False
     return str(user_profile.get('position') or '').strip() == '기초의원'
+
+
+_MIN_RAW_SCORE = 2
+_MIN_RELATIVE_SCORE = 0.35
+
+
+def compute_bio_affinity(
+    bio_entries: list[dict],
+    user_profile: dict | None = None,
+) -> dict:
+    """bioEntries 기반으로 ARGUMENT_LAYER 도메인별 친화도를 계산한다.
+
+    반환값: {"matches": [{"id": "...", "score": 0.0~1.0}, ...], "updatedAt": 생략}
+    matches는 score 내림차순 최대 3개. 임계값 미달 도메인은 제외.
+    """
+    bio_text = " ".join(
+        f"{e.get('title', '')} {e.get('content', '')}"
+        for e in bio_entries
+        if e.get("content")
+    )[:3000]
+
+    penalize_metro = _is_basic_lawmaker(user_profile)
+    terms, active_groups, explicit_terms = _query_features(
+        topic=bio_text, instructions="", keywords=[]
+    )
+
+    raw: dict[str, int] = {}
+    for domain, data in ARGUMENT_LAYER.items():
+        score = 0
+        for section in ("argument_chains", "empirical_evidence", "korean_context"):
+            for item in data.get(section, []):
+                score += _score_material(
+                    item, terms, active_groups, explicit_terms,
+                    penalize_metro=penalize_metro,
+                )
+        raw[domain] = score
+
+    top = sorted(raw.items(), key=lambda x: x[1], reverse=True)[:3]
+    max_score = top[0][1] if top and top[0][1] > 0 else 1
+
+    matches = [
+        {"id": did, "score": round(s / max_score, 2)}
+        for did, s in top
+        if s >= _MIN_RAW_SCORE and (s / max_score) >= _MIN_RELATIVE_SCORE
+    ]
+
+    return {"matches": matches}
 
 
 # 광역·단체장급 소재 감지 신호 (compact 형태: 공백 제거·소문자)
@@ -1126,12 +1184,13 @@ def _build_evidence_brief(
     *, topic: str = "", instructions: str = "",
     keywords: Iterable[str] | None = None,
     penalize_metro: bool = False,
+    bio_affinity: dict[str, float] | None = None,
 ) -> str:
     terms, active_groups, explicit_terms = _query_features(topic=topic, instructions=instructions, keywords=keywords)
-    if not terms:
+    if not terms and not bio_affinity:
         return ""
 
-    candidates: list[tuple[int, int, str]] = []
+    candidates: list[tuple[float, int, str]] = []
     for index, (value_id, data) in enumerate(ARGUMENT_LAYER.items()):
         chain, chain_score = _select_material_with_score(
             data.get("argument_chains") or [{}],
@@ -1147,7 +1206,13 @@ def _build_evidence_brief(
             explicit_terms,
             penalize_metro=penalize_metro,
         )
-        combined_score = chain_score + evidence_score
+        combined_score: float = float(chain_score + evidence_score)
+        if bio_affinity:
+            boost = bio_affinity.get(value_id, 0.0)
+            if combined_score > 0:
+                combined_score += min(2.0, boost * 2.0)
+            else:
+                combined_score += min(0.75, boost * 0.75)
         if combined_score <= 0:
             continue
         core = CORE_LEADERSHIP_VALUES.get(value_id, {})
@@ -1173,9 +1238,10 @@ def _build_higher_principle_brief(
     *, topic: str = "", instructions: str = "",
     keywords: Iterable[str] | None = None,
     penalize_metro: bool = False,
+    bio_affinity: dict[str, float] | None = None,
 ) -> str:
     terms, active_groups, explicit_terms = _query_features(topic=topic, instructions=instructions, keywords=keywords)
-    candidates: list[tuple[int, int, str]] = []
+    candidates: list[tuple[float, int, str]] = []
     for index, (value_id, data) in enumerate(ARGUMENT_LAYER.items()):
         core = CORE_LEADERSHIP_VALUES.get(value_id, {})
         chain, chain_score = _select_material_with_score(
@@ -1199,7 +1265,13 @@ def _build_higher_principle_brief(
             explicit_terms,
             penalize_metro=penalize_metro,
         )
-        combined_score = chain_score + evidence_score + context_score
+        combined_score: float = float(chain_score + evidence_score + context_score)
+        if bio_affinity:
+            boost = bio_affinity.get(value_id, 0.0)
+            if combined_score > 0:
+                combined_score += min(2.0, boost * 2.0)
+            else:
+                combined_score += min(0.75, boost * 0.75)
         if terms and combined_score <= 0:
             continue
         label = core.get("vision", value_id)
@@ -1228,18 +1300,26 @@ def _build_counterargument_rebuttal_brief(
     *, topic: str = "", instructions: str = "",
     keywords: Iterable[str] | None = None,
     penalize_metro: bool = False,
+    bio_affinity: dict[str, float] | None = None,
 ) -> str:
     terms, active_groups, explicit_terms = _query_features(topic=topic, instructions=instructions, keywords=keywords)
-    candidates: list[tuple[int, int, str]] = []
+    candidates: list[tuple[float, int, str]] = []
     for index, (value_id, data) in enumerate(ARGUMENT_LAYER.items()):
         core = CORE_LEADERSHIP_VALUES.get(value_id, {})
-        rebuttal, score = _select_material_with_score(
+        rebuttal, rebuttal_score = _select_material_with_score(
             data.get("counter_rebuttals") or [{}],
             terms,
             active_groups,
             explicit_terms,
             penalize_metro=penalize_metro,
         )
+        score: float = float(rebuttal_score)
+        if bio_affinity:
+            boost = bio_affinity.get(value_id, 0.0)
+            if score > 0:
+                score += min(2.0, boost * 2.0)
+            else:
+                score += min(0.75, boost * 0.75)
         if terms and score <= 0:
             continue
         label = core.get("vision", value_id)
@@ -1265,12 +1345,19 @@ def build_argument_role_material_block(
 ) -> str:
     """역할 섹션 바로 아래에 붙일 자연어 소재 블록."""
     penalize_metro = _is_basic_lawmaker(user_profile)
+    bio_affinity: dict[str, float] | None = None
+    if user_profile:
+        la = user_profile.get("leadershipAffinity") or {}
+        raw = {m["id"]: float(m.get("score", 0)) for m in la.get("matches", []) if m.get("id")}
+        bio_affinity = raw if raw else None
+
     if role == "evidence":
         summary = _build_evidence_brief(
             topic=topic,
             instructions=instructions,
             keywords=keywords,
             penalize_metro=penalize_metro,
+            bio_affinity=bio_affinity,
         )
     elif role == "higher_principle":
         summary = _build_higher_principle_brief(
@@ -1278,6 +1365,7 @@ def build_argument_role_material_block(
             instructions=instructions,
             keywords=keywords,
             penalize_metro=penalize_metro,
+            bio_affinity=bio_affinity,
         )
     elif role == "counterargument_rebuttal":
         summary = _build_counterargument_rebuttal_brief(
@@ -1285,6 +1373,7 @@ def build_argument_role_material_block(
             instructions=instructions,
             keywords=keywords,
             penalize_metro=penalize_metro,
+            bio_affinity=bio_affinity,
         )
     else:
         return ""

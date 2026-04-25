@@ -503,6 +503,7 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
             input_user_profile = data.get("userProfile")
         elif isinstance(data.get("user"), dict):
             input_user_profile = data.get("user")
+        input_user_profile.pop("leadershipAffinity", None)
 
         uid = _extract_uid(req, data, input_user_profile)
         if not uid:
@@ -560,6 +561,18 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
                 )
 
         db = firestore.client()
+
+        try:
+            aff_doc = (
+                db.collection("users").document(uid)
+                .collection("memory").document("profile_affinity")
+                .get()
+            )
+            if aff_doc.exists:
+                user_profile["leadershipAffinity"] = aff_doc.to_dict() or {}
+        except Exception as _aff_exc:
+            logger.warning("[LeadershipAffinity] 로드 실패(무시) — uid=%s: %s", uid, _aff_exc)
+
         try:
             perm_result = _run_async(check_generation_permission(uid, db))
         except Exception as exc:
