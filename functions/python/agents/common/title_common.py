@@ -386,8 +386,7 @@ def extract_numbers_from_content(content: str) -> Dict[str, Any]:
         
     try:
         patterns = [
-            r'\d+(?:,\d{3})*억원?',
-            r'\d+(?:,\d{3})*만원?',
+            r'(?<![\d.])\d+(?:,\d{3})*(?:\.\d+)?(?:억원|억|만원|원)(?![\d.A-Za-z])',
             r'\d+(?:\.\d+)?%',
             r'\d+(?:,\d{3})*명',
             r'\d+(?:,\d{3})*건',
@@ -396,7 +395,6 @@ def extract_numbers_from_content(content: str) -> Dict[str, Any]:
             r'\d+(?:,\d{3})*개',
             r'\d+(?:,\d{3})*회',
             r'\d+배',
-            r'\d+(?:,\d{3})*원',
             r'\d+일',
             r'\d+개월',
             r'\d+년',

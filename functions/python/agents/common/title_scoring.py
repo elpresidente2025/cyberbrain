@@ -6,6 +6,15 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+_INTERNAL_PROMPT_LEAK_RE = re.compile(
+    r"원문\s*(?:약속|대로|에서\s*약속|범위|기준|바탕으로\s*약속)"
+    r"|검색어\s*(?:반영|삽입|횟수)"
+    r"|생성\s*시간"
+    r"|카테고리\s*:"
+    r"|프롬프트|지시사항",
+    re.IGNORECASE,
+)
+
 from .title_common import (
     SLOT_PLACEHOLDER_NAMES,
     TITLE_LENGTH_HARD_MAX,
@@ -475,6 +484,14 @@ def calculate_title_quality_score(
             'breakdown': {'ellipsis': {'score': 0, 'max': 100, 'status': '실패', 'reason': '말줄임표 포함'}},
             'passed': False,
             'suggestions': ['말줄임표("...", "…") 사용 금지. 내용을 자르지 말고 완결된 제목을 작성하세요.']
+        }
+
+    if _INTERNAL_PROMPT_LEAK_RE.search(title):
+        return {
+            'score': 0,
+            'breakdown': {'internalLeak': {'score': 0, 'max': 100, 'status': '실패', 'reason': '시스템 내부어 누출'}},
+            'passed': False,
+            'suggestions': ['제목에 시스템 내부 지시어가 포함됐습니다. 내용 중심으로 다시 작성하세요.']
         }
 
     truncated_reason = _detect_truncated_title_reason(title)

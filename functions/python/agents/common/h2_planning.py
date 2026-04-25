@@ -77,6 +77,12 @@ _METRO_MAYOR_KEYWORDS: frozenset[str] = frozenset({
     "광주시장", "대전시장", "울산시장", "세종시장",
 })
 
+_NEGATIVE_NUMERIC_CTX_RE = re.compile(
+    r"(?:삭감|폐지|폐기|반대|좌절|저지|봉쇄|사례|보듯이|과거에)",
+    re.IGNORECASE,
+)
+_NEGATIVE_WINDOW = 60
+
 _PROCEDURAL_MARKERS = ("단계", "절차", "방법", "순서", "신청", "접수", "가이드")
 _COMPARATIVE_MARKERS = ("vs", "대비", "비교", "차이", "기존 ")
 _DECLARATIVE_TAIL_RE = re.compile(r"(?:이다|아니다|한다|해야|없다|있다|된다|이다\.|다\.)$")
@@ -376,6 +382,27 @@ def _specific_anchor_exclusion_set(
     return exclusions
 
 
+def _is_counterexample_numeric(number: str, section_text: str) -> bool:
+    """숫자의 모든 등장 위치가 부정 맥락(삭감·폐지 등) 주변이면 True.
+
+    하나라도 긍정 맥락이면 False — specific_anchor 후보 유지.
+    """
+    num = str(number or "").strip()
+    text = str(section_text or "")
+    if not num or not text:
+        return False
+    matches = list(re.finditer(re.escape(num), text))
+    if not matches:
+        return False
+    negative_hits = 0
+    for match in matches:
+        start, end = match.span()
+        window = text[max(0, start - _NEGATIVE_WINDOW): end + _NEGATIVE_WINDOW]
+        if _NEGATIVE_NUMERIC_CTX_RE.search(window):
+            negative_hits += 1
+    return negative_hits == len(matches)
+
+
 def extract_specific_anchors(
     *,
     section_text: str,
@@ -402,7 +429,10 @@ def extract_specific_anchors(
         entity_hints=entity_hints,
     )
     raw_items: List[str] = []
-    raw_items.extend(str(item or "") for item in numerics or ())
+    for num in numerics or ():
+        s = str(num or "").strip()
+        if s and not _is_counterexample_numeric(s, body):
+            raw_items.append(s)
     raw_items.extend(str(item or "") for item in candidate_keywords or ())
 
     anchors: List[str] = []

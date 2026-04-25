@@ -682,7 +682,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
                 '  <implementation_structure priority="critical">\n'
                 '    <overview>context_injection의 execution_plan이 감지되었습니다. '
                 '본론은 정책 효과 일반론이 아니라 실행 항목을 답하는 구조여야 합니다.</overview>\n'
-                '    <section order="1" role="problem_to_recovery">원문에 제시된 후퇴 지점과 왜 복구해야 하는지 정리하십시오.</section>\n'
+                '    <section order="1" role="problem_to_recovery">입력 내용에 제시된 후퇴 지점과 왜 복구해야 하는지 정리하십시오.</section>\n'
                 '    <section order="2" role="execution_package">execution_items 중 핵심 실행 항목 3개 이상을 묶어 구체 방안으로 선언하십시오.</section>\n'
                 '    <section order="3" role="institutionalization">연구·효과분석·조례·추진체계 등 execution_items에 있는 제도화 방안을 선언하십시오. 예산은 사용자 입력 또는 execution_items에 있을 때만 쓰십시오.</section>\n'
                 '    <rule>body_sections가 3개를 넘으면 execution_package를 여러 섹션으로 나누고, 실행 항목 누락을 만들지 마십시오.</rule>\n'
@@ -983,7 +983,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             "    <rule>소제목에 조사나 술어가 어색하게 잘린 경우('확신을 길', '진짜 승' 등) 반드시 고친 뒤 출력할 것.</rule>\n"
             f"    <rule>소제목은 {H2_MIN_LENGTH}~{H2_MAX_LENGTH}자의 완결된 구문이어야 합니다. 명사만 나열('A, B')하거나 서술어 없이 끊는 토막 제목은 금지. "
             "\"위한/향한/만드는/통한/대한\" 관형절 수식도 금지.</rule>\n"
-            "    <rule priority='critical'>소제목은 서로 다른 원문 실행수단을 답해야 하며, '제도 기반을 세우겠습니다', '조례로 뒷받침하겠습니다' 같은 저정보 템플릿을 반복하지 말 것.</rule>\n"
+            "    <rule priority='critical'>소제목은 서로 다른 실행수단을 답해야 하며, '제도 기반을 세우겠습니다', '조례로 뒷받침하겠습니다' 같은 저정보 템플릿을 반복하지 말 것.</rule>\n"
             "    <rule>소제목에 '저는/제가/나는/내가' 같은 1인칭 표현 금지.</rule>\n"
             "    <rule>어느 body/conclusion 섹션이 비어 보이거나 설명이 모자라면, 독자가 '그래서 구체적으로 어떻게 할 건데?'라고 물을 지점을 찾아 그 섹션에만 구체 문장 1개 이상을 더할 것. 어떤 후보나 어떤 선거에도 쓸 수 있는 일반 공약 문장은 추가하지 말 것.</rule>\n"
             "    <rule priority='critical'>conclusion 문단은 본문에서 실제로 사용한 정책명·수치·실행수단을 다시 불러와 닫을 것. '시민의 목소리', '삶의 질', '다양한 분야', '좋은 정치', '기대를 저버리지 않겠습니다' 같은 범용 다짐만으로 결론을 채우면 불합격.</rule>\n"
@@ -1458,7 +1458,7 @@ class StructureAgent(SectionRepairMixin, SectionNormalizerMixin, Agent):
             anchor_rule = (
                 f'    <rule priority="critical">이 섹션의 우선 인용 앵커: "{safe_anchor_hint}". '
                 '이 앵커를 본문 문단 중 최소 1개에 실제 이름으로 등장시키십시오. '
-                '참고자료에 등장한 원문을 그대로 쓰고 변형·일반화하지 말 것. '
+                '참고자료에 등장한 내용을 그대로 쓰고 변형·일반화하지 말 것. '
                 '이 앵커가 본 섹션 주제와 직접 연결되지 않으면 다른 근거로 보완하되, 섹션 전체를 포괄 어휘로 채우지는 마십시오.</rule>\n'
             ) + anchor_rule
 

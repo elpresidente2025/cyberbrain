@@ -6,7 +6,7 @@ import logging
 import re
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-from agents.common.role_keyword_policy import should_block_role_keyword
+from agents.common.role_keyword_policy import ROLE_KEYWORD_PATTERN, should_block_role_keyword
 
 from .keyword_common import (
     _count_keyword_occurrences_in_h2,
@@ -33,6 +33,30 @@ from .keyword_reference import (
 
 
 logger = logging.getLogger(__name__)
+
+_ROLE_SEO_EXEMPT_SUFFIXES: tuple[str, ...] = (
+    "국회의원", "원내대표",
+    "광역의원", "시의원", "도의원", "구의원", "군의원", "기초의원",
+    "구청장", "군수", "도지사", "교육감",
+    "장관", "차관", "위원장", "부위원장", "당대표",
+    "예비후보", "후보",
+)
+_ROLE_SEO_METRO_MAYORS: frozenset[str] = frozenset({
+    "서울시장", "부산시장", "대구시장", "인천시장",
+    "광주시장", "대전시장", "울산시장", "세종시장",
+})
+
+
+def _is_role_keyword_for_seo(kw: str) -> bool:
+    """SEO 목표 횟수 완화 대상 직책명 키워드를 감지한다."""
+    if ROLE_KEYWORD_PATTERN.fullmatch(kw):
+        return True
+    if any(kw.endswith(s) for s in _ROLE_SEO_EXEMPT_SUFFIXES):
+        return True
+    if kw in _ROLE_SEO_METRO_MAYORS:
+        return True
+    return False
+
 
 def _section_priority(section_type: str) -> int:
     if section_type.startswith("body"):
@@ -494,6 +518,10 @@ def validate_keyword_insertion(
                 except (TypeError, ValueError):
                     effective_max = max(effective_expected, int(user_max_count))
 
+        is_role_kw = _is_role_keyword_for_seo(keyword)
+        if is_role_kw:
+            effective_expected = min(effective_expected, 1)
+
         derived_body_expected = max(0, int(effective_expected) - int(title_count) - int(h2_count))
         override_value = None
         if isinstance(body_min_overrides, Mapping):
@@ -503,13 +531,19 @@ def validate_keyword_insertion(
                 derived_body_expected = max(0, int(override_value))
             except (TypeError, ValueError):
                 derived_body_expected = max(0, derived_body_expected)
+        if is_role_kw:
+            derived_body_expected = 0
+
         sentence_coverage_count = (
             count_keyword_sentence_reflections(content, keyword)
             + count_keyword_sentence_reflections(title_text or "", keyword)
         )
         gate_count = max(total_exact_count, sentence_coverage_count)
         coverage_count = max(total_exact_count, variant_coverage_count + title_count, sentence_coverage_count)
-        preferred_exact_min = 1 if len(_keyword_tokens(keyword)) >= 2 and effective_expected > 0 else 0
+        preferred_exact_min = (
+            0 if is_role_kw
+            else (1 if len(_keyword_tokens(keyword)) >= 2 and effective_expected > 0 else 0)
+        )
         exact_shortfall = max(0, preferred_exact_min - total_exact_count)
         # 사용자 입력 키워드는 부족 판정은 gate count, 과다 판정은 exact count 기준으로 검증한다.
         is_under_min = gate_count < effective_expected

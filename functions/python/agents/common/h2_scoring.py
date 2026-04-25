@@ -27,6 +27,15 @@ from .h2_guide import (
 )
 from .h2_planning import SectionPlan
 
+_INTERNAL_PROMPT_LEAK_RE = re.compile(
+    r"원문\s*(?:약속|대로|에서\s*약속|범위|기준|바탕으로\s*약속)"
+    r"|검색어\s*(?:반영|삽입|횟수)"
+    r"|생성\s*시간"
+    r"|카테고리\s*:"
+    r"|프롬프트|지시사항",
+    re.IGNORECASE,
+)
+
 __all__ = [
     "H2Score",
     "H2_AEO_ADVISORIES",
@@ -100,6 +109,8 @@ H2_HARD_FAIL_ISSUES = frozenset(
         # "실행 계획을 세우겠습니다", "제도 기반을 세우겠습니다"처럼
         # 본문 고유 실행수단을 하나도 담지 않은 저정보 H2.
         "H2_LOW_INFORMATION_TEMPLATE",
+        # "원문 약속대로", "검색어 반영 횟수" 등 시스템 내부어가 H2에 노출됨.
+        "H2_INTERNAL_PROMPT_LEAK",
     }
 )
 
@@ -421,6 +432,9 @@ def score_h2(
             category_tags=[normalized_style],
             breakdown={},
         )
+
+    if _INTERNAL_PROMPT_LEAK_RE.search(heading_text):
+        issues.append("H2_INTERNAL_PROMPT_LEAK")
 
     length_raw = _length_band_score(heading_text)
     length_weighted = length_raw * _WEIGHTS["length"]
