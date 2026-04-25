@@ -348,6 +348,10 @@ def build_role_governance_xml(user_profile: Optional[Dict[str, Any]]) -> str:
         f'반드시 authority_scope 안의 표현으로 고친다.</rule>\n'
         f'    <rule>중앙정부급 정책 사례는 참고 사례, 비교 사례, 재정 불가능론 반박, '
         f'지역형 축소 적용의 맥락에서만 사용한다.</rule>\n'
+        f'    <rule>근거 없는 완료형 사실 표현 금지: "확보했습니다", "합의했습니다", "확정됐습니다", '
+        f'"끝냈습니다", "반영됐습니다"는 참고자료에 공식 문서·의결·합의 근거가 있을 때만 사용한다.</rule>\n'
+        f'    <rule>근거가 없으면 절차형 약속으로 쓴다: "확보를 추진하겠습니다", "협의하겠습니다", '
+        f'"반영되도록 요구하겠습니다", "제출하겠습니다", "심의에서 챙기겠습니다".</rule>\n'
         f'  </final_check>\n'
         f'</role_governance>'
     )

@@ -331,3 +331,29 @@ def test_build_structure_prompt_basic_lawmaker_contains_scale_guard():
     ref_idx = prompt.find("<reference_materials")
     assert role_idx != -1
     assert role_idx < ref_idx or ref_idx == -1
+
+
+# ──────────────────────────────────────────────
+# 6. final_check 완료형 사실 금지 규칙
+# ──────────────────────────────────────────────
+
+def test_role_governance_final_check_blocks_unverified_completed_facts():
+    from agents.common.role_governance import build_role_governance_xml
+
+    xml = build_role_governance_xml({"position": "기초의원"})
+
+    assert "근거 없는 완료형 사실 표현 금지" in xml
+    assert "확보했습니다" in xml
+    assert "합의했습니다" in xml
+    assert "확정됐습니다" in xml
+    assert "참고자료에 공식 문서·의결·합의 근거" in xml
+
+
+def test_role_governance_final_check_suggests_procedural_rewrites():
+    from agents.common.role_governance import build_role_governance_xml
+
+    xml = build_role_governance_xml({"position": "국회의원"})
+
+    assert "확보를 추진하겠습니다" in xml
+    assert "협의하겠습니다" in xml
+    assert "반영되도록 요구하겠습니다" in xml
