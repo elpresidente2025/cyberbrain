@@ -1793,7 +1793,7 @@ AI가 이미 학습하고 있습니다.
         >
           <Typography variant="body2" sx={{ lineHeight: 2, fontSize: '0.95rem' }}>
             {BRANDING.companyNameKo} | 사업자등록번호: 256-24-02174 | 통신판매업신고번호: (비움)<br />
-            대표: 강정구 | 인천광역시 계양구<br />
+            대표: 강정구 | 인천광역시 계양구 용종로 124, 학마을한진아파트 139동 1504호 | 대표번호: 010-4885-6206<br />
             Copyright 2025. {BRANDING.companyNameEn}. All Rights Reserved.
           </Typography>
         </Box>
