@@ -328,7 +328,13 @@ function renderArgumentLayer(buf, setArgField, addArgItem, removeArgItem) {
   if (!buf) return null;
   return Object.entries(DOMAIN_LABELS).map(([domain, domainLabel]) => (
     <Accordion key={domain} disableGutters elevation={0}
-      sx={{ border: '1px solid', borderColor: 'divider', mb: 1, '&:before': { display: 'none' } }}>
+      sx={{
+        border: '1px solid',
+        borderColor: 'divider',
+        mb: 1,
+        '&:before': { display: 'none' },
+        '&.Mui-expanded': { borderColor: 'rgba(21, 36, 132, 0.3)', borderLeft: `2px solid ${colors.brand.primary}` },
+      }}>
       <AccordionSummary expandIcon={<ExpandMore />}>
         <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>{domainLabel}</Typography>
       </AccordionSummary>
@@ -348,7 +354,13 @@ function renderArgumentLayer(buf, setArgField, addArgItem, removeArgItem) {
                 />
               ))}
               <Button size="small" startIcon={<Add />} variant="outlined"
-                onClick={() => addArgItem(domain, subKey)} sx={{ mt: 0.5 }}>
+                onClick={() => addArgItem(domain, subKey)}
+                sx={{
+                  mt: 0.5,
+                  borderColor: 'rgba(21, 36, 132, 0.4)',
+                  color: colors.brand.primary,
+                  '&:hover': { borderColor: colors.brand.primary, bgcolor: 'rgba(21, 36, 132, 0.05)' },
+                }}>
                 항목 추가
               </Button>
             </Box>
@@ -472,10 +484,10 @@ export default function LeadershipManager() {
     }
   };
 
-  const primaryColor = theme.palette.ui?.header || colors.brand.primary;
+  const primaryColor = colors.brand.primary;
 
   return (
-    <HongKongNeonCard sx={{ p: { xs: 2, sm: 3 } }}>
+    <HongKongNeonCard sx={{ p: { xs: 2, sm: 3 }, '&:hover': { transform: 'none' } }}>
       {/* 헤더 */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -501,7 +513,16 @@ export default function LeadershipManager() {
             onChange={(_, open) => setExpanded(open ? meta.key : false)}
             disableGutters
             elevation={0}
-            sx={{ mb: 1.5, border: '1px solid', borderColor: 'divider', '&:before': { display: 'none' } }}
+            sx={{
+              mb: 1.5,
+              border: '1px solid',
+              borderColor: 'divider',
+              '&:before': { display: 'none' },
+              '&.Mui-expanded': {
+                borderColor: `rgba(21, 36, 132, 0.4)`,
+                borderLeft: `3px solid ${colors.brand.primary}`,
+              },
+            }}
           >
             <AccordionSummary expandIcon={<ExpandMore />}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', width: '100%', pr: 1 }}>
@@ -537,7 +558,7 @@ export default function LeadershipManager() {
                   disabled={saving === meta.key}
                   onClick={() => handleSave(meta.key)}
                   startIcon={saving === meta.key ? <CircularProgress size={14} /> : <Save />}
-                  sx={{ bgcolor: primaryColor, '&:hover': { bgcolor: '#007a74' } }}
+                  sx={{ bgcolor: primaryColor, '&:hover': { bgcolor: '#1e30a0' } }}
                 >
                   저장
                 </Button>
