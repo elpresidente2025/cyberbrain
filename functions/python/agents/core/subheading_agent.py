@@ -1256,7 +1256,8 @@ class SubheadingAgent(Agent):
         section_xml_parts: List[str] = []
         for plan in plans:
             ctx_slice = str(plan.get("section_text") or "")[:400]
-            numerics = ", ".join(plan.get("numerics") or []) or "(없음)"
+            pos_nums = ", ".join(plan.get("positive_numeric_anchors") or plan.get("numerics") or []) or "(없음)"
+            forbidden_nums = ", ".join(plan.get("forbidden_numeric_anchors") or []) or "(없음)"
             specific_anchors = ", ".join(plan.get("specific_anchors") or []) or "(없음)"
             section_xml_parts.append(
                 f"""<section index="{int(plan.get("index", 0)) + 1}">
@@ -1265,7 +1266,8 @@ class SubheadingAgent(Agent):
   <query_intent>{plan.get("query_intent") or "info"}</query_intent>
   <answer_type>{plan.get("answer_type") or "question-form"}</answer_type>
   <assigned_entity_surface>{plan.get("assigned_entity_surface") or "(없음)"}</assigned_entity_surface>
-  <numerics>{numerics}</numerics>
+  <numerics>{pos_nums}</numerics>
+  <forbidden_numerics note="H2 사용 금지 — 삭감·폐지 맥락">{forbidden_nums}</forbidden_numerics>
   <specific_anchors>{specific_anchors}</specific_anchors>
   <key_claim>{plan.get("key_claim") or "(없음)"}</key_claim>
   <context>{ctx_slice}</context>
@@ -1299,8 +1301,9 @@ class SubheadingAgent(Agent):
 {build_h2_rules(h2_style)}
 {tone_section}
 # Section Plan Table
-각 section 은 suggested_type / must_include_keyword / query_intent / answer_type / assigned_entity_surface / numerics / specific_anchors / key_claim / context 로 구성되어 있습니다. must_include_keyword는 해당 소제목 앞 1/3 안에 등장시키되, **context 본문의 실제 주제와 must_include_keyword가 맞지 않으면 본문 주제를 우선하세요.** 소제목은 본문을 정답으로 가정한 질문·주장이어야 합니다.
+각 section 은 suggested_type / must_include_keyword / query_intent / answer_type / assigned_entity_surface / numerics / forbidden_numerics / specific_anchors / key_claim / context 로 구성되어 있습니다. must_include_keyword는 해당 소제목 앞 1/3 안에 등장시키되, **context 본문의 실제 주제와 must_include_keyword가 맞지 않으면 본문 주제를 우선하세요.** 소제목은 본문을 정답으로 가정한 질문·주장이어야 합니다.
 `specific_anchors`가 있으면 H2에 최소 1개를 자연스럽게 포함하십시오. "실행 계획", "제도 기반", "제도로 뒷받침", "재정 우려" 같은 추상 틀은 specific_anchors 없이 쓰면 실패입니다.
+`forbidden_numerics`에 나열된 숫자는 삭감·폐지 맥락의 숫자이므로 H2 앵커로 사용하지 마십시오.
 {sections_xml}
 
 # [AEO/SEO] Entity Surface 정책 (필수 준수)
@@ -1706,7 +1709,8 @@ class SubheadingAgent(Agent):
             plan = plans[idx]
             issues_text = ", ".join(issues_map.get(idx, [])) or "(없음)"
             ctx_slice = str(plan.get("section_text") or "")[:400]
-            numerics = ", ".join(plan.get("numerics") or []) or "(없음)"
+            pos_nums = ", ".join(plan.get("positive_numeric_anchors") or plan.get("numerics") or []) or "(없음)"
+            forbidden_nums = ", ".join(plan.get("forbidden_numeric_anchors") or []) or "(없음)"
             specific_anchors = ", ".join(plan.get("specific_anchors") or []) or "(없음)"
             failed_xml_parts.append(
                 f"""<failed_section index="{int(plan.get("index", idx))}">
@@ -1717,7 +1721,8 @@ class SubheadingAgent(Agent):
   <query_intent>{plan.get("query_intent") or "info"}</query_intent>
   <answer_type>{plan.get("answer_type") or "question-form"}</answer_type>
   <assigned_entity_surface>{plan.get("assigned_entity_surface") or "(없음)"}</assigned_entity_surface>
-  <numerics>{numerics}</numerics>
+  <numerics>{pos_nums}</numerics>
+  <forbidden_numerics note="H2 사용 금지 — 삭감·폐지 맥락">{forbidden_nums}</forbidden_numerics>
   <specific_anchors>{specific_anchors}</specific_anchors>
   <key_claim>{plan.get("key_claim") or "(없음)"}</key_claim>
   <context>{ctx_slice}</context>
@@ -1759,6 +1764,13 @@ class SubheadingAgent(Agent):
             "INCOMPLETE_ENDING": (
                 "소제목이 조사/미완결 어미로 끝남. 완결된 어절로 마무리하세요."
             ),
+            "H2_COUNTEREXAMPLE_NUMERIC_ANCHOR": (
+                "forbidden_numerics(삭감·폐지 맥락 숫자)가 소제목에 포함됨. "
+                "해당 숫자는 H2 앵커로 쓰지 말고, numerics(긍정 맥락 숫자) 또는 specific_anchors를 대신 활용하세요."
+            ),
+            "H2_INTERNAL_PROMPT_LEAK": (
+                "시스템 지시어('원문 약속대로', '검색어 반영' 등)가 소제목에 포함됨. 실제 공약 내용으로 교체하세요."
+            ),
         }
         all_issues: set = set()
         for idx in failing_indices:
@@ -1783,6 +1795,7 @@ class SubheadingAgent(Agent):
 
 # 금지
 - `assigned_entity_surface` 값을 그대로 소제목으로 쓰지 마세요. 인물 표면형은 소제목의 **일부**로만 사용하세요.
+- `forbidden_numerics`에 나열된 숫자(삭감·폐지 맥락)는 소제목 앵커로 쓰지 마세요.
 - 추상어만으로 구성된 소제목 (혁신/미래/포용/도약/비전/발전)
 - 감정 호소형 수사 ("함께 ~ 가자", "약속드립니다")
 

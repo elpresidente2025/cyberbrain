@@ -127,6 +127,10 @@ class SectionPlan(TypedDict, total=False):
     candidate_keywords: List[str]
     specific_anchors: List[str]
     numerics: List[str]
+    # 긍정 맥락 숫자 — specific_anchors 후보 및 LLM H2 앵커 권장
+    positive_numeric_anchors: List[str]
+    # 부정 맥락 숫자(삭감·폐지 등) — H2 앵커로 사용 금지
+    forbidden_numeric_anchors: List[str]
     entity_hints: List[str]
     key_claim: str
     # user 가 명시한 키워드. deterministic fallback 템플릿의 키워드 안전 검사에서 allowlist 로 사용.
@@ -856,6 +860,8 @@ def extract_section_plan(
 
     numerics_bundle = extract_numbers_from_content(cleaned) or {}
     numerics = list(numerics_bundle.get("numbers") or [])
+    positive_numeric_anchors = [n for n in numerics if not _is_counterexample_numeric(n, cleaned)]
+    forbidden_numeric_anchors = [n for n in numerics if _is_counterexample_numeric(n, cleaned)]
 
     override_types = list(
         style_config.get("preferred_types") or style_config.get("preferredTypes") or []
@@ -903,7 +909,7 @@ def extract_section_plan(
         must_include_keyword=must_include,
         user_keywords=user_keywords or (),
         entity_hints=identity_hints,
-        numerics=numerics,
+        numerics=positive_numeric_anchors,
     )
 
     return SectionPlan(
@@ -914,6 +920,8 @@ def extract_section_plan(
         candidate_keywords=candidate_keywords,
         specific_anchors=specific_anchors,
         numerics=numerics,
+        positive_numeric_anchors=positive_numeric_anchors,
+        forbidden_numeric_anchors=forbidden_numeric_anchors,
         entity_hints=entity_hints,
         key_claim=key_claim,
         user_keywords=[str(k).strip() for k in (user_keywords or ()) if str(k).strip()],

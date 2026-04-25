@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Dict, List, Optional, TypedDict
+from typing import Dict, List, Optional, Sequence, TypedDict
 
 from . import korean_morph
 from .h2_guide import (
@@ -35,6 +35,18 @@ _INTERNAL_PROMPT_LEAK_RE = re.compile(
     r"|프롬프트|지시사항",
     re.IGNORECASE,
 )
+
+# forbidden_numeric_anchors 중 heading에 등장한 숫자 반환.
+# lookbehind (?<![\d.]) : 56.8억 안의 8억 오탐 방지 (PR 2-A 연동).
+def _forbidden_numeric_anchor_hits(heading_text: str, forbidden: Sequence[str]) -> List[str]:
+    hits: List[str] = []
+    for num in forbidden or ():
+        n = str(num or "").strip()
+        if not n:
+            continue
+        if re.search(rf"(?<![\d.]){re.escape(n)}(?![\d.A-Za-z])", heading_text):
+            hits.append(n)
+    return hits
 
 __all__ = [
     "H2Score",
@@ -111,6 +123,8 @@ H2_HARD_FAIL_ISSUES = frozenset(
         "H2_LOW_INFORMATION_TEMPLATE",
         # "원문 약속대로", "검색어 반영 횟수" 등 시스템 내부어가 H2에 노출됨.
         "H2_INTERNAL_PROMPT_LEAK",
+        # plan의 forbidden_numeric_anchors(삭감·폐지 맥락 숫자)가 H2에 등장.
+        "H2_COUNTEREXAMPLE_NUMERIC_ANCHOR",
     }
 )
 
@@ -435,6 +449,10 @@ def score_h2(
 
     if _INTERNAL_PROMPT_LEAK_RE.search(heading_text):
         issues.append("H2_INTERNAL_PROMPT_LEAK")
+
+    forbidden_nums = list(plan.get("forbidden_numeric_anchors") or [])
+    if forbidden_nums and _forbidden_numeric_anchor_hits(heading_text, forbidden_nums):
+        issues.append("H2_COUNTEREXAMPLE_NUMERIC_ANCHOR")
 
     length_raw = _length_band_score(heading_text)
     length_weighted = length_raw * _WEIGHTS["length"]
