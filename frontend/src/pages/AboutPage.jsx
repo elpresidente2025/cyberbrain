@@ -310,19 +310,14 @@ AI가 이미 학습하고 있습니다.
             transition={{ duration: 0.6 }}
           >
             <Box sx={{ position: 'relative', overflow: 'hidden' }}>
-              {/* Decorative gradient blobs */}
+              {/* Mesh gradient background */}
               <Box sx={{
-                position: 'absolute', top: '15%', right: '-5%',
-                width: '45vw', height: '45vw', maxWidth: 550, maxHeight: 550,
-                borderRadius: '50%',
-                background: 'radial-gradient(circle, rgba(21,36,132,0.05) 0%, transparent 70%)',
-                pointerEvents: 'none'
-              }} />
-              <Box sx={{
-                position: 'absolute', bottom: '10%', left: '-8%',
-                width: '35vw', height: '35vw', maxWidth: 400, maxHeight: 400,
-                borderRadius: '50%',
-                background: 'radial-gradient(circle, rgba(21,36,132,0.03) 0%, transparent 70%)',
+                position: 'absolute', inset: 0,
+                background: [
+                  'radial-gradient(ellipse 65% 60% at 78% 22%, rgba(21,36,132,0.13) 0%, transparent 60%)',
+                  'radial-gradient(ellipse 50% 45% at 12% 80%, rgba(21,36,132,0.09) 0%, transparent 55%)',
+                  'radial-gradient(ellipse 40% 35% at 55% 55%, rgba(21,36,132,0.05) 0%, transparent 50%)'
+                ].join(', '),
                 pointerEvents: 'none'
               }} />
 
@@ -509,7 +504,7 @@ AI가 이미 학습하고 있습니다.
                     mb: 2,
                     textAlign: 'center',
                     color: 'var(--color-text-primary)',
-                    fontSize: { xs: '2rem', md: '2.8rem' },
+                    fontSize: { xs: '2.2rem', md: '3.2rem' },
                     letterSpacing: '-0.02em',
                     wordBreak: 'keep-all',
                     textWrap: 'balance'
@@ -615,90 +610,99 @@ AI가 이미 학습하고 있습니다.
                 의원님이 직접 쓴 한 편을 받아, 다섯 채널에 맞게 다시 씁니다.
               </Typography>
 
-              <Grid container spacing={3}>
-                {[
-                  {
-                    icon: <EditNote aria-hidden="true" />,
-                    step: '01',
-                    title: '직접 쓴 원문 입력',
-                    description: '주력 SNS에 올린 입장문·페이스북 글을 그대로 붙여넣습니다.'
-                  },
-                  {
-                    icon: <Fingerprint aria-hidden="true" />,
-                    step: '02',
-                    title: '문체 지문 학습',
-                    description: '의원님이 써 오신 문장의 결·어미·수사 습관을 6차원으로 분석합니다.'
-                  },
-                  {
-                    icon: <Share aria-hidden="true" />,
-                    step: '03',
-                    title: '채널별 길이·리듬 변환',
-                    description: '블로그는 늘리고, X는 압축하고, 인스타는 리듬을 맞춥니다.'
-                  },
-                  {
-                    icon: <FactCheck aria-hidden="true" />,
-                    step: '04',
-                    title: '위험 표현 1차 점검',
-                    description: '허위사실·비방·기부행위 암시를 채널별로 미리 걸러냅니다.'
-                  }
-                ].map((item, index) => (
-                  <Grid item xs={12} sm={6} md={3} key={index}>
-                    <motion.div
-                      initial={{ opacity: 0, y: 24 }}
-                      whileInView={{ opacity: 1, y: 0 }}
-                      viewport={{ once: true }}
-                      transition={{ duration: 0.5, delay: index * 0.1 }}
-                      style={{ height: '100%' }}
-                    >
-                      <Box sx={{
-                        p: { xs: 3, md: 3.5 },
-                        height: '100%',
-                        borderRadius: 'var(--radius-lg)',
-                        bgcolor: 'var(--color-surface)',
-                        border: '1px solid var(--color-border)',
-                        boxShadow: brandShadow
-                      }}>
-                        <Typography sx={{
-                          color: 'var(--color-primary)',
-                          fontSize: '0.85rem',
-                          fontWeight: 700,
-                          letterSpacing: '0.08em',
-                          mb: 1.5,
-                          ...numericStyle
-                        }}>
-                          STEP {item.step}
-                        </Typography>
-                        <Box sx={{
-                          mb: 2,
-                          '& .MuiSvgIcon-root': {
-                            color: 'var(--color-primary)',
-                            fontSize: 40
-                          }
-                        }}>
-                          {item.icon}
+              <Box sx={{ position: 'relative' }}>
+                {/* 타임라인 연결선 (데스크톱) */}
+                <Box sx={{
+                  display: { xs: 'none', md: 'block' },
+                  position: 'absolute',
+                  top: 27,
+                  left: 'calc(12.5% + 27px)',
+                  right: 'calc(12.5% + 27px)',
+                  height: 2,
+                  bgcolor: 'var(--color-border)',
+                  zIndex: 0
+                }} />
+                <Grid container spacing={{ xs: 2, md: 4 }}>
+                  {[
+                    {
+                      icon: <EditNote aria-hidden="true" />,
+                      step: '01',
+                      title: '직접 쓴 원문 입력',
+                      description: '주력 SNS에 올린 입장문·페이스북 글을 그대로 붙여넣습니다.'
+                    },
+                    {
+                      icon: <Fingerprint aria-hidden="true" />,
+                      step: '02',
+                      title: '문체 지문 학습',
+                      description: '의원님이 써 오신 문장의 결·어미·수사 습관을 6차원으로 분석합니다.'
+                    },
+                    {
+                      icon: <Share aria-hidden="true" />,
+                      step: '03',
+                      title: '채널별 길이·리듬 변환',
+                      description: '블로그는 늘리고, X는 압축하고, 인스타는 리듬을 맞춥니다.'
+                    },
+                    {
+                      icon: <FactCheck aria-hidden="true" />,
+                      step: '04',
+                      title: '위험 표현 1차 점검',
+                      description: '허위사실·비방·기부행위 암시를 채널별로 미리 걸러냅니다.'
+                    }
+                  ].map((item, index) => (
+                    <Grid item xs={12} sm={6} md={3} key={index}>
+                      <motion.div
+                        initial={{ opacity: 0, y: 24 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.5, delay: index * 0.1 }}
+                      >
+                        <Box sx={{ textAlign: 'center', position: 'relative', zIndex: 1 }}>
+                          <Box sx={{
+                            width: 56, height: 56,
+                            borderRadius: '50%',
+                            bgcolor: 'var(--color-primary)',
+                            color: 'var(--color-text-inverse)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            mx: 'auto', mb: 3,
+                            fontSize: '0.9rem', fontWeight: 800,
+                            letterSpacing: '0.06em',
+                            boxShadow: brandShadowLg,
+                            ...numericStyle
+                          }}>
+                            {item.step}
+                          </Box>
+                          <Box sx={{
+                            mb: 2,
+                            '& .MuiSvgIcon-root': {
+                              color: 'var(--color-primary)',
+                              fontSize: 36
+                            }
+                          }}>
+                            {item.icon}
+                          </Box>
+                          <Typography sx={{
+                            fontWeight: 700,
+                            mb: 1,
+                            color: 'var(--color-text-primary)',
+                            fontSize: { xs: '1.05rem', md: '1.1rem' },
+                            wordBreak: 'keep-all'
+                          }}>
+                            {item.title}
+                          </Typography>
+                          <Typography sx={{
+                            color: 'var(--color-text-secondary)',
+                            fontSize: { xs: '0.9rem', md: '0.95rem' },
+                            lineHeight: 1.65,
+                            wordBreak: 'keep-all'
+                          }}>
+                            {item.description}
+                          </Typography>
                         </Box>
-                        <Typography sx={{
-                          fontWeight: 700,
-                          mb: 1,
-                          color: 'var(--color-text-primary)',
-                          fontSize: { xs: '1.1rem', md: '1.2rem' },
-                          wordBreak: 'keep-all'
-                        }}>
-                          {item.title}
-                        </Typography>
-                        <Typography sx={{
-                          color: 'var(--color-text-secondary)',
-                          fontSize: { xs: '0.95rem', md: '1rem' },
-                          lineHeight: 1.65,
-                          wordBreak: 'keep-all'
-                        }}>
-                          {item.description}
-                        </Typography>
-                      </Box>
-                    </motion.div>
-                  </Grid>
-                ))}
-              </Grid>
+                      </motion.div>
+                    </Grid>
+                  ))}
+                </Grid>
+              </Box>
             </Container>
           </motion.div>
 
@@ -720,7 +724,7 @@ AI가 이미 학습하고 있습니다.
                     mb: 2,
                     textAlign: 'center',
                     color: 'var(--color-text-primary)',
-                    fontSize: { xs: '2rem', md: '2.8rem' },
+                    fontSize: { xs: '1.75rem', md: '2.4rem' },
                     letterSpacing: '-0.02em',
                     wordBreak: 'keep-all',
                     textWrap: 'balance'
@@ -732,7 +736,7 @@ AI가 이미 학습하고 있습니다.
                   mb: 8,
                   textAlign: 'center',
                   color: 'var(--color-text-secondary)',
-                  fontSize: { xs: '1rem', md: '1.125rem' },
+                  fontSize: { xs: '1rem', md: '1.1rem' },
                   lineHeight: 1.7,
                   wordBreak: 'keep-all'
                 }}>
@@ -1092,91 +1096,115 @@ AI가 이미 학습하고 있습니다.
                 일반 AI에는 없는, 정치 콘텐츠 변환에 특화된 설계.
               </Typography>
 
-              <Grid container spacing={4}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 6, md: 10 } }}>
                 {differentiators.map((value, index) => (
-                  <Grid item xs={12} sm={4} key={index}>
-                    <motion.div
-                      initial={{ opacity: 0, y: 24 }}
-                      whileInView={{ opacity: 1, y: 0 }}
-                      viewport={{ once: true }}
-                      transition={{ duration: 0.5, delay: index * 0.15 }}
-                      style={{ height: '100%' }}
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, y: 24 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true, margin: '-60px' }}
+                    transition={{ duration: 0.5, delay: index * 0.1 }}
+                  >
+                    <Grid
+                      container
+                      spacing={{ xs: 3, md: 6 }}
+                      alignItems="center"
+                      direction={index % 2 === 1 ? 'row-reverse' : 'row'}
                     >
-                      <Card
-                        elevation={0}
-                        onClick={() => setSelectedFeature(value)}
-                        onKeyDown={(e) => handleCardKeyDown(e, value)}
-                        tabIndex={0}
-                        role="button"
-                        aria-label={`${value.title} - ${value.description}. 클릭하여 자세히 보기`}
-                        sx={{
-                          textAlign: 'center',
-                          p: { xs: 2, sm: 3, md: 4 },
-                          height: '100%',
-                          borderRadius: 'var(--radius-lg)',
-                          bgcolor: 'var(--color-surface)',
-                          border: '2px solid var(--color-border)',
-                          boxShadow: brandShadow,
-                          cursor: 'pointer',
-                          transition: springTransition,
-                          '&:hover, &:focus': {
-                            borderColor: 'var(--color-primary)',
-                            transform: 'translateY(-4px)',
-                            boxShadow: brandShadowLg
-                          },
-                          '&:focus-visible': {
-                            outline: '2px solid var(--color-primary)',
-                            outlineOffset: '2px'
-                          }
-                        }}
-                      >
-                        <CardContent>
-                          <Box sx={{ mb: 2, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                            <Box sx={{
-                              width: { xs: 50, sm: 60, md: 80 },
-                              height: { xs: 50, sm: 60, md: 80 },
-                              display: 'flex',
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                              '& .MuiSvgIcon-root': {
-                                color: 'var(--color-primary)',
-                                fontSize: { xs: 40, sm: 50, md: 64 }
-                              }
-                            }}>
-                              {value.icon}
-                            </Box>
+                      {/* 아이콘 패널 */}
+                      <Grid item xs={12} md={4}>
+                        <Box
+                          onClick={() => setSelectedFeature(value)}
+                          onKeyDown={(e) => handleCardKeyDown(e, value)}
+                          tabIndex={0}
+                          role="button"
+                          aria-label={`${value.title} 자세히 보기`}
+                          sx={{
+                            p: { xs: 4, md: 6 },
+                            borderRadius: 'var(--radius-lg)',
+                            bgcolor: 'var(--color-primary-lighter)',
+                            border: '1px solid rgba(21,36,132,0.12)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 2,
+                            cursor: 'pointer',
+                            minHeight: { md: 220 },
+                            transition: springTransition,
+                            '&:hover': {
+                              bgcolor: 'rgba(21,36,132,0.1)',
+                              transform: 'scale(1.02)',
+                              boxShadow: brandShadowLg
+                            },
+                            '&:focus-visible': {
+                              outline: '2px solid var(--color-primary)',
+                              outlineOffset: '2px'
+                            }
+                          }}
+                        >
+                          <Box sx={{ '& .MuiSvgIcon-root': { color: 'var(--color-primary)', fontSize: 72 } }}>
+                            {value.icon}
                           </Box>
-                          <Typography
-                            variant="h4"
-                            sx={{
-                              fontWeight: 700,
-                              mb: 1.5,
-                              color: 'var(--color-text-primary)',
-                              fontSize: { xs: '1.1rem', sm: '1.4rem', md: '1.8rem', lg: '2rem' },
-                              lineHeight: 1.3,
-                              wordBreak: 'keep-all'
-                            }}
-                          >
-                            {value.title}
-                          </Typography>
-                          <Typography
-                            variant="body1"
-                            sx={{
-                              color: 'var(--color-text-secondary)',
-                              fontSize: { xs: '0.85rem', sm: '0.95rem', md: '1.05rem', lg: '1.15rem' },
-                              fontWeight: 400,
-                              lineHeight: 1.5,
-                              wordBreak: 'keep-all'
-                            }}
-                          >
-                            {value.description}
-                          </Typography>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  </Grid>
+                        </Box>
+                      </Grid>
+
+                      {/* 텍스트 패널 */}
+                      <Grid item xs={12} md={8}>
+                        <Typography sx={{
+                          fontSize: '0.8rem', fontWeight: 800,
+                          letterSpacing: '0.12em',
+                          color: 'var(--color-primary)',
+                          mb: 1.5,
+                          ...numericStyle
+                        }}>
+                          {String(index + 1).padStart(2, '0')}
+                        </Typography>
+                        <Typography
+                          variant="h3"
+                          sx={{
+                            fontWeight: 700,
+                            mb: 1.5,
+                            color: 'var(--color-text-primary)',
+                            fontSize: { xs: '1.5rem', md: '2rem' },
+                            letterSpacing: '-0.02em',
+                            wordBreak: 'keep-all'
+                          }}
+                        >
+                          {value.title}
+                        </Typography>
+                        <Typography sx={{
+                          color: 'var(--color-text-secondary)',
+                          fontSize: { xs: '1rem', md: '1.1rem' },
+                          lineHeight: 1.7,
+                          wordBreak: 'keep-all',
+                          mb: 3
+                        }}>
+                          {value.description}
+                        </Typography>
+                        <Button
+                          onClick={() => setSelectedFeature(value)}
+                          variant="outlined"
+                          size="small"
+                          sx={{
+                            color: 'var(--color-primary)',
+                            borderColor: 'var(--color-primary)',
+                            borderRadius: 'var(--radius-md)',
+                            px: 3, py: 1,
+                            fontSize: '0.9rem',
+                            fontWeight: 600,
+                            textTransform: 'none',
+                            transition: springTransition,
+                            '&:hover': { bgcolor: 'var(--color-primary-lighter)' }
+                          }}
+                        >
+                          자세히 보기
+                        </Button>
+                      </Grid>
+                    </Grid>
+                  </motion.div>
                 ))}
-              </Grid>
+              </Box>
             </Container>
           </motion.div>
 
@@ -1198,7 +1226,7 @@ AI가 이미 학습하고 있습니다.
                     mb: 2,
                     textAlign: 'center',
                     color: 'var(--color-text-primary)',
-                    fontSize: { xs: '2rem', md: '2.8rem' },
+                    fontSize: { xs: '1.6rem', md: '2.2rem' },
                     letterSpacing: '-0.02em',
                     wordBreak: 'keep-all',
                     textWrap: 'balance'
@@ -1479,53 +1507,62 @@ AI가 이미 학습하고 있습니다.
                   자주 묻는 질문
                 </Typography>
 
-                {displayedFAQs.map((faq, index) => (
-                  <motion.div
-                    key={faq.id}
-                    initial={{ opacity: 0, y: 16 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.4, delay: index * 0.08 }}
-                  >
-                    <Accordion
-                      expanded={expandedFAQ === faq.id}
-                      onChange={handleFAQChange(faq.id)}
-                      elevation={0}
-                      sx={{
-                        mb: 2,
-                        borderRadius: 'var(--radius-md)',
-                        bgcolor: 'var(--color-background)',
-                        border: '1px solid var(--color-border)',
-                        borderTop: expandedFAQ === faq.id ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
-                        boxShadow: 'none',
-                        transition: 'all var(--transition-normal)',
-                        '&:before': { display: 'none' },
-                        '&:first-of-type': { borderRadius: 'var(--radius-md)' },
-                        '&:last-of-type': { borderRadius: 'var(--radius-md)' },
-                        '&.Mui-expanded': { margin: '0 0 16px 0' },
-                        '&:hover': { borderColor: 'var(--color-primary)' }
-                      }}
-                    >
-                      <AccordionSummary
-                        expandIcon={<ExpandMore sx={{ color: 'var(--color-primary)' }} />}
-                        sx={{ py: 3, px: 4 }}
-                      >
-                        <Typography sx={{ fontWeight: 600, fontSize: '1.25rem', color: 'var(--color-text-primary)' }}>
-                          {faq.question}
-                        </Typography>
-                      </AccordionSummary>
-                      <AccordionDetails sx={{ px: 4, py: 3, bgcolor: 'var(--color-background)' }}>
-                        <Typography sx={{
-                          color: 'var(--color-text-secondary)',
-                          fontSize: '1.125rem',
-                          lineHeight: 1.8
-                        }}>
-                          {faq.answer}
-                        </Typography>
-                      </AccordionDetails>
-                    </Accordion>
-                  </motion.div>
-                ))}
+                <Grid container spacing={3} id="faq-list">
+                  {[0, 1].map((colIndex) => (
+                    <Grid item xs={12} md={6} key={colIndex}>
+                      {displayedFAQs
+                        .filter((_, i) => i % 2 === colIndex)
+                        .map((faq, index) => (
+                          <motion.div
+                            key={faq.id}
+                            initial={{ opacity: 0, y: 16 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            viewport={{ once: true }}
+                            transition={{ duration: 0.4, delay: index * 0.08 }}
+                          >
+                            <Accordion
+                              expanded={expandedFAQ === faq.id}
+                              onChange={handleFAQChange(faq.id)}
+                              elevation={0}
+                              sx={{
+                                mb: 2,
+                                borderRadius: 'var(--radius-md)',
+                                bgcolor: 'var(--color-background)',
+                                border: '1px solid var(--color-border)',
+                                borderTop: expandedFAQ === faq.id ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                boxShadow: 'none',
+                                transition: 'all var(--transition-normal)',
+                                '&:before': { display: 'none' },
+                                '&:first-of-type': { borderRadius: 'var(--radius-md)' },
+                                '&:last-of-type': { borderRadius: 'var(--radius-md)' },
+                                '&.Mui-expanded': { margin: '0 0 16px 0' },
+                                '&:hover': { borderColor: 'var(--color-primary)' }
+                              }}
+                            >
+                              <AccordionSummary
+                                expandIcon={<ExpandMore sx={{ color: 'var(--color-primary)' }} />}
+                                sx={{ py: 2.5, px: 3 }}
+                              >
+                                <Typography sx={{ fontWeight: 600, fontSize: '1.05rem', color: 'var(--color-text-primary)', wordBreak: 'keep-all' }}>
+                                  {faq.question}
+                                </Typography>
+                              </AccordionSummary>
+                              <AccordionDetails sx={{ px: 3, py: 2.5, bgcolor: 'var(--color-background)' }}>
+                                <Typography sx={{
+                                  color: 'var(--color-text-secondary)',
+                                  fontSize: '1rem',
+                                  lineHeight: 1.8,
+                                  wordBreak: 'keep-all'
+                                }}>
+                                  {faq.answer}
+                                </Typography>
+                              </AccordionDetails>
+                            </Accordion>
+                          </motion.div>
+                        ))}
+                    </Grid>
+                  ))}
+                </Grid>
 
                 {moreFAQs.length > 0 && (
                   <Box sx={{ textAlign: 'center', mt: 8 }}>
@@ -1568,6 +1605,11 @@ AI가 이미 학습하고 있습니다.
           {/* ════════════════════════════════════════════════════════
               가격 섹션
               ════════════════════════════════════════════════════════ */}
+          <Box sx={{
+            background: 'linear-gradient(160deg, rgba(21,36,132,0.06) 0%, rgba(21,36,132,0.015) 100%)',
+            borderTop: '1px solid rgba(21,36,132,0.10)',
+            borderBottom: '1px solid rgba(21,36,132,0.10)'
+          }}>
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -1732,6 +1774,7 @@ AI가 이미 학습하고 있습니다.
               </Card>
             </Container>
           </motion.div>
+          </Box>
 
         </Box>
 
@@ -1750,7 +1793,7 @@ AI가 이미 학습하고 있습니다.
         >
           <Typography variant="body2" sx={{ lineHeight: 2, fontSize: '0.95rem' }}>
             {BRANDING.companyNameKo} | 사업자등록번호: 256-24-02174 | 통신판매업신고번호: (비움)<br />
-            대표: 강정구 | 인천광역시 계양구 용종로 124, 학마을한진아파트 139동 1504호 | 대표번호: 010-4885-6206<br />
+            대표: 강정구 | 인천광역시 계양구<br />
             Copyright 2025. {BRANDING.companyNameEn}. All Rights Reserved.
           </Typography>
         </Box>
