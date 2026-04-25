@@ -5,11 +5,11 @@ import {
   List, ListItemButton, ListItemText,
   Dialog, DialogTitle, DialogContent, DialogActions,
   Accordion, AccordionSummary, AccordionDetails,
-  Alert, Snackbar, Chip, Divider, IconButton,
+  Alert, Snackbar, Chip, Divider, IconButton, useTheme,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import { ExpandMore, Save, RestartAlt, Add, Delete, AutoStories, Close } from '@mui/icons-material';
 import { callFunctionWithRetry } from '../../services/firebaseService';
-import { colors } from '../../theme/tokens';
 
 // ──────────────────────────────────────────────────────
 // 메타데이터
@@ -324,7 +324,7 @@ function ArgumentItemCard({ item, fields, onEdit, onDelete }) {
   );
 }
 
-function renderArgumentLayer(buf, setArgField, addArgItem, removeArgItem) {
+function renderArgumentLayer(buf, setArgField, addArgItem, removeArgItem, primaryColor) {
   if (!buf) return null;
   return Object.entries(DOMAIN_LABELS).map(([domain, domainLabel]) => (
     <Accordion key={domain} disableGutters elevation={0}
@@ -334,8 +334,8 @@ function renderArgumentLayer(buf, setArgField, addArgItem, removeArgItem) {
         mb: 1,
         '&:before': { display: 'none' },
         '&.Mui-expanded': {
-          borderColor: 'rgba(21, 36, 132, 0.3)',
-          borderLeft: `2px solid ${colors.brand.primary}`,
+          borderColor: alpha(primaryColor, 0.3),
+          borderLeft: `2px solid ${primaryColor}`,
         },
       }}>
       <AccordionSummary expandIcon={<ExpandMore />}>
@@ -360,9 +360,9 @@ function renderArgumentLayer(buf, setArgField, addArgItem, removeArgItem) {
                 onClick={() => addArgItem(domain, subKey)}
                 sx={{
                   mt: 0.5,
-                  borderColor: 'rgba(21, 36, 132, 0.4)',
-                  color: colors.brand.primary,
-                  '&:hover': { borderColor: colors.brand.primary, bgcolor: 'rgba(21, 36, 132, 0.05)' },
+                  borderColor: alpha(primaryColor, 0.4),
+                  color: primaryColor,
+                  '&:hover': { borderColor: primaryColor, bgcolor: alpha(primaryColor, 0.05) },
                 }}>
                 항목 추가
               </Button>
@@ -379,6 +379,8 @@ function renderArgumentLayer(buf, setArgField, addArgItem, removeArgItem) {
 // ──────────────────────────────────────────────────────
 
 export default function LeadershipManager({ open, onClose }) {
+  const theme = useTheme();
+  const P = theme.palette.primary.main;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null);
   const [resetting, setResetting] = useState(null);
@@ -482,7 +484,7 @@ export default function LeadershipManager({ open, onClose }) {
       case 'BALANCED_APPROACH':      return renderBalancedApproach(buf, sf);
       case 'PREFERRED_EXPRESSIONS':  return renderPreferredExpressions(buf, sf);
       case 'PRAGMATIC_EXPERIENCE':   return renderPragmaticExperience(buf, sf);
-      case 'ARGUMENT_LAYER':         return renderArgumentLayer(buf, setArgField, addArgItem, removeArgItem);
+      case 'ARGUMENT_LAYER':         return renderArgumentLayer(buf, setArgField, addArgItem, removeArgItem, P);
       default: return null;
     }
   };
@@ -520,9 +522,9 @@ export default function LeadershipManager({ open, onClose }) {
             flexShrink: 0,
           }}
         >
-          <AutoStories sx={{ color: colors.brand.primary, fontSize: 22 }} />
+          <AutoStories sx={{ color: P, fontSize: 22 }} />
           <Box sx={{ flex: 1 }}>
-            <Typography variant="h6" sx={{ fontWeight: 700, color: colors.brand.primary, lineHeight: 1.2 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, color: P, lineHeight: 1.2 }}>
               리더십 철학 관리
             </Typography>
             {overrideCount > 0 && (
@@ -575,14 +577,14 @@ export default function LeadershipManager({ open, onClose }) {
                         px: { xs: 1.5, sm: 2 },
                         borderLeft: '3px solid',
                         borderLeftColor: selected === meta.key
-                          ? colors.brand.primary
+                          ? P
                           : 'transparent',
                         transition: 'border-color 0.15s',
                         '&.Mui-selected': {
-                          bgcolor: 'rgba(21, 36, 132, 0.08)',
+                          bgcolor: alpha(P, 0.08),
                         },
                         '&.Mui-selected:hover': {
-                          bgcolor: 'rgba(21, 36, 132, 0.12)',
+                          bgcolor: alpha(P, 0.12),
                         },
                       }}
                     >
@@ -597,9 +599,9 @@ export default function LeadershipManager({ open, onClose }) {
                                 sx={{
                                   height: 15,
                                   fontSize: '0.58rem',
-                                  bgcolor: 'rgba(21, 36, 132, 0.1)',
-                                  color: colors.brand.primary,
-                                  border: '1px solid rgba(21, 36, 132, 0.25)',
+                                  bgcolor: alpha(P, 0.1),
+                                  color: P,
+                                  border: `1px solid ${alpha(P, 0.25)}`,
                                   '& .MuiChip-label': { px: 0.75 },
                                 }}
                               />
@@ -685,7 +687,7 @@ export default function LeadershipManager({ open, onClose }) {
             disabled={saving === selected}
             onClick={() => handleSave(selected)}
             startIcon={saving === selected ? <CircularProgress size={14} /> : <Save />}
-            sx={{ bgcolor: colors.brand.primary, '&:hover': { bgcolor: '#1e30a0' } }}
+            sx={{ bgcolor: P, '&:hover': { bgcolor: theme.palette.primary.dark } }}
           >
             저장
           </Button>

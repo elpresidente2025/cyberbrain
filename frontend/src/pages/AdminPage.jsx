@@ -132,7 +132,7 @@ function AdminPage() {
               gap: 2,
               mb: `${spacing.xl}px`,
               pb: `${spacing.md}px`,
-              borderBottom: `2px solid ${theme.palette.ui?.header || colors.brand.primary}`
+              borderBottom: `2px solid ${theme.palette.primary.main}`
             }}
           >
             <Box>
@@ -163,15 +163,15 @@ function AdminPage() {
                 onClick={handlePreviewOnboarding}
                 aria-label="온보딩 미리보기 열기"
                 sx={{
-                  borderColor: colors.brand.primary,
-                  color: colors.brand.primary,
+                  borderColor: theme.palette.primary.main,
+                  color: theme.palette.primary.main,
                   '&:hover': {
-                    borderColor: '#007a74',
-                    bgcolor: 'rgba(0, 98, 97, 0.08)',
+                    borderColor: theme.palette.primary.dark,
+                    bgcolor: `rgba(${theme.palette.mode === 'dark' ? '107,130,224' : '21,36,132'}, 0.08)`,
                     transform: 'translateY(-1px)'
                   },
                   '&:focus-visible': {
-                    outline: '2px solid #006261',
+                    outline: `2px solid ${theme.palette.primary.main}`,
                     outlineOffset: '2px'
                   }
                 }}
@@ -184,15 +184,15 @@ function AdminPage() {
                 onClick={handleOpenPerformanceMonitor}
                 aria-label="성능 모니터 열기"
                 sx={{
-                  bgcolor: colors.brand.primary,
+                  bgcolor: theme.palette.primary.main,
                   color: 'white',
                   '&:hover': {
-                    bgcolor: '#007a74',
+                    bgcolor: theme.palette.primary.dark,
                     transform: 'translateY(-1px)',
-                    boxShadow: '0 4px 12px rgba(0, 98, 97, 0.3)'
+                    boxShadow: `0 4px 12px rgba(${theme.palette.mode === 'dark' ? '107,130,224' : '21,36,132'}, 0.3)`
                   },
                   '&:focus-visible': {
-                    outline: '2px solid #006261',
+                    outline: `2px solid ${theme.palette.primary.main}`,
                     outlineOffset: '2px'
                   }
                 }}
@@ -304,11 +304,11 @@ function AdminPage() {
               }}
             >
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <AutoStories sx={{ color: colors.brand.primary, fontSize: 26 }} />
+                <AutoStories sx={{ color: theme.palette.primary.main, fontSize: 26 }} />
                 <Box>
                   <Typography
                     variant="subtitle1"
-                    sx={{ fontWeight: 700, color: colors.brand.primary, lineHeight: 1.3 }}
+                    sx={{ fontWeight: 700, color: theme.palette.primary.main, lineHeight: 1.3 }}
                   >
                     리더십 철학 관리
                   </Typography>
@@ -323,11 +323,11 @@ function AdminPage() {
                 onClick={() => setLeadershipOpen(true)}
                 aria-label="리더십 철학 관리 편집 열기"
                 sx={{
-                  borderColor: 'rgba(21, 36, 132, 0.4)',
-                  color: colors.brand.primary,
+                  borderColor: theme.palette.primary.main,
+                  color: theme.palette.primary.main,
                   '&:hover': {
-                    borderColor: colors.brand.primary,
-                    bgcolor: 'rgba(21, 36, 132, 0.05)',
+                    borderColor: theme.palette.primary.dark,
+                    bgcolor: `rgba(${theme.palette.mode === 'dark' ? '107,130,224' : '21,36,132'}, 0.05)`,
                   },
                 }}
               >

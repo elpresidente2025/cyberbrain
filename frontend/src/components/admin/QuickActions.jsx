@@ -10,6 +10,7 @@ import {
   useTheme,
   Snackbar
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import {
   Download,
   People,
@@ -26,43 +27,41 @@ import HongKongNeonCard from '../HongKongNeonCard';
 import { getAdminStats, callFunctionWithRetry } from '../../services/firebaseService';
 import { buildFunctionsUrl } from '../../config/branding';
 
-// 단일 액센트: 브랜드 블루 (#152484) + 위험 동작 빨강 (#d22730)
-const PRIMARY = '#152484';
-const PRIMARY_HOVER = '#1e30a0';
 const DANGER = '#d22730';
-
-const primaryContained = {
-  bgcolor: PRIMARY,
-  color: 'white',
-  fontWeight: 600,
-  '&:hover': {
-    bgcolor: PRIMARY_HOVER,
-    transform: 'translateY(-2px)',
-    boxShadow: '0 6px 18px rgba(21, 36, 132, 0.32)',
-  },
-  '&:focus-visible': { outline: `2px solid ${PRIMARY}`, outlineOffset: '2px' },
-};
-
-const primaryOutlined = {
-  borderColor: 'rgba(21, 36, 132, 0.4)',
-  color: PRIMARY,
-  '&:hover': {
-    borderColor: PRIMARY,
-    bgcolor: 'rgba(21, 36, 132, 0.05)',
-    transform: 'translateY(-2px)',
-  },
-  '&:focus-visible': { outline: `2px solid ${PRIMARY}`, outlineOffset: '2px' },
-};
-
-const sysBtn = {
-  borderColor: 'rgba(21, 36, 132, 0.3)',
-  color: PRIMARY,
-  '&:hover': { borderColor: PRIMARY, bgcolor: 'rgba(21, 36, 132, 0.05)' },
-  '&.Mui-disabled': { opacity: 0.45 },
-};
 
 function QuickActions() {
   const theme = useTheme();
+  const P = theme.palette.primary.main;
+
+  const primaryContained = {
+    bgcolor: P,
+    color: 'white',
+    fontWeight: 600,
+    '&:hover': {
+      bgcolor: theme.palette.primary.dark,
+      transform: 'translateY(-2px)',
+      boxShadow: `0 6px 18px ${alpha(P, 0.32)}`,
+    },
+    '&:focus-visible': { outline: `2px solid ${P}`, outlineOffset: '2px' },
+  };
+
+  const primaryOutlined = {
+    borderColor: alpha(P, 0.4),
+    color: P,
+    '&:hover': {
+      borderColor: P,
+      bgcolor: alpha(P, 0.05),
+      transform: 'translateY(-2px)',
+    },
+    '&:focus-visible': { outline: `2px solid ${P}`, outlineOffset: '2px' },
+  };
+
+  const sysBtn = {
+    borderColor: alpha(P, 0.3),
+    color: P,
+    '&:hover': { borderColor: P, bgcolor: alpha(P, 0.05) },
+    '&.Mui-disabled': { opacity: 0.45 },
+  };
   const [userListOpen, setUserListOpen] = useState(false);
   const [statusUpdateOpen, setStatusUpdateOpen] = useState(false);
   const [serviceMode, setServiceMode] = useState(null);
@@ -360,7 +359,7 @@ function QuickActions() {
             variant="h6"
             component="h2"
             id="quick-actions-heading"
-            sx={{ fontWeight: 700, color: theme.palette.ui?.header || PRIMARY }}
+            sx={{ fontWeight: 700, color: theme.palette.text.primary }}
           >
             빠른 작업
           </Typography>
@@ -371,12 +370,12 @@ function QuickActions() {
               sx={{
                 bgcolor: serviceMode
                   ? 'rgba(245, 158, 11, 0.12)'
-                  : 'rgba(21, 36, 132, 0.1)',
-                color: serviceMode ? '#d97706' : PRIMARY,
+                  : alpha(P, 0.1),
+                color: serviceMode ? '#d97706' : P,
                 border: '1px solid',
                 borderColor: serviceMode
                   ? 'rgba(245, 158, 11, 0.35)'
-                  : 'rgba(21, 36, 132, 0.3)',
+                  : alpha(P, 0.3),
                 fontWeight: 600,
                 fontSize: '0.7rem',
               }}

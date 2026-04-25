@@ -6,7 +6,10 @@ const createCustomTheme = (isDarkMode) => createTheme({
   palette: {
     mode: isDarkMode ? 'dark' : 'light',
     primary: {
-      main: colors.brand.primary,
+      main: isDarkMode ? '#6b82e0' : colors.brand.primary,
+      light: '#6b82e0',
+      dark: '#0d1a5c',
+      contrastText: '#ffffff',
     },
     // 브랜드 컬러 (디자인 토큰 통합)
     brand: colors.brand,
