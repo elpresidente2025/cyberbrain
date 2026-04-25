@@ -20,6 +20,11 @@ def _strip_warning_box_artifacts(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _cdata(text: str) -> str:
+    """XML CDATA 섹션으로 감싼다. 내부 ']]>' 시퀀스는 분리해 처리한다."""
+    return "<![CDATA[" + str(text or "").replace("]]>", "]]]]><![CDATA[>") + "]]>"
+
+
 def generate_role_warning_bundle(
     user_profile: Optional[Dict[str, Any]] = None,
     author_bio: str = "",
@@ -44,7 +49,11 @@ def generate_role_warning_bundle(
     )
     non_lawmaker_clean = _strip_warning_box_artifacts(non_lawmaker_text)
     if non_lawmaker_clean:
-        blocks.append(f"<non_lawmaker_warning>\n{non_lawmaker_clean}\n</non_lawmaker_warning>")
+        blocks.append(
+            "<non_lawmaker_warning>\n"
+            + _cdata(non_lawmaker_clean)
+            + "\n</non_lawmaker_warning>"
+        )
 
     if not blocks:
         return ""

@@ -241,3 +241,93 @@ def test_build_structure_prompt_role_warning_before_reference_materials():
     assert role_idx < ref_idx, (
         f"role_warning_bundle({role_idx})이 reference_materials({ref_idx})보다 뒤에 위치함"
     )
+
+
+def test_build_structure_prompt_role_warning_before_execution_plan():
+    from agents.core.prompt_builder import build_structure_prompt
+
+    prompt = build_structure_prompt({
+        "topic": "샘플구 생활 복지 정책",
+        "category": "policy-proposal",
+        "writingMethod": "logical_writing",
+        "authorName": "홍길동",
+        "authorBio": "샘플구의원 예비후보 홍길동",
+        "instructions": "주민 생활 개선",
+        "newsContext": "지역 복지 논의",
+        "ragContext": "",
+        "targetWordCount": 1800,
+        "contextAnalysis": {},
+        "userProfile": {
+            "name": "홍길동",
+            "position": "기초의원",
+            "status": "예비",
+            "politicalExperience": "정치 신인",
+            "regionMetro": "샘플특별시",
+            "regionLocal": "샘플구",
+        },
+        "userKeywords": ["홍길동", "샘플구"],
+        "lengthSpec": {
+            "body_sections": 3,
+            "total_sections": 5,
+            "paragraphs_per_section": 3,
+            "per_section_min": 180,
+            "per_section_max": 320,
+        },
+    })
+
+    role_idx = prompt.find("<role_warning_bundle>")
+    plan_idx = prompt.find("<execution_plan")
+
+    assert role_idx != -1, "role_warning_bundle이 프롬프트에 없음"
+    if plan_idx != -1:
+        assert role_idx < plan_idx, (
+            f"role_warning_bundle({role_idx})이 execution_plan({plan_idx})보다 뒤에 위치함"
+        )
+
+
+def test_build_structure_prompt_basic_lawmaker_contains_scale_guard():
+    """기초의원 프롬프트에 국가급 정책 스케일 금지 텍스트가 포함되어야 한다."""
+    from agents.core.prompt_builder import build_structure_prompt
+
+    prompt = build_structure_prompt({
+        "topic": "샘플구 기본소득 정책",
+        "category": "policy-proposal",
+        "writingMethod": "logical_writing",
+        "authorName": "홍길동",
+        "authorBio": "샘플구의원 예비후보 홍길동",
+        "instructions": "기본소득 도입과 증세 합의 필요성",
+        "newsContext": "",
+        "ragContext": "",
+        "targetWordCount": 1800,
+        "contextAnalysis": {},
+        "userProfile": {
+            "name": "홍길동",
+            "position": "기초의원",
+            "status": "예비",
+            "politicalExperience": "정치 신인",
+            "regionMetro": "샘플특별시",
+            "regionLocal": "샘플구",
+        },
+        "userKeywords": ["홍길동", "샘플구"],
+        "lengthSpec": {
+            "body_sections": 3,
+            "total_sections": 5,
+            "paragraphs_per_section": 3,
+            "per_section_min": 180,
+            "per_section_max": 320,
+        },
+    })
+
+    # forbidden_direct_claims 항목이 프롬프트에 있어야 함
+    assert "전국 단위 기본소득을 시행하겠습니다" in prompt
+    assert "증세 합의를 이끌겠습니다" in prompt
+
+    # rewrite_rules의 source_pattern과 target_frame이 들어가야 함
+    assert "기본소득, 기본소득제, BI" in prompt
+    assert "생활비 부담을 줄이는 지역형 지원 조례 검토" in prompt
+
+    # role_warning_bundle이 reference_materials보다 앞에 있어야 함
+    role_idx = prompt.find("<role_warning_bundle>")
+    ref_idx = prompt.find("<reference_materials")
+    assert role_idx != -1
+    assert role_idx < ref_idx or ref_idx == -1

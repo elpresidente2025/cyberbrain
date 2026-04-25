@@ -411,7 +411,12 @@ class WriterAgent:
         election_instruction = election_ctx.get('prompt_instruction', '')
         if election_instruction:
             prompt_sections.append(election_instruction)
-        
+
+        # 6.05 Role governance + 신분/시제 가드 — ContextAnalyzer 소재보다 먼저 읽어야 스케일 제한이 작동함
+        warnings = self.build_warnings(user_profile, author_bio)
+        if warnings:
+            prompt_sections.append(warnings)
+
         # 6.1 Context Analyzer
         use_context_analyzer = True
         context_analysis = {}
@@ -491,11 +496,6 @@ class WriterAgent:
                 except Exception as e:
                     logger.error(f"❌ [WriterAgent] ContextAnalyzer error: {e}")
         
-        # 6.7 Warnings
-        warnings = self.build_warnings(user_profile, author_bio)
-        if warnings:
-            prompt_sections.append(warnings)
-            
         if party_stance_guide:
             prompt_sections.append(party_stance_guide)
             
