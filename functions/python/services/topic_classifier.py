@@ -255,6 +255,54 @@ POLICY_COMMITMENT_PATTERNS = (
     r"만들겠습니다",
 )
 
+SUPPORT_APPEAL_STRONG_PATTERNS = (
+    r"지지해\s*주세요",
+    r"지지해\s*주십시오",
+    r"지지\s*부탁",
+    r"한\s*표\s*부탁",
+    r"투표\s*부탁",
+    r"기회를\s*주세요",
+    r"기회를\s*주십시오",
+    r"꼭\s*지지해",
+)
+
+SUPPORT_APPEAL_WEAK_PATTERNS = (
+    r"함께해\s*주세요",
+    r"함께해\s*주십시오",
+    r"응원해\s*주세요",
+    r"응원해\s*주십시오",
+    r"선택해\s*주세요",
+    r"선택해\s*주십시오",
+    r"믿어\s*주세요",
+    r"믿어\s*주십시오",
+    r"힘을\s*모아",
+    r"힘이\s*되어",
+    r"힘을\s*보태",
+)
+
+SUPPORT_APPEAL_CONTEXT_AMPLIFIERS = (
+    r"예비후보",
+    r"청년\s*후보",
+    r"후보\s*등록",
+    r"출마\s*(?:를|를\s*선언|를\s*결심|합니다|했습니다)",
+    r"선거\s*(?:에서|를\s*앞두고|를\s*향해|운동)",
+)
+
+
+def _detect_support_appeal(stance_text: str, policy_signal_score: int) -> bool:
+    """지지 호소(support_appeal) 서브카테고리 해당 여부 판정.
+
+    강한 신호 1개 OR (약한 신호 + 문맥 증폭자)의 합이 2 이상이면 True.
+    정책 신호가 3 이상이면 정책 글로 판단하여 False.
+    """
+    if policy_signal_score >= 3:
+        return False
+    if _pattern_score(stance_text, SUPPORT_APPEAL_STRONG_PATTERNS) >= 1:
+        return True
+    weak = _pattern_score(stance_text, SUPPORT_APPEAL_WEAK_PATTERNS)
+    amp = min(_pattern_score(stance_text, SUPPORT_APPEAL_CONTEXT_AMPLIFIERS), 1)
+    return weak + amp >= 2
+
 
 def normalize_requested_category(raw_category: Any, raw_sub_category: Any = "") -> tuple[str, str]:
     sub_category = str(raw_sub_category or "").strip()
@@ -463,11 +511,26 @@ def refine_with_stance(primary: Dict[str, Any], stance_text: str) -> Dict[str, A
         if policy_signal_score >= 2 or policy_commitment_score >= 2:
             pass  # policy signal이 강하면 personal_reflection 오버라이드 차단
         else:
+            if _detect_support_appeal(normalized_stance, policy_signal_score):
+                return _build_result(
+                    category="daily-communication",
+                    sub_category="support_appeal",
+                    confidence=max(confidence, 0.86),
+                    source=f"{source}+stance_support_appeal",
+                )
             return _build_result(
                 category="daily-communication",
                 confidence=max(confidence, 0.86),
                 source=f"{source}+stance_reflection",
             )
+
+    if category == "daily-communication" and _detect_support_appeal(normalized_stance, policy_signal_score):
+        return _build_result(
+            category="daily-communication",
+            sub_category="support_appeal",
+            confidence=max(confidence, 0.84),
+            source=f"{source}+stance_support_appeal",
+        )
 
     if category == "current-affairs" and diagnosis_score >= 1:
         return _build_result(

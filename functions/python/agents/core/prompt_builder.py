@@ -23,6 +23,7 @@ from ..templates.daily_communication import build_daily_communication_prompt
 from ..templates.local_issues import build_local_issues_prompt
 from ..templates.offline_engagement import build_offline_engagement_prompt
 from ..templates.policy_proposal import build_policy_proposal_prompt
+from ..templates.support_appeal import build_support_appeal_prompt
 
 from .prompt_guards import (
     _build_style_generation_guard,
@@ -77,6 +78,7 @@ TEMPLATE_BUILDERS = {
     'analytical_writing': build_local_issues_prompt,
     'bipartisan_writing': build_bipartisan_cooperation_prompt,
     'offline_writing': build_offline_engagement_prompt,
+    'support_appeal_writing': build_support_appeal_prompt,
 }
 
 def is_current_lawmaker(user_profile: Dict) -> bool:

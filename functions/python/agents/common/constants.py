@@ -38,6 +38,7 @@ SUBCATEGORY_TO_WRITING_METHOD = {
     'current_affairs_diagnosis': 'diagnostic_writing',
     'policy_explanation': 'logical_writing',
     'campaign_declaration': 'campaign_declaration',
+    'support_appeal': 'support_appeal_writing',
 }
 
 def resolve_writing_method(category: str, sub_category: Optional[str] = None) -> str:
