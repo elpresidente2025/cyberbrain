@@ -337,6 +337,26 @@ def test_build_structure_prompt_basic_lawmaker_contains_scale_guard():
 # 6. final_check 완료형 사실 금지 규칙
 # ──────────────────────────────────────────────
 
+def test_role_governance_non_incumbent_bans_all_completion_forms():
+    from agents.common.role_governance import build_role_governance_xml
+
+    for status in ("예비", "후보", "준비"):
+        xml = build_role_governance_xml({"position": "기초의원", "status": status})
+        assert "전면 금지" in xml, f"status={status}"
+        assert "발굴했습니다" in xml, f"status={status}"
+        assert "구현했습니다" in xml, f"status={status}"
+        assert "마쳤습니다" in xml, f"status={status}"
+        assert "미래·절차형" in xml, f"status={status}"
+
+
+def test_role_governance_incumbent_uses_documented_basis_rule():
+    from agents.common.role_governance import build_role_governance_xml
+
+    xml = build_role_governance_xml({"position": "기초의원", "status": "현역"})
+    assert "공식 문서·예산안·의결·협약·회의록·보도자료 등" in xml
+    assert "전면 금지" not in xml
+
+
 def test_role_governance_final_check_blocks_unverified_completed_facts():
     from agents.common.role_governance import build_role_governance_xml
 

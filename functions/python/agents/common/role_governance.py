@@ -299,10 +299,20 @@ def get_role_governance(user_profile: Optional[Dict[str, Any]]) -> Optional[Role
     return ROLE_GOVERNANCE.get(position)
 
 
+_NON_INCUMBENT_KEYWORDS = ('예비', '후보', '준비')
+
+
+def _is_non_incumbent(user_profile: Optional[Dict[str, Any]]) -> bool:
+    status = str((user_profile or {}).get('status') or '').strip()
+    return any(kw in status for kw in _NON_INCUMBENT_KEYWORDS)
+
+
 def build_role_governance_xml(user_profile: Optional[Dict[str, Any]]) -> str:
     governance = get_role_governance(user_profile)
     if not governance:
         return ""
+
+    non_incumbent = _is_non_incumbent(user_profile)
 
     rewrite_lines = "\n".join(
         f'    <rule>'
@@ -348,11 +358,19 @@ def build_role_governance_xml(user_profile: Optional[Dict[str, Any]]) -> str:
         f'반드시 authority_scope 안의 표현으로 고친다.</rule>\n'
         f'    <rule>중앙정부급 정책 사례는 참고 사례, 비교 사례, 재정 불가능론 반박, '
         f'지역형 축소 적용의 맥락에서만 사용한다.</rule>\n'
+        + (
+        f'    <rule>화자는 아직 당선 전(예비후보·후보·준비 상태) 신분이므로 과거 완료형 사실 표현을 일체 쓰지 않는다. '
+        f'"발굴했습니다", "구현했습니다", "마쳤습니다", "확보했습니다", "합의했습니다", '
+        f'"확정됐습니다", "끝냈습니다", "반영됐습니다" 등 모든 과거 완료형은 전면 금지한다. '
+        f'반드시 미래·절차형으로 쓴다: "추진하겠습니다", "발굴하겠습니다", "마련하겠습니다", '
+        f'"확보를 추진하겠습니다", "협의하겠습니다".</rule>\n'
+        if non_incumbent else
         f'    <rule>근거 없는 완료형 사실 표현 금지: "확보했습니다", "합의했습니다", "확정됐습니다", '
         f'"끝냈습니다", "반영됐습니다"는 참고자료에 공식 문서·예산안·의결·협약·회의록·보도자료 등 '
         f'검증 가능한 근거가 있을 때만 사용한다.</rule>\n'
         f'    <rule>근거가 없으면 절차형 약속으로 쓴다: "확보를 추진하겠습니다", "협의하겠습니다", '
         f'"반영되도록 요구하겠습니다", "제출하겠습니다", "심의에서 챙기겠습니다".</rule>\n'
+        ) +
         f'  </final_check>\n'
         f'</role_governance>'
     )
