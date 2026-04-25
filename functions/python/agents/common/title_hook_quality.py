@@ -90,6 +90,9 @@ POLITICAL_HIGH_RISK_PATTERNS: List[Pattern[str]] = [
 POLITICAL_CAUTION_PATTERNS: List[Pattern[str]] = [
     re.compile(r'절대\s*(?:모르면|놓치면|하면\s*안\s*되는)'),
     re.compile(r'반드시\s*(?:알아야|봐야|해야\s*하는)'),
+    # 한정·긴급 스위치형 — 선거 조급증 유발 패턴
+    re.compile(r'지금\s*(?:아니면|이\s*타이밍|놓치면|안\s*하면)'),
+    re.compile(r'(?:오늘만|이번\s*한\s*번만|기회가\s*없)'),
 ]
 
 POLITICAL_RISK_PENALTY: Dict[str, int] = {
@@ -485,6 +488,10 @@ ANSWER_ANCHOR_PATTERNS: List[Pattern[str]] = [
                r'직결\s*노선|역세권\s*지정|도첨산단\s*지정)'),
     # "N개 중 유일" / "N중 최초" — 답변 엔진이 매우 선호하는 랭킹 쿼리
     re.compile(r'\d+\s*(?:개|곳|시도|시·도|개\s*시도)\s*(?:중\s*)?(?:유일|최초|최다|최대|최소)'),
+    # 단계 예고형 — "2단계로 정리", "3단계별 접근" (단계·체크리스트 확정형 변환)
+    re.compile(r'\d+\s*단계\s*(?:로|별|까지|의)'),
+    # 체크리스트형 — 항목 기반 답변 구조
+    re.compile(r'체크리스트|점검\s*(?:항목|사항)'),
 ]
 
 
@@ -1021,6 +1028,8 @@ def render_hook_rubric_block() -> str:
         '      <good>[정책명], 왜 지금 필요한지 설명드립니다</good>\n'
         '      <good>[이슈], 주민 생활에 어떤 변화가 생기나</good>\n'
         '      <good>[지표] [이전값]→[현재값], 무엇이 달라졌나</good>\n'
+        '      <good>[이슈], [N]가지 기준으로 정리합니다</good>\n'
+        '      <good>[정책명] 시행 전후, 주민 생활에서 무엇이 달라지나</good>\n'
         '    </track>\n'
         '    <track type="engagement_first" maps_to="VIRAL_HOOK|ISSUE_ANALYSIS"\n'
         '           when="서사·현장 중심이고 수치 재료가 희박할 때">\n'
@@ -1028,6 +1037,12 @@ def render_hook_rubric_block() -> str:
         '      <good>현장에서 확인한 [이슈], 대안은 무엇인가</good>\n'
         '      <good>[이슈], 왜 지금 주목해야 하나</good>\n'
         '      <acceptable>주민 여러분이 가장 자주 말씀하신 문제부터 살펴보겠습니다</acceptable>\n'
+        '    </track>\n'
+        '    <track type="empathy_hook" maps_to="VIRAL_HOOK"\n'
+        '           when="주민 불편·민원·일상 문제가 글의 출발점일 때">\n'
+        '      <rule>공감형 도입 후 문제의식과 대안을 연결한다. 고발형·공포형 아님.</rule>\n'
+        '      <good>[이슈], 주민들이 조용히 겪던 문제입니다</good>\n'
+        '      <good>많은 분들이 겪고 계신 [이슈], 함께 해결 방향을 찾겠습니다</good>\n'
         '    </track>\n'
         '    <banned reason="정치 콘텐츠 신뢰 파괴·선거 리스크 — scorer에서 political_high_risk 감점">\n'
         '      <bad>충격! [이슈]의 숨겨진 진실</bad>\n'

@@ -194,6 +194,12 @@ def _build_opening_hook_policy_block() -> str:
         '    <example>주민 여러분이 반복해서 말씀하신 불편부터 살펴보겠습니다.</example>\n'
         '    <example>현장의 목소리를 바탕으로 개선 방향을 정리했습니다.</example>\n'
         '  </track>\n'
+        '  <track type="empathy_first" when="주민 불편·민원·일상 문제가 글의 출발점일 때">\n'
+        '    <rule>공감형 도입 후 반드시 문제의식과 대안을 연결한다. 고발·공포·상대 비판 아님.</rule>\n'
+        '    <example>많은 분들이 조용히 겪고 계신 문제부터 이야기를 시작하겠습니다.</example>\n'
+        '    <example>이 문제, 저도 현장에서 직접 확인했습니다.</example>\n'
+        '    <example>주민 여러분이 가장 많이 호소하신 불편, 함께 해결 방향을 찾겠습니다.</example>\n'
+        '  </track>\n'
         '</opening-hook-policy>'
     )
 
