@@ -7,9 +7,9 @@
 
 TITLE_SPEC = {
     'hardMin': 17,
-    'hardMax': 47,
+    'hardMax': 50,
     'optimalMin': 20,
-    'optimalMax': 41,
+    'optimalMax': 45,
 }
 
 STRUCTURE_SPEC = {
