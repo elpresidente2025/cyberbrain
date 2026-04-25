@@ -189,7 +189,7 @@ _LOW_INFORMATION_HEADING_PATTERNS: List[tuple[str, re.Pattern[str]]] = [
     ("financial_concern", re.compile(r"(?:재정\s*우려|예산\s*우려|재원\s*우려|어떻게\s*넘)")),
     ("generic_issue", re.compile(r"(?:핵심\s*쟁점|필요한\s*이유|기존\s*정책과\s*차이|회복의\s*출발점)")),
     ("abstract_sentiment_question", re.compile(
-        r'^.{0,16}(?:책임감|패기|각오|신념|포부|다짐|사명감)\s*(?:은|는)?\s*\??$'
+        r'(?:책임감|패기|각오|신념|포부|다짐|사명감)\s*(?:은|는)?\s*\??$'
     )),
 ]
 
