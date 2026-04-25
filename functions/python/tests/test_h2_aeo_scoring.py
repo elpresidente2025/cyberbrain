@@ -38,6 +38,7 @@ from agents.common.h2_scoring import (
     count_entity_distribution,
     detect_emotion_appeal,
     detect_sibling_suffix_overlap,
+    score_h2,
     score_h2_aeo,
 )
 
@@ -698,3 +699,70 @@ class TestLocalizeUserRole:
     def test_empty_role_returns_empty(self) -> None:
         assert localize_user_role("", region_metro="서울특별시", region_local="") == ""
         assert localize_user_role(None, region_metro="", region_local="") == ""
+
+
+# ---------------------------------------------------------------------------
+# body_alignment 배경 어휘 오탐 차단
+# ---------------------------------------------------------------------------
+
+class TestBodyAlignmentBackgroundFP:
+    def test_discounts_background_token_false_positive(self) -> None:
+        """배경 어휘 오탐: full coverage 높지만 첫 문장과 무관 → BODY_ALIGNMENT_LOW.
+
+        H2를 조사 없는 순수 명사형으로 구성해 regex/kiwi 양쪽에서 substring 매칭이
+        일어나도록 한다. 첫 문장은 H2 토큰과 무관한 내용으로, 후반 본문에만 H2 토큰이
+        등장하는 배경 어휘 오탐 패턴을 재현한다.
+        """
+        plan = {
+            "must_include_keyword": "청년",
+            "suggested_type": "이유형",
+            "section_text": (
+                "지역 경제 현황을 먼저 살펴봐야 합니다. "
+                "청년 창업 지원이 필요한 이유는 일자리 문제와 직결되기 때문입니다."
+            ),
+        }
+        result = score_h2(
+            "청년 창업 지원 필요한 이유",
+            plan,
+            style="aeo",
+            preferred_types=["이유형"],
+        )
+        assert "BODY_ALIGNMENT_LOW" in result["issues"]
+        assert result["passed"] is False
+        assert result["breakdown"]["body_alignment"]["first_sentence_coverage"] == 0.0
+        assert result["breakdown"]["body_alignment"]["background_fp_discounted"] == 1.0
+
+    def test_no_penalty_when_first_sentence_matches(self) -> None:
+        """정상 H2: 첫 문장과 토큰 겹침 → 할인 없음."""
+        plan = {
+            "must_include_keyword": "청년 주거",
+            "suggested_type": "질문형",
+            "section_text": (
+                "청년 주거 문제 해결은 월세 부담 완화와 공공임대 확대에서 출발합니다. "
+                "창업 지원과 일자리 정책도 함께 추진합니다."
+            ),
+        }
+        result = score_h2(
+            "청년 주거 문제는 어떻게 풀 수 있을까?",
+            plan,
+            style="aeo",
+            preferred_types=["질문형"],
+        )
+        assert result["breakdown"]["body_alignment"]["background_fp_discounted"] == 0.0
+        assert "BODY_ALIGNMENT_LOW" not in result["issues"]
+
+    def test_existing_low_coverage_still_fails(self) -> None:
+        """기존 동작 회귀: full coverage 자체가 낮으면 여전히 BODY_ALIGNMENT_LOW."""
+        plan = {
+            "must_include_keyword": "청년 주거",
+            "suggested_type": "주장형",
+            "section_text": "교통 혼잡 완화와 버스 노선 조정이 이 지역의 핵심 과제입니다.",
+        }
+        result = score_h2(
+            "청년 주거 공약은 반드시 실현된다",
+            plan,
+            style="aeo",
+            preferred_types=["주장형"],
+        )
+        assert "BODY_ALIGNMENT_LOW" in result["issues"]
+        assert result["passed"] is False

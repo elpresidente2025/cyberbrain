@@ -242,6 +242,78 @@ def _h2_content_tokens(text: str) -> List[str]:
     ]
 
 
+_BODY_SENTENCE_SPLIT_RE = re.compile(
+    r"(?<=[.!?。])\s+|(?<=다)\s+(?=[가-힣A-Z])"
+)
+
+
+def _extract_body_first_sentence(text: str) -> str:
+    """섹션 본문에서 첫 문장을 추출한다 (최대 200자).
+
+    한국어 종결어미("다") 기반 분리와 구두점 기반 분리를 함께 사용한다.
+    추출 실패 시 빈 문자열 반환 — 호출부에서 패널티 없음으로 처리.
+    """
+    cleaned = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not cleaned:
+        return ""
+    parts = _BODY_SENTENCE_SPLIT_RE.split(cleaned, maxsplit=1)
+    return parts[0].strip()[:200]
+
+
+def _body_alignment_token_coverage(heading: str, text: str) -> float:
+    """단일 텍스트 대상 H2 content token coverage.
+
+    H2 내용어(명사) 중 text 에 substring 으로 등장하는 비율을 반환한다.
+    heading 또는 text 가 비어 있으면 1.0 (체크 생략).
+    """
+    heading_tokens = _h2_content_tokens(heading)
+    if not heading_tokens:
+        return 1.0
+    body = str(text or "").strip()
+    if not body:
+        return 1.0
+    unique_tokens = list(dict.fromkeys(heading_tokens))
+    matched = sum(1 for tok in unique_tokens if tok in body)
+    return matched / len(unique_tokens)
+
+
+_BACKGROUND_FP_EFFECTIVE = 0.0
+
+
+def _body_alignment_diagnostics(heading: str, section_text: str) -> Dict[str, float]:
+    """full body coverage 와 첫 문장 coverage 를 교차 검증해 배경 어휘 오탐을 차단한다.
+
+    Why: H2→body 단방향 coverage 는 배경 어휘(경력·소속·정당명)가 본문에 흩어져
+         있으면 H2 주제와 무관해도 coverage 가 높게 나온다. AEO 구조에서 본문
+         첫 문장은 H2 의 직접 답변이어야 하므로, 아래 fingerprint 는 의미 불일치
+         신호로 쓸 수 있다:
+             full_body_coverage >= _BODY_ALIGNMENT_FULL_PASS  AND  first == 0.0
+
+    반환:
+        effective  — score_h2 가 실제로 사용할 coverage (오탐 시 0.0 강제)
+        full       — 본문 전체 기준 coverage
+        first      — 본문 첫 문장 기준 coverage
+        discounted — 1.0 이면 배경 어휘 오탐 판정으로 할인 적용됨
+    """
+    full = _body_alignment_token_coverage(heading, section_text)
+    first_sentence = _extract_body_first_sentence(section_text)
+    first = (
+        _body_alignment_token_coverage(heading, first_sentence)
+        if first_sentence
+        else 1.0  # 첫 문장 추출 실패 → 체크 생략, 패널티 없음
+    )
+
+    discounted = full >= _BODY_ALIGNMENT_FULL_PASS and first <= 0.0
+    effective = _BACKGROUND_FP_EFFECTIVE if discounted else full
+
+    return {
+        "effective": effective,
+        "full": round(full, 4),
+        "first": round(first, 4),
+        "discounted": 1.0 if discounted else 0.0,
+    }
+
+
 def _body_alignment_coverage(heading: str, section_text: str) -> float:
     """H2 content token 중 섹션 본문에 substring 으로 등장하는 비율.
 
@@ -251,20 +323,10 @@ def _body_alignment_coverage(heading: str, section_text: str) -> float:
     How to apply: 반환값은 0.0~1.0. 본문 또는 heading token 이 없으면 1.0
          (체크 생략). score_h2 는 이 값을 기반으로 BODY_ALIGNMENT_LOW 판정.
 
-    매칭은 substring 기준(부분 일치) — "인천광역시" 가 본문 "인천광역시의원"
-    안에 있으면 매칭으로 친다. kiwi 경로에서는 명사 form 기준이라 노이즈가
-    적어 substring 매칭이 안전.
+    배경 어휘 오탐(full coverage 높음 + 첫 문장 coverage 0) 은
+    _body_alignment_diagnostics 에서 차단되며 effective = 0.0 으로 강제된다.
     """
-    heading_tokens = _h2_content_tokens(heading)
-    if not heading_tokens:
-        return 1.0
-    body = str(section_text or "").strip()
-    if not body:
-        return 1.0
-    # 중복 토큰 제거 (같은 단어가 H2 에서 2번 나와도 1 counting)
-    unique_tokens = list(dict.fromkeys(heading_tokens))
-    matched = sum(1 for tok in unique_tokens if tok in body)
-    return matched / len(unique_tokens)
+    return _body_alignment_diagnostics(heading, section_text)["effective"]
 
 
 def _body_alignment_score(coverage: float) -> float:
@@ -541,7 +603,8 @@ def score_h2(
 
     # H2 가 본문을 정답으로 삼고 있는가 — content token coverage 기반
     section_text = str(plan.get("section_text") or "")
-    alignment_coverage = _body_alignment_coverage(heading_text, section_text)
+    alignment_diag = _body_alignment_diagnostics(heading_text, section_text)
+    alignment_coverage = alignment_diag["effective"]
     alignment_raw = _body_alignment_score(alignment_coverage)
     alignment_weighted = alignment_raw * _WEIGHTS["body_alignment"]
     if alignment_coverage < _BODY_ALIGNMENT_HARD_FAIL:
@@ -552,6 +615,9 @@ def score_h2(
         "raw": alignment_raw,
         "weighted": alignment_weighted,
         "coverage": round(alignment_coverage, 4),
+        "full_body_coverage": alignment_diag["full"],
+        "first_sentence_coverage": alignment_diag["first"],
+        "background_fp_discounted": alignment_diag["discounted"],
     }
 
     low_info_family = _low_information_heading_family(heading_text)
