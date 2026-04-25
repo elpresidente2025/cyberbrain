@@ -396,6 +396,13 @@ def _build_aeo_rules() -> str:
     한 가지 형태만 6번 반복하면 품질 실패로 간주한다.
   </surface_diversity>
 
+  <question_diversity severity="important">
+    질문형 H2는 글 전체에서 절반을 넘기지 말 것.
+    H2 3개 이하 기준 최대 1개, 4개 이상 기준 최대 2개까지만 사용한다.
+    나머지는 목표형·주장형·대조형·사례형으로 분산한다.
+    질문형 3개 이상이면 H2_QUESTION_ARCHETYPE_EXCESS 어드바이저리가 발생한다.
+  </question_diversity>
+
   <archetypes>
     <archetype name="질문형" strength="AEO 최강">
       <good>청년 기본소득, 신청 방법은?</good>
@@ -834,13 +841,13 @@ def is_h2_archetype(heading: str, archetype: str) -> bool:
 #   - 여론조사 매치업: 질문형·대조형 주, 사례형 보조
 
 CATEGORY_ARCHETYPE_MAP = {
-    "current-affairs": {"primary": ["질문형", "주장형", "이유형"], "auxiliary": ["대조형", "사례형", "서술형"]},
-    "policy-proposal": {"primary": ["질문형", "목표형", "주장형", "이유형"], "auxiliary": ["사례형", "서술형"]},
-    "activity-report": {"primary": ["목표형", "이유형"], "auxiliary": ["사례형", "서술형"]},
-    "daily-communication": {"primary": ["질문형", "이유형"], "auxiliary": ["사례형", "서술형"]},
-    "local-issues": {"primary": ["질문형", "목표형", "주장형", "이유형"], "auxiliary": ["사례형", "서술형"]},
-    "educational-content": {"primary": ["질문형", "이유형"], "auxiliary": ["대조형", "사례형", "서술형"]},
-    "default": {"primary": ["질문형", "주장형", "이유형"], "auxiliary": ["대조형", "사례형", "서술형"]},
+    "current-affairs":     {"primary": ["질문형", "주장형", "이유형", "대조형"],                    "auxiliary": ["사례형", "목표형", "서술형"]},
+    "policy-proposal":     {"primary": ["목표형", "주장형", "이유형", "대조형", "사례형", "질문형"], "auxiliary": ["서술형"]},
+    "activity-report":     {"primary": ["목표형", "이유형"],                                       "auxiliary": ["사례형", "서술형"]},
+    "daily-communication": {"primary": ["질문형", "이유형"],                                       "auxiliary": ["사례형", "서술형"]},
+    "local-issues":        {"primary": ["목표형", "주장형", "이유형", "대조형", "사례형"],           "auxiliary": ["질문형", "서술형"]},
+    "educational-content": {"primary": ["질문형", "이유형"],                                       "auxiliary": ["대조형", "사례형", "서술형"]},
+    "default":             {"primary": ["질문형", "주장형", "이유형"],                             "auxiliary": ["대조형", "사례형", "서술형"]},
 }
 
 _COMMEMORATIVE_ARCHETYPES = {"primary": ["주장형", "이유형"], "auxiliary": []}

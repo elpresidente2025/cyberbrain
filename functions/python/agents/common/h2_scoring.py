@@ -144,6 +144,7 @@ H2_AEO_ADVISORIES = frozenset(
         "H2_BODY_ECHO_FIRST_SENTENCE",
         "H2_QA_PAIRING_FAIL",
         "H2_CANONICAL_FORM_MISMATCH",
+        "H2_QUESTION_ARCHETYPE_EXCESS",  # 세트 내 질문형 H2 초과
     }
 )
 
@@ -963,6 +964,24 @@ def score_h2_aeo(
         if comma_count > 2:
             issues.append("H2_COMMA_FORM_EXCESS")
             uniqueness_score = min(uniqueness_score, 0.5)
+
+    # 질문형 빈도 제한: 세트 내 최대 N개 (서술형·쉼표형 cap과 동일 패턴)
+    if detect_h2_archetype(text) == "질문형":
+        # siblings에 현재 heading이 포함된 경우 중복 계산 방지 — dedupe 후 count
+        _seen: set = set()
+        _deduped: List[str] = []
+        for _h in all_headings_for_overlap:
+            if _h not in _seen:
+                _seen.add(_h)
+                _deduped.append(_h)
+        question_count = sum(
+            1 for h in _deduped
+            if detect_h2_archetype(h) == "질문형"
+        )
+        question_cap = 1 if section_count <= 3 else 2
+        if question_count > question_cap:
+            issues.append("H2_QUESTION_ARCHETYPE_EXCESS")
+            uniqueness_score = min(uniqueness_score, 0.6)
 
     # H2-title 유사도 체크: 제목 복사 H2 차단
     title_clean = str(article_title or "").strip()
