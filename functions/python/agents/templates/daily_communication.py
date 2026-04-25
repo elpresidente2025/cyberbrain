@@ -106,6 +106,12 @@ def build_daily_communication_prompt(options: dict) -> str:
 
 {keywords_section}{hints_section}
 
+<source_constraint priority="critical" description="소재 순도 규칙 — 절대 어김 금지">
+  <rule id="input_only">새로운 소재(정책명, 사업명, 수치, 사건, 인물)는 스탠스텍스트에 있는 것만 사용한다.</rule>
+  <rule id="no_rag_policy_augmentation">RAG·프로필의 정책 공약·법안·성과 항목을 끌어다 새 섹션 소재로 만드는 것은 금지한다. 화자 정체성(이름·직함·지역)만 맥락으로 활용한다.</rule>
+  <rule id="subdivision_allowed">소재가 1~2개뿐이면 그 소재를 여러 각도(배경·현장·다짐 등)로 세분화하여 전개하는 것은 허용한다.</rule>
+</source_constraint>
+
 <writing_blueprint description="글쓰기 설계도 - 4가지 부품을 조립하여 완성된 글 생성">
   <component id="narrative" name="뼈대 (서사 프레임): {narrative_frame.name}">
     {narrative_frame.instruction}
@@ -119,7 +125,7 @@ def build_daily_communication_prompt(options: dict) -> str:
   </component>
   <component id="structure" name="구조 전략 (Standard 5-Step Structure)">
     <rule priority="critical">서사 흐름과 안정감을 위해 [서론 - 본론1 - 본론2 - 본론3 - 결론]의 5단 구조를 반드시 준수하라.</rule>
-    <rule>입력된 핵심 소재가 적더라도(1~2개), 이를 세분화하거나 관련 내용을 보강하여 반드시 3개의 본론을 채워라.</rule>
+    <rule>입력된 핵심 소재가 적더라도(1~2개), 그 소재를 여러 각도로 세분화하여 3개의 본론을 채워라. RAG·프로필의 정책 공약·사업명·수치를 끌어다 새 섹션을 만드는 것은 금지한다.</rule>
     <section order="1" name="서론">인사, 문제 제기, 공감 형성</section>
     <section order="2" name="본론 1" subheading="h2 소제목 필수">첫 번째 핵심 주장 / 현황 분석</section>
     <section order="3" name="본론 2" subheading="h2 소제목 필수">두 번째 핵심 주장 / 구체적 해결책</section>
