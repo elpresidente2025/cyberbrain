@@ -778,6 +778,15 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
 
             if not results["ragContext"] and topic and uid:
 
+                # support_appeal은 정책 청크 대신 배경·사연·인연 청크를 우선 회수
+                if sub_category == "support_appeal":
+                    _rag_query_text = " ".join(filter(None, [
+                        "출마 동기 지역 인연 성장 배경 봉사 경험 개인 사연",
+                        str(stance_text or "").strip(),
+                    ]))
+                else:
+                    _rag_query_text = topic
+
                 async def rag_task() -> str:
                     try:
                         from rag_manager import LightRAGManager, graph_exists_in_gcs
@@ -800,7 +809,7 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
                                 if not manager.rag:
                                     return ""
                                 rag_result = await manager.rag.aquery(
-                                    topic, param=QueryParam(mode="hybrid")
+                                    _rag_query_text, param=QueryParam(mode="hybrid")
                                 )
                                 return str(rag_result or "")
 
