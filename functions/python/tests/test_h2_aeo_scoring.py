@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import pathlib
 import sys
+from unittest.mock import patch
 
 import pytest
 
@@ -705,13 +706,23 @@ class TestLocalizeUserRole:
 # body_alignment 배경 어휘 오탐 차단
 # ---------------------------------------------------------------------------
 
+_MOCK_NOUNS: dict[str, list[str]] = {
+    "청년 창업 지원 필요한 이유": ["청년", "창업", "지원", "이유"],
+    "청년 주거 문제는 어떻게 풀 수 있을까?": ["청년", "주거", "문제"],
+    "청년 주거 공약은 반드시 실현된다": ["청년", "주거", "공약"],
+}
+
+def _fake_extract_nouns(text: str) -> list[str] | None:
+    return _MOCK_NOUNS.get(str(text or "").strip(), [])
+
+
 class TestBodyAlignmentBackgroundFP:
     def test_discounts_background_token_false_positive(self) -> None:
         """배경 어휘 오탐: full coverage 높지만 첫 문장과 무관 → BODY_ALIGNMENT_LOW.
 
-        H2를 조사 없는 순수 명사형으로 구성해 regex/kiwi 양쪽에서 substring 매칭이
-        일어나도록 한다. 첫 문장은 H2 토큰과 무관한 내용으로, 후반 본문에만 H2 토큰이
-        등장하는 배경 어휘 오탐 패턴을 재현한다.
+        H2를 순수 명사형으로 구성해 heading 명사 토큰이 본문 후반에만 등장하는
+        배경 어휘 오탐 패턴을 재현한다. extract_nouns는 kiwi 동작을 시뮬레이션하여
+        mock한다 (Windows 환경에서 kiwi 비활성화 우회).
         """
         plan = {
             "must_include_keyword": "청년",
@@ -721,12 +732,13 @@ class TestBodyAlignmentBackgroundFP:
                 "청년 창업 지원이 필요한 이유는 일자리 문제와 직결되기 때문입니다."
             ),
         }
-        result = score_h2(
-            "청년 창업 지원 필요한 이유",
-            plan,
-            style="aeo",
-            preferred_types=["이유형"],
-        )
+        with patch("agents.common.korean_morph.extract_nouns", side_effect=_fake_extract_nouns):
+            result = score_h2(
+                "청년 창업 지원 필요한 이유",
+                plan,
+                style="aeo",
+                preferred_types=["이유형"],
+            )
         assert "BODY_ALIGNMENT_LOW" in result["issues"]
         assert result["passed"] is False
         assert result["breakdown"]["body_alignment"]["first_sentence_coverage"] == 0.0
@@ -742,12 +754,13 @@ class TestBodyAlignmentBackgroundFP:
                 "창업 지원과 일자리 정책도 함께 추진합니다."
             ),
         }
-        result = score_h2(
-            "청년 주거 문제는 어떻게 풀 수 있을까?",
-            plan,
-            style="aeo",
-            preferred_types=["질문형"],
-        )
+        with patch("agents.common.korean_morph.extract_nouns", side_effect=_fake_extract_nouns):
+            result = score_h2(
+                "청년 주거 문제는 어떻게 풀 수 있을까?",
+                plan,
+                style="aeo",
+                preferred_types=["질문형"],
+            )
         assert result["breakdown"]["body_alignment"]["background_fp_discounted"] == 0.0
         assert "BODY_ALIGNMENT_LOW" not in result["issues"]
 
@@ -758,11 +771,12 @@ class TestBodyAlignmentBackgroundFP:
             "suggested_type": "주장형",
             "section_text": "교통 혼잡 완화와 버스 노선 조정이 이 지역의 핵심 과제입니다.",
         }
-        result = score_h2(
-            "청년 주거 공약은 반드시 실현된다",
-            plan,
-            style="aeo",
-            preferred_types=["주장형"],
-        )
+        with patch("agents.common.korean_morph.extract_nouns", side_effect=_fake_extract_nouns):
+            result = score_h2(
+                "청년 주거 공약은 반드시 실현된다",
+                plan,
+                style="aeo",
+                preferred_types=["주장형"],
+            )
         assert "BODY_ALIGNMENT_LOW" in result["issues"]
         assert result["passed"] is False
