@@ -267,6 +267,10 @@ _KEYWORD_TRAILING_PARTICLE_RE = re.compile(
     r"(?:은|는|이|가|을|를|의|에|에서|으로|과|와|도|만),?\s*"
 )
 
+# _strip_keyword_from_heading prefix 패턴용 — 단어 경계 lookahead 구성 요소
+_KEYWORD_SEP = r"(?:\s|[,·。]|$)"
+_KEYWORD_PARTICLE = r"(?:에서|으로|에게|까지|부터|은|는|이|가|을|를|의|에|도|만|로|과|와)"
+
 
 def _strip_keyword_from_heading(heading: str, keyword: str) -> str:
     """H2 에서 keyword + 후행 조사/쉼표를 제거해 남은 부분을 반환.
@@ -277,9 +281,11 @@ def _strip_keyword_from_heading(heading: str, keyword: str) -> str:
     text = str(heading or "").strip()
     escaped = re.escape(keyword)
 
-    # prefix: "계양 테크노밸리, 앵커 기업 유치에 청신호" → "앵커 기업 유치에 청신호"
+    # prefix: "샘플구 테크노밸리, 앵커 기업 유치에 청신호" → "앵커 기업 유치에 청신호"
+    # lookahead로 keyword 뒤가 구분자 또는 조사+구분자인지 확인 (복합어 prefix 오소비 방지)
     prefix = re.match(
-        rf"^{escaped}\s*(?:은|는|이|가|을|를|의|에|에서|으로|과|와|도|만)?\s*[,·]?\s*(.+)$",
+        rf"^{escaped}(?={_KEYWORD_SEP}|{_KEYWORD_PARTICLE}{_KEYWORD_SEP})"
+        rf"\s*{_KEYWORD_PARTICLE}?\s*[,·]?\s*(.+)$",
         text,
     )
     if prefix:

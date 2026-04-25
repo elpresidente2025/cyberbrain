@@ -17,6 +17,7 @@ from typing import Any, Iterable, List, Optional, Sequence, TypedDict
 
 from . import korean_morph
 from .h2_guide import resolve_category_archetypes
+from .role_keyword_policy import ROLE_KEYWORD_PATTERN
 from .title_common import extract_numbers_from_content
 
 __all__ = [
@@ -58,6 +59,23 @@ _NUMERIC_LEAD_RE = re.compile(r"\d")
 _ENTITY_SUFFIX_RE = re.compile(
     r"(?:광역시|특별자치시|특별시|특별자치도|자치시|자치도|시|구|군|동|읍|면|도)$"
 )
+
+# H2 must_include 제외 대상 — 의회·선거 직책 전체 표현 (bare "시장"/"의원"/"대표" 제외로 오탐 방지)
+_ROLE_OFFICE_SUFFIXES: tuple[str, ...] = (
+    "국회의원", "원내대표",
+    "광역의원", "시의원", "도의원", "구의원", "군의원",
+    "기초의원",
+    "구청장", "군수", "도지사", "교육감",
+    "장관", "차관",
+    "위원장", "부위원장",
+    "당대표",
+    "예비후보", "후보",
+)
+# bare "시장" suffix는 전통시장·골목시장 등과 겹치므로 광역시장만 명시 목록으로 처리
+_METRO_MAYOR_KEYWORDS: frozenset[str] = frozenset({
+    "서울시장", "부산시장", "대구시장", "인천시장",
+    "광주시장", "대전시장", "울산시장", "세종시장",
+})
 
 _PROCEDURAL_MARKERS = ("단계", "절차", "방법", "순서", "신청", "접수", "가이드")
 _COMPARATIVE_MARKERS = ("vs", "대비", "비교", "차이", "기존 ")
@@ -532,6 +550,28 @@ def extract_key_claim(section_text: str, *, style: str = "aeo") -> str:
     return longest[:_KEY_CLAIM_MAX_LEN].rstrip()
 
 
+def _is_h2_must_include_role_keyword(keyword: str) -> bool:
+    """H2 must_include로 쓰기에 부적합한 직책명 키워드를 감지한다."""
+    kw = re.sub(r"\s+", "", str(keyword or "")).strip()
+    if not kw:
+        return False
+    if ROLE_KEYWORD_PATTERN.fullmatch(kw):
+        return True
+    if any(kw.endswith(suffix) for suffix in _ROLE_OFFICE_SUFFIXES):
+        return True
+    if kw in _METRO_MAYOR_KEYWORDS:
+        return True
+    return False
+
+
+def _first_non_role_keyword(items: Sequence[str]) -> str:
+    for item in items or ():
+        candidate = str(item or "").strip()
+        if candidate and not _is_h2_must_include_role_keyword(candidate):
+            return candidate
+    return ""
+
+
 def pick_must_include_keyword(
     section_text: str,
     *,
@@ -551,10 +591,12 @@ def pick_must_include_keyword(
     """
     haystack = strip_html(section_text)
     if not haystack:
-        if user_keywords:
-            return str(user_keywords[0]).strip()
-        if entity_hints:
-            return str(entity_hints[0]).strip()
+        fallback_user = _first_non_role_keyword(user_keywords)
+        if fallback_user:
+            return fallback_user
+        fallback_entity = _first_non_role_keyword(entity_hints)
+        if fallback_entity:
+            return fallback_entity
         return ""
 
     # 첫 2문장 추출 (~주제문)
@@ -564,18 +606,25 @@ def pick_must_include_keyword(
     # 1단계: 첫 2문장에 등장하는 user_keyword → 주제어
     for kw in user_keywords or ():
         candidate = str(kw or "").strip()
-        if candidate and candidate in head_text:
+        if not candidate or _is_h2_must_include_role_keyword(candidate):
+            continue
+        if candidate in head_text:
             return candidate
 
     # 2단계: 전체 본문에 2회 이상 등장하는 user_keyword → 주제적 비중 있음
     for kw in user_keywords or ():
         candidate = str(kw or "").strip()
-        if candidate and haystack.count(candidate) >= 2:
+        if not candidate or _is_h2_must_include_role_keyword(candidate):
+            continue
+        if haystack.count(candidate) >= 2:
             return candidate
 
+    # 3단계: entity_hints (role keyword 오염 방어 포함)
     for hint in entity_hints or ():
         candidate = str(hint or "").strip()
-        if candidate and candidate in haystack:
+        if not candidate or _is_h2_must_include_role_keyword(candidate):
+            continue
+        if candidate in haystack:
             return candidate
 
     tokens = [tok for tok in _tokenize(haystack) if tok not in _STOPWORDS]
