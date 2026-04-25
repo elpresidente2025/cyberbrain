@@ -114,6 +114,15 @@ def build_policy_proposal_prompt(options: dict) -> str:
 
 {keywords_section}{hints_section}{rhetorical_section}
 
+<policy_scope_constraint priority="critical">
+  <rule>본문 H2 기준 핵심 정책축은 최대 3개까지만 선택한다.</rule>
+  <rule>각 H2에는 하나의 정책축만 배정한다.</rule>
+  <rule>각 정책축의 세부 실행 항목은 3개 이내로 제한한다.</rule>
+  <rule>서론에서 정책명·사업명을 한꺼번에 나열하지 않는다.</rule>
+  <rule>원문에 없는 정책축을 창작하지 않는다.</rule>
+  <rule>정책을 많이 나열하기보다 선택한 축의 필요성·실행방식·기대효과를 서술한다.</rule>
+</policy_scope_constraint>
+
 <writing_blueprint description="글쓰기 설계도 - 3가지 부품을 조립하여 체계적이고 설득력 있는 글 생성">
   <component id="structure" name="전체 뼈대 (논리 구조): {logical_structure.name}">
     {logical_structure.instruction}

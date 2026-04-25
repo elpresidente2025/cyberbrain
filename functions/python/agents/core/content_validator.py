@@ -37,6 +37,36 @@ _LOW_INFORMATION_H2_SURFACE_RE = re.compile(
     r")"
 )
 
+# 직책 키워드 + 부정 조합 검출 (advisory — passed:True 유지)
+_ROLE_NEGATIVE_VERB_PATTERN = re.compile(
+    r"(?:구의원|시의원|도의원|국회의원|구청장|의원|예비후보)\s*"
+    r"(?:추진|결정|처리|통과|발의|제안|요청|협의|합의|검토|추천|지정|선정)"
+    r"\s*"
+    r"(?:실패|무산|좌절|반대|부결|후퇴|못\s*하|안\s*되|않겠|없이|불가|거부|철회|취소|포기|중단)",
+    re.IGNORECASE,
+)
+_ROLE_AS_POLICY_OBJECT_PATTERN = re.compile(
+    r"(?:구의원|시의원|도의원|국회의원|구청장|의원|예비후보)\s*"
+    r"(?:추진|복원|회복|후퇴|변화|성과|실행|처리|해결|흐지부지)",
+    re.IGNORECASE,
+)
+_ROLE_ODD_JOSA_PATTERN = re.compile(
+    r"(?:구의원|시의원|도의원|국회의원|구청장|의원|예비후보)"
+    r"(?:이|가|을|를|의)?\s*같은\s*(?:후퇴|변화|성과|문제)",
+    re.IGNORECASE,
+)
+
+# 지역 비하성 은유 검출 (advisory — passed:True 유지)
+_REGIONAL_DEROGATORY_METAPHOR_PATTERN = re.compile(
+    r"(?:"
+    r"지방\s*(?:소멸|쇠퇴|죽어가|사라져|낙후|후진)"
+    r"|(?:구도심|원도심|달동네|쪽방촌|낡은\s*동네|낙후된\s*지역)\s*(?:처럼|같은|수준)"
+    r"|멈춘\s*심장\s*(?:처럼|같이|같은)"
+    r"|(?:[가-힣]{2,12}(?:동|구|군|시|읍|면|리).{0,12})?(?:활력을\s*잃|생기를\s*잃|죽어가|멈춰\s*있)"
+    r")",
+    re.IGNORECASE,
+)
+
 class ContentValidator:
     def _validate_bundle_section_contracts(
         self,
@@ -404,6 +434,17 @@ class ContentValidator:
             re.compile(r'관련 .*쟁점.*함께 .*봐야', re.IGNORECASE),
             re.compile(r'그래도 .*문제는 .*점검해야', re.IGNORECASE),
             re.compile(r'현장 .*데이터.*함께 .*점검', re.IGNORECASE),
+            # 시스템 내부 변수명 (literal 매칭 — false positive 없음, \b 미사용: 한국어 \w 충돌 방지)
+            re.compile(r'source_sequence|execution_items|forbidden_inferred|required_source_facts', re.IGNORECASE),
+            re.compile(r'central_claim|primary_keyword', re.IGNORECASE),
+            # 메타 지시 한국어 표현
+            re.compile(r'원문에서\s*약속한\s*범위', re.IGNORECASE),
+            re.compile(r'금지된\s*추론', re.IGNORECASE),
+            re.compile(r'사용자\s*입력에\s*없으므로', re.IGNORECASE),
+            re.compile(r'위\s*실행\s*항목', re.IGNORECASE),
+            re.compile(r'메타\s*지시|프롬프트\s*(?:설명|지시|내용)', re.IGNORECASE),
+            re.compile(r'새\s*공약처럼', re.IGNORECASE),
+            re.compile(r'필수\s*반영|누락하지\s*말고\s*본론에', re.IGNORECASE),
         ]
         if os.environ.get("ENABLE_SEQUENTIAL_STRUCTURE", "true").lower() == "true":
             patterns.extend([
@@ -416,6 +457,32 @@ class ContentValidator:
             if any(pattern.search(sentence) for pattern in patterns):
                 leaks.append(sentence)
         return leaks
+
+    def _find_role_negative_combinations(self, content: str) -> List[str]:
+        plain_text = re.sub(r'<[^>]*>', ' ', content or '')
+        plain_text = re.sub(r'\s+', ' ', plain_text).strip()
+        if not plain_text:
+            return []
+        hits: List[str] = []
+        for sentence in self._split_plain_sentences(plain_text):
+            if (
+                _ROLE_NEGATIVE_VERB_PATTERN.search(sentence)
+                or _ROLE_AS_POLICY_OBJECT_PATTERN.search(sentence)
+                or _ROLE_ODD_JOSA_PATTERN.search(sentence)
+            ):
+                hits.append(sentence[:100])
+        return hits
+
+    def _find_regional_derogatory_metaphors(self, content: str) -> List[str]:
+        plain_text = re.sub(r'<[^>]*>', ' ', content or '')
+        plain_text = re.sub(r'\s+', ' ', plain_text).strip()
+        if not plain_text:
+            return []
+        hits: List[str] = []
+        for sentence in self._split_plain_sentences(plain_text):
+            if _REGIONAL_DEROGATORY_METAPHOR_PATTERN.search(sentence):
+                hits.append(sentence[:100])
+        return hits
 
     def _count_event_fact_sentence_mentions(
         self, content: str, *, event_date_hint: str = '', event_location_hint: str = ''
@@ -1180,4 +1247,14 @@ class ContentValidator:
                     'feedback': f'동일 동사/구문이 {QUALITY_SPEC["verbRepeatMax"]}회를 초과했습니다. 동의어로 교체하십시오.',
                 }
 
-        return {'passed': True}
+        all_advisories = []
+        role_neg = self._find_role_negative_combinations(content)
+        if role_neg:
+            all_advisories.append({'code': 'ROLE_NEGATIVE_COMBO', 'reason': '직책+부정동사', 'samples': role_neg[:3]})
+        regional = self._find_regional_derogatory_metaphors(content)
+        if regional:
+            all_advisories.append({'code': 'REGIONAL_DEROGATORY_METAPHOR', 'reason': '지역 비하성 은유', 'samples': regional[:3]})
+        result: Dict[str, Any] = {'passed': True}
+        if all_advisories:
+            result['advisories'] = all_advisories
+        return result

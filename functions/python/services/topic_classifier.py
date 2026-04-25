@@ -113,6 +113,14 @@ CATEGORY_PATTERNS = {
         r"개혁",
         r"해법",
         r"정책",
+        r"바우처\s*(?:지급|도입|지원|확대|사업|제도)",
+        r"지역화폐\s*(?:도입|확대|공약|활성화|정책|지원|장려|사용\s*확대)",
+        r"(?:참여|자립|청년|가족돌봄)\s*수당",
+        r"창업\s*(?:지원|생태계|육성|보육)",
+        r"재취업\s*(?:지원|교육|정책|프로그램)",
+        r"청년\s*(?:지원\s*정책|일자리\s*정책|주거\s*지원|이음망|자립)",
+        r"돌봄\s*(?:서비스\s*확대|정책|지원\s*강화)",
+        r"공공\s*(?:주택\s*공급|의료\s*강화|교육\s*지원)",
     ),
     "educational-content": (
         r"쉽게\s*설명",
@@ -452,11 +460,14 @@ def refine_with_stance(primary: Dict[str, Any], stance_text: str) -> Dict[str, A
     best = _best_scored_category(normalized_stance)
 
     if detect_personal_reflection_topic("", normalized_stance):
-        return _build_result(
-            category="daily-communication",
-            confidence=max(confidence, 0.86),
-            source=f"{source}+stance_reflection",
-        )
+        if policy_signal_score >= 2 or policy_commitment_score >= 2:
+            pass  # policy signal이 강하면 personal_reflection 오버라이드 차단
+        else:
+            return _build_result(
+                category="daily-communication",
+                confidence=max(confidence, 0.86),
+                source=f"{source}+stance_reflection",
+            )
 
     if category == "current-affairs" and diagnosis_score >= 1:
         return _build_result(

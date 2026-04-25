@@ -147,7 +147,13 @@ H2_AEO_ADVISORIES = frozenset(
         "H2_QA_PAIRING_FAIL",
         "H2_CANONICAL_FORM_MISMATCH",
         "H2_QUESTION_ARCHETYPE_EXCESS",  # 세트 내 질문형 H2 초과
+        "H2_REGIONAL_DEROGATORY",  # 지역 비하성 은유 — advisory
     }
+)
+
+_REGIONAL_DEROGATORY_H2_RE = re.compile(
+    r"(?:지방\s*소멸|달동네|낙후된\s*지역|촌구석|낡은\s*동네|멈춘\s*심장)",
+    re.IGNORECASE,
 )
 
 _WEIGHTS = {
@@ -452,6 +458,9 @@ def score_h2(
 
     if _INTERNAL_PROMPT_LEAK_RE.search(heading_text):
         issues.append("H2_INTERNAL_PROMPT_LEAK")
+
+    if _REGIONAL_DEROGATORY_H2_RE.search(heading_text):
+        issues.append("H2_REGIONAL_DEROGATORY")
 
     forbidden_nums = list(plan.get("forbidden_numeric_anchors") or [])
     if forbidden_nums and _forbidden_numeric_anchor_hits(heading_text, forbidden_nums):
