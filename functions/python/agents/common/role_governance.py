@@ -81,6 +81,18 @@ ROLE_GOVERNANCE: Dict[str, RoleGovernance] = {
                 "source_pattern": "중앙정부 권한, 헌법적 권한 다툼",
                 "target_frame": "구의회가 할 수 있는 감시·제안·조례 발의",
             },
+            {
+                "source_pattern": "전담 부서 신설, 기관 내 부서 설치, 전담팀 구성",
+                "target_frame": "구청 집행부에 전담 조직 설치를 요구하고 관련 조례·예산 심의로 뒷받침",
+            },
+            {
+                "source_pattern": "기업·기관과 직접 협약 체결, MOU 체결, 협약 추진",
+                "target_frame": "구청이 기업·기관과 협약을 맺도록 촉구하고 의회 차원에서 지원 근거 마련",
+            },
+            {
+                "source_pattern": "시스템 전면 도입, 기기 직접 도입, 플랫폼 직접 구축, 인프라 직접 설치",
+                "target_frame": "도입 근거 조례를 마련하고 예산 심의에서 반영되도록 요구",
+            },
         ],
     ),
 

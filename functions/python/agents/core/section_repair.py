@@ -532,6 +532,7 @@ class SectionRepairMixin:
         )
         if isinstance(context_analysis, dict):
             context_analysis = self._normalize_context_analysis_materials(context_analysis)
+            context_analysis['position'] = user_profile.get('position', '')
         # validate_output 호출에 사용하는 이벤트 컨텍스트 힌트는
         # process 스코프에서 항상 초기화되어야 한다.
         is_event_announcement = False

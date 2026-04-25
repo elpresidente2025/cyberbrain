@@ -1,6 +1,12 @@
 import os
 import re
 from typing import Dict, Any, Optional, List, Tuple
+
+try:
+    from kiwipiepy import Kiwi
+    _kiwi = Kiwi()
+except Exception:
+    _kiwi = None
 from .structure_utils import strip_html, material_key, normalize_context_text
 from .intro_echo_utils import find_intro_conclusion_duplicates
 from ..common.h2_guide import H2_MIN_LENGTH, H2_MAX_LENGTH
@@ -36,6 +42,14 @@ _LOW_INFORMATION_H2_SURFACE_RE = re.compile(
     r"재정\s*우려,?\s*어떻게\s*넘"
     r")"
 )
+
+# 기초의원 화자가 직접 사용하면 안 되는 집행형 동사 원형 (advisory)
+# 구청장·단체장 집행부 고유 권한에 해당하는 행위
+_EXECUTIVE_VERB_STEMS = frozenset({
+    '신설하다', '설치하다', '구축하다', '도입하다', '운영하다',
+    '체결하다', '배치하다', '임명하다', '편성하다', '집행하다',
+    '착공하다', '개통하다', '설립하다',
+})
 
 # 직책 키워드 + 부정 조합 검출 (advisory — passed:True 유지)
 _ROLE_NEGATIVE_VERB_PATTERN = re.compile(
@@ -482,6 +496,26 @@ class ContentValidator:
         for sentence in self._split_plain_sentences(plain_text):
             if _REGIONAL_DEROGATORY_METAPHOR_PATTERN.search(sentence):
                 hits.append(sentence[:100])
+        return hits
+
+    def _find_executive_verb_claims(self, content: str, position: str = '') -> List[str]:
+        """기초의원 프로필에서 집행부 고유 집행형 동사를 kiwi로 검출 (advisory)."""
+        if _kiwi is None or position != '기초의원':
+            return []
+        plain_text = re.sub(r'<[^>]*>', ' ', content or '')
+        plain_text = re.sub(r'\s+', ' ', plain_text).strip()
+        if not plain_text:
+            return []
+        hits: List[str] = []
+        for sentence in self._split_plain_sentences(plain_text):
+            try:
+                tokens = _kiwi.analyze(sentence, top_n=1)[0][0]
+                for token in tokens:
+                    if token.tag.startswith('V') and token.lemma in _EXECUTIVE_VERB_STEMS:
+                        hits.append(sentence[:100])
+                        break
+            except Exception:
+                continue
         return hits
 
     def _count_event_fact_sentence_mentions(
@@ -1247,6 +1281,7 @@ class ContentValidator:
                     'feedback': f'동일 동사/구문이 {QUALITY_SPEC["verbRepeatMax"]}회를 초과했습니다. 동의어로 교체하십시오.',
                 }
 
+        position = (context_analysis or {}).get('position') or ''
         all_advisories = []
         role_neg = self._find_role_negative_combinations(content)
         if role_neg:
@@ -1254,6 +1289,9 @@ class ContentValidator:
         regional = self._find_regional_derogatory_metaphors(content)
         if regional:
             all_advisories.append({'code': 'REGIONAL_DEROGATORY_METAPHOR', 'reason': '지역 비하성 은유', 'samples': regional[:3]})
+        exec_verbs = self._find_executive_verb_claims(content, position=position)
+        if exec_verbs:
+            all_advisories.append({'code': 'EXECUTIVE_VERB_CLAIM', 'reason': '기초의원 집행형 동사', 'samples': exec_verbs[:3]})
         result: Dict[str, Any] = {'passed': True}
         if all_advisories:
             result['advisories'] = all_advisories
