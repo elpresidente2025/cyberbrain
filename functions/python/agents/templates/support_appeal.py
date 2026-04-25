@@ -190,9 +190,9 @@ def build_support_appeal_prompt(options: dict) -> str:
 {keywords_section}{hints_section}
 
 <source_constraint priority="critical" description="소재 순도 규칙">
-  <rule id="input_only">본문의 모든 소재(인물, 사건, 수치, 지역명, 활동)는 반드시 입장문(stanceText)에서 가져와야 합니다.</rule>
-  <rule id="no_rag_augmentation">RAG 맥락, 프로필 공약·법안·성과 항목을 소재로 새로운 본론 섹션을 만들지 마세요. 화자 정체성(이름·직함·지역)만 활용하세요.</rule>
-  <rule id="no_policy_spillover">정책 공약 목록을 본론에 펼치지 마세요. 이 글은 정책 설명이 아니라 지지 호소입니다.</rule>
+  <rule id="input_only">본문의 서사 골격(인물, 사건, 동기, 지역 연결고리)은 반드시 입장문(stanceText)에서 가져와야 합니다.</rule>
+  <rule id="no_rag_section">RAG 맥락·프로필 공약 항목을 소재로 독립 H2 섹션을 신설하지 마세요. 정책은 화자의 배경이나 다짐을 뒷받침하는 맥락으로 1~2개 간략 언급에 그쳐야 합니다.</rule>
+  <rule id="policy_as_evidence">공약은 "이러한 삶을 살아왔기에 이런 준비를 했다"는 서사의 증거로만 사용하세요. 공약 목록을 나열하거나 정책 설명 섹션을 만드는 것은 금지입니다.</rule>
   <rule id="sparse_input_allowed">입장문 소재가 1~2개뿐이어도 강제로 3개 섹션을 채우지 마세요. 2개 H2로도 완성된 글이 됩니다.</rule>
 </source_constraint>
 
