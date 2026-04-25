@@ -1,4 +1,55 @@
-from typing import Optional
+from typing import Any, Dict, Optional
+
+from .role_governance import build_role_governance_xml
+
+
+def _strip_warning_box_artifacts(text: str) -> str:
+    """박스 문자(╔═╗║╚╝)로 구성된 장식 줄을 제거한다."""
+    _BOX_CHARS = {"╔", "═", "╗", "║", "╚", "╝"}
+    lines = []
+    for line in str(text or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            lines.append("")
+            continue
+        if set(stripped) <= (_BOX_CHARS | {" "}):
+            continue
+        if stripped.startswith("║") and stripped.endswith("║"):
+            stripped = stripped.strip("║").strip()
+        lines.append(stripped)
+    return "\n".join(lines).strip()
+
+
+def generate_role_warning_bundle(
+    user_profile: Optional[Dict[str, Any]] = None,
+    author_bio: str = "",
+) -> str:
+    """직책별 권한/톤 가드(role_governance) + 신분·시제 가드(non_lawmaker_warning)를 묶는다.
+
+    role_governance는 모든 직책에 주입된다.
+    non_lawmaker_warning은 국회의원 이외의 직책에서만 생성된다.
+    """
+    profile = user_profile if isinstance(user_profile, dict) else {}
+    blocks = []
+
+    role_governance_xml = build_role_governance_xml(profile)
+    if role_governance_xml:
+        blocks.append(role_governance_xml)
+
+    non_lawmaker_text = generate_non_lawmaker_warning(
+        profile.get("position"),
+        profile.get("status"),
+        profile.get("politicalExperience"),
+        author_bio,
+    )
+    non_lawmaker_clean = _strip_warning_box_artifacts(non_lawmaker_text)
+    if non_lawmaker_clean:
+        blocks.append(f"<non_lawmaker_warning>\n{non_lawmaker_clean}\n</non_lawmaker_warning>")
+
+    if not blocks:
+        return ""
+
+    return "<role_warning_bundle>\n" + "\n\n".join(blocks) + "\n</role_warning_bundle>"
 
 
 def generate_non_lawmaker_warning(

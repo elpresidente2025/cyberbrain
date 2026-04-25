@@ -6,7 +6,7 @@
 import logging
 from typing import Any, Dict, List
 
-from ..common.warnings import generate_non_lawmaker_warning
+from ..common.warnings import generate_role_warning_bundle
 from ..common.seo import build_seo_instruction
 from ..common.h2_guide import build_h2_rules
 from ..common.election_rules import get_prompt_instruction
@@ -486,16 +486,12 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
 
     # Warning Generation (XML)
     warning_blocks: List[str] = []
-    non_lawmaker_warn = generate_non_lawmaker_warning(
-        user_profile.get('position'),
-        user_profile.get('status'),
-        user_profile.get('politicalExperience'),
-        params.get('authorBio'),
+    role_warning = generate_role_warning_bundle(
+        user_profile=user_profile,
+        author_bio=params.get('authorBio', ''),
     )
-    if non_lawmaker_warn:
-        warning_blocks.append(
-            f"<non_lawmaker_warning>{_xml_cdata(non_lawmaker_warn)}</non_lawmaker_warning>"
-        )
+    if role_warning:
+        warning_blocks.append(role_warning)
 
     if params.get('authorBio') and '"' in params.get('authorBio', ''):
         warning_blocks.append(
@@ -795,9 +791,9 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
   <party_stance_guide>{_xml_cdata(party_stance_guide)}</party_stance_guide>
   <seo_instruction>{_xml_cdata(seo_instruction)}</seo_instruction>
   <election_instruction>{_xml_cdata(election_instruction)}</election_instruction>
+  {bio_warning}
   {ref_section}
   {context_injection_xml}
-  {bio_warning}
   {structure_enforcement}
   {leadership_philosophy}
   {style_generation_guard}

@@ -20,7 +20,7 @@ from ..common.stance_filters import (
     looks_like_hashtag_bullet_line,
     normalize_stance_text as normalize_stance_text_common,
 )
-from ..common.warnings import generate_non_lawmaker_warning, generate_family_status_warning
+from ..common.warnings import generate_role_warning_bundle, generate_family_status_warning
 from ..common.constants import resolve_writing_method
 from ..common.xml_builder import (
     build_context_analysis_section,
@@ -709,38 +709,33 @@ class WriterAgent:
         return experience in ['초선', '재선', '3선이상']
 
     def build_warnings(self, user_profile: Dict[str, Any], author_bio: str) -> str:
-        warnings = []
-        
-        nm_warning = generate_non_lawmaker_warning(
-            user_profile.get('position'),
-            user_profile.get('status'),
-            user_profile.get('politicalExperience'),
-            author_bio,
+        blocks = []
+
+        role_bundle = generate_role_warning_bundle(
+            user_profile=user_profile,
+            author_bio=author_bio,
         )
-        if nm_warning: warnings.append(nm_warning.strip())
-        
-        fam_warning = generate_family_status_warning({
-            'familyStatus': user_profile.get('familyStatus')
-        })
-        if fam_warning: warnings.append(fam_warning.strip())
-        
-        warnings.append("""🚨 [CRITICAL] 사실 관계 왜곡 금지 (본인 vs 가족 구분):
-- 작성자 프로필(Bio)에 언급된 "가족의 직업/이력"을 "나(화자)의 직업/이력"으로 쓰지 마십시오.
-- 예: "아버지가 부두 노동자" -> "저는 부두 노동자 출신입니다" (❌ 절대 금지: 아버지가 노동자이지 내가 아님)
-- 예: "아버지가 부두 노동자" -> "부두 노동자였던 아버지의 등을 보며 자랐습니다" (✅ 올바른 표현)""")
-        
-        target_election = user_profile.get('targetElection', {})
-        position = target_election.get('position') or user_profile.get('position', '')
-        is_metro = any(x in position for x in ['시장', '도지사', '교육감'])
-        is_gugun = any(x in position for x in ['구청장', '군수', '기초의원'])
-        if is_metro and not is_gugun:
-             warnings.append(f"""🚨 [CRITICAL] 지역 범위 설정 (광역 자치단체장급):
-- 당신은 지금 기초지자체(구/군)가 아닌 **"광역 자치단체({user_profile.get('regionMetro', '시/도')} 전체"**를 대표하는 후보자입니다.
-- 특정 구/군에만 국한된 공약이나 비전을 메인으로 내세우지 마십시오.
-- 반드시 **"{user_profile.get('regionMetro', '부산')} 전체의 균형 발전"**이나 **"시정 전체의 쇄신"**과 연결 지어 거시적인 관점에서 서술하십시오.""")
+        if role_bundle:
+            blocks.append(role_bundle)
+
+        fam_warning = generate_family_status_warning(
+            str(user_profile.get('familyStatus') or '')
+        )
+        if fam_warning:
+            blocks.append(fam_warning.strip())
+
+        blocks.append(
+            "🚨 [CRITICAL] 사실 관계 왜곡 금지 (본인 vs 가족 구분):\n"
+            "- 작성자 프로필(Bio)에 언급된 \"가족의 직업/이력\"을 \"나(화자)의 직업/이력\"으로 쓰지 마십시오.\n"
+            "- 예: \"아버지가 부두 노동자\" -> \"저는 부두 노동자 출신입니다\" (❌ 절대 금지)\n"
+            "- 예: \"아버지가 부두 노동자\" -> \"부두 노동자였던 아버지의 등을 보며 자랐습니다\" (✅ 올바른 표현)"
+        )
 
         if author_bio and '"' in author_bio:
-             warnings.append("""🚨 [CRITICAL] Bio 인용구 보존 법칙:
-- 작성자 정보(Bio)에 있는 **큰따옴표(" ")로 묶인 문장**은 사용자의 핵심 서사(Narrative)이므로, 금지어나 민감한 단어(예: 국회의원)가 포함되어 있더라도 **절대 수정/삭제/검열하지 말고 원문 그대로 인용**하십시오.""")
-             
-        return '\n\n'.join(warnings) if warnings else ''
+            blocks.append(
+                "🚨 [CRITICAL] Bio 인용구 보존 법칙:\n"
+                "- 작성자 정보(Bio)에 있는 큰따옴표로 묶인 문장은 사용자의 핵심 서사이므로, "
+                "금지어나 민감한 단어가 포함되어 있더라도 절대 수정/삭제/검열하지 말고 원문 그대로 인용하십시오."
+            )
+
+        return '\n\n'.join(blocks) if blocks else ''
