@@ -1096,115 +1096,91 @@ AI가 이미 학습하고 있습니다.
                 일반 AI에는 없는, 정치 콘텐츠 변환에 특화된 설계.
               </Typography>
 
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 6, md: 10 } }}>
+              <Grid container spacing={4}>
                 {differentiators.map((value, index) => (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0, y: 24 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true, margin: '-60px' }}
-                    transition={{ duration: 0.5, delay: index * 0.1 }}
-                  >
-                    <Grid
-                      container
-                      spacing={{ xs: 3, md: 6 }}
-                      alignItems="center"
-                      direction={index % 2 === 1 ? 'row-reverse' : 'row'}
+                  <Grid item xs={12} sm={4} key={index}>
+                    <motion.div
+                      initial={{ opacity: 0, y: 24 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true }}
+                      transition={{ duration: 0.5, delay: index * 0.15 }}
+                      style={{ height: '100%' }}
                     >
-                      {/* 아이콘 패널 */}
-                      <Grid item xs={12} md={4}>
-                        <Box
-                          onClick={() => setSelectedFeature(value)}
-                          onKeyDown={(e) => handleCardKeyDown(e, value)}
-                          tabIndex={0}
-                          role="button"
-                          aria-label={`${value.title} 자세히 보기`}
-                          sx={{
-                            p: { xs: 4, md: 6 },
-                            borderRadius: 'var(--radius-lg)',
-                            bgcolor: 'var(--color-primary-lighter)',
-                            border: '1px solid rgba(21,36,132,0.12)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: 2,
-                            cursor: 'pointer',
-                            minHeight: { md: 220 },
-                            transition: springTransition,
-                            '&:hover': {
-                              bgcolor: 'rgba(21,36,132,0.1)',
-                              transform: 'scale(1.02)',
-                              boxShadow: brandShadowLg
-                            },
-                            '&:focus-visible': {
-                              outline: '2px solid var(--color-primary)',
-                              outlineOffset: '2px'
-                            }
-                          }}
-                        >
-                          <Box sx={{ '& .MuiSvgIcon-root': { color: 'var(--color-primary)', fontSize: 72 } }}>
-                            {value.icon}
-                          </Box>
-                        </Box>
-                      </Grid>
-
-                      {/* 텍스트 패널 */}
-                      <Grid item xs={12} md={8}>
-                        <Typography sx={{
-                          fontSize: '0.8rem', fontWeight: 800,
-                          letterSpacing: '0.12em',
-                          color: 'var(--color-primary)',
-                          mb: 1.5,
-                          ...numericStyle
-                        }}>
-                          {String(index + 1).padStart(2, '0')}
-                        </Typography>
-                        <Typography
-                          variant="h3"
-                          sx={{
-                            fontWeight: 700,
-                            mb: 1.5,
-                            color: 'var(--color-text-primary)',
-                            fontSize: { xs: '1.5rem', md: '2rem' },
-                            letterSpacing: '-0.02em',
-                            wordBreak: 'keep-all'
-                          }}
-                        >
-                          {value.title}
-                        </Typography>
-                        <Typography sx={{
-                          color: 'var(--color-text-secondary)',
-                          fontSize: { xs: '1rem', md: '1.1rem' },
-                          lineHeight: 1.7,
-                          wordBreak: 'keep-all',
-                          mb: 3
-                        }}>
-                          {value.description}
-                        </Typography>
-                        <Button
-                          onClick={() => setSelectedFeature(value)}
-                          variant="outlined"
-                          size="small"
-                          sx={{
-                            color: 'var(--color-primary)',
+                      <Card
+                        elevation={0}
+                        onClick={() => setSelectedFeature(value)}
+                        onKeyDown={(e) => handleCardKeyDown(e, value)}
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`${value.title} - ${value.description}. 클릭하여 자세히 보기`}
+                        sx={{
+                          textAlign: 'center',
+                          p: { xs: 2, sm: 3, md: 4 },
+                          height: '100%',
+                          borderRadius: 'var(--radius-lg)',
+                          bgcolor: 'var(--color-surface)',
+                          border: '2px solid var(--color-border)',
+                          boxShadow: brandShadow,
+                          cursor: 'pointer',
+                          transition: springTransition,
+                          '&:hover, &:focus': {
                             borderColor: 'var(--color-primary)',
-                            borderRadius: 'var(--radius-md)',
-                            px: 3, py: 1,
-                            fontSize: '0.9rem',
-                            fontWeight: 600,
-                            textTransform: 'none',
-                            transition: springTransition,
-                            '&:hover': { bgcolor: 'var(--color-primary-lighter)' }
-                          }}
-                        >
-                          자세히 보기
-                        </Button>
-                      </Grid>
-                    </Grid>
-                  </motion.div>
+                            transform: 'translateY(-4px)',
+                            boxShadow: brandShadowLg
+                          },
+                          '&:focus-visible': {
+                            outline: '2px solid var(--color-primary)',
+                            outlineOffset: '2px'
+                          }
+                        }}
+                      >
+                        <CardContent>
+                          <Box sx={{ mb: 2, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                            <Box sx={{
+                              width: { xs: 50, sm: 60, md: 80 },
+                              height: { xs: 50, sm: 60, md: 80 },
+                              display: 'flex',
+                              justifyContent: 'center',
+                              alignItems: 'center',
+                              '& .MuiSvgIcon-root': {
+                                color: 'var(--color-primary)',
+                                fontSize: { xs: 40, sm: 50, md: 64 }
+                              }
+                            }}>
+                              {value.icon}
+                            </Box>
+                          </Box>
+                          <Typography
+                            variant="h4"
+                            sx={{
+                              fontWeight: 700,
+                              mb: 1.5,
+                              color: 'var(--color-text-primary)',
+                              fontSize: { xs: '1.1rem', sm: '1.4rem', md: '1.8rem', lg: '2rem' },
+                              lineHeight: 1.3,
+                              wordBreak: 'keep-all'
+                            }}
+                          >
+                            {value.title}
+                          </Typography>
+                          <Typography
+                            variant="body1"
+                            sx={{
+                              color: 'var(--color-text-secondary)',
+                              fontSize: { xs: '0.85rem', sm: '0.95rem', md: '1.05rem', lg: '1.15rem' },
+                              fontWeight: 400,
+                              lineHeight: 1.5,
+                              wordBreak: 'keep-all'
+                            }}
+                          >
+                            {value.description}
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  </Grid>
                 ))}
-              </Box>
+              </Grid>
             </Container>
           </motion.div>
 
