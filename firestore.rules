@@ -63,6 +63,11 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // leadership_overrides 서브컬렉션 (system/{docId} 룰이 서브컬렉션 미커버)
+    match /system/leadership_overrides/sections/{sectionId} {
+      allow read, write: if isAdmin();
+    }
+
     // =====================================================================
     // Generation Progress Collection
     // =====================================================================

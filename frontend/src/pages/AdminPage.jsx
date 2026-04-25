@@ -11,7 +11,7 @@ import {
   useTheme,
   Grid
 } from '@mui/material';
-import { Speed, Visibility } from '@mui/icons-material';
+import { Speed, Visibility, AutoStories } from '@mui/icons-material';
 import DashboardLayout from '../components/DashboardLayout';
 import { colors, spacing } from '../theme/tokens';
 import DashboardCards from '../components/admin/DashboardCards';
@@ -20,6 +20,7 @@ import ErrorsMiniTable from '../components/admin/ErrorsMiniTable';
 import NoticeManager from '../components/admin/NoticeManager';
 import PerformanceMonitor from '../components/admin/PerformanceMonitor';
 import UserManagement from '../components/admin/UserManagement';
+import LeadershipManager from '../components/admin/LeadershipManager';
 import SystemSettings from '../components/admin/SystemSettings';
 import { useAuth } from '../hooks/useAuth';
 import { hasAdminAccess } from '../utils/authz';
@@ -274,11 +275,27 @@ function AdminPage() {
           </Box>
         </motion.div>
 
-        {/* 사용자 관리 영역 */}
+        {/* 리더십 철학 관리 영역 */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.6 }}
+        >
+          <Box
+            component="section"
+            aria-labelledby="leadership-section"
+            sx={{ mb: `${spacing.xl}px` }}
+          >
+            <SectionHeading id="leadership-section">리더십 철학 관리</SectionHeading>
+            <LeadershipManager />
+          </Box>
+        </motion.div>
+
+        {/* 사용자 관리 영역 */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.7 }}
         >
           <Box
             component="section"

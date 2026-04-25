@@ -713,6 +713,106 @@ ARGUMENT_LAYER = {
 
 
 # ============================================================================
+# Firestore 오버레이 캐시 — 관리자 편집값이 모듈 기본값을 덮어씀
+# ============================================================================
+
+import time as _time
+
+_VALID_SECTIONS: frozenset = frozenset({
+    "CORE_LEADERSHIP_VALUES",
+    "LEADERSHIP_PHILOSOPHY",
+    "BALANCED_APPROACH",
+    "PREFERRED_EXPRESSIONS",
+    "PRAGMATIC_EXPERIENCE",
+    "ARGUMENT_LAYER",
+})
+
+
+def _base_sections() -> dict:
+    return {
+        "CORE_LEADERSHIP_VALUES": CORE_LEADERSHIP_VALUES,
+        "LEADERSHIP_PHILOSOPHY":  LEADERSHIP_PHILOSOPHY,
+        "BALANCED_APPROACH":      BALANCED_APPROACH,
+        "PREFERRED_EXPRESSIONS":  PREFERRED_EXPRESSIONS,
+        "PRAGMATIC_EXPERIENCE":   PRAGMATIC_EXPERIENCE,
+        "ARGUMENT_LAYER":         ARGUMENT_LAYER,
+    }
+
+
+_OVERRIDE_CACHE: dict = {}
+_OVERRIDE_STATUS: dict = {}
+_CACHE_LOADED_AT: float = 0.0
+_CACHE_TTL_SECONDS: float = 300.0
+
+
+def _invalidate_cache() -> None:
+    global _CACHE_LOADED_AT
+    _CACHE_LOADED_AT = 0.0
+
+
+def _load_overrides() -> None:
+    global _OVERRIDE_CACHE, _OVERRIDE_STATUS, _CACHE_LOADED_AT
+    try:
+        from firebase_admin import firestore as _fs
+        db = _fs.client()
+        cache: dict = {}
+        status: dict = {}
+        for section in _VALID_SECTIONS:
+            doc = (
+                db.collection("system")
+                .document("leadership_overrides")
+                .collection("sections")
+                .document(section)
+                .get()
+            )
+            if doc.exists:
+                payload = (doc.to_dict() or {}).get("data")
+                if isinstance(payload, dict):
+                    cache[section] = payload
+                    status[section] = True
+                else:
+                    status[section] = False
+            else:
+                status[section] = False
+        _OVERRIDE_CACHE, _OVERRIDE_STATUS = cache, status
+    except Exception:
+        _OVERRIDE_CACHE, _OVERRIDE_STATUS = {}, {}
+    finally:
+        _CACHE_LOADED_AT = _time.monotonic()
+
+
+def _ensure_cache() -> None:
+    if _time.monotonic() - _CACHE_LOADED_AT > _CACHE_TTL_SECONDS:
+        _load_overrides()
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    result = dict(base)
+    for key, val in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(val, dict):
+            result[key] = _deep_merge(result[key], val)
+        else:
+            result[key] = val  # 리스트는 통째 교체
+    return result
+
+
+def get_effective_sections() -> dict:
+    """관리자 핸들러용 — Firestore 오버라이드가 적용된 전체 6개 섹션 반환."""
+    _ensure_cache()
+    base = _base_sections()
+    return {
+        name: _deep_merge(bv, _OVERRIDE_CACHE[name]) if name in _OVERRIDE_CACHE else bv
+        for name, bv in base.items()
+    }
+
+
+def get_override_status() -> dict:
+    """섹션별 Firestore 오버라이드 활성 여부 {section: bool}."""
+    _ensure_cache()
+    return dict(_OVERRIDE_STATUS)
+
+
+# ============================================================================
 # 프롬프트 빌더 — 정치 철학 주입
 # ============================================================================
 

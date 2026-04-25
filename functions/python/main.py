@@ -381,6 +381,44 @@ def py_batchAnalyzeBioStyles(req: https_fn.CallableRequest) -> dict:
 
 
 # ============================================================
+# Admin — Leadership Data Management
+# ============================================================
+
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.MB_256,
+    timeout_sec=30,
+)
+def py_getLeadershipData(req: https_fn.CallableRequest) -> dict:
+    """관리자 전용 — 리더십 데이터 전체 조회 (6개 섹션 + 오버라이드 상태)."""
+    from handlers.leadership_admin import handle_get_leadership_data
+    return handle_get_leadership_data(req)
+
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.MB_256,
+    timeout_sec=30,
+)
+def py_updateLeadershipSection(req: https_fn.CallableRequest) -> dict:
+    """관리자 전용 — 리더십 섹션 업데이트 (Firestore 오버라이드 저장)."""
+    from handlers.leadership_admin import handle_update_leadership_section
+    return handle_update_leadership_section(req)
+
+
+@https_fn.on_call(
+    region="asia-northeast3",
+    memory=options.MemoryOption.MB_256,
+    timeout_sec=30,
+)
+def py_resetLeadershipSection(req: https_fn.CallableRequest) -> dict:
+    """관리자 전용 — 리더십 섹션 기본값 복원 (Firestore 오버라이드 삭제)."""
+    from handlers.leadership_admin import handle_reset_leadership_section
+    return handle_reset_leadership_section(req)
+
+
+# ============================================================
 # Admin — Cliche Dictionary
 # ============================================================
 
