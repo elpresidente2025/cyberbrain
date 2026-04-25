@@ -151,7 +151,7 @@ ${BRANDING.serviceName}은 글을 생성할 때부터 이런 표현을 회피하
       ariaLabel: '문체 지문 학습 기능',
       title: '문체 지문 학습',
       description: '의원님의 글쓰기 패턴을 6차원 분석',
-      modalTitle: '의원님이 쓴 글 몇 편이면 충분합니다. 문장의 결까지 AI가 따라 씁니다.',
+      modalTitle: '의원님이 쓴 글 몇 편이면 충분합니다. 채널마다 의원님 문장의 결로 씁니다.',
       details: `평균 문장 길이, 격식의 정도, 자주 쓰는 전환 표현,
 선호하는 종결 어미, 강조할 때의 수사법, 인사와 마무리 습관.
 
@@ -159,7 +159,7 @@ ${BRANDING.serviceName}은 글을 생성할 때부터 이런 표현을 회피하
 AI가 이를 해석하여 생성 제약조건으로 주입합니다.
 
 쓸수록 정밀해집니다.
-보좌진도 직접 쓴 글과 구분하기 어려워집니다.`
+채널이 달라도 의원님 문장의 결이 그대로 살아납니다.`
     },
     {
       icon: <AccountTree aria-hidden="true" />,
@@ -452,7 +452,7 @@ AI가 이미 학습하고 있습니다.
                       }
                     }}
                   >
-                    서비스 시작
+                    무료 체험 신청
                   </Button>
 
                   <Button
@@ -874,7 +874,7 @@ AI가 이미 학습하고 있습니다.
                         textWrap: 'balance'
                       }}
                     >
-                      도입 사례: 블로그 조회수 추이
+                      실측 13개월: 월 조회수 4.4배
                     </Typography>
                     <Typography sx={{
                       color: 'var(--color-text-secondary)',
@@ -1726,7 +1726,7 @@ AI가 이미 학습하고 있습니다.
                       }
                     }}
                   >
-                    서비스 신청
+                    무료 체험 신청
                   </Button>
                 </CardContent>
               </Card>
