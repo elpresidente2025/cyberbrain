@@ -346,7 +346,7 @@ def test_role_governance_final_check_blocks_unverified_completed_facts():
     assert "확보했습니다" in xml
     assert "합의했습니다" in xml
     assert "확정됐습니다" in xml
-    assert "참고자료에 공식 문서·의결·합의 근거" in xml
+    assert "공식 문서·예산안·의결·협약·회의록·보도자료 등" in xml
 
 
 def test_role_governance_final_check_suggests_procedural_rewrites():
