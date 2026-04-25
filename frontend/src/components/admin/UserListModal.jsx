@@ -155,10 +155,10 @@ function UserListModal({ open, onClose }) {
         sx: { minHeight: '70vh' }
       }}
     >
-      <DialogTitle sx={{ 
+      <DialogTitle sx={{
         pb: 1,
-        borderBottom: '1px solid #e0e0e0',
-        bgcolor: '#f8f9fa'
+        borderBottom: '1px solid',
+        borderColor: 'divider',
       }}>
         <Box display="flex" justifyContent="space-between" alignItems="center">
           <Box display="flex" alignItems="center" gap={1}>
@@ -183,7 +183,7 @@ function UserListModal({ open, onClose }) {
 
       <DialogContent sx={{ p: 0 }}>
         {/* 검색 및 액션 바 */}
-        <Box sx={{ p: 2, borderBottom: '1px solid #e0e0e0', bgcolor: '#fafafa' }}>
+        <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
           <Box display="flex" gap={2} alignItems="center" justifyContent="space-between">
             <TextField
               placeholder="이름, 이메일, 직책, 지역, 선거구로 검색..."
@@ -246,7 +246,7 @@ function UserListModal({ open, onClose }) {
               <TableContainer component={Paper} variant="outlined">
                 <Table size="small">
                   <TableHead>
-                    <TableRow sx={{ bgcolor: '#f5f5f5' }}>
+                    <TableRow sx={{ bgcolor: 'action.hover' }}>
                       <TableCell><strong>이름</strong></TableCell>
                       <TableCell><strong>이메일</strong></TableCell>
                       <TableCell><strong>직책</strong></TableCell>
@@ -335,7 +335,7 @@ function UserListModal({ open, onClose }) {
         </Box>
       </DialogContent>
 
-      <DialogActions sx={{ p: 2, borderTop: '1px solid #e0e0e0', bgcolor: '#f8f9fa' }}>
+      <DialogActions sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
         <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
           {!loading && `총 ${filteredUsers.length}명의 사용자`}
         </Typography>

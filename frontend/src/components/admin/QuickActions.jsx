@@ -383,7 +383,7 @@ function QuickActions() {
           )}
         </Box>
 
-        {/* ── 주요 작업 — 7 : 5 비대칭 ── */}
+        {/* ── 주요 작업 — 1 : 1 균등 ── */}
         <Grid
           container
           spacing={2}
@@ -391,26 +391,26 @@ function QuickActions() {
           aria-labelledby="quick-actions-heading"
           sx={{ mb: 2 }}
         >
-          <Grid item xs={12} sm={7}>
+          <Grid item xs={12} sm={6}>
             <Button
               fullWidth
               variant="contained"
               startIcon={<People aria-hidden="true" />}
               onClick={() => setUserListOpen(true)}
               aria-label="사용자 목록 모달 열기"
-              sx={{ py: 1.75, ...primaryContained }}
+              sx={{ py: 1.5, ...primaryContained }}
             >
               사용자 목록
             </Button>
           </Grid>
-          <Grid item xs={12} sm={5}>
+          <Grid item xs={12} sm={6}>
             <Button
               fullWidth
               variant="outlined"
               startIcon={<Api aria-hidden="true" />}
               onClick={() => setStatusUpdateOpen(true)}
               aria-label="상태 수정 모달 열기"
-              sx={{ py: 1.75, ...primaryOutlined }}
+              sx={{ py: 1.5, ...primaryOutlined }}
             >
               상태 수정
             </Button>

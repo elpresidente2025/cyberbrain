@@ -189,8 +189,8 @@ function StatusUpdateModal({ open, onClose }) {
       <DialogTitle>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Api sx={{ color: theme.palette.ui?.header || '#152484' }} />
-            <Typography variant="h6" sx={{ color: theme.palette.ui?.header || '#152484', fontWeight: 600 }}>
+            <Api sx={{ color: theme.palette.primary.main }} />
+            <Typography variant="h6" sx={{ color: theme.palette.primary.main, fontWeight: 600 }}>
               시스템 상태 관리
             </Typography>
           </Box>
@@ -208,7 +208,7 @@ function StatusUpdateModal({ open, onClose }) {
         ) : (
           <>
             {/* 현재 상태 표시 */}
-            <Box sx={{ mb: 3, p: 2, backgroundColor: '#f5f5f5', borderRadius: 0.5 }}>
+            <Box sx={{ mb: 3, p: 2, bgcolor: 'action.hover', borderRadius: 0.5 }}>
               <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 600 }}>
                 현재 시스템 상태
               </Typography>
@@ -227,7 +227,7 @@ function StatusUpdateModal({ open, onClose }) {
                       size="small"
                       startIcon={<Refresh />}
                       onClick={fetchCurrentStatus}
-                      sx={{ color: theme.palette.ui?.header || '#152484' }}
+                      sx={{ color: theme.palette.primary.main }}
                     >
                       새로고침
                     </Button>
@@ -432,9 +432,9 @@ function StatusUpdateModal({ open, onClose }) {
           variant="contained"
           onClick={handleStatusUpdate}
           disabled={updating || !newStatus || !reason.trim() || success}
-          sx={{ 
-            backgroundColor: theme.palette.ui?.header || '#152484',
-            '&:hover': { backgroundColor: '#003A87' }
+          sx={{
+            backgroundColor: theme.palette.primary.main,
+            '&:hover': { backgroundColor: theme.palette.primary.dark }
           }}
         >
           {updating ? (
