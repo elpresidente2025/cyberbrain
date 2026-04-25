@@ -8,6 +8,7 @@ import {
   Box,
   Button,
   Alert,
+  Paper,
   useTheme,
   Grid
 } from '@mui/material';
@@ -55,6 +56,7 @@ function AdminPage() {
   const navigate = useNavigate();
   const { notification, showNotification, hideNotification } = useNotification();
   const [performanceMonitorOpen, setPerformanceMonitorOpen] = useState(false);
+  const [leadershipOpen, setLeadershipOpen] = useState(false);
 
   // 성능 모니터 열기/닫기 핸들러 (메모이제이션)
   const handleOpenPerformanceMonitor = useCallback(() => {
@@ -287,7 +289,55 @@ function AdminPage() {
             sx={{ mb: `${spacing.xl}px` }}
           >
             <SectionHeading id="leadership-section">리더십 철학 관리</SectionHeading>
-            <LeadershipManager />
+            <Paper
+              elevation={0}
+              sx={{
+                p: { xs: 2, sm: 3 },
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 2,
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <AutoStories sx={{ color: colors.brand.primary, fontSize: 26 }} />
+                <Box>
+                  <Typography
+                    variant="subtitle1"
+                    sx={{ fontWeight: 700, color: colors.brand.primary, lineHeight: 1.3 }}
+                  >
+                    리더십 철학 관리
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                    leadership.py 섹션별 오버레이 편집 — 저장된 값이 Python 원본을 덮어씁니다.
+                  </Typography>
+                </Box>
+              </Box>
+              <Button
+                variant="outlined"
+                startIcon={<AutoStories />}
+                onClick={() => setLeadershipOpen(true)}
+                aria-label="리더십 철학 관리 편집 열기"
+                sx={{
+                  borderColor: 'rgba(21, 36, 132, 0.4)',
+                  color: colors.brand.primary,
+                  '&:hover': {
+                    borderColor: colors.brand.primary,
+                    bgcolor: 'rgba(21, 36, 132, 0.05)',
+                  },
+                }}
+              >
+                편집 열기
+              </Button>
+            </Paper>
+            <LeadershipManager
+              open={leadershipOpen}
+              onClose={() => setLeadershipOpen(false)}
+            />
           </Box>
         </motion.div>
 

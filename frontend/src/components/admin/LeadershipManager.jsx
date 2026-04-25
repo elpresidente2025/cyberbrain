@@ -2,11 +2,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Typography, Button, TextField, Paper, CircularProgress,
+  List, ListItemButton, ListItemText,
+  Dialog, DialogTitle, DialogContent, DialogActions,
   Accordion, AccordionSummary, AccordionDetails,
-  Alert, Snackbar, Chip, Divider, IconButton, useTheme,
+  Alert, Snackbar, Chip, Divider, IconButton,
 } from '@mui/material';
-import { ExpandMore, Save, RestartAlt, Add, Delete, AutoStories } from '@mui/icons-material';
-import HongKongNeonCard from '../HongKongNeonCard';
+import { ExpandMore, Save, RestartAlt, Add, Delete, AutoStories, Close } from '@mui/icons-material';
 import { callFunctionWithRetry } from '../../services/firebaseService';
 import { colors } from '../../theme/tokens';
 
@@ -44,7 +45,6 @@ const SECTION_META = [
   { key: 'ARGUMENT_LAYER',         label: '논거 레이어',     desc: '5개 도메인 논거체인·실증근거·해외사례·반론재반박·한국적맥락', isComplex: true },
 ];
 
-// 목록 필드 경로 — 해당 경로의 값이 배열이면 편집 시 텍스트로 변환
 const TEXT_LIST_PATHS = {
   CORE_LEADERSHIP_VALUES: [
     'basicSociety.principles','basicSociety.policies',
@@ -93,7 +93,7 @@ function pathSet(obj, pathStr, value) {
 }
 
 // ──────────────────────────────────────────────────────
-// 정규화 (API → 편집버퍼) / 역정규화 (저장 시)
+// 정규화 / 역정규화
 // ──────────────────────────────────────────────────────
 
 function normalize(sectionKey, data) {
@@ -166,10 +166,10 @@ function SubPaper({ title, children }) {
 function renderCoreLeadershipValues(buf, sf) {
   return Object.entries(DOMAIN_LABELS).map(([key, label]) => (
     <SubPaper key={key} title={label}>
-      <FField label="비전"                value={buf?.[key]?.vision}     onChange={v => sf(`${key}.vision`, v)} />
-      <ListField label="원칙"             value={buf?.[key]?.principles} onChange={v => sf(`${key}.principles`, v)} />
-      <ListField label="정책"             value={buf?.[key]?.policies}   onChange={v => sf(`${key}.policies`, v)} />
-      <FField label="철학"                value={buf?.[key]?.philosophy} onChange={v => sf(`${key}.philosophy`, v)} />
+      <FField label="비전"    value={buf?.[key]?.vision}     onChange={v => sf(`${key}.vision`, v)} />
+      <ListField label="원칙" value={buf?.[key]?.principles} onChange={v => sf(`${key}.principles`, v)} />
+      <ListField label="정책" value={buf?.[key]?.policies}   onChange={v => sf(`${key}.policies`, v)} />
+      <FField label="철학"    value={buf?.[key]?.philosophy} onChange={v => sf(`${key}.philosophy`, v)} />
     </SubPaper>
   ));
 }
@@ -194,8 +194,8 @@ function renderLeadershipPhilosophy(buf, sf) {
       <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>핵심원칙</Typography>
       {CORE_PRINCIPLES.map(([k, label]) => (
         <SubPaper key={k} title={label}>
-          <FField label="원칙" value={buf?.coreprinciples?.[k]?.principle} onChange={v => sf(`coreprinciples.${k}.principle`, v)} />
-          <FField label="의미" value={buf?.coreprinciples?.[k]?.meaning}   onChange={v => sf(`coreprinciples.${k}.meaning`, v)} />
+          <FField label="원칙" value={buf?.coreprinciples?.[k]?.principle}   onChange={v => sf(`coreprinciples.${k}.principle`, v)} />
+          <FField label="의미" value={buf?.coreprinciples?.[k]?.meaning}     onChange={v => sf(`coreprinciples.${k}.meaning`, v)} />
           <FField label="적용" value={buf?.coreprinciples?.[k]?.application} onChange={v => sf(`coreprinciples.${k}.application`, v)} />
         </SubPaper>
       ))}
@@ -203,7 +203,7 @@ function renderLeadershipPhilosophy(buf, sf) {
       <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>정책접근</Typography>
       {POLICY_APPROACHES.map(([k, label]) => (
         <SubPaper key={k} title={label}>
-          <FField label="스타일" value={buf?.policyApproach?.[k]?.style} onChange={v => sf(`policyApproach.${k}.style`, v)} />
+          <FField label="스타일" value={buf?.policyApproach?.[k]?.style}          onChange={v => sf(`policyApproach.${k}.style`, v)} />
           <ListField label="특성" value={buf?.policyApproach?.[k]?.characteristics} onChange={v => sf(`policyApproach.${k}.characteristics`, v)} />
         </SubPaper>
       ))}
@@ -244,8 +244,8 @@ function renderBalancedApproach(buf, sf) {
       ))}
       <Divider sx={{ my: 2 }} />
       <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>건설적 비판</Typography>
-      <ListField label="프로세스"  value={buf?.constructiveCriticism?.process}    onChange={v => sf('constructiveCriticism.process', v)} />
-      <ListField label="원칙"      value={buf?.constructiveCriticism?.principles} onChange={v => sf('constructiveCriticism.principles', v)} />
+      <ListField label="프로세스" value={buf?.constructiveCriticism?.process}    onChange={v => sf('constructiveCriticism.process', v)} />
+      <ListField label="원칙"     value={buf?.constructiveCriticism?.principles} onChange={v => sf('constructiveCriticism.principles', v)} />
     </>
   );
 }
@@ -301,7 +301,7 @@ function renderPragmaticExperience(buf, sf) {
 }
 
 // ──────────────────────────────────────────────────────
-// 섹션 렌더러 6 — 논거 레이어 (카드 편집)
+// 섹션 렌더러 6 — 논거 레이어
 // ──────────────────────────────────────────────────────
 
 function ArgumentItemCard({ item, fields, onEdit, onDelete }) {
@@ -333,7 +333,10 @@ function renderArgumentLayer(buf, setArgField, addArgItem, removeArgItem) {
         borderColor: 'divider',
         mb: 1,
         '&:before': { display: 'none' },
-        '&.Mui-expanded': { borderColor: 'rgba(21, 36, 132, 0.3)', borderLeft: `2px solid ${colors.brand.primary}` },
+        '&.Mui-expanded': {
+          borderColor: 'rgba(21, 36, 132, 0.3)',
+          borderLeft: `2px solid ${colors.brand.primary}`,
+        },
       }}>
       <AccordionSummary expandIcon={<ExpandMore />}>
         <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>{domainLabel}</Typography>
@@ -375,14 +378,13 @@ function renderArgumentLayer(buf, setArgField, addArgItem, removeArgItem) {
 // 메인 컴포넌트
 // ──────────────────────────────────────────────────────
 
-export default function LeadershipManager() {
-  const theme = useTheme();
+export default function LeadershipManager({ open, onClose }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null);
   const [resetting, setResetting] = useState(null);
   const [overrideStatus, setOverrideStatus] = useState({});
   const [buffers, setBuffers] = useState({});
-  const [expanded, setExpanded] = useState('CORE_LEADERSHIP_VALUES');
+  const [selected, setSelected] = useState('CORE_LEADERSHIP_VALUES');
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
 
   const showNotification = (message, severity = 'success') =>
@@ -405,9 +407,11 @@ export default function LeadershipManager() {
     }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  // 모달이 열릴 때 데이터 로드
+  useEffect(() => {
+    if (open) loadData();
+  }, [open, loadData]);
 
-  // 섹션 내 특정 경로 값 업데이트
   const setField = useCallback((sectionKey, pathStr, value) => {
     setBuffers(prev => {
       const updated = JSON.parse(JSON.stringify(prev));
@@ -416,7 +420,6 @@ export default function LeadershipManager() {
     });
   }, []);
 
-  // ARGUMENT_LAYER 전용
   const setArgField = useCallback((domain, subKey, idx, fk, value) => {
     setBuffers(prev => {
       const updated = JSON.parse(JSON.stringify(prev));
@@ -484,89 +487,210 @@ export default function LeadershipManager() {
     }
   };
 
-  const primaryColor = colors.brand.primary;
+  const selectedMeta = SECTION_META.find(m => m.key === selected);
+  const overrideCount = Object.values(overrideStatus).filter(Boolean).length;
 
   return (
-    <HongKongNeonCard sx={{ p: { xs: 2, sm: 3 }, '&:hover': { transform: 'none' } }}>
-      {/* 헤더 */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <AutoStories sx={{ color: primaryColor }} />
-          <Typography variant="h6" sx={{ color: primaryColor, fontWeight: 600 }}>
-            리더십 철학 관리
-          </Typography>
-        </Box>
-        <Button variant="outlined" size="small" onClick={loadData} disabled={loading}>
-          새로고침
-        </Button>
-      </Box>
-
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        SECTION_META.map(meta => (
-          <Accordion
-            key={meta.key}
-            expanded={expanded === meta.key}
-            onChange={(_, open) => setExpanded(open ? meta.key : false)}
-            disableGutters
-            elevation={0}
-            sx={{
-              mb: 1.5,
-              border: '1px solid',
-              borderColor: 'divider',
-              '&:before': { display: 'none' },
-              '&.Mui-expanded': {
-                borderColor: `rgba(21, 36, 132, 0.4)`,
-                borderLeft: `3px solid ${colors.brand.primary}`,
-              },
-            }}
+    <>
+      <Dialog
+        open={open}
+        onClose={onClose}
+        fullWidth
+        maxWidth="lg"
+        PaperProps={{
+          sx: {
+            height: '88vh',
+            display: 'flex',
+            flexDirection: 'column',
+            m: { xs: 1, sm: 2 },
+            maxHeight: { xs: 'calc(100% - 16px)', sm: 'calc(100% - 32px)' },
+          },
+        }}
+      >
+        {/* 헤더 */}
+        <DialogTitle
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
+            py: 2,
+            px: 3,
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            flexShrink: 0,
+          }}
+        >
+          <AutoStories sx={{ color: colors.brand.primary, fontSize: 22 }} />
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, color: colors.brand.primary, lineHeight: 1.2 }}>
+              리더십 철학 관리
+            </Typography>
+            {overrideCount > 0 && (
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                {overrideCount}개 섹션 오버레이 적용 중
+              </Typography>
+            )}
+          </Box>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={loadData}
+            disabled={loading}
+            sx={{ mr: 1, borderColor: 'divider', color: 'text.secondary', '&:hover': { borderColor: 'text.primary' } }}
           >
-            <AccordionSummary expandIcon={<ExpandMore />}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', width: '100%', pr: 1 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                  {meta.label}
-                </Typography>
-                {overrideStatus[meta.key] && (
-                  <Chip label="적용중" size="small" color="primary" sx={{ height: 18, fontSize: '0.65rem' }} />
-                )}
-                <Typography variant="caption" sx={{ color: 'text.secondary', ml: 0.5 }}>
-                  {meta.desc}
-                </Typography>
-              </Box>
-            </AccordionSummary>
-            <AccordionDetails sx={{ pt: 1, pb: 2 }}>
-              {sectionContent(meta)}
+            새로고침
+          </Button>
+          <IconButton onClick={onClose} size="small" aria-label="닫기">
+            <Close />
+          </IconButton>
+        </DialogTitle>
 
-              {/* 섹션 액션 버튼 */}
-              <Box sx={{ display: 'flex', gap: 1, mt: 2, justifyContent: 'flex-end' }}>
-                <Button
-                  variant="outlined"
-                  color="warning"
-                  size="small"
-                  disabled={!overrideStatus[meta.key] || resetting === meta.key}
-                  onClick={() => handleReset(meta.key)}
-                  startIcon={resetting === meta.key ? <CircularProgress size={14} /> : <RestartAlt />}
-                >
-                  기본값으로 초기화
-                </Button>
-                <Button
-                  variant="contained"
-                  size="small"
-                  disabled={saving === meta.key}
-                  onClick={() => handleSave(meta.key)}
-                  startIcon={saving === meta.key ? <CircularProgress size={14} /> : <Save />}
-                  sx={{ bgcolor: primaryColor, '&:hover': { bgcolor: '#1e30a0' } }}
-                >
-                  저장
-                </Button>
+        {/* 본문 */}
+        <DialogContent sx={{ display: 'flex', p: 0, overflow: 'hidden', flex: 1 }}>
+          {loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%' }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <>
+              {/* 좌측 네비게이션 */}
+              <Box
+                sx={{
+                  width: { xs: 160, sm: 210 },
+                  flexShrink: 0,
+                  borderRight: '1px solid',
+                  borderColor: 'divider',
+                  overflowY: 'auto',
+                  bgcolor: 'action.hover',
+                }}
+              >
+                <List dense disablePadding>
+                  {SECTION_META.map((meta) => (
+                    <ListItemButton
+                      key={meta.key}
+                      selected={selected === meta.key}
+                      onClick={() => setSelected(meta.key)}
+                      sx={{
+                        py: 1.5,
+                        px: { xs: 1.5, sm: 2 },
+                        borderLeft: '3px solid',
+                        borderLeftColor: selected === meta.key
+                          ? colors.brand.primary
+                          : 'transparent',
+                        transition: 'border-color 0.15s',
+                        '&.Mui-selected': {
+                          bgcolor: 'rgba(21, 36, 132, 0.08)',
+                        },
+                        '&.Mui-selected:hover': {
+                          bgcolor: 'rgba(21, 36, 132, 0.12)',
+                        },
+                      }}
+                    >
+                      <ListItemText
+                        primary={
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+                            <span>{meta.label}</span>
+                            {overrideStatus[meta.key] && (
+                              <Chip
+                                label="적용"
+                                size="small"
+                                sx={{
+                                  height: 15,
+                                  fontSize: '0.58rem',
+                                  bgcolor: 'rgba(21, 36, 132, 0.1)',
+                                  color: colors.brand.primary,
+                                  border: '1px solid rgba(21, 36, 132, 0.25)',
+                                  '& .MuiChip-label': { px: 0.75 },
+                                }}
+                              />
+                            )}
+                          </Box>
+                        }
+                        secondary={meta.desc}
+                        primaryTypographyProps={{
+                          variant: 'body2',
+                          fontWeight: selected === meta.key ? 600 : 400,
+                          sx: { lineHeight: 1.3 },
+                        }}
+                        secondaryTypographyProps={{
+                          variant: 'caption',
+                          sx: {
+                            fontSize: '0.62rem',
+                            lineHeight: 1.3,
+                            mt: 0.3,
+                            display: 'block',
+                            wordBreak: 'keep-all',
+                          },
+                        }}
+                      />
+                    </ListItemButton>
+                  ))}
+                </List>
               </Box>
-            </AccordionDetails>
-          </Accordion>
-        ))
-      )}
+
+              {/* 우측 콘텐츠 패널 */}
+              <Box
+                sx={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  p: { xs: 2, sm: 3 },
+                }}
+              >
+                {selectedMeta && (
+                  <>
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5 }}>
+                        {selectedMeta.label}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {selectedMeta.desc}
+                      </Typography>
+                    </Box>
+                    {sectionContent(selectedMeta)}
+                  </>
+                )}
+              </Box>
+            </>
+          )}
+        </DialogContent>
+
+        {/* 액션 영역 */}
+        <DialogActions
+          sx={{
+            px: 3,
+            py: 2,
+            borderTop: '1px solid',
+            borderColor: 'divider',
+            flexShrink: 0,
+            gap: 1,
+          }}
+        >
+          <Button
+            variant="outlined"
+            color="warning"
+            size="small"
+            disabled={!overrideStatus[selected] || resetting === selected}
+            onClick={() => handleReset(selected)}
+            startIcon={resetting === selected ? <CircularProgress size={14} /> : <RestartAlt />}
+          >
+            기본값으로 초기화
+          </Button>
+          <Box sx={{ flex: 1 }} />
+          <Button size="small" onClick={onClose} sx={{ color: 'text.secondary' }}>
+            닫기
+          </Button>
+          <Button
+            variant="contained"
+            size="small"
+            disabled={saving === selected}
+            onClick={() => handleSave(selected)}
+            startIcon={saving === selected ? <CircularProgress size={14} /> : <Save />}
+            sx={{ bgcolor: colors.brand.primary, '&:hover': { bgcolor: '#1e30a0' } }}
+          >
+            저장
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={notification.open}
@@ -578,6 +702,6 @@ export default function LeadershipManager() {
           {notification.message}
         </Alert>
       </Snackbar>
-    </HongKongNeonCard>
+    </>
   );
 }
