@@ -105,6 +105,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     """
     # Extract params
     writing_method = params.get('writingMethod')
+    is_support_appeal = writing_method == "support_appeal_writing"
     category = str(params.get('category') or '').strip().lower()
     template_builder = TEMPLATE_BUILDERS.get(writing_method, build_daily_communication_prompt)
 
@@ -166,7 +167,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     source_blocks = [instructions_text]
     if news_context_text:
         source_blocks.append(news_context_text)
-    if rag_context_text:
+    if rag_context_text and not is_support_appeal:
         source_blocks.append(f"[사용자 프로필 기반 맥락]\n{rag_context_text}")
     bio_source_line = ""
     bio_source_rule = "보조 자료: 사용자 프로필(Bio)은 화자 정체성과 어조 참고용이며, 분량이 부족할 때만 활용하세요."
@@ -310,7 +311,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
             else:
                 intro_anchor_topic = normalize_context_text(first)
 
-        if stance_count > 0:
+        if stance_count > 0 and not is_support_appeal:
             context_injection = f"""
 <body_expansion mandatory="true">
   <description>아래 {stance_count}개 설계도에 따라 본론 섹션을 확장합니다.</description>
@@ -377,7 +378,7 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
             for item in source_contract.get('source_sequence_items', [])
             if normalize_context_text(item)
         ] if isinstance(source_contract.get('source_sequence_items'), list) else []
-        if answer_type == 'implementation_plan' or execution_items:
+        if not is_support_appeal and (answer_type == 'implementation_plan' or execution_items):
             item_lines = "\n".join(
                 f'    <item priority="{i + 1}">{_xml_text(item)}</item>'
                 for i, item in enumerate(execution_items[:8])

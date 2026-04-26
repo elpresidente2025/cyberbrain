@@ -1,4 +1,4 @@
-"""support_appeal — RAG 필터 및 validator 단위 테스트."""
+"""support_appeal — RAG 필터, validator, prompt_builder 단위 테스트."""
 from __future__ import annotations
 
 import sys
@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
 
 from handlers.pipeline_start import _should_discard_support_appeal_rag
 from agents.common.support_appeal_validator import validate_support_appeal_writing
+from agents.core.prompt_builder import build_structure_prompt
 
 
 # ---------------------------------------------------------------------------
@@ -146,3 +147,48 @@ class TestSupportAppealValidator:
         )
         result = validate_support_appeal_writing(content)
         assert "SUPPORT_APPEAL_CTA_MISSING" not in result["issues"]
+
+
+# ---------------------------------------------------------------------------
+# prompt_builder: support_appeal 전용 블록 주입 차단
+# ---------------------------------------------------------------------------
+
+class TestSupportAppealPromptBuilder:
+
+    _BASE_PARAMS = {
+        "writingMethod": "support_appeal_writing",
+        "category": "daily-communication",
+        "topic": "샘플구의원 예비후보 홍길동, 주민 삶에 실질적 변화 약속드립니다",
+        "authorBio": "홍길동, 샘플구의원 예비후보",
+        "instructions": ["계산동과 작전동은 오랜 시간 활력을 잃어가고 있습니다."],
+        "ragContext": "지역화폐 지급 방안 조례 제정 및 예산 편성을 추진합니다.",
+        "contextAnalysis": {
+            "answer_type": "implementation_plan",
+            "central_claim": "주민 삶 개선",
+            "execution_items": ["조례 제정", "예산 확보"],
+            "source_contract": {},
+            "contentStrategy": {},
+        },
+        "stanceList": [
+            {"topic": "지역화폐 도입", "expansion_why": "소비 활성화", "expansion_effect": "골목상권 살리기"}
+        ],
+        "lengthSpec": {"targetChars": 1200, "minChars": 900, "maxChars": 1600},
+        "outputMode": "xml",
+        "newsSourceMode": "news",
+        "userProfile": {},
+    }
+
+    def test_rag_context_excluded_from_prompt(self):
+        """support_appeal_writing 에서는 ragContext가 source_blocks에 포함되지 않음."""
+        prompt = build_structure_prompt(self._BASE_PARAMS)
+        assert "사용자 프로필 기반 맥락" not in prompt
+
+    def test_body_expansion_excluded_from_prompt(self):
+        """support_appeal_writing 에서는 body_expansion 블록이 주입되지 않음."""
+        prompt = build_structure_prompt(self._BASE_PARAMS)
+        assert "<body_expansion" not in prompt
+
+    def test_execution_plan_excluded_from_prompt(self):
+        """support_appeal_writing 에서는 execution_plan 블록이 주입되지 않음."""
+        prompt = build_structure_prompt(self._BASE_PARAMS)
+        assert "<execution_plan" not in prompt
