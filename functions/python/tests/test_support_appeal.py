@@ -10,7 +10,9 @@ if str(ROOT) not in sys.path:
 
 from handlers.pipeline_start import _should_discard_support_appeal_rag
 from agents.common.support_appeal_validator import validate_support_appeal_writing
+from agents.common.support_appeal_bio_sanitizer import sanitize_support_appeal_author_bio
 from agents.core.prompt_builder import build_structure_prompt
+from agents.templates.support_appeal import build_support_appeal_prompt
 
 
 # ---------------------------------------------------------------------------
@@ -192,3 +194,122 @@ class TestSupportAppealPromptBuilder:
         """support_appeal_writing 에서는 execution_plan 블록이 주입되지 않음."""
         prompt = build_structure_prompt(self._BASE_PARAMS)
         assert "<execution_plan" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# Bio sanitizer: sanitize_support_appeal_author_bio
+# ---------------------------------------------------------------------------
+
+class TestSupportAppealBioSanitizer:
+
+    def test_keeps_pure_identity_sentence(self):
+        """직책·활동 이력만 있는 문장은 보존."""
+        bio = "더불어민주당 청년위원장으로 활동했습니다."
+        result = sanitize_support_appeal_author_bio(bio)
+        assert "청년위원장" in result
+        assert "활동" in result
+
+    def test_drops_pure_policy_sentence(self):
+        """정체성 마커 없이 정책 구조어만 있는 문장은 제거."""
+        bio = "지역 청년 건강바우처를 도입하고 조례 제정을 추진합니다."
+        result = sanitize_support_appeal_author_bio(bio)
+        assert result == ""
+
+    def test_keeps_mixed_sentence_with_identity(self):
+        """직책 + 정책 혼합 문장은 정체성을 위해 보존."""
+        bio = "청년위원장으로 활동하며 지역 청년 바우처 도입에 참여했습니다."
+        result = sanitize_support_appeal_author_bio(bio)
+        assert "청년위원장" in result
+
+    def test_drops_only_policy_keeps_identity_in_multiline(self):
+        """여러 문장 중 정책-only 문장만 제거하고 정체성 문장은 보존."""
+        bio = (
+            "더불어민주당 청년위원장으로 활동했습니다. "
+            "지역화폐 지급과 청년 바우처 도입을 추진합니다. "
+            "주민참여예산 시민위원장을 역임했습니다."
+        )
+        result = sanitize_support_appeal_author_bio(bio)
+        assert "청년위원장" in result
+        assert "주민참여예산" in result
+        assert "지역화폐 지급" not in result
+        assert "바우처 도입" not in result
+
+    def test_empty_input_returns_empty(self):
+        assert sanitize_support_appeal_author_bio("") == ""
+        assert sanitize_support_appeal_author_bio("   ") == ""
+
+    def test_does_not_hardcode_brand_policy_names(self):
+        """특정 정책 브랜드명(지역화폐·천원의 아침밥)을 정체성 문장에서 제거하지 않음."""
+        bio = "인천에서 태어나 지역화폐 운동에 참여한 청년위원장입니다."
+        result = sanitize_support_appeal_author_bio(bio)
+        assert "지역화폐" in result
+        assert "청년위원장" in result
+
+
+# ---------------------------------------------------------------------------
+# Validator donation footer strip
+# ---------------------------------------------------------------------------
+
+class TestSupportAppealValidatorFooterStrip:
+
+    def _make_content(self, h2s, tail):
+        h2_html = "".join(f"<h2>{h}</h2><p>본문입니다.</p>" for h in h2s)
+        return h2_html + f"<p>{tail}</p>"
+
+    def test_donation_footer_does_not_trigger_numeric_overload(self):
+        """후원 안내 블록(연간 10만원/100만원/25%)은 NUMERIC 카운트에서 제외."""
+        body = self._make_content(["말할 자격"], "기회를 주십시오.")
+        donation = (
+            "\n새마을금고 9002-2087-6629-2 후원회"
+            "\n* 본인의 실명으로만 후원 가능하며, 외국인은 불가합니다."
+            "\n* 연간 10만원까지 전액 세액공제가 가능합니다."
+            "\n* 1인당 연간 100만원까지 후원할 수 있습니다."
+        )
+        result = validate_support_appeal_writing(body + donation)
+        assert "SUPPORT_APPEAL_NUMERIC_OVERLOAD" not in str(result["issues"])
+        assert result["numeric_count"] == 0
+
+    def test_body_numerics_still_counted_after_strip(self):
+        """본문에 정책 수치가 3개 있으면 후원 안내와 무관하게 NUMERIC_OVERLOAD."""
+        body = self._make_content(
+            ["말할 자격"],
+            "100억 규모, 50명 목표, 30개 사업, 기회를 주십시오.",
+        )
+        donation = "\n새마을금고 9002-2087-6629-2 후원회\n* 본인의 실명으로만 후원."
+        result = validate_support_appeal_writing(body + donation)
+        assert any("NUMERIC_OVERLOAD" in issue for issue in result["issues"])
+
+
+# ---------------------------------------------------------------------------
+# support_appeal template: material_usage_lock + sanitized author_bio
+# ---------------------------------------------------------------------------
+
+class TestSupportAppealTemplate:
+
+    _BASE_OPTIONS = {
+        "topic": "샘플구의원 예비후보 홍길동, 주민과 함께",
+        "authorName": "홍길동",
+        "instructions": ["계산동은 오랜 시간 활력을 잃었습니다."],
+        "userProfile": {"status": "예비"},
+    }
+
+    def test_material_usage_lock_block_present(self):
+        prompt = build_support_appeal_prompt({
+            **self._BASE_OPTIONS,
+            "authorBio": "더불어민주당 청년위원장",
+        })
+        assert "<material_usage_lock" in prompt
+        assert "identity_only" in prompt
+        assert "policy_not_section" in prompt
+
+    def test_author_bio_sanitized_in_prompt(self):
+        """authorBio의 정책-only 문장은 프롬프트의 <author>에 들어가지 않음."""
+        prompt = build_support_appeal_prompt({
+            **self._BASE_OPTIONS,
+            "authorBio": (
+                "더불어민주당 청년위원장으로 활동했습니다. "
+                "조례 제정과 청년 바우처 도입을 추진합니다."
+            ),
+        })
+        assert "청년위원장" in prompt
+        assert "조례 제정과 청년 바우처 도입을 추진합니다" not in prompt

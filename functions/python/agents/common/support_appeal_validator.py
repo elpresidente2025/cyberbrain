@@ -24,10 +24,29 @@ _CTA_RE = re.compile(
     r"맡겨\s*주|힘을\s*실어\s*주|도와\s*주|밀어\s*주)"
 )
 
+_DONATION_FOOTER_PATTERNS = [
+    re.compile(r"\n\s*(?:[가-힣]+(?:은행|금고|뱅크|저축은행))\s+[\d\-]+.*$", re.DOTALL),
+    re.compile(r"\n\s*\*\s*본인의\s*실명.*$", re.DOTALL),
+    re.compile(r"\n\s*\*\s*연간\s*\d+\s*만원.*$", re.DOTALL),
+    re.compile(r"\n\s*\*\s*\d+인당\s*연간.*$", re.DOTALL),
+]
+
+
+def _strip_donation_footer(content: str) -> str:
+    """후원 안내 블록(은행·계좌, 실명·세액공제 안내)을 제거.
+
+    후원 안내는 generation 단계 이후 고정 블록으로 붙는 경우가 많아
+    validator의 NUMERIC 검사에서 false positive를 일으킨다."""
+    cleaned = content
+    for pattern in _DONATION_FOOTER_PATTERNS:
+        cleaned = pattern.sub("", cleaned)
+    return cleaned.strip()
+
 
 def validate_support_appeal_writing(content: str) -> Dict[str, Any]:
     """support_appeal 본문 4개 게이트 검증. 각 게이트는 issue 코드 발급."""
     issues: List[str] = []
+    content = _strip_donation_footer(content)
 
     headings = [h.strip() for h in _H2_RE.findall(content)]
 

@@ -3,6 +3,7 @@ from ..common.editorial import STRUCTURE_SPEC, TITLE_SPEC
 from ..common.election_rules import get_election_stage
 from ..common.speaker_identity import build_speaker_identity_xml
 from ..common.leadership import LEADERSHIP_PHILOSOPHY
+from ..common.support_appeal_bio_sanitizer import sanitize_support_appeal_author_bio
 
 
 @dataclass
@@ -112,7 +113,7 @@ VOCABULARY_MODULES = {
 
 def build_support_appeal_prompt(options: dict) -> str:
     topic = options.get('topic', '')
-    author_bio = options.get('authorBio', '')
+    author_bio = sanitize_support_appeal_author_bio(options.get('authorBio', ''))
     author_name = options.get('authorName', '')
     user_profile = options.get('userProfile', {})
     keywords = options.get('keywords', [])
@@ -208,6 +209,21 @@ def build_support_appeal_prompt(options: dict) -> str:
   <rule id="community_context_allowed">RAG의 지역 현실·주민 생활 맥락 청크는 공동체 서사 소재로 허용.</rule>
   <rule id="deep_not_wide">소재가 적을수록 새 소재를 추가하지 말고 있는 소재를 깊게 전개할 것.</rule>
 </source_constraint>
+
+<material_usage_lock priority="critical" description="입력 소재별 활용 범위 잠금">
+  <rule id="identity_only">
+    author, speaker_identity, stanceText 안의 정보 중 직책·지역 연고·현장 경험·주민 접점·활동 이력만 본문 구조의 중심 소재로 사용한다.
+  </rule>
+  <rule id="policy_not_section">
+    정책명·사업명·바우처·수당·조례·시스템·플랫폼·지급·지원·구축·도입 같은 항목이 author나 stanceText에 보이더라도 본론 H2 주제로 삼지 않는다.
+  </rule>
+  <rule id="policy_cap">
+    정책 항목은 전체 본문에서 최대 2개만, 각각 1문장 이내로 보조 근거로만 언급한다. 정책 카드 나열·열거·설명은 금지.
+  </rule>
+  <rule id="stance_handling">
+    stanceText에 정책 표현이 많아도 그 정책을 본론 주제로 삼지 말고, 공동체 서사·화자의 책임·말할 자격을 설명하는 보조 문장으로만 사용한다.
+  </rule>
+</material_usage_lock>
 
 <narrative_expansion_guide description="있는 소재로 분량을 만드는 방법">
   소재 하나를 3개 문단으로 전개하는 원칙:
