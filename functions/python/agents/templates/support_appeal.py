@@ -225,6 +225,15 @@ def build_support_appeal_prompt(options: dict) -> str:
   </rule>
 </material_usage_lock>
 
+<local_council_ratio priority="critical" description="기초의원·구의원 예비후보 분량 비중">
+  이 글은 기초의원·구의원 예비후보의 장문 지지 호소문이다.
+  전체 분량의 50~60%는 지역 연고·현장 경험·주민 접점·말할 자격을 증명하는 데 사용한다.
+  20~25%는 공동체 현실과 감정선에 사용한다.
+  정책·공약 설명은 15~25%를 넘기지 않는다.
+  정책은 최대 2개만 대표 사례로 언급하고, 독립 H2로 만들지 않는다.
+  분량을 채울 때 정책 카드를 추가하지 말고, 화자의 자격·공동체 서사를 깊게 펼친다.
+</local_council_ratio>
+
 <h2_examples priority="critical" description="본론 H2 형식 — 정책명 없이 사람·현장·책임 중심">
   <bad reason="질문형 + 정책어 동반">청년 자립 지원 방안은?</bad>
   <bad reason="정책 1개 H2 헌정 + 설명형">지역화폐, 골목경제 활력 불어넣는 이유</bad>

@@ -104,6 +104,42 @@ class TestSupportAppealValidator:
         assert result["passed"] is False
         assert any("QUESTION_H2" in issue for issue in result["issues"])
 
+    def test_detects_question_h2_tail_na(self):
+        """'~나' 종결도 질문형으로 감지 (예: '어떤 목소리를 듣나')."""
+        content = self._make_content(
+            ["박지상은 어떤 목소리를 듣나"],
+            "선택해 주십시오.",
+        )
+        result = validate_support_appeal_writing(content)
+        assert any("QUESTION_H2" in issue for issue in result["issues"])
+
+    def test_detects_question_h2_tail_inga(self):
+        """'~인가' 종결도 질문형으로 감지."""
+        content = self._make_content(
+            ["우리는 무엇을 해야 하는 사람인가"],
+            "선택해 주십시오.",
+        )
+        result = validate_support_appeal_writing(content)
+        assert any("QUESTION_H2" in issue for issue in result["issues"])
+
+    def test_detects_question_h2_lead_word(self):
+        """문장 첫머리 의문 부사도 질문형으로 감지."""
+        content = self._make_content(
+            ["어떻게 다시 시작할 수 있을까"],
+            "선택해 주십시오.",
+        )
+        result = validate_support_appeal_writing(content)
+        assert any("QUESTION_H2" in issue for issue in result["issues"])
+
+    def test_policy_h2_detects_newly_synced_keywords(self):
+        """BODY와 동기화한 정책어(바우처·수당·프로그램·제도)도 H2 정책 감지."""
+        content = self._make_content(
+            ["청년 바우처 도입 약속"],
+            "선택해 주십시오.",
+        )
+        result = validate_support_appeal_writing(content)
+        assert any("POLICY_H2" in issue for issue in result["issues"])
+
     def test_detects_missing_cta(self):
         content = self._make_content(
             ["말할 자격"],
@@ -229,14 +265,16 @@ class TestSupportAppealPromptBuilder:
 
 class TestSupportAppealH2Examples:
 
+    _BASE_OPTIONS = {
+        "topic": "샘플구의원 예비후보 홍길동",
+        "authorName": "홍길동",
+        "authorBio": "더불어민주당 청년위원장",
+        "instructions": ["계산동은 오랜 시간 활력을 잃었습니다."],
+        "userProfile": {"status": "예비"},
+    }
+
     def test_h2_examples_block_present(self):
-        prompt = build_support_appeal_prompt({
-            "topic": "샘플구의원 예비후보 홍길동",
-            "authorName": "홍길동",
-            "authorBio": "더불어민주당 청년위원장",
-            "instructions": ["계산동은 오랜 시간 활력을 잃었습니다."],
-            "userProfile": {"status": "예비"},
-        })
+        prompt = build_support_appeal_prompt(self._BASE_OPTIONS)
         assert "<h2_examples" in prompt
         assert "<bad" in prompt
         assert "<good" in prompt
@@ -244,6 +282,13 @@ class TestSupportAppealH2Examples:
         assert "골목경제 활력 불어넣는 이유" in prompt
         # 서사형 H2 예시가 good으로 명시
         assert "골목에서 배운 책임" in prompt
+
+    def test_local_council_ratio_block_present(self):
+        """기초의원·구의원 분량 비중 블록이 포함됨."""
+        prompt = build_support_appeal_prompt(self._BASE_OPTIONS)
+        assert "<local_council_ratio" in prompt
+        assert "50~60" in prompt  # 서사 비중
+        assert "15~25" in prompt  # 정책 비중
 
 
 # ---------------------------------------------------------------------------

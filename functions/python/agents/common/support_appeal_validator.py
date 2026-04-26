@@ -11,18 +11,19 @@ import re
 from typing import Any, Dict, List
 
 _H2_RE = re.compile(r"<h2>(.*?)</h2>", re.DOTALL)
-_QUESTION_TAIL_RE = re.compile(r"(?:\?|까\??|나요\??|는가\??)$")
+_QUESTION_TAIL_RE = re.compile(r"(?:\?|까\??|나요\??|는가\??|인가\??|나\??|냐\??)$")
+_QUESTION_LEAD_RE = re.compile(r"^(왜|어떻게|무엇|무슨|어떤|누가|언제|어디서)")
 
-_POLICY_KEYWORD_RE = re.compile(
-    r"(조례|예산|국비|시범사업|로드맵|법안|발의|시스템|플랫폼|"
-    r"구축|도입|확대|지원|공약|정책|사업)"
+# H2 정책 감지와 본문 정책 감지가 같은 구조 패턴을 공유한다.
+_POLICY_STRUCTURAL_PATTERN = (
+    r"조례|예산|국비|시범사업|로드맵|법안|발의|시스템|플랫폼|"
+    r"구축|도입|확대|지원|지원금|보조금|공약|정책|사업|"
+    r"바우처|수당|제도|지급|프로그램|프로젝트"
 )
+
+_POLICY_KEYWORD_RE = re.compile(f"({_POLICY_STRUCTURAL_PATTERN})")
+_BODY_POLICY_RE = re.compile(f"({_POLICY_STRUCTURAL_PATTERN})")
 _NUMERIC_RE = re.compile(r"\d+\s*(?:억|만|천|건|개|명|대|곳|%|퍼센트)")
-
-_BODY_POLICY_RE = re.compile(
-    r"(바우처|수당|지원금|보조금|조례|예산|국비|시범사업|법안|발의|"
-    r"제도|사업|시스템|플랫폼|지급|지원|구축|도입|확대|프로그램|프로젝트)"
-)
 _BODY_POLICY_THRESHOLD = 6
 
 _CTA_RE = re.compile(
@@ -57,8 +58,13 @@ def validate_support_appeal_writing(content: str) -> Dict[str, Any]:
 
     headings = [h.strip() for h in _H2_RE.findall(content)]
 
-    # 1. 질문형 H2 0개
-    question_h2 = [h for h in headings if h.endswith("?") or _QUESTION_TAIL_RE.search(h)]
+    # 1. 질문형 H2 0개 — tail("?·까·나요·는가·인가·나·냐") + lead("왜·어떻게·무엇·어떤" 등)
+    question_h2 = [
+        h for h in headings
+        if h.endswith("?")
+        or _QUESTION_TAIL_RE.search(h)
+        or _QUESTION_LEAD_RE.search(h)
+    ]
     if question_h2:
         issues.append(f"SUPPORT_APPEAL_QUESTION_H2:{len(question_h2)}")
 
