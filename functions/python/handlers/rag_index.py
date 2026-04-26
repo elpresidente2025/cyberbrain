@@ -84,10 +84,10 @@ def handle_index_bio(req: https_fn.Request) -> https_fn.Response:
         db = firestore.client()
         bio_doc = db.collection("bios").document(uid).get()
         bio_data = bio_doc.to_dict() or {}
-        entries = bio_data.get("bioEntries") or []
+        entries = bio_data.get("entries") or []
 
         if not entries:
-            return _json_response({"error": "색인할 bioEntries가 없습니다."}, 404)
+            return _json_response({"error": "색인할 entries가 없습니다."}, 404)
 
         async def _index():
             manager = LightRAGManager(bucket_name=_RAG_BUCKET, uid=uid)
@@ -141,7 +141,7 @@ def handle_batch_index_bios(req: https_fn.Request) -> https_fn.Response:
             from rag_manager import LightRAGManager
 
             bio_doc = db.collection("bios").document(uid).get()
-            entries = (bio_doc.to_dict() or {}).get("bioEntries") or []
+            entries = (bio_doc.to_dict() or {}).get("entries") or []
             if not entries:
                 results.append({"uid": uid, "status": "skipped", "reason": "no entries"})
                 continue
@@ -185,7 +185,7 @@ def handle_batch_compute_affinity(req: https_fn.Request) -> https_fn.Response:
         try:
             bio_doc = db.collection("bios").document(uid).get()
             bio_data = bio_doc.to_dict() or {}
-            entries = bio_data.get("bioEntries") or []
+            entries = bio_data.get("entries") or []
             if not entries:
                 results.append({"uid": uid, "status": "skipped", "reason": "no entries"})
                 continue
