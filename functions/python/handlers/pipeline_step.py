@@ -355,6 +355,8 @@ def handle_step(req: https_fn.Request) -> https_fn.Response:
                                             "numeric_count": _sa_result["numeric_count"],
                                         },
                                     )
+                                updated_context["supportAppealValidation"] = _sa_result
+                                updated_context["supportAppealValid"] = bool(_sa_result["passed"])
                                 # soft length telemetry (hard cap 없음)
                                 if len(updated_context["content"]) > 1100:
                                     emit_quality_signal(

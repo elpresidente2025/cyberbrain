@@ -377,6 +377,26 @@ def _split_reference_materials(data: Dict[str, Any]) -> tuple[str, str, str, lis
     return stance_text, news_data_text, instructions_text, deduped_declared_keywords
 
 
+_SA_SPECIFIC_POLICY_TERMS = frozenset({
+    "지역화폐", "참여소득", "참여 소득", "건강바우처", "건강 바우처",
+    "청년스테이션", "청년 스테이션", "천원의 아침밥",
+})
+_SA_GENERAL_POLICY_TERMS = (
+    "조례", "예산", "국비", "시범사업", "로드맵", "법안", "발의", "공약",
+)
+
+
+def _should_discard_support_appeal_rag(rag_text: str) -> bool:
+    """지지 호소 전용: 정책 청크 hit-count >= 4이면 True(폐기)."""
+    if not rag_text:
+        return False
+    hits = (
+        sum(2 for t in _SA_SPECIFIC_POLICY_TERMS if t in rag_text)
+        + sum(1 for t in _SA_GENERAL_POLICY_TERMS if t in rag_text)
+    )
+    return hits >= 4
+
+
 def _is_noise_auto_keyword(keyword: str) -> bool:
     normalized = re.sub(r"\s+", " ", str(keyword or "")).strip()
     if not normalized:
@@ -851,18 +871,9 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
                     results["styleHints"] = value
                 elif key == "rag" and value:
                     rag_text = str(value)
-                    # support_appeal: 정책 어휘 밀도가 30% 이상이면 ragContext 폐기
-                    if sub_category == "support_appeal" and rag_text:
-                        _policy_kw_re = re.compile(
-                            r"(조례|예산|국비|시범사업|로드맵|법안|발의|시스템|플랫폼|"
-                            r"구축|도입|확대|지원|공약|정책|사업)"
-                        )
-                        words = rag_text.split()
-                        if words:
-                            policy_hits = sum(1 for w in words if _policy_kw_re.search(w))
-                            if policy_hits / len(words) > 0.30:
-                                logger.info("[support_appeal] policy-heavy RAG discarded (%d/%d tokens)", policy_hits, len(words))
-                                rag_text = ""
+                    if sub_category == "support_appeal" and _should_discard_support_appeal_rag(rag_text):
+                        logger.info("[support_appeal] policy-heavy RAG discarded")
+                        rag_text = ""
                     if rag_text:
                         results["ragContext"] = rag_text
 
