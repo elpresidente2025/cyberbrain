@@ -1925,9 +1925,6 @@ class SubheadingAgent(Agent):
             primary_anchor_subject = _subject_particle(primary_anchor)
             add(f"{keyword}{topic} {primary_anchor}에서 시작된다")
             add(f"{keyword}, {primary_anchor}부터 시작합니다")
-            if len(specific_anchors) >= 2:
-                secondary_anchor = specific_anchors[1]
-                add(f"{keyword}{topic} {primary_anchor}{_conjunction_particle(primary_anchor)} {secondary_anchor}{_direction_particle(secondary_anchor)} 답한다")
         else:
             primary_anchor = ""
             primary_anchor_subject = ""
