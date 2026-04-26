@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from ..common.editorial import STRUCTURE_SPEC, TITLE_SPEC
 from ..common.election_rules import get_election_stage
 from ..common.speaker_identity import build_speaker_identity_xml
+from ..common.leadership import LEADERSHIP_PHILOSOPHY
 
 
 @dataclass
@@ -174,6 +175,13 @@ def build_support_appeal_prompt(options: dict) -> str:
 </personalization_guide>
 """
 
+    _core = LEADERSHIP_PHILOSOPHY.get('coreApproach', {})
+    _field_based = _core.get('fieldBased', {}).get('meaning', '현장에서 답을 찾고 현실에 기반한 정치')
+    _result_oriented = _core.get('resultOriented', {}).get('meaning', '화려한 말보다 실질적 변화와 성과')
+    _tone = LEADERSHIP_PHILOSOPHY.get('communicationStyle', {}).get('tone', {})
+    _humble = _tone.get('humble', '겸손하고 진솔한 자세')
+    _empathetic = _tone.get('empathetic', '서민의 아픔에 공감')
+
     prompt = f"""
 <task type="지지 호소" system="전자두뇌비서관">
 
@@ -190,13 +198,38 @@ def build_support_appeal_prompt(options: dict) -> str:
 {keywords_section}{hints_section}
 
 <source_constraint priority="critical" description="소재 순도 규칙">
-  <rule id="input_only">본문의 서사 골격(인물, 사건, 동기, 지역 연결고리)은 반드시 입장문(stanceText)에서 가져와야 합니다.</rule>
-  <rule id="no_rag_section">RAG 맥락·프로필 공약 항목을 소재로 독립 H2 섹션을 신설하지 마세요. 정책명은 전체 본문에 최대 2개, 각각 한 문장 이내로만 언급하세요.</rule>
-  <rule id="policy_as_evidence">공약은 "이러한 삶을 살아왔기에 이런 준비를 했다"는 서사의 증거로만 사용하세요. 공약 목록 나열, 정책 설명 섹션 신설, 세부 사업 명칭 열거는 금지입니다.</rule>
-  <rule id="sparse_input_allowed">입장문 소재가 1~2개뿐이어도 강제로 3개 섹션을 채우지 마세요. 2개 H2로도 완성된 글이 됩니다.</rule>
+  <philosophy>
+    {_field_based} — 화자가 직접 경험하고 현장에서 목격한 것만이 이 글의 뼈대가 될 수 있다.
+    {_result_oriented} — 추상적 선언이 아닌 감각적 장면으로 변화를 묘사해야 한다.
+  </philosophy>
+  <rule id="no_fabrication">없는 사실을 지어내는 것은 금지. 입장문과 화자 프로필에 있는 소재만 사용.</rule>
+  <rule id="no_rag_section">RAG 정책 항목을 소재로 독립 H2 섹션 신설 금지. 정책명은 전체 최대 2개, 각 1문장 이내.</rule>
+  <rule id="policy_as_evidence">정책은 "이런 삶을 살아왔기에 이런 준비를 했다"는 사람 증명의 증거로만 사용. 목록 나열·설명 섹션 금지.</rule>
+  <rule id="community_context_allowed">RAG의 지역 현실·주민 생활 맥락 청크는 공동체 서사 소재로 허용.</rule>
+  <rule id="deep_not_wide">소재가 적을수록 새 소재를 추가하지 말고 있는 소재를 깊게 전개할 것.</rule>
 </source_constraint>
 
-<writing_blueprint description="Hook → Story → Vision → CTA 4단 흐름">
+<narrative_expansion_guide description="있는 소재로 분량을 만드는 방법">
+  소재 하나를 3개 문단으로 전개하는 원칙:
+  - 문단 1 (배경·현장): 이 소재가 존재하는 공간과 상황을 감각적으로 묘사
+  - 문단 2 (화자의 접점): 화자가 이 현실을 어떻게 목격하거나 체험했는가
+  - 문단 3 (책임과 다짐): 그래서 화자가 왜 지금 이 자리에 서 있는가
+
+  입장문에 공동체 현실 묘사가 있는 경우: 그 내용을 직접 위 3문단으로 확장.
+  입장문에 이미지·은유 표현만 있는 경우: 그 표현의 감정적 무게와 화자의 책임감을 풀어쓰되,
+    구체적 사실은 지어내지 말 것. 이미지가 내포하는 공동체의 감정 상태를 서술.
+
+  "분량을 버티는 것은 화자의 자의식이 아니라 공동체의 문제 서사다."
+  새 소재를 추가하는 대신 있는 소재를 장면·감정·책임으로 세분화하는 것이 분량의 원칙.
+</narrative_expansion_guide>
+
+<emotion_arc description="섹션별 감정 역할">
+  서론 (호명+상황): 공적 엄숙함·위기감·책임감 → 글 전체를 사적 자기 PR이 아닌 공적 발언으로 프레이밍
+  본론 (자격+공동체): 자부심·현장성·공감 → 낯선 정치인이 아닌 이미 지역 안에 있던 사람으로 인식
+  결론 (CTA): {_humble}, {_empathetic} → 부탁 전 몸을 낮춰 심리적 거부감을 줄인 뒤 직접 요청
+</emotion_arc>
+
+<writing_blueprint description="한국 정치 지지 호소 5단 구조">
 
   <component id="story_frame" name="스토리 프레임: {story_frame.name}">
     {story_frame.instruction}
@@ -211,29 +244,41 @@ def build_support_appeal_prompt(options: dict) -> str:
     위 어휘 테마에 맞는 단어와 표현을 사용하여 글 전체의 감성을 형성하라.
   </component>
 
-  <component id="structure" name="4단 서사 구조 (Hook → Story → Vision → CTA)">
-    <section order="1" name="서론 (Hook)">
-      감각적이고 구체적인 장면이나 질문으로 시작하세요. 일반 인삿말로 시작하지 마세요.
-      화자 소개는 1문장 이내로 제한하고, 왜 이 글을 쓰게 됐는지를 바로 연결하세요.
+  <component id="structure" name="5단 서사 구조">
+    <section order="1" name="서론: 호명 + 상황 제시">
+      "주민 여러분", "시민 여러분"처럼 독자를 먼저 부른다.
+      자기소개보다 먼저 지금 이 말을 왜 해야 하는지 상황·책임감을 제시한다.
+      공적 엄숙함으로 글 전체를 사적 PR이 아닌 공적 발언으로 프레이밍한다.
+      일반 인삿말로 시작하지 말 것.
     </section>
-    <section order="2" name="본론 1 (Story/Why)" subheading="h2 소제목 필수 — 서사형·선언형으로 작성 (질문형 금지)">
-      화자가 이 일에 나선 이유, 지역·사람·사건과의 개인적 연결고리를 구체 장면으로 풀어내세요.
-      소재가 1개뿐이면 이 섹션에 집중하고 억지로 분리하지 마세요.
+    <section order="2" name="본론 1: 말할 자격" subheading="h2 소제목 필수 — 서사형·선언형, 질문형 금지">
+      연고·현장 경험·활동 이력을 통해 "낯선 정치인이 아닌 이미 지역 안에 있던 사람"임을 증명한다.
+      "이 지역에서 오래 살았다", "이 일을 오래 했다", "이 현장을 오래 봤다"가 이 섹션의 핵심.
+      authorBio의 직함·경력·지역 연고를 narrative_expansion_guide의 3문단 전개법으로 깊게 펼친다.
     </section>
-    <section order="3" name="본론 2 (Vision/Promise, 선택적)" subheading="h2 소제목 필수 — 서사형·선언형으로 작성 (질문형 금지)">
-      입장문에 비전·약속 소재가 있을 경우에만 작성하세요. 소재가 없으면 이 섹션을 생략하고
-      2개 본론으로 완성하세요. RAG/프로필 보강으로 채우는 것은 금지합니다.
+    <section order="3" name="본론 2: 공동체 서사" subheading="h2 소제목 필수 — 서사형·선언형, 질문형 금지">
+      "우리 지역은 왜 지금 이 상태인가"를 화자의 눈으로 묘사한다.
+      입장문에 공동체 현실 묘사가 있으면 그것을 3문단으로 확장한다.
+      입장문에 이미지·은유만 있으면 그 표현의 감정적 무게를 풀어쓴다 — 없는 사실을 만들지 말 것.
+      이 섹션이 분량의 핵심이다. 공동체 서사가 충분히 깊어야 독자가 화자를 신뢰한다.
     </section>
-    <section order="4" name="결론 (CTA)">
-      결론 마지막 문단에 지지 호소 문장을 반드시 1~2개 포함하세요.
-      호소는 "~해 주십시오" 또는 "~해 주세요" 형식의 직접 요청이어야 합니다.
+    <section order="4" name="본론 3: 핵심 증빙 (선택적)" subheading="h2 소제목 필수 — 서사형·선언형, 질문형 금지">
+      입장문 또는 RAG에 정책·약속 소재가 있을 때만 작성한다.
+      정책은 목록이 아니라 "이런 사람이기 때문에 이런 준비를 했다"는 사람 증명의 증거로 제시한다.
+      소재가 없으면 이 섹션을 생략하고 2개 본론으로 완성한다.
+    </section>
+    <section order="5" name="결론: 겸손 + CTA">
+      부탁하기 전에 먼저 감사와 겸손으로 몸을 낮춘다.
+      마지막 문단에 직접 지지 요청 1~2문장이 반드시 있어야 한다.
+      "~해 주십시오" 또는 "~해 주세요" 형식의 직접 요청.
     </section>
 
     <rules>
-      <rule id="h2_style">H2 소제목은 서사형·선언형으로 작성. 질문형("왜~", "어떻게~", "무엇이~") 금지.</rule>
-      <rule id="body_count">본론은 2개 또는 3개. 소재가 충분하면 3개, 부족하면 2개로 완성. 3개 강제 금지.</rule>
-      <rule id="cta_mandatory">결론 마지막 문단에 지지·동참 호소 문장이 없으면 불합격.</rule>
-      <rule id="no_section_mini_conclusion">각 본론 섹션 말미에 "앞으로 ~하겠습니다" 식의 미니 결론 금지. 다짐·호소는 결론에만.</rule>
+      <rule id="h2_style">H2 소제목은 서사형·선언형. 질문형("왜~", "어떻게~", "무엇이~") 금지.</rule>
+      <rule id="body_count">본론은 2~3개. 소재 충분 시 3개, 부족 시 2개. 3개 강제 금지.</rule>
+      <rule id="cta_mandatory">결론 마지막 문단에 직접 지지 호소 문장 없으면 불합격.</rule>
+      <rule id="no_section_mini_conclusion">각 본론 말미에 "앞으로 ~하겠습니다" 식 미니 결론 금지. 다짐·호소는 결론에만.</rule>
+      <rule id="structure_integrity">마무리 인사 후 본문 재시작 금지.</rule>
     </rules>
   </component>
 
@@ -249,14 +294,15 @@ def build_support_appeal_prompt(options: dict) -> str:
 <quality_verification description="품질 검증">
   <rule id="cta_check">결론에 지지·동참 호소 문장 확인</rule>
   <rule id="h2_style_check">H2가 서사형·선언형인지 확인</rule>
-  <rule id="source_purity_check">입장문에 없는 소재(정책 공약, 수치)가 생성되지 않았는지 확인</rule>
+  <rule id="no_fabrication_check">입장문·프로필에 없는 구체적 사실이 생성되지 않았는지 확인</rule>
+  <rule id="narrative_depth_check">본론 섹션이 새 소재 추가가 아닌 깊은 전개로 구성됐는지 확인</rule>
   <rule id="sentence_completeness">모든 문장 완전한 구조 확인</rule>
   <rule id="particles">조사 누락 절대 금지</rule>
 </quality_verification>
 
 <final_mission>
-위 글쓰기 설계도와 모든 규칙을 준수하여, 입력 소재만으로 진솔하고 설득력 있는 지지 호소 원고를 작성하라.
-소재가 적더라도 강제로 보강하지 말고, 있는 소재로 완성도 높은 글을 완성하라.
+위 글쓰기 설계도에 따라, 입장문과 화자 프로필에 있는 소재만으로 진솔하고 설득력 있는 지지 호소 원고를 작성하라.
+없는 사실을 만들어내지 말고, 있는 소재를 감각·감정·책임으로 깊게 전개하라.
 출력은 반드시 title, content, hashtags 태그로 감싸서 제공하라.
 </final_mission>
 
