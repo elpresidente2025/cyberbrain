@@ -850,7 +850,21 @@ def handle_start(req: https_fn.Request) -> https_fn.Response:
                 elif key == "style" and isinstance(value, dict):
                     results["styleHints"] = value
                 elif key == "rag" and value:
-                    results["ragContext"] = str(value)
+                    rag_text = str(value)
+                    # support_appeal: 정책 어휘 밀도가 30% 이상이면 ragContext 폐기
+                    if sub_category == "support_appeal" and rag_text:
+                        _policy_kw_re = re.compile(
+                            r"(조례|예산|국비|시범사업|로드맵|법안|발의|시스템|플랫폼|"
+                            r"구축|도입|확대|지원|공약|정책|사업)"
+                        )
+                        words = rag_text.split()
+                        if words:
+                            policy_hits = sum(1 for w in words if _policy_kw_re.search(w))
+                            if policy_hits / len(words) > 0.30:
+                                logger.info("[support_appeal] policy-heavy RAG discarded (%d/%d tokens)", policy_hits, len(words))
+                                rag_text = ""
+                    if rag_text:
+                        results["ragContext"] = rag_text
 
             return results
 

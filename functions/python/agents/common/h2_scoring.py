@@ -126,6 +126,8 @@ H2_HARD_FAIL_ISSUES = frozenset(
         "H2_INTERNAL_PROMPT_LEAK",
         # plan의 forbidden_numeric_anchors(삭감·폐지 맥락 숫자)가 H2에 등장.
         "H2_COUNTEREXAMPLE_NUMERIC_ANCHOR",
+        # support_appeal 장르에서 질문형 H2 금지 위반.
+        "H2_QUESTION_FORM_IN_SUPPORT_APPEAL",
     }
 )
 
@@ -472,13 +474,14 @@ def _banned_pattern_score(hit_count: int) -> float:
     return max(0.0, 1.0 - 0.4 * hit_count)
 
 
-def _assertive_question_gate_score(heading: str, style: str) -> tuple:
-    """assertive 스타일에서만 질문형을 금지한다. AEO는 중립 1.0."""
-    if style != "assertive":
-        return (1.0, False)
-    if heading.rstrip().endswith("?") or _QUESTION_TAIL_RE.search(heading):
-        return (0.0, True)
-    return (1.0, False)
+def _assertive_question_gate_score(heading: str, style: str, subcategory: str = "") -> tuple:
+    """assertive 스타일 또는 support_appeal 장르에서 질문형을 금지한다."""
+    is_question = heading.rstrip().endswith("?") or _QUESTION_TAIL_RE.search(heading)
+    if subcategory == "support_appeal" and is_question:
+        return (0.0, True, "H2_QUESTION_FORM_IN_SUPPORT_APPEAL")
+    if style == "assertive" and is_question:
+        return (0.0, True, "QUESTION_FORM_IN_ASSERTIVE")
+    return (1.0, False, "")
 
 
 def _duplicate_score(heading: str) -> tuple:
@@ -500,6 +503,7 @@ def score_h2(
     style: str = "aeo",
     preferred_types: Optional[List[str]] = None,
     passing_threshold: Optional[float] = None,
+    subcategory: str = "",
 ) -> H2Score:
     """주어진 heading 을 plan 과 대조해 rubric 점수를 반환한다."""
     normalized_style = normalize_h2_style(style)
@@ -583,10 +587,10 @@ def score_h2(
     ending_weighted = ending_raw * _WEIGHTS["ending"]
     breakdown["ending"] = {"raw": ending_raw, "weighted": ending_weighted}
 
-    assertive_raw, assertive_fail = _assertive_question_gate_score(heading_text, normalized_style)
+    assertive_raw, assertive_fail, assertive_issue = _assertive_question_gate_score(heading_text, normalized_style, subcategory)
     assertive_weighted = assertive_raw * _WEIGHTS["assertive_gate"]
-    if assertive_fail:
-        issues.append("QUESTION_FORM_IN_ASSERTIVE")
+    if assertive_fail and assertive_issue:
+        issues.append(assertive_issue)
     breakdown["assertive_gate"] = {"raw": assertive_raw, "weighted": assertive_weighted}
 
     # plan 이 "질문형" archetype 을 배정했는데 실제 heading 이 질문 형태가 아니면

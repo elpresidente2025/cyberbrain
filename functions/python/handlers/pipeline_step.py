@@ -334,6 +334,35 @@ def handle_step(req: https_fn.Request) -> https_fn.Response:
                         updated_context["keywordResult"] = final_keyword_result
                         updated_context["keywordValidation"] = build_keyword_validation(final_keyword_result)
                         updated_context["wordCount"] = int(count_without_space(updated_context["content"]))
+
+                        # support_appeal 전용 post-generation 검증
+                        if sub_category == "support_appeal":
+                            try:
+                                from agents.common.support_appeal_validator import validate_support_appeal_writing
+                                from agents.common.telemetry import emit_quality_signal
+                                _sa_result = validate_support_appeal_writing(updated_context["content"])
+                                if not _sa_result["passed"]:
+                                    logger.warning(
+                                        "support_appeal validator issues: %s", _sa_result["issues"]
+                                    )
+                                    emit_quality_signal(
+                                        signal_type="support_appeal_validation_failed",
+                                        payload={
+                                            "issues": _sa_result["issues"],
+                                            "h2_count": _sa_result["h2_count"],
+                                            "question_h2_count": _sa_result["question_h2_count"],
+                                            "policy_h2_count": _sa_result["policy_h2_count"],
+                                            "numeric_count": _sa_result["numeric_count"],
+                                        },
+                                    )
+                                # soft length telemetry (hard cap 없음)
+                                if len(updated_context["content"]) > 1100:
+                                    emit_quality_signal(
+                                        signal_type="support_appeal_long_content_warning",
+                                        payload={"content_length": len(updated_context["content"]), "threshold": 1100},
+                                    )
+                            except Exception as _sa_exc:
+                                logger.warning("support_appeal validator failed (non-fatal): %s", _sa_exc)
                         logger.info(
                             "Python final output formatting completed: wordCount=%s, keywordValidation=%s",
                             updated_context["wordCount"],

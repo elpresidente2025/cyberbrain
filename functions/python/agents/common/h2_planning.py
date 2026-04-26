@@ -1017,7 +1017,11 @@ _ANSWER_LIST_MARKERS = (
 )
 _ANSWER_LIST_NUMERIC_RE = re.compile(r"(?:^|[^\d])(?:[1-9]|1[0-9])[\)\.]\s")
 _ANSWER_LIST_COUNT_RE = re.compile(r"(?:3|4|5|6|7|8|9|10)\s?(?:대|가지|단계|축|원칙|영역)")
-_ANSWER_FACT_TAIL_RE = re.compile(r"(?:입니다|이다|합니다|한다|됩니다|된다|했습니다|했다)\s*[\.]")
+_ANSWER_FACT_TAIL_RE = re.compile(
+    r"(?:입니다|이다|합니다|한다|됩니다|된다|했습니다|했다|"
+    r"겠(?:습니다|다|어요|지요|죠))"
+    r"\s*[\.。]?$"
+)
 
 
 def classify_section_intent(section_text: str) -> str:
@@ -1040,7 +1044,7 @@ def classify_section_intent(section_text: str) -> str:
     return "info"
 
 
-def detect_answer_type(section_text: str) -> str:
+def detect_answer_type(section_text: str, *, subcategory: str = "") -> str:
     """섹션 본문이 지향하는 답변 형태를 분류한다.
 
     반환값: "declarative-list" | "declarative-fact" | "question-form"
@@ -1048,6 +1052,9 @@ def detect_answer_type(section_text: str) -> str:
     - 단정형 문장 비율이 높으면 fact
     - 그 외(기본) question-form — LLM 에 질문형 H2 를 요구
     """
+    if subcategory == "support_appeal":
+        return "declarative-fact"
+
     text = strip_html(section_text)
     if not text:
         return "question-form"

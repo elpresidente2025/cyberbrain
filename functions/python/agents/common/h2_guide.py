@@ -851,7 +851,8 @@ CATEGORY_ARCHETYPE_MAP = {
     "current-affairs":     {"primary": ["질문형", "주장형", "이유형", "대조형"],                    "auxiliary": ["사례형", "목표형", "서술형"]},
     "policy-proposal":     {"primary": ["목표형", "주장형", "이유형", "대조형", "사례형", "질문형"], "auxiliary": ["서술형"]},
     "activity-report":     {"primary": ["목표형", "이유형"],                                       "auxiliary": ["사례형", "서술형"]},
-    "daily-communication": {"primary": ["질문형", "이유형"],                                       "auxiliary": ["사례형", "서술형"]},
+    "daily-communication": {"primary": ["질문형", "이유형"],                                       "auxiliary": ["사례형", "서술형", "주장형", "목표형"]},
+    "support-appeal":      {"primary": ["서술형", "주장형", "사례형"],                              "auxiliary": ["목표형"]},
     "local-issues":        {"primary": ["목표형", "주장형", "이유형", "대조형", "사례형"],           "auxiliary": ["질문형", "서술형"]},
     "educational-content": {"primary": ["질문형", "이유형"],                                       "auxiliary": ["대조형", "사례형", "서술형"]},
     "default":             {"primary": ["질문형", "주장형", "이유형"],                             "auxiliary": ["대조형", "사례형", "서술형"]},
@@ -944,6 +945,15 @@ CATEGORY_TONE_EXAMPLES = {
             '이 제도, 무엇이 달라졌나요?',
             '규정 개정의 핵심 배경',
             '기존 제도 vs 개정안, 무엇이 다른가',
+        ],
+    },
+    'support-appeal': {
+        'style': 'aeo',
+        'description': '지지 호소는 서술형·주장형·사례형 아키타입을 사용합니다. 질문형은 금지됩니다.',
+        'examples': [
+            '지상에서 정치를 다시 짓는다',
+            '말로 하는 정치는 끝났다',
+            '현장에서 만난 시민의 한마디',
         ],
     },
     'default': {

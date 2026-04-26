@@ -317,6 +317,7 @@ class SubheadingAgent(Agent):
             f"{user_profile.get('regionMetro', '')} {user_profile.get('regionDistrict', '')}".strip()
         )
         category = context.get("category", "") or "default"
+        subcategory = context.get("subCategory", "") or context.get("subcategory", "") or ""
 
         stance_text = context.get("stanceText", "") or ""
         user_keywords = list(context.get("userKeywords") or [])
@@ -341,6 +342,7 @@ class SubheadingAgent(Agent):
             role_facts=role_facts,
             preferred_keyword=preferred_keyword,
             user_profile=user_profile,
+            subcategory=subcategory,
         )
 
         return {
@@ -534,6 +536,7 @@ class SubheadingAgent(Agent):
         role_facts: Optional[Dict[str, Any]] = None,
         preferred_keyword: str = "",
         user_profile: Optional[Dict[str, Any]] = None,
+        subcategory: str = "",
     ) -> Tuple[str, List[Dict[str, Any]], Dict[str, Any]]:
         matches = list(_H2_PATTERN.finditer(content))
         if not matches:
@@ -543,11 +546,14 @@ class SubheadingAgent(Agent):
         _title_m = re.search(r"<(?:h1|title)>(.*?)</(?:h1|title)>", content)
         article_title = _title_m.group(1).strip() if _title_m else ""
 
+        # support_appeal은 category 키도 "support-appeal"로 매핑해 풀/톤을 올바르게 적용
+        effective_h2_category = "support-appeal" if subcategory == "support_appeal" else (category or "default")
+
         print(
-            f"✨ [SubheadingAgent] 소제목 {len(matches)}개 최적화 시작 (Category: {category})"
+            f"✨ [SubheadingAgent] 소제목 {len(matches)}개 최적화 시작 (Category: {category}, Subcategory: {subcategory})"
         )
 
-        style_config = self.get_style_config(category)
+        style_config = self.get_style_config(effective_h2_category)
         is_commemorative = detect_commemorative_topic(topic, stance_text)
         if is_commemorative:
             style_config["commemorative"] = True
@@ -559,7 +565,7 @@ class SubheadingAgent(Agent):
             preferred_types = override_types
         else:
             pool = resolve_category_archetypes(
-                category or "default",
+                effective_h2_category,
                 commemorative=is_commemorative,
                 matchup=False,
             )
@@ -620,7 +626,7 @@ class SubheadingAgent(Agent):
 
         for i, plan in enumerate(plans):
             plan["query_intent"] = classify_section_intent(section_texts[i])
-            plan["answer_type"] = detect_answer_type(section_texts[i])
+            plan["answer_type"] = detect_answer_type(section_texts[i], subcategory=subcategory)
             plan["target_keyword_canonical"] = target_keyword_canonical
             plan["assigned_entity_surface"] = (
                 assigned_entity_surfaces[i] if i < len(assigned_entity_surfaces) else ""
@@ -675,6 +681,7 @@ class SubheadingAgent(Agent):
                 plans[i],
                 style=h2_style,
                 preferred_types=preferred_types,
+                subcategory=subcategory,
             )
             for i, heading in enumerate(first_attempt)
         ]
@@ -706,6 +713,7 @@ class SubheadingAgent(Agent):
                     plans[i],
                     style=h2_style,
                     preferred_types=preferred_types,
+                    subcategory=subcategory,
                 )
                 self._enrich_score_one(
                     new_score,
@@ -786,6 +794,7 @@ class SubheadingAgent(Agent):
                             plans[idx],
                             style=h2_style,
                             preferred_types=preferred_types,
+                            subcategory=subcategory,
                         )
                         self._enrich_score_one(
                             new_score,

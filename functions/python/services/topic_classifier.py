@@ -627,12 +627,22 @@ async def resolve_request_intent(topic: str, payload: Dict[str, Any] | None = No
     )
 
     if requested_category != "auto":
-        return _build_result(
+        result = _build_result(
             category=requested_category,
             sub_category=requested_sub_category,
             confidence=1.0,
             source="explicit",
         )
+        # subCategory가 명시됐으면 사용자 의도 존중. 비어 있을 때만 support_appeal 신호 검사.
+        if not requested_sub_category:
+            stance_text = _extract_stance_text(payload)
+            if stance_text:
+                normalized = _normalize_text(stance_text)
+                policy_score = _pattern_score(normalized, SUBSTANTIVE_POLICY_PATTERNS)
+                if _detect_support_appeal(normalized, policy_score):
+                    result = {**result, "subCategory": "support_appeal", "source": "explicit+stance_support_appeal"}
+                    result["writingMethod"] = _writing_method_for(requested_category, "support_appeal")
+        return result
 
     stance_text = _extract_stance_text(payload)
     return await classify_topic(topic, stance_text=stance_text)
