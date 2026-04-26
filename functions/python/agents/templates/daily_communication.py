@@ -107,6 +107,7 @@ def build_daily_communication_prompt(options: dict) -> str:
 {keywords_section}{hints_section}
 
 <source_constraint priority="critical" description="소재 순도 규칙 — 절대 어김 금지">
+  <!-- 이 원칙의 출처는 leadership.py다. 특정 인물명을 템플릿에 박지 않되, 철학 자체는 leadership.py에서 가져온다. -->
   <philosophy>좋은 생활정치 글의 핵심 원칙 — '현장에서 직접 확인한 경험'과 '화려한 말보다 실질적 변화' — 은 화자가 직접 경험하고 말한 것에서만 소재를 취해야 함을 요구한다. 프로필 정책 목록을 끌어다 섹션을 채우는 것은 '화려한 정책 나열'로 이 원칙과 충돌한다.</philosophy>
   <rule id="input_only">새로운 소재(정책명, 사업명, 수치, 사건, 인물)는 스탠스텍스트에 있는 것만 사용한다.</rule>
   <rule id="no_rag_policy_augmentation">RAG·프로필의 정책 공약·법안·성과 항목을 끌어다 독립 H2 섹션 소재로 만드는 것은 금지한다. 공약은 화자의 배경·경험·다짐을 뒷받침하는 맥락으로 1~2개 간략 언급에 그쳐야 하며, 화자 정체성(이름·직함·지역)은 자유롭게 활용한다.</rule>
