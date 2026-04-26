@@ -225,6 +225,19 @@ def build_support_appeal_prompt(options: dict) -> str:
   </rule>
 </material_usage_lock>
 
+<h2_examples priority="critical" description="본론 H2 형식 — 정책명 없이 사람·현장·책임 중심">
+  <bad reason="질문형 + 정책어 동반">청년 자립 지원 방안은?</bad>
+  <bad reason="정책 1개 H2 헌정 + 설명형">지역화폐, 골목경제 활력 불어넣는 이유</bad>
+  <bad reason="정책 카드 나열">스마트 시스템 도입과 사업 확대</bad>
+  <bad reason="질문형 종결">왜 이 지역이 변해야 하는가</bad>
+
+  <good>이 거리에서 마주한 외로움</good>
+  <good>골목에서 배운 책임</good>
+  <good>주민 곁에 먼저 서겠습니다</good>
+  <good>여기서 살아온 사람의 약속</good>
+  <good>멈춘 심장을 다시 뛰게 한다</good>
+</h2_examples>
+
 <narrative_expansion_guide description="있는 소재로 분량을 만드는 방법">
   소재 하나를 3개 문단으로 전개하는 원칙:
   - 문단 1 (배경·현장): 이 소재가 존재하는 공간과 상황을 감각적으로 묘사

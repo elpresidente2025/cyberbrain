@@ -195,6 +195,87 @@ class TestSupportAppealPromptBuilder:
         prompt = build_structure_prompt(self._BASE_PARAMS)
         assert "<execution_plan" not in prompt
 
+    def test_instructions_text_sanitized_for_support_appeal(self):
+        """support_appeal_writing에서 instructions의 정책-only 문장은 reference_materials에 들어가지 않음."""
+        params = {
+            **self._BASE_PARAMS,
+            "instructions": [
+                "계산동은 오랜 시간 활력을 잃어가고 있습니다.",
+                "지역 청년 바우처 도입과 조례 제정을 추진합니다.",
+            ],
+        }
+        prompt = build_structure_prompt(params)
+        assert "계산동은 오랜 시간 활력을 잃어가고 있습니다" in prompt
+        assert "지역 청년 바우처 도입과 조례 제정을 추진합니다" not in prompt
+
+    def test_profile_support_context_sanitized_for_support_appeal(self):
+        """support_appeal_writing에서 profileSupportContext의 정책-only 문장은 보조 자료에 들어가지 않음."""
+        params = {
+            **self._BASE_PARAMS,
+            "newsContext": "지역 뉴스",  # profileSupportContext가 보강 경로로 들어가도록
+            "profileSupportContext": (
+                "더불어민주당 청년위원장으로 활동했습니다. "
+                "건강바우처 도입과 조례 제정을 추진합니다."
+            ),
+        }
+        prompt = build_structure_prompt(params)
+        assert "청년위원장" in prompt
+        assert "건강바우처 도입과 조례 제정을 추진합니다" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# support_appeal template: <h2_examples> good/bad block
+# ---------------------------------------------------------------------------
+
+class TestSupportAppealH2Examples:
+
+    def test_h2_examples_block_present(self):
+        prompt = build_support_appeal_prompt({
+            "topic": "샘플구의원 예비후보 홍길동",
+            "authorName": "홍길동",
+            "authorBio": "더불어민주당 청년위원장",
+            "instructions": ["계산동은 오랜 시간 활력을 잃었습니다."],
+            "userProfile": {"status": "예비"},
+        })
+        assert "<h2_examples" in prompt
+        assert "<bad" in prompt
+        assert "<good" in prompt
+        # 정책 카드 H2 예시가 bad로 명시
+        assert "골목경제 활력 불어넣는 이유" in prompt
+        # 서사형 H2 예시가 good으로 명시
+        assert "골목에서 배운 책임" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Validator POLICY_BODY_OVERLOAD gate (telemetry only)
+# ---------------------------------------------------------------------------
+
+class TestSupportAppealValidatorBodyOverload:
+
+    def _make_content(self, h2s, tail):
+        h2_html = "".join(f"<h2>{h}</h2><p>본문입니다.</p>" for h in h2s)
+        return h2_html + f"<p>{tail}</p>"
+
+    def test_body_policy_overload_detected(self):
+        """본문 정책 구조어 6개 초과면 POLICY_BODY_OVERLOAD 발급."""
+        body = self._make_content(
+            ["말할 자격"],
+            "조례와 예산, 시범사업과 바우처, 수당과 지원금, 시스템 도입을 추진합니다. 기회를 주십시오.",
+        )
+        result = validate_support_appeal_writing(body)
+        assert any("POLICY_BODY_OVERLOAD" in issue for issue in result["issues"])
+        assert result["body_policy_hits"] > 6
+
+    def test_low_policy_count_passes(self):
+        """본문 정책 구조어 ≤ 6이면 POLICY_BODY_OVERLOAD 없음."""
+        body = self._make_content(
+            ["말할 자격"],
+            "조례 한 번, 예산 한 번. 기회를 주십시오.",
+        )
+        result = validate_support_appeal_writing(body)
+        assert "POLICY_BODY_OVERLOAD" not in str(result["issues"])
+        assert result["body_policy_hits"] <= 6
+
 
 # ---------------------------------------------------------------------------
 # Bio sanitizer: sanitize_support_appeal_author_bio

@@ -35,6 +35,7 @@ from .structure_utils import _xml_cdata, _xml_text, normalize_context_text, spli
 from .style_guide_builder import build_style_role_priority_summary
 from ..common.writing_principles import build_writing_principles_xml
 from ..common.leadership import build_leadership_philosophy_xml
+from ..common.support_appeal_bio_sanitizer import sanitize_support_appeal_author_bio
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,17 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
     news_source_mode = str(params.get('newsSourceMode') or 'news').strip().lower()
     profile_support_context = normalize_context_text(params.get('profileSupportContext'))
     profile_substitute_context = normalize_context_text(params.get('profileSubstituteContext'))
+    if is_support_appeal:
+        _orig_profile_support = profile_support_context
+        _orig_profile_substitute = profile_substitute_context
+        profile_support_context = sanitize_support_appeal_author_bio(profile_support_context)
+        profile_substitute_context = sanitize_support_appeal_author_bio(profile_substitute_context)
+        if _orig_profile_support != profile_support_context or _orig_profile_substitute != profile_substitute_context:
+            logger.info(
+                "[support_appeal] profile contexts sanitized: support %d->%d, substitute %d->%d",
+                len(_orig_profile_support), len(profile_support_context),
+                len(_orig_profile_substitute), len(profile_substitute_context),
+            )
     personalization_context = normalize_context_text(
         params.get('personalizationContext') or params.get('memoryContext'),
         sep="\n",
@@ -157,6 +169,14 @@ def build_structure_prompt(params: Dict[str, Any]) -> str:
 
     # Reference Materials Section
     instructions_text = normalize_context_text(params.get('instructions'))
+    if is_support_appeal:
+        _orig_instructions = instructions_text
+        instructions_text = sanitize_support_appeal_author_bio(instructions_text)
+        if _orig_instructions != instructions_text:
+            logger.info(
+                "[support_appeal] instructions sanitized: %d -> %d",
+                len(_orig_instructions), len(instructions_text),
+            )
     news_context_text = normalize_context_text(params.get('newsContext'))
     rag_context_text = normalize_context_text(params.get('ragContext'))
     if news_context_text:

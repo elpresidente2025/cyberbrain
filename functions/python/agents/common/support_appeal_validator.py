@@ -1,7 +1,8 @@
 """support_appeal_writing 전용 post-generation validator.
 
 AEO_ANSWER_FIRST_METHODS에서 제외된 자리에 들어가는 장르 전용 rubric.
-4개 검사: CTA 존재 / 질문형 H2 0 / 독립 정책 H2 0 / 정책 수치 ≤ 2.
+5개 검사: CTA 존재 / 질문형 H2 0 / 독립 정책 H2 0 / 정책 수치 ≤ 2 /
+본문 정책 구조어 ≤ 6.
 """
 
 from __future__ import annotations
@@ -17,6 +18,12 @@ _POLICY_KEYWORD_RE = re.compile(
     r"구축|도입|확대|지원|공약|정책|사업)"
 )
 _NUMERIC_RE = re.compile(r"\d+\s*(?:억|만|천|건|개|명|대|곳|%|퍼센트)")
+
+_BODY_POLICY_RE = re.compile(
+    r"(바우처|수당|지원금|보조금|조례|예산|국비|시범사업|법안|발의|"
+    r"제도|사업|시스템|플랫폼|지급|지원|구축|도입|확대|프로그램|프로젝트)"
+)
+_BODY_POLICY_THRESHOLD = 6
 
 _CTA_RE = re.compile(
     r"(지지해\s*주|한\s*표\s*(?:부탁|주십시오|주세요)|기회를\s*주|투표\s*부탁|"
@@ -71,6 +78,11 @@ def validate_support_appeal_writing(content: str) -> Dict[str, Any]:
     if not _CTA_RE.search(tail):
         issues.append("SUPPORT_APPEAL_CTA_MISSING")
 
+    # 5. 본문 정책 구조어 ≤ 6 (telemetry 게이트 — 자동 repair 없음)
+    body_policy_hits = len(_BODY_POLICY_RE.findall(content))
+    if body_policy_hits > _BODY_POLICY_THRESHOLD:
+        issues.append(f"SUPPORT_APPEAL_POLICY_BODY_OVERLOAD:{body_policy_hits}")
+
     return {
         "passed": not issues,
         "issues": issues,
@@ -78,4 +90,5 @@ def validate_support_appeal_writing(content: str) -> Dict[str, Any]:
         "question_h2_count": len(question_h2),
         "policy_h2_count": len(policy_h2),
         "numeric_count": len(numerics),
+        "body_policy_hits": body_policy_hits,
     }
