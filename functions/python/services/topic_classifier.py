@@ -300,6 +300,7 @@ def _detect_support_appeal(stance_text: str, policy_signal_score: int) -> bool:
     강한 신호 1개 OR (약한 신호 + 문맥 증폭자)의 합이 2 이상이면 True.
     강한 신호는 명시적 지지 호소이므로 정책 점수와 무관하게 우선 감지.
     약한 신호는 정책 신호가 3 이상이면 정책 글로 판단하여 False.
+    후보 문맥(amp) 단독으로도 정책 신호가 낮으면(≤1) True — CTA 없는 후보 주제 대응.
     """
     if _pattern_score(stance_text, SUPPORT_APPEAL_STRONG_PATTERNS) >= 1:
         return True
@@ -307,6 +308,8 @@ def _detect_support_appeal(stance_text: str, policy_signal_score: int) -> bool:
         return False
     weak = _pattern_score(stance_text, SUPPORT_APPEAL_WEAK_PATTERNS)
     amp = min(_pattern_score(stance_text, SUPPORT_APPEAL_CONTEXT_AMPLIFIERS), 1)
+    if amp >= 1 and policy_signal_score <= 1:
+        return True
     return weak + amp >= 2
 
 
@@ -642,12 +645,14 @@ async def resolve_request_intent(topic: str, payload: Dict[str, Any] | None = No
             source="explicit",
         )
         # subCategory가 명시됐으면 사용자 의도 존중. 비어 있을 때만 support_appeal 신호 검사.
-        # topic과 stanceText를 합산해 검사 — "예비후보" 등 신호가 topic에만 있는 경우 대응.
-        if not requested_sub_category:
+        # daily-communication 문맥에서만 검사 — 다른 카테고리에 support_appeal subCategory 오염 방지.
+        # topic+stanceText 합산 검사, 단 policy_score는 stanceText만으로 계산 (topic의 "정책" 단어에 의한 오억제 방지).
+        if not requested_sub_category and requested_category == "daily-communication":
             stance_text = _extract_stance_text(payload)
             combined = _normalize_text(f"{topic}\n{stance_text}".strip())
             if combined:
-                policy_score = _pattern_score(combined, SUBSTANTIVE_POLICY_PATTERNS)
+                _stance_only = _normalize_text(stance_text)
+                policy_score = _pattern_score(_stance_only, SUBSTANTIVE_POLICY_PATTERNS) if _stance_only else 0
                 if _detect_support_appeal(combined, policy_score):
                     result = {**result, "subCategory": "support_appeal", "source": "explicit+topic_stance_support_appeal"}
                     result["writingMethod"] = _writing_method_for(requested_category, "support_appeal")

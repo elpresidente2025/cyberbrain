@@ -116,16 +116,48 @@ def test_resolve_request_intent_detects_support_appeal_strong_pattern_in_topic()
     assert result["subCategory"] == "support_appeal"
 
 
+def test_resolve_request_intent_detects_support_appeal_from_topic_without_cta() -> None:
+    """topic에 '예비후보'만 있고 stance에 CTA 없어도 정책 신호 낮으면 support_appeal."""
+    result = asyncio.run(
+        topic_classifier.resolve_request_intent(
+            "샘플구의원 예비후보 홍길동, 주민 삶과 정책 사이를 좁히겠습니다",
+            {
+                "category": "daily-communication",
+                "subCategory": "",
+                "stanceText": "계산동은 오랜 시간 활력을 잃어가고 있습니다.",
+            },
+        )
+    )
+    assert result["subCategory"] == "support_appeal"
+    assert result["writingMethod"] == "support_appeal_writing"
+
+
 def test_resolve_request_intent_does_not_misroute_policy_heavy_topic() -> None:
-    """topic이 '예비후보'를 포함해도 정책어가 3개 이상이면 support_appeal 아님."""
+    """topic이 '예비후보'를 포함해도 stance 정책어가 3개 이상이면 support_appeal 아님."""
     result = asyncio.run(
         topic_classifier.resolve_request_intent(
             "샘플구의원 예비후보 홍길동의 조례·예산·공약 로드맵 발표",
             {
                 "category": "daily-communication",
                 "subCategory": "",
-                "stanceText": "구청 예산 확보와 공약 추진 계획을 말씀드립니다.",
+                "stanceText": "구청 예산 확보와 공약 추진 계획을 말씀드립니다. 조례 발의로 정책을 실현하겠습니다.",
             },
         )
     )
     assert result["subCategory"] != "support_appeal"
+
+
+def test_resolve_request_intent_does_not_pollute_activity_report_category() -> None:
+    """activity-report 카테고리에는 support_appeal subCategory가 적용되지 않음."""
+    result = asyncio.run(
+        topic_classifier.resolve_request_intent(
+            "샘플구의원 예비후보 홍길동 활동 보고",
+            {
+                "category": "activity-report",
+                "subCategory": "",
+                "stanceText": "의정활동을 보고드립니다.",
+            },
+        )
+    )
+    assert result["subCategory"] != "support_appeal"
+    assert result["category"] == "activity-report"
