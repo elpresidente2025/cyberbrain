@@ -264,6 +264,7 @@ SUPPORT_APPEAL_STRONG_PATTERNS = (
     r"기회를\s*주세요",
     r"기회를\s*주십시오",
     r"꼭\s*지지해",
+    r"소중한\s*한\s*표",
 )
 
 SUPPORT_APPEAL_WEAK_PATTERNS = (
@@ -278,6 +279,10 @@ SUPPORT_APPEAL_WEAK_PATTERNS = (
     r"힘을\s*모아",
     r"힘이\s*되어",
     r"힘을\s*보태",
+    r"약속드립",
+    r"맡겨\s*주(?:세요|십시오)?",
+    r"힘을\s*실어\s*주",
+    r"도와\s*주(?:세요|십시오)?",
 )
 
 SUPPORT_APPEAL_CONTEXT_AMPLIFIERS = (
@@ -492,9 +497,11 @@ JSON만 출력하세요.
         return _build_result(category=DEFAULT_CATEGORY, confidence=DEFAULT_CONFIDENCE, source="default")
 
 
-def refine_with_stance(primary: Dict[str, Any], stance_text: str) -> Dict[str, Any]:
+def refine_with_stance(primary: Dict[str, Any], stance_text: str, *, topic: str = "") -> Dict[str, Any]:
     normalized_stance = _normalize_text(stance_text)
-    if len(normalized_stance) < 8:
+    # support_appeal 감지는 topic+stance 합산으로 — "예비후보" 등 신호가 topic에만 있는 케이스 대응
+    _combined_for_appeal = _normalize_text(f"{topic}\n{normalized_stance}".strip()) if topic else normalized_stance
+    if len(_combined_for_appeal) < 8 and len(normalized_stance) < 8:
         return primary
 
     category = str(primary.get("category") or DEFAULT_CATEGORY)
@@ -512,7 +519,7 @@ def refine_with_stance(primary: Dict[str, Any], stance_text: str) -> Dict[str, A
         if policy_signal_score >= 2 or policy_commitment_score >= 2:
             pass  # policy signal이 강하면 personal_reflection 오버라이드 차단
         else:
-            if _detect_support_appeal(normalized_stance, policy_signal_score):
+            if _detect_support_appeal(_combined_for_appeal, policy_signal_score):
                 return _build_result(
                     category="daily-communication",
                     sub_category="support_appeal",
@@ -525,7 +532,7 @@ def refine_with_stance(primary: Dict[str, Any], stance_text: str) -> Dict[str, A
                 source=f"{source}+stance_reflection",
             )
 
-    if category == "daily-communication" and _detect_support_appeal(normalized_stance, policy_signal_score):
+    if category == "daily-communication" and _detect_support_appeal(_combined_for_appeal, policy_signal_score):
         return _build_result(
             category="daily-communication",
             sub_category="support_appeal",
@@ -617,7 +624,7 @@ async def classify_topic(topic: str, stance_text: str = "") -> Dict[str, Any]:
     if not primary:
         primary = await classify_with_llm(normalized_topic)
 
-    return refine_with_stance(primary, stance_text)
+    return refine_with_stance(primary, stance_text, topic=normalized_topic)
 
 
 async def resolve_request_intent(topic: str, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
@@ -635,13 +642,14 @@ async def resolve_request_intent(topic: str, payload: Dict[str, Any] | None = No
             source="explicit",
         )
         # subCategory가 명시됐으면 사용자 의도 존중. 비어 있을 때만 support_appeal 신호 검사.
+        # topic과 stanceText를 합산해 검사 — "예비후보" 등 신호가 topic에만 있는 경우 대응.
         if not requested_sub_category:
             stance_text = _extract_stance_text(payload)
-            if stance_text:
-                normalized = _normalize_text(stance_text)
-                policy_score = _pattern_score(normalized, SUBSTANTIVE_POLICY_PATTERNS)
-                if _detect_support_appeal(normalized, policy_score):
-                    result = {**result, "subCategory": "support_appeal", "source": "explicit+stance_support_appeal"}
+            combined = _normalize_text(f"{topic}\n{stance_text}".strip())
+            if combined:
+                policy_score = _pattern_score(combined, SUBSTANTIVE_POLICY_PATTERNS)
+                if _detect_support_appeal(combined, policy_score):
+                    result = {**result, "subCategory": "support_appeal", "source": "explicit+topic_stance_support_appeal"}
                     result["writingMethod"] = _writing_method_for(requested_category, "support_appeal")
         return result
 

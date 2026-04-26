@@ -128,3 +128,21 @@ class TestSupportAppealValidator:
         result = validate_support_appeal_writing(content)
         assert result["policy_h2_count"] >= 1
         assert result["passed"] is False
+
+    def test_cta_detected_sojounghan_hanpyo(self):
+        """'소중한 한 표를 주십시오' 형태 CTA 감지."""
+        content = self._make_content(
+            ["말할 자격"],
+            "샘플구의원 예비후보 홍길동에게 소중한 한 표를 주십시오.",
+        )
+        result = validate_support_appeal_writing(content)
+        assert "SUPPORT_APPEAL_CTA_MISSING" not in result["issues"]
+
+    def test_cta_detected_matgyeo_ju(self):
+        """'맡겨 주십시오' 형태 CTA 감지."""
+        content = self._make_content(
+            ["말할 자격"],
+            "이 지역의 변화를 저 홍길동에게 맡겨 주십시오.",
+        )
+        result = validate_support_appeal_writing(content)
+        assert "SUPPORT_APPEAL_CTA_MISSING" not in result["issues"]
