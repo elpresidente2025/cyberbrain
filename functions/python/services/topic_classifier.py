@@ -293,12 +293,13 @@ def _detect_support_appeal(stance_text: str, policy_signal_score: int) -> bool:
     """지지 호소(support_appeal) 서브카테고리 해당 여부 판정.
 
     강한 신호 1개 OR (약한 신호 + 문맥 증폭자)의 합이 2 이상이면 True.
-    정책 신호가 3 이상이면 정책 글로 판단하여 False.
+    강한 신호는 명시적 지지 호소이므로 정책 점수와 무관하게 우선 감지.
+    약한 신호는 정책 신호가 3 이상이면 정책 글로 판단하여 False.
     """
-    if policy_signal_score >= 3:
-        return False
     if _pattern_score(stance_text, SUPPORT_APPEAL_STRONG_PATTERNS) >= 1:
         return True
+    if policy_signal_score >= 3:
+        return False
     weak = _pattern_score(stance_text, SUPPORT_APPEAL_WEAK_PATTERNS)
     amp = min(_pattern_score(stance_text, SUPPORT_APPEAL_CONTEXT_AMPLIFIERS), 1)
     return weak + amp >= 2
